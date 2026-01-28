@@ -1,122 +1,285 @@
 "use client";
 
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "convex/react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@convex/_generated/api";
-import { useAuthActions } from "@convex-dev/auth/react";
 import { Button } from "@/components/ui/button";
+import { UrlBar } from "@/components/dashboard/url-bar";
 import { RequestList } from "@/components/dashboard/request-list";
+import {
+  RequestDetail,
+  RequestDetailEmpty,
+} from "@/components/dashboard/request-detail";
 import Link from "next/link";
+import { Copy, Check, Send } from "lucide-react";
+
+const WEBHOOK_BASE_URL =
+  process.env.NEXT_PUBLIC_WEBHOOK_URL || "https://go.webhooks.cc";
 
 export default function DashboardPage() {
   const endpoints = useQuery(api.endpoints.list);
-  const { signOut } = useAuthActions();
+  const searchParams = useSearchParams();
+  const endpointSlug = searchParams.get("endpoint");
 
-  // Get the most recent endpoint
-  const currentEndpoint = endpoints?.[0];
+  const currentEndpoint =
+    endpoints?.find((ep) => ep.slug === endpointSlug) ?? endpoints?.[0];
 
   const requests = useQuery(
     api.requests.list,
-    currentEndpoint ? { endpointId: currentEndpoint._id, limit: 50 } : "skip"
+    currentEndpoint
+      ? { endpointId: currentEndpoint._id, limit: 50 }
+      : "skip"
   );
 
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [liveMode, setLiveMode] = useState(true);
+  const [sortNewest, setSortNewest] = useState(true);
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const prevRequestCount = useRef(0);
+  const [newCount, setNewCount] = useState(0);
+
+  // Track incoming requests for live mode
+  useEffect(() => {
+    if (!requests) return;
+
+    const currentCount = requests.length;
+    const diff = currentCount - prevRequestCount.current;
+
+    if (prevRequestCount.current > 0 && diff > 0) {
+      if (liveMode) {
+        // Auto-select newest
+        setSelectedId(requests[0]._id);
+      } else {
+        // Show "N new" banner
+        setNewCount((prev) => prev + diff);
+      }
+    }
+
+    prevRequestCount.current = currentCount;
+  }, [requests, liveMode]);
+
+  // Auto-select first request when requests load and nothing is selected
+  useEffect(() => {
+    if (requests && requests.length > 0 && !selectedId) {
+      setSelectedId(requests[0]._id);
+    }
+  }, [requests, selectedId]);
+
+  // Reset state when endpoint changes
+  useEffect(() => {
+    setSelectedId(null);
+    setNewCount(0);
+    prevRequestCount.current = 0;
+  }, [currentEndpoint?._id]);
+
+  const handleSelect = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setMobileDetail(true);
+    },
+    []
+  );
+
+  const handleJumpToNew = useCallback(() => {
+    if (requests && requests.length > 0) {
+      setSelectedId(requests[0]._id);
+      setNewCount(0);
+    }
+  }, [requests]);
+
   if (endpoints === undefined) {
-    return <div className="p-8">Loading...</div>;
+    return (
+      <div className="flex items-center justify-center flex-1">
+        <div className="animate-pulse text-muted-foreground font-bold uppercase tracking-wide text-sm">
+          Loading...
+        </div>
+      </div>
+    );
   }
 
+  if (endpoints.length === 0) {
+    return <EmptyEndpoints />;
+  }
+
+  if (!currentEndpoint) return null;
+
+  const selectedRequest = requests?.find((r) => r._id === selectedId) ?? null;
+  const hasRequests = requests && requests.length > 0;
+
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="border-b">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="font-bold text-xl">
-              webhooks.cc
-            </Link>
+    <>
+      {/* URL Bar */}
+      <UrlBar
+        endpointId={currentEndpoint._id}
+        endpointName={currentEndpoint.name || currentEndpoint.slug}
+        slug={currentEndpoint.slug}
+        mockResponse={currentEndpoint.mockResponse}
+      />
 
-            {/* Endpoint selector */}
-            {endpoints.length > 0 && (
-              <select className="border rounded px-3 py-1.5 text-sm">
-                {endpoints.map((ep) => (
-                  <option key={ep._id} value={ep._id}>
-                    {ep.name || ep.slug}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <Button size="sm" asChild>
-              <Link href="/endpoints/new">New Endpoint</Link>
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <Link
-              href="/account"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Account
-            </Link>
-            <Button variant="ghost" size="sm" onClick={() => signOut()}>
-              Sign out
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main content */}
-      <main className="container mx-auto px-4 py-8">
-        {endpoints.length === 0 ? (
-          <EmptyState />
-        ) : currentEndpoint ? (
-          <div className="space-y-6">
-            {/* Endpoint info */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold">
-                  {currentEndpoint.name || currentEndpoint.slug}
-                </h1>
-                <code className="text-sm text-muted-foreground">
-                  https://webhooks.cc/w/{currentEndpoint.slug}
-                </code>
-              </div>
-              <Button variant="outline" asChild>
-                <Link href={`/endpoints/${currentEndpoint.slug}/settings`}>
-                  Settings
-                </Link>
-              </Button>
+      {/* Split pane or empty state */}
+      {hasRequests ? (
+        <>
+          {/* Desktop: side-by-side */}
+          <div className="hidden md:flex flex-1 overflow-hidden">
+            <div className="w-80 shrink-0 border-r-2 border-foreground overflow-hidden">
+              <RequestList
+                requests={requests}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                liveMode={liveMode}
+                onToggleLiveMode={() => setLiveMode(!liveMode)}
+                sortNewest={sortNewest}
+                onToggleSort={() => setSortNewest(!sortNewest)}
+                newCount={newCount}
+                onJumpToNew={handleJumpToNew}
+              />
             </div>
+            <div className="flex-1 overflow-hidden">
+              {selectedRequest ? (
+                <RequestDetail request={selectedRequest} />
+              ) : (
+                <RequestDetailEmpty />
+              )}
+            </div>
+          </div>
 
-            {/* Requests */}
-            {requests && requests.length > 0 ? (
-              <RequestList requests={requests} />
-            ) : (
-              <div className="border rounded-lg p-12 text-center">
-                <p className="text-muted-foreground mb-4">
-                  No requests yet. Send a webhook to get started.
-                </p>
-                <code className="bg-muted p-3 rounded text-sm block">
-                  curl -X POST https://webhooks.cc/w/{currentEndpoint.slug} -d
-                  &apos;test&apos;
-                </code>
+          {/* Mobile: list or detail */}
+          <div className="md:hidden flex-1 overflow-hidden flex flex-col">
+            {mobileDetail && selectedRequest ? (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <button
+                  onClick={() => setMobileDetail(false)}
+                  className="border-b-2 border-foreground px-4 py-2 text-sm font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors shrink-0"
+                >
+                  &larr; Back to list
+                </button>
+                <div className="flex-1 overflow-hidden">
+                  <RequestDetail request={selectedRequest} />
+                </div>
               </div>
+            ) : (
+              <RequestList
+                requests={requests}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                liveMode={liveMode}
+                onToggleLiveMode={() => setLiveMode(!liveMode)}
+                sortNewest={sortNewest}
+                onToggleSort={() => setSortNewest(!sortNewest)}
+                newCount={newCount}
+                onJumpToNew={handleJumpToNew}
+              />
             )}
           </div>
-        ) : null}
-      </main>
+        </>
+      ) : (
+        <WaitingForRequests slug={currentEndpoint.slug} />
+      )}
+    </>
+  );
+}
+
+function WaitingForRequests({ slug }: { slug: string }) {
+  const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
+  const curlCmd = `curl -X POST ${url} \\
+  -H "Content-Type: application/json" \\
+  -d '{"test": true}'`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(curlCmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSendTest = async () => {
+    setSending(true);
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test: true, sentAt: new Date().toISOString() }),
+      });
+      setSent(true);
+      setTimeout(() => setSent(false), 3000);
+    } catch {
+      // Ignore - might be CORS, request still reaches the receiver
+      setSent(true);
+      setTimeout(() => setSent(false), 3000);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="max-w-lg w-full text-center space-y-6">
+        <div className="flex items-center justify-center gap-3">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
+          </span>
+          <p className="font-bold uppercase tracking-wide">
+            Waiting for first request...
+          </p>
+        </div>
+
+        <div className="text-left">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Send a test webhook
+            </span>
+            <button
+              onClick={handleCopy}
+              className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3 w-3" /> Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3 w-3" /> Copy
+                </>
+              )}
+            </button>
+          </div>
+          <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">
+            {curlCmd}
+          </pre>
+        </div>
+
+        <button
+          onClick={handleSendTest}
+          disabled={sending}
+          className="neo-btn-primary w-full flex items-center justify-center gap-2"
+        >
+          <Send className="h-4 w-4" />
+          {sending ? "Sending..." : sent ? "Sent!" : "Send test request"}
+        </button>
+      </div>
     </div>
   );
 }
 
-function EmptyState() {
+function EmptyEndpoints() {
   return (
-    <div className="text-center py-16">
-      <h2 className="text-xl font-semibold mb-2">No endpoints yet</h2>
-      <p className="text-muted-foreground mb-6">
-        Create your first endpoint to start capturing webhooks.
-      </p>
-      <Button asChild>
-        <Link href="/endpoints/new">Create endpoint</Link>
-      </Button>
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="text-center space-y-4">
+        <h2 className="text-xl font-bold uppercase tracking-wide">
+          No endpoints yet
+        </h2>
+        <p className="text-muted-foreground">
+          Create your first endpoint to start capturing webhooks.
+        </p>
+        <Button asChild className="neo-btn-primary !rounded-none">
+          <Link href="/endpoints/new">Create Endpoint</Link>
+        </Button>
+      </div>
     </div>
   );
 }

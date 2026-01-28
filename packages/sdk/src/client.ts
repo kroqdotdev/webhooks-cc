@@ -37,7 +37,7 @@ export class WebhooksCC {
       throw new Error(`API error (${response.status}): ${error}`);
     }
 
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
   endpoints = {

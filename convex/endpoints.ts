@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { nanoid } from "nanoid";
@@ -15,8 +16,7 @@ export const create = mutation({
     isEphemeral: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const userId = identity ? (identity.subject as any) : null;
+    const userId = await getAuthUserId(ctx) ?? undefined;
 
     const slug = nanoid(8);
     const isEphemeral = args.isEphemeral ?? !userId;
@@ -31,10 +31,10 @@ export const create = mutation({
       createdAt: Date.now(),
     });
 
+    // URL is constructed client-side using NEXT_PUBLIC_WEBHOOK_URL
     return {
       id: endpointId,
       slug,
-      url: `https://webhooks.cc/w/${slug}`,
     };
   },
 });
@@ -42,12 +42,12 @@ export const create = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
 
     const endpoints = await ctx.db
       .query("endpoints")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
       .collect();
 
@@ -85,12 +85,12 @@ export const update = mutation({
     ),
   },
   handler: async (ctx, { id, ...updates }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
 
     const endpoint = await ctx.db.get(id);
     if (!endpoint) throw new Error("Endpoint not found");
-    if (endpoint.userId !== identity.subject) {
+    if (endpoint.userId !== userId) {
       throw new Error("Not authorized");
     }
 
@@ -102,12 +102,12 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("endpoints") },
   handler: async (ctx, { id }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
 
     const endpoint = await ctx.db.get(id);
     if (!endpoint) throw new Error("Endpoint not found");
-    if (endpoint.userId !== identity.subject) {
+    if (endpoint.userId !== userId) {
       throw new Error("Not authorized");
     }
 

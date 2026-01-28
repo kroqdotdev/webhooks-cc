@@ -1,51 +1,98 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  /* Font families */
+  --font-sans: var(--font-sans), system-ui, sans-serif;
+  --font-mono: var(--font-mono), monospace;
+
+  /* Border radius */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* Colors using CSS variables */
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Box shadows */
+  --shadow-neo: 4px 4px 0 0 hsl(var(--foreground));
+  --shadow-neo-sm: 2px 2px 0 0 hsl(var(--foreground));
+  --shadow-neo-lg: 6px 6px 0 0 hsl(var(--foreground));
+}
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* Neubrutalism Light Theme */
+    --background: 60 9% 98%;
+    --foreground: 0 0% 0%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 0 0% 0%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
+    --popover-foreground: 0 0% 0%;
+    --primary: 162 100% 41%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 52 100% 50%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 60 5% 90%;
+    --muted-foreground: 0 0% 35%;
+    --accent: 280 100% 65%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 0%;
+    --input: 0 0% 0%;
+    --ring: 162 100% 41%;
+    --radius: 0;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /* Neubrutalism Dark Theme */
+    --background: 240 6% 10%;
+    --foreground: 60 9% 98%;
+    --card: 240 6% 14%;
+    --card-foreground: 60 9% 98%;
+    --popover: 240 6% 14%;
+    --popover-foreground: 60 9% 98%;
+    --primary: 162 100% 45%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 52 100% 50%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 240 5% 20%;
+    --muted-foreground: 60 5% 65%;
+    --accent: 280 100% 70%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 60 9% 98%;
+    --input: 60 9% 98%;
+    --ring: 162 100% 45%;
+    --radius: 0;
   }
 }
 
@@ -56,4 +103,102 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+@layer components {
+  /* Neubrutalism card with hard shadow */
+  .neo-card {
+    @apply border-2 border-foreground bg-card p-6;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  .neo-card:hover {
+    box-shadow: 6px 6px 0 0 hsl(var(--foreground));
+    transform: translate(-2px, -2px);
+  }
+
+  /* Neubrutalism button base styles */
+  .neo-btn {
+    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  .neo-btn:hover {
+    box-shadow: 2px 2px 0 0 hsl(var(--foreground));
+    transform: translate(2px, 2px);
+  }
+
+  .neo-btn:active {
+    box-shadow: 0 0 0 0 hsl(var(--foreground));
+    transform: translate(4px, 4px);
+  }
+
+  .neo-btn-primary {
+    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer bg-primary text-primary-foreground;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  .neo-btn-primary:hover {
+    box-shadow: 2px 2px 0 0 hsl(var(--foreground));
+    transform: translate(2px, 2px);
+  }
+
+  .neo-btn-primary:active {
+    box-shadow: 0 0 0 0 hsl(var(--foreground));
+    transform: translate(4px, 4px);
+  }
+
+  .neo-btn-secondary {
+    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer bg-secondary text-secondary-foreground;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  .neo-btn-secondary:hover {
+    box-shadow: 2px 2px 0 0 hsl(var(--foreground));
+    transform: translate(2px, 2px);
+  }
+
+  .neo-btn-secondary:active {
+    box-shadow: 0 0 0 0 hsl(var(--foreground));
+    transform: translate(4px, 4px);
+  }
+
+  .neo-btn-outline {
+    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer bg-background;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  .neo-btn-outline:hover {
+    box-shadow: 2px 2px 0 0 hsl(var(--foreground));
+    transform: translate(2px, 2px);
+  }
+
+  .neo-btn-outline:active {
+    box-shadow: 0 0 0 0 hsl(var(--foreground));
+    transform: translate(4px, 4px);
+  }
+
+  /* Code blocks */
+  .neo-code {
+    @apply border-2 border-foreground bg-muted p-4 font-mono text-sm;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  /* Input fields */
+  .neo-input {
+    @apply border-2 border-foreground bg-background px-4 py-3 outline-none;
+    box-shadow: 4px 4px 0 0 hsl(var(--foreground));
+  }
+
+  .neo-input:focus {
+    box-shadow: 2px 2px 0 0 hsl(var(--foreground));
+    transform: translate(2px, 2px);
+  }
+}
+
+/* Smooth transitions */
+@utility transition-neo {
+  transition-property: all;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
 }

@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
@@ -37,17 +39,19 @@ type MockResponse struct {
 	Headers map[string]string `json:"headers"`
 }
 
-type ConvexMutationRequest struct {
-	Path string         `json:"path"`
-	Args map[string]any `json:"args"`
-}
-
-var convexURL string
+var convexSiteURL string
+var httpClient *http.Client
 
 func main() {
-	convexURL = os.Getenv("CONVEX_URL")
-	if convexURL == "" {
-		log.Fatal("CONVEX_URL environment variable is required")
+	// HTTP actions are served from the .site domain, not .cloud
+	convexSiteURL = os.Getenv("CONVEX_SITE_URL")
+	if convexSiteURL == "" {
+		log.Fatal("CONVEX_SITE_URL environment variable is required")
+	}
+
+	// Initialize HTTP client with timeout
+	httpClient = &http.Client{
+		Timeout: 10 * time.Second,
 	}
 
 	app := fiber.New(fiber.Config{
@@ -56,6 +60,11 @@ func main() {
 	})
 
 	app.Use(recover.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		AllowHeaders: "Content-Type,Authorization",
+	}))
 	app.Use(logger.New(logger.Config{
 		Format: "${time} ${method} ${path} ${status} ${latency}\n",
 	}))
@@ -75,6 +84,23 @@ func main() {
 
 	log.Printf("Webhook receiver starting on :%s", port)
 	log.Fatal(app.Listen(":" + port))
+}
+
+// realIP extracts the client IP from proxy headers, falling back to the
+// direct connection IP. Caddy sets X-Forwarded-For and X-Real-Ip.
+func realIP(c *fiber.Ctx) string {
+	// X-Real-Ip is a single IP set by the reverse proxy
+	if ip := c.Get("X-Real-Ip"); ip != "" {
+		return ip
+	}
+	// X-Forwarded-For can be a comma-separated chain; first entry is the client
+	if xff := c.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	return c.IP()
 }
 
 func handleWebhook(c *fiber.Ctx) error {
@@ -105,14 +131,14 @@ func handleWebhook(c *fiber.Ctx) error {
 	}
 
 	// Call Convex to capture the request
-	resp, err := callConvex("requests:capture", map[string]any{
+	resp, err := callConvex(map[string]any{
 		"slug":        slug,
 		"method":      c.Method(),
 		"path":        path,
 		"headers":     headers,
 		"body":        body,
 		"queryParams": queryParams,
-		"ip":          c.IP(),
+		"ip":          realIP(c),
 	})
 
 	if err != nil {
@@ -147,23 +173,19 @@ func handleWebhook(c *fiber.Ctx) error {
 	return c.SendString("OK")
 }
 
-func callConvex(fnPath string, args map[string]any) (*CaptureResponse, error) {
-	payload, err := json.Marshal(ConvexMutationRequest{
-		Path: fnPath,
-		Args: args,
-	})
+func callConvex(args map[string]any) (*CaptureResponse, error) {
+	payload, err := json.Marshal(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", convexURL+"/api/mutation", bytes.NewReader(payload))
+	req, err := http.NewRequest("POST", convexSiteURL+"/capture", bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Convex: %w", err)
 	}

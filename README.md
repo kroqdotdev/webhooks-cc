@@ -42,6 +42,26 @@ webhooks-cc/
 - **SDK:** TypeScript
 - **Payments:** Polar.sh
 
+## Infrastructure
+
+The project runs on an Ubuntu LXC container with Caddy reverse proxy:
+
+| Domain | Port | Service |
+|--------|------|---------|
+| webhooks.cc | 3000 | Next.js web app |
+| go.webhooks.cc | 3001 | Go webhook receiver |
+
+### Mail
+
+SMTP is configured for transactional emails (welcome, notifications, etc.):
+
+| Setting | Value |
+|---------|-------|
+| Host | mail.sauerdev.com |
+| Port | 465 (SSL) or 587 (TLS) |
+| Username | postmaster@webhooks.cc |
+| From addresses | *@webhooks.cc |
+
 ## Commands
 
 ```bash
@@ -73,6 +93,10 @@ POLAR_ACCESS_TOKEN=
 POLAR_WEBHOOK_SECRET=
 POLAR_PRO_PRICE_ID=
 CONVEX_URL=
+SMTP_HOST=mail.sauerdev.com
+SMTP_PORT=465
+SMTP_USER=postmaster@webhooks.cc
+SMTP_PASS=
 ```
 
 ## License

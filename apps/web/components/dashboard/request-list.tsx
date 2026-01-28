@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { Circle, ArrowUpDown } from "lucide-react";
 
 interface Request {
   _id: string;
@@ -11,161 +11,134 @@ interface Request {
   body?: string;
   queryParams: Record<string, string>;
   contentType?: string;
+  ip: string;
   size: number;
   receivedAt: number;
 }
 
 interface RequestListProps {
   requests: Request[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  liveMode: boolean;
+  onToggleLiveMode: () => void;
+  sortNewest: boolean;
+  onToggleSort: () => void;
+  newCount?: number;
+  onJumpToNew?: () => void;
 }
 
-export function RequestList({ requests }: RequestListProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+const METHOD_COLORS: Record<string, string> = {
+  GET: "bg-primary text-primary-foreground",
+  POST: "bg-secondary text-secondary-foreground",
+  PUT: "bg-accent text-accent-foreground",
+  DELETE: "bg-destructive text-destructive-foreground",
+  PATCH: "bg-accent text-accent-foreground",
+  HEAD: "bg-muted text-muted-foreground",
+  OPTIONS: "bg-muted text-muted-foreground",
+};
 
-  return (
-    <div className="border rounded divide-y">
-      {requests.map((request) => (
-        <RequestRow
-          key={request._id}
-          request={request}
-          isExpanded={expandedId === request._id}
-          onToggle={() =>
-            setExpandedId(expandedId === request._id ? null : request._id)
-          }
-        />
-      ))}
-    </div>
-  );
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return new Date(timestamp).toLocaleDateString();
 }
 
-function RequestRow({
-  request,
-  isExpanded,
-  onToggle,
-}: {
-  request: Request;
-  isExpanded: boolean;
-  onToggle: () => void;
-}) {
-  const methodColors: Record<string, string> = {
-    GET: "bg-green-100 text-green-800",
-    POST: "bg-blue-100 text-blue-800",
-    PUT: "bg-yellow-100 text-yellow-800",
-    DELETE: "bg-red-100 text-red-800",
-    PATCH: "bg-purple-100 text-purple-800",
-  };
-
-  const time = new Date(request.receivedAt).toLocaleTimeString();
+export function RequestList({
+  requests,
+  selectedId,
+  onSelect,
+  liveMode,
+  onToggleLiveMode,
+  sortNewest,
+  onToggleSort,
+  newCount,
+  onJumpToNew,
+}: RequestListProps) {
+  const sorted = sortNewest ? requests : [...requests].reverse();
 
   return (
-    <div>
-      <button
-        onClick={onToggle}
-        className="w-full p-4 flex items-center gap-4 hover:bg-muted/50 text-left"
-      >
-        <span
-          className={cn(
-            "px-2 py-1 rounded text-xs font-mono font-semibold",
-            methodColors[request.method] || "bg-gray-100 text-gray-800"
-          )}
-        >
-          {request.method}
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="border-b-2 border-foreground px-3 py-2 flex items-center justify-between shrink-0">
+        <span className="text-sm font-bold">
+          {requests.length} request{requests.length !== 1 ? "s" : ""}
         </span>
-        <span className="font-mono text-sm flex-1 truncate">{request.path}</span>
-        <span className="text-sm text-muted-foreground">
-          {formatBytes(request.size)}
-        </span>
-        <span className="text-sm text-muted-foreground">{time}</span>
-      </button>
-
-      {isExpanded && (
-        <div className="p-4 bg-muted/30 border-t">
-          <RequestDetail request={request} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RequestDetail({ request }: { request: Request }) {
-  const [tab, setTab] = useState<"headers" | "body" | "query">("body");
-
-  return (
-    <div>
-      <div className="flex gap-2 mb-4">
-        {["body", "headers", "query"].map((t) => (
+        <div className="flex items-center gap-2">
           <button
-            key={t}
-            onClick={() => setTab(t as typeof tab)}
+            onClick={onToggleSort}
+            className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground"
+            title={sortNewest ? "Showing newest first" : "Showing oldest first"}
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onToggleLiveMode}
             className={cn(
-              "px-3 py-1 rounded text-sm",
-              tab === t ? "bg-primary text-primary-foreground" : "bg-muted"
+              "flex items-center gap-1.5 px-2 py-1 text-xs font-bold uppercase tracking-wide border-2 border-foreground cursor-pointer transition-colors",
+              liveMode
+                ? "bg-primary text-primary-foreground"
+                : "bg-background hover:bg-muted"
+            )}
+            title={liveMode ? "Live mode: auto-selects new requests" : "Review mode: new requests won't interrupt"}
+          >
+            <Circle
+              className={cn(
+                "h-2 w-2",
+                liveMode ? "fill-current" : "fill-muted-foreground text-muted-foreground"
+              )}
+            />
+            {liveMode ? "Live" : "Paused"}
+          </button>
+        </div>
+      </div>
+
+      {/* New requests banner */}
+      {!liveMode && newCount && newCount > 0 && onJumpToNew && (
+        <button
+          onClick={onJumpToNew}
+          className="bg-primary text-primary-foreground text-xs font-bold text-center py-1.5 cursor-pointer hover:bg-primary/90 transition-colors shrink-0"
+        >
+          {newCount} new request{newCount !== 1 ? "s" : ""}
+        </button>
+      )}
+
+      {/* Request rows */}
+      <div className="flex-1 overflow-y-auto">
+        {sorted.map((request) => (
+          <button
+            key={request._id}
+            onClick={() => onSelect(request._id)}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer transition-colors border-b border-foreground/10",
+              selectedId === request._id
+                ? "bg-muted border-l-4 border-l-primary"
+                : "hover:bg-muted/50 border-l-4 border-l-transparent"
             )}
           >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            <span
+              className={cn(
+                "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
+                METHOD_COLORS[request.method] || "bg-muted"
+              )}
+            >
+              {request.method}
+            </span>
+            <span className="text-xs text-muted-foreground font-mono truncate flex-1">
+              #{request._id.slice(-6)}
+            </span>
+            <span className="text-xs text-muted-foreground font-mono shrink-0">
+              {formatRelativeTime(request.receivedAt)}
+            </span>
           </button>
         ))}
       </div>
-
-      {tab === "body" && (
-        <pre className="bg-background p-4 rounded overflow-x-auto text-sm font-mono">
-          {request.body ? formatBody(request.body, request.contentType) : "(empty)"}
-        </pre>
-      )}
-
-      {tab === "headers" && (
-        <div className="bg-background p-4 rounded overflow-x-auto">
-          <table className="text-sm font-mono w-full">
-            <tbody>
-              {Object.entries(request.headers).map(([key, value]) => (
-                <tr key={key}>
-                  <td className="pr-4 text-muted-foreground">{key}</td>
-                  <td>{value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === "query" && (
-        <div className="bg-background p-4 rounded overflow-x-auto">
-          {Object.keys(request.queryParams).length > 0 ? (
-            <table className="text-sm font-mono w-full">
-              <tbody>
-                {Object.entries(request.queryParams).map(([key, value]) => (
-                  <tr key={key}>
-                    <td className="pr-4 text-muted-foreground">{key}</td>
-                    <td>{value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <span className="text-muted-foreground">(no query params)</span>
-          )}
-        </div>
-      )}
     </div>
   );
-}
-
-function formatBody(body: string, contentType?: string): string {
-  if (!body) return "(empty)";
-
-  // Try to parse and format JSON
-  if (contentType?.includes("application/json") || body.startsWith("{") || body.startsWith("[")) {
-    try {
-      return JSON.stringify(JSON.parse(body), null, 2);
-    } catch {
-      // Not valid JSON, return as-is
-    }
-  }
-
-  return body;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}b`;
-  return `${(bytes / 1024).toFixed(1)}kb`;
 }

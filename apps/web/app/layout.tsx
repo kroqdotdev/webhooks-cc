@@ -1,9 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
+import { ThemeProvider } from "@/components/providers/theme-provider";
 
-const inter = Inter({ subsets: ["latin"] });
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "webhooks.cc - Inspect webhooks instantly",
@@ -17,9 +26,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <ConvexAuthProvider>{children}</ConvexAuthProvider>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                const stored = localStorage.getItem('theme');
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const isDark = stored === 'dark' || (stored !== 'light' && prefersDark);
+                if (isDark) document.documentElement.classList.add('dark');
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}>
+        <ThemeProvider>
+          <ConvexAuthProvider>{children}</ConvexAuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
