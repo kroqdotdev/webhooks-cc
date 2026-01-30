@@ -35,3 +35,9 @@ coverage/
 # Misc
 *.log
 .vercel
+
+# Feature work
+feat/
+
+# Documentation (internal planning docs)
+docs/
