@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or enhancement
+about: Suggest a feature
 title: ''
 labels: enhancement
 assignees: ''
@@ -8,20 +8,16 @@ assignees: ''
 
 ## Problem
 
-Describe the problem or limitation you're experiencing.
+What problem does this solve?
 
-## Proposed Solution
+## Solution
 
-Describe your proposed solution or feature.
+What should we build?
 
-## Alternatives Considered
+## Alternatives
 
-Describe any alternative solutions or features you've considered.
+What other approaches did you consider?
 
 ## Use Case
 
-Describe how this feature would be used and who would benefit from it.
-
-## Additional Context
-
-Any other context, mockups, or examples.
+Who benefits and how?
