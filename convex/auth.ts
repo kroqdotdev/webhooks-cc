@@ -18,6 +18,8 @@ export const { auth, signIn, signOut, store } = convexAuth({
       // Case 2: New auth account - check if user with same email already exists
       // This handles cross-provider linking (e.g., user signed up with Google,
       // now signing in with GitHub using the same email)
+      // Security note: This relies on OAuth providers verifying email ownership.
+      // Both GitHub and Google verify emails before returning them in profile.
       if (profile.email) {
         const existingUser = await ctx.db
           .query("users")
@@ -25,6 +27,11 @@ export const { auth, signIn, signOut, store } = convexAuth({
           .first();
 
         if (existingUser) {
+          // Audit log: Account linking event for security monitoring
+          console.log(
+            `[AUDIT] Account linked: userId=${existingUser._id} email=${profile.email} ` +
+            `newProvider=${profile.provider ?? "unknown"} timestamp=${Date.now()}`
+          );
           // Update profile info and link this auth account to existing user
           await ctx.db.patch(existingUser._id, {
             name: profile.name ?? existingUser.name,

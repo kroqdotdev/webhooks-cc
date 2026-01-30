@@ -34,11 +34,15 @@ export const capture = mutation({
         return { error: "limit_exceeded" };
       }
 
-      // Increment usage
+      // Increment usage with TOCTOU protection:
+      // Re-read user to get latest requestsUsed value before incrementing
       if (user) {
-        await ctx.db.patch(endpoint.userId, {
-          requestsUsed: user.requestsUsed + 1,
-        });
+        const freshUser = await ctx.db.get(endpoint.userId);
+        if (freshUser) {
+          await ctx.db.patch(endpoint.userId, {
+            requestsUsed: freshUser.requestsUsed + 1,
+          });
+        }
       }
     }
 

@@ -25,6 +25,9 @@ export const createCheckout = action({
 });
 
 // Handle Polar webhook events
+// SECURITY: This mutation is internal-only. The HTTP endpoint that calls this
+// must verify the Polar webhook signature using the POLAR_WEBHOOK_SECRET before
+// invoking this mutation. See: https://docs.polar.sh/developers/webhooks/signature
 export const handleWebhook = internalMutation({
   args: {
     event: v.string(),

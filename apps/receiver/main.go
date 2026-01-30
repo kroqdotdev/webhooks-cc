@@ -49,9 +49,14 @@ func main() {
 		log.Fatal("CONVEX_SITE_URL environment variable is required")
 	}
 
-	// Initialize HTTP client with timeout
+	// Initialize HTTP client with timeout and connection pooling
 	httpClient = &http.Client{
 		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		},
 	}
 
 	app := fiber.New(fiber.Config{

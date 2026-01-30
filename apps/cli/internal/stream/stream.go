@@ -2,9 +2,12 @@ package stream
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"webhooks.cc/shared/types"
@@ -26,11 +29,14 @@ func New(endpointSlug, baseURL, token string) *Stream {
 	}
 }
 
-// Listen connects to the real-time stream and calls handler for each request
-func (s *Stream) Listen(handler RequestHandler) error {
-	url := fmt.Sprintf("%s/api/stream/%s", s.baseURL, s.endpointSlug)
+// Listen connects to the real-time stream and calls handler for each request.
+// It respects the provided context for cancellation and graceful shutdown.
+func (s *Stream) Listen(ctx context.Context, handler RequestHandler) error {
+	// URL-escape the slug to prevent injection
+	escapedSlug := url.PathEscape(s.endpointSlug)
+	streamURL := fmt.Sprintf("%s/api/stream/%s", s.baseURL, escapedSlug)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -39,8 +45,19 @@ func (s *Stream) Listen(handler RequestHandler) error {
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 
+	// Configure HTTP client with connection timeouts but no overall timeout for SSE
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second, // Connection establishment timeout
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		IdleConnTimeout:       5 * time.Minute,
+	}
 	client := &http.Client{
-		Timeout: 0, // No timeout for SSE
+		Timeout:   0, // No overall timeout for SSE long-polling
+		Transport: transport,
 	}
 
 	resp, err := client.Do(req)
@@ -53,32 +70,62 @@ func (s *Stream) Listen(handler RequestHandler) error {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
+	// Channel to signal scanner goroutine completion
+	done := make(chan struct{})
+	errChan := make(chan error, 1)
 
-		// Skip empty lines and comments
-		if len(line) == 0 || line[0] == ':' {
-			continue
-		}
-
-		// Parse SSE data
-		if len(line) > 5 && line[:5] == "data:" {
-			data := line[5:]
-			if len(data) > 0 && data[0] == ' ' {
-				data = data[1:]
+	go func() {
+		defer close(done)
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
 			}
 
-			var req types.CapturedRequest
-			if err := json.Unmarshal([]byte(data), &req); err != nil {
+			line := scanner.Text()
+
+			// Skip empty lines and comments
+			if len(line) == 0 || line[0] == ':' {
 				continue
 			}
 
-			handler(&req)
+			// Parse SSE data
+			if len(line) > 5 && line[:5] == "data:" {
+				data := line[5:]
+				if len(data) > 0 && data[0] == ' ' {
+					data = data[1:]
+				}
+
+				var capturedReq types.CapturedRequest
+				if err := json.Unmarshal([]byte(data), &capturedReq); err != nil {
+					continue
+				}
+
+				handler(&capturedReq)
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// Wait for either context cancellation or scanner completion
+	select {
+	case <-ctx.Done():
+		// Close the response body to unblock the scanner
+		resp.Body.Close()
+		<-done // Wait for goroutine to finish
+		return ctx.Err()
+	case <-done:
+		select {
+		case err := <-errChan:
+			return err
+		default:
+			return nil
 		}
 	}
-
-	return scanner.Err()
 }
 
 // FormatRequest returns a formatted string for terminal output
