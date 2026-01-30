@@ -5,21 +5,8 @@ import { cn } from "@/lib/utils";
 import { Copy, Check } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatBytes } from "@/types/request";
+import { formatBytes, Request } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
-
-interface Request {
-  _id: string;
-  method: string;
-  path: string;
-  headers: Record<string, string>;
-  body?: string;
-  queryParams: Record<string, string>;
-  contentType?: string;
-  ip: string;
-  size: number;
-  receivedAt: number;
-}
 
 interface RequestDetailProps {
   request: Request;
@@ -150,8 +137,9 @@ export function RequestDetail({ request }: RequestDetailProps) {
           <div className="relative">
             {request.body && (
               <button
-                onClick={() => handleCopy(request.body!, "body")}
+                onClick={() => request.body && handleCopy(request.body, "body")}
                 className="absolute top-2 right-2 neo-btn-outline !py-1 !px-2 text-xs flex items-center gap-1"
+                aria-label={copied === "body" ? "Copied to clipboard" : "Copy body to clipboard"}
               >
                 {copied === "body" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               </button>

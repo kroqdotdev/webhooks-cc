@@ -5,13 +5,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"webhooks.cc/shared/types"
 )
+
+// debugLog conditionally logs debug messages if WHK_DEBUG is set
+var debugLog = func() func(format string, args ...any) {
+	if os.Getenv("WHK_DEBUG") != "" {
+		return func(format string, args ...any) {
+			log.Printf("[DEBUG] "+format, args...)
+		}
+	}
+	return func(format string, args ...any) {} // no-op
+}()
 
 type Stream struct {
 	endpointSlug string
@@ -100,6 +112,7 @@ func (s *Stream) Listen(ctx context.Context, handler RequestHandler) error {
 
 				var capturedReq types.CapturedRequest
 				if err := json.Unmarshal([]byte(data), &capturedReq); err != nil {
+					debugLog("SSE parse error: %v (data: %s)", err, data)
 					continue
 				}
 

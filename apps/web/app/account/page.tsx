@@ -30,7 +30,10 @@ export default function AccountPage() {
     );
   }
 
-  const usagePercent = Math.min((user.requestsUsed / user.requestLimit) * 100, 100);
+  const usagePercent =
+    user.requestLimit > 0
+      ? Math.min((user.requestsUsed / user.requestLimit) * 100, 100)
+      : 0;
 
   const handleRevoke = async (id: Id<"apiKeys">) => {
     if (confirm("Are you sure you want to revoke this API key?")) {

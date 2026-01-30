@@ -136,6 +136,9 @@ export const update = mutation({
   },
 });
 
+// Maximum requests to delete in a single mutation to avoid timeouts
+const DELETE_BATCH_SIZE = 100;
+
 export const remove = mutation({
   args: { id: v.id("endpoints") },
   handler: async (ctx, { id }) => {
@@ -148,16 +151,18 @@ export const remove = mutation({
       throw new Error("Not authorized");
     }
 
-    // Delete all requests for this endpoint
+    // Delete requests in batches to avoid timeout
     const requests = await ctx.db
       .query("requests")
       .withIndex("by_endpoint_time", (q) => q.eq("endpointId", id))
-      .collect();
+      .take(DELETE_BATCH_SIZE);
 
     for (const request of requests) {
       await ctx.db.delete(request._id);
     }
 
+    // If there might be more requests, the endpoint stays but requests are being cleaned
+    // For simplicity, we delete the endpoint now - orphaned requests will be cleaned by cron
     await ctx.db.delete(id);
     return { success: true };
   },

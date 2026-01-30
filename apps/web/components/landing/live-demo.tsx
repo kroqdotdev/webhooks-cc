@@ -152,8 +152,9 @@ export function LiveDemo() {
                 {endpointUrl}
               </div>
               <button
-                onClick={() => handleCopy(endpointUrl!, "url")}
+                onClick={() => endpointUrl && handleCopy(endpointUrl, "url")}
                 className="neo-btn-outline py-2 px-4"
+                aria-label={copied === "url" ? "Copied to clipboard" : "Copy URL to clipboard"}
               >
                 {copied === "url" ? "Copied!" : <Copy className="h-5 w-5" />}
               </button>
@@ -181,8 +182,9 @@ export function LiveDemo() {
                 {curlCommand}
               </div>
               <button
-                onClick={() => handleCopy(curlCommand!, "curl")}
+                onClick={() => curlCommand && handleCopy(curlCommand, "curl")}
                 className="neo-btn-outline py-2 px-4 self-start"
+                aria-label={copied === "curl" ? "Copied to clipboard" : "Copy curl command to clipboard"}
               >
                 {copied === "curl" ? "Copied!" : <Copy className="h-5 w-5" />}
               </button>

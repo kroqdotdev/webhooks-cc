@@ -2,20 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Circle, ArrowUpDown } from "lucide-react";
-import { getMethodColor, formatRelativeTime } from "@/types/request";
-
-interface Request {
-  _id: string;
-  method: string;
-  path: string;
-  headers: Record<string, string>;
-  body?: string;
-  queryParams: Record<string, string>;
-  contentType?: string;
-  ip: string;
-  size: number;
-  receivedAt: number;
-}
+import { getMethodColor, formatRelativeTime, Request } from "@/types/request";
 
 interface RequestListProps {
   requests: Request[];

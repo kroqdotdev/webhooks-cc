@@ -26,9 +26,10 @@ import { Copy, Check } from "lucide-react";
 export default function EndpointSettingsPage() {
   const params = useParams();
   const router = useRouter();
-  const slug = params.slug as string;
+  const rawSlug = params.slug;
+  const slug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug ?? "";
 
-  const endpoint = useQuery(api.endpoints.getBySlug, { slug });
+  const endpoint = useQuery(api.endpoints.getBySlug, slug ? { slug } : "skip");
   const updateEndpoint = useMutation(api.endpoints.update);
   const deleteEndpoint = useMutation(api.endpoints.remove);
 

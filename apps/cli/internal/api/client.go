@@ -5,6 +5,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ func (c *Client) getToken() (string, error) {
 	return token.AccessToken, nil
 }
 
-func (c *Client) request(method, path string, body interface{}, result interface{}) error {
+func (c *Client) request(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	token, err := c.getToken()
 	if err != nil {
 		return err
@@ -80,7 +81,7 @@ func (c *Client) request(method, path string, body interface{}, result interface
 		bodyReader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -112,10 +113,20 @@ func (c *Client) request(method, path string, body interface{}, result interface
 	return nil
 }
 
+// requestWithDefaultContext is a helper that uses context.Background() for backwards compatibility
+func (c *Client) requestWithDefaultContext(method, path string, body interface{}, result interface{}) error {
+	return c.request(context.Background(), method, path, body, result)
+}
+
 // CreateEndpoint creates a new endpoint
 func (c *Client) CreateEndpoint(name string) (*Endpoint, error) {
+	return c.CreateEndpointWithContext(context.Background(), name)
+}
+
+// CreateEndpointWithContext creates a new endpoint with context for cancellation
+func (c *Client) CreateEndpointWithContext(ctx context.Context, name string) (*Endpoint, error) {
 	var result Endpoint
-	err := c.request("POST", "/api/endpoints", map[string]string{"name": name}, &result)
+	err := c.request(ctx, "POST", "/api/endpoints", map[string]string{"name": name}, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +135,13 @@ func (c *Client) CreateEndpoint(name string) (*Endpoint, error) {
 
 // ListEndpoints returns all endpoints for the user
 func (c *Client) ListEndpoints() ([]Endpoint, error) {
+	return c.ListEndpointsWithContext(context.Background())
+}
+
+// ListEndpointsWithContext returns all endpoints for the user with context for cancellation
+func (c *Client) ListEndpointsWithContext(ctx context.Context) ([]Endpoint, error) {
 	var result []Endpoint
-	err := c.request("GET", "/api/endpoints", nil, &result)
+	err := c.request(ctx, "GET", "/api/endpoints", nil, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +150,13 @@ func (c *Client) ListEndpoints() ([]Endpoint, error) {
 
 // DeleteEndpoint deletes an endpoint
 func (c *Client) DeleteEndpoint(slug string) error {
+	return c.DeleteEndpointWithContext(context.Background(), slug)
+}
+
+// DeleteEndpointWithContext deletes an endpoint with context for cancellation
+func (c *Client) DeleteEndpointWithContext(ctx context.Context, slug string) error {
 	// Escape the slug to prevent path injection attacks
-	return c.request("DELETE", "/api/endpoints/"+url.PathEscape(slug), nil, nil)
+	return c.request(ctx, "DELETE", "/api/endpoints/"+url.PathEscape(slug), nil, nil)
 }
 
 // Endpoint represents a webhook endpoint in the webhooks.cc system.

@@ -12,6 +12,7 @@ export default function LoginPage() {
   const { signIn } = useAuthActions();
   const router = useRouter();
   const [signingIn, setSigningIn] = useState<"github" | "google" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -21,9 +22,11 @@ export default function LoginPage() {
 
   const handleSignIn = async (provider: "github" | "google") => {
     setSigningIn(provider);
+    setError(null);
     try {
       await signIn(provider);
     } catch {
+      setError("Sign in failed. Please try again.");
       setSigningIn(null);
     }
   };
@@ -52,6 +55,12 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold mb-2">Sign in to webhooks.cc</h1>
             <p className="text-muted-foreground">Continue with your preferred provider</p>
           </div>
+
+          {error && (
+            <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded mb-4">
+              {error}
+            </div>
+          )}
 
           <div className="space-y-3">
             <Button

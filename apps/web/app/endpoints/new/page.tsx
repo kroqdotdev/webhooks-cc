@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RequireAuth } from "@/components/auth/require-auth";
+import { parseStatusCode } from "@/lib/http";
 import Link from "next/link";
 
 export default function NewEndpointPage() {
@@ -39,7 +40,7 @@ function NewEndpointForm() {
         name: name || undefined,
         mockResponse: mockBody
           ? {
-              status: parseInt(mockStatus) || 200,
+              status: parseStatusCode(mockStatus, 200),
               body: mockBody,
               headers: {},
             }

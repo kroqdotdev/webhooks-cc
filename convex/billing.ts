@@ -53,11 +53,21 @@ export const handleWebhook = internalMutation({
       case "subscription.updated": {
         const userIdStr = data.metadata?.userId;
         if (!userIdStr) return;
-        // Validate the userId is a proper Convex ID
-        const userId = userIdStr as Id<"users">;
 
-        const user = await ctx.db.get(userId);
-        if (!user) return;
+        // Validate the user exists before using the ID
+        // ctx.db.get will return null if the ID format is invalid or user doesn't exist
+        let user;
+        try {
+          user = await ctx.db.get(userIdStr as Id<"users">);
+        } catch {
+          console.error(`Invalid userId format in webhook metadata: ${userIdStr}`);
+          return;
+        }
+        if (!user) {
+          console.error(`User not found for webhook: ${userIdStr}`);
+          return;
+        }
+        const userId = user._id;
 
         await ctx.db.patch(userId, {
           polarCustomerId: data.customerId,

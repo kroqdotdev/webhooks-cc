@@ -1,17 +1,16 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { customAlphabet } from "nanoid";
+
+// Generate unbiased random API key body using nanoid (no modulo bias)
+const generateApiKeyBody = customAlphabet(
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+  32
+);
 
 function generateApiKey(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  // Use crypto.getRandomValues for cryptographically secure random key generation
-  const randomBytes = new Uint8Array(32);
-  crypto.getRandomValues(randomBytes);
-  let key = "whcc_";
-  for (let i = 0; i < 32; i++) {
-    key += chars.charAt(randomBytes[i] % chars.length);
-  }
-  return key;
+  return `whcc_${generateApiKeyBody()}`;
 }
 
 async function hashKey(key: string): Promise<string> {

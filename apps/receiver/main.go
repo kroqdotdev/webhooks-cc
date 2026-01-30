@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -56,6 +57,10 @@ func main() {
 	if convexSiteURL == "" {
 		log.Fatal("CONVEX_SITE_URL environment variable is required")
 	}
+	// Validate URL format at startup
+	if _, err := url.Parse(convexSiteURL); err != nil {
+		log.Fatalf("CONVEX_SITE_URL is not a valid URL: %v", err)
+	}
 
 	// Shared secret for authenticating with Convex /capture endpoint
 	// If not set, the receiver will work but Convex won't require authentication
@@ -63,7 +68,7 @@ func main() {
 
 	// Initialize HTTP client with timeout and connection pooling
 	httpClient = &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: httpTimeout,
 		Transport: &http.Transport{
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: 100,
@@ -193,7 +198,12 @@ func handleWebhook(c *fiber.Ctx) error {
 			}
 			c.Set(key, value)
 		}
-		return c.Status(resp.MockResponse.Status).SendString(resp.MockResponse.Body)
+		// Validate status code is within valid HTTP range (100-599)
+		status := resp.MockResponse.Status
+		if status < 100 || status > 599 {
+			status = 200 // Default to 200 for invalid status codes
+		}
+		return c.Status(status).SendString(resp.MockResponse.Body)
 	}
 
 	return c.SendString("OK")

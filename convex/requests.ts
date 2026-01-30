@@ -72,12 +72,17 @@ export const capture = internalMutation({
   },
 });
 
+// Maximum number of requests that can be fetched at once
+const MAX_LIST_LIMIT = 100;
+
 export const list = query({
   args: {
     endpointId: v.id("endpoints"),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { endpointId, limit = 50 }) => {
+    // Validate and cap the limit to prevent excessive data retrieval
+    const actualLimit = Math.min(Math.max(1, limit), MAX_LIST_LIMIT);
     const userId = await getAuthUserId(ctx);
 
     // Verify the user has access to this endpoint
@@ -98,7 +103,7 @@ export const list = query({
       .query("requests")
       .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId))
       .order("desc")
-      .take(limit);
+      .take(actualLimit);
 
     return requests;
   },
@@ -130,33 +135,45 @@ export const get = query({
   },
 });
 
+// Maximum requests to delete per endpoint in a single run to avoid timeout
+const CLEANUP_BATCH_SIZE = 100;
+
 // Cleanup expired ephemeral endpoints and their requests
 export const cleanupExpired = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
 
+    // Use index properly with range query for expiresAt
+    // Note: endpoints with expiresAt: undefined won't match q.lt("expiresAt", now)
     const expired = await ctx.db
       .query("endpoints")
-      .withIndex("by_expires")
-      .filter((q) => q.and(q.neq(q.field("expiresAt"), undefined), q.lt(q.field("expiresAt"), now)))
+      .withIndex("by_expires", (q) => q.lt("expiresAt", now))
       .take(100);
 
+    let deletedEndpoints = 0;
+    let deletedRequests = 0;
+
     for (const endpoint of expired) {
-      // Delete requests
+      // Delete requests in batches to avoid timeout
       const requests = await ctx.db
         .query("requests")
         .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpoint._id))
-        .collect();
+        .take(CLEANUP_BATCH_SIZE);
 
       for (const request of requests) {
         await ctx.db.delete(request._id);
+        deletedRequests++;
       }
 
-      // Delete endpoint
-      await ctx.db.delete(endpoint._id);
+      // Only delete endpoint if all requests have been cleaned
+      // If there are exactly CLEANUP_BATCH_SIZE requests, there might be more
+      if (requests.length < CLEANUP_BATCH_SIZE) {
+        await ctx.db.delete(endpoint._id);
+        deletedEndpoints++;
+      }
     }
 
-    return { deleted: expired.length };
+    return { deletedEndpoints, deletedRequests };
   },
 });
