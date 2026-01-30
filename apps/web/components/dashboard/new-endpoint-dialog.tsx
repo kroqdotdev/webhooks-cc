@@ -51,9 +51,7 @@ export function NewEndpointDialog() {
       resetForm();
       router.push(`/dashboard?endpoint=${result.slug}`);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create endpoint"
-      );
+      setError(err instanceof Error ? err.message : "Failed to create endpoint");
       setIsSubmitting(false);
     }
   };
@@ -81,12 +79,8 @@ export function NewEndpointDialog() {
       </DialogTrigger>
       <DialogContent className="border-2 border-foreground shadow-neo">
         <DialogHeader>
-          <DialogTitle className="font-bold uppercase tracking-wide">
-            Create Endpoint
-          </DialogTitle>
-          <DialogDescription>
-            Create a new webhook endpoint to capture requests.
-          </DialogDescription>
+          <DialogTitle className="font-bold uppercase tracking-wide">Create Endpoint</DialogTitle>
+          <DialogDescription>Create a new webhook endpoint to capture requests.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -113,11 +107,7 @@ export function NewEndpointDialog() {
               </p>
             </div>
 
-            <StatusCodePicker
-              id="ep-status"
-              value={mockStatus}
-              onChange={setMockStatus}
-            />
+            <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
 
             <div className="space-y-2">
               <Label htmlFor="ep-body" className="font-bold uppercase tracking-wide text-xs">

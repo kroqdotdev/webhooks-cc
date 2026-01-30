@@ -108,15 +108,10 @@ export default function AccountPage() {
             </div>
           ) : (
             apiKeys.map((key) => (
-              <div
-                key={key._id}
-                className="p-4 flex items-center justify-between"
-              >
+              <div key={key._id} className="p-4 flex items-center justify-between">
                 <div>
                   <p className="font-medium">{key.name}</p>
-                  <p className="text-sm text-muted-foreground font-mono">
-                    {key.keyPrefix}...
-                  </p>
+                  <p className="text-sm text-muted-foreground font-mono">{key.keyPrefix}...</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                     {key.lastUsedAt && (

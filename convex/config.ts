@@ -19,7 +19,9 @@ function safeParseInt(envVar: string, defaultVal: number, min: number, max: numb
     return defaultVal;
   }
   if (value < min || value > max) {
-    console.error(`Value for ${envVar} (${value}) out of range [${min}, ${max}], using default ${defaultVal}`);
+    console.error(
+      `Value for ${envVar} (${value}) out of range [${min}, ${max}], using default ${defaultVal}`
+    );
     return defaultVal;
   }
   return value;
@@ -31,4 +33,9 @@ export const PRO_REQUEST_LIMIT = safeParseInt("PRO_REQUEST_LIMIT", 500000, 1, 10
 
 export const EPHEMERAL_TTL_MS = safeParseInt("EPHEMERAL_TTL_MS", 600000, 60000, 86400000); // 1min to 24hrs
 
-export const BILLING_PERIOD_MS = safeParseInt("BILLING_PERIOD_MS", 2592000000, 86400000, 31536000000); // 1 day to 1 year
+export const BILLING_PERIOD_MS = safeParseInt(
+  "BILLING_PERIOD_MS",
+  2592000000,
+  86400000,
+  31536000000
+); // 1 day to 1 year

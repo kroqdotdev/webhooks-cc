@@ -23,12 +23,13 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 ### Tier 1: Direct Competitors (Webhook Inspection/Testing)
 
 #### **Webhook.site** ⭐ Market Leader
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Free | $0 | 100 requests, 7-day expiry, public URLs |
-| Basic | $9/mo ($90/yr) | 1 URL, 1,000 request history, 365-day retention |
-| Pro | $18/mo ($180/yr) | Unlimited URLs, 10K history, custom actions, CSV export |
-| Enterprise | $69/mo ($699/yr) | Custom domain, multi-user, SSO, 100K history |
+
+| Plan       | Price            | Key Limits                                              |
+| ---------- | ---------------- | ------------------------------------------------------- |
+| Free       | $0               | 100 requests, 7-day expiry, public URLs                 |
+| Basic      | $9/mo ($90/yr)   | 1 URL, 1,000 request history, 365-day retention         |
+| Pro        | $18/mo ($180/yr) | Unlimited URLs, 10K history, custom actions, CSV export |
+| Enterprise | $69/mo ($699/yr) | Custom domain, multi-user, SSO, 100K history            |
 
 **Strengths:** Brand recognition, simple UI, workflow automations, email addresses  
 **Weaknesses:** No API mocking, limited free tier
@@ -36,12 +37,13 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 ---
 
 #### **Hookdeck** (Event Gateway)
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Developer | $0 | 10,000 events/mo, 3-day retention, 1 user |
-| Team | $39/mo | Pay-as-you-go, 7-day retention, unlimited users |
-| Growth | $499/mo | 30-day retention, SSO, SLAs |
-| Enterprise | Custom | Custom everything |
+
+| Plan       | Price   | Key Limits                                      |
+| ---------- | ------- | ----------------------------------------------- |
+| Developer  | $0      | 10,000 events/mo, 3-day retention, 1 user       |
+| Team       | $39/mo  | Pay-as-you-go, 7-day retention, unlimited users |
+| Growth     | $499/mo | 30-day retention, SSO, SLAs                     |
+| Enterprise | Custom  | Custom everything                               |
 
 **Pricing Model:** $1 per 100K additional events  
 **Strengths:** Professional-grade, great for production use, excellent observability  
@@ -50,12 +52,13 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 ---
 
 #### **Beeceptor** (API Mocking + Webhook Testing)
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Free | $0 | 50 req/day, 3 mock rules, public endpoint |
-| Individual | $10/mo | 15K req/mo, 50 rules, private endpoint |
-| Team | $25/mo | 100K req/mo, 250 rules, API access, custom domain |
-| Scale | $99/mo | 1M+ req/mo, 500 rules, audit logs |
+
+| Plan       | Price  | Key Limits                                        |
+| ---------- | ------ | ------------------------------------------------- |
+| Free       | $0     | 50 req/day, 3 mock rules, public endpoint         |
+| Individual | $10/mo | 15K req/mo, 50 rules, private endpoint            |
+| Team       | $25/mo | 100K req/mo, 250 rules, API access, custom domain |
+| Scale      | $99/mo | 1M+ req/mo, 500 rules, audit logs                 |
 
 **Strengths:** Strong mocking features, AI-powered, spec-to-mock  
 **Weaknesses:** Per-endpoint pricing can add up
@@ -63,12 +66,13 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 ---
 
 #### **Webhook Relay**
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Free | $0 | 150 webhooks/mo, 1 tunnel, 2 destinations |
-| Basic | $8.99/mo | 5K webhooks/mo, 8 tunnels, 10 destinations |
-| Business | $69.99/mo | 60K webhooks/mo, 20 tunnels, 50 destinations |
-| Pro | $224.99/mo | 1M webhooks/mo, 50 tunnels, 200 destinations |
+
+| Plan     | Price      | Key Limits                                   |
+| -------- | ---------- | -------------------------------------------- |
+| Free     | $0         | 150 webhooks/mo, 1 tunnel, 2 destinations    |
+| Basic    | $8.99/mo   | 5K webhooks/mo, 8 tunnels, 10 destinations   |
+| Business | $69.99/mo  | 60K webhooks/mo, 20 tunnels, 50 destinations |
+| Pro      | $224.99/mo | 1M webhooks/mo, 50 tunnels, 200 destinations |
 
 **Strengths:** Strong tunneling, Kubernetes integration, AI transformations  
 **Weaknesses:** Complex pricing, dated UI
@@ -78,12 +82,13 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 ### Tier 2: Adjacent Competitors
 
 #### **RequestBin (Pipedream)**
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Free | $0 | 100 credits/mo, 3 workflows |
-| Basic | $29/mo | 2K credits/mo, 10 workflows |
+
+| Plan     | Price  | Key Limits                        |
+| -------- | ------ | --------------------------------- |
+| Free     | $0     | 100 credits/mo, 3 workflows       |
+| Basic    | $29/mo | 2K credits/mo, 10 workflows       |
 | Advanced | $49/mo | Unlimited workflows, premium apps |
-| Connect | $99/mo | Production integrations |
+| Connect  | $99/mo | Production integrations           |
 
 **Positioning:** More of a workflow automation tool than pure webhook testing  
 **Note:** Recently acquired by Workday
@@ -91,23 +96,25 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 ---
 
 #### **Svix** (Webhooks-as-a-Service for sending)
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Starter | $0 | 50K messages, 10 msg/sec |
-| Startup | $10/mo | 100K messages, 200 msg/sec |
+
+| Plan     | Price  | Key Limits                 |
+| -------- | ------ | -------------------------- |
+| Starter  | $0     | 50K messages, 10 msg/sec   |
+| Startup  | $10/mo | 100K messages, 200 msg/sec |
 | Business | Custom | 1.5M messages, 800 msg/sec |
 
-**Focus:** Helping companies *send* webhooks to their users, not receive/test them
+**Focus:** Helping companies _send_ webhooks to their users, not receive/test them
 
 ---
 
 #### **Postman** (API Platform)
-| Plan | Price | Key Limits |
-|------|-------|------------|
-| Free | $0 | Limited mock requests, 25 collection runs |
-| Basic | $14/user/mo | 10K mock requests |
-| Professional | $29/user/mo | Advanced features |
-| Enterprise | $49/user/mo | Full governance |
+
+| Plan         | Price       | Key Limits                                |
+| ------------ | ----------- | ----------------------------------------- |
+| Free         | $0          | Limited mock requests, 25 collection runs |
+| Basic        | $14/user/mo | 10K mock requests                         |
+| Professional | $29/user/mo | Advanced features                         |
+| Enterprise   | $49/user/mo | Full governance                           |
 
 **Mock server pricing:** ~$0.75 per 1,000 calls after limits  
 **Note:** Per-user pricing makes it expensive for teams
@@ -116,12 +123,12 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 
 ### Tier 3: Free/Open Source Alternatives
 
-| Tool | Type | Hosting |
-|------|------|---------|
-| **webhook-tester** (tarampampam) | Self-hosted | Docker/Go |
-| **WebhookSpy** | Open source SaaS | Cloud + self-host |
-| **TypedWebhook.tools** | Free tool | Cloud only |
-| **Localtunnel** | CLI tool | Self-run |
+| Tool                             | Type             | Hosting           |
+| -------------------------------- | ---------------- | ----------------- |
+| **webhook-tester** (tarampampam) | Self-hosted      | Docker/Go         |
+| **WebhookSpy**                   | Open source SaaS | Cloud + self-host |
+| **TypedWebhook.tools**           | Free tool        | Cloud only        |
+| **Localtunnel**                  | CLI tool         | Self-run          |
 
 **Risk:** These set user expectations for "free" functionality
 
@@ -139,15 +146,16 @@ The API testing and webhook inspection market is growing rapidly, driven by incr
 
 ### Price Points in the Market
 
-| Segment | Monthly Price | Annual (typical 15-20% discount) |
-|---------|---------------|----------------------------------|
-| Free tier | $0 | - |
-| Hobbyist/Individual | $8-15 | $80-150 |
-| Startup/Small team | $20-50 | $200-500 |
-| Professional/Growth | $50-100 | $500-1,000 |
-| Enterprise | $200-500+ | Custom |
+| Segment             | Monthly Price | Annual (typical 15-20% discount) |
+| ------------------- | ------------- | -------------------------------- |
+| Free tier           | $0            | -                                |
+| Hobbyist/Individual | $8-15         | $80-150                          |
+| Startup/Small team  | $20-50        | $200-500                         |
+| Professional/Growth | $50-100       | $500-1,000                       |
+| Enterprise          | $200-500+     | Custom                           |
 
 ### Key Insight: The Gap at $15-25/mo
+
 Looking at the market, there's a notable jump from $8-10 (basic individual) to $39-50 (team tier). A well-positioned tier at $15-20 could capture users who need more than basic but don't need full team features.
 
 ---
@@ -157,6 +165,7 @@ Looking at the market, there's a notable jump from $8-10 (basic individual) to $
 ### What to Offer by Tier
 
 #### **Free Tier** (Acquisition)
+
 - Auto-generated unique URLs
 - 100-500 requests per URL (or per day)
 - 24-48 hour data retention
@@ -169,6 +178,7 @@ Looking at the market, there's a notable jump from $8-10 (basic individual) to $
 ---
 
 #### **Starter Tier** ($8-12/mo) - Your "avoid middle tier" option
+
 - 10,000-25,000 requests/month
 - 7-day retention
 - Private/secure endpoints
@@ -183,8 +193,9 @@ Looking at the market, there's a notable jump from $8-10 (basic individual) to $
 ---
 
 #### **Pro/Team Tier** ($20-35/mo)
+
 - 100,000+ requests/month
-- 30-day retention  
+- 30-day retention
 - Unlimited endpoints
 - Custom subdomains
 - Full API access
@@ -200,6 +211,7 @@ Looking at the market, there's a notable jump from $8-10 (basic individual) to $
 ---
 
 ### Optional Enterprise Features (if demand emerges)
+
 - Custom domains
 - SSO/SAML
 - SLAs
@@ -212,6 +224,7 @@ Looking at the market, there's a notable jump from $8-10 (basic individual) to $
 ## Recommended Pricing Strategy
 
 ### Option A: Two-Tier Simplicity ✅ Recommended
+
 ```
 FREE        →  $0    (500 req/day, 24hr retention, 3 endpoints)
 PRO         →  $15/mo or $144/yr (unlimited*, 30-day, team features)
@@ -220,6 +233,7 @@ PRO         →  $15/mo or $144/yr (unlimited*, 30-day, team features)
 ```
 
 **Advantages:**
+
 - Simple to understand and communicate
 - Covers 90% of use cases
 - Easy to implement
@@ -229,6 +243,7 @@ PRO         →  $15/mo or $144/yr (unlimited*, 30-day, team features)
 ---
 
 ### Option B: Three-Tier Standard
+
 ```
 FREE        →  $0    (500 req/day, 24hr retention, 3 endpoints)
 STARTER     →  $9/mo  (25K/mo, 7-day, 20 endpoints, private)
@@ -236,11 +251,13 @@ PRO         →  $25/mo (250K/mo, 30-day, unlimited, team)
 ```
 
 **Advantages:**
+
 - More pricing flexibility
 - Captures price-sensitive users at $9
 - Higher revenue potential from heavy users
 
 **Disadvantages:**
+
 - More complexity to manage
 - Risk of "paradox of choice"
 
@@ -255,7 +272,6 @@ PRO         →  $25/mo (250K/mo, 30-day, unlimited, team)
    - WebSocket testing
    - gRPC mock endpoints
    - GraphQL inspection
-   
 2. **Developer Experience**
    - CLI tool for quick endpoint creation
    - VS Code extension
@@ -283,11 +299,13 @@ PRO         →  $25/mo (250K/mo, 30-day, unlimited, team)
 ## Go-to-Market Considerations
 
 ### SEO/Discovery
+
 - Keywords: "webhook tester", "request bin", "http bin", "mock api", "test endpoint"
 - Strong competition from webhook.site, requestbin.com
 - Content marketing: tutorials for specific integrations (Stripe webhooks, GitHub webhooks, etc.)
 
 ### Distribution Channels
+
 1. **Product Hunt** - Critical for initial launch
 2. **Dev.to / Hashnode** - Technical blog posts
 3. **Twitter/X** - Developer community
@@ -297,12 +315,15 @@ PRO         →  $25/mo (250K/mo, 30-day, unlimited, team)
 ### Positioning Statements
 
 **Option A: Simplicity Focus**
+
 > "The fastest way to debug webhooks. Get a URL in one click."
 
-**Option B: Developer Focus**  
+**Option B: Developer Focus**
+
 > "API testing built for developers, not accountants. One price, all features."
 
 **Option C: Privacy Focus**
+
 > "Your webhook data stays private. Always."
 
 ---
@@ -311,12 +332,12 @@ PRO         →  $25/mo (250K/mo, 30-day, unlimited, team)
 
 Assuming you can capture a small fraction of the market:
 
-| Users | Free | Paid ($15/mo avg) | MRR |
-|-------|------|-------------------|-----|
-| 1,000 | 900 | 100 | $1,500 |
-| 5,000 | 4,500 | 500 | $7,500 |
-| 10,000 | 9,000 | 1,000 | $15,000 |
-| 25,000 | 22,500 | 2,500 | $37,500 |
+| Users  | Free   | Paid ($15/mo avg) | MRR     |
+| ------ | ------ | ----------------- | ------- |
+| 1,000  | 900    | 100               | $1,500  |
+| 5,000  | 4,500  | 500               | $7,500  |
+| 10,000 | 9,000  | 1,000             | $15,000 |
+| 25,000 | 22,500 | 2,500             | $37,500 |
 
 Industry benchmark: ~5-10% conversion from free to paid for developer tools
 
@@ -325,6 +346,7 @@ Industry benchmark: ~5-10% conversion from free to paid for developer tools
 ## Final Recommendations
 
 ### Pricing Tiers (Recommended)
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  FREE                    │  PRO ($15/mo or $144/yr)            │
@@ -343,6 +365,7 @@ Industry benchmark: ~5-10% conversion from free to paid for developer tools
 ```
 
 ### Key Success Factors
+
 1. **Frictionless onboarding** - URL in one click, no signup required for free tier
 2. **Beautiful UI** - Developer tools that look good stand out
 3. **Great free tier** - Generous enough to be useful, limited enough to convert
@@ -350,6 +373,7 @@ Industry benchmark: ~5-10% conversion from free to paid for developer tools
 5. **Fast iteration** - Ship features users ask for quickly
 
 ### What to Build First (MVP)
+
 1. Unique URL generation
 2. Request capture and display
 3. Basic filtering/search
@@ -357,6 +381,7 @@ Industry benchmark: ~5-10% conversion from free to paid for developer tools
 5. User accounts + paid tier
 
 ### What to Add Later
+
 - Local tunneling
 - Team features
 - API access
@@ -365,4 +390,4 @@ Industry benchmark: ~5-10% conversion from free to paid for developer tools
 
 ---
 
-*Research compiled: January 2026*
+_Research compiled: January 2026_

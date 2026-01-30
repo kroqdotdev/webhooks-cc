@@ -5,7 +5,6 @@ import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
@@ -44,9 +43,7 @@ export function EndpointSettingsDialog({
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(endpointName);
-  const [mockStatus, setMockStatus] = useState(
-    mockResponse?.status?.toString() || "200"
-  );
+  const [mockStatus, setMockStatus] = useState(mockResponse?.status?.toString() || "200");
   const [mockBody, setMockBody] = useState(mockResponse?.body || "");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -118,21 +115,14 @@ export function EndpointSettingsDialog({
       </DialogTrigger>
       <DialogContent className="border-2 border-foreground shadow-neo">
         <DialogHeader>
-          <DialogTitle className="font-bold uppercase tracking-wide">
-            Endpoint Settings
-          </DialogTitle>
-          <DialogDescription>
-            Configure {endpointName || slug}
-          </DialogDescription>
+          <DialogTitle className="font-bold uppercase tracking-wide">Endpoint Settings</DialogTitle>
+          <DialogDescription>Configure {endpointName || slug}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Name */}
           <div className="space-y-2">
-            <Label
-              htmlFor="settings-name"
-              className="font-bold uppercase tracking-wide text-xs"
-            >
+            <Label htmlFor="settings-name" className="font-bold uppercase tracking-wide text-xs">
               Name
             </Label>
             <input
@@ -147,25 +137,16 @@ export function EndpointSettingsDialog({
           {/* Mock Response */}
           <div className="border-2 border-foreground p-4 space-y-4">
             <div>
-              <p className="font-bold uppercase tracking-wide text-xs mb-1">
-                Mock Response
-              </p>
+              <p className="font-bold uppercase tracking-wide text-xs mb-1">Mock Response</p>
               <p className="text-xs text-muted-foreground">
                 What this endpoint returns when it receives a request.
               </p>
             </div>
 
-            <StatusCodePicker
-              id="settings-status"
-              value={mockStatus}
-              onChange={setMockStatus}
-            />
+            <StatusCodePicker id="settings-status" value={mockStatus} onChange={setMockStatus} />
 
             <div className="space-y-2">
-              <Label
-                htmlFor="settings-body"
-                className="font-bold uppercase tracking-wide text-xs"
-              >
+              <Label htmlFor="settings-body" className="font-bold uppercase tracking-wide text-xs">
                 Response Body
               </Label>
               <Textarea
@@ -196,11 +177,7 @@ export function EndpointSettingsDialog({
                 : "text-destructive"
             }`}
           >
-            {isDeleting
-              ? "Deleting..."
-              : confirmDelete
-                ? "Confirm Delete"
-                : "Delete Endpoint"}
+            {isDeleting ? "Deleting..." : confirmDelete ? "Confirm Delete" : "Delete Endpoint"}
           </button>
           <div className="flex gap-2">
             <button

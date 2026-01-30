@@ -15,40 +15,50 @@ import {
 } from "@/components/ui/select";
 
 const STATUS_CODES = [
-  { group: "2xx Success", codes: [
-    { value: "200", label: "200 OK" },
-    { value: "201", label: "201 Created" },
-    { value: "202", label: "202 Accepted" },
-    { value: "204", label: "204 No Content" },
-  ]},
-  { group: "3xx Redirect", codes: [
-    { value: "301", label: "301 Moved Permanently" },
-    { value: "302", label: "302 Found" },
-    { value: "304", label: "304 Not Modified" },
-    { value: "307", label: "307 Temporary Redirect" },
-    { value: "308", label: "308 Permanent Redirect" },
-  ]},
-  { group: "4xx Client Error", codes: [
-    { value: "400", label: "400 Bad Request" },
-    { value: "401", label: "401 Unauthorized" },
-    { value: "403", label: "403 Forbidden" },
-    { value: "404", label: "404 Not Found" },
-    { value: "405", label: "405 Method Not Allowed" },
-    { value: "409", label: "409 Conflict" },
-    { value: "422", label: "422 Unprocessable Entity" },
-    { value: "429", label: "429 Too Many Requests" },
-  ]},
-  { group: "5xx Server Error", codes: [
-    { value: "500", label: "500 Internal Server Error" },
-    { value: "502", label: "502 Bad Gateway" },
-    { value: "503", label: "503 Service Unavailable" },
-    { value: "504", label: "504 Gateway Timeout" },
-  ]},
+  {
+    group: "2xx Success",
+    codes: [
+      { value: "200", label: "200 OK" },
+      { value: "201", label: "201 Created" },
+      { value: "202", label: "202 Accepted" },
+      { value: "204", label: "204 No Content" },
+    ],
+  },
+  {
+    group: "3xx Redirect",
+    codes: [
+      { value: "301", label: "301 Moved Permanently" },
+      { value: "302", label: "302 Found" },
+      { value: "304", label: "304 Not Modified" },
+      { value: "307", label: "307 Temporary Redirect" },
+      { value: "308", label: "308 Permanent Redirect" },
+    ],
+  },
+  {
+    group: "4xx Client Error",
+    codes: [
+      { value: "400", label: "400 Bad Request" },
+      { value: "401", label: "401 Unauthorized" },
+      { value: "403", label: "403 Forbidden" },
+      { value: "404", label: "404 Not Found" },
+      { value: "405", label: "405 Method Not Allowed" },
+      { value: "409", label: "409 Conflict" },
+      { value: "422", label: "422 Unprocessable Entity" },
+      { value: "429", label: "429 Too Many Requests" },
+    ],
+  },
+  {
+    group: "5xx Server Error",
+    codes: [
+      { value: "500", label: "500 Internal Server Error" },
+      { value: "502", label: "502 Bad Gateway" },
+      { value: "503", label: "503 Service Unavailable" },
+      { value: "504", label: "504 Gateway Timeout" },
+    ],
+  },
 ];
 
-const ALL_PRESET_VALUES = STATUS_CODES.flatMap((g) =>
-  g.codes.map((c) => c.value)
-);
+const ALL_PRESET_VALUES = STATUS_CODES.flatMap((g) => g.codes.map((c) => c.value));
 
 const CUSTOM_VALUE = "__custom__";
 
@@ -58,11 +68,7 @@ interface StatusCodePickerProps {
   onChange: (value: string) => void;
 }
 
-export function StatusCodePicker({
-  id,
-  value,
-  onChange,
-}: StatusCodePickerProps) {
+export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps) {
   const isPreset = ALL_PRESET_VALUES.includes(value);
   const [isCustom, setIsCustom] = useState(!isPreset);
   const [customValue, setCustomValue] = useState(isPreset ? "" : value);
@@ -104,10 +110,7 @@ export function StatusCodePicker({
         Status Code
       </Label>
       <div className="flex gap-2">
-        <Select
-          value={isCustom ? CUSTOM_VALUE : value}
-          onValueChange={handleSelectChange}
-        >
+        <Select value={isCustom ? CUSTOM_VALUE : value} onValueChange={handleSelectChange}>
           <SelectTrigger
             id={id}
             className={cn(
@@ -159,19 +162,17 @@ export function StatusCodePicker({
           />
         )}
       </div>
-      {isCustom && customValue.length === 3 && (
+      {isCustom &&
+        customValue.length === 3 &&
         (() => {
           const num = parseInt(customValue);
           if (num < 100 || num > 599) {
             return (
-              <p className="text-xs text-destructive">
-                Status code must be between 100 and 599
-              </p>
+              <p className="text-xs text-destructive">Status code must be between 100 and 599</p>
             );
           }
           return null;
-        })()
-      )}
+        })()}
     </div>
   );
 }

@@ -12,33 +12,40 @@ Before you begin, ensure you have the following installed:
 - **Make** (for running build commands)
 
 You'll also need:
+
 - A [Convex](https://convex.dev) account (free tier available)
 
 ## Development Setup
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/your-username/webhooks-cc.git
    cd webhooks-cc
    ```
 
 2. **Install dependencies**
+
    ```bash
    pnpm install
    ```
 
 3. **Set up environment variables**
+
    ```bash
    cp .env.example .env.local
    ```
+
    Edit `.env.local` and fill in your Convex credentials.
 
 4. **Start the Convex backend** (in a separate terminal)
+
    ```bash
    pnpm dev:convex
    ```
 
 5. **Start the Next.js web app**
+
    ```bash
    pnpm dev:web
    ```
@@ -65,6 +72,7 @@ You'll also need:
 ## Making Changes
 
 1. **Create a feature branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -75,6 +83,7 @@ You'll also need:
    - Update documentation if needed
 
 3. **Test your changes**
+
    ```bash
    pnpm typecheck      # TypeScript type checking
    make test           # Run all tests
@@ -99,6 +108,7 @@ type(scope): description
 ```
 
 Types:
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation only
@@ -108,6 +118,7 @@ Types:
 - `chore`: Maintenance tasks
 
 Examples:
+
 ```
 feat(endpoints): add custom response headers
 fix(receiver): handle empty request bodies

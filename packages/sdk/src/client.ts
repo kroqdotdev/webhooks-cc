@@ -19,7 +19,9 @@ const SAFE_PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_-]+$/;
 
 function validatePathSegment(segment: string, name: string): void {
   if (!SAFE_PATH_SEGMENT_REGEX.test(segment)) {
-    throw new Error(`Invalid ${name}: must contain only alphanumeric characters, hyphens, and underscores`);
+    throw new Error(
+      `Invalid ${name}: must contain only alphanumeric characters, hyphens, and underscores`
+    );
   }
 }
 
@@ -113,7 +115,10 @@ export class WebhooksCC {
       validatePathSegment(endpointSlug, "endpointSlug");
       const { timeout = 30000, pollInterval = 500, match } = options;
       // Clamp pollInterval to safe bounds to prevent DoS via busy loops (0/negative) or excessive delays
-      const safePollInterval = Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, pollInterval));
+      const safePollInterval = Math.max(
+        MIN_POLL_INTERVAL,
+        Math.min(MAX_POLL_INTERVAL, pollInterval)
+      );
       const start = Date.now();
       let lastChecked = 0;
       // Maximum iterations to prevent unbounded resource consumption

@@ -75,9 +75,7 @@ function NewEndpointForm() {
               onChange={(e) => setName(e.target.value)}
               placeholder="My Webhook"
             />
-            <p className="text-sm text-muted-foreground">
-              A friendly name for this endpoint
-            </p>
+            <p className="text-sm text-muted-foreground">A friendly name for this endpoint</p>
           </div>
 
           <div className="border rounded-lg p-4 space-y-4">

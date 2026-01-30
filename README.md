@@ -80,39 +80,39 @@ webhooks-cc/
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|------------|
-| Frontend | Next.js 15, Tailwind CSS, shadcn/ui |
-| Backend | Convex (database, auth, real-time) |
-| Receiver | Go, Fiber |
-| CLI | Go, Cobra |
-| SDK | TypeScript |
-| Payments | Polar.sh (optional) |
+| Component | Technology                          |
+| --------- | ----------------------------------- |
+| Frontend  | Next.js 15, Tailwind CSS, shadcn/ui |
+| Backend   | Convex (database, auth, real-time)  |
+| Receiver  | Go, Fiber                           |
+| CLI       | Go, Cobra                           |
+| SDK       | TypeScript                          |
+| Payments  | Polar.sh (optional)                 |
 
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` and set:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `CONVEX_DEPLOYMENT` | Yes | Convex deployment identifier |
-| `NEXT_PUBLIC_CONVEX_URL` | Yes | Convex cloud URL (`.convex.cloud`) |
-| `CONVEX_SITE_URL` | Yes | Convex site URL (`.convex.site`) |
-| `NEXT_PUBLIC_WEBHOOK_URL` | Yes | Public URL of your receiver |
-| `NEXT_PUBLIC_APP_URL` | Yes | Public URL of your web app |
-| `POLAR_ACCESS_TOKEN` | No | Polar.sh billing |
-| `SMTP_*` | No | Email settings |
+| Variable                  | Required | Description                        |
+| ------------------------- | -------- | ---------------------------------- |
+| `CONVEX_DEPLOYMENT`       | Yes      | Convex deployment identifier       |
+| `NEXT_PUBLIC_CONVEX_URL`  | Yes      | Convex cloud URL (`.convex.cloud`) |
+| `CONVEX_SITE_URL`         | Yes      | Convex site URL (`.convex.site`)   |
+| `NEXT_PUBLIC_WEBHOOK_URL` | Yes      | Public URL of your receiver        |
+| `NEXT_PUBLIC_APP_URL`     | Yes      | Public URL of your web app         |
+| `POLAR_ACCESS_TOKEN`      | No       | Polar.sh billing                   |
+| `SMTP_*`                  | No       | Email settings                     |
 
 ### Convex Environment Variables
 
 Set via dashboard or `npx convex env set`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FREE_REQUEST_LIMIT` | 500 | Requests per period (free tier) |
-| `PRO_REQUEST_LIMIT` | 500000 | Requests per period (pro tier) |
-| `EPHEMERAL_TTL_MS` | 600000 | Anonymous endpoint lifetime (10 min) |
-| `BILLING_PERIOD_MS` | 2592000000 | Billing cycle (30 days) |
+| Variable             | Default    | Description                          |
+| -------------------- | ---------- | ------------------------------------ |
+| `FREE_REQUEST_LIMIT` | 500        | Requests per period (free tier)      |
+| `PRO_REQUEST_LIMIT`  | 500000     | Requests per period (pro tier)       |
+| `EPHEMERAL_TTL_MS`   | 600000     | Anonymous endpoint lifetime (10 min) |
+| `BILLING_PERIOD_MS`  | 2592000000 | Billing cycle (30 days)              |
 
 ## Commands
 

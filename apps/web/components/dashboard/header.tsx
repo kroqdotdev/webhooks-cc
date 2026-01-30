@@ -24,10 +24,7 @@ export function DashboardHeader() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Link
-            href="/account"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
+          <Link href="/account" className="text-sm text-muted-foreground hover:text-foreground">
             Account
           </Link>
           <Button variant="ghost" size="sm" onClick={() => signOut()}>

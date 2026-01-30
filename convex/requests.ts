@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { query, internalMutation } from "./_generated/server";
 
 // Internal mutation - only called from the HTTP action in http.ts
 export const capture = internalMutation({
@@ -139,12 +139,7 @@ export const cleanupExpired = internalMutation({
     const expired = await ctx.db
       .query("endpoints")
       .withIndex("by_expires")
-      .filter((q) =>
-        q.and(
-          q.neq(q.field("expiresAt"), undefined),
-          q.lt(q.field("expiresAt"), now)
-        )
-      )
+      .filter((q) => q.and(q.neq(q.field("expiresAt"), undefined), q.lt(q.field("expiresAt"), now)))
       .take(100);
 
     for (const endpoint of expired) {

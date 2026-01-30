@@ -50,9 +50,7 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold mb-2">Sign in to webhooks.cc</h1>
-            <p className="text-muted-foreground">
-              Continue with your preferred provider
-            </p>
+            <p className="text-muted-foreground">Continue with your preferred provider</p>
           </div>
 
           <div className="space-y-3">

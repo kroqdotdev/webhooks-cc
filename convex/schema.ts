@@ -16,11 +16,7 @@ export default defineSchema({
     polarCustomerId: v.optional(v.string()),
     polarSubscriptionId: v.optional(v.string()),
     subscriptionStatus: v.optional(
-      v.union(
-        v.literal("active"),
-        v.literal("canceled"),
-        v.literal("past_due")
-      )
+      v.union(v.literal("active"), v.literal("canceled"), v.literal("past_due"))
     ),
 
     // Billing period

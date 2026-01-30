@@ -2,7 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { nanoid } from "nanoid";
-import { EPHEMERAL_TTL_MS, FREE_REQUEST_LIMIT } from "./config";
+import { EPHEMERAL_TTL_MS } from "./config";
 
 export const create = mutation({
   args: {
@@ -17,7 +17,7 @@ export const create = mutation({
     isEphemeral: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx) ?? undefined;
+    const userId = (await getAuthUserId(ctx)) ?? undefined;
 
     const slug = nanoid(8);
     const isEphemeral = args.isEphemeral ?? !userId;

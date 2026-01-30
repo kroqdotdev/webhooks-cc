@@ -1,9 +1,9 @@
 ---
 name: Feature Request
 about: Suggest a feature
-title: ''
+title: ""
 labels: enhancement
-assignees: ''
+assignees: ""
 ---
 
 ## Problem

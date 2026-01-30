@@ -11,9 +11,7 @@ export function ThemeToggle() {
       <button
         onClick={() => setTheme("light")}
         className={`p-2 transition-colors cursor-pointer ${
-          theme === "light"
-            ? "bg-foreground text-background"
-            : "hover:bg-muted"
+          theme === "light" ? "bg-foreground text-background" : "hover:bg-muted"
         }`}
         aria-label="Light mode"
       >
@@ -22,9 +20,7 @@ export function ThemeToggle() {
       <button
         onClick={() => setTheme("system")}
         className={`p-2 transition-colors cursor-pointer border-x-2 border-foreground ${
-          theme === "system"
-            ? "bg-foreground text-background"
-            : "hover:bg-muted"
+          theme === "system" ? "bg-foreground text-background" : "hover:bg-muted"
         }`}
         aria-label="System theme"
       >
@@ -33,9 +29,7 @@ export function ThemeToggle() {
       <button
         onClick={() => setTheme("dark")}
         className={`p-2 transition-colors cursor-pointer ${
-          theme === "dark"
-            ? "bg-foreground text-background"
-            : "hover:bg-muted"
+          theme === "dark" ? "bg-foreground text-background" : "hover:bg-muted"
         }`}
         aria-label="Dark mode"
       >
