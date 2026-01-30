@@ -1,18 +1,17 @@
 /**
- * Validates that a required environment variable is set.
- * Throws an error if missing to ensure proper configuration.
+ * Webhook receiver base URL.
+ * Must access directly (not via dynamic key) for Next.js bundler to inline the value.
  */
-function getRequiredEnv(key: string): string {
-  const value = process.env[key];
+export const WEBHOOK_BASE_URL = (() => {
+  const value = process.env.NEXT_PUBLIC_WEBHOOK_URL;
   if (!value) {
     throw new Error(
-      `Required environment variable ${key} is not set. ` + `Please add it to your .env.local file.`
+      `Required environment variable NEXT_PUBLIC_WEBHOOK_URL is not set. ` +
+        `Please add it to your .env.local file.`
     );
   }
   return value;
-}
-
-export const WEBHOOK_BASE_URL = getRequiredEnv("NEXT_PUBLIC_WEBHOOK_URL");
+})();
 
 export function getWebhookUrl(slug: string): string {
   return `${WEBHOOK_BASE_URL}/w/${slug}`;
