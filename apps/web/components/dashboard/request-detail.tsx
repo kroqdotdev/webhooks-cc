@@ -41,20 +41,40 @@ function formatBody(body: string, contentType?: string): string {
   return body;
 }
 
+// Escape a string for safe use in shell double quotes
+// Handles: backslash, double quote, backtick, dollar sign, newlines
+function escapeForShellDoubleQuotes(str: string): string {
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/`/g, "\\`")
+    .replace(/\$/g, "\\$")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
+}
+
+// Escape a string for safe use in shell single quotes
+// Single quotes don't interpret anything, so we only need to handle the quote itself
+function escapeForShellSingleQuotes(str: string): string {
+  return str.replace(/'/g, "'\\''");
+}
+
 function generateCurlCommand(request: Request): string {
   const parts = [`curl -X ${request.method}`];
   for (const [key, value] of Object.entries(request.headers)) {
     if (!SKIP_HEADERS_FOR_CURL.includes(key.toLowerCase())) {
-      parts.push(`-H "${key}: ${value.replace(/"/g, '\\"')}"`);
+      const safeKey = escapeForShellDoubleQuotes(key);
+      const safeValue = escapeForShellDoubleQuotes(value);
+      parts.push(`-H "${safeKey}: ${safeValue}"`);
     }
   }
   if (request.body) {
-    parts.push(`-d '${request.body.replace(/'/g, "'\\''")}'`);
+    parts.push(`-d '${escapeForShellSingleQuotes(request.body)}'`);
   }
   let url = `${WEBHOOK_BASE_URL}${request.path}`;
   const queryString = new URLSearchParams(request.queryParams).toString();
   if (queryString) url += `?${queryString}`;
-  parts.push(`"${url}"`);
+  parts.push(`"${escapeForShellDoubleQuotes(url)}"`);
   return parts.join(" \\\n  ");
 }
 

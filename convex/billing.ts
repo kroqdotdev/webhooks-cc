@@ -116,9 +116,10 @@ export const checkPeriodResets = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
+    let processed = 0;
 
-    // Find users whose period has ended
-    const users = await ctx.db
+    // Find pro users whose period has ended
+    const proUsers = await ctx.db
       .query("users")
       .filter((q) =>
         q.and(
@@ -128,7 +129,7 @@ export const checkPeriodResets = internalMutation({
       )
       .take(100);
 
-    for (const user of users) {
+    for (const user of proUsers) {
       if (user.cancelAtPeriodEnd) {
         // Downgrade to free
         await ctx.db.patch(user._id, {
@@ -140,6 +141,7 @@ export const checkPeriodResets = internalMutation({
           periodStart: undefined,
           periodEnd: undefined,
         });
+        processed++;
       } else if (user.plan === "pro" && user.periodEnd) {
         // Reset usage for new period
         const newPeriodStart = user.periodEnd;
@@ -150,9 +152,40 @@ export const checkPeriodResets = internalMutation({
           periodStart: newPeriodStart,
           periodEnd: newPeriodEnd,
         });
+        processed++;
       }
     }
 
-    return { processed: users.length };
+    // Reset free users who have exceeded their limit
+    // Free users get a rolling 30-day period, reset when their period ends
+    const freeUsers = await ctx.db
+      .query("users")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("plan"), "free"),
+          q.or(
+            // Never had a period set (legacy users)
+            q.eq(q.field("periodStart"), undefined),
+            // Period has ended
+            q.and(
+              q.neq(q.field("periodEnd"), undefined),
+              q.lt(q.field("periodEnd"), now)
+            )
+          )
+        )
+      )
+      .take(100);
+
+    for (const user of freeUsers) {
+      // Reset usage and set a new 30-day period
+      await ctx.db.patch(user._id, {
+        requestsUsed: 0,
+        periodStart: now,
+        periodEnd: now + BILLING_PERIOD_MS,
+      });
+      processed++;
+    }
+
+    return { processed };
   },
 });

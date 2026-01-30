@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"webhooks.cc/shared/types"
@@ -14,16 +15,16 @@ import (
 // maxResponseBodySize limits the response body to prevent memory exhaustion
 const maxResponseBodySize = 100 * 1024 * 1024 // 100MB
 
-// sensitiveHeaders that should not be forwarded to local services
+// sensitiveHeaders that should not be forwarded to local services (lowercase for case-insensitive matching)
 // These headers from captured webhooks could expose credentials or cause security issues
 var sensitiveHeaders = map[string]bool{
-	"Authorization":       true,
-	"Cookie":              true,
-	"Set-Cookie":          true,
-	"X-Api-Key":           true,
-	"Proxy-Authorization": true,
-	"X-Auth-Token":        true,
-	"X-Access-Token":      true,
+	"authorization":       true,
+	"cookie":              true,
+	"set-cookie":          true,
+	"x-api-key":           true,
+	"proxy-authorization": true,
+	"x-auth-token":        true,
+	"x-access-token":      true,
 }
 
 type Tunnel struct {
@@ -68,8 +69,10 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 	// Copy headers (except Host and sensitive security headers)
 	// We filter sensitive headers to prevent forwarding credentials from
 	// captured webhooks to the local target service
+	// Use case-insensitive matching since HTTP headers are case-insensitive per RFC 7230
 	for key, value := range req.Headers {
-		if key != "Host" && !sensitiveHeaders[key] {
+		keyLower := strings.ToLower(key)
+		if keyLower != "host" && !sensitiveHeaders[keyLower] {
 			httpReq.Header.Set(key, value)
 		}
 	}

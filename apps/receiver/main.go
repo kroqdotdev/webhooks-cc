@@ -181,6 +181,16 @@ func handleWebhook(c *fiber.Ctx) error {
 	// Return mock response
 	if resp.MockResponse != nil {
 		for key, value := range resp.MockResponse.Headers {
+			// Skip security-sensitive headers that could be used for attacks
+			keyLower := strings.ToLower(key)
+			if keyLower == "set-cookie" || keyLower == "strict-transport-security" ||
+				keyLower == "content-security-policy" || keyLower == "x-frame-options" {
+				continue
+			}
+			// Reject headers with newlines (HTTP response splitting prevention)
+			if strings.ContainsAny(key, "\r\n") || strings.ContainsAny(value, "\r\n") {
+				continue
+			}
 			c.Set(key, value)
 		}
 		return c.Status(resp.MockResponse.Status).SendString(resp.MockResponse.Body)
@@ -215,6 +225,11 @@ func callConvex(ctx context.Context, args map[string]any) (*CaptureResponse, err
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Check for HTTP errors before parsing JSON
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Convex returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result CaptureResponse
