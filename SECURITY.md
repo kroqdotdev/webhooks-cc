@@ -3,8 +3,8 @@
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
-| latest  | Yes |
+| ------- | --------- |
+| latest  | Yes       |
 
 ## Reporting a Vulnerability
 
@@ -26,13 +26,13 @@ Report security issues responsibly. Do not open public GitHub issues.
 
 ### Response Timeline
 
-| Stage | Time |
-|-------|------|
-| Acknowledgment | 48 hours |
-| Initial assessment | 1 week |
-| Critical fix | 7 days |
-| High severity fix | 30 days |
-| Medium/Low fix | 90 days |
+| Stage              | Time     |
+| ------------------ | -------- |
+| Acknowledgment     | 48 hours |
+| Initial assessment | 1 week   |
+| Critical fix       | 7 days   |
+| High severity fix  | 30 days  |
+| Medium/Low fix     | 90 days  |
 
 ### Safe Harbor
 

@@ -7,10 +7,7 @@ import { api } from "@convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { UrlBar } from "@/components/dashboard/url-bar";
 import { RequestList } from "@/components/dashboard/request-list";
-import {
-  RequestDetail,
-  RequestDetailEmpty,
-} from "@/components/dashboard/request-detail";
+import { RequestDetail, RequestDetailEmpty } from "@/components/dashboard/request-detail";
 import Link from "next/link";
 import { Copy, Check, Send } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
@@ -20,14 +17,11 @@ export default function DashboardPage() {
   const searchParams = useSearchParams();
   const endpointSlug = searchParams.get("endpoint");
 
-  const currentEndpoint =
-    endpoints?.find((ep) => ep.slug === endpointSlug) ?? endpoints?.[0];
+  const currentEndpoint = endpoints?.find((ep) => ep.slug === endpointSlug) ?? endpoints?.[0];
 
   const requests = useQuery(
     api.requests.list,
-    currentEndpoint
-      ? { endpointId: currentEndpoint._id, limit: 50 }
-      : "skip"
+    currentEndpoint ? { endpointId: currentEndpoint._id, limit: 50 } : "skip"
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -71,13 +65,10 @@ export default function DashboardPage() {
     prevRequestCount.current = 0;
   }, [currentEndpoint?._id]);
 
-  const handleSelect = useCallback(
-    (id: string) => {
-      setSelectedId(id);
-      setMobileDetail(true);
-    },
-    []
-  );
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id);
+    setMobileDetail(true);
+  }, []);
 
   const handleJumpToNew = useCallback(() => {
     if (requests && requests.length > 0) {
@@ -221,9 +212,7 @@ function WaitingForRequests({ slug }: { slug: string }) {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <p className="font-bold uppercase tracking-wide">
-            Waiting for first request...
-          </p>
+          <p className="font-bold uppercase tracking-wide">Waiting for first request...</p>
         </div>
 
         <div className="text-left">
@@ -246,9 +235,7 @@ function WaitingForRequests({ slug }: { slug: string }) {
               )}
             </button>
           </div>
-          <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">
-            {curlCmd}
-          </pre>
+          <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
         </div>
 
         <button
@@ -268,9 +255,7 @@ function EmptyEndpoints() {
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <div className="text-center space-y-4">
-        <h2 className="text-xl font-bold uppercase tracking-wide">
-          No endpoints yet
-        </h2>
+        <h2 className="text-xl font-bold uppercase tracking-wide">No endpoints yet</h2>
         <p className="text-muted-foreground">
           Create your first endpoint to start capturing webhooks.
         </p>

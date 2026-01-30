@@ -157,11 +157,7 @@ export default function EndpointSettingsPage() {
                 {webhookUrl}
               </code>
               <Button variant="outline" size="icon" onClick={copyUrl}>
-                {copied ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
@@ -231,22 +227,15 @@ export default function EndpointSettingsPage() {
                 <DialogHeader>
                   <DialogTitle>Delete endpoint?</DialogTitle>
                   <DialogDescription>
-                    This will permanently delete this endpoint and all its
-                    captured requests. This action cannot be undone.
+                    This will permanently delete this endpoint and all its captured requests. This
+                    action cannot be undone.
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setDeleteDialogOpen(false)}
-                  >
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleDelete}
-                    disabled={isDeleting}
-                  >
+                  <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
                     {isDeleting ? "Deleting..." : "Delete"}
                   </Button>
                 </DialogFooter>

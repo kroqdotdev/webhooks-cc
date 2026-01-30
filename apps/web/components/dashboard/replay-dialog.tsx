@@ -110,8 +110,8 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
         <DialogHeader>
           <DialogTitle className="font-bold uppercase tracking-wide">Replay Request</DialogTitle>
           <DialogDescription>
-            Send this captured request to another URL. Requests are made from your browser,
-            so localhost URLs work for local development testing.
+            Send this captured request to another URL. Requests are made from your browser, so
+            localhost URLs work for local development testing.
           </DialogDescription>
         </DialogHeader>
 

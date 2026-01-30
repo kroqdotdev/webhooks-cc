@@ -18,12 +18,7 @@ interface UrlBarProps {
   };
 }
 
-export function UrlBar({
-  endpointId,
-  endpointName,
-  slug,
-  mockResponse,
-}: UrlBarProps) {
+export function UrlBar({ endpointId, endpointName, slug, mockResponse }: UrlBarProps) {
   const [copied, setCopied] = useState(false);
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
 
@@ -45,9 +40,7 @@ export function UrlBar({
           slug={slug}
           mockResponse={mockResponse}
         />
-        <span className="font-bold text-sm uppercase tracking-wide shrink-0">
-          {endpointName}
-        </span>
+        <span className="font-bold text-sm uppercase tracking-wide shrink-0">{endpointName}</span>
 
         {/* URL + Copy */}
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -64,11 +57,7 @@ export function UrlBar({
             title="Copy URL"
             aria-label="Copy webhook URL"
           >
-            {copied ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" />
-            )}
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>

@@ -61,11 +61,13 @@ export function RequestList({
             onClick={onToggleLiveMode}
             className={cn(
               "flex items-center gap-1.5 px-2 py-1 text-xs font-bold uppercase tracking-wide border-2 border-foreground cursor-pointer transition-colors",
-              liveMode
-                ? "bg-primary text-primary-foreground"
-                : "bg-background hover:bg-muted"
+              liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             )}
-            title={liveMode ? "Live mode: auto-selects new requests" : "Review mode: new requests won't interrupt"}
+            title={
+              liveMode
+                ? "Live mode: auto-selects new requests"
+                : "Review mode: new requests won't interrupt"
+            }
           >
             <Circle
               className={cn(

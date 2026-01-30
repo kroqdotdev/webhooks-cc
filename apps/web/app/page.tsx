@@ -31,8 +31,8 @@ export default function Home() {
               <span className="bg-primary text-primary-foreground px-2">instantly</span>
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-              Get a unique URL in one click. See incoming requests in real-time.
-              Forward to localhost for development.{" "}
+              Get a unique URL in one click. See incoming requests in real-time. Forward to
+              localhost for development.{" "}
               <span className="text-foreground font-semibold">No signup required.</span>
             </p>
             <HeroCTA />
@@ -42,11 +42,19 @@ export default function Home() {
           <div className="mt-16 neo-code overflow-x-auto">
             <pre className="text-sm md:text-base">
               <code>
-                <span className="text-muted-foreground"># Create an endpoint and start capturing webhooks</span>
+                <span className="text-muted-foreground">
+                  # Create an endpoint and start capturing webhooks
+                </span>
                 {"\n"}
-                <span className="text-primary">$</span> curl -X POST https://your-receiver.example.com/w/abc123 \{"\n"}
-                {"  "}-H <span className="text-secondary">&quot;Content-Type: application/json&quot;</span> \{"\n"}
-                {"  "}-d <span className="text-secondary">&apos;{`{"event": "payment.success", "amount": 4999}`}&apos;</span>
+                <span className="text-primary">$</span> curl -X POST
+                https://your-receiver.example.com/w/abc123 \{"\n"}
+                {"  "}-H{" "}
+                <span className="text-secondary">&quot;Content-Type: application/json&quot;</span> \
+                {"\n"}
+                {"  "}-d{" "}
+                <span className="text-secondary">
+                  &apos;{`{"event": "payment.success", "amount": 4999}`}&apos;
+                </span>
               </code>
             </pre>
           </div>
@@ -70,8 +78,8 @@ export default function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">Real-time inspection</h3>
               <p className="text-muted-foreground">
-                See requests as they arrive. Headers, body, query params - all formatted
-                and searchable.
+                See requests as they arrive. Headers, body, query params - all formatted and
+                searchable.
               </p>
             </div>
 
@@ -81,8 +89,7 @@ export default function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">Mock responses</h3>
               <p className="text-muted-foreground">
-                Configure what your endpoint returns. Set status codes, headers, and body
-                content.
+                Configure what your endpoint returns. Set status codes, headers, and body content.
               </p>
             </div>
 
@@ -92,8 +99,7 @@ export default function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">Local forwarding</h3>
               <p className="text-muted-foreground">
-                Forward webhooks to localhost with our CLI. Test integrations without
-                deploying.
+                Forward webhooks to localhost with our CLI. Test integrations without deploying.
               </p>
             </div>
           </div>
@@ -108,9 +114,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple pricing</h2>
-            <p className="text-xl text-muted-foreground">
-              Start free, upgrade when you need more
-            </p>
+            <p className="text-xl text-muted-foreground">Start free, upgrade when you need more</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -178,9 +182,7 @@ export default function Home() {
       <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="neo-card bg-foreground text-background text-center py-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Start debugging webhooks today
-            </h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Start debugging webhooks today</h2>
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
               Join thousands of developers who trust webhooks.cc for their webhook testing needs.
             </p>
@@ -211,7 +213,10 @@ export default function Home() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/installation" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/installation"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     Installation
                   </Link>
                 </li>
@@ -236,7 +241,10 @@ export default function Home() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/docs/webhooks" className="text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/docs/webhooks"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     Webhook Guides
                   </Link>
                 </li>

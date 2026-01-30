@@ -6,8 +6,7 @@ function getRequiredEnv(key: string): string {
   const value = process.env[key];
   if (!value) {
     throw new Error(
-      `Required environment variable ${key} is not set. ` +
-      `Please add it to your .env.local file.`
+      `Required environment variable ${key} is not set. ` + `Please add it to your .env.local file.`
     );
   }
   return value;

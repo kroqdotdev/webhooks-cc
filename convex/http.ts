@@ -9,9 +9,7 @@ const http = httpRouter();
 auth.addHttpRoutes(http);
 
 // Allowed HTTP methods for webhook capture
-const ALLOWED_METHODS = new Set([
-  "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
-]);
+const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
 // Valid slug format: alphanumeric (mixed case) with hyphens/underscores, 1-50 chars
 // nanoid generates mixed-case alphanumeric strings

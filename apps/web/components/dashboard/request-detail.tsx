@@ -27,11 +27,7 @@ interface RequestDetailProps {
 
 function formatBody(body: string, contentType?: string): string {
   if (!body) return "(empty)";
-  if (
-    contentType?.includes("application/json") ||
-    body.startsWith("{") ||
-    body.startsWith("[")
-  ) {
+  if (contentType?.includes("application/json") || body.startsWith("{") || body.startsWith("[")) {
     try {
       return JSON.stringify(JSON.parse(body), null, 2);
     } catch {
@@ -127,11 +123,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
                 </>
               )}
             </button>
-            <ReplayDialog
-              method={request.method}
-              headers={request.headers}
-              body={request.body}
-            />
+            <ReplayDialog method={request.method} headers={request.headers} body={request.body} />
           </div>
         </div>
       </div>
@@ -144,9 +136,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
             onClick={() => setTab(t)}
             className={cn(
               "px-4 py-2 text-xs font-bold uppercase tracking-wide border-r-2 border-foreground last:border-r-0 cursor-pointer transition-colors",
-              tab === t
-                ? "bg-foreground text-background"
-                : "bg-background hover:bg-muted"
+              tab === t ? "bg-foreground text-background" : "bg-background hover:bg-muted"
             )}
           >
             {t}
@@ -163,17 +153,11 @@ export function RequestDetail({ request }: RequestDetailProps) {
                 onClick={() => handleCopy(request.body!, "body")}
                 className="absolute top-2 right-2 neo-btn-outline !py-1 !px-2 text-xs flex items-center gap-1"
               >
-                {copied === "body" ? (
-                  <Check className="h-3 w-3" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
+                {copied === "body" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               </button>
             )}
             <pre className="neo-code overflow-x-auto text-sm whitespace-pre-wrap break-words">
-              {request.body
-                ? formatBody(request.body, request.contentType)
-                : "(empty body)"}
+              {request.body ? formatBody(request.body, request.contentType) : "(empty body)"}
             </pre>
           </div>
         )}
@@ -183,10 +167,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
             <table className="text-sm font-mono w-full">
               <tbody>
                 {Object.entries(request.headers).map(([key, value]) => (
-                  <tr
-                    key={key}
-                    className="border-b border-foreground/20 last:border-0"
-                  >
+                  <tr key={key} className="border-b border-foreground/20 last:border-0">
                     <td className="pr-4 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
                       {key}
                     </td>
@@ -204,10 +185,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
               <table className="text-sm font-mono w-full">
                 <tbody>
                   {Object.entries(request.queryParams).map(([key, value]) => (
-                    <tr
-                      key={key}
-                      className="border-b border-foreground/20 last:border-0"
-                    >
+                    <tr key={key} className="border-b border-foreground/20 last:border-0">
                       <td className="pr-4 py-1.5 text-muted-foreground font-semibold whitespace-nowrap align-top">
                         {key}
                       </td>
@@ -235,9 +213,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
 export function RequestDetailEmpty() {
   return (
     <div className="flex items-center justify-center h-full text-muted-foreground">
-      <p className="font-bold uppercase tracking-wide text-sm">
-        Select a request to view details
-      </p>
+      <p className="font-bold uppercase tracking-wide text-sm">Select a request to view details</p>
     </div>
   );
 }

@@ -1,11 +1,7 @@
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AppHeader } from "@/components/nav/app-header";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
       <div className="h-screen flex flex-col overflow-hidden">

@@ -84,9 +84,7 @@ export function LiveDemo() {
     }
   };
 
-  const endpointUrl = endpointSlug
-    ? `${WEBHOOK_BASE_URL}/w/${endpointSlug}`
-    : null;
+  const endpointUrl = endpointSlug ? `${WEBHOOK_BASE_URL}/w/${endpointSlug}` : null;
 
   const curlCommand = endpointUrl
     ? `curl -X POST ${endpointUrl} \\
@@ -176,9 +174,7 @@ export function LiveDemo() {
                 <Send className="inline-block mr-2 h-4 w-4" />
                 {isSending ? "Sending..." : "Send Test Request"}
               </button>
-              <span className="text-sm text-muted-foreground self-center">
-                or use curl:
-              </span>
+              <span className="text-sm text-muted-foreground self-center">or use curl:</span>
             </div>
             <div className="flex gap-2">
               <div className="flex-1 neo-code py-3 font-mono text-sm overflow-x-auto whitespace-pre">
@@ -214,7 +210,10 @@ export function LiveDemo() {
               ) : (
                 "This endpoint expires in 10 minutes."
               )}{" "}
-              <a href="/login" className="underline font-semibold text-foreground hover:text-primary">
+              <a
+                href="/login"
+                className="underline font-semibold text-foreground hover:text-primary"
+              >
                 Sign up
               </a>{" "}
               to keep your endpoints.
@@ -234,11 +233,7 @@ function DemoRequestList({ slug }: { slug: string }) {
   );
 
   if (!endpoint) {
-    return (
-      <div className="neo-code text-center py-8 text-muted-foreground">
-        Loading...
-      </div>
-    );
+    return <div className="neo-code text-center py-8 text-muted-foreground">Loading...</div>;
   }
 
   if (!requests || requests.length === 0) {
@@ -253,17 +248,21 @@ function DemoRequestList({ slug }: { slug: string }) {
   return <SimpleDemoList requests={requests} />;
 }
 
-function SimpleDemoList({ requests }: { requests: Array<{
-  _id: string;
-  method: string;
-  path: string;
-  headers: Record<string, string>;
-  body?: string;
-  queryParams: Record<string, string>;
-  contentType?: string;
-  size: number;
-  receivedAt: number;
-}> }) {
+function SimpleDemoList({
+  requests,
+}: {
+  requests: Array<{
+    _id: string;
+    method: string;
+    path: string;
+    headers: Record<string, string>;
+    body?: string;
+    queryParams: Record<string, string>;
+    contentType?: string;
+    size: number;
+    receivedAt: number;
+  }>;
+}) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (

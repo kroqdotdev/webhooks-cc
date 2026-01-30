@@ -5,14 +5,20 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["webhook", "testing", "api", "sdk"],
+  "keywords": [
+    "webhook",
+    "testing",
+    "api",
+    "sdk"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {

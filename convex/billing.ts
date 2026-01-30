@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { action, internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { FREE_REQUEST_LIMIT, PRO_REQUEST_LIMIT, BILLING_PERIOD_MS } from "./config";
 
@@ -76,9 +75,7 @@ export const handleWebhook = internalMutation({
       case "subscription.canceled": {
         const user = await ctx.db
           .query("users")
-          .withIndex("by_polar_customer", (q) =>
-            q.eq("polarCustomerId", data.customerId)
-          )
+          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", data.customerId))
           .first();
 
         if (user) {
@@ -92,9 +89,7 @@ export const handleWebhook = internalMutation({
       case "subscription.revoked": {
         const user = await ctx.db
           .query("users")
-          .withIndex("by_polar_customer", (q) =>
-            q.eq("polarCustomerId", data.customerId)
-          )
+          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", data.customerId))
           .first();
 
         if (user) {
@@ -121,12 +116,7 @@ export const checkPeriodResets = internalMutation({
     // Find pro users whose period has ended
     const proUsers = await ctx.db
       .query("users")
-      .filter((q) =>
-        q.and(
-          q.neq(q.field("periodEnd"), undefined),
-          q.lt(q.field("periodEnd"), now)
-        )
-      )
+      .filter((q) => q.and(q.neq(q.field("periodEnd"), undefined), q.lt(q.field("periodEnd"), now)))
       .take(100);
 
     for (const user of proUsers) {
@@ -167,10 +157,7 @@ export const checkPeriodResets = internalMutation({
             // Never had a period set (legacy users)
             q.eq(q.field("periodStart"), undefined),
             // Period has ended
-            q.and(
-              q.neq(q.field("periodEnd"), undefined),
-              q.lt(q.field("periodEnd"), now)
-            )
+            q.and(q.neq(q.field("periodEnd"), undefined), q.lt(q.field("periodEnd"), now))
           )
         )
       )

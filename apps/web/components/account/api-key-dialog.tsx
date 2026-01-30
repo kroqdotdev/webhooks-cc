@@ -68,7 +68,7 @@ export function ApiKeyDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => isOpen ? setOpen(true) : handleClose()}>
+    <Dialog open={open} onOpenChange={(isOpen) => (isOpen ? setOpen(true) : handleClose())}>
       <DialogTrigger asChild>
         <Button>Create API Key</Button>
       </DialogTrigger>
@@ -123,9 +123,7 @@ export function ApiKeyDialog() {
 
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-2 p-3 bg-muted rounded-lg border">
-                <code className="flex-1 text-sm font-mono break-all">
-                  {createdKey}
-                </code>
+                <code className="flex-1 text-sm font-mono break-all">{createdKey}</code>
                 <Button variant="ghost" size="icon" onClick={copyKey}>
                   {copied ? (
                     <Check className="h-4 w-4 text-green-500" />
