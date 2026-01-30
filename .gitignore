@@ -13,8 +13,7 @@ dist/
 .env.local
 .env*.local
 
-# Convex
-convex/_generated/
+# Convex (generated types are committed for CI/contributors)
 
 # Go
 apps/receiver/receiver
