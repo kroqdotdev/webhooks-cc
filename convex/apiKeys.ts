@@ -32,6 +32,9 @@ async function hashKey(key: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Maximum length for API key names
+const MAX_NAME_LENGTH = 100;
+
 export const create = mutation({
   args: {
     name: v.string(),
@@ -39,6 +42,12 @@ export const create = mutation({
   handler: async (ctx, { name }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+
+    // Validate name
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
+      throw new Error(`API key name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+    }
 
     const apiKey = generateApiKey();
     const keyHash = await hashKey(apiKey);
@@ -48,7 +57,7 @@ export const create = mutation({
       userId,
       keyHash,
       keyPrefix,
-      name,
+      name: trimmedName,
       createdAt: Date.now(),
     });
 

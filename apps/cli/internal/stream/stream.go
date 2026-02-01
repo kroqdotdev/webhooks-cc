@@ -98,6 +98,10 @@ func (s *Stream) Listen(ctx context.Context, handler RequestHandler) error {
 	go func() {
 		defer close(done)
 		scanner := bufio.NewScanner(resp.Body)
+		// Increase buffer size to handle large webhook bodies (up to 1MB)
+		// Default 64KB is too small for webhooks with large payloads
+		buf := make([]byte, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
 		for scanner.Scan() {
 			select {
 			case <-ctx.Done():

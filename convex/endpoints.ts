@@ -12,6 +12,11 @@ import { mutation, query } from "./_generated/server";
 import { nanoid } from "nanoid";
 import { EPHEMERAL_TTL_MS } from "./config";
 
+// Maximum length for endpoint names
+const MAX_NAME_LENGTH = 100;
+// Maximum attempts to generate a unique slug
+const MAX_SLUG_ATTEMPTS = 5;
+
 export const create = mutation({
   args: {
     name: v.optional(v.string()),
@@ -27,13 +32,45 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const userId = (await getAuthUserId(ctx)) ?? undefined;
 
-    const slug = nanoid(8);
+    // Validate name length if provided
+    if (args.name !== undefined) {
+      const trimmedName = args.name.trim();
+      if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
+        throw new Error(`Endpoint name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+      }
+    }
+
+    // Validate mock response status code if provided (must be integer between 100-599)
+    if (args.mockResponse) {
+      const status = args.mockResponse.status;
+      if (!Number.isInteger(status) || status < 100 || status > 599) {
+        throw new Error("Mock response status must be an integer between 100 and 599");
+      }
+    }
+
+    // Generate unique slug with collision check
+    let slug: string | null = null;
+    for (let i = 0; i < MAX_SLUG_ATTEMPTS; i++) {
+      const candidate = nanoid(8);
+      const existing = await ctx.db
+        .query("endpoints")
+        .withIndex("by_slug", (q) => q.eq("slug", candidate))
+        .first();
+      if (!existing) {
+        slug = candidate;
+        break;
+      }
+    }
+    if (!slug) {
+      throw new Error("Failed to generate unique slug, please try again");
+    }
+
     const isEphemeral = args.isEphemeral ?? !userId;
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,
       slug,
-      name: args.name,
+      name: args.name?.trim(),
       mockResponse: args.mockResponse,
       isEphemeral,
       expiresAt: isEphemeral ? Date.now() + EPHEMERAL_TTL_MS : undefined,
@@ -129,7 +166,7 @@ export const update = mutation({
       })
     ),
   },
-  handler: async (ctx, { id, ...updates }) => {
+  handler: async (ctx, { id, name, mockResponse }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
@@ -139,7 +176,26 @@ export const update = mutation({
       throw new Error("Not authorized");
     }
 
-    await ctx.db.patch(id, updates);
+    // Validate name length if provided
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
+        throw new Error(`Endpoint name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+      }
+    }
+
+    // Validate mock response status code if provided (must be integer between 100-599)
+    if (mockResponse) {
+      const status = mockResponse.status;
+      if (!Number.isInteger(status) || status < 100 || status > 599) {
+        throw new Error("Mock response status must be an integer between 100 and 599");
+      }
+    }
+
+    await ctx.db.patch(id, {
+      ...(name !== undefined && { name: name.trim() }),
+      ...(mockResponse !== undefined && { mockResponse }),
+    });
     return { success: true };
   },
 });
