@@ -32,8 +32,11 @@ const (
 	quotaCacheTTL         = 30 * time.Second // How long to cache quota data
 	endpointCacheTTL      = 60 * time.Second // How long to cache endpoint info
 	batchFlushInterval    = 100 * time.Millisecond
-	batchMaxSize          = 50 // Flush when batch reaches this size
+	batchMaxSize          = 50    // Flush when batch reaches this size
+	batchMaxPerSlug       = 1000  // Maximum buffered requests per slug before dropping oldest
 	shutdownTimeout       = 10 * time.Second
+	maxCacheEntries       = 10000 // Maximum cache entries before cleanup
+	cacheCleanupInterval  = 5 * time.Minute
 )
 
 // BufferedRequest holds request data waiting to be sent to Convex.
@@ -101,18 +104,64 @@ type inFlightRequest struct {
 
 // EndpointCache caches endpoint info to return mock responses immediately.
 // Uses single-flight pattern to prevent thundering herd on cache refresh.
+// Implements size-bounded caching with periodic cleanup of stale entries.
 type EndpointCache struct {
 	mu       sync.RWMutex
 	entries  map[string]*EndpointInfo
 	inFlight map[string]*inFlightRequest
 	ttl      time.Duration
+	maxSize  int
 }
 
 func NewEndpointCache(ttl time.Duration) *EndpointCache {
-	return &EndpointCache{
+	c := &EndpointCache{
 		entries:  make(map[string]*EndpointInfo),
 		inFlight: make(map[string]*inFlightRequest),
 		ttl:      ttl,
+		maxSize:  maxCacheEntries,
+	}
+	// Start background cleanup goroutine
+	go c.cleanupLoop()
+	return c
+}
+
+// cleanupLoop periodically removes stale entries to prevent unbounded growth.
+func (c *EndpointCache) cleanupLoop() {
+	ticker := time.NewTicker(cacheCleanupInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		c.cleanup()
+	}
+}
+
+// cleanup removes entries older than 2x TTL and enforces max size.
+func (c *EndpointCache) cleanup() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	staleThreshold := c.ttl * 2
+
+	// Remove stale entries
+	for slug, entry := range c.entries {
+		if now.Sub(entry.LastSync) > staleThreshold {
+			delete(c.entries, slug)
+		}
+	}
+
+	// If still over max size, remove oldest entries
+	for len(c.entries) > c.maxSize {
+		var oldestSlug string
+		var oldestTime time.Time
+		for slug, entry := range c.entries {
+			if oldestSlug == "" || entry.LastSync.Before(oldestTime) {
+				oldestSlug = slug
+				oldestTime = entry.LastSync
+			}
+		}
+		if oldestSlug != "" {
+			delete(c.entries, oldestSlug)
+		}
 	}
 }
 
@@ -140,16 +189,24 @@ func (c *EndpointCache) Get(ctx context.Context, slug string) (*EndpointInfo, er
 	// Check if another goroutine is already fetching this slug
 	if req, ok := c.inFlight[slug]; ok {
 		c.mu.Unlock()
-		// Wait for the in-flight request to complete
-		<-req.done
-		if req.err != nil {
-			// On error, return stale cache if available
+		// Wait for the in-flight request to complete or context cancellation
+		select {
+		case <-req.done:
+			if req.err != nil {
+				// On error, return stale cache if available
+				if exists && entry != nil {
+					return entry, nil
+				}
+				return nil, req.err
+			}
+			return req.result.(*EndpointInfo), nil
+		case <-ctx.Done():
+			// Context cancelled while waiting - return stale cache or error
 			if exists && entry != nil {
 				return entry, nil
 			}
-			return nil, req.err
+			return nil, ctx.Err()
 		}
-		return req.result.(*EndpointInfo), nil
 	}
 
 	// We're the first - create in-flight tracker
@@ -184,18 +241,64 @@ func (c *EndpointCache) Get(ctx context.Context, slug string) (*EndpointInfo, er
 
 // QuotaCache provides thread-safe caching of user quota information.
 // Uses single-flight pattern to prevent thundering herd on cache refresh.
+// Implements size-bounded caching with periodic cleanup of stale entries.
 type QuotaCache struct {
 	mu       sync.RWMutex
 	entries  map[string]*QuotaEntry
 	inFlight map[string]*inFlightRequest
 	ttl      time.Duration
+	maxSize  int
 }
 
 func NewQuotaCache(ttl time.Duration) *QuotaCache {
-	return &QuotaCache{
+	c := &QuotaCache{
 		entries:  make(map[string]*QuotaEntry),
 		inFlight: make(map[string]*inFlightRequest),
 		ttl:      ttl,
+		maxSize:  maxCacheEntries,
+	}
+	// Start background cleanup goroutine
+	go c.cleanupLoop()
+	return c
+}
+
+// cleanupLoop periodically removes stale entries to prevent unbounded growth.
+func (c *QuotaCache) cleanupLoop() {
+	ticker := time.NewTicker(cacheCleanupInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		c.cleanup()
+	}
+}
+
+// cleanup removes entries older than 2x TTL and enforces max size.
+func (c *QuotaCache) cleanup() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	staleThreshold := c.ttl * 2
+
+	// Remove stale entries
+	for slug, entry := range c.entries {
+		if now.Sub(entry.LastSync) > staleThreshold {
+			delete(c.entries, slug)
+		}
+	}
+
+	// If still over max size, remove oldest entries
+	for len(c.entries) > c.maxSize {
+		var oldestSlug string
+		var oldestTime time.Time
+		for slug, entry := range c.entries {
+			if oldestSlug == "" || entry.LastSync.Before(oldestTime) {
+				oldestSlug = slug
+				oldestTime = entry.LastSync
+			}
+		}
+		if oldestSlug != "" {
+			delete(c.entries, oldestSlug)
+		}
 	}
 }
 
@@ -223,19 +326,27 @@ func (c *QuotaCache) Check(ctx context.Context, slug string) (*QuotaEntry, error
 	// Check if another goroutine is already fetching this slug
 	if req, ok := c.inFlight[slug]; ok {
 		c.mu.Unlock()
-		// Wait for the in-flight request to complete
-		<-req.done
-		if req.err != nil {
-			// On error, return stale cache if available
+		// Wait for the in-flight request to complete or context cancellation
+		select {
+		case <-req.done:
+			if req.err != nil {
+				// On error, return stale cache if available
+				if exists && entry != nil {
+					return entry, nil
+				}
+				return nil, req.err
+			}
+			if req.result == nil {
+				return nil, nil
+			}
+			return req.result.(*QuotaEntry), nil
+		case <-ctx.Done():
+			// Context cancelled while waiting - return stale cache or error
 			if exists && entry != nil {
 				return entry, nil
 			}
-			return nil, req.err
+			return nil, ctx.Err()
 		}
-		if req.result == nil {
-			return nil, nil
-		}
-		return req.result.(*QuotaEntry), nil
 	}
 
 	// We're the first - create in-flight tracker
@@ -244,11 +355,14 @@ func (c *QuotaCache) Check(ctx context.Context, slug string) (*QuotaEntry, error
 	c.mu.Unlock()
 
 	// Fetch from Convex
-	newEntry, err := c.fetchAndStore(ctx, slug)
+	newEntry, err := c.fetchQuota(ctx, slug)
 
 	// Update cache and notify waiters
 	c.mu.Lock()
 	delete(c.inFlight, slug)
+	if err == nil && newEntry != nil {
+		c.entries[slug] = newEntry
+	}
 	req.result = newEntry
 	req.err = err
 	c.mu.Unlock()
@@ -265,7 +379,8 @@ func (c *QuotaCache) Check(ctx context.Context, slug string) (*QuotaEntry, error
 	return newEntry, nil
 }
 
-func (c *QuotaCache) fetchAndStore(ctx context.Context, slug string) (*QuotaEntry, error) {
+// fetchQuota retrieves quota information from Convex.
+func (c *QuotaCache) fetchQuota(ctx context.Context, slug string) (*QuotaEntry, error) {
 	resp, err := fetchQuota(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -286,20 +401,28 @@ func (c *QuotaCache) fetchAndStore(ctx context.Context, slug string) (*QuotaEntr
 		entry.PeriodEnd = *resp.PeriodEnd
 	}
 
-	c.mu.Lock()
-	c.entries[slug] = entry
-	c.mu.Unlock()
-
 	return entry, nil
 }
 
-func (c *QuotaCache) Decrement(slug string) {
+// CheckAndDecrement atomically checks if quota allows a request and decrements if so.
+// Returns true if the request is allowed, false if quota is exceeded.
+// Returns true for unlimited quotas or if no entry exists (fail-open).
+func (c *QuotaCache) CheckAndDecrement(slug string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if entry, exists := c.entries[slug]; exists && !entry.IsUnlimited {
-		entry.Remaining--
+	entry, exists := c.entries[slug]
+	if !exists {
+		return true // Fail-open if no cached entry
 	}
+	if entry.IsUnlimited {
+		return true
+	}
+	if entry.Remaining <= 0 {
+		return false
+	}
+	entry.Remaining--
+	return true
 }
 
 // RequestBatcher buffers requests per slug and flushes them in batches.
@@ -323,9 +446,16 @@ func NewRequestBatcher(maxSize int, interval time.Duration) *RequestBatcher {
 }
 
 // Add adds a request to the buffer for a slug.
+// If the buffer exceeds batchMaxPerSlug, the oldest request is dropped.
 func (b *RequestBatcher) Add(slug string, req BufferedRequest) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// Enforce buffer size limit to prevent memory exhaustion
+	if len(b.buffers[slug]) >= batchMaxPerSlug {
+		log.Printf("Buffer full for %s (%d requests), dropping oldest request", slug, len(b.buffers[slug]))
+		b.buffers[slug] = b.buffers[slug][1:] // Drop oldest
+	}
 
 	b.buffers[slug] = append(b.buffers[slug], req)
 
@@ -545,17 +675,16 @@ func handleWebhook(c *fiber.Ctx) error {
 		return c.Status(410).SendString("Endpoint expired")
 	}
 
-	// Check quota from cache (fail-open on errors for availability)
-	quota, err := quotaCache.Check(c.Context(), slug)
+	// Check and refresh quota cache (fail-open on errors for availability)
+	_, err = quotaCache.Check(c.Context(), slug)
 	if err != nil {
 		log.Printf("Quota check failed for %s, allowing request: %v", slug, err)
-	} else if quota != nil && !quota.IsUnlimited && quota.Remaining <= 0 {
-		return c.Status(429).SendString("Request limit exceeded")
 	}
 
-	// Decrement local quota counter
-	if quota != nil && !quota.IsUnlimited && quota.Remaining > 0 {
-		quotaCache.Decrement(slug)
+	// Atomically check quota and decrement if allowed
+	// This prevents the race condition where multiple goroutines check > 0 then all decrement
+	if !quotaCache.CheckAndDecrement(slug) {
+		return c.Status(429).SendString("Request limit exceeded")
 	}
 
 	// Collect headers

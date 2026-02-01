@@ -4,6 +4,7 @@
  * Index documentation:
  * - users.by_email: Lookup user by OAuth email during authentication
  * - users.by_polar_customer: Find user when processing Polar webhooks
+ * - users.by_period_end: Find users with expired billing periods for reset cron
  * - apiKeys.by_key_hash: Validate API keys in O(1) time
  * - apiKeys.by_user: List API keys for a user's settings page
  * - endpoints.by_slug: Resolve endpoint from webhook URL path
@@ -45,7 +46,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_email", ["email"])
-    .index("by_polar_customer", ["polarCustomerId"]),
+    .index("by_polar_customer", ["polarCustomerId"])
+    .index("by_period_end", ["periodEnd"]),
 
   apiKeys: defineTable({
     userId: v.id("users"),

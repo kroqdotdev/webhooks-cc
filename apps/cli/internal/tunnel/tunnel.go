@@ -67,6 +67,19 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 		return nil, fmt.Errorf("invalid request path: %w", err)
 	}
 
+	// Append query parameters from the original request
+	if len(req.QueryParams) > 0 {
+		parsedTarget, parseErr := url.Parse(targetURL)
+		if parseErr == nil {
+			q := parsedTarget.Query()
+			for key, value := range req.QueryParams {
+				q.Set(key, value)
+			}
+			parsedTarget.RawQuery = q.Encode()
+			targetURL = parsedTarget.String()
+		}
+	}
+
 	// Create the forwarded request
 	httpReq, err := http.NewRequest(req.Method, targetURL, bytes.NewBufferString(req.Body))
 	if err != nil {
@@ -95,7 +108,8 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	// Count bytes without allocating memory for the body
+	n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
 		return &ForwardResult{
 			Success:  false,
@@ -108,7 +122,7 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 		Success:    true,
 		StatusCode: resp.StatusCode,
 		Duration:   time.Since(start),
-		BodySize:   len(body),
+		BodySize:   int(n),
 	}, nil
 }
 

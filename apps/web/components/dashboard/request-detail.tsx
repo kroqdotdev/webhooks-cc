@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Copy, Check } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
@@ -31,6 +31,11 @@ function formatBody(body: string, contentType?: string): string {
  * Escapes a string for use inside shell double quotes.
  * In double-quoted strings, bash interprets: \ " ` $ and newlines.
  * This escapes those characters to prevent shell injection in curl commands.
+ *
+ * Note: Newlines and carriage returns are replaced with literal \n and \r
+ * for display purposes. The curl command will send these as literals, not
+ * as control characters. For exact reproduction of bodies with newlines,
+ * users should use the Replay feature instead.
  */
 function escapeForShellDoubleQuotes(str: string): string {
   return str
@@ -51,13 +56,18 @@ function escapeForShellSingleQuotes(str: string): string {
   return str.replace(/'/g, "'\\''");
 }
 
+/** Valid HTTP methods - alphanumeric only to prevent shell injection */
+const VALID_HTTP_METHOD = /^[A-Z]+$/;
+
 /**
  * Generates a curl command that reproduces the captured request.
  * Skips host (set by curl), content-length (calculated by curl),
  * and connection (managed by curl) headers to avoid conflicts.
  */
 function generateCurlCommand(request: Request): string {
-  const parts = [`curl -X ${request.method}`];
+  // Validate method is alphanumeric to prevent shell injection
+  const safeMethod = VALID_HTTP_METHOD.test(request.method) ? request.method : "GET";
+  const parts = [`curl -X ${safeMethod}`];
   for (const [key, value] of Object.entries(request.headers)) {
     if (!SKIP_HEADERS_FOR_CURL.includes(key.toLowerCase())) {
       const safeKey = escapeForShellDoubleQuotes(key);
@@ -68,7 +78,9 @@ function generateCurlCommand(request: Request): string {
   if (request.body) {
     parts.push(`-d '${escapeForShellSingleQuotes(request.body)}'`);
   }
-  let url = `${WEBHOOK_BASE_URL}${request.path}`;
+  // Ensure path starts with / and normalize
+  const normalizedPath = request.path.startsWith("/") ? request.path : `/${request.path}`;
+  let url = `${WEBHOOK_BASE_URL}${normalizedPath}`;
   const queryString = new URLSearchParams(request.queryParams).toString();
   if (queryString) url += `?${queryString}`;
   parts.push(`"${escapeForShellDoubleQuotes(url)}"`);
@@ -80,12 +92,25 @@ type Tab = "body" | "headers" | "query" | "raw";
 export function RequestDetail({ request }: RequestDetailProps) {
   const [tab, setTab] = useState<Tab>("body");
   const [copied, setCopied] = useState<string | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = async (text: string, key: string) => {
     const success = await copyToClipboard(text);
     if (success) {
       setCopied(key);
-      setTimeout(() => setCopied(null), 2000);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => setCopied(null), 2000);
     }
   };
 

@@ -27,6 +27,20 @@ const DEFAULT_TIMEOUT = 30000;
 const MIN_POLL_INTERVAL = 10;
 const MAX_POLL_INTERVAL = 60000;
 
+/**
+ * Error thrown when an API request fails with a specific HTTP status code.
+ * Allows callers to distinguish between different error types.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    message: string
+  ) {
+    super(`API error (${statusCode}): ${message}`);
+    this.name = "ApiError";
+  }
+}
+
 // Validates path segments to prevent traversal attacks (e.g., "../admin")
 const SAFE_PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_-]+$/;
 
@@ -77,7 +91,14 @@ export class WebhooksCC {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`API error (${response.status}): ${error}`);
+        // Truncate error to prevent potential sensitive data leakage in logs
+        const sanitizedError = error.length > 200 ? error.slice(0, 200) + "..." : error;
+        throw new ApiError(response.status, sanitizedError);
+      }
+
+      // Handle empty responses (204 No Content)
+      if (response.status === 204 || response.headers.get("content-length") === "0") {
+        return undefined as T;
       }
 
       // Validate Content-Type before parsing JSON
@@ -176,8 +197,25 @@ export class WebhooksCC {
           if (matched) {
             return matched;
           }
-        } catch {
-          // Continue polling without updating lastChecked to avoid missing requests
+        } catch (error) {
+          // Throw on non-transient errors - don't continue polling with invalid credentials
+          if (error instanceof ApiError) {
+            if (error.statusCode === 401) {
+              throw new Error("Authentication failed: invalid or expired API key");
+            }
+            if (error.statusCode === 403) {
+              throw new Error("Access denied: insufficient permissions for this endpoint");
+            }
+            if (error.statusCode === 404) {
+              throw new Error(`Endpoint "${endpointSlug}" not found`);
+            }
+            // Continue polling only for transient errors (5xx)
+            if (error.statusCode < 500) {
+              throw error;
+            }
+          }
+          // Continue polling for transient errors (network issues, 5xx) without updating lastChecked
+          // to avoid missing requests during temporary issues
         }
 
         await sleep(safePollInterval);

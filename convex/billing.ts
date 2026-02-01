@@ -147,10 +147,11 @@ export const checkPeriodResets = internalMutation({
     const now = Date.now();
     let processed = 0;
 
-    // Find pro users whose period has ended
+    // Find users whose period has ended using the index for efficient range query
+    // Note: The index only returns users where periodEnd is defined AND < now
     const proUsers = await ctx.db
       .query("users")
-      .filter((q) => q.and(q.neq(q.field("periodEnd"), undefined), q.lt(q.field("periodEnd"), now)))
+      .withIndex("by_period_end", (q) => q.lt("periodEnd", now))
       .take(100);
 
     for (const user of proUsers) {
