@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Play } from "lucide-react";
+import { SKIP_HEADERS_FOR_REPLAY } from "@/lib/constants";
 
 /** Props for the ReplayDialog component. */
 interface ReplayDialogProps {
@@ -72,10 +73,9 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
     setErrorMsg("");
 
     try {
-      const skipHeaders = ["host", "content-length", "connection", "accept-encoding"];
       const filteredHeaders: Record<string, string> = {};
       for (const [key, value] of Object.entries(headers)) {
-        if (!skipHeaders.includes(key.toLowerCase())) {
+        if (!SKIP_HEADERS_FOR_REPLAY.includes(key.toLowerCase())) {
           filteredHeaders[key] = value;
         }
       }

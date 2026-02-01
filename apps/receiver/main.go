@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -31,6 +33,7 @@ const (
 	endpointCacheTTL      = 60 * time.Second // How long to cache endpoint info
 	batchFlushInterval    = 100 * time.Millisecond
 	batchMaxSize          = 50 // Flush when batch reaches this size
+	shutdownTimeout       = 10 * time.Second
 )
 
 // BufferedRequest holds request data waiting to be sent to Convex.
@@ -89,21 +92,32 @@ type EndpointInfo struct {
 	LastSync     time.Time
 }
 
+// inFlightRequest tracks an in-progress cache refresh to prevent thundering herd.
+type inFlightRequest struct {
+	done   chan struct{}
+	result any
+	err    error
+}
+
 // EndpointCache caches endpoint info to return mock responses immediately.
+// Uses single-flight pattern to prevent thundering herd on cache refresh.
 type EndpointCache struct {
-	mu      sync.RWMutex
-	entries map[string]*EndpointInfo
-	ttl     time.Duration
+	mu       sync.RWMutex
+	entries  map[string]*EndpointInfo
+	inFlight map[string]*inFlightRequest
+	ttl      time.Duration
 }
 
 func NewEndpointCache(ttl time.Duration) *EndpointCache {
 	return &EndpointCache{
-		entries: make(map[string]*EndpointInfo),
-		ttl:     ttl,
+		entries:  make(map[string]*EndpointInfo),
+		inFlight: make(map[string]*inFlightRequest),
+		ttl:      ttl,
 	}
 }
 
 func (c *EndpointCache) Get(ctx context.Context, slug string) (*EndpointInfo, error) {
+	// Fast path: check if we have a valid cached entry
 	c.mu.RLock()
 	entry, exists := c.entries[slug]
 	isStale := !exists || time.Since(entry.LastSync) > c.ttl
@@ -113,8 +127,50 @@ func (c *EndpointCache) Get(ctx context.Context, slug string) (*EndpointInfo, er
 		return entry, nil
 	}
 
-	// Refresh from Convex
+	// Slow path: need to refresh - use single-flight pattern
+	c.mu.Lock()
+	// Double-check after acquiring write lock
+	entry, exists = c.entries[slug]
+	isStale = !exists || time.Since(entry.LastSync) > c.ttl
+	if !isStale && entry != nil {
+		c.mu.Unlock()
+		return entry, nil
+	}
+
+	// Check if another goroutine is already fetching this slug
+	if req, ok := c.inFlight[slug]; ok {
+		c.mu.Unlock()
+		// Wait for the in-flight request to complete
+		<-req.done
+		if req.err != nil {
+			// On error, return stale cache if available
+			if exists && entry != nil {
+				return entry, nil
+			}
+			return nil, req.err
+		}
+		return req.result.(*EndpointInfo), nil
+	}
+
+	// We're the first - create in-flight tracker
+	req := &inFlightRequest{done: make(chan struct{})}
+	c.inFlight[slug] = req
+	c.mu.Unlock()
+
+	// Fetch from Convex
 	newEntry, err := fetchEndpointInfo(ctx, slug)
+
+	// Update cache and notify waiters
+	c.mu.Lock()
+	delete(c.inFlight, slug)
+	if err == nil && newEntry != nil {
+		c.entries[slug] = newEntry
+	}
+	req.result = newEntry
+	req.err = err
+	c.mu.Unlock()
+	close(req.done)
+
 	if err != nil {
 		if exists && entry != nil {
 			log.Printf("Endpoint info refresh failed for %s, using stale cache: %v", slug, err)
@@ -123,28 +179,28 @@ func (c *EndpointCache) Get(ctx context.Context, slug string) (*EndpointInfo, er
 		return nil, err
 	}
 
-	c.mu.Lock()
-	c.entries[slug] = newEntry
-	c.mu.Unlock()
-
 	return newEntry, nil
 }
 
 // QuotaCache provides thread-safe caching of user quota information.
+// Uses single-flight pattern to prevent thundering herd on cache refresh.
 type QuotaCache struct {
-	mu      sync.RWMutex
-	entries map[string]*QuotaEntry
-	ttl     time.Duration
+	mu       sync.RWMutex
+	entries  map[string]*QuotaEntry
+	inFlight map[string]*inFlightRequest
+	ttl      time.Duration
 }
 
 func NewQuotaCache(ttl time.Duration) *QuotaCache {
 	return &QuotaCache{
-		entries: make(map[string]*QuotaEntry),
-		ttl:     ttl,
+		entries:  make(map[string]*QuotaEntry),
+		inFlight: make(map[string]*inFlightRequest),
+		ttl:      ttl,
 	}
 }
 
 func (c *QuotaCache) Check(ctx context.Context, slug string) (*QuotaEntry, error) {
+	// Fast path: check if we have a valid cached entry
 	c.mu.RLock()
 	entry, exists := c.entries[slug]
 	isStale := !exists || time.Since(entry.LastSync) > c.ttl
@@ -154,7 +210,50 @@ func (c *QuotaCache) Check(ctx context.Context, slug string) (*QuotaEntry, error
 		return entry, nil
 	}
 
-	newEntry, err := c.refresh(ctx, slug)
+	// Slow path: need to refresh - use single-flight pattern
+	c.mu.Lock()
+	// Double-check after acquiring write lock
+	entry, exists = c.entries[slug]
+	isStale = !exists || time.Since(entry.LastSync) > c.ttl
+	if !isStale && entry != nil {
+		c.mu.Unlock()
+		return entry, nil
+	}
+
+	// Check if another goroutine is already fetching this slug
+	if req, ok := c.inFlight[slug]; ok {
+		c.mu.Unlock()
+		// Wait for the in-flight request to complete
+		<-req.done
+		if req.err != nil {
+			// On error, return stale cache if available
+			if exists && entry != nil {
+				return entry, nil
+			}
+			return nil, req.err
+		}
+		if req.result == nil {
+			return nil, nil
+		}
+		return req.result.(*QuotaEntry), nil
+	}
+
+	// We're the first - create in-flight tracker
+	req := &inFlightRequest{done: make(chan struct{})}
+	c.inFlight[slug] = req
+	c.mu.Unlock()
+
+	// Fetch from Convex
+	newEntry, err := c.fetchAndStore(ctx, slug)
+
+	// Update cache and notify waiters
+	c.mu.Lock()
+	delete(c.inFlight, slug)
+	req.result = newEntry
+	req.err = err
+	c.mu.Unlock()
+	close(req.done)
+
 	if err != nil {
 		if exists && entry != nil {
 			log.Printf("Quota refresh failed for %s, using stale cache: %v", slug, err)
@@ -166,16 +265,7 @@ func (c *QuotaCache) Check(ctx context.Context, slug string) (*QuotaEntry, error
 	return newEntry, nil
 }
 
-func (c *QuotaCache) Decrement(slug string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if entry, exists := c.entries[slug]; exists && !entry.IsUnlimited {
-		entry.Remaining--
-	}
-}
-
-func (c *QuotaCache) refresh(ctx context.Context, slug string) (*QuotaEntry, error) {
+func (c *QuotaCache) fetchAndStore(ctx context.Context, slug string) (*QuotaEntry, error) {
 	resp, err := fetchQuota(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -203,9 +293,20 @@ func (c *QuotaCache) refresh(ctx context.Context, slug string) (*QuotaEntry, err
 	return entry, nil
 }
 
+func (c *QuotaCache) Decrement(slug string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if entry, exists := c.entries[slug]; exists && !entry.IsUnlimited {
+		entry.Remaining--
+	}
+}
+
 // RequestBatcher buffers requests per slug and flushes them in batches.
+// Tracks in-flight goroutines for graceful shutdown.
 type RequestBatcher struct {
 	mu       sync.Mutex
+	wg       sync.WaitGroup
 	buffers  map[string][]BufferedRequest
 	timers   map[string]*time.Timer
 	maxSize  int
@@ -221,8 +322,7 @@ func NewRequestBatcher(maxSize int, interval time.Duration) *RequestBatcher {
 	}
 }
 
-// Add adds a request to the buffer for a slug. Returns true if the buffer
-// was flushed synchronously due to reaching max size.
+// Add adds a request to the buffer for a slug.
 func (b *RequestBatcher) Add(slug string, req BufferedRequest) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -237,6 +337,8 @@ func (b *RequestBatcher) Add(slug string, req BufferedRequest) {
 
 	// Start or reset timer for this slug
 	if timer, exists := b.timers[slug]; exists {
+		// Stop returns false if timer already fired, but that's OK
+		// since the timer callback will just find an empty buffer
 		timer.Stop()
 	}
 	b.timers[slug] = time.AfterFunc(b.interval, func() {
@@ -265,8 +367,13 @@ func (b *RequestBatcher) flushLocked(slug string) {
 		delete(b.timers, slug)
 	}
 
+	// Track this goroutine for graceful shutdown
+	b.wg.Add(1)
+
 	// Send to Convex in background
 	go func() {
+		defer b.wg.Done()
+
 		ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
 		defer cancel()
 
@@ -295,6 +402,11 @@ func (b *RequestBatcher) FlushAll() {
 	for _, slug := range slugs {
 		b.Flush(slug)
 	}
+}
+
+// Wait blocks until all in-flight flush goroutines complete.
+func (b *RequestBatcher) Wait() {
+	b.wg.Wait()
 }
 
 var (
@@ -356,8 +468,41 @@ func main() {
 		port = "3001"
 	}
 
+	// Graceful shutdown handling
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-shutdownCh
+		log.Println("Shutdown signal received, flushing pending requests...")
+
+		// Flush all pending batches
+		requestBatcher.FlushAll()
+
+		// Wait for in-flight requests with timeout
+		done := make(chan struct{})
+		go func() {
+			requestBatcher.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			log.Println("All pending requests flushed successfully")
+		case <-time.After(shutdownTimeout):
+			log.Println("Shutdown timeout exceeded, some requests may be lost")
+		}
+
+		// Shutdown the server
+		if err := app.Shutdown(); err != nil {
+			log.Printf("Error during shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("Webhook receiver starting on :%s", port)
-	log.Fatal(app.Listen(":" + port))
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatalf("Server error: %v", err)
+	}
 }
 
 func realIP(c *fiber.Ctx) string {
@@ -400,7 +545,7 @@ func handleWebhook(c *fiber.Ctx) error {
 		return c.Status(410).SendString("Endpoint expired")
 	}
 
-	// Check quota from cache
+	// Check quota from cache (fail-open on errors for availability)
 	quota, err := quotaCache.Check(c.Context(), slug)
 	if err != nil {
 		log.Printf("Quota check failed for %s, allowing request: %v", slug, err)
