@@ -227,6 +227,73 @@ http.route({
       });
     }
 
+    // Validate each request in the batch (same validation as single /capture)
+    for (const req of body.requests) {
+      // Validate HTTP method
+      if (typeof req.method !== "string" || !ALLOWED_METHODS.has(req.method.toUpperCase())) {
+        return new Response(JSON.stringify({ error: "invalid_method" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate path
+      if (typeof req.path !== "string" || req.path.length > MAX_PATH_LENGTH) {
+        return new Response(JSON.stringify({ error: "invalid_path" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate IP address
+      if (typeof req.ip !== "string" || req.ip.length > MAX_IP_LENGTH) {
+        return new Response(JSON.stringify({ error: "invalid_ip" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate body size
+      if (typeof req.body === "string" && req.body.length > MAX_BODY_SIZE) {
+        return new Response(JSON.stringify({ error: "body_too_large" }), {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate headers count, structure, and values are all strings
+      if (!isStringRecord(req.headers) || Object.keys(req.headers).length > MAX_HEADERS) {
+        return new Response(JSON.stringify({ error: "invalid_headers" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate query params count, structure, and values are all strings
+      if (!isStringRecord(req.queryParams) || Object.keys(req.queryParams).length > MAX_QUERY_PARAMS) {
+        return new Response(JSON.stringify({ error: "invalid_query_params" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate receivedAt timestamp (must be within last 60 seconds to prevent backdating)
+      if (typeof req.receivedAt !== "number") {
+        return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const now = Date.now();
+      const sixtySecondsAgo = now - 60000;
+      if (req.receivedAt < sixtySecondsAgo || req.receivedAt > now + 5000) {
+        return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const result = await ctx.runMutation(internal.requests.captureBatch, body);
     return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },

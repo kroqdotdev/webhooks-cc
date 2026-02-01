@@ -13,8 +13,18 @@ export const WEBHOOK_BASE_URL = (() => {
   return value;
 })();
 
-/** Constructs the full webhook URL for a given endpoint slug. */
+/** Valid slug format: alphanumeric with hyphens/underscores, 1-50 chars */
+const SLUG_REGEX = /^[a-zA-Z0-9_-]{1,50}$/;
+
+/**
+ * Constructs the full webhook URL for a given endpoint slug.
+ * Validates the slug to prevent URL injection attacks.
+ * @throws Error if slug contains invalid characters
+ */
 export function getWebhookUrl(slug: string): string {
+  if (!SLUG_REGEX.test(slug)) {
+    throw new Error("Invalid slug: must contain only alphanumeric characters, hyphens, and underscores (1-50 chars)");
+  }
   return `${WEBHOOK_BASE_URL}/w/${slug}`;
 }
 
@@ -25,3 +35,10 @@ export function getWebhookUrl(slug: string): string {
  * - connection: curl manages connection lifecycle
  */
 export const SKIP_HEADERS_FOR_CURL: readonly string[] = ["host", "content-length", "connection"];
+
+/**
+ * Headers to omit when replaying requests.
+ * Extends SKIP_HEADERS_FOR_CURL with:
+ * - accept-encoding: let the HTTP client handle compression negotiation
+ */
+export const SKIP_HEADERS_FOR_REPLAY: readonly string[] = [...SKIP_HEADERS_FOR_CURL, "accept-encoding"];
