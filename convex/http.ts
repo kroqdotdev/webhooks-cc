@@ -43,22 +43,14 @@ async function secureCompare(a: string, b: string): Promise<boolean> {
   const algorithm = { name: "HMAC", hash: "SHA-256" };
 
   try {
-    const keyA = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(a),
-      algorithm,
-      false,
-      ["sign"]
-    );
+    const keyA = await crypto.subtle.importKey("raw", encoder.encode(a), algorithm, false, [
+      "sign",
+    ]);
     const sigA = await crypto.subtle.sign("HMAC", keyA, encoder.encode("compare"));
 
-    const keyB = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(b),
-      algorithm,
-      false,
-      ["sign"]
-    );
+    const keyB = await crypto.subtle.importKey("raw", encoder.encode(b), algorithm, false, [
+      "sign",
+    ]);
     const sigB = await crypto.subtle.sign("HMAC", keyB, encoder.encode("compare"));
 
     const arrA = new Uint8Array(sigA);
@@ -75,6 +67,172 @@ async function secureCompare(a: string, b: string): Promise<boolean> {
     return false;
   }
 }
+
+// HTTP endpoint for Go receiver to fetch quota information for rate limiting.
+// Returns remaining quota for a given slug, enabling the receiver to enforce
+// limits locally and avoid OCC conflicts from concurrent user doc reads.
+// Usage: GET /quota?slug=xxx
+http.route({
+  path: "/quota",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    // Verify shared secret from Go receiver
+    const authHeader = request.headers.get("Authorization");
+    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
+
+    if (!expectedSecret) {
+      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
+      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const isValid = await secureCompare(providedSecret, expectedSecret);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Extract slug from query parameter
+    const url = new URL(request.url);
+    const slug = url.searchParams.get("slug");
+
+    if (!slug || !SLUG_REGEX.test(slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Look up endpoint and user quota
+    const result = await ctx.runQuery(internal.requests.getQuota, { slug });
+
+    return new Response(JSON.stringify(result), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
+// HTTP endpoint for Go receiver to get endpoint info for caching.
+// Returns endpoint details including mock response configuration.
+// Usage: GET /endpoint-info?slug=xxx
+http.route({
+  path: "/endpoint-info",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    // Verify shared secret from Go receiver
+    const authHeader = request.headers.get("Authorization");
+    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
+
+    if (!expectedSecret) {
+      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
+      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const isValid = await secureCompare(providedSecret, expectedSecret);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Extract slug from query parameter
+    const url = new URL(request.url);
+    const slug = url.searchParams.get("slug");
+
+    if (!slug || !SLUG_REGEX.test(slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Get endpoint info
+    const result = await ctx.runQuery(internal.requests.getEndpointInfo, { slug });
+
+    return new Response(JSON.stringify(result), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
+// HTTP endpoint for Go receiver to capture webhook requests in batches.
+// Accepts an array of requests for a single slug.
+// Usage: POST /capture-batch
+http.route({
+  path: "/capture-batch",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    // Verify shared secret from Go receiver
+    const authHeader = request.headers.get("Authorization");
+    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
+
+    if (!expectedSecret) {
+      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
+      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const isValid = await secureCompare(providedSecret, expectedSecret);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate slug format
+    if (typeof body.slug !== "string" || !SLUG_REGEX.test(body.slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate requests array
+    if (!Array.isArray(body.requests) || body.requests.length === 0) {
+      return new Response(JSON.stringify({ error: "invalid_requests" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Limit batch size to prevent timeout
+    if (body.requests.length > 100) {
+      return new Response(JSON.stringify({ error: "batch_too_large" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await ctx.runMutation(internal.requests.captureBatch, body);
+    return new Response(JSON.stringify(result), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
 
 // HTTP endpoint for Go receiver to capture webhook requests
 // SECURITY: This endpoint REQUIRES a shared secret to prevent unauthorized access.
@@ -98,9 +256,7 @@ http.route({
     }
 
     // Verify the authorization header matches the expected secret (constant-time comparison)
-    const providedSecret = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : "";
+    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
     const isValid = await secureCompare(providedSecret, expectedSecret);
     if (!isValid) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -160,10 +316,7 @@ http.route({
     }
 
     // Validate headers count, structure, and values are all strings
-    if (
-      !isStringRecord(body.headers) ||
-      Object.keys(body.headers).length > MAX_HEADERS
-    ) {
+    if (!isStringRecord(body.headers) || Object.keys(body.headers).length > MAX_HEADERS) {
       return new Response(JSON.stringify({ error: "invalid_headers" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },

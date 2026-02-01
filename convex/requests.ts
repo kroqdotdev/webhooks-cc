@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { query, internalMutation } from "./_generated/server";
+import { query, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 // Internal mutation - only called from the HTTP action in http.ts
 export const capture = internalMutation({
@@ -29,20 +30,9 @@ export const capture = internalMutation({
       return { error: "expired" };
     }
 
-    // Check user limits if not ephemeral
-    if (endpoint.userId) {
-      const user = await ctx.db.get(endpoint.userId);
-      if (user && user.requestsUsed >= user.requestLimit) {
-        return { error: "limit_exceeded" };
-      }
-
-      // Increment usage - Convex mutations are already atomic/serializable
-      if (user) {
-        await ctx.db.patch(endpoint.userId, {
-          requestsUsed: user.requestsUsed + 1,
-        });
-      }
-    }
+    // Note: Quota limits are now enforced by the Go receiver via the quota cache.
+    // This avoids reading the user document here, preventing OCC conflicts when
+    // many concurrent webhooks hit the same user's endpoints.
 
     const contentType = args.headers["content-type"] || args.headers["Content-Type"];
     const size = args.body ? new TextEncoder().encode(args.body).length : 0;
@@ -61,6 +51,15 @@ export const capture = internalMutation({
       receivedAt: Date.now(),
     });
 
+    // Schedule usage increment to run immediately after this mutation commits.
+    // Scheduled mutations run sequentially, avoiding OCC conflicts when many
+    // concurrent requests hit the same user's endpoints.
+    if (endpoint.userId) {
+      await ctx.scheduler.runAfter(0, internal.requests.incrementUsage, {
+        userId: endpoint.userId,
+      });
+    }
+
     return {
       success: true,
       mockResponse: endpoint.mockResponse ?? {
@@ -69,6 +68,167 @@ export const capture = internalMutation({
         headers: {},
       },
     };
+  },
+});
+
+// Get quota information for a slug - used by Go receiver for rate limiting.
+// Returns remaining quota, limit, and period end for caching in the receiver.
+export const getQuota = internalQuery({
+  args: {
+    slug: v.string(),
+  },
+  handler: async (ctx, { slug }) => {
+    const endpoint = await ctx.db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+
+    if (!endpoint) {
+      return { error: "not_found" };
+    }
+
+    // Ephemeral endpoints or endpoints without a user are unlimited
+    if (endpoint.isEphemeral || !endpoint.userId) {
+      return {
+        userId: null,
+        remaining: -1,
+        limit: -1,
+        periodEnd: null,
+      };
+    }
+
+    const user = await ctx.db.get(endpoint.userId);
+    if (!user) {
+      // User was deleted but endpoint still exists - treat as unlimited
+      return {
+        userId: null,
+        remaining: -1,
+        limit: -1,
+        periodEnd: null,
+      };
+    }
+
+    return {
+      userId: endpoint.userId,
+      remaining: Math.max(0, user.requestLimit - user.requestsUsed),
+      limit: user.requestLimit,
+      periodEnd: user.periodEnd ?? null,
+    };
+  },
+});
+
+// Increment user's request usage counter.
+// Called via scheduler from capture to avoid OCC conflicts.
+// Supports batch increments via the count parameter.
+export const incrementUsage = internalMutation({
+  args: {
+    userId: v.id("users"),
+    count: v.optional(v.number()),
+  },
+  handler: async (ctx, { userId, count = 1 }) => {
+    const user = await ctx.db.get(userId);
+    if (user) {
+      await ctx.db.patch(userId, {
+        requestsUsed: user.requestsUsed + count,
+      });
+    }
+  },
+});
+
+// Get endpoint info for caching in Go receiver.
+// Returns endpoint details including mock response configuration.
+export const getEndpointInfo = internalQuery({
+  args: {
+    slug: v.string(),
+  },
+  handler: async (ctx, { slug }) => {
+    const endpoint = await ctx.db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+
+    if (!endpoint) {
+      return { error: "not_found" as const };
+    }
+
+    return {
+      endpointId: endpoint._id,
+      userId: endpoint.userId ?? null,
+      isEphemeral: endpoint.isEphemeral ?? false,
+      expiresAt: endpoint.expiresAt ?? null,
+      mockResponse: endpoint.mockResponse ?? {
+        status: 200,
+        body: "OK",
+        headers: {},
+      },
+    };
+  },
+});
+
+// Batch capture mutation for high-throughput webhook ingestion.
+// Accepts an array of requests for a single slug and inserts them all at once.
+// This reduces OCC conflicts by batching multiple requests into one mutation.
+export const captureBatch = internalMutation({
+  args: {
+    slug: v.string(),
+    requests: v.array(
+      v.object({
+        method: v.string(),
+        path: v.string(),
+        headers: v.record(v.string(), v.string()),
+        body: v.optional(v.string()),
+        queryParams: v.record(v.string(), v.string()),
+        ip: v.string(),
+        receivedAt: v.number(),
+      })
+    ),
+  },
+  handler: async (ctx, { slug, requests }) => {
+    // Find endpoint
+    const endpoint = await ctx.db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+
+    if (!endpoint) {
+      return { error: "not_found", inserted: 0 };
+    }
+
+    // Check if expired
+    if (endpoint.expiresAt && endpoint.expiresAt < Date.now()) {
+      return { error: "expired", inserted: 0 };
+    }
+
+    // Insert all requests
+    let inserted = 0;
+    for (const req of requests) {
+      const contentType = req.headers["content-type"] || req.headers["Content-Type"];
+      const size = req.body ? new TextEncoder().encode(req.body).length : 0;
+
+      await ctx.db.insert("requests", {
+        endpointId: endpoint._id,
+        method: req.method,
+        path: req.path,
+        headers: req.headers,
+        body: req.body,
+        queryParams: req.queryParams,
+        contentType,
+        ip: req.ip,
+        size,
+        receivedAt: req.receivedAt,
+      });
+      inserted++;
+    }
+
+    // Schedule single usage increment for the entire batch
+    if (endpoint.userId && inserted > 0) {
+      await ctx.scheduler.runAfter(0, internal.requests.incrementUsage, {
+        userId: endpoint.userId,
+        count: inserted,
+      });
+    }
+
+    return { success: true, inserted };
   },
 });
 
