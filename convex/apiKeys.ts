@@ -1,18 +1,29 @@
+/**
+ * @fileoverview API key management for programmatic access to webhooks.cc.
+ *
+ * Security design:
+ * - Keys use nanoid with a custom alphabet to avoid modulo bias
+ * - Only the SHA-256 hash is stored; the plaintext key is shown once at creation
+ * - Keys use prefix "whcc_" for identification; first 12 chars stored for display
+ * - Validation uses the hash index for O(1) lookup
+ */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { customAlphabet } from "nanoid";
 
-// Generate unbiased random API key body using nanoid (no modulo bias)
+// Generate unbiased random API key using nanoid (avoids modulo bias from Math.random)
 const generateApiKeyBody = customAlphabet(
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
   32
 );
 
+/** Generates a new API key with the whcc_ prefix. */
 function generateApiKey(): string {
   return `whcc_${generateApiKeyBody()}`;
 }
 
+/** Produces a SHA-256 hash of the API key for secure storage. */
 async function hashKey(key: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(key);
@@ -85,7 +96,10 @@ export const revoke = mutation({
   },
 });
 
-// Validate an API key (internal use only - called from HTTP actions)
+/**
+ * Validates an API key and updates its last-used timestamp.
+ * Internal use only - called from HTTP actions after extracting the key from headers.
+ */
 export const validate = internalMutation({
   args: {
     key: v.string(),

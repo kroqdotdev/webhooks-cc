@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Billing and subscription management via Polar.sh webhooks.
+ *
+ * Period reset logic:
+ * - Pro users: Period aligns with Polar subscription (typically monthly)
+ * - Free users: Rolling 30-day period, reset when exceeded
+ * - checkPeriodResets runs daily via cron to process resets
+ *
+ * Downgrade flow:
+ * - User cancels -> cancelAtPeriodEnd set to true
+ * - At period end, checkPeriodResets downgrades to free tier
+ * - Request limits reset, subscription fields cleared
+ */
 import { v } from "convex/values";
 import { action, internalMutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
@@ -116,7 +129,18 @@ export const handleWebhook = internalMutation({
   },
 });
 
-// Check and reset billing periods (run daily via cron)
+/**
+ * Resets billing periods and processes subscription downgrades.
+ *
+ * For pro users whose period ended:
+ * - If cancelAtPeriodEnd is true, downgrades to free tier
+ * - Otherwise, starts a new billing period and resets usage
+ *
+ * For free users whose period ended:
+ * - Resets requestsUsed to 0 and starts a new 30-day period
+ *
+ * Processes up to 100 users per run to avoid timeout.
+ */
 export const checkPeriodResets = internalMutation({
   args: {},
   handler: async (ctx) => {

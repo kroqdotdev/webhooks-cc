@@ -1,3 +1,16 @@
+/**
+ * @fileoverview webhooks.cc SDK client for programmatic webhook management.
+ *
+ * @example
+ * ```typescript
+ * const client = new WebhooksCC({ apiKey: 'whcc_...' });
+ * const endpoint = await client.endpoints.create({ name: 'My Webhook' });
+ * const request = await client.requests.waitFor(endpoint.slug, {
+ *   timeout: 10000,
+ *   match: (r) => r.method === 'POST'
+ * });
+ * ```
+ */
 import type {
   ClientOptions,
   Endpoint,
@@ -10,13 +23,17 @@ import type {
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_TIMEOUT = 30000;
 
-// Poll interval bounds to prevent DoS via busy loops or excessive delays
-const MIN_POLL_INTERVAL = 10; // ms - prevent busy loops
-const MAX_POLL_INTERVAL = 60000; // ms - 1 minute max
+// Poll interval bounds: 10ms minimum prevents busy loops, 60s maximum prevents stale connections
+const MIN_POLL_INTERVAL = 10;
+const MAX_POLL_INTERVAL = 60000;
 
-// Validates that a slug/ID contains only safe characters to prevent path traversal
+// Validates path segments to prevent traversal attacks (e.g., "../admin")
 const SAFE_PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_-]+$/;
 
+/**
+ * Validates that a URL path segment contains only safe characters.
+ * Prevents path traversal attacks by rejecting "..", "/", and special characters.
+ */
 function validatePathSegment(segment: string, name: string): void {
   if (!SAFE_PATH_SEGMENT_REGEX.test(segment)) {
     throw new Error(
@@ -25,6 +42,13 @@ function validatePathSegment(segment: string, name: string): void {
   }
 }
 
+/**
+ * Client for the webhooks.cc API.
+ *
+ * Provides methods to create endpoints, list captured requests, and wait
+ * for incoming webhooks. Handles authentication, request signing, and
+ * response validation.
+ */
 export class WebhooksCC {
   private apiKey: string;
   private baseUrl: string;
@@ -111,23 +135,34 @@ export class WebhooksCC {
       return this.request<Request>("GET", `/requests/${requestId}`);
     },
 
+    /**
+     * Polls for incoming requests until one matches or timeout expires.
+     *
+     * Fetches requests that arrived since the last successful check. On API
+     * errors, continues polling without updating the timestamp to avoid
+     * missing requests during transient failures.
+     *
+     * @param endpointSlug - Endpoint to monitor
+     * @param options - Timeout, poll interval, and optional match filter
+     * @returns First matching request, or first request if no match filter
+     * @throws Error if timeout expires or max iterations (10000) reached
+     */
     waitFor: async (endpointSlug: string, options: WaitForOptions = {}): Promise<Request> => {
       validatePathSegment(endpointSlug, "endpointSlug");
       const { timeout = 30000, pollInterval = 500, match } = options;
-      // Clamp pollInterval to safe bounds to prevent DoS via busy loops (0/negative) or excessive delays
+      // Clamp pollInterval to safe bounds
       const safePollInterval = Math.max(
         MIN_POLL_INTERVAL,
         Math.min(MAX_POLL_INTERVAL, pollInterval)
       );
       const start = Date.now();
       let lastChecked = 0;
-      // Maximum iterations to prevent unbounded resource consumption
       const MAX_ITERATIONS = 10000;
       let iterations = 0;
 
       while (Date.now() - start < timeout && iterations < MAX_ITERATIONS) {
         iterations++;
-        const checkTime = Date.now(); // Capture before the request
+        const checkTime = Date.now();
 
         try {
           const requests = await this.requests.list(endpointSlug, {
@@ -135,15 +170,14 @@ export class WebhooksCC {
             limit: 100,
           });
 
-          lastChecked = checkTime; // Only update on success
+          lastChecked = checkTime;
 
           const matched = match ? requests.find(match) : requests[0];
           if (matched) {
             return matched;
           }
         } catch {
-          // Don't update lastChecked on failure, but continue polling
-          // This ensures we don't miss requests if the API call fails temporarily
+          // Continue polling without updating lastChecked to avoid missing requests
         }
 
         await sleep(safePollInterval);
@@ -157,6 +191,7 @@ export class WebhooksCC {
   };
 }
 
+/** Returns a promise that resolves after the specified milliseconds. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

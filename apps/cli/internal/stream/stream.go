@@ -1,3 +1,6 @@
+// Package stream provides Server-Sent Events (SSE) connectivity for real-time
+// webhook notifications. It maintains a persistent connection to the webhooks.cc
+// API and delivers captured requests as they arrive.
 package stream
 
 import (
@@ -25,14 +28,20 @@ var debugLog = func() func(format string, args ...any) {
 	return func(format string, args ...any) {} // no-op
 }()
 
+// Stream manages a Server-Sent Events connection to receive webhook notifications.
+// It handles connection timeouts, reconnection, and SSE message parsing.
 type Stream struct {
 	endpointSlug string
 	baseURL      string
 	token        string
 }
 
+// RequestHandler processes captured webhook requests as they arrive.
+// The tunnel package implements this to forward requests to localhost.
 type RequestHandler func(req *types.CapturedRequest)
 
+// New creates a Stream that listens for webhooks on the given endpoint.
+// The token authenticates with the webhooks.cc API.
 func New(endpointSlug, baseURL, token string) *Stream {
 	return &Stream{
 		endpointSlug: endpointSlug,
@@ -152,6 +161,7 @@ func FormatRequest(req *types.CapturedRequest) string {
 	)
 }
 
+// colorMethod returns the method string with ANSI color codes for terminal display.
 func colorMethod(method string) string {
 	// ANSI colors for methods
 	colors := map[string]string{
@@ -172,6 +182,7 @@ func colorMethod(method string) string {
 	return fmt.Sprintf("%s%s%s", color, method, reset)
 }
 
+// formatBytes converts a byte count to a human-readable string (e.g., "1.5kb").
 func formatBytes(size int) string {
 	if size < 1024 {
 		return fmt.Sprintf("%db", size)

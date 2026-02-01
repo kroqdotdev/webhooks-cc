@@ -1,3 +1,12 @@
+// Package main provides the whk command-line tool for webhooks.cc.
+// Commands:
+//   - auth: Login, logout, check authentication status
+//   - create: Create a new webhook endpoint
+//   - list: List your endpoints
+//   - delete: Delete an endpoint by slug
+//   - tunnel: Forward webhooks to localhost
+//   - listen: Stream incoming requests to terminal
+//   - replay: Resend a captured request to a target URL
 package main
 
 import (

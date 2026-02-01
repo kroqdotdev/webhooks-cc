@@ -12,9 +12,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Play } from "lucide-react";
 
+/** Props for the ReplayDialog component. */
 interface ReplayDialogProps {
+  /** HTTP method of the captured request (GET, POST, etc.) */
   method: string;
+  /** Headers from the captured request. */
   headers: Record<string, string>;
+  /** Request body, if present. */
   body?: string;
 }
 

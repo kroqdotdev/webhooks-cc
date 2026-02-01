@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Database schema for webhooks.cc.
+ *
+ * Index documentation:
+ * - users.by_email: Lookup user by OAuth email during authentication
+ * - users.by_polar_customer: Find user when processing Polar webhooks
+ * - apiKeys.by_key_hash: Validate API keys in O(1) time
+ * - apiKeys.by_user: List API keys for a user's settings page
+ * - endpoints.by_slug: Resolve endpoint from webhook URL path
+ * - endpoints.by_user: List endpoints for dashboard
+ * - endpoints.by_expires: Find expired ephemeral endpoints for cleanup cron
+ * - requests.by_endpoint_time: List requests for an endpoint, sorted by time
+ */
 import { defineSchema, defineTable } from "convex/server";
 import { authTables } from "@convex-dev/auth/server";
 import { v } from "convex/values";
@@ -11,10 +24,11 @@ export default defineSchema({
     name: v.optional(v.string()),
     image: v.optional(v.string()),
 
-    // Subscription
+    // Subscription: "free" | "pro" | "enterprise" (future)
     plan: v.union(v.literal("free"), v.literal("pro")),
     polarCustomerId: v.optional(v.string()),
     polarSubscriptionId: v.optional(v.string()),
+    // Subscription state: active (paying), canceled (downgrading), past_due (payment failed)
     subscriptionStatus: v.optional(
       v.union(v.literal("active"), v.literal("canceled"), v.literal("past_due"))
     ),

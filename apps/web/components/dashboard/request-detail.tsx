@@ -8,10 +8,13 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes, Request } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 
+/** Props for RequestDetail component. */
 interface RequestDetailProps {
+  /** The captured webhook request to display. */
   request: Request;
 }
 
+/** Formats the request body, pretty-printing JSON if detected. */
 function formatBody(body: string, contentType?: string): string {
   if (!body) return "(empty)";
   if (contentType?.includes("application/json") || body.startsWith("{") || body.startsWith("[")) {
@@ -24,8 +27,11 @@ function formatBody(body: string, contentType?: string): string {
   return body;
 }
 
-// Escape a string for safe use in shell double quotes
-// Handles: backslash, double quote, backtick, dollar sign, newlines
+/**
+ * Escapes a string for use inside shell double quotes.
+ * In double-quoted strings, bash interprets: \ " ` $ and newlines.
+ * This escapes those characters to prevent shell injection in curl commands.
+ */
 function escapeForShellDoubleQuotes(str: string): string {
   return str
     .replace(/\\/g, "\\\\")
@@ -36,12 +42,20 @@ function escapeForShellDoubleQuotes(str: string): string {
     .replace(/\r/g, "\\r");
 }
 
-// Escape a string for safe use in shell single quotes
-// Single quotes don't interpret anything, so we only need to handle the quote itself
+/**
+ * Escapes a string for use inside shell single quotes.
+ * Single-quoted strings interpret nothing except the quote itself.
+ * To include a literal quote: end the string, add escaped quote, restart: 'foo'\''bar'
+ */
 function escapeForShellSingleQuotes(str: string): string {
   return str.replace(/'/g, "'\\''");
 }
 
+/**
+ * Generates a curl command that reproduces the captured request.
+ * Skips host (set by curl), content-length (calculated by curl),
+ * and connection (managed by curl) headers to avoid conflicts.
+ */
 function generateCurlCommand(request: Request): string {
   const parts = [`curl -X ${request.method}`];
   for (const [key, value] of Object.entries(request.headers)) {

@@ -184,7 +184,9 @@ export function LiveDemo() {
               <button
                 onClick={() => curlCommand && handleCopy(curlCommand, "curl")}
                 className="neo-btn-outline py-2 px-4 self-start"
-                aria-label={copied === "curl" ? "Copied to clipboard" : "Copy curl command to clipboard"}
+                aria-label={
+                  copied === "curl" ? "Copied to clipboard" : "Copy curl command to clipboard"
+                }
               >
                 {copied === "curl" ? "Copied!" : <Copy className="h-5 w-5" />}
               </button>

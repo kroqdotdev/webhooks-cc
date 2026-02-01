@@ -20,10 +20,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
+/** Props for the EndpointSettingsDialog component. */
 interface EndpointSettingsDialogProps {
+  /** Convex document ID for the endpoint. */
   endpointId: Id<"endpoints">;
+  /** Display name of the endpoint. */
   endpointName: string;
+  /** URL-safe slug for the endpoint. */
   slug: string;
+  /** Current mock response configuration, if set. */
   mockResponse?: {
     status: number;
     body: string;

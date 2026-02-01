@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Webhook endpoint CRUD operations.
+ *
+ * Authorization rules (three-tier):
+ * 1. Ephemeral endpoints: Viewable by anyone (for live demo)
+ * 2. Owned endpoints: Only viewable/editable by the owner
+ * 3. Unowned non-ephemeral: Should not exist; denied if found
+ */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
@@ -136,7 +144,7 @@ export const update = mutation({
   },
 });
 
-// Maximum requests to delete in a single mutation to avoid timeouts
+// Delete at most 100 requests per mutation to avoid Convex timeout (10s limit)
 const DELETE_BATCH_SIZE = 100;
 
 export const remove = mutation({

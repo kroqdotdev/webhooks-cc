@@ -1,3 +1,6 @@
+// Package tunnel forwards captured webhook requests to local development servers.
+// It replays requests against a configurable target URL, filtering security-sensitive
+// headers to prevent credential leakage from captured webhooks.
 package tunnel
 
 import (
@@ -27,12 +30,16 @@ var sensitiveHeaders = map[string]bool{
 	"x-access-token":      true,
 }
 
+// Tunnel forwards captured webhook requests to a local target URL.
+// Filters security-sensitive headers (Authorization, Cookie, etc.)
+// before forwarding to prevent credential leakage.
 type Tunnel struct {
 	endpointSlug string
 	targetURL    string
 	httpClient   *http.Client
 }
 
+// New creates a Tunnel that forwards requests to the given target URL.
 func New(endpointSlug, targetURL string) *Tunnel {
 	return &Tunnel{
 		endpointSlug: endpointSlug,
@@ -105,6 +112,8 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 	}, nil
 }
 
+// ForwardResult contains the outcome of forwarding a request.
+// On failure, Success is false and Error describes what went wrong.
 type ForwardResult struct {
 	Success    bool
 	StatusCode int
@@ -113,6 +122,7 @@ type ForwardResult struct {
 	Error      string
 }
 
+// String returns a formatted status for terminal display.
 func (r *ForwardResult) String() string {
 	if !r.Success {
 		return fmt.Sprintf("FAILED: %s", r.Error)

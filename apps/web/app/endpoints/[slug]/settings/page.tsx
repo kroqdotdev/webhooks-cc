@@ -27,7 +27,7 @@ export default function EndpointSettingsPage() {
   const params = useParams();
   const router = useRouter();
   const rawSlug = params.slug;
-  const slug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug ?? "";
+  const slug = Array.isArray(rawSlug) ? rawSlug[0] : (rawSlug ?? "");
 
   const endpoint = useQuery(api.endpoints.getBySlug, slug ? { slug } : "skip");
   const updateEndpoint = useMutation(api.endpoints.update);

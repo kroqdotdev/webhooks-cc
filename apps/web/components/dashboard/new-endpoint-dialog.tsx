@@ -19,6 +19,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 
+/** Dialog for creating a new webhook endpoint with optional mock response configuration. */
 export function NewEndpointDialog() {
   const router = useRouter();
   const createEndpoint = useMutation(api.endpoints.create);
