@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@polar-sh/sdk": "^0.42.5",
     "nanoid": "^5.1.6"
   }
 }
