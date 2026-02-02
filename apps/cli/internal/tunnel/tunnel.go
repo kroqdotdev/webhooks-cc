@@ -106,7 +106,7 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 			Duration: time.Since(start),
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Count bytes without allocating memory for the body
 	n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodySize))
