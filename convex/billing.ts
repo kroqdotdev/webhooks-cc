@@ -16,12 +16,10 @@ import { v } from "convex/values";
 import { action, internalAction, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   FREE_REQUEST_LIMIT,
   PRO_REQUEST_LIMIT,
   BILLING_PERIOD_MS,
-  POLAR_API_URL,
 } from "./config";
 
 /**

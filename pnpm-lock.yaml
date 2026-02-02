@@ -11,6 +11,9 @@ importers:
       '@convex-dev/rate-limiter':
         specifier: ^0.3.2
         version: 0.3.2(convex@1.31.7(react@19.2.4))(react@19.2.4)
+      '@polar-sh/sdk':
+        specifier: ^0.34.2
+        version: 0.34.17
     devDependencies:
       '@auth/core':
         specifier: ^0.41.1
@@ -139,15 +142,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
-  convex:
-    dependencies:
-      '@polar-sh/sdk':
-        specifier: ^0.42.5
-        version: 0.42.5
-      nanoid:
-        specifier: ^5.1.6
-        version: 5.1.6
 
   packages/sdk:
     dependencies:
@@ -906,6 +900,15 @@ packages:
 
   '@panva/hkdf@1.2.1':
     resolution: {integrity: sha512-6oclG6Y3PiDFcoyk8srjLfVKyMfVCKJ27JwNPViuXziFpmdz+MZnZN/aKY0JGXgYuO/VghU0jcOAZgWXZ1Dmrw==}
+
+  '@polar-sh/sdk@0.34.17':
+    resolution: {integrity: sha512-+eJAAyyP4CAtMy9Hd6gaNXErjaH3KuTXJFv72kqlCCvv7SweBlM4U2+zpeYAZvd/YMRZq/c447f0a0DD2e7UEA==}
+    hasBin: true
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.5.0 <1.10.0'
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
 
   '@polar-sh/sdk@0.42.5':
     resolution: {integrity: sha512-GzC3/ElCtMO55+KeXwFTANlydZzw5qI3DU/F9vAFIsUKuegSmh+Xu03KCL+ct9/imJOvLUQucYhUSsNKqo2j2Q==}
@@ -3052,6 +3055,9 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
@@ -3597,6 +3603,11 @@ snapshots:
   '@oslojs/encoding@1.1.0': {}
 
   '@panva/hkdf@1.2.1': {}
+
+  '@polar-sh/sdk@0.34.17':
+    dependencies:
+      standardwebhooks: 1.0.0
+      zod: 3.25.76
 
   '@polar-sh/sdk@0.42.5':
     dependencies:
@@ -5898,5 +5909,7 @@ snapshots:
   zod-validation-error@4.0.2(zod@4.3.6):
     dependencies:
       zod: 4.3.6
+
+  zod@3.25.76: {}
 
   zod@4.3.6: {}

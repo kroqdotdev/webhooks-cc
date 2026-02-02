@@ -359,20 +359,20 @@ func (s *FileQuotaStore) writeQuotaFile(path string, quota *QuotaFile) error {
 	}
 
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return err
 	}
 
 	// Sync to disk before rename for durability
 	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return err
 	}
 
 	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return err
 	}
 
@@ -452,8 +452,11 @@ func isValidSlug(slug string) bool {
 		return false
 	}
 	for _, r := range slug {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_') {
+		isLower := r >= 'a' && r <= 'z'
+		isUpper := r >= 'A' && r <= 'Z'
+		isDigit := r >= '0' && r <= '9'
+		isSpecial := r == '-' || r == '_'
+		if !(isLower || isUpper || isDigit || isSpecial) {
 			return false
 		}
 	}
@@ -886,7 +889,7 @@ func fetchEndpointInfo(ctx context.Context, slug string) (*EndpointInfo, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch endpoint info: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
@@ -927,7 +930,7 @@ func callCheckPeriod(ctx context.Context, userID string) (*CheckPeriodResponse, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to call check-period: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
@@ -962,7 +965,7 @@ func fetchQuota(ctx context.Context, slug string) (*QuotaResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch quota: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
@@ -1007,7 +1010,7 @@ func callConvexBatch(ctx context.Context, slug string, requests []BufferedReques
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Convex batch: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
@@ -1015,7 +1018,7 @@ func callConvexBatch(ctx context.Context, slug string, requests []BufferedReques
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Convex batch returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("convex batch returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result CaptureResponse

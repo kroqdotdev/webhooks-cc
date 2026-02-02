@@ -262,7 +262,7 @@ function EmptyEndpoints() {
       <div className="text-center space-y-2">
         <h2 className="text-xl font-bold uppercase tracking-wide">No endpoints yet</h2>
         <p className="text-muted-foreground">
-          Click <span className="font-bold text-foreground">"New Endpoint"</span> above to get started!
+          Click <span className="font-bold text-foreground">&quot;New Endpoint&quot;</span> above to get started!
         </p>
       </div>
     </div>
