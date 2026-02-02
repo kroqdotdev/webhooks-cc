@@ -8,6 +8,166 @@ const http = httpRouter();
 // Auth HTTP routes for OAuth callbacks
 auth.addHttpRoutes(http);
 
+// Webhook signature tolerance (5 minutes)
+const WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
+
+/**
+ * Verify Polar webhook signature using standardwebhooks format.
+ * Uses Web Crypto API which is available in Convex runtime.
+ *
+ * Headers used:
+ * - webhook-id: Unique message ID
+ * - webhook-timestamp: Unix timestamp in seconds
+ * - webhook-signature: "v1,{base64-hmac-sha256}"
+ *
+ * Signature is computed as HMAC-SHA256 of "${msgId}.${timestamp}.${body}"
+ */
+async function verifyWebhookSignature(
+  body: string,
+  headers: Record<string, string>,
+  secret: string
+): Promise<{ verified: boolean; error?: string }> {
+  const msgId = headers["webhook-id"];
+  const msgTimestamp = headers["webhook-timestamp"];
+  const msgSignature = headers["webhook-signature"];
+
+  if (!msgId || !msgTimestamp || !msgSignature) {
+    return { verified: false, error: "Missing required webhook headers" };
+  }
+
+  // Verify timestamp is within tolerance
+  const timestamp = parseInt(msgTimestamp, 10);
+  if (isNaN(timestamp)) {
+    return { verified: false, error: "Invalid timestamp header" };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (now - timestamp > WEBHOOK_TOLERANCE_SECONDS) {
+    return { verified: false, error: "Message timestamp too old" };
+  }
+  if (timestamp > now + WEBHOOK_TOLERANCE_SECONDS) {
+    return { verified: false, error: "Message timestamp too new" };
+  }
+
+  // Convert secret string to bytes (matching Polar SDK behavior)
+  // The Polar SDK does: Buffer.from(secret, "utf-8") which just converts string to bytes
+  const encoder = new TextEncoder();
+  const secretBytes = encoder.encode(secret);
+
+  // Import the key for HMAC-SHA256
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  // Compute the signature: HMAC-SHA256 of "${msgId}.${timestamp}.${body}"
+  const toSign = encoder.encode(`${msgId}.${timestamp}.${body}`);
+  const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, toSign);
+
+  // Convert to base64
+  const computedSignature = btoa(
+    String.fromCharCode(...new Uint8Array(signatureBuffer))
+  );
+
+  // Parse the provided signatures (format: "v1,{sig1} v1,{sig2} ...")
+  const passedSignatures = msgSignature.split(" ");
+  for (const versionedSig of passedSignatures) {
+    const [version, signature] = versionedSig.split(",");
+    if (version !== "v1") continue;
+
+    // Constant-time comparison to prevent timing attacks
+    const encoder2 = new TextEncoder();
+    const sigA = encoder2.encode(signature);
+    const sigB = encoder2.encode(computedSignature);
+
+    if (sigA.length === sigB.length) {
+      let result = 0;
+      for (let i = 0; i < sigA.length; i++) {
+        result |= sigA[i] ^ sigB[i];
+      }
+      if (result === 0) {
+        return { verified: true };
+      }
+    }
+  }
+
+  return { verified: false, error: "No matching signature found" };
+}
+
+// Polar webhook endpoint for billing events
+http.route({
+  path: "/polar-webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.text();
+    const webhookSecret = process.env.POLAR_WEBHOOK_SECRET;
+
+    if (!webhookSecret) {
+      console.error("[polar-webhook] POLAR_WEBHOOK_SECRET is not configured");
+      return new Response(JSON.stringify({ error: "internal_error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Convert Headers to Record<string, string>
+    const headers: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      headers[key.toLowerCase()] = value;
+    });
+
+    // Verify webhook signature
+    const verification = await verifyWebhookSignature(body, headers, webhookSecret);
+    if (!verification.verified) {
+      console.error("[polar-webhook] Signature verification failed:", verification.error);
+      return new Response(JSON.stringify({ error: "invalid_signature" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Parse the webhook payload
+    let event;
+    try {
+      event = JSON.parse(body);
+    } catch {
+      console.error("[polar-webhook] Invalid JSON payload");
+      return new Response(JSON.stringify({ error: "invalid_payload" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!event.type || !event.data) {
+      console.error("[polar-webhook] Missing type or data in payload");
+      return new Response(JSON.stringify({ error: "invalid_payload" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Process the webhook event
+    try {
+      await ctx.runMutation(internal.billing.handleWebhook, {
+        event: event.type,
+        data: event.data,
+      });
+    } catch (error) {
+      console.error("[polar-webhook] Failed to process event:", error);
+      // Return 200 to prevent Polar from retrying - we've logged the error
+      // Retrying with the same data would just fail again
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
 // Allowed HTTP methods for webhook capture
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
@@ -117,7 +277,7 @@ http.route({
 
     if (!expectedSecret) {
       console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+      return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -165,7 +325,7 @@ http.route({
 
     if (!expectedSecret) {
       console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+      return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -234,7 +394,7 @@ http.route({
 
     if (!expectedSecret) {
       console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+      return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -282,7 +442,7 @@ http.route({
 
     if (!expectedSecret) {
       console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+      return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -427,7 +587,7 @@ http.route({
     // Fail closed: if secret is not configured, deny all requests
     if (!expectedSecret) {
       console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "server_misconfiguration" }), {
+      return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });

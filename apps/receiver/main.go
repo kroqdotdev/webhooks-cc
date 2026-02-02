@@ -39,6 +39,8 @@ const (
 	maxCacheEntries       = 10000 // Maximum cache entries before cleanup
 	cacheCleanupInterval  = 5 * time.Minute
 	quotaFileMaxAge       = 1 * time.Hour // Maximum age of quota files before cleanup
+	maxHeaderKeyLen       = 256           // Maximum length for mock response header keys
+	maxHeaderValueLen     = 8192          // Maximum length for mock response header values
 )
 
 // BufferedRequest holds request data waiting to be sent to Convex.
@@ -783,6 +785,9 @@ func realIP(c *fiber.Ctx) string {
 // the request for batch processing.
 func handleWebhook(c *fiber.Ctx) error {
 	slug := c.Params("slug")
+	if !isValidSlug(slug) {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid_slug"})
+	}
 	log.Printf("[handleWebhook] Processing request for slug=%s", slug)
 	path := c.Params("*")
 	if path == "" {
@@ -795,15 +800,15 @@ func handleWebhook(c *fiber.Ctx) error {
 	endpointInfo, err := endpointCache.Get(c.Context(), slug)
 	if err != nil {
 		log.Printf("Endpoint info fetch failed for %s: %v", slug, err)
-		return c.Status(500).SendString("Internal server error")
+		return c.Status(500).JSON(fiber.Map{"error": "internal_error"})
 	}
 	if endpointInfo == nil || endpointInfo.Error == "not_found" {
-		return c.Status(404).SendString("Endpoint not found")
+		return c.Status(404).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	// Check if expired
 	if endpointInfo.ExpiresAt != nil && *endpointInfo.ExpiresAt < time.Now().UnixMilli() {
-		return c.Status(410).SendString("Endpoint expired")
+		return c.Status(410).JSON(fiber.Map{"error": "expired"})
 	}
 
 	// Atomically check quota and decrement if allowed
@@ -811,14 +816,9 @@ func handleWebhook(c *fiber.Ctx) error {
 	quotaResult := quotaStore.GetAndDecrement(c.Context(), slug)
 	if !quotaResult.Allowed {
 		log.Printf("[handleWebhook] QUOTA_EXCEEDED for slug=%s retryAfter=%d", slug, quotaResult.RetryAfter)
-		if quotaResult.RetryAfter > 0 {
-			retryAfterSecs := (quotaResult.RetryAfter + 999) / 1000 // Round up to seconds
-			c.Set("Retry-After", fmt.Sprintf("%d", retryAfterSecs))
-		}
+		// Minimal 429 response - don't leak usage details to webhook senders
 		return c.Status(429).JSON(fiber.Map{
-			"error":      "quota_exceeded",
-			"retryAfter": quotaResult.RetryAfter,
-			"slug":       slug,
+			"error": "quota_exceeded",
 		})
 	}
 
@@ -847,8 +847,6 @@ func handleWebhook(c *fiber.Ctx) error {
 
 	// Return mock response immediately from cache
 	if endpointInfo.MockResponse != nil {
-		const maxHeaderKeyLen = 256
-		const maxHeaderValueLen = 8192
 		for key, value := range endpointInfo.MockResponse.Headers {
 			// Skip headers that exceed length limits
 			if len(key) > maxHeaderKeyLen || len(value) > maxHeaderValueLen {

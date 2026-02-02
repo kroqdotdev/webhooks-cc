@@ -16,11 +16,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import Link from "next/link";
-import { Trash2, Github } from "lucide-react";
+import { Trash2, Github, CheckCircle } from "lucide-react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { UpgradeButton } from "@/components/billing/upgrade-button";
+import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
+import { PastDueBanner } from "@/components/billing/past-due-banner";
 
 function UsageResetCountdown({ periodEnd }: { periodEnd: number }) {
   const [timeRemaining, setTimeRemaining] = useState<string>("");
@@ -44,6 +46,48 @@ function UsageResetCountdown({ periodEnd }: { periodEnd: number }) {
   return <span>{timeRemaining}</span>;
 }
 
+function UpgradeSuccessBanner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("upgraded") === "true") {
+      setShow(true);
+      // Remove the query parameter from URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete("upgraded");
+      router.replace(url.pathname, { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  if (!show) return null;
+
+  return (
+    <div className="rounded-md bg-green-500/10 border border-green-500/20 p-4 mb-4">
+      <div className="flex items-center gap-3">
+        <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+        <div>
+          <p className="text-sm font-medium text-green-500">
+            Welcome to Pro!
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Your subscription is now active. Enjoy 500K requests/month and 30-day data retention.
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShow(false)}
+          className="ml-auto"
+        >
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function AccountPage() {
   const user = useQuery(api.users.current);
   const apiKeys = useQuery(api.apiKeys.list);
@@ -56,6 +100,7 @@ export default function AccountPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [revokeKeyId, setRevokeKeyId] = useState<Id<"apiKeys"> | null>(null);
+  const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -77,9 +122,11 @@ export default function AccountPage() {
 
   const usagePercent =
     user.requestLimit > 0 ? Math.min((user.requestsUsed / user.requestLimit) * 100, 100) : 0;
+  const isNearLimit = usagePercent > 80;
 
   const handleRevoke = async () => {
     if (!revokeKeyId) return;
+    setRevoking(true);
     setRevokeError(null);
     try {
       await revokeApiKey({ id: revokeKeyId });
@@ -87,6 +134,8 @@ export default function AccountPage() {
     } catch (error) {
       console.error("Failed to revoke API key:", error);
       setRevokeError("Failed to revoke API key. Please try again.");
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -114,6 +163,12 @@ export default function AccountPage() {
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-2xl space-y-8">
+      {/* Success/Warning Banners */}
+      <Suspense fallback={null}>
+        <UpgradeSuccessBanner />
+      </Suspense>
+      <PastDueBanner />
+
       {/* Account Info */}
       <section className="space-y-4">
         <h1 className="text-2xl font-bold">Account</h1>
@@ -167,43 +222,92 @@ export default function AccountPage() {
         </div>
       </section>
 
-      {/* Usage */}
+      {/* Billing & Usage */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Usage</h2>
+        <h2 className="text-lg font-semibold">Billing & Usage</h2>
 
         <div className="border rounded-lg p-6 space-y-4 bg-card">
-          <div className="flex justify-between text-sm">
-            <span>{user.plan === "free" ? "Requests today" : "Requests this period"}</span>
-            <span className="font-medium">
-              {user.requestsUsed.toLocaleString()} / {user.requestLimit.toLocaleString()}
-            </span>
-          </div>
+          {/* Usage meter */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>{user.plan === "free" ? "Requests today" : "Requests this period"}</span>
+              <span className={isNearLimit ? "text-destructive font-medium" : "font-medium"}>
+                {user.requestsUsed.toLocaleString()} / {user.requestLimit.toLocaleString()}
+              </span>
+            </div>
 
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div
-              className="h-full bg-primary transition-all"
-              style={{ width: `${usagePercent}%` }}
-            />
-          </div>
+              className="h-2 bg-muted rounded-full overflow-hidden"
+              role="progressbar"
+              aria-valuenow={usagePercent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Usage: ${user.requestsUsed.toLocaleString()} of ${user.requestLimit.toLocaleString()} requests`}
+            >
+              <div
+                className={`h-full transition-all ${isNearLimit ? "bg-destructive" : "bg-primary"}`}
+                style={{ width: `${usagePercent}%` }}
+              />
+            </div>
 
-          {user.plan === "free" && (
-            <>
-              <div className="text-sm text-muted-foreground">
-                {user.periodEnd ? (
+            {user.periodEnd && (
+              <p className="text-xs text-muted-foreground">
+                {user.plan === "free" ? (
                   <UsageResetCountdown periodEnd={user.periodEnd} />
                 ) : (
-                  "Resets on first request"
+                  `Resets ${new Date(user.periodEnd).toLocaleDateString()}`
                 )}
+              </p>
+            )}
+            {user.plan === "free" && !user.periodEnd && (
+              <p className="text-xs text-muted-foreground">Resets on first request</p>
+            )}
+          </div>
+
+          {/* Plan info and actions */}
+          {user.plan === "free" ? (
+            <div className="pt-2 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Free Plan</p>
+                  <p className="text-sm text-muted-foreground">
+                    200 requests/day, 24-hour data retention
+                  </p>
+                </div>
               </div>
-              <div className="pt-2">
-                <Button asChild>
-                  <Link href="/upgrade">Upgrade to Pro</Link>
-                </Button>
+              <div>
+                <UpgradeButton />
                 <p className="text-sm text-muted-foreground mt-2">
-                  Get 500,000 requests/month and 30-day data retention
+                  Get 500,000 requests/month and 30-day data retention for $8/month
                 </p>
               </div>
-            </>
+            </div>
+          ) : (
+            <div className="pt-2 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Pro Plan</p>
+                  <p className="text-sm text-muted-foreground">
+                    500K requests/month, 30-day data retention
+                  </p>
+                </div>
+                <p className="font-medium">$8/month</p>
+              </div>
+              {user.cancelAtPeriodEnd && (
+                <div className="rounded-md bg-muted p-3 text-sm">
+                  Your subscription will end on{" "}
+                  {user.periodEnd
+                    ? new Date(user.periodEnd).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : "the end of your billing period"}
+                  . You&apos;ll be downgraded to the free tier after this date.
+                </div>
+              )}
+              <ManageSubscriptionDialog />
+            </div>
           )}
         </div>
       </section>
@@ -277,7 +381,7 @@ export default function AccountPage() {
       {/* Revoke API Key Dialog */}
       <AlertDialog
         open={revokeKeyId !== null}
-        onOpenChange={(open) => !open && setRevokeKeyId(null)}
+        onOpenChange={(open) => !open && !revoking && setRevokeKeyId(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -286,11 +390,17 @@ export default function AccountPage() {
               Are you sure you want to revoke this API key? Any applications using this key will no
               longer be able to access webhooks.cc.
             </AlertDialogDescription>
-            {revokeError && <p className="text-sm text-destructive mt-2">{revokeError}</p>}
+            {revokeError && (
+              <p className="text-sm text-destructive mt-2" role="alert" aria-live="polite">
+                {revokeError}
+              </p>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setRevokeError(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRevoke}>Revoke</AlertDialogAction>
+            <AlertDialogCancel disabled={revoking} onClick={() => setRevokeError(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRevoke} disabled={revoking}>
+              {revoking ? "Revoking..." : "Revoke"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -326,15 +436,20 @@ export default function AccountPage() {
               This is your last chance. Are you ABSOLUTELY sure you want to delete your account?
               This action is irreversible.
             </AlertDialogDescription>
-            {deleteError && <p className="text-sm text-destructive mt-2">{deleteError}</p>}
+            {deleteError && (
+              <p className="text-sm text-destructive mt-2" role="alert" aria-live="polite">
+                {deleteError}
+              </p>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteAccount}
+              disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete My Account
+              {isDeleting ? "Deleting..." : "Delete My Account"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -2,6 +2,7 @@ import GitHub from "@auth/core/providers/github";
 import Google from "@auth/core/providers/google";
 import { convexAuth } from "@convex-dev/auth/server";
 import { FREE_REQUEST_LIMIT } from "./config";
+import { internal } from "./_generated/api";
 
 export const { auth, signIn, signOut, store } = convexAuth({
   providers: [GitHub, Google],
@@ -49,7 +50,7 @@ export const { auth, signIn, signOut, store } = convexAuth({
       if (!profile.email) {
         throw new Error("Email is required for registration");
       }
-      return await ctx.db.insert("users", {
+      const userId = await ctx.db.insert("users", {
         email: profile.email,
         name: profile.name,
         image: profile.image,
@@ -58,6 +59,15 @@ export const { auth, signIn, signOut, store } = convexAuth({
         requestLimit: FREE_REQUEST_LIMIT,
         createdAt: Date.now(),
       });
+
+      // Schedule Polar customer creation (runs asynchronously)
+      await ctx.scheduler.runAfter(0, internal.billing.createPolarCustomer, {
+        userId,
+        email: profile.email,
+        name: typeof profile.name === "string" ? profile.name : undefined,
+      });
+
+      return userId;
     },
   },
 });
