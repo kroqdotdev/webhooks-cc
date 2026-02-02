@@ -27,7 +27,7 @@ function safeParseInt(envVar: string, defaultVal: number, min: number, max: numb
   return value;
 }
 
-export const FREE_REQUEST_LIMIT = safeParseInt("FREE_REQUEST_LIMIT", 500, 1, 1000000);
+export const FREE_REQUEST_LIMIT = safeParseInt("FREE_REQUEST_LIMIT", 200, 1, 1000000);
 
 export const PRO_REQUEST_LIMIT = safeParseInt("PRO_REQUEST_LIMIT", 500000, 1, 100000000);
 

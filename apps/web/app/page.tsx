@@ -129,7 +129,7 @@ export default function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  "500 requests/day",
+                  "200 requests/day",
                   "24-hour data retention",
                   "Unlimited endpoints",
                   "CLI & SDK access",
@@ -153,7 +153,7 @@ export default function Home() {
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Pro</h3>
                 <p className="text-5xl font-bold">
-                  $15
+                  $8
                   <span className="text-lg font-normal text-muted-foreground">/month</span>
                 </p>
               </div>

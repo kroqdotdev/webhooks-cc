@@ -109,7 +109,7 @@ Set via dashboard or `npx convex env set`:
 
 | Variable             | Default    | Description                          |
 | -------------------- | ---------- | ------------------------------------ |
-| `FREE_REQUEST_LIMIT` | 500        | Requests per period (free tier)      |
+| `FREE_REQUEST_LIMIT` | 200        | Requests per period (free tier)      |
 | `PRO_REQUEST_LIMIT`  | 500000     | Requests per period (pro tier)       |
 | `EPHEMERAL_TTL_MS`   | 600000     | Anonymous endpoint lifetime (10 min) |
 | `BILLING_PERIOD_MS`  | 2592000000 | Billing cycle (30 days)              |
