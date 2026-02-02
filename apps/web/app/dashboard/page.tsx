@@ -4,11 +4,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@convex/_generated/api";
-import { Button } from "@/components/ui/button";
 import { UrlBar } from "@/components/dashboard/url-bar";
 import { RequestList } from "@/components/dashboard/request-list";
 import { RequestDetail, RequestDetailEmpty } from "@/components/dashboard/request-detail";
-import Link from "next/link";
 import { Copy, Check, Send } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 
@@ -261,14 +259,11 @@ function WaitingForRequests({ slug }: { slug: string }) {
 function EmptyEndpoints() {
   return (
     <div className="flex-1 flex items-center justify-center p-8">
-      <div className="text-center space-y-4">
+      <div className="text-center space-y-2">
         <h2 className="text-xl font-bold uppercase tracking-wide">No endpoints yet</h2>
         <p className="text-muted-foreground">
-          Create your first endpoint to start capturing webhooks.
+          Click <span className="font-bold text-foreground">"New Endpoint"</span> above to get started!
         </p>
-        <Button asChild className="neo-btn-primary !rounded-none">
-          <Link href="/endpoints/new">Create Endpoint</Link>
-        </Button>
       </div>
     </div>
   );
