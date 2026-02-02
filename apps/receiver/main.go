@@ -456,9 +456,10 @@ func isValidSlug(slug string) bool {
 		isUpper := r >= 'A' && r <= 'Z'
 		isDigit := r >= '0' && r <= '9'
 		isSpecial := r == '-' || r == '_'
-		if !(isLower || isUpper || isDigit || isSpecial) {
-			return false
+		if isLower || isUpper || isDigit || isSpecial {
+			continue
 		}
+		return false
 	}
 	return true
 }
