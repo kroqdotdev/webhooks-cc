@@ -93,7 +93,7 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseSize))
@@ -111,11 +111,6 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 	}
 
 	return nil
-}
-
-// requestWithDefaultContext is a helper that uses context.Background() for backwards compatibility
-func (c *Client) requestWithDefaultContext(method, path string, body interface{}, result interface{}) error {
-	return c.request(context.Background(), method, path, body, result)
 }
 
 // CreateEndpoint creates a new endpoint

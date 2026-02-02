@@ -85,7 +85,7 @@ func (s *Stream) Listen(ctx context.Context, handler RequestHandler) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
@@ -141,7 +141,7 @@ func (s *Stream) Listen(ctx context.Context, handler RequestHandler) error {
 	select {
 	case <-ctx.Done():
 		// Close the response body to unblock the scanner
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		<-done // Wait for goroutine to finish
 		return ctx.Err()
 	case <-done:
