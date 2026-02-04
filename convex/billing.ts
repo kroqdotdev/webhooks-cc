@@ -14,8 +14,7 @@
  */
 import { v } from "convex/values";
 import { action, internalAction, internalMutation } from "./_generated/server";
-import { api, internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { FREE_REQUEST_LIMIT, PRO_REQUEST_LIMIT, BILLING_PERIOD_MS } from "./config";
 
 /**
@@ -28,7 +27,7 @@ export const createCheckout = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const user = await ctx.runQuery(api.users.current);
+    const user = await ctx.runQuery(internal.users.currentFull);
     if (!user) throw new Error("User not found");
 
     if (user.plan === "pro") {
@@ -96,7 +95,7 @@ export const cancelSubscription = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const user = await ctx.runQuery(api.users.current);
+    const user = await ctx.runQuery(internal.users.currentFull);
     if (!user) throw new Error("User not found");
     if (!user.polarSubscriptionId) {
       throw new Error("No active subscription");
@@ -134,7 +133,7 @@ export const resubscribe = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const user = await ctx.runQuery(api.users.current);
+    const user = await ctx.runQuery(internal.users.currentFull);
     if (!user) throw new Error("User not found");
     if (!user.polarSubscriptionId) {
       throw new Error("No subscription to reactivate");
@@ -184,47 +183,65 @@ export const setCancelAtPeriodEnd = internalMutation({
  * SECURITY: This mutation is internal-only. The HTTP endpoint verifies
  * the webhook signature before calling this mutation.
  */
+/** Validate that a webhook data object has the expected string field. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- webhook data from v.any() is inherently untyped
+function requireStringField(data: any, field: string, context: string): string {
+  const value = data?.[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`[billing] Missing or invalid ${field} in ${context} webhook data`);
+  }
+  return value;
+}
+
 export const handleWebhook = internalMutation({
   args: {
     event: v.string(),
     data: v.any(),
   },
   handler: async (ctx, { event, data }) => {
+    // Basic data validation - all webhook events should have an object payload
+    if (typeof data !== "object" || data === null) {
+      console.error(`[billing] Invalid webhook data for event ${event}: not an object`);
+      return;
+    }
     console.log(`[billing.handleWebhook] Processing event: ${event}`);
 
     switch (event) {
       // Customer events
       case "customer.created": {
-        // Customer was created - verify and log
-        console.log(`[billing] Customer created: ${data.id}`);
+        const id = requireStringField(data, "id", "customer.created");
+        console.log(`[billing] Customer created: ${id}`);
         break;
       }
 
       case "customer.updated": {
-        // Customer details changed - sync if needed
-        console.log(`[billing] Customer updated: ${data.id}`);
+        const id = requireStringField(data, "id", "customer.updated");
+        console.log(`[billing] Customer updated: ${id}`);
         break;
       }
 
       // Order events
       case "order.paid": {
-        // Payment confirmed - subscription.created handles upgrade
+        requireStringField(data, "customer_id", "order.paid");
         console.log(`[billing] Order paid for customer: ${data.customer_id}`);
         break;
       }
 
       case "order.refunded": {
-        // Refund issued - subscription.revoked will handle downgrade
-        console.log(`[billing] Order refunded: ${data.id}`);
+        const id = requireStringField(data, "id", "order.refunded");
+        console.log(`[billing] Order refunded: ${id}`);
         break;
       }
 
       // Subscription events
       case "subscription.created":
       case "subscription.updated": {
+        requireStringField(data, "id", event);
+        requireStringField(data, "customer_id", event);
+
         // User subscribed to Pro or subscription updated
         const userId = data.customer?.metadata?.userId;
-        if (!userId) {
+        if (typeof userId !== "string" || userId.length === 0) {
           // This can happen for subscriptions created directly in Polar dashboard
           // or legacy customers without metadata
           console.log(
@@ -233,12 +250,21 @@ export const handleWebhook = internalMutation({
           return;
         }
 
-        let user;
-        try {
-          user = await ctx.db.get(userId as Id<"users">);
-        } catch {
+        // Validate userId is a valid Convex ID before using it
+        const normalizedId = ctx.db.normalizeId("users", userId);
+        if (!normalizedId) {
           console.log(
             `[billing] Ignoring ${event} - invalid userId format: ${userId} (customer: ${data.customer_id})`
+          );
+          return;
+        }
+
+        let user;
+        try {
+          user = await ctx.db.get(normalizedId);
+        } catch {
+          console.log(
+            `[billing] Ignoring ${event} - failed to get user: ${userId} (customer: ${data.customer_id})`
           );
           return;
         }
@@ -250,14 +276,23 @@ export const handleWebhook = internalMutation({
           return;
         }
 
+        const periodStart = new Date(data.current_period_start).getTime();
+        const periodEnd = new Date(data.current_period_end).getTime();
+        if (isNaN(periodStart) || isNaN(periodEnd)) {
+          console.error(
+            `[billing] Invalid period dates in ${event}: start=${data.current_period_start}, end=${data.current_period_end}`
+          );
+          return;
+        }
+
         await ctx.db.patch(user._id, {
           polarCustomerId: data.customer_id,
           polarSubscriptionId: data.id,
           subscriptionStatus: "active",
           plan: "pro",
           requestLimit: PRO_REQUEST_LIMIT,
-          periodStart: new Date(data.current_period_start).getTime(),
-          periodEnd: new Date(data.current_period_end).getTime(),
+          periodStart,
+          periodEnd,
           cancelAtPeriodEnd: data.cancel_at_period_end ?? false,
         });
         console.log(`[billing] User ${userId} upgraded to Pro`);
@@ -265,10 +300,10 @@ export const handleWebhook = internalMutation({
       }
 
       case "subscription.canceled": {
-        // User canceled - will downgrade at period end
+        const customerId = requireStringField(data, "customer_id", "subscription.canceled");
         const user = await ctx.db
           .query("users")
-          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", data.customer_id))
+          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", customerId))
           .first();
 
         if (user) {
@@ -282,10 +317,10 @@ export const handleWebhook = internalMutation({
       }
 
       case "subscription.uncanceled": {
-        // User reactivated before period end
+        const customerId = requireStringField(data, "customer_id", "subscription.uncanceled");
         const user = await ctx.db
           .query("users")
-          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", data.customer_id))
+          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", customerId))
           .first();
 
         if (user) {
@@ -299,10 +334,10 @@ export const handleWebhook = internalMutation({
       }
 
       case "subscription.revoked": {
-        // Immediate cancellation (refund, chargeback, fraud)
+        const customerId = requireStringField(data, "customer_id", "subscription.revoked");
         const user = await ctx.db
           .query("users")
-          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", data.customer_id))
+          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", customerId))
           .first();
 
         if (user) {
@@ -322,10 +357,10 @@ export const handleWebhook = internalMutation({
       }
 
       case "subscription.active": {
-        // Subscription is now active (payment succeeded after past_due)
+        const customerId = requireStringField(data, "customer_id", "subscription.active");
         const user = await ctx.db
           .query("users")
-          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", data.customer_id))
+          .withIndex("by_polar_customer", (q) => q.eq("polarCustomerId", customerId))
           .first();
 
         if (user) {
@@ -402,6 +437,13 @@ export const checkPeriodResets = internalMutation({
         console.log(`[billing] User ${user._id} period reset`);
         processed++;
       }
+    }
+
+    // If we processed a full batch and actually had pro users to process,
+    // reschedule to handle remaining users. Skip if all were free users
+    // (they use lazy reset) to avoid an infinite reschedule loop.
+    if (expiredUsers.length === 100 && processed > 0) {
+      await ctx.scheduler.runAfter(100, internal.billing.checkPeriodResets, {});
     }
 
     return { processed };

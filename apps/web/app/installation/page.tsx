@@ -106,8 +106,8 @@ export default function InstallationPage() {
               <h2 className="text-lg font-bold mb-3">Shell script (macOS / Linux)</h2>
               <CodeBlock>{`curl -fsSL https://webhooks.cc/install.sh | sh`}</CodeBlock>
               <p className="text-sm text-muted-foreground mt-2">
-                Downloads the latest binary for your platform and installs it
-                to <code className="font-mono font-bold">/usr/local/bin</code>.
+                Downloads the latest binary for your platform and installs it to{" "}
+                <code className="font-mono font-bold">/usr/local/bin</code>.
               </p>
             </section>
 

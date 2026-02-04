@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-
 export const metadata: Metadata = {
   title: "Testing with the SDK - webhooks.cc Docs",
   description: "Use the webhooks.cc SDK in your CI/CD pipeline to verify webhook integrations.",
@@ -11,8 +10,8 @@ export default function TestingPage() {
     <article>
       <h1 className="text-3xl md:text-4xl font-bold mb-4">Testing</h1>
       <p className="text-lg text-muted-foreground mb-10">
-        Use the SDK in your test suite to verify webhook integrations end-to-end.
-        Create temporary endpoints, trigger your application, and assert on the captured requests.
+        Use the SDK in your test suite to verify webhook integrations end-to-end. Create temporary
+        endpoints, trigger your application, and assert on the captured requests.
       </p>
 
       <section className="mb-10">
@@ -97,7 +96,10 @@ const req = await client.requests.waitFor(endpoint.slug, {
         <h2 className="text-xl font-bold mb-3">Tips</h2>
         <ul className="list-disc list-inside space-y-2 text-muted-foreground">
           <li>Use unique endpoint names per test run to avoid conflicts in parallel CI</li>
-          <li>Always clean up endpoints in <code className="font-mono font-bold">afterAll</code> / <code className="font-mono font-bold">afterEach</code></li>
+          <li>
+            Always clean up endpoints in <code className="font-mono font-bold">afterAll</code> /{" "}
+            <code className="font-mono font-bold">afterEach</code>
+          </li>
           <li>Set a mock response if your application checks the webhook delivery status</li>
           <li>The free plan supports 200 requests/day, enough for most test suites</li>
         </ul>

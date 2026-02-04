@@ -102,7 +102,6 @@ export default defineSchema({
     expiresAt: v.number(),
     status: v.union(v.literal("pending"), v.literal("authorized")),
     userId: v.optional(v.id("users")),
-    apiKey: v.optional(v.string()),
   })
     .index("by_device_code", ["deviceCode"])
     .index("by_user_code", ["userCode"])

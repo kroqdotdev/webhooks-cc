@@ -3,7 +3,8 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "SDK Overview - webhooks.cc Docs",
-  description: "The webhooks.cc TypeScript SDK for programmatic endpoint management and webhook inspection.",
+  description:
+    "The webhooks.cc TypeScript SDK for programmatic endpoint management and webhook inspection.",
 };
 
 export default function SdkPage() {
@@ -11,15 +12,19 @@ export default function SdkPage() {
     <article>
       <h1 className="text-3xl md:text-4xl font-bold mb-4">SDK</h1>
       <p className="text-lg text-muted-foreground mb-10">
-        The TypeScript SDK lets you create endpoints, read captured requests, and integrate webhooks.cc
-        into your application or test suite programmatically.
+        The TypeScript SDK lets you create endpoints, read captured requests, and integrate
+        webhooks.cc into your application or test suite programmatically.
       </p>
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Install</h2>
         <pre className="neo-code text-sm mb-4">{`npm install @webhookscc/sdk`}</pre>
         <p className="text-sm text-muted-foreground">
-          See <Link href="/installation" className="text-primary hover:underline font-bold">all installation options</Link>.
+          See{" "}
+          <Link href="/installation" className="text-primary hover:underline font-bold">
+            all installation options
+          </Link>
+          .
         </p>
       </section>
 
@@ -27,8 +32,10 @@ export default function SdkPage() {
         <h2 className="text-xl font-bold mb-3">Authentication</h2>
         <p className="text-muted-foreground mb-4">
           Generate an API key from your{" "}
-          <Link href="/account" className="text-primary hover:underline font-bold">account page</Link>.
-          Pass it when creating the client:
+          <Link href="/account" className="text-primary hover:underline font-bold">
+            account page
+          </Link>
+          . Pass it when creating the client:
         </p>
         <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhookscc/sdk";
 

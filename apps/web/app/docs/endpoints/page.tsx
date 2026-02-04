@@ -11,8 +11,8 @@ export default function EndpointsPage() {
     <article>
       <h1 className="text-3xl md:text-4xl font-bold mb-4">Endpoints</h1>
       <p className="text-lg text-muted-foreground mb-10">
-        Endpoints are unique URLs that capture incoming webhooks. Each endpoint has its own request history,
-        mock response configuration, and settings.
+        Endpoints are unique URLs that capture incoming webhooks. Each endpoint has its own request
+        history, mock response configuration, and settings.
       </p>
 
       <section className="mb-10">
@@ -45,7 +45,12 @@ export default function EndpointsPage() {
         </p>
         <ul className="list-disc list-inside space-y-1 text-muted-foreground mb-4">
           <li>Rename the endpoint</li>
-          <li>Configure a <Link href="/docs/mock-responses" className="text-primary hover:underline font-bold">mock response</Link></li>
+          <li>
+            Configure a{" "}
+            <Link href="/docs/mock-responses" className="text-primary hover:underline font-bold">
+              mock response
+            </Link>
+          </li>
           <li>Delete the endpoint and all its captured requests</li>
         </ul>
       </section>

@@ -32,9 +32,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
       <div className="flex flex-1">
         <DocsSidebar />
         <main className="flex-1 min-w-0 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-10 md:px-10">
-            {children}
-          </div>
+          <div className="max-w-3xl mx-auto px-6 py-10 md:px-10">{children}</div>
         </main>
       </div>
     </div>

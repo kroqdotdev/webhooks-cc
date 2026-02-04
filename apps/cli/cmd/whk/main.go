@@ -13,6 +13,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -210,7 +213,7 @@ func createEndpointCmd() *cobra.Command {
 		Short: "Create a new endpoint",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := ""
+			name := fmt.Sprintf("endpoint-%s", randomSuffix(6))
 			if len(args) > 0 {
 				name = args[0]
 			}
@@ -335,6 +338,8 @@ func tunnelCmd() *cobra.Command {
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 
+			// Set up signal handler BEFORE creating endpoint so ephemeral
+			// cleanup works even if the user cancels during creation.
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 			defer signal.Stop(sigCh)
@@ -343,7 +348,7 @@ func tunnelCmd() *cobra.Command {
 			slug := endpointSlug
 			createdEndpoint := false
 			if slug == "" {
-				endpoint, err := client.CreateEndpointWithContext(ctx, "")
+				endpoint, err := client.CreateEndpointWithContext(ctx, fmt.Sprintf("tunnel-%s", randomSuffix(6)))
 				if err != nil {
 					return fmt.Errorf("failed to create endpoint: %w", err)
 				}
@@ -392,14 +397,20 @@ func tunnelCmd() *cobra.Command {
 			}()
 
 			// Listen for requests and forward them
-			return s.Listen(ctx, func(req *types.CapturedRequest) {
+			err = s.Listen(ctx, func(req *types.CapturedRequest) {
 				// Print received request
 				fmt.Printf("  %s", stream.FormatRequest(req))
 
-				// Apply custom headers
-				for k, v := range customHeaders {
-					req.Headers[k] = v
+				// Copy headers before mutation to avoid modifying the
+				// deserialized struct from the stream goroutine.
+				hdrs := make(map[string]string, len(req.Headers)+len(customHeaders))
+				for k, v := range req.Headers {
+					hdrs[k] = v
 				}
+				for k, v := range customHeaders {
+					hdrs[k] = v
+				}
+				req.Headers = hdrs
 
 				// Forward to local server
 				result, err := t.Forward(req)
@@ -409,6 +420,10 @@ func tunnelCmd() *cobra.Command {
 				}
 				fmt.Printf("  -> %s\n", result)
 			})
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+			return err
 		},
 	}
 
@@ -460,9 +475,13 @@ func listenCmd() *cobra.Command {
 			fmt.Println()
 
 			s := stream.New(slug, client.BaseURL(), token.AccessToken)
-			return s.Listen(ctx, func(req *types.CapturedRequest) {
+			err = s.Listen(ctx, func(req *types.CapturedRequest) {
 				fmt.Printf("  %s\n", stream.FormatRequest(req))
 			})
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+			return err
 		},
 	}
 }
@@ -580,4 +599,11 @@ func parseHeaders(headers []string) map[string]string {
 		}
 	}
 	return result
+}
+
+// randomSuffix returns n hex characters from crypto/rand.
+func randomSuffix(n int) string {
+	b := make([]byte, (n+1)/2)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)[:n]
 }

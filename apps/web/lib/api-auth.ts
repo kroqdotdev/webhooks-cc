@@ -5,9 +5,6 @@
  * and provides a helper to call /cli/* Convex HTTP actions with the shared secret.
  */
 
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
-const CAPTURE_SHARED_SECRET = process.env.CAPTURE_SHARED_SECRET;
-
 /** Extract Bearer token from Authorization header */
 export function extractBearerToken(request: Request): string | null {
   const authHeader = request.headers.get("Authorization");
@@ -15,26 +12,45 @@ export function extractBearerToken(request: Request): string | null {
   return authHeader.slice(7);
 }
 
+function getConvexSiteUrl(): string {
+  const url = process.env.CONVEX_SITE_URL;
+  if (!url) throw new Error("CONVEX_SITE_URL is not configured");
+  return url;
+}
+
+function getSharedSecret(): string {
+  const secret = process.env.CAPTURE_SHARED_SECRET;
+  if (!secret) throw new Error("CAPTURE_SHARED_SECRET is not configured");
+  return secret;
+}
+
 /** Validate an API key via Convex HTTP action. Returns userId or null. */
 export async function validateApiKey(apiKey: string): Promise<string | null> {
-  if (!CONVEX_SITE_URL || !CAPTURE_SHARED_SECRET) {
+  let siteUrl: string;
+  let secret: string;
+  try {
+    siteUrl = getConvexSiteUrl();
+    secret = getSharedSecret();
+  } catch {
     console.error("Missing CONVEX_SITE_URL or CAPTURE_SHARED_SECRET");
     return null;
   }
 
-  const resp = await fetch(`${CONVEX_SITE_URL}/validate-api-key`, {
+  const resp = await fetch(`${siteUrl}/validate-api-key`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${CAPTURE_SHARED_SECRET}`,
+      Authorization: `Bearer ${secret}`,
     },
     body: JSON.stringify({ apiKey }),
   });
 
   if (!resp.ok) return null;
 
-  const data = await resp.json();
-  return data.userId ?? null;
+  const data: unknown = await resp.json();
+  if (typeof data !== "object" || data === null) return null;
+  const userId = (data as Record<string, unknown>).userId;
+  return typeof userId === "string" ? userId : null;
 }
 
 /** Call a /cli/* Convex HTTP action with shared secret authentication. */
@@ -46,27 +62,39 @@ export async function convexCliRequest(
     body?: unknown;
   } = {}
 ): Promise<Response> {
-  if (!CONVEX_SITE_URL || !CAPTURE_SHARED_SECRET) {
+  let siteUrl: string;
+  let secret: string;
+  try {
+    siteUrl = getConvexSiteUrl();
+    secret = getSharedSecret();
+  } catch {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  const url = new URL(`${CONVEX_SITE_URL}${path}`);
+  const method = options.method ?? "GET";
+  const url = new URL(`${siteUrl}${path}`);
   if (options.params) {
     for (const [key, value] of Object.entries(options.params)) {
       url.searchParams.set(key, value);
     }
   }
 
+  const hasBody = options.body && method !== "GET";
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${secret}`,
+  };
+  if (hasBody) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const resp = await fetch(url.toString(), {
-    method: options.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${CAPTURE_SHARED_SECRET}`,
-    },
-    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    method,
+    headers,
+    ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
   });
 
   let data: unknown;
@@ -88,26 +116,32 @@ export async function convexCliRequest(
 
 /**
  * Authenticate a request using Bearer token API key.
- * Returns userId on success, or an error Response.
+ * Returns { success: true, userId } on success, or { success: false, response } on failure.
  */
-export async function authenticateRequest(
-  request: Request
-): Promise<{ userId: string } | Response> {
+export type AuthResult = { success: true; userId: string } | { success: false; response: Response };
+
+export async function authenticateRequest(request: Request): Promise<AuthResult> {
   const token = extractBearerToken(request);
   if (!token) {
-    return new Response(JSON.stringify({ error: "Missing authorization header" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return {
+      success: false,
+      response: new Response(JSON.stringify({ error: "Missing authorization header" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    };
   }
 
   const userId = await validateApiKey(token);
   if (!userId) {
-    return new Response(JSON.stringify({ error: "Invalid API key" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return {
+      success: false,
+      response: new Response(JSON.stringify({ error: "Invalid API key" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    };
   }
 
-  return { userId };
+  return { success: true, userId };
 }

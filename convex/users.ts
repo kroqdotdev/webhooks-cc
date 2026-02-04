@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
@@ -8,6 +8,20 @@ export const current = query({
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
 
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+
+    // Filter out internal billing IDs that shouldn't be exposed to clients
+    const { polarCustomerId: _, polarSubscriptionId: __, ...publicUser } = user;
+    return publicUser;
+  },
+});
+
+/** Internal query returning full user data (including Polar IDs) for server-side billing actions. */
+export const currentFull = internalQuery({
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
     return await ctx.db.get(userId);
   },
 });

@@ -1,18 +1,26 @@
-import { ConvexHttpClient } from "convex/browser";
+import { getConvexClient } from "@/lib/convex-client";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { api } from "@convex/_generated/api";
-import { NextRequest } from "next/server";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+export async function GET(request: Request) {
+  const rateLimited = checkRateLimit(request, 30);
+  if (rateLimited) return rateLimited;
 
-export async function GET(request: NextRequest) {
-  const code = request.nextUrl.searchParams.get("code");
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get("code");
   if (!code) {
     return Response.json({ error: "Missing code parameter" }, { status: 400 });
   }
 
-  const result = await convex.query(api.deviceAuth.pollDeviceCode, {
-    deviceCode: code,
-  });
+  try {
+    const convex = getConvexClient();
+    const result = await convex.query(api.deviceAuth.pollDeviceCode, {
+      deviceCode: code,
+    });
 
-  return Response.json(result);
+    // Only return the status field to unauthenticated callers
+    return Response.json({ status: result.status });
+  } catch {
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

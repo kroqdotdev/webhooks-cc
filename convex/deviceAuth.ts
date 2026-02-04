@@ -13,7 +13,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { generateApiKey, hashKey } from "./apiKeys";
+import { generateApiKey, hashKey, MAX_KEYS_PER_USER } from "./apiKeys";
 import { customAlphabet } from "nanoid";
 
 const DEVICE_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -27,9 +27,18 @@ const generateDeviceCode = customAlphabet(
 // Uppercase alphanumeric for user codes (easy to type, no ambiguous chars like 0/O, 1/I/L)
 const generateUserCodePart = customAlphabet("ABCDEFGHJKMNPQRSTUVWXYZ23456789", 4);
 
+// Maximum pending device codes to prevent table flooding from unauthenticated callers
+const MAX_PENDING_CODES = 500;
+
 export const createDeviceCode = mutation({
   args: {},
   handler: async (ctx) => {
+    // Check table size to prevent flooding (this mutation is unauthenticated)
+    const pendingCodes = await ctx.db.query("deviceCodes").take(MAX_PENDING_CODES + 1);
+    if (pendingCodes.length > MAX_PENDING_CODES) {
+      throw new Error("Too many pending device codes, please try again later");
+    }
+
     const deviceCode = generateDeviceCode();
     const userCode = `${generateUserCodePart()}-${generateUserCodePart()}`;
     const expiresAt = Date.now() + DEVICE_CODE_TTL_MS;
@@ -66,28 +75,14 @@ export const authorizeDeviceCode = mutation({
     if (code.expiresAt < Date.now()) throw new Error("Code expired");
     if (code.status === "authorized") throw new Error("Code already used");
 
-    // Generate an API key for the CLI
-    const rawKey = generateApiKey();
-    const keyHash = await hashKey(rawKey);
-    const keyPrefix = rawKey.slice(0, 12);
-
-    // Store the API key hash in the apiKeys table
-    await ctx.db.insert("apiKeys", {
-      userId,
-      keyHash,
-      keyPrefix,
-      name: "CLI (device auth)",
-      createdAt: Date.now(),
-    });
-
     // Get user info for the CLI
     const user = await ctx.db.get(userId);
 
-    // Mark device code as authorized and store the raw key for one-time claim
+    // Mark device code as authorized with userId only.
+    // API key is generated at claim time to avoid storing raw keys in the table.
     await ctx.db.patch(code._id, {
       status: "authorized",
       userId,
-      apiKey: rawKey,
     });
 
     return {
@@ -127,17 +122,40 @@ export const claimDeviceCode = mutation({
     if (!code) throw new Error("Invalid or expired code");
     if (code.expiresAt < Date.now()) throw new Error("Code expired");
     if (code.status !== "authorized") throw new Error("Code not yet authorized");
-    if (!code.apiKey || !code.userId) throw new Error("Code not properly authorized");
+    if (!code.userId) throw new Error("Code not properly authorized");
+    const userId = code.userId;
+
+    // Enforce per-user key limit (same check as apiKeys.create)
+    const existingKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .take(MAX_KEYS_PER_USER + 1);
+    if (existingKeys.length >= MAX_KEYS_PER_USER) {
+      throw new Error(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed per user`);
+    }
+
+    // Generate API key at claim time (avoids storing raw key in the table)
+    const rawKey = generateApiKey();
+    const keyHash = await hashKey(rawKey);
+    const keyPrefix = rawKey.slice(0, 12);
+
+    await ctx.db.insert("apiKeys", {
+      userId,
+      keyHash,
+      keyPrefix,
+      name: "CLI (device auth)",
+      createdAt: Date.now(),
+    });
 
     // Get user info
-    const user = await ctx.db.get(code.userId);
+    const user = await ctx.db.get(userId);
 
     // Delete the device code (one-time use)
     await ctx.db.delete(code._id);
 
     return {
-      apiKey: code.apiKey,
-      userId: code.userId,
+      apiKey: rawKey,
+      userId,
       email: user?.email ?? "",
     };
   },

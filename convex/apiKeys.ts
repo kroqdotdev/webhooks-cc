@@ -34,6 +34,8 @@ export async function hashKey(key: string): Promise<string> {
 
 // Maximum length for API key names
 const MAX_NAME_LENGTH = 100;
+// Maximum number of API keys per user
+export const MAX_KEYS_PER_USER = 10;
 
 export const create = mutation({
   args: {
@@ -47,6 +49,15 @@ export const create = mutation({
     const trimmedName = name.trim();
     if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
       throw new Error(`API key name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+    }
+
+    // Enforce per-user key limit
+    const existingKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .take(MAX_KEYS_PER_USER + 1);
+    if (existingKeys.length >= MAX_KEYS_PER_USER) {
+      throw new Error(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed per user`);
     }
 
     const apiKey = generateApiKey();
@@ -75,7 +86,7 @@ export const list = query({
     const keys = await ctx.db
       .query("apiKeys")
       .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
+      .take(MAX_KEYS_PER_USER);
 
     // Return only safe fields (not the hash)
     return keys.map((key) => ({

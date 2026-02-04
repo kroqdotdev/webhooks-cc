@@ -4,10 +4,11 @@ export const dynamic = "force-dynamic";
 
 const POLL_INTERVAL_MS = 500;
 const KEEPALIVE_INTERVAL_MS = 30_000;
+const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequest(request);
-  if (auth instanceof Response) return auth;
+  if (!auth.success) return auth.response;
 
   const { slug } = await params;
 
@@ -20,11 +21,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     return endpointResp;
   }
 
-  const endpoint = await endpointResp.json();
-  const endpointId = endpoint._id;
+  const endpoint: unknown = await endpointResp.json();
+  if (
+    typeof endpoint !== "object" ||
+    endpoint === null ||
+    !("_id" in endpoint) ||
+    typeof (endpoint as Record<string, unknown>)._id !== "string"
+  ) {
+    return Response.json({ error: "Invalid endpoint data" }, { status: 502 });
+  }
+  const endpointId = (endpoint as { _id: string })._id;
 
   const encoder = new TextEncoder();
   let lastTimestamp = Date.now();
+  const connectionStart = Date.now();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -42,7 +52,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
       abortSignal.addEventListener("abort", () => {
         cleanup();
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Stream may already be closed
+        }
       });
 
       // Send keepalive pings
@@ -58,6 +72,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       // Poll for new requests
       const poll = async () => {
         while (!abortSignal.aborted) {
+          // Enforce max connection duration
+          if (Date.now() - connectionStart > MAX_CONNECTION_DURATION_MS) {
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `event: timeout\ndata: ${JSON.stringify({ reason: "max_duration" })}\n\n`
+                )
+              );
+            } catch {
+              // Stream may already be closed by abort
+            }
+            break;
+          }
+
           try {
             const resp = await convexCliRequest("/cli/requests-since", {
               params: {
@@ -123,6 +151,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
     },
   });
 }

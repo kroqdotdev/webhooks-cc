@@ -23,7 +23,11 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
         signature: "create(options?: CreateEndpointOptions): Promise<Endpoint>",
         params: [
           { name: "name", type: "string?", description: "Display name" },
-          { name: "mockResponse", type: "MockResponse?", description: "Custom response configuration" },
+          {
+            name: "mockResponse",
+            type: "MockResponse?",
+            description: "Custom response configuration",
+          },
         ],
         returns: "Endpoint object with id, url, slug, and name",
       },
@@ -57,7 +61,11 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
         params: [
           { name: "endpointSlug", type: "string", description: "Endpoint slug" },
           { name: "limit", type: "number?", description: "Max results (default: 50)" },
-          { name: "since", type: "number?", description: "Only return requests after this timestamp (ms)" },
+          {
+            name: "since",
+            type: "number?",
+            description: "Only return requests after this timestamp (ms)",
+          },
         ],
         returns: "Array of Request objects",
       },
@@ -74,8 +82,16 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
         params: [
           { name: "endpointSlug", type: "string", description: "Endpoint slug to monitor" },
           { name: "timeout", type: "number?", description: "Max wait time in ms (default: 30000)" },
-          { name: "pollInterval", type: "number?", description: "Interval between polls in ms (default: 500)" },
-          { name: "match", type: "function?", description: "Filter function: (request) => boolean" },
+          {
+            name: "pollInterval",
+            type: "number?",
+            description: "Interval between polls in ms (default: 500)",
+          },
+          {
+            name: "match",
+            type: "function?",
+            description: "Filter function: (request) => boolean",
+          },
         ],
         returns: "First matching Request, or first request if no match filter",
       },
@@ -126,8 +142,12 @@ const client = new WebhooksCC({
                       <tbody>
                         {method.params.map((p) => (
                           <tr key={p.name} className="border-b border-foreground/20 last:border-0">
-                            <td className="py-1.5 pr-3"><code>{p.name}</code></td>
-                            <td className="py-1.5 pr-3 text-muted-foreground"><code>{p.type}</code></td>
+                            <td className="py-1.5 pr-3">
+                              <code>{p.name}</code>
+                            </td>
+                            <td className="py-1.5 pr-3 text-muted-foreground">
+                              <code>{p.type}</code>
+                            </td>
                             <td className="py-1.5 text-muted-foreground">{p.description}</td>
                           </tr>
                         ))}

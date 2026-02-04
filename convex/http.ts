@@ -690,8 +690,8 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[cli/endpoints POST]", error);
+      return new Response(JSON.stringify({ error: "Failed to create endpoint" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -724,8 +724,8 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[cli/endpoints GET]", error);
+      return new Response(JSON.stringify({ error: "Failed to list endpoints" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -767,8 +767,8 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[cli/endpoints DELETE]", error);
+      return new Response(JSON.stringify({ error: "Failed to delete endpoint" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -810,8 +810,8 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[cli/requests GET]", error);
+      return new Response(JSON.stringify({ error: "Failed to get request" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -839,18 +839,26 @@ http.route({
       });
     }
 
+    const parsedTimestamp = Number(afterTimestamp);
+    if (isNaN(parsedTimestamp)) {
+      return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     try {
       const requests = await ctx.runQuery(internal.requests.listNewForUser, {
         endpointId: endpointId as Id<"endpoints">,
         userId: userId as Id<"users">,
-        afterTimestamp: Number(afterTimestamp),
+        afterTimestamp: parsedTimestamp,
       });
       return new Response(JSON.stringify(requests), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[cli/requests-since GET]", error);
+      return new Response(JSON.stringify({ error: "Failed to get requests" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -892,8 +900,8 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return new Response(JSON.stringify({ error: message }), {
+      console.error("[cli/endpoint-by-slug GET]", error);
+      return new Response(JSON.stringify({ error: "Failed to get endpoint" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });

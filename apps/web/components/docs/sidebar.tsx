@@ -111,7 +111,10 @@ export function DocsSidebar() {
 
       {/* Mobile overlay */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-30 bg-background/80" onClick={() => setMobileOpen(false)} />
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-background/80"
+          onClick={() => setMobileOpen(false)}
+        />
       )}
 
       {/* Mobile sidebar */}

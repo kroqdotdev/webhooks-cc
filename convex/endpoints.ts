@@ -7,8 +7,10 @@
  * 3. Unowned non-ephemeral: Should not exist; denied if found
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { GenericDatabaseReader } from "convex/server";
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { DataModel } from "./_generated/dataModel";
 import { nanoid } from "nanoid";
 import { EPHEMERAL_TTL_MS } from "./config";
 
@@ -16,6 +18,21 @@ import { EPHEMERAL_TTL_MS } from "./config";
 const MAX_NAME_LENGTH = 100;
 // Maximum attempts to generate a unique slug
 const MAX_SLUG_ATTEMPTS = 5;
+// Maximum endpoints returned by public list query
+const MAX_LIST_RESULTS = 100;
+
+/** Generate a unique slug with collision checking. */
+async function generateUniqueSlug(db: GenericDatabaseReader<DataModel>): Promise<string> {
+  for (let i = 0; i < MAX_SLUG_ATTEMPTS; i++) {
+    const candidate = nanoid(8);
+    const existing = await db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", candidate))
+      .first();
+    if (!existing) return candidate;
+  }
+  throw new Error("Failed to generate unique slug, please try again");
+}
 
 export const create = mutation({
   args: {
@@ -48,24 +65,10 @@ export const create = mutation({
       }
     }
 
-    // Generate unique slug with collision check
-    let slug: string | null = null;
-    for (let i = 0; i < MAX_SLUG_ATTEMPTS; i++) {
-      const candidate = nanoid(8);
-      const existing = await ctx.db
-        .query("endpoints")
-        .withIndex("by_slug", (q) => q.eq("slug", candidate))
-        .first();
-      if (!existing) {
-        slug = candidate;
-        break;
-      }
-    }
-    if (!slug) {
-      throw new Error("Failed to generate unique slug, please try again");
-    }
+    const slug = await generateUniqueSlug(ctx.db);
 
-    const isEphemeral = args.isEphemeral ?? !userId;
+    // Unauthenticated users must always create ephemeral endpoints
+    const isEphemeral = !userId ? true : (args.isEphemeral ?? false);
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,
@@ -91,13 +94,11 @@ export const list = query({
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
 
-    const endpoints = await ctx.db
+    return await ctx.db
       .query("endpoints")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
-      .collect();
-
-    return endpoints;
+      .take(MAX_LIST_RESULTS);
   },
 });
 
@@ -159,11 +160,14 @@ export const update = mutation({
     id: v.id("endpoints"),
     name: v.optional(v.string()),
     mockResponse: v.optional(
-      v.object({
-        status: v.number(),
-        body: v.string(),
-        headers: v.record(v.string(), v.string()),
-      })
+      v.union(
+        v.object({
+          status: v.number(),
+          body: v.string(),
+          headers: v.record(v.string(), v.string()),
+        }),
+        v.null()
+      )
     ),
   },
   handler: async (ctx, { id, name, mockResponse }) => {
@@ -194,7 +198,10 @@ export const update = mutation({
 
     await ctx.db.patch(id, {
       ...(name !== undefined && { name: name.trim() }),
-      ...(mockResponse !== undefined && { mockResponse }),
+      // null clears the mock response; undefined means no change
+      ...(mockResponse !== undefined && {
+        mockResponse: mockResponse === null ? undefined : mockResponse,
+      }),
     });
     return { success: true };
   },
@@ -241,7 +248,7 @@ export const listByUser = internalQuery({
       .query("endpoints")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
-      .collect();
+      .take(100);
   },
 });
 
@@ -270,21 +277,7 @@ export const createForUser = internalMutation({
       }
     }
 
-    let slug: string | null = null;
-    for (let i = 0; i < MAX_SLUG_ATTEMPTS; i++) {
-      const candidate = nanoid(8);
-      const existing = await ctx.db
-        .query("endpoints")
-        .withIndex("by_slug", (q) => q.eq("slug", candidate))
-        .first();
-      if (!existing) {
-        slug = candidate;
-        break;
-      }
-    }
-    if (!slug) {
-      throw new Error("Failed to generate unique slug, please try again");
-    }
+    const slug = await generateUniqueSlug(ctx.db);
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,

@@ -1,9 +1,11 @@
-import { ConvexHttpClient } from "convex/browser";
+import { getConvexClient } from "@/lib/convex-client";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { api } from "@convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-
 export async function POST(request: Request) {
+  const rateLimited = checkRateLimit(request, 10);
+  if (rateLimited) return rateLimited;
+
   let body;
   try {
     body = await request.json();
@@ -16,6 +18,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const convex = getConvexClient();
     const result = await convex.mutation(api.deviceAuth.claimDeviceCode, {
       deviceCode: body.deviceCode,
     });
@@ -26,7 +29,17 @@ export async function POST(request: Request) {
       email: result.email,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Claim failed";
-    return Response.json({ error: message }, { status: 400 });
+    // Distinguish expected claim failures (expired, already used, etc.) from server errors
+    if (
+      error instanceof Error &&
+      (error.message.includes("expired") ||
+        error.message.includes("Invalid") ||
+        error.message.includes("not yet authorized") ||
+        error.message.includes("not properly authorized") ||
+        error.message.includes("Maximum of"))
+    ) {
+      return Response.json({ error: "Claim failed" }, { status: 400 });
+    }
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

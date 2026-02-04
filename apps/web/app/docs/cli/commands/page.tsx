@@ -15,7 +15,8 @@ interface CommandDef {
 const COMMANDS: CommandDef[] = [
   {
     name: "auth login",
-    description: "Log in to webhooks.cc. Opens your browser to verify a device code. Credentials are stored at ~/.config/whk/token.json.",
+    description:
+      "Log in to webhooks.cc. Opens your browser to verify a device code. Credentials are stored at ~/.config/whk/token.json.",
     usage: "whk auth login",
   },
   {
@@ -30,7 +31,8 @@ const COMMANDS: CommandDef[] = [
   },
   {
     name: "create",
-    description: "Create a new endpoint. An optional name can be provided; the slug is auto-generated.",
+    description:
+      "Create a new endpoint. An optional name can be provided; the slug is auto-generated.",
     usage: "whk create [name]",
   },
   {
@@ -42,23 +44,26 @@ const COMMANDS: CommandDef[] = [
     name: "delete",
     description: "Delete an endpoint. Prompts for confirmation unless --force is set.",
     usage: "whk delete <slug>",
-    flags: [
-      { name: "--force, -f", description: "Skip the confirmation prompt" },
-    ],
+    flags: [{ name: "--force, -f", description: "Skip the confirmation prompt" }],
   },
   {
     name: "tunnel",
-    description: "Forward webhooks to a local port. Creates a new endpoint unless --endpoint is set.",
+    description:
+      "Forward webhooks to a local port. Creates a new endpoint unless --endpoint is set.",
     usage: "whk tunnel <port>",
     flags: [
       { name: "--endpoint", description: "Use an existing endpoint instead of creating one" },
       { name: "--ephemeral, -e", description: "Delete the endpoint when the tunnel exits" },
-      { name: "--header, -H", description: "Add a custom header to forwarded requests (repeatable, format: Key:Value)" },
+      {
+        name: "--header, -H",
+        description: "Add a custom header to forwarded requests (repeatable, format: Key:Value)",
+      },
     ],
   },
   {
     name: "listen",
-    description: "Stream incoming requests for an endpoint to the terminal without forwarding them.",
+    description:
+      "Stream incoming requests for an endpoint to the terminal without forwarding them.",
     usage: "whk listen <slug>",
   },
   {

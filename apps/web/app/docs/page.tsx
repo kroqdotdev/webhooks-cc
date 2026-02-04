@@ -3,7 +3,8 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Quick Start - webhooks.cc Docs",
-  description: "Get started with webhooks.cc in three steps: create an endpoint, send a webhook, and view it in the dashboard.",
+  description:
+    "Get started with webhooks.cc in three steps: create an endpoint, send a webhook, and view it in the dashboard.",
 };
 
 export default function DocsPage() {
@@ -23,14 +24,20 @@ export default function DocsPage() {
           <h2 className="text-xl font-bold">Create an endpoint</h2>
         </div>
         <p className="text-muted-foreground mb-4">
-          Sign in and click <strong className="text-foreground">New Endpoint</strong> in the dashboard.
-          You get a unique URL like:
+          Sign in and click <strong className="text-foreground">New Endpoint</strong> in the
+          dashboard. You get a unique URL like:
         </p>
         <pre className="neo-code text-sm mb-4">https://go.webhooks.cc/w/&lt;slug&gt;</pre>
         <p className="text-sm text-muted-foreground">
           Or create one programmatically with the{" "}
-          <Link href="/docs/sdk" className="text-primary hover:underline font-bold">SDK</Link> or{" "}
-          <Link href="/docs/cli" className="text-primary hover:underline font-bold">CLI</Link>.
+          <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
+            SDK
+          </Link>{" "}
+          or{" "}
+          <Link href="/docs/cli" className="text-primary hover:underline font-bold">
+            CLI
+          </Link>
+          .
         </p>
       </section>
 
@@ -63,8 +70,10 @@ export default function DocsPage() {
         </div>
         <p className="text-muted-foreground mb-4">
           Open the{" "}
-          <Link href="/dashboard" className="text-primary hover:underline font-bold">dashboard</Link>.
-          Requests appear in real-time. Inspect headers, body, query parameters, and metadata.
+          <Link href="/dashboard" className="text-primary hover:underline font-bold">
+            dashboard
+          </Link>
+          . Requests appear in real-time. Inspect headers, body, query parameters, and metadata.
           Copy as curl, replay to another URL, or export as JSON/CSV.
         </p>
       </section>
@@ -89,7 +98,9 @@ export default function DocsPage() {
             <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
               Use the SDK
             </Link>{" "}
-            <span className="text-muted-foreground">- integrate webhooks.cc into your test suite</span>
+            <span className="text-muted-foreground">
+              - integrate webhooks.cc into your test suite
+            </span>
           </li>
           <li>
             <Link href="/docs/webhooks/stripe" className="text-primary hover:underline font-bold">

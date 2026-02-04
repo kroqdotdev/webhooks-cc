@@ -387,7 +387,7 @@ export const listNewForUser = internalQuery({
 const MAX_LIST_LIMIT = 100;
 
 // Maximum count to avoid loading too much data into memory
-const MAX_COUNT = 10000;
+const MAX_COUNT = 1000;
 
 export const count = query({
   args: {

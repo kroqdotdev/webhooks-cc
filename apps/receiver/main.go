@@ -26,6 +26,16 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
 
+// debugLog conditionally logs verbose messages when RECEIVER_DEBUG is set.
+var debugLog = func() func(format string, args ...any) {
+	if os.Getenv("RECEIVER_DEBUG") != "" {
+		return func(format string, args ...any) {
+			log.Printf("[DEBUG] "+format, args...)
+		}
+	}
+	return func(string, ...any) {} // no-op
+}()
+
 const (
 	maxBodySize           = 100 * 1024       // 100KB max body for webhooks
 	maxConvexResponseSize = 1024 * 1024      // 1MB max response from Convex
@@ -136,24 +146,30 @@ type EndpointCache struct {
 	maxSize  int
 }
 
-func NewEndpointCache(ttl time.Duration) *EndpointCache {
+func NewEndpointCache(ctx context.Context, ttl time.Duration) *EndpointCache {
 	c := &EndpointCache{
 		entries:  make(map[string]*EndpointInfo),
 		inFlight: make(map[string]*inFlightRequest),
 		ttl:      ttl,
 		maxSize:  maxCacheEntries,
 	}
-	// Start background cleanup goroutine
-	go c.cleanupLoop()
+	// Start background cleanup goroutine (stopped via ctx)
+	go c.cleanupLoop(ctx)
 	return c
 }
 
 // cleanupLoop periodically removes stale entries to prevent unbounded growth.
-func (c *EndpointCache) cleanupLoop() {
+// Exits when ctx is cancelled.
+func (c *EndpointCache) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(cacheCleanupInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		c.cleanup()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.cleanup()
+		}
 	}
 }
 
@@ -275,21 +291,28 @@ type FileQuotaStore struct {
 
 // NewFileQuotaStore creates a new file-based quota store.
 // Creates the directory if it doesn't exist and starts a cleanup goroutine.
-func NewFileQuotaStore(dir string) *FileQuotaStore {
+// The cleanup goroutine exits when ctx is cancelled.
+func NewFileQuotaStore(ctx context.Context, dir string) *FileQuotaStore {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		log.Printf("Warning: failed to create quota directory %s: %v", dir, err)
 	}
 	s := &FileQuotaStore{dir: dir}
-	go s.cleanupLoop()
+	go s.cleanupLoop(ctx)
 	return s
 }
 
 // cleanupLoop periodically removes stale quota files.
-func (s *FileQuotaStore) cleanupLoop() {
+// Exits when ctx is cancelled.
+func (s *FileQuotaStore) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(cacheCleanupInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		s.cleanup()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.cleanup()
+		}
 	}
 }
 
@@ -392,7 +415,7 @@ func (s *FileQuotaStore) fetchAndCreateQuota(ctx context.Context, slug string) (
 
 	// For free users who need period start, call check-period to initialize
 	if resp.NeedsPeriodStart && resp.UserID != "" {
-		log.Printf("Starting period for free user %s (needsPeriodStart=true)", resp.UserID)
+		debugLog("Starting period for free user %s (needsPeriodStart=true)", resp.UserID)
 		periodResp, err := callCheckPeriod(ctx, resp.UserID)
 		if err != nil {
 			log.Printf("Failed to start period for user %s: %v", resp.UserID, err)
@@ -412,7 +435,7 @@ func (s *FileQuotaStore) fetchAndCreateQuota(ctx context.Context, slug string) (
 			return quota, nil
 		} else if periodResp.Error == "" {
 			// Period started successfully, use the new quota info
-			log.Printf("Period started for user %s, periodEnd=%v, remaining=%d", resp.UserID, periodResp.PeriodEnd, periodResp.Remaining)
+			debugLog("Period started for user %s, periodEnd=%v, remaining=%d", resp.UserID, periodResp.PeriodEnd, periodResp.Remaining)
 			quota := &QuotaFile{
 				UserID:      resp.UserID,
 				Remaining:   periodResp.Remaining,
@@ -440,7 +463,7 @@ func (s *FileQuotaStore) fetchAndCreateQuota(ctx context.Context, slug string) (
 		quota.PeriodEnd = *resp.PeriodEnd
 	}
 
-	log.Printf("[fetchAndCreateQuota] Created quota for slug: IsUnlimited=%v Remaining=%d Limit=%d", quota.IsUnlimited, quota.Remaining, quota.Limit)
+	debugLog("[fetchAndCreateQuota] Created quota for slug: IsUnlimited=%v Remaining=%d Limit=%d", quota.IsUnlimited, quota.Remaining, quota.Limit)
 
 	return quota, nil
 }
@@ -492,7 +515,7 @@ func (s *FileQuotaStore) GetAndDecrement(ctx context.Context, slug string) Quota
 		staleDuration := time.Now().UnixMilli() - quota.LastSync
 		if staleDuration > quotaStaleTTL.Milliseconds() {
 			needsFetch = true
-			log.Printf("[GetAndDecrement] slug=%s quota stale (age=%dms), refreshing", slug, staleDuration)
+			debugLog("[GetAndDecrement] slug=%s quota stale (age=%dms), refreshing", slug, staleDuration)
 		}
 	}
 
@@ -502,13 +525,13 @@ func (s *FileQuotaStore) GetAndDecrement(ctx context.Context, slug string) Quota
 			log.Printf("Warning: failed to fetch quota for %s: %v", slug, err)
 			// If we have stale data, use it; otherwise fail-open
 			if quota == nil {
-				log.Printf("[GetAndDecrement] slug=%s no cached data, fail-open", slug)
+				debugLog("[GetAndDecrement] slug=%s no cached data, fail-open", slug)
 				return QuotaCheckResult{Allowed: true}
 			}
-			log.Printf("[GetAndDecrement] slug=%s using stale quota data", slug)
+			debugLog("[GetAndDecrement] slug=%s using stale quota data", slug)
 		} else if newQuota == nil {
 			// Endpoint not found
-			log.Printf("[GetAndDecrement] slug=%s endpoint not found, fail-open", slug)
+			debugLog("[GetAndDecrement] slug=%s endpoint not found, fail-open", slug)
 			return QuotaCheckResult{Allowed: true}
 		} else {
 			quota = newQuota
@@ -521,11 +544,11 @@ func (s *FileQuotaStore) GetAndDecrement(ctx context.Context, slug string) Quota
 
 	// If still no quota (shouldn't happen), fail-open
 	if quota == nil {
-		log.Printf("[GetAndDecrement] slug=%s no quota data, fail-open", slug)
+		debugLog("[GetAndDecrement] slug=%s no quota data, fail-open", slug)
 		return QuotaCheckResult{Allowed: true}
 	}
 
-	log.Printf("[GetAndDecrement] slug=%s IsUnlimited=%v Remaining=%d Limit=%d PeriodEnd=%d",
+	debugLog("[GetAndDecrement] slug=%s IsUnlimited=%v Remaining=%d Limit=%d PeriodEnd=%d",
 		slug, quota.IsUnlimited, quota.Remaining, quota.Limit, quota.PeriodEnd)
 
 	// Unlimited quota
@@ -542,7 +565,7 @@ func (s *FileQuotaStore) GetAndDecrement(ctx context.Context, slug string) Quota
 				retryAfter = 0
 			}
 		}
-		log.Printf("[GetAndDecrement] slug=%s QUOTA_EXCEEDED retryAfter=%d", slug, retryAfter)
+		debugLog("[GetAndDecrement] slug=%s QUOTA_EXCEEDED retryAfter=%d", slug, retryAfter)
 		return QuotaCheckResult{Allowed: false, RetryAfter: retryAfter}
 	}
 
@@ -553,7 +576,7 @@ func (s *FileQuotaStore) GetAndDecrement(ctx context.Context, slug string) Quota
 		// Still allow the request since we already decremented in memory
 	}
 
-	log.Printf("[GetAndDecrement] slug=%s ALLOWED remaining=%d", slug, quota.Remaining)
+	debugLog("[GetAndDecrement] slug=%s ALLOWED remaining=%d", slug, quota.Remaining)
 	return QuotaCheckResult{Allowed: true}
 }
 
@@ -648,7 +671,7 @@ func (b *RequestBatcher) flushLocked(slug string) {
 			log.Printf("Batch capture error for %s: %s", slug, resp.Error)
 			return
 		}
-		log.Printf("Batch captured %d requests for %s", resp.Inserted, slug)
+		debugLog("Batch captured %d requests for %s", resp.Inserted, slug)
 	}()
 }
 
@@ -690,6 +713,9 @@ func main() {
 	}
 
 	captureSharedSecret = os.Getenv("CAPTURE_SHARED_SECRET")
+	if captureSharedSecret == "" {
+		log.Println("WARNING: CAPTURE_SHARED_SECRET is not set. Internal API calls will be unauthenticated.")
+	}
 
 	httpClient = &http.Client{
 		Timeout: httpTimeout,
@@ -704,8 +730,13 @@ func main() {
 	if quotaDir == "" {
 		quotaDir = "/tmp/webhooks-quota"
 	}
-	quotaStore = NewFileQuotaStore(quotaDir)
-	endpointCache = NewEndpointCache(endpointCacheTTL)
+	// Create a root context that is cancelled on shutdown.
+	// Background goroutines (cache cleanup, quota cleanup) use this for graceful exit.
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
+	quotaStore = NewFileQuotaStore(rootCtx, quotaDir)
+	endpointCache = NewEndpointCache(rootCtx, endpointCacheTTL)
 	requestBatcher = NewRequestBatcher(batchMaxSize, batchFlushInterval)
 
 	app := fiber.New(fiber.Config{
@@ -714,10 +745,15 @@ func main() {
 	})
 
 	app.Use(recover.New())
+
+	// CORS: All routes on this service are public webhook capture endpoints,
+	// so allow any origin. The receiver has no authenticated browser-facing routes.
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
+		AllowOriginsFunc: func(origin string) bool {
+			return true
+		},
 		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-		AllowHeaders: "Content-Type,Authorization",
+		AllowHeaders: "Content-Type",
 	}))
 	app.Use(logger.New(logger.Config{
 		Format: "${time} ${method} ${path} ${status} ${latency}\n",
@@ -741,6 +777,9 @@ func main() {
 	go func() {
 		<-shutdownCh
 		log.Println("Shutdown signal received, flushing pending requests...")
+
+		// Cancel root context to stop background cleanup goroutines
+		rootCancel()
 
 		// Flush all pending batches
 		requestBatcher.FlushAll()
@@ -792,7 +831,7 @@ func handleWebhook(c *fiber.Ctx) error {
 	if !isValidSlug(slug) {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid_slug"})
 	}
-	log.Printf("[handleWebhook] Processing request for slug=%s", slug)
+	debugLog("[handleWebhook] Processing request for slug=%s", slug)
 	path := c.Params("*")
 	if path == "" {
 		path = "/"
@@ -801,7 +840,7 @@ func handleWebhook(c *fiber.Ctx) error {
 	}
 
 	// Get endpoint info from cache (for mock response and validation)
-	endpointInfo, err := endpointCache.Get(c.Context(), slug)
+	endpointInfo, err := endpointCache.Get(c.UserContext(), slug)
 	if err != nil {
 		log.Printf("Endpoint info fetch failed for %s: %v", slug, err)
 		return c.Status(500).JSON(fiber.Map{"error": "internal_error"})
@@ -817,9 +856,9 @@ func handleWebhook(c *fiber.Ctx) error {
 
 	// Atomically check quota and decrement if allowed
 	// File-based storage eliminates the pointer aliasing race condition
-	quotaResult := quotaStore.GetAndDecrement(c.Context(), slug)
+	quotaResult := quotaStore.GetAndDecrement(c.UserContext(), slug)
 	if !quotaResult.Allowed {
-		log.Printf("[handleWebhook] QUOTA_EXCEEDED for slug=%s retryAfter=%d", slug, quotaResult.RetryAfter)
+		debugLog("[handleWebhook] QUOTA_EXCEEDED for slug=%s retryAfter=%d", slug, quotaResult.RetryAfter)
 		// Minimal 429 response - don't leak usage details to webhook senders
 		return c.Status(429).JSON(fiber.Map{
 			"error": "quota_exceeded",
@@ -952,7 +991,7 @@ func callCheckPeriod(ctx context.Context, userID string) (*CheckPeriodResponse, 
 }
 
 func fetchQuota(ctx context.Context, slug string) (*QuotaResponse, error) {
-	log.Printf("[fetchQuota] Fetching quota for slug=%s", slug)
+	debugLog("[fetchQuota] Fetching quota for slug=%s", slug)
 	req, err := http.NewRequestWithContext(ctx, "GET", convexSiteURL+"/quota?slug="+url.QueryEscape(slug), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create quota request: %w", err)
@@ -982,8 +1021,8 @@ func fetchQuota(ctx context.Context, slug string) (*QuotaResponse, error) {
 		return nil, fmt.Errorf("failed to parse quota response: %w", err)
 	}
 
-	log.Printf("[fetchQuota] slug=%s response: userId=%s remaining=%d limit=%d needsPeriodStart=%v error=%s",
-		slug, result.UserID, result.Remaining, result.Limit, result.NeedsPeriodStart, result.Error)
+	debugLog("[fetchQuota] slug=%s response: remaining=%d limit=%d needsPeriodStart=%v error=%s",
+		slug, result.Remaining, result.Limit, result.NeedsPeriodStart, result.Error)
 
 	return &result, nil
 }
