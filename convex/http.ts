@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
 const http = httpRouter();
@@ -269,26 +270,8 @@ http.route({
   path: "/quota",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    // Verify shared secret from Go receiver
-    const authHeader = request.headers.get("Authorization");
-    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
-
-    if (!expectedSecret) {
-      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "internal_error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    const isValid = await secureCompare(providedSecret, expectedSecret);
-    if (!isValid) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
 
     // Extract slug from query parameter
     const url = new URL(request.url);
@@ -317,26 +300,8 @@ http.route({
   path: "/check-period",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    // Verify shared secret from Go receiver
-    const authHeader = request.headers.get("Authorization");
-    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
-
-    if (!expectedSecret) {
-      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "internal_error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    const isValid = await secureCompare(providedSecret, expectedSecret);
-    if (!isValid) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
 
     let body;
     try {
@@ -386,26 +351,8 @@ http.route({
   path: "/endpoint-info",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    // Verify shared secret from Go receiver
-    const authHeader = request.headers.get("Authorization");
-    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
-
-    if (!expectedSecret) {
-      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "internal_error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    const isValid = await secureCompare(providedSecret, expectedSecret);
-    if (!isValid) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
 
     // Extract slug from query parameter
     const url = new URL(request.url);
@@ -434,26 +381,8 @@ http.route({
   path: "/capture-batch",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    // Verify shared secret from Go receiver
-    const authHeader = request.headers.get("Authorization");
-    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
-
-    if (!expectedSecret) {
-      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "internal_error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    const isValid = await secureCompare(providedSecret, expectedSecret);
-    if (!isValid) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
 
     let body;
     try {
@@ -578,28 +507,8 @@ http.route({
   path: "/capture",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    // Verify shared secret from Go receiver - REQUIRED, not optional
-    const authHeader = request.headers.get("Authorization");
-    const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
-
-    // Fail closed: if secret is not configured, deny all requests
-    if (!expectedSecret) {
-      console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
-      return new Response(JSON.stringify({ error: "internal_error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Verify the authorization header matches the expected secret (constant-time comparison)
-    const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    const isValid = await secureCompare(providedSecret, expectedSecret);
-    if (!isValid) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
 
     let body;
     try {
@@ -678,6 +587,317 @@ http.route({
     return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
     });
+  }),
+});
+
+// --- CLI API HTTP actions (shared-secret authenticated) ---
+
+/** Helper to verify shared secret and return error response if invalid */
+async function verifySharedSecret(request: Request): Promise<Response | null> {
+  const authHeader = request.headers.get("Authorization");
+  const expectedSecret = process.env.CAPTURE_SHARED_SECRET;
+
+  if (!expectedSecret) {
+    console.error("CAPTURE_SHARED_SECRET is not configured - denying request");
+    return new Response(JSON.stringify({ error: "internal_error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const isValid = await secureCompare(providedSecret, expectedSecret);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return null;
+}
+
+// Validate API key and return userId
+http.route({
+  path: "/validate-api-key",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof body.apiKey !== "string" || body.apiKey.length === 0) {
+      return new Response(JSON.stringify({ error: "missing_api_key" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await ctx.runMutation(internal.apiKeys.validate, { key: body.apiKey });
+    if (!result) {
+      return new Response(JSON.stringify({ error: "invalid_api_key" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ userId: result.userId }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
+// Create endpoint for user
+http.route({
+  path: "/cli/endpoints",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof body.userId !== "string" || body.userId.length === 0) {
+      return new Response(JSON.stringify({ error: "missing_user_id" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.endpoints.createForUser, {
+        userId: body.userId,
+        name: body.name,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// List endpoints for user
+http.route({
+  path: "/cli/endpoints",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const userId = url.searchParams.get("userId");
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "missing_user_id" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const endpoints = await ctx.runQuery(internal.endpoints.listByUser, {
+        userId: userId as Id<"users">,
+      });
+      return new Response(JSON.stringify(endpoints), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// Delete endpoint for user
+http.route({
+  path: "/cli/endpoints",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof body.userId !== "string" || typeof body.slug !== "string") {
+      return new Response(JSON.stringify({ error: "missing_fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.endpoints.removeForUser, {
+        slug: body.slug,
+        userId: body.userId,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// Get single request for user
+http.route({
+  path: "/cli/requests",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const requestId = url.searchParams.get("requestId");
+    const userId = url.searchParams.get("userId");
+
+    if (!requestId || !userId) {
+      return new Response(JSON.stringify({ error: "missing_params" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runQuery(internal.requests.getForUser, {
+        requestId: requestId as Id<"requests">,
+        userId: userId as Id<"users">,
+      });
+      if (!result) {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// Get requests since timestamp for SSE polling
+http.route({
+  path: "/cli/requests-since",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const endpointId = url.searchParams.get("endpointId");
+    const userId = url.searchParams.get("userId");
+    const afterTimestamp = url.searchParams.get("afterTimestamp");
+
+    if (!endpointId || !userId || !afterTimestamp) {
+      return new Response(JSON.stringify({ error: "missing_params" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const requests = await ctx.runQuery(internal.requests.listNewForUser, {
+        endpointId: endpointId as Id<"endpoints">,
+        userId: userId as Id<"users">,
+        afterTimestamp: Number(afterTimestamp),
+      });
+      return new Response(JSON.stringify(requests), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// Get endpoint by slug with ownership check
+http.route({
+  path: "/cli/endpoint-by-slug",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const slug = url.searchParams.get("slug");
+    const userId = url.searchParams.get("userId");
+
+    if (!slug || !userId) {
+      return new Response(JSON.stringify({ error: "missing_params" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const endpoint = await ctx.runQuery(internal.endpoints.getBySlugForUser, {
+        slug,
+        userId: userId as Id<"users">,
+      });
+      if (!endpoint) {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(endpoint), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
   }),
 });
 

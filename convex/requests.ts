@@ -346,6 +346,43 @@ export const captureBatch = internalMutation({
   },
 });
 
+// --- Internal functions for CLI API routes ---
+
+export const getForUser = internalQuery({
+  args: { requestId: v.id("requests"), userId: v.id("users") },
+  handler: async (ctx, { requestId, userId }) => {
+    const request = await ctx.db.get(requestId);
+    if (!request) return null;
+
+    const endpoint = await ctx.db.get(request.endpointId);
+    if (!endpoint) return null;
+    if (endpoint.userId !== userId) return null;
+
+    return request;
+  },
+});
+
+export const listNewForUser = internalQuery({
+  args: {
+    endpointId: v.id("endpoints"),
+    userId: v.id("users"),
+    afterTimestamp: v.number(),
+  },
+  handler: async (ctx, { endpointId, userId, afterTimestamp }) => {
+    const endpoint = await ctx.db.get(endpointId);
+    if (!endpoint) return [];
+    if (endpoint.userId !== userId) return [];
+
+    return await ctx.db
+      .query("requests")
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gt("receivedAt", afterTimestamp)
+      )
+      .order("asc")
+      .take(100);
+  },
+});
+
 // Maximum number of requests that can be fetched at once
 const MAX_LIST_LIMIT = 100;
 

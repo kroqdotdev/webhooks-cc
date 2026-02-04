@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
 import type * as config from "../config.js";
 import type * as crons from "../crons.js";
+import type * as deviceAuth from "../deviceAuth.js";
 import type * as endpoints from "../endpoints.js";
 import type * as http from "../http.js";
 import type * as rateLimiter from "../rateLimiter.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   billing: typeof billing;
   config: typeof config;
   crons: typeof crons;
+  deviceAuth: typeof deviceAuth;
   endpoints: typeof endpoints;
   http: typeof http;
   rateLimiter: typeof rateLimiter;

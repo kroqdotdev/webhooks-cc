@@ -8,7 +8,7 @@
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { nanoid } from "nanoid";
 import { EPHEMERAL_TTL_MS } from "./config";
 
@@ -228,6 +228,98 @@ export const remove = mutation({
     // If there might be more requests, the endpoint stays but requests are being cleaned
     // For simplicity, we delete the endpoint now - orphaned requests will be cleaned by cron
     await ctx.db.delete(id);
+    return { success: true };
+  },
+});
+
+// --- Internal functions for CLI API routes ---
+
+export const listByUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("endpoints")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .collect();
+  },
+});
+
+export const getBySlugForUser = internalQuery({
+  args: { slug: v.string(), userId: v.id("users") },
+  handler: async (ctx, { slug, userId }) => {
+    const endpoint = await ctx.db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+
+    if (!endpoint) return null;
+    if (endpoint.userId !== userId) return null;
+
+    return endpoint;
+  },
+});
+
+export const createForUser = internalMutation({
+  args: { userId: v.id("users"), name: v.optional(v.string()) },
+  handler: async (ctx, { userId, name }) => {
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
+        throw new Error(`Endpoint name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+      }
+    }
+
+    let slug: string | null = null;
+    for (let i = 0; i < MAX_SLUG_ATTEMPTS; i++) {
+      const candidate = nanoid(8);
+      const existing = await ctx.db
+        .query("endpoints")
+        .withIndex("by_slug", (q) => q.eq("slug", candidate))
+        .first();
+      if (!existing) {
+        slug = candidate;
+        break;
+      }
+    }
+    if (!slug) {
+      throw new Error("Failed to generate unique slug, please try again");
+    }
+
+    const endpointId = await ctx.db.insert("endpoints", {
+      userId,
+      slug,
+      name: name?.trim(),
+      isEphemeral: false,
+      createdAt: Date.now(),
+    });
+
+    return { id: endpointId, slug };
+  },
+});
+
+export const removeForUser = internalMutation({
+  args: { slug: v.string(), userId: v.id("users") },
+  handler: async (ctx, { slug, userId }) => {
+    const endpoint = await ctx.db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+
+    if (!endpoint) throw new Error("Endpoint not found");
+    if (endpoint.userId !== userId) throw new Error("Not authorized");
+
+    // Delete requests in batches
+    const requests = await ctx.db
+      .query("requests")
+      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpoint._id))
+      .take(DELETE_BATCH_SIZE);
+
+    for (const request of requests) {
+      await ctx.db.delete(request._id);
+    }
+
+    await ctx.db.delete(endpoint._id);
     return { success: true };
   },
 });
