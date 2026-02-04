@@ -103,23 +103,29 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			port := args[0]
-			subdomain, _ := cmd.Flags().GetString("subdomain")
+			endpoint, _ := cmd.Flags().GetString("endpoint")
 			ephemeral, _ := cmd.Flags().GetBool("ephemeral")
+			headers, _ := cmd.Flags().GetStringArray("header")
 
-			fmt.Printf("Creating tunnel to localhost:%s\n", port)
-			if subdomain != "" {
-				fmt.Printf("Requesting subdomain: %s\n", subdomain)
+			if endpoint != "" {
+				fmt.Printf("Forwarding endpoint %s to localhost:%s\n", endpoint, port)
+			} else {
+				fmt.Printf("Creating tunnel to localhost:%s\n", port)
 			}
 			if ephemeral {
 				fmt.Println("Endpoint will be deleted on exit")
 			}
+			if len(headers) > 0 {
+				fmt.Printf("Custom headers: %v\n", headers)
+			}
 
-			// TODO: Create endpoint, connect to real-time stream, forward requests
+			// TODO: Create or reuse endpoint, connect to real-time stream, forward requests
 			fmt.Println("Tunneling not yet implemented")
 		},
 	}
-	tunnelCmd.Flags().StringP("subdomain", "s", "", "Request specific subdomain (pro only)")
+	tunnelCmd.Flags().String("endpoint", "", "Use an existing endpoint instead of creating one")
 	tunnelCmd.Flags().BoolP("ephemeral", "e", false, "Delete endpoint on exit")
+	tunnelCmd.Flags().StringArrayP("header", "H", nil, "Add custom header to forwarded requests (repeatable)")
 
 	// Listen command
 	listenCmd := &cobra.Command{

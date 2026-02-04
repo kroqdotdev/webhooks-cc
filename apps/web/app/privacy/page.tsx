@@ -31,14 +31,12 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">
-          Last updated: February 4, 2026
-        </p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: February 4, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
-            webhooks.cc is a webhook inspection and testing tool. This policy
-            describes what data we collect, why, and how we handle it.
+            webhooks.cc is a webhook inspection and testing tool. This policy describes what data we
+            collect, why, and how we handle it.
           </p>
         </div>
 
@@ -47,21 +45,19 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold mb-3">What We Collect</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              <span className="font-bold text-foreground">Account info.</span>{" "}
-              When you sign in with GitHub or Google, we receive your email
-              address, display name, and profile picture from the OAuth provider.
+              <span className="font-bold text-foreground">Account info.</span> When you sign in with
+              GitHub or Google, we receive your email address, display name, and profile picture
+              from the OAuth provider.
             </p>
             <p>
-              <span className="font-bold text-foreground">Webhook data.</span>{" "}
-              We store the requests sent to your endpoints: HTTP method, path,
-              headers, query parameters, request body, and sender IP address.
+              <span className="font-bold text-foreground">Webhook data.</span> We store the requests
+              sent to your endpoints: HTTP method, path, headers, query parameters, request body,
+              and sender IP address.
             </p>
             <p>
-              <span className="font-bold text-foreground">
-                Billing identifiers.
-              </span>{" "}
-              If you subscribe to a paid plan, we store your Polar customer ID
-              and subscription ID. We do not store payment card details.
+              <span className="font-bold text-foreground">Billing identifiers.</span> If you
+              subscribe to a paid plan, we store your Polar customer ID and subscription ID. We do
+              not store payment card details.
             </p>
           </div>
         </section>
@@ -85,12 +81,12 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold mb-3">Third-Party Services</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              <span className="font-bold text-foreground">Convex</span> hosts
-              our database and handles authentication.
+              <span className="font-bold text-foreground">Convex</span> hosts our database and
+              handles authentication.
             </p>
             <p>
-              <span className="font-bold text-foreground">Polar.sh</span>{" "}
-              processes subscription payments.
+              <span className="font-bold text-foreground">Polar.sh</span> processes subscription
+              payments.
             </p>
             <p>We do not use analytics trackers or advertising networks.</p>
           </div>
@@ -101,16 +97,16 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold mb-3">Data Retention</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              <span className="font-bold text-foreground">Free plan:</span>{" "}
-              Captured requests are cleared on each billing period reset.
+              <span className="font-bold text-foreground">Free plan:</span> Captured requests are
+              cleared on each billing period reset.
             </p>
             <p>
-              <span className="font-bold text-foreground">Pro plan:</span>{" "}
-              Requests are retained for 30 days.
+              <span className="font-bold text-foreground">Pro plan:</span> Requests are retained for
+              30 days.
             </p>
             <p>
-              Ephemeral (anonymous) endpoints and their requests are
-              automatically deleted when they expire.
+              Ephemeral (anonymous) endpoints and their requests are automatically deleted when they
+              expire.
             </p>
           </div>
         </section>
@@ -120,9 +116,8 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold mb-3">Cookies & Storage</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              Authentication is managed by Convex and uses standard session
-              mechanisms. We store your theme preference (light/dark) in
-              localStorage. We do not use tracking cookies.
+              Authentication is managed by Convex and uses standard session mechanisms. We store
+              your theme preference (light/dark) in localStorage. We do not use tracking cookies.
             </p>
           </div>
         </section>
@@ -132,13 +127,9 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold mb-3">Your Data</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              You can delete your endpoints and their captured requests at any
-              time from the dashboard. To delete your account entirely, visit
-              your{" "}
-              <Link
-                href="/account"
-                className="text-primary hover:underline font-bold"
-              >
+              You can delete your endpoints and their captured requests at any time from the
+              dashboard. To delete your account entirely, visit your{" "}
+              <Link href="/account" className="text-primary hover:underline font-bold">
                 account page
               </Link>
               .

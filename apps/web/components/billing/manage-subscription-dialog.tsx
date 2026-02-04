@@ -77,9 +77,12 @@ export function ManageSubscriptionDialog() {
     : "Unknown";
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => {
-      if (!canceling && !resubscribing) setOpen(isOpen);
-    }}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!canceling && !resubscribing) setOpen(isOpen);
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline">Manage subscription</Button>
       </DialogTrigger>
@@ -111,14 +114,10 @@ export function ManageSubscriptionDialog() {
         {user.cancelAtPeriodEnd ? (
           <div className="space-y-3">
             <div className="rounded-md bg-muted p-3 text-sm">
-              Your subscription will end on {nextPaymentDate}. You&apos;ll be
-              downgraded to the free tier after this date.
+              Your subscription will end on {nextPaymentDate}. You&apos;ll be downgraded to the free
+              tier after this date.
             </div>
-            <Button
-              onClick={handleResubscribe}
-              disabled={resubscribing}
-              className="w-full"
-            >
+            <Button onClick={handleResubscribe} disabled={resubscribing} className="w-full">
               {resubscribing ? "Reactivating..." : "Keep my subscription"}
             </Button>
           </div>
@@ -134,16 +133,18 @@ export function ManageSubscriptionDialog() {
         )}
       </DialogContent>
 
-      <AlertDialog open={confirmCancelOpen} onOpenChange={(isOpen) => {
-        if (!canceling) setConfirmCancelOpen(isOpen);
-      }}>
+      <AlertDialog
+        open={confirmCancelOpen}
+        onOpenChange={(isOpen) => {
+          if (!canceling) setConfirmCancelOpen(isOpen);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
             <AlertDialogDescription>
-              You&apos;ll retain Pro access until your billing period ends on{" "}
-              {nextPaymentDate}. After that, you&apos;ll be downgraded to the
-              free tier.
+              You&apos;ll retain Pro access until your billing period ends on {nextPaymentDate}.
+              After that, you&apos;ll be downgraded to the free tier.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

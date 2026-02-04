@@ -52,11 +52,11 @@ whk tunnel 8080
 ## SDK
 
 ```typescript
-import { WebhooksClient } from '@webhooks-cc/sdk';
+import { WebhooksClient } from "@webhooks-cc/sdk";
 
-const client = new WebhooksClient({ apiKey: 'your-api-key' });
+const client = new WebhooksClient({ apiKey: "your-api-key" });
 
-const endpoint = await client.endpoints.create({ name: 'my-webhook' });
+const endpoint = await client.endpoints.create({ name: "my-webhook" });
 console.log(endpoint.url);
 
 const requests = await client.requests.list(endpoint.id);
