@@ -76,7 +76,7 @@ export default function InstallationPage() {
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Installation</h1>
         <p className="text-lg text-muted-foreground mb-8">
-          Install the CLI for local forwarding or the SDK for programmatic access.
+          Install the CLI to forward webhooks to localhost, or the SDK for programmatic access.
         </p>
 
         {/* Tab switcher */}
@@ -99,33 +99,51 @@ export default function InstallationPage() {
           <div className="space-y-6">
             <section>
               <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
-              <CodeBlock>{`brew install webhookscc/tap/whk`}</CodeBlock>
+              <CodeBlock>{`brew install lohsefar/tap/whk`}</CodeBlock>
             </section>
 
             <section>
-              <h2 className="text-lg font-bold mb-3">Shell script</h2>
+              <h2 className="text-lg font-bold mb-3">Shell script (macOS / Linux)</h2>
               <CodeBlock>{`curl -fsSL https://webhooks.cc/install.sh | sh`}</CodeBlock>
+              <p className="text-sm text-muted-foreground mt-2">
+                Downloads the latest binary for your platform and installs it
+                to <code className="font-mono font-bold">/usr/local/bin</code>.
+              </p>
             </section>
 
             <section>
-              <h2 className="text-lg font-bold mb-3">Go install</h2>
-              <CodeBlock>{`go install github.com/webhookscc/cli@latest`}</CodeBlock>
+              <h2 className="text-lg font-bold mb-3">GitHub Releases</h2>
+              <p className="text-sm text-muted-foreground">
+                Download pre-built binaries for macOS, Linux, and Windows from{" "}
+                <a
+                  href="https://github.com/lohsefar/webhooks-cc/releases"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline font-bold"
+                >
+                  GitHub Releases
+                </a>
+                .
+              </p>
             </section>
 
             <section>
-              <h2 className="text-lg font-bold mb-3">Verify installation</h2>
+              <h2 className="text-lg font-bold mb-3">Verify</h2>
               <CodeBlock>{`whk --version`}</CodeBlock>
             </section>
 
-            <p className="text-sm text-muted-foreground">
-              After installing, run <code className="font-mono font-bold">whk auth login</code> to
-              authenticate, then <code className="font-mono font-bold">whk tunnel 3000</code> to
-              forward webhooks to your local server. See the{" "}
-              <Link href="/docs/cli" className="text-primary hover:underline font-bold">
-                CLI docs
-              </Link>{" "}
-              for full usage.
-            </p>
+            <section>
+              <h2 className="text-lg font-bold mb-3">Get started</h2>
+              <CodeBlock copyText="whk auth login">{`whk auth login      # authenticate via browser
+whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
+              <p className="text-sm text-muted-foreground mt-2">
+                See the{" "}
+                <Link href="/docs/cli" className="text-primary hover:underline font-bold">
+                  CLI docs
+                </Link>{" "}
+                for the full command reference.
+              </p>
+            </section>
           </div>
         )}
 

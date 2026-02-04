@@ -40,8 +40,8 @@ coverage/
 # Feature work
 feat/
 
-# Documentation (internal planning docs)
-docs/
+# Documentation (internal planning docs, root only)
+/docs/
 
 # Temporary files
 tmp/
