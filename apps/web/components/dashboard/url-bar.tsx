@@ -16,9 +16,10 @@ interface UrlBarProps {
     body: string;
     headers: Record<string, string>;
   };
+  extra?: React.ReactNode;
 }
 
-export function UrlBar({ endpointId, endpointName, slug, mockResponse }: UrlBarProps) {
+export function UrlBar({ endpointId, endpointName, slug, mockResponse, extra }: UrlBarProps) {
   const [copied, setCopied] = useState(false);
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
 
@@ -60,6 +61,7 @@ export function UrlBar({ endpointId, endpointName, slug, mockResponse }: UrlBarP
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
         </div>
+        {extra}
       </div>
     </div>
   );

@@ -7,24 +7,12 @@ import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes, Request } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
+import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
 
 /** Props for RequestDetail component. */
 interface RequestDetailProps {
   /** The captured webhook request to display. */
   request: Request;
-}
-
-/** Formats the request body, pretty-printing JSON if detected. */
-function formatBody(body: string, contentType?: string): string {
-  if (!body) return "(empty)";
-  if (contentType?.includes("application/json") || body.startsWith("{") || body.startsWith("[")) {
-    try {
-      return JSON.stringify(JSON.parse(body), null, 2);
-    } catch {
-      // Not valid JSON
-    }
-  }
-  return body;
 }
 
 /**
@@ -116,6 +104,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
 
   const curlCommand = generateCurlCommand(request);
   const fullTime = new Date(request.receivedAt).toLocaleString();
+  const bodyFormat = detectFormat(request.contentType, request.body);
 
   return (
     <div className="flex flex-col h-full">
@@ -174,17 +163,22 @@ export function RequestDetail({ request }: RequestDetailProps) {
       <div className="flex-1 overflow-auto p-4">
         {tab === "body" && (
           <div className="relative">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border-2 border-foreground bg-muted">
+                {getFormatLabel(bodyFormat)}
+              </span>
+            </div>
             {request.body && (
               <button
                 onClick={() => request.body && handleCopy(request.body, "body")}
-                className="absolute top-2 right-2 neo-btn-outline !py-1 !px-2 text-xs flex items-center gap-1"
+                className="absolute top-0 right-0 neo-btn-outline !py-1 !px-2 text-xs flex items-center gap-1"
                 aria-label={copied === "body" ? "Copied to clipboard" : "Copy body to clipboard"}
               >
                 {copied === "body" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               </button>
             )}
             <pre className="neo-code overflow-x-auto text-sm whitespace-pre-wrap break-words">
-              {request.body ? formatBody(request.body, request.contentType) : "(empty body)"}
+              {request.body ? formatBody(request.body, bodyFormat) : "(empty body)"}
             </pre>
           </div>
         )}

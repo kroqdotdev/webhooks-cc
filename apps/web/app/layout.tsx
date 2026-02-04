@@ -15,9 +15,32 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "webhooks.cc - Inspect webhooks instantly",
+  title: {
+    default: "webhooks.cc - Inspect webhooks instantly",
+    template: "%s | webhooks.cc",
+  },
   description:
     "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, forward to localhost.",
+  metadataBase: new URL("https://webhooks.cc"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://webhooks.cc",
+    siteName: "webhooks.cc",
+    title: "webhooks.cc - Inspect webhooks instantly",
+    description:
+      "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, forward to localhost.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "webhooks.cc - Inspect webhooks instantly",
+    description:
+      "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, forward to localhost.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /account
+Disallow: /api
+
+Sitemap: https://webhooks.cc/sitemap.xml
