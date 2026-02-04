@@ -19,12 +19,12 @@ const generateApiKeyBody = customAlphabet(
 );
 
 /** Generates a new API key with the whcc_ prefix. */
-function generateApiKey(): string {
+export function generateApiKey(): string {
   return `whcc_${generateApiKeyBody()}`;
 }
 
 /** Produces a SHA-256 hash of the API key for secure storage. */
-async function hashKey(key: string): Promise<string> {
+export async function hashKey(key: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(key);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);

@@ -11,6 +11,9 @@
  * - endpoints.by_user: List endpoints for dashboard
  * - endpoints.by_expires: Find expired ephemeral endpoints for cleanup cron
  * - requests.by_endpoint_time: List requests for an endpoint, sorted by time
+ * - deviceCodes.by_device_code: CLI polls by device code during OAuth device flow
+ * - deviceCodes.by_user_code: Browser lookup when user enters code to authorize
+ * - deviceCodes.by_expires: Cleanup cron finds expired device codes
  */
 import { defineSchema, defineTable } from "convex/server";
 import { authTables } from "@convex-dev/auth/server";
@@ -92,4 +95,16 @@ export default defineSchema({
     size: v.number(),
     receivedAt: v.number(),
   }).index("by_endpoint_time", ["endpointId", "receivedAt"]),
+
+  deviceCodes: defineTable({
+    deviceCode: v.string(),
+    userCode: v.string(),
+    expiresAt: v.number(),
+    status: v.union(v.literal("pending"), v.literal("authorized")),
+    userId: v.optional(v.id("users")),
+    apiKey: v.optional(v.string()),
+  })
+    .index("by_device_code", ["deviceCode"])
+    .index("by_user_code", ["userCode"])
+    .index("by_expires", ["expiresAt"]),
 });

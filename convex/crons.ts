@@ -6,6 +6,9 @@ const crons = cronJobs();
 // Clean up expired ephemeral endpoints every 5 minutes
 crons.interval("cleanup expired endpoints", { minutes: 5 }, internal.requests.cleanupExpired);
 
+// Clean up expired device codes every 5 minutes
+crons.interval("cleanup expired device codes", { minutes: 5 }, internal.deviceAuth.cleanupExpired);
+
 // Check billing period resets daily at midnight UTC
 crons.daily(
   "check billing period resets",

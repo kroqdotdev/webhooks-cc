@@ -1,0 +1,59 @@
+version: 2
+
+project_name: whk
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: whk
+    main: ./cmd/whk
+    binary: whk
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: whk
+    builds:
+      - whk
+    name_template: "whk_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: whk
+    repository:
+      owner: lohsefar
+      name: homebrew-tap
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: "https://webhooks.cc"
+    description: "CLI tool for webhooks.cc - Inspect, forward, and replay webhooks"
+    license: "MIT"
+    install: |
+      bin.install "whk"
+    test: |
+      system "#{bin}/whk", "--version"

@@ -16,12 +16,13 @@ import (
 	"time"
 
 	"webhooks.cc/cli/internal/auth"
+	"webhooks.cc/shared/types"
 )
 
 const (
 	defaultBaseURL         = "https://webhooks.cc"
 	httpTimeout            = 30 * time.Second
-	maxErrorResponseSize   = 1024 * 1024  // 1MB for error responses
+	maxErrorResponseSize   = 1024 * 1024    // 1MB for error responses
 	maxSuccessResponseSize = 10 * 1024 * 1024 // 10MB for success responses
 )
 
@@ -45,8 +46,9 @@ func NewClient() *Client {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	// Validate URL format early to provide clear error messages
-	if _, err := url.Parse(baseURL); err != nil {
-		// Fall back to default if WHK_API_URL is malformed
+	parsed, err := url.Parse(baseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		fmt.Fprintf(os.Stderr, "Warning: WHK_API_URL is invalid (%q), using default %s\n", baseURL, defaultBaseURL)
 		baseURL = defaultBaseURL
 	}
 
@@ -58,6 +60,11 @@ func NewClient() *Client {
 	}
 }
 
+// BaseURL returns the configured API base URL for use by the stream package.
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
 func (c *Client) getToken() (string, error) {
 	token, err := auth.LoadToken()
 	if err != nil {
@@ -66,10 +73,14 @@ func (c *Client) getToken() (string, error) {
 	return token.AccessToken, nil
 }
 
-func (c *Client) request(ctx context.Context, method, path string, body interface{}, result interface{}) error {
-	token, err := c.getToken()
-	if err != nil {
-		return err
+func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}, authenticated bool) error {
+	var token string
+	if authenticated {
+		var err error
+		token, err = c.getToken()
+		if err != nil {
+			return err
+		}
 	}
 
 	var bodyReader io.Reader
@@ -86,9 +97,15 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if authenticated {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
+	return c.executeRequest(req, result)
+}
+
+func (c *Client) executeRequest(req *http.Request, result interface{}) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
@@ -100,7 +117,12 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 		if err != nil {
 			return fmt.Errorf("API error (%d): failed to read response", resp.StatusCode)
 		}
-		return fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
+		// Truncate long error bodies for readability
+		bodyStr := string(body)
+		if len(bodyStr) > 200 {
+			bodyStr = bodyStr[:200] + "..."
+		}
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, bodyStr)
 	}
 
 	if result != nil {
@@ -111,6 +133,76 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 	}
 
 	return nil
+}
+
+func (c *Client) request(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+	return c.doRequest(ctx, method, path, body, result, true)
+}
+
+func (c *Client) requestNoAuth(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+	return c.doRequest(ctx, method, path, body, result, false)
+}
+
+// --- Device auth methods ---
+
+// DeviceCodeResponse is returned by CreateDeviceCode
+type DeviceCodeResponse struct {
+	DeviceCode      string `json:"deviceCode"`
+	UserCode        string `json:"userCode"`
+	ExpiresAt       int64  `json:"expiresAt"`
+	VerificationURL string `json:"verificationUrl"`
+}
+
+// PollResponse is returned by PollDeviceCode
+type PollResponse struct {
+	Status string `json:"status"`
+}
+
+// ClaimResponse is returned by ClaimDeviceCode
+type ClaimResponse struct {
+	APIKey string `json:"apiKey"`
+	UserID string `json:"userId"`
+	Email  string `json:"email"`
+}
+
+// CreateDeviceCode initiates the device authorization flow
+func (c *Client) CreateDeviceCode(ctx context.Context) (*DeviceCodeResponse, error) {
+	var result DeviceCodeResponse
+	err := c.requestNoAuth(ctx, "POST", "/api/auth/device-code", nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// PollDeviceCode checks the status of a device authorization request
+func (c *Client) PollDeviceCode(ctx context.Context, deviceCode string) (*PollResponse, error) {
+	var result PollResponse
+	err := c.requestNoAuth(ctx, "GET", "/api/auth/device-poll?code="+url.QueryEscape(deviceCode), nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ClaimDeviceCode exchanges an authorized device code for an API key
+func (c *Client) ClaimDeviceCode(ctx context.Context, deviceCode string) (*ClaimResponse, error) {
+	var result ClaimResponse
+	err := c.requestNoAuth(ctx, "POST", "/api/auth/device-claim", map[string]string{"deviceCode": deviceCode}, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// --- Endpoint CRUD ---
+
+// Endpoint represents a webhook endpoint in the webhooks.cc system.
+type Endpoint struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 // CreateEndpoint creates a new endpoint
@@ -154,10 +246,14 @@ func (c *Client) DeleteEndpointWithContext(ctx context.Context, slug string) err
 	return c.request(ctx, "DELETE", "/api/endpoints/"+url.PathEscape(slug), nil, nil)
 }
 
-// Endpoint represents a webhook endpoint in the webhooks.cc system.
-type Endpoint struct {
-	ID   string `json:"id"`
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	URL  string `json:"url"`
+// --- Request methods ---
+
+// GetRequest fetches a single captured request by ID
+func (c *Client) GetRequest(ctx context.Context, requestID string) (*types.CapturedRequest, error) {
+	var result types.CapturedRequest
+	err := c.request(ctx, "GET", "/api/requests/"+url.PathEscape(requestID), nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
