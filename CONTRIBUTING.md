@@ -155,4 +155,9 @@ webhooks-cc/
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+This project uses a split license. By contributing, you agree that your contributions will be licensed under the license that applies to the component you modify:
+
+- **AGPL-3.0** for `apps/web/`, `apps/receiver/`, and `convex/`
+- **MIT** for `apps/cli/`, `packages/sdk/`, and `apps/go-shared/`
+
+See the root [LICENSE](LICENSE) and each component's `LICENSE` file for details.

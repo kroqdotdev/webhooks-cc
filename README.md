@@ -64,12 +64,15 @@ const requests = await client.requests.list(endpoint.id);
 
 ## Open Source
 
-This project is MIT licensed. The source is available for transparency and community contributions, not as a deployment guide.
+The source is available for transparency and community contributions, not as a deployment guide. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-If you want to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-If you need to self-host for compliance or air-gapped environments, the code is here. But for most use cases, the hosted service at [webhooks.cc](https://webhooks.cc) is the easier path.
+For compliance or air-gapped environments, the code is here. For most use cases, the hosted service at [webhooks.cc](https://webhooks.cc) is the easier path.
 
 ## License
 
-[MIT](LICENSE)
+This project uses a split license:
+
+- **AGPL-3.0** — The web app, receiver, and Convex backend (`apps/web/`, `apps/receiver/`, `convex/`). See [LICENSE](LICENSE).
+- **MIT** — The CLI and SDK (`apps/cli/`, `packages/sdk/`, `apps/go-shared/`). See their respective `LICENSE` files.
+
+If you use the CLI or SDK in your own projects, MIT applies. If you fork and host the service, AGPL-3.0 applies.
