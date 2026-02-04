@@ -340,9 +340,9 @@ function DashboardSkeleton() {
 function WaitingForRequests({ slug }: { slug: string }) {
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const sentTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
     return () => {
