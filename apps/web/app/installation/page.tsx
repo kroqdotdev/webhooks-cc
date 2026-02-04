@@ -99,7 +99,7 @@ export default function InstallationPage() {
           <div className="space-y-6">
             <section>
               <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
-              <CodeBlock>{`brew install webhookscc/tap/webhooks-cli`}</CodeBlock>
+              <CodeBlock>{`brew install webhookscc/tap/whk`}</CodeBlock>
             </section>
 
             <section>
@@ -114,12 +114,12 @@ export default function InstallationPage() {
 
             <section>
               <h2 className="text-lg font-bold mb-3">Verify installation</h2>
-              <CodeBlock>{`webhooks --version`}</CodeBlock>
+              <CodeBlock>{`whk --version`}</CodeBlock>
             </section>
 
             <p className="text-sm text-muted-foreground">
-              After installing, run <code className="font-mono font-bold">webhooks login</code> to
-              authenticate, then <code className="font-mono font-bold">webhooks tunnel</code> to
+              After installing, run <code className="font-mono font-bold">whk auth login</code> to
+              authenticate, then <code className="font-mono font-bold">whk tunnel 3000</code> to
               forward webhooks to your local server. See the{" "}
               <Link href="/docs/cli" className="text-primary hover:underline font-bold">
                 CLI docs
@@ -154,9 +154,9 @@ export default function InstallationPage() {
             <section>
               <h2 className="text-lg font-bold mb-3">Quick start</h2>
               <CodeBlock>
-                {`import { WebhooksClient } from "@webhookscc/sdk";
+                {`import { WebhooksCC } from "@webhookscc/sdk";
 
-const client = new WebhooksClient({
+const client = new WebhooksCC({
   apiKey: process.env.WEBHOOKS_API_KEY,
 });
 

@@ -68,19 +68,12 @@ function UpgradeSuccessBanner() {
       <div className="flex items-center gap-3">
         <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
         <div>
-          <p className="text-sm font-medium text-green-500">
-            Welcome to Pro!
-          </p>
+          <p className="text-sm font-medium text-green-500">Welcome to Pro!</p>
           <p className="text-sm text-muted-foreground">
             Your subscription is now active. Enjoy 500K requests/month and 30-day data retention.
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setShow(false)}
-          className="ml-auto"
-        >
+        <Button variant="ghost" size="sm" onClick={() => setShow(false)} className="ml-auto">
           Dismiss
         </Button>
       </div>
@@ -397,7 +390,9 @@ export default function AccountPage() {
             )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={revoking} onClick={() => setRevokeError(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={revoking} onClick={() => setRevokeError(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction onClick={handleRevoke} disabled={revoking}>
               {revoking ? "Revoking..." : "Revoke"}
             </AlertDialogAction>

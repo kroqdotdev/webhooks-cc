@@ -16,11 +16,7 @@ import { v } from "convex/values";
 import { action, internalAction, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import {
-  FREE_REQUEST_LIMIT,
-  PRO_REQUEST_LIMIT,
-  BILLING_PERIOD_MS,
-} from "./config";
+import { FREE_REQUEST_LIMIT, PRO_REQUEST_LIMIT, BILLING_PERIOD_MS } from "./config";
 
 /**
  * Create Polar.sh checkout session for upgrading to Pro.

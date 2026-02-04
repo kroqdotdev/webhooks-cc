@@ -68,9 +68,7 @@ async function verifyWebhookSignature(
   const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, toSign);
 
   // Convert to base64
-  const computedSignature = btoa(
-    String.fromCharCode(...new Uint8Array(signatureBuffer))
-  );
+  const computedSignature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
 
   // Parse the provided signatures (format: "v1,{sig1} v1,{sig2} ...")
   const passedSignatures = msgSignature.split(" ");
