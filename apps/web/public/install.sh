@@ -25,14 +25,14 @@ case "$ARCH" in
 esac
 
 # Get latest version
-VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^cli-//')
+VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
 if [ -z "$VERSION" ]; then
   echo "Failed to fetch latest version"
   exit 1
 fi
 
 FILENAME="${BINARY}_${OS}_${ARCH}.tar.gz"
-URL="https://github.com/$REPO/releases/download/cli-${VERSION}/${FILENAME}"
+URL="https://github.com/$REPO/releases/download/${VERSION}/${FILENAME}"
 
 echo "Downloading $BINARY $VERSION for $OS/$ARCH..."
 
