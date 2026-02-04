@@ -7,6 +7,7 @@
 //   - tunnel: Forward webhooks to localhost
 //   - listen: Stream incoming requests to terminal
 //   - replay: Resend a captured request to a target URL
+//   - update: Self-update to the latest release
 package main
 
 import (
@@ -28,6 +29,7 @@ import (
 	"webhooks.cc/cli/internal/auth"
 	"webhooks.cc/cli/internal/stream"
 	"webhooks.cc/cli/internal/tunnel"
+	"webhooks.cc/cli/internal/update"
 	"webhooks.cc/shared/types"
 )
 
@@ -64,6 +66,9 @@ func main() {
 	// Replay command
 	replayCmd := replayCmd()
 
+	// Update command
+	updateCmd := updateCmd()
+
 	// Add all commands
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(createCmd)
@@ -72,6 +77,7 @@ func main() {
 	rootCmd.AddCommand(tunnelCmd)
 	rootCmd.AddCommand(listenCmd)
 	rootCmd.AddCommand(replayCmd)
+	rootCmd.AddCommand(updateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -498,6 +504,46 @@ func replayCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&target, "to", "http://localhost:8080", "Target URL for replay")
 	return cmd
+}
+
+// --- Update command ---
+
+func updateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update",
+		Short: "Update whk to the latest version",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if version == "dev" {
+				return fmt.Errorf("cannot update a dev build; install a release build first")
+			}
+
+			ctx := cmd.Context()
+
+			fmt.Printf("Current version: %s\n", version)
+			fmt.Print("Checking for updates... ")
+
+			release, available, err := update.Check(ctx, version)
+			if err != nil {
+				return err
+			}
+
+			if !available {
+				fmt.Println("already up to date.")
+				return nil
+			}
+
+			latest := strings.TrimPrefix(release.TagName, "v")
+			fmt.Printf("found %s\n", latest)
+			fmt.Printf("Updating %s -> %s... ", version, latest)
+
+			if err := update.Apply(ctx, release); err != nil {
+				return err
+			}
+
+			fmt.Println("done.")
+			return nil
+		},
+	}
 }
 
 // --- Helpers ---

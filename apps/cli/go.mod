@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/mod v0.22.0
 	webhooks.cc/shared v0.0.0
 )
 
