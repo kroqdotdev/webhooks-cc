@@ -8,7 +8,7 @@ Before you begin, ensure you have the following installed:
 
 - **Node.js** 20+ (with npm)
 - **pnpm** 8+ (`npm install -g pnpm`)
-- **Go** 1.21+
+- **Go** 1.23+
 - **Make** (for running build commands)
 
 You'll also need:
