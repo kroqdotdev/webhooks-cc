@@ -53,7 +53,7 @@ func Check(ctx context.Context, currentVersion string) (*Release, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to check for updates: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -127,7 +127,7 @@ func Apply(ctx context.Context, release *Release) error {
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download returned HTTP %d", resp.StatusCode)
@@ -139,15 +139,17 @@ func Apply(ctx context.Context, release *Release) error {
 		return err
 	}
 	archivePath := archiveFile.Name()
-	defer os.Remove(archivePath)
+	defer func() { _ = os.Remove(archivePath) }()
 
 	hasher := sha256.New()
 	writer := io.MultiWriter(archiveFile, hasher)
 	if _, err := io.Copy(writer, io.LimitReader(resp.Body, maxBinarySize)); err != nil {
-		archiveFile.Close()
+		_ = archiveFile.Close()
 		return fmt.Errorf("download failed: %w", err)
 	}
-	archiveFile.Close()
+	if err := archiveFile.Close(); err != nil {
+		return fmt.Errorf("failed to write archive: %w", err)
+	}
 
 	// Verify checksum.
 	actualHash := hex.EncodeToString(hasher.Sum(nil))
@@ -171,27 +173,29 @@ func Apply(ctx context.Context, release *Release) error {
 		return fmt.Errorf("cannot write to %s (try running with sudo): %w", dir, err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	// Extract binary from the verified archive.
 	if strings.HasSuffix(name, ".zip") {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		if err := extractZip(archivePath, tmpPath); err != nil {
 			return err
 		}
 	} else {
 		af, err := os.Open(archivePath)
 		if err != nil {
-			tmpFile.Close()
+			_ = tmpFile.Close()
 			return err
 		}
 		if err := extractTarGz(af, tmpFile); err != nil {
-			af.Close()
-			tmpFile.Close()
+			_ = af.Close()
+			_ = tmpFile.Close()
 			return err
 		}
-		af.Close()
-		tmpFile.Close()
+		_ = af.Close()
+		if err := tmpFile.Close(); err != nil {
+			return fmt.Errorf("failed to write extracted binary: %w", err)
+		}
 	}
 
 	if err := os.Chmod(tmpPath, 0755); err != nil {
@@ -236,7 +240,7 @@ func fetchChecksum(ctx context.Context, checksumsURL, assetName string) (string,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("failed to fetch checksums (HTTP %d)", resp.StatusCode)
@@ -266,7 +270,7 @@ func extractTarGz(r io.Reader, dest *os.File) error {
 	if err != nil {
 		return fmt.Errorf("failed to decompress: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	tr := tar.NewReader(gz)
 	for {
@@ -293,7 +297,7 @@ func extractZip(archivePath, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	target := binary + ".exe"
 	for _, f := range zr.File {
@@ -307,15 +311,21 @@ func extractZip(archivePath, destPath string) error {
 
 		dst, err := os.Create(destPath)
 		if err != nil {
-			src.Close()
+			_ = src.Close()
 			return err
 		}
 
 		_, copyErr := io.Copy(dst, io.LimitReader(src, maxBinarySize))
-		src.Close()
-		dst.Close()
+		closeErr1 := src.Close()
+		closeErr2 := dst.Close()
 		if copyErr != nil {
 			return fmt.Errorf("failed to extract binary: %w", copyErr)
+		}
+		if closeErr1 != nil {
+			return fmt.Errorf("failed to close archive entry: %w", closeErr1)
+		}
+		if closeErr2 != nil {
+			return fmt.Errorf("failed to close destination file: %w", closeErr2)
 		}
 		return nil
 	}
