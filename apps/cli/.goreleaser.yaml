@@ -36,6 +36,11 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+release:
+  name_template: "CLI v{{.Version}}"
+  header: |
+    ## whk CLI v{{.Version}}
+
 changelog:
   sort: asc
   filters:
@@ -49,7 +54,7 @@ brews:
     repository:
       owner: lohsefar
       name: homebrew-tap
-      token: "{{ .Env.GITHUB_TOKEN }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://webhooks.cc"
     description: "CLI tool for webhooks.cc - Inspect, forward, and replay webhooks"
     license: "MIT"
