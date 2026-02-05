@@ -1,4 +1,4 @@
-import { authenticateRequest, convexCliRequest } from "@/lib/api-auth";
+import { authenticateRequest, convexCliRequest, formatRequest } from "@/lib/api-auth";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequest(request);
@@ -18,7 +18,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   const since = url.searchParams.get("since");
   if (since) queryParams.since = since;
 
-  return convexCliRequest("/cli/requests-list", {
+  const resp = await convexCliRequest("/cli/requests-list", {
     params: queryParams,
   });
+
+  if (!resp.ok) return resp;
+
+  const data: unknown[] = await resp.json();
+  return Response.json(data.map((r) => formatRequest(r as Record<string, unknown>)));
 }
