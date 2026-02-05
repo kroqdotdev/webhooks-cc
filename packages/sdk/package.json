@@ -1,31 +1,46 @@
 {
   "name": "@webhooks-cc/sdk",
   "version": "0.1.0",
-  "description": "Official SDK for webhooks.cc",
+  "description": "Official SDK for webhooks.cc — programmatic webhook testing",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "webhook",
     "testing",
     "api",
-    "sdk"
+    "sdk",
+    "webhooks-cc"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/webhooks-cc/webhooks-cc",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://webhooks.cc",
   "devDependencies": {
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "convex": "^1.31.6"
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
   }
 }

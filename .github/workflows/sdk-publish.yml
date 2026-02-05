@@ -1,0 +1,36 @@
+name: SDK Publish
+
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Typecheck
+        run: pnpm --filter @webhooks-cc/sdk typecheck
+
+      - name: Build SDK
+        run: pnpm --filter @webhooks-cc/sdk build
+
+      - name: Run tests
+        run: pnpm --filter @webhooks-cc/sdk test
+
+      - name: Publish to npm
+        run: pnpm --filter @webhooks-cc/sdk publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

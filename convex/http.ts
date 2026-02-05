@@ -692,7 +692,7 @@ http.route({
     } catch (error) {
       console.error("[cli/endpoints POST]", error);
       return new Response(JSON.stringify({ error: "Failed to create endpoint" }), {
-        status: 400,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -726,7 +726,7 @@ http.route({
     } catch (error) {
       console.error("[cli/endpoints GET]", error);
       return new Response(JSON.stringify({ error: "Failed to list endpoints" }), {
-        status: 400,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -769,7 +769,7 @@ http.route({
     } catch (error) {
       console.error("[cli/endpoints DELETE]", error);
       return new Response(JSON.stringify({ error: "Failed to delete endpoint" }), {
-        status: 400,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -812,7 +812,7 @@ http.route({
     } catch (error) {
       console.error("[cli/requests GET]", error);
       return new Response(JSON.stringify({ error: "Failed to get request" }), {
-        status: 400,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -859,7 +859,83 @@ http.route({
     } catch (error) {
       console.error("[cli/requests-since GET]", error);
       return new Response(JSON.stringify({ error: "Failed to get requests" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// List requests for an endpoint (SDK/CLI)
+http.route({
+  path: "/cli/requests-list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const slug = url.searchParams.get("slug");
+    const userId = url.searchParams.get("userId");
+    const limit = url.searchParams.get("limit");
+    const since = url.searchParams.get("since");
+
+    if (!slug || !userId) {
+      return new Response(JSON.stringify({ error: "missing_params" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+    const parsedSince = since ? parseInt(since, 10) : undefined;
+
+    if (parsedLimit !== undefined && (isNaN(parsedLimit) || parsedLimit < 1)) {
+      return new Response(JSON.stringify({ error: "invalid_limit" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (parsedSince !== undefined && (isNaN(parsedSince) || parsedSince < 0)) {
+      return new Response(JSON.stringify({ error: "invalid_since" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Look up endpoint by slug with ownership check
+    try {
+      const endpoint = await ctx.runQuery(internal.endpoints.getBySlugForUser, {
+        slug,
+        userId: userId as Id<"users">,
+      });
+      if (!endpoint) {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const requests = await ctx.runQuery(internal.requests.listForUser, {
+        endpointId: endpoint._id,
+        userId: userId as Id<"users">,
+        limit: parsedLimit,
+        since: parsedSince,
+      });
+      return new Response(JSON.stringify(requests), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("[cli/requests-list GET]", error);
+      return new Response(JSON.stringify({ error: "Failed to list requests" }), {
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -885,6 +961,13 @@ http.route({
       });
     }
 
+    if (!SLUG_REGEX.test(slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     try {
       const endpoint = await ctx.runQuery(internal.endpoints.getBySlugForUser, {
         slug,
@@ -902,7 +985,7 @@ http.route({
     } catch (error) {
       console.error("[cli/endpoint-by-slug GET]", error);
       return new Response(JSON.stringify({ error: "Failed to get endpoint" }), {
-        status: 400,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }

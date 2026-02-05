@@ -9,8 +9,8 @@ export interface Endpoint {
   slug: string;
   /** Display name for the endpoint */
   name?: string;
-  /** Full URL where webhooks should be sent */
-  url: string;
+  /** Full URL where webhooks should be sent (undefined if server is misconfigured) */
+  url?: string;
   /** Unix timestamp (ms) when the endpoint was created */
   createdAt: number;
 }
@@ -50,15 +50,6 @@ export interface Request {
 export interface CreateEndpointOptions {
   /** Display name for the endpoint */
   name?: string;
-  /** Configure a mock response to return for all requests */
-  mockResponse?: {
-    /** HTTP status code (100-599) */
-    status: number;
-    /** Response body string */
-    body: string;
-    /** Response headers */
-    headers?: Record<string, string>;
-  };
 }
 
 /**

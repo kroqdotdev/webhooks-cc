@@ -114,6 +114,41 @@ export async function convexCliRequest(
   });
 }
 
+/** Build the webhook URL for a given slug using server-side env var. Returns undefined if not configured. */
+function webhookUrl(slug: string): string | undefined {
+  const base = process.env.WEBHOOK_BASE_URL ?? process.env.NEXT_PUBLIC_WEBHOOK_URL;
+  if (!base) return undefined;
+  return `${base}/w/${slug}`;
+}
+
+/** Transform a Convex endpoint document into the SDK Endpoint shape. */
+export function formatEndpoint(doc: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: doc._id ?? doc.id,
+    slug: doc.slug,
+    name: doc.name,
+    url: typeof doc.slug === "string" ? webhookUrl(doc.slug) : undefined,
+    createdAt: doc.createdAt ?? doc._creationTime,
+  };
+}
+
+/** Transform a Convex request document into the SDK Request shape. */
+export function formatRequest(doc: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: doc._id ?? doc.id,
+    endpointId: doc.endpointId,
+    method: doc.method,
+    path: doc.path,
+    headers: doc.headers,
+    body: doc.body,
+    queryParams: doc.queryParams,
+    contentType: doc.contentType,
+    ip: doc.ip,
+    size: doc.size,
+    receivedAt: doc.receivedAt,
+  };
+}
+
 /**
  * Authenticate a request using Bearer token API key.
  * Returns { success: true, userId } on success, or { success: false, response } on failure.
