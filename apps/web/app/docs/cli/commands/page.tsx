@@ -75,6 +75,11 @@ const COMMANDS: CommandDef[] = [
     ],
   },
   {
+    name: "update",
+    description: "Update whk to the latest version.",
+    usage: "whk update",
+  },
+  {
     name: "--version",
     description: "Print the CLI version.",
     usage: "whk --version",

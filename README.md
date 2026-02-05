@@ -51,7 +51,7 @@ curl -fsSL https://webhooks.cc/install.sh | sh
 Then authenticate:
 
 ```bash
-whk login
+whk auth login
 ```
 
 ### SDK

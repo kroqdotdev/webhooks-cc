@@ -16,11 +16,11 @@ export default function TestingPage() {
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Pattern: test, assert, cleanup</h2>
-        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhookscc/sdk";
+        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhooks-cc/sdk";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 const client = new WebhooksCC({
-  apiKey: process.env.WEBHOOKS_API_KEY!,
+  apiKey: process.env.WHK_API_KEY!,
 });
 
 describe("payment webhooks", () => {
@@ -63,7 +63,7 @@ describe("payment webhooks", () => {
         </p>
         <pre className="neo-code text-sm">{`# .github/workflows/test.yml
 env:
-  WEBHOOKS_API_KEY: \${{ secrets.WEBHOOKS_API_KEY }}
+  WHK_API_KEY: \${{ secrets.WHK_API_KEY }}
 
 steps:
   - uses: actions/checkout@v4
@@ -100,8 +100,7 @@ const req = await client.requests.waitFor(endpoint.slug, {
             Always clean up endpoints in <code className="font-mono font-bold">afterAll</code> /{" "}
             <code className="font-mono font-bold">afterEach</code>
           </li>
-          <li>Set a mock response if your application checks the webhook delivery status</li>
-          <li>The free plan supports 200 requests/day, enough for most test suites</li>
+          <li>The free plan supports 200 requests/day — enough for most test suites</li>
         </ul>
       </section>
     </article>

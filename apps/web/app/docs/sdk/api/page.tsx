@@ -21,14 +21,7 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
         name: "client.endpoints.create",
         description: "Create a new webhook endpoint. The slug is auto-generated.",
         signature: "create(options?: CreateEndpointOptions): Promise<Endpoint>",
-        params: [
-          { name: "name", type: "string?", description: "Display name" },
-          {
-            name: "mockResponse",
-            type: "MockResponse?",
-            description: "Custom response configuration",
-          },
-        ],
+        params: [{ name: "name", type: "string?", description: "Display name" }],
         returns: "Endpoint object with id, url, slug, and name",
       },
       {
@@ -109,7 +102,7 @@ export default function ApiReferencePage() {
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Constructor</h2>
-        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhookscc/sdk";
+        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({
   apiKey: string,     // Required. Your API key.
@@ -170,19 +163,12 @@ const client = new WebhooksCC({
   id: string;
   slug: string;
   name?: string;
-  url: string;
+  url?: string;
   createdAt: number;
 }
 
 interface CreateEndpointOptions {
   name?: string;
-  mockResponse?: MockResponse;
-}
-
-interface MockResponse {
-  status: number;
-  body: string;
-  headers?: Record<string, string>;
 }
 
 interface Request {
@@ -197,6 +183,11 @@ interface Request {
   ip: string;
   size: number;
   receivedAt: number;
+}
+
+interface ListRequestsOptions {
+  limit?: number;        // default: 50, max: 1000
+  since?: number;        // only requests after this timestamp (ms)
 }
 
 interface WaitForOptions {

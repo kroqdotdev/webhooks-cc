@@ -18,7 +18,7 @@ export default function SdkPage() {
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Install</h2>
-        <pre className="neo-code text-sm mb-4">{`npm install @webhookscc/sdk`}</pre>
+        <pre className="neo-code text-sm mb-4">{`npm install @webhooks-cc/sdk`}</pre>
         <p className="text-sm text-muted-foreground">
           See{" "}
           <Link href="/installation" className="text-primary hover:underline font-bold">
@@ -37,10 +37,10 @@ export default function SdkPage() {
           </Link>
           . Pass it when creating the client:
         </p>
-        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhookscc/sdk";
+        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({
-  apiKey: process.env.WEBHOOKS_API_KEY,
+  apiKey: process.env.WHK_API_KEY,
 });`}</pre>
       </section>
 
@@ -48,11 +48,6 @@ const client = new WebhooksCC({
         <h2 className="text-xl font-bold mb-3">Create an endpoint</h2>
         <pre className="neo-code text-sm">{`const endpoint = await client.endpoints.create({
   name: "test-payments",
-  mockResponse: {         // optional
-    status: 200,
-    body: '{"received": true}',
-    headers: { "Content-Type": "application/json" },
-  },
 });
 
 console.log(endpoint.url);

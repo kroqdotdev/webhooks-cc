@@ -135,31 +135,31 @@ whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
               <div className="space-y-6">
                 <section>
                   <h2 className="text-lg font-bold mb-3">npm</h2>
-                  <CodeBlock>{`npm install @webhookscc/sdk`}</CodeBlock>
+                  <CodeBlock>{`npm install @webhooks-cc/sdk`}</CodeBlock>
                 </section>
 
                 <section>
                   <h2 className="text-lg font-bold mb-3">pnpm</h2>
-                  <CodeBlock>{`pnpm add @webhookscc/sdk`}</CodeBlock>
+                  <CodeBlock>{`pnpm add @webhooks-cc/sdk`}</CodeBlock>
                 </section>
 
                 <section>
                   <h2 className="text-lg font-bold mb-3">bun</h2>
-                  <CodeBlock>{`bun add @webhookscc/sdk`}</CodeBlock>
+                  <CodeBlock>{`bun add @webhooks-cc/sdk`}</CodeBlock>
                 </section>
 
                 <section>
                   <h2 className="text-lg font-bold mb-3">yarn</h2>
-                  <CodeBlock>{`yarn add @webhookscc/sdk`}</CodeBlock>
+                  <CodeBlock>{`yarn add @webhooks-cc/sdk`}</CodeBlock>
                 </section>
 
                 <section>
                   <h2 className="text-lg font-bold mb-3">Quick start</h2>
                   <CodeBlock>
-                    {`import { WebhooksCC } from "@webhookscc/sdk";
+                    {`import { WebhooksCC } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({
-  apiKey: process.env.WEBHOOKS_API_KEY,
+  apiKey: process.env.WHK_API_KEY,
 });
 
 const endpoint = await client.endpoints.create({
