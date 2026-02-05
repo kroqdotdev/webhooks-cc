@@ -1,7 +1,7 @@
 {
   "name": "@webhooks-cc/sdk",
-  "version": "0.1.0",
-  "description": "Official SDK for webhooks.cc — programmatic webhook testing",
+  "version": "0.1.1",
+  "description": "TypeScript SDK for webhooks.cc — create endpoints, capture requests, assert in tests",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -13,7 +13,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
