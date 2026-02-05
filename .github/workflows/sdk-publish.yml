@@ -21,8 +21,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Typecheck
+        run: pnpm --filter @webhooks-cc/sdk typecheck
+
       - name: Build SDK
         run: pnpm --filter @webhooks-cc/sdk build
+
+      - name: Run tests
+        run: pnpm --filter @webhooks-cc/sdk test
 
       - name: Publish to npm
         run: pnpm --filter @webhooks-cc/sdk publish --access public --no-git-checks

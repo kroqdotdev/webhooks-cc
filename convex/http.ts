@@ -887,6 +887,29 @@ http.route({
       });
     }
 
+    if (!SLUG_REGEX.test(slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+    const parsedSince = since ? parseInt(since, 10) : undefined;
+
+    if (parsedLimit !== undefined && (isNaN(parsedLimit) || parsedLimit < 1)) {
+      return new Response(JSON.stringify({ error: "invalid_limit" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (parsedSince !== undefined && isNaN(parsedSince)) {
+      return new Response(JSON.stringify({ error: "invalid_since" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // Look up endpoint by slug with ownership check
     try {
       const endpoint = await ctx.runQuery(internal.endpoints.getBySlugForUser, {
@@ -903,8 +926,8 @@ http.route({
       const requests = await ctx.runQuery(internal.requests.listForUser, {
         endpointId: endpoint._id,
         userId: userId as Id<"users">,
-        limit: limit ? parseInt(limit, 10) : undefined,
-        since: since ? parseInt(since, 10) : undefined,
+        limit: parsedLimit,
+        since: parsedSince,
       });
       return new Response(JSON.stringify(requests), {
         headers: { "Content-Type": "application/json" },

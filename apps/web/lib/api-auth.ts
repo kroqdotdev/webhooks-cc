@@ -114,10 +114,10 @@ export async function convexCliRequest(
   });
 }
 
-/** Build the webhook URL for a given slug using server-side env var. */
-export function webhookUrl(slug: string): string {
+/** Build the webhook URL for a given slug using server-side env var. Returns undefined if not configured. */
+function webhookUrl(slug: string): string | undefined {
   const base = process.env.NEXT_PUBLIC_WEBHOOK_URL;
-  if (!base) throw new Error("NEXT_PUBLIC_WEBHOOK_URL is not configured");
+  if (!base) return undefined;
   return `${base}/w/${slug}`;
 }
 
@@ -127,7 +127,7 @@ export function formatEndpoint(doc: Record<string, unknown>): Record<string, unk
     id: doc._id ?? doc.id,
     slug: doc.slug,
     name: doc.name,
-    url: typeof doc.slug === "string" ? webhookUrl(doc.slug as string) : undefined,
+    url: typeof doc.slug === "string" ? webhookUrl(doc.slug) : undefined,
     createdAt: doc.createdAt ?? doc._creationTime,
   };
 }

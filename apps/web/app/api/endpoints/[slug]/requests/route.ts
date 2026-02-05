@@ -24,6 +24,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
   if (!resp.ok) return resp;
 
-  const data: unknown[] = await resp.json();
+  const data: unknown = await resp.json();
+  if (!Array.isArray(data)) {
+    return Response.json({ error: "Unexpected response format" }, { status: 502 });
+  }
   return Response.json(data.map((r) => formatRequest(r as Record<string, unknown>)));
 }

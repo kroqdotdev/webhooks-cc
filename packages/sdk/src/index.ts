@@ -1,4 +1,4 @@
-export { WebhooksCC } from "./client";
+export { WebhooksCC, ApiError } from "./client";
 export type {
   Endpoint,
   Request,

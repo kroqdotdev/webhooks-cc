@@ -141,8 +141,8 @@ export class WebhooksCC {
     list: async (endpointSlug: string, options: ListRequestsOptions = {}): Promise<Request[]> => {
       validatePathSegment(endpointSlug, "endpointSlug");
       const params = new URLSearchParams();
-      if (options.limit) params.set("limit", String(options.limit));
-      if (options.since) params.set("since", String(options.since));
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.since !== undefined) params.set("since", String(options.since));
 
       const query = params.toString();
       return this.request<Request[]>(

@@ -10,7 +10,10 @@ export async function GET(request: Request) {
 
   if (!resp.ok) return resp;
 
-  const data: unknown[] = await resp.json();
+  const data: unknown = await resp.json();
+  if (!Array.isArray(data)) {
+    return Response.json({ error: "Unexpected response format" }, { status: 502 });
+  }
   return Response.json(data.map((e) => formatEndpoint(e as Record<string, unknown>)));
 }
 
@@ -25,13 +28,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (typeof body.name !== "string" || body.name.length === 0) {
-    return Response.json({ error: "Missing or invalid 'name'" }, { status: 400 });
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (name.length === 0 || name.length > 100) {
+    return Response.json({ error: "Name must be between 1 and 100 characters" }, { status: 400 });
   }
 
   const resp = await convexCliRequest("/cli/endpoints", {
     method: "POST",
-    body: { userId: auth.userId, name: body.name },
+    body: { userId: auth.userId, name },
   });
 
   if (!resp.ok) return resp;

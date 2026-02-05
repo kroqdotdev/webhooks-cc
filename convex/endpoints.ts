@@ -278,16 +278,17 @@ export const createForUser = internalMutation({
     }
 
     const slug = await generateUniqueSlug(ctx.db);
+    const createdAt = Date.now();
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,
       slug,
       name: name?.trim(),
       isEphemeral: false,
-      createdAt: Date.now(),
+      createdAt,
     });
 
-    return { id: endpointId, slug };
+    return { id: endpointId, slug, name: name?.trim(), createdAt };
   },
 });
 
