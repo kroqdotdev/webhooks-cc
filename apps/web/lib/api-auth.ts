@@ -116,7 +116,7 @@ export async function convexCliRequest(
 
 /** Build the webhook URL for a given slug using server-side env var. Returns undefined if not configured. */
 function webhookUrl(slug: string): string | undefined {
-  const base = process.env.NEXT_PUBLIC_WEBHOOK_URL;
+  const base = process.env.WEBHOOK_BASE_URL ?? process.env.NEXT_PUBLIC_WEBHOOK_URL;
   if (!base) return undefined;
   return `${base}/w/${slug}`;
 }
