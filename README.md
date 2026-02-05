@@ -40,10 +40,31 @@ Get a unique URL, point your webhook there, and see every request in real-time. 
 
 See [webhooks.cc/pricing](https://webhooks.cc/pricing) for details.
 
-## CLI
+## Install
+
+### CLI
+
+```bash
+curl -fsSL https://webhooks.cc/install.sh | sh
+```
+
+Then authenticate:
 
 ```bash
 whk login
+```
+
+### SDK
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+See [webhooks.cc/docs/installation](https://webhooks.cc/docs/installation) for Homebrew, manual downloads, and other methods.
+
+## CLI
+
+```bash
 whk endpoints list
 whk endpoints create --name "stripe-test"
 whk tunnel 8080
@@ -52,14 +73,14 @@ whk tunnel 8080
 ## SDK
 
 ```typescript
-import { WebhooksClient } from "@webhooks-cc/sdk";
+import { WebhooksCC } from "@webhooks-cc/sdk";
 
-const client = new WebhooksClient({ apiKey: "your-api-key" });
+const client = new WebhooksCC({ apiKey: "whcc_..." });
 
 const endpoint = await client.endpoints.create({ name: "my-webhook" });
 console.log(endpoint.url);
 
-const requests = await client.requests.list(endpoint.id);
+const requests = await client.requests.list(endpoint.slug);
 ```
 
 ## Open Source
