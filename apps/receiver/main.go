@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -51,6 +52,8 @@ const (
 	quotaFileMaxAge       = 1 * time.Hour // Maximum age of quota files before cleanup
 	maxHeaderKeyLen       = 256           // Maximum length for mock response header keys
 	maxHeaderValueLen     = 8192          // Maximum length for mock response header values
+	cbThreshold           = 5                // Consecutive failures to open circuit
+	cbCooldown            = 30 * time.Second // Cooldown before probing in half-open
 )
 
 // BufferedRequest holds request data waiting to be sent to Convex.
@@ -133,6 +136,126 @@ type inFlightRequest struct {
 	done   chan struct{}
 	result any
 	err    error
+}
+
+// errCircuitOpen is a sentinel error returned when the circuit breaker is open.
+var errCircuitOpen = errors.New("circuit breaker open")
+
+// circuitState represents the state of a circuit breaker.
+type circuitState int
+
+const (
+	circuitClosed  circuitState = iota
+	circuitOpen
+	circuitHalfOpen
+)
+
+func (s circuitState) String() string {
+	switch s {
+	case circuitClosed:
+		return "closed"
+	case circuitOpen:
+		return "open"
+	case circuitHalfOpen:
+		return "half-open"
+	}
+	return "unknown"
+}
+
+// CircuitBreaker implements a simple 3-state circuit breaker for Convex calls.
+// States: closed (normal), open (rejecting), half-open (probing with one request).
+// Only network errors and 5xx responses trip the circuit; 4xx are business errors.
+type CircuitBreaker struct {
+	mu            sync.Mutex
+	failures      int
+	threshold     int
+	state         circuitState
+	lastFailure   time.Time
+	cooldown      time.Duration
+	probeInFlight bool // true when a half-open probe is active
+}
+
+func newCircuitBreaker(threshold int, cooldown time.Duration) *CircuitBreaker {
+	return &CircuitBreaker{
+		threshold: threshold,
+		cooldown:  cooldown,
+		state:     circuitClosed,
+	}
+}
+
+// AllowRequest checks if a request should be allowed through.
+// In closed state, always allows. In open state, allows after cooldown (transitions to half-open).
+// In half-open state, allows exactly one probe request; additional requests are rejected.
+func (cb *CircuitBreaker) AllowRequest() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case circuitClosed:
+		return true
+	case circuitOpen:
+		if time.Since(cb.lastFailure) > cb.cooldown {
+			cb.state = circuitHalfOpen
+			cb.probeInFlight = true
+			debugLog("[CircuitBreaker] Transitioning to half-open, sending probe")
+			return true
+		}
+		return false
+	case circuitHalfOpen:
+		return false // Probe already in progress; only one allowed via open→half-open transition
+	}
+	return true
+}
+
+// RecordSuccess resets the failure count and closes the circuit.
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	prev := cb.state
+	cb.failures = 0
+	cb.state = circuitClosed
+	cb.probeInFlight = false
+	if prev != circuitClosed {
+		log.Printf("[CircuitBreaker] Circuit closed (was %s)", prev)
+	}
+}
+
+// RecordFailure increments the failure count and opens the circuit at threshold.
+func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.failures++
+	cb.lastFailure = time.Now()
+	cb.probeInFlight = false
+
+	if cb.state == circuitHalfOpen {
+		cb.state = circuitOpen
+		debugLog("[CircuitBreaker] Probe failed, re-opening circuit")
+		return
+	}
+
+	if cb.failures >= cb.threshold {
+		if cb.state != circuitOpen {
+			log.Printf("[CircuitBreaker] Opening circuit after %d consecutive failures", cb.failures)
+		}
+		cb.state = circuitOpen
+	}
+}
+
+// State returns the current circuit state string (for JSON serialization).
+func (cb *CircuitBreaker) State() string {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state.String()
+}
+
+// isDegraded returns true if the circuit is not in the closed (healthy) state.
+func (cb *CircuitBreaker) isDegraded() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state != circuitClosed
 }
 
 // EndpointCache caches endpoint info to return mock responses immediately.
@@ -523,8 +646,12 @@ func (s *FileQuotaStore) GetAndDecrement(ctx context.Context, slug string) Quota
 		newQuota, err := s.fetchAndCreateQuota(ctx, slug)
 		if err != nil {
 			log.Printf("Warning: failed to fetch quota for %s: %v", slug, err)
-			// If we have stale data, use it; otherwise fail-open
+			// If we have stale data, use it; otherwise check if circuit caused the failure
 			if quota == nil {
+				if errors.Is(err, errCircuitOpen) {
+					debugLog("[GetAndDecrement] slug=%s no cached data + circuit open, fail-closed", slug)
+					return QuotaCheckResult{Allowed: false, RetryAfter: cbCooldown.Milliseconds()}
+				}
 				debugLog("[GetAndDecrement] slug=%s no cached data, fail-open", slug)
 				return QuotaCheckResult{Allowed: true}
 			}
@@ -698,6 +825,7 @@ var (
 	quotaStore          *FileQuotaStore
 	endpointCache       *EndpointCache
 	requestBatcher      *RequestBatcher
+	convexCircuit       *CircuitBreaker
 	convexSiteURL       string
 	captureSharedSecret string
 	httpClient          *http.Client
@@ -738,6 +866,7 @@ func main() {
 	quotaStore = NewFileQuotaStore(rootCtx, quotaDir)
 	endpointCache = NewEndpointCache(rootCtx, endpointCacheTTL)
 	requestBatcher = NewRequestBatcher(batchMaxSize, batchFlushInterval)
+	convexCircuit = newCircuitBreaker(cbThreshold, cbCooldown)
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -760,7 +889,16 @@ func main() {
 	}))
 
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+		status := "ok"
+		httpStatus := 200
+		if convexCircuit.isDegraded() {
+			status = "degraded"
+			httpStatus = 503
+		}
+		return c.Status(httpStatus).JSON(fiber.Map{
+			"status":  status,
+			"circuit": convexCircuit.State(),
+		})
 	})
 
 	app.All("/w/:slug/*", handleWebhook)
@@ -843,6 +981,9 @@ func handleWebhook(c *fiber.Ctx) error {
 	endpointInfo, err := endpointCache.Get(c.UserContext(), slug)
 	if err != nil {
 		log.Printf("Endpoint info fetch failed for %s: %v", slug, err)
+		if errors.Is(err, errCircuitOpen) {
+			return c.Status(503).JSON(fiber.Map{"error": "service_unavailable"})
+		}
 		return c.Status(500).JSON(fiber.Map{"error": "internal_error"})
 	}
 	if endpointInfo == nil || endpointInfo.Error == "not_found" {
@@ -916,6 +1057,10 @@ func handleWebhook(c *fiber.Ctx) error {
 }
 
 func fetchEndpointInfo(ctx context.Context, slug string) (*EndpointInfo, error) {
+	if !convexCircuit.AllowRequest() {
+		return nil, fmt.Errorf("rejecting endpoint info request: %w", errCircuitOpen)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", convexSiteURL+"/endpoint-info?slug="+url.QueryEscape(slug), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create endpoint info request: %w", err)
@@ -925,14 +1070,24 @@ func fetchEndpointInfo(ctx context.Context, slug string) (*EndpointInfo, error) 
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to fetch endpoint info: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to read endpoint info response: %w", err)
 	}
+
+	if resp.StatusCode >= 500 {
+		convexCircuit.RecordFailure()
+		return nil, fmt.Errorf("endpoint info endpoint returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Upstream is reachable (even on 4xx business errors) — clear circuit state
+	convexCircuit.RecordSuccess()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("endpoint info endpoint returned status %d: %s", resp.StatusCode, string(body))
@@ -949,6 +1104,10 @@ func fetchEndpointInfo(ctx context.Context, slug string) (*EndpointInfo, error) 
 
 // callCheckPeriod calls the Convex /check-period endpoint to start a free user's period.
 func callCheckPeriod(ctx context.Context, userID string) (*CheckPeriodResponse, error) {
+	if !convexCircuit.AllowRequest() {
+		return nil, fmt.Errorf("rejecting check-period request: %w", errCircuitOpen)
+	}
+
 	payload, err := json.Marshal(map[string]string{"userId": userID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal check-period request: %w", err)
@@ -964,16 +1123,26 @@ func callCheckPeriod(ctx context.Context, userID string) (*CheckPeriodResponse, 
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to call check-period: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to read check-period response: %w", err)
 	}
 
-	// 429 responses contain valid quota_exceeded JSON
+	if resp.StatusCode >= 500 {
+		convexCircuit.RecordFailure()
+		return nil, fmt.Errorf("check-period endpoint returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Upstream is reachable (even on 4xx business errors) — clear circuit state
+	convexCircuit.RecordSuccess()
+
+	// 429 responses contain valid quota_exceeded JSON (business logic)
 	if resp.StatusCode != 200 && resp.StatusCode != 429 {
 		return nil, fmt.Errorf("check-period endpoint returned status %d: %s", resp.StatusCode, string(body))
 	}
@@ -988,6 +1157,11 @@ func callCheckPeriod(ctx context.Context, userID string) (*CheckPeriodResponse, 
 
 func fetchQuota(ctx context.Context, slug string) (*QuotaResponse, error) {
 	debugLog("[fetchQuota] Fetching quota for slug=%s", slug)
+
+	if !convexCircuit.AllowRequest() {
+		return nil, fmt.Errorf("rejecting quota request: %w", errCircuitOpen)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", convexSiteURL+"/quota?slug="+url.QueryEscape(slug), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create quota request: %w", err)
@@ -997,14 +1171,24 @@ func fetchQuota(ctx context.Context, slug string) (*QuotaResponse, error) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to fetch quota: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to read quota response: %w", err)
 	}
+
+	if resp.StatusCode >= 500 {
+		convexCircuit.RecordFailure()
+		return nil, fmt.Errorf("quota endpoint returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Upstream is reachable (even on 4xx business errors) — clear circuit state
+	convexCircuit.RecordSuccess()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("quota endpoint returned status %d: %s", resp.StatusCode, string(body))
@@ -1022,6 +1206,10 @@ func fetchQuota(ctx context.Context, slug string) (*QuotaResponse, error) {
 }
 
 func callConvexBatch(ctx context.Context, slug string, requests []BufferedRequest) (*CaptureResponse, error) {
+	if !convexCircuit.AllowRequest() {
+		return nil, fmt.Errorf("rejecting batch request: %w", errCircuitOpen)
+	}
+
 	payload, err := json.Marshal(map[string]any{
 		"slug":     slug,
 		"requests": requests,
@@ -1040,14 +1228,24 @@ func callConvexBatch(ctx context.Context, slug string, requests []BufferedReques
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to call Convex batch: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConvexResponseSize))
 	if err != nil {
+		convexCircuit.RecordFailure()
 		return nil, fmt.Errorf("failed to read batch response: %w", err)
 	}
+
+	if resp.StatusCode >= 500 {
+		convexCircuit.RecordFailure()
+		return nil, fmt.Errorf("convex batch returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Upstream is reachable (even on 4xx business errors) — clear circuit state
+	convexCircuit.RecordSuccess()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("convex batch returned status %d: %s", resp.StatusCode, string(body))

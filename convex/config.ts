@@ -1,8 +1,11 @@
 /**
  * Configuration from Convex environment variables.
- * Set via: npx convex env set KEY=value
+ * Set via: npx convex env set KEY value
  *
- * These defaults match the original hardcoded values.
+ * IMPORTANT: Values are evaluated at module load time (deployment).
+ * After changing an env var, you must redeploy for it to take effect:
+ *   npx convex dev --once   (dev)
+ *   npx convex deploy       (prod)
  */
 
 /**
@@ -45,6 +48,9 @@ export const FREE_PERIOD_MS = 24 * 60 * 60 * 1000;
 
 // Pro user request retention (30 days in milliseconds)
 export const PRO_REQUEST_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Abuse protection: maximum active ephemeral endpoints before rejecting new ones
+export const MAX_EPHEMERAL_ENDPOINTS = safeParseInt("MAX_EPHEMERAL_ENDPOINTS", 500, 10, 10000);
 
 // Polar.sh Configuration
 export const POLAR_SANDBOX = process.env.POLAR_SANDBOX === "true";

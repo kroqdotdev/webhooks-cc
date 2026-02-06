@@ -46,7 +46,12 @@ describe("WebhooksCC", () => {
 
   describe("endpoints.create", () => {
     it("sends POST /api/endpoints with auth header", async () => {
-      const endpoint = { id: "ep1", slug: "abc123", url: "https://r.webhooks.cc/w/abc123", createdAt: Date.now() };
+      const endpoint = {
+        id: "ep1",
+        slug: "abc123",
+        url: "https://r.webhooks.cc/w/abc123",
+        createdAt: Date.now(),
+      };
       const fetchMock = mockFetch({ body: endpoint });
       globalThis.fetch = fetchMock;
 
@@ -64,7 +69,12 @@ describe("WebhooksCC", () => {
     });
 
     it("sends POST with empty options when none provided", async () => {
-      const endpoint = { id: "ep1", slug: "abc123", url: "https://r.webhooks.cc/w/abc123", createdAt: Date.now() };
+      const endpoint = {
+        id: "ep1",
+        slug: "abc123",
+        url: "https://r.webhooks.cc/w/abc123",
+        createdAt: Date.now(),
+      };
       const fetchMock = mockFetch({ body: endpoint });
       globalThis.fetch = fetchMock;
 
@@ -78,7 +88,9 @@ describe("WebhooksCC", () => {
 
   describe("endpoints.list", () => {
     it("sends GET /api/endpoints", async () => {
-      const endpoints = [{ id: "ep1", slug: "abc", url: "https://r.webhooks.cc/w/abc", createdAt: Date.now() }];
+      const endpoints = [
+        { id: "ep1", slug: "abc", url: "https://r.webhooks.cc/w/abc", createdAt: Date.now() },
+      ];
       const fetchMock = mockFetch({ body: endpoints });
       globalThis.fetch = fetchMock;
 
@@ -94,7 +106,12 @@ describe("WebhooksCC", () => {
 
   describe("endpoints.get", () => {
     it("sends GET /api/endpoints/{slug}", async () => {
-      const endpoint = { id: "ep1", slug: "abc123", url: "https://r.webhooks.cc/w/abc123", createdAt: Date.now() };
+      const endpoint = {
+        id: "ep1",
+        slug: "abc123",
+        url: "https://r.webhooks.cc/w/abc123",
+        createdAt: Date.now(),
+      };
       const fetchMock = mockFetch({ body: endpoint });
       globalThis.fetch = fetchMock;
 
@@ -119,7 +136,11 @@ describe("WebhooksCC", () => {
 
   describe("endpoints.delete", () => {
     it("sends DELETE /api/endpoints/{slug}", async () => {
-      const fetchMock = mockFetch({ status: 204, body: undefined, headers: { "content-length": "0" } });
+      const fetchMock = mockFetch({
+        status: 204,
+        body: undefined,
+        headers: { "content-length": "0" },
+      });
       globalThis.fetch = fetchMock;
 
       const client = createClient();

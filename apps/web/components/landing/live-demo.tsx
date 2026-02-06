@@ -6,8 +6,9 @@ import { api } from "@convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { Copy, Send, Plus, Check, Circle } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { Id } from "@convex/_generated/dataModel";
 import { getMethodColor, formatRelativeTime, Request } from "@/types/request";
-import { WEBHOOK_BASE_URL } from "@/lib/constants";
+import { getWebhookUrl } from "@/lib/constants";
 
 const REQUEST_LIMIT = 50;
 const COPY_FEEDBACK_MS = 2000;
@@ -20,7 +21,8 @@ export function LiveDemo() {
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<Id<"requests"> | null>(null);
 
   const createEndpoint = useMutation(api.endpoints.create);
 
@@ -42,7 +44,13 @@ export function LiveDemo() {
     const stored = localStorage.getItem("demo_endpoint");
     if (stored) {
       try {
-        const { slug, expiresAt: storedExpiry } = JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        const slug = parsed?.slug;
+        const storedExpiry = parsed?.expiresAt;
+        if (typeof slug !== "string" || typeof storedExpiry !== "number") {
+          localStorage.removeItem("demo_endpoint");
+          return;
+        }
         if (storedExpiry > Date.now()) {
           setEndpointSlug(slug);
           setExpiresAt(storedExpiry);
@@ -76,6 +84,7 @@ export function LiveDemo() {
         setEndpointSlug(null);
         setExpiresAt(null);
         setSelectedId(null);
+        setError(null);
         localStorage.removeItem("demo_endpoint");
         return;
       }
@@ -91,6 +100,7 @@ export function LiveDemo() {
 
   const handleCreateEndpoint = async () => {
     setIsCreating(true);
+    setError(null);
     try {
       const result = await createEndpoint({ isEphemeral: true });
       const expiry = Date.now() + 10 * 60 * 1000;
@@ -104,14 +114,19 @@ export function LiveDemo() {
           expiresAt: expiry,
         })
       );
-    } catch (error) {
-      console.error("Failed to create endpoint:", error);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "";
+      if (raw.includes("Rate limit exceeded") || raw.includes("Too many active demo endpoints")) {
+        setError(raw);
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
     } finally {
       setIsCreating(false);
     }
   };
 
-  const endpointUrl = endpointSlug ? `${WEBHOOK_BASE_URL}/w/${endpointSlug}` : null;
+  const endpointUrl = endpointSlug ? getWebhookUrl(endpointSlug) : null;
   const selectedRequest = requests?.find((r) => r._id === selectedId) ?? null;
 
   return (
@@ -131,6 +146,11 @@ export function LiveDemo() {
             <Plus className="inline-block mr-2 h-5 w-5" />
             {isCreating ? "Creating..." : "Create test endpoint"}
           </button>
+          {error && (
+            <p role="alert" className="text-sm text-destructive mt-4 font-medium">
+              {error}
+            </p>
+          )}
           <p className="text-sm text-muted-foreground mt-4">
             Test endpoints support up to 50 requests and expire after 10 minutes.
           </p>
@@ -256,8 +276,8 @@ function DemoRequestList({
   onSelect,
 }: {
   requests: Request[] | undefined;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedId: Id<"requests"> | null;
+  onSelect: (id: Id<"requests">) => void;
 }) {
   if (!requests) {
     return (

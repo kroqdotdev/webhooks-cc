@@ -23,4 +23,21 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: EPHEMERAL_TTL_MS,
     capacity: EPHEMERAL_RATE_LIMIT,
   },
+  // Endpoint creation rate limits (abuse protection)
+  // Per-user: keyed by userId
+  endpointCreationUser: {
+    kind: "token bucket",
+    rate: 10,
+    period: 10 * 60 * 1000, // 10 minutes
+    capacity: 10,
+  },
+  // Anonymous: keyed by "global" (Convex mutations have no IP access).
+  // Higher capacity than per-user because this single bucket is shared
+  // across all anonymous users.
+  endpointCreationAnon: {
+    kind: "token bucket",
+    rate: 20,
+    period: 10 * 60 * 1000, // 10 minutes
+    capacity: 20,
+  },
 });

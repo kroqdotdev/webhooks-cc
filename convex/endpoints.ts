@@ -13,7 +13,8 @@ import { mutation, query, internalQuery, internalMutation } from "./_generated/s
 import { internal } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { nanoid } from "nanoid";
-import { EPHEMERAL_TTL_MS } from "./config";
+import { EPHEMERAL_TTL_MS, MAX_EPHEMERAL_ENDPOINTS } from "./config";
+import { rateLimiter } from "./rateLimiter";
 
 // Maximum length for endpoint names
 const MAX_NAME_LENGTH = 100;
@@ -50,6 +51,16 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const userId = (await getAuthUserId(ctx)) ?? undefined;
 
+    // Rate limit endpoint creation
+    const rateLimitResult = await rateLimiter.limit(
+      ctx,
+      userId ? "endpointCreationUser" : "endpointCreationAnon",
+      { key: userId ?? "global" }
+    );
+    if (!rateLimitResult.ok) {
+      throw new Error("Rate limit exceeded. Please try again later.");
+    }
+
     // Validate name length if provided
     if (args.name !== undefined) {
       const trimmedName = args.name.trim();
@@ -70,6 +81,18 @@ export const create = mutation({
 
     // Unauthenticated users must always create ephemeral endpoints
     const isEphemeral = !userId ? true : (args.isEphemeral ?? false);
+
+    // Global cap on active ephemeral endpoints to prevent abuse
+    if (isEphemeral) {
+      const candidates = await ctx.db
+        .query("endpoints")
+        .withIndex("by_expires", (q) => q.gt("expiresAt", Date.now()))
+        .take(MAX_EPHEMERAL_ENDPOINTS + 1);
+      const activeEphemeral = candidates.filter((e) => e.isEphemeral);
+      if (activeEphemeral.length > MAX_EPHEMERAL_ENDPOINTS) {
+        throw new Error("Too many active demo endpoints. Please try again later.");
+      }
+    }
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,
