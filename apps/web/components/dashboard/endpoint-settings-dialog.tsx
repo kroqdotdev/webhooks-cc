@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@convex/_generated/api";
@@ -19,6 +19,33 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+
+/** Suggested response bodies by status code. Used to pre-fill the body when the user picks a code. */
+const DEFAULT_BODIES: Record<string, string> = {
+  "200": '{"status": "ok"}',
+  "201": '{"id": "abc-123", "created": true}',
+  "202": '{"accepted": true, "message": "Processing"}',
+  "204": "",
+  "301": "",
+  "302": "",
+  "304": "",
+  "307": "",
+  "308": "",
+  "400": '{"error": "bad_request", "message": "Invalid input"}',
+  "401": '{"error": "unauthorized"}',
+  "403": '{"error": "forbidden"}',
+  "404": '{"error": "not_found"}',
+  "405": '{"error": "method_not_allowed"}',
+  "409": '{"error": "conflict", "message": "Resource already exists"}',
+  "422": '{"error": "unprocessable_entity", "message": "Validation failed"}',
+  "429": '{"error": "too_many_requests", "retry_after": 60}',
+  "500": '{"error": "internal_server_error"}',
+  "502": '{"error": "bad_gateway"}',
+  "503": '{"error": "service_unavailable"}',
+  "504": '{"error": "gateway_timeout"}',
+};
+
+const DEFAULT_BODY_VALUES = new Set(Object.values(DEFAULT_BODIES));
 
 /** Props for the EndpointSettingsDialog component. */
 interface EndpointSettingsDialogProps {
@@ -55,15 +82,17 @@ export function EndpointSettingsDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync props when dialog opens
+  // Sync props only when dialog opens (not on every re-render while open)
+  const prevOpen = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !prevOpen.current) {
       setName(endpointName);
       setMockStatus(mockResponse?.status?.toString() || "200");
       setMockBody(mockResponse?.body || "");
       setError(null);
       setConfirmDelete(false);
     }
+    prevOpen.current = open;
   }, [open, endpointName, mockResponse]);
 
   const handleSave = async () => {
@@ -71,16 +100,17 @@ export function EndpointSettingsDialog({
     setError(null);
 
     try {
+      const hasCustomMock = mockBody || mockStatus !== "200";
       await updateEndpoint({
         id: endpointId,
         name: name || undefined,
-        mockResponse: mockBody
+        mockResponse: hasCustomMock
           ? {
               status: parseStatusCode(mockStatus, 200),
               body: mockBody,
               headers: mockResponse?.headers || {},
             }
-          : undefined,
+          : null,
       });
       setOpen(false);
     } catch (err) {
@@ -148,7 +178,17 @@ export function EndpointSettingsDialog({
               </p>
             </div>
 
-            <StatusCodePicker id="settings-status" value={mockStatus} onChange={setMockStatus} />
+            <StatusCodePicker
+              id="settings-status"
+              value={mockStatus}
+              onChange={(code) => {
+                setMockStatus(code);
+                // Pre-fill body with a sensible default if empty or still a default template
+                if (!mockBody || DEFAULT_BODY_VALUES.has(mockBody)) {
+                  setMockBody(DEFAULT_BODIES[code] ?? "");
+                }
+              }}
+            />
 
             <div className="space-y-2">
               <Label htmlFor="settings-body" className="font-bold uppercase tracking-wide text-xs">
@@ -158,10 +198,13 @@ export function EndpointSettingsDialog({
                 id="settings-body"
                 value={mockBody}
                 onChange={(e) => setMockBody(e.target.value)}
-                placeholder='{"success": true}'
+                placeholder='{"status": "ok"}'
                 rows={3}
                 className="border-2 border-foreground rounded-none text-sm font-mono"
               />
+              <p className="text-xs text-muted-foreground">
+                Edit freely &mdash; the suggestion above is just a starting point.
+              </p>
             </div>
           </div>
 

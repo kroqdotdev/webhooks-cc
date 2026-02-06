@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -335,6 +336,14 @@ func (c *EndpointCache) cleanup() {
 			delete(c.entries, oldestSlug)
 		}
 	}
+}
+
+// Evict removes a cached entry for the given slug, forcing a fresh fetch on next access.
+func (c *EndpointCache) Evict(slug string) {
+	c.mu.Lock()
+	delete(c.entries, slug)
+	c.mu.Unlock()
+	debugLog("[EndpointCache] Evicted cache for slug=%s", slug)
 }
 
 func (c *EndpointCache) Get(ctx context.Context, slug string) (*EndpointInfo, error) {
@@ -939,6 +948,21 @@ func main() {
 			"status":  status,
 			"circuit": convexCircuit.State(),
 		})
+	})
+
+	// Internal endpoint for cache invalidation (called by Convex when mock response changes)
+	app.Post("/internal/cache-invalidate/:slug", func(c *fiber.Ctx) error {
+		auth := c.Get("Authorization")
+		expected := "Bearer " + captureSharedSecret
+		if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
+			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		}
+		slug := c.Params("slug")
+		if slug == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "missing_slug"})
+		}
+		endpointCache.Evict(slug)
+		return c.JSON(fiber.Map{"ok": true})
 	})
 
 	app.All("/w/:slug/*", handleWebhook)
