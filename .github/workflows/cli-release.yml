@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # needed for cosign keyless signing via OIDC
 
 jobs:
   release:
@@ -22,6 +23,9 @@ jobs:
         with:
           go-version-file: apps/cli/go.mod
           cache-dependency-path: apps/cli/go.sum
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
