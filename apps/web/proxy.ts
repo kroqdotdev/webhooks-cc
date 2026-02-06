@@ -11,12 +11,27 @@ import { NextResponse } from "next/server";
  *   and the theme-detection script in layout.tsx. Nonce support would require deep
  *   Next.js configuration changes. Mitigated by strict connect-src/object-src.
  * - style-src 'unsafe-inline': Required by Tailwind CSS for inline styles.
- * - connect-src is restricted to self + Convex domains. The web replay dialog
- *   (which fetches arbitrary user-provided URLs) will be blocked for external
- *   targets — use the CLI `whk replay` command for cross-origin replay.
+ * - connect-src is restricted to self + Convex + webhook receiver domains. The
+ *   web replay dialog (which fetches arbitrary user-provided URLs) will be blocked
+ *   for external targets — use the CLI `whk replay` command for cross-origin replay.
  */
+function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
+  const value = raw || fallback;
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return fallback;
+  }
+}
+
 export function proxy() {
   const response = NextResponse.next();
+
+  const webhookOrigin = sanitizeCspOrigin(
+    process.env.NEXT_PUBLIC_WEBHOOK_URL,
+    "https://go.webhooks.cc"
+  );
 
   const csp = [
     "default-src 'self'",
@@ -24,7 +39,7 @@ export function proxy() {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    "connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud",
+    `connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud ${webhookOrigin}`,
     "object-src 'none'",
     "worker-src 'self'",
     "frame-ancestors 'none'",
