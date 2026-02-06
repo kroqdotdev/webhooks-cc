@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push
+.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push prod prod-web prod-receiver
 
 # Development
 dev:
@@ -16,6 +16,21 @@ dev-receiver:
 
 dev-cli:
 	cd apps/cli && go run ./cmd/whk $(ARGS)
+
+# Production
+prod:
+	@echo "Deploying Convex and building..."
+	npx convex deploy
+	pnpm build
+	cd apps/receiver && go build -o ../../dist/receiver .
+	@echo "Starting production servers..."
+	@make -j2 prod-web prod-receiver
+
+prod-web:
+	pnpm --filter web start
+
+prod-receiver:
+	@set -a && . ./.env.local && set +a && ./dist/receiver
 
 # Build
 build:

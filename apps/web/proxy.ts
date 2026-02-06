@@ -33,13 +33,27 @@ export function proxy() {
     "https://go.webhooks.cc"
   );
 
+  const convexOrigin = sanitizeCspOrigin(
+    process.env.NEXT_PUBLIC_CONVEX_URL,
+    "https://api.webhooks.cc"
+  );
+
+  // Build WebSocket origin from Convex URL (wss:// version)
+  let convexWsOrigin: string;
+  try {
+    const url = new URL(convexOrigin);
+    convexWsOrigin = `wss://${url.host}`;
+  } catch {
+    convexWsOrigin = "wss://api.webhooks.cc";
+  }
+
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud ${webhookOrigin}`,
+    `connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud ${convexOrigin} ${convexWsOrigin} ${webhookOrigin}`,
     "object-src 'none'",
     "worker-src 'self'",
     "frame-ancestors 'none'",

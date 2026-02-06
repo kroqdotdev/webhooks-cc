@@ -48,14 +48,6 @@ const NAV_SECTIONS: NavSection[] = [
       { title: "Testing", href: "/docs/sdk/testing" },
     ],
   },
-  {
-    title: "Integrations",
-    items: [
-      { title: "Stripe", href: "/docs/webhooks/stripe" },
-      { title: "GitHub", href: "/docs/webhooks/github" },
-      { title: "Shopify", href: "/docs/webhooks/shopify" },
-    ],
-  },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {

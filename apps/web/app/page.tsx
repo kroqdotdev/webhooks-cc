@@ -37,8 +37,8 @@ export default function Home() {
                   # Create an endpoint and start capturing webhooks
                 </span>
                 {"\n"}
-                <span className="text-primary">$</span> curl -X POST
-                https://your-receiver.example.com/w/abc123 \{"\n"}
+                <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
+                \{"\n"}
                 {"  "}-H{" "}
                 <span className="text-code-string">&quot;Content-Type: application/json&quot;</span>{" "}
                 \{"\n"}

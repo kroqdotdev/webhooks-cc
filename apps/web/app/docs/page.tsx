@@ -102,12 +102,6 @@ export default function DocsPage() {
               - integrate webhooks.cc into your test suite
             </span>
           </li>
-          <li>
-            <Link href="/docs/webhooks/stripe" className="text-primary hover:underline font-bold">
-              Integration guides
-            </Link>{" "}
-            <span className="text-muted-foreground">- Stripe, GitHub, Shopify setup</span>
-          </li>
         </ul>
       </section>
     </article>
