@@ -70,7 +70,13 @@ func (c *Client) BaseURL() string {
 // This can be overridden with the WHK_WEBHOOK_URL environment variable.
 func (c *Client) WebhookURL() string {
 	if envURL := os.Getenv("WHK_WEBHOOK_URL"); envURL != "" {
-		return strings.TrimSuffix(envURL, "/")
+		trimmed := strings.TrimSuffix(envURL, "/")
+		parsed, err := url.Parse(trimmed)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			fmt.Fprintf(os.Stderr, "Warning: WHK_WEBHOOK_URL is invalid (%q), using default %s\n", trimmed, defaultWebhookURL)
+			return defaultWebhookURL
+		}
+		return trimmed
 	}
 	return defaultWebhookURL
 }
