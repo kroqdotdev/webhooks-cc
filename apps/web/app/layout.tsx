@@ -3,6 +3,13 @@ import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import {
+  DEFAULT_OG_IMAGE_PATH,
+  DEFAULT_PAGE_DESCRIPTION,
+  DEFAULT_PAGE_TITLE,
+  SITE_NAME,
+  SITE_URL,
+} from "@/lib/seo";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -16,26 +23,29 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "webhooks.cc - Inspect webhooks instantly",
+    default: DEFAULT_PAGE_TITLE,
     template: "%s | webhooks.cc",
   },
-  description:
-    "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, forward to localhost.",
-  metadataBase: new URL("https://webhooks.cc"),
+  description: DEFAULT_PAGE_DESCRIPTION,
+  metadataBase: new URL(SITE_URL),
+  alternates: {
+    canonical: "/",
+  },
+  applicationName: SITE_NAME,
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://webhooks.cc",
-    siteName: "webhooks.cc",
-    title: "webhooks.cc - Inspect webhooks instantly",
-    description:
-      "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, forward to localhost.",
+    url: SITE_URL,
+    siteName: SITE_NAME,
+    title: DEFAULT_PAGE_TITLE,
+    description: DEFAULT_PAGE_DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE_PATH],
   },
   twitter: {
     card: "summary_large_image",
-    title: "webhooks.cc - Inspect webhooks instantly",
-    description:
-      "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, forward to localhost.",
+    title: DEFAULT_PAGE_TITLE,
+    description: DEFAULT_PAGE_DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE_PATH],
   },
   robots: {
     index: true,

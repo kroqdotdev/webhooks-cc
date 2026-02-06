@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "API Reference - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "SDK API Reference Docs",
   description: "Complete API reference for the webhooks.cc TypeScript SDK.",
-};
+  path: "/docs/sdk/api",
+});
 
 interface MethodDef {
   name: string;

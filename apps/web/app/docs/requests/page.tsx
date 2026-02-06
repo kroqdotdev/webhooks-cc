@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Requests - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "Requests Docs",
   description: "Inspect captured webhook requests: body, headers, query parameters, and more.",
-};
+  path: "/docs/requests",
+});
 
 export default function RequestsPage() {
   return (

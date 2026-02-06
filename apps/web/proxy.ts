@@ -78,8 +78,8 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization)
-     * - favicon.ico, robots.txt, sitemap.xml (well-known files)
+     * - favicon.ico, robots.txt, sitemap.xml, sitemap-index.xml (well-known files)
      */
-    "/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|sitemap-index\\.xml).*)",
   ],
 };

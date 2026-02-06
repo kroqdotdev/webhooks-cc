@@ -1,5 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { createPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createPageMetadata({
+  title: "Privacy Policy",
+  description:
+    "Read the webhooks.cc privacy policy, including data collection, retention, and usage.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (

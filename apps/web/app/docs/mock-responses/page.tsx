@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Mock Responses - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "Mock Responses Docs",
   description: "Configure what your webhook endpoint returns: status codes, headers, and body.",
-};
+  path: "/docs/mock-responses",
+});
 
 export default function MockResponsesPage() {
   return (

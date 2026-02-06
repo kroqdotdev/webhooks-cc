@@ -5,6 +5,14 @@ import { HeroCTA } from "@/components/landing/hero-cta";
 import { Zap, Eye, Terminal, ArrowRight, Check } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
+import { createPageMetadata } from "@/lib/seo";
+
+export const metadata = createPageMetadata({
+  title: "Inspect Webhooks Instantly",
+  description:
+    "Capture webhooks in real time, inspect headers and payloads, and forward requests to localhost with webhooks.cc.",
+  path: "/",
+});
 
 interface GitHubRepoResponse {
   stargazers_count: number;
@@ -25,8 +33,29 @@ async function getStarCount(): Promise<number | null> {
 
 export default async function Home() {
   const stars = await getStarCount();
+  const softwareApplicationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "webhooks.cc",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Web",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+    },
+    url: "https://webhooks.cc",
+    description:
+      "Capture webhooks in real time, inspect requests, and forward to localhost for development.",
+  };
+
   return (
     <main className="min-h-screen">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+      />
+
       {/* Navigation */}
       <FloatingNavbar />
 

@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "CLI Overview - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "CLI Overview Docs",
   description:
     "The webhooks.cc CLI lets you forward webhooks to localhost and manage endpoints from the terminal.",
-};
+  path: "/docs/cli",
+});
 
 export default function CliPage() {
   return (

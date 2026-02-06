@@ -1,13 +1,14 @@
 import Link from "next/link";
-import type { Metadata } from "next";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { BackButton } from "@/components/nav/back-button";
 import { Mail, Bug, CreditCard, MessageSquare } from "lucide-react";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Support - webhooks.cc",
+export const metadata = createPageMetadata({
+  title: "Support",
   description: "Get help with webhooks.cc — bug reports, billing, and general questions.",
-};
+  path: "/support",
+});
 
 export default function SupportPage() {
   return (
@@ -24,10 +25,7 @@ export default function SupportPage() {
 
         <h2 className="sr-only">Contact options</h2>
         <div className="grid sm:grid-cols-2 gap-6 mb-12">
-          <a
-            href="mailto:support@webhooks.cc"
-            className="neo-card transition-neo group"
-          >
+          <a href="mailto:support@webhooks.cc" className="neo-card transition-neo group">
             <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
               <Bug className="h-6 w-6 text-primary-foreground" />
             </div>
@@ -85,8 +83,8 @@ export default function SupportPage() {
               <Link href="/docs" className="text-primary hover:underline font-bold">
                 documentation
               </Link>{" "}
-              first — it covers setup, endpoints, the CLI, and the SDK. Most questions are
-              answered there.
+              first — it covers setup, endpoints, the CLI, and the SDK. Most questions are answered
+              there.
             </p>
           </div>
         </section>

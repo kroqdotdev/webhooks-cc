@@ -1,5 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { createPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createPageMetadata({
+  title: "Terms of Service",
+  description:
+    "Read the webhooks.cc terms of service for acceptable use, billing, and legal terms.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

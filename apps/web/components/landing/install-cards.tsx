@@ -7,9 +7,7 @@ export function InstallCards() {
   return (
     <div className="mt-16 grid md:grid-cols-2 gap-6">
       <div className="neo-card neo-card-static">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
-          SDK
-        </p>
+        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">SDK</p>
         <div className="neo-code !p-3 !shadow-none relative">
           <CopyButton text="npm install @webhooks-cc/sdk" />
           <code className="text-sm pr-8">
@@ -24,9 +22,7 @@ export function InstallCards() {
         </p>
       </div>
       <div className="neo-card neo-card-static">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
-          CLI
-        </p>
+        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">CLI</p>
         <div className="neo-code !p-3 !shadow-none relative">
           <CopyButton text="curl -fsSL https://webhooks.cc/install.sh | sh" />
           <code className="text-sm pr-8">

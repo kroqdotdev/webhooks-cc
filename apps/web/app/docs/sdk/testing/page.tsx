@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Testing with the SDK - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "SDK Testing Docs",
   description: "Use the webhooks.cc SDK in your CI/CD pipeline to verify webhook integrations.",
-};
+  path: "/docs/sdk/testing",
+});
 
 export default function TestingPage() {
   return (

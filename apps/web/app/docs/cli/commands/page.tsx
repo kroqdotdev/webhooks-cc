@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "CLI Commands - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "CLI Commands Docs",
   description: "Full command reference for the webhooks.cc CLI.",
-};
+  path: "/docs/cli/commands",
+});
 
 interface CommandDef {
   name: string;

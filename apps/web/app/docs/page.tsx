@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Quick Start - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "Quick Start Docs",
   description:
     "Get started with webhooks.cc in three steps: create an endpoint, send a webhook, and view it in the dashboard.",
-};
+  path: "/docs",
+});
 
 export default function DocsPage() {
   return (

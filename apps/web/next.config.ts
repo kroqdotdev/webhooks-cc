@@ -11,5 +11,4 @@ export default withSentryConfig(nextConfig, {
   project: "javascript-nextjs",
   // Skip source map upload when no auth token is provided
   authToken: process.env.SENTRY_AUTH_TOKEN,
-  disableLogger: true,
 });

@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "SDK Overview - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "SDK Overview Docs",
   description:
     "The webhooks.cc TypeScript SDK for programmatic endpoint management and webhook inspection.",
-};
+  path: "/docs/sdk",
+});
 
 export default function SdkPage() {
   return (

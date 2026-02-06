@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Tunneling - webhooks.cc Docs",
+export const metadata = createPageMetadata({
+  title: "CLI Tunneling Docs",
   description: "Forward webhooks from webhooks.cc to your local development server.",
-};
+  path: "/docs/cli/tunnel",
+});
 
 export default function TunnelPage() {
   return (
