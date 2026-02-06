@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
 /**
  * Security headers proxy.
@@ -16,7 +15,7 @@ import type { NextRequest } from "next/server";
  *   (which fetches arbitrary user-provided URLs) will be blocked for external
  *   targets — use the CLI `whk replay` command for cross-origin replay.
  */
-export function proxy(_request: NextRequest) {
+export function proxy() {
   const response = NextResponse.next();
 
   const csp = [
