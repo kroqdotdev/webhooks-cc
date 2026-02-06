@@ -28,7 +28,10 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
 export function proxy() {
   const response = NextResponse.next();
 
-  const webhookOrigin = sanitizeCspOrigin(process.env.NEXT_PUBLIC_WEBHOOK_URL, "https://go.webhooks.cc");
+  const webhookOrigin = sanitizeCspOrigin(
+    process.env.NEXT_PUBLIC_WEBHOOK_URL,
+    "https://go.webhooks.cc"
+  );
 
   const csp = [
     "default-src 'self'",
