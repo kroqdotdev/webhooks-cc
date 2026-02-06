@@ -9,7 +9,13 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { GenericDatabaseReader } from "convex/server";
 import { v } from "convex/values";
-import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import {
+  mutation,
+  query,
+  internalQuery,
+  internalMutation,
+  internalAction,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { nanoid } from "nanoid";
@@ -228,7 +234,43 @@ export const update = mutation({
         mockResponse: mockResponse === null ? undefined : mockResponse,
       }),
     });
+
+    // Invalidate receiver cache so the new mock response takes effect quickly.
+    // 2s delay ensures the mutation's write is fully committed and visible
+    // to Convex queries before the receiver re-fetches endpoint info.
+    if (mockResponse !== undefined) {
+      await ctx.scheduler.runAfter(2000, internal.endpoints.invalidateReceiverCache, {
+        slug: endpoint.slug,
+      });
+    }
+
     return { success: true };
+  },
+});
+
+/** Notify the Go receiver to evict its cached endpoint info for a slug. */
+export const invalidateReceiverCache = internalAction({
+  args: { slug: v.string() },
+  handler: async (_ctx, { slug }) => {
+    const receiverUrl = process.env.RECEIVER_URL;
+    const secret = process.env.CAPTURE_SHARED_SECRET;
+    if (!receiverUrl || !secret) return;
+
+    try {
+      const res = await fetch(
+        `${receiverUrl}/internal/cache-invalidate/${encodeURIComponent(slug)}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}` },
+        }
+      );
+      if (!res.ok) {
+        console.warn(`Cache invalidation failed for ${slug}: ${res.status}`);
+      }
+    } catch (err) {
+      // Best-effort: cache will expire on its own after TTL
+      console.warn(`Cache invalidation request failed for ${slug}:`, err);
+    }
   },
 });
 

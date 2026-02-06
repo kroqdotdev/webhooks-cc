@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "turbo test",
+    "test:convex": "vitest run --config convex/vitest.config.ts",
     "typecheck": "turbo typecheck",
     "receiver": "cd apps/receiver && go run .",
     "cli": "cd apps/cli && go run ./cmd/whk"
@@ -19,10 +20,12 @@
   "devDependencies": {
     "@auth/core": "^0.41.1",
     "@convex-dev/auth": "^0.0.90",
+    "@edge-runtime/vm": "^5.0.0",
     "@eslint/js": "^9.39.2",
     "@next/eslint-plugin-next": "^16.1.6",
     "@types/node": "^25.2.0",
     "convex": "^1.31.7",
+    "convex-test": "^0.0.41",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
@@ -32,7 +35,8 @@
     "prettier": "^3.8.1",
     "turbo": "^2.8.3",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.54.0"
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^3.2.4"
   },
   "packageManager": "pnpm@10.28.2",
   "engines": {

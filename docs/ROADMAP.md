@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap outlines the development path from scaffold to production. Focus is on getting the web experience working first, with CLI and SDK deferred to later phases.
+This roadmap outlines the development path from scaffold to production.
 
 ---
 
@@ -13,11 +13,12 @@ This roadmap outlines the development path from scaffold to production. Focus is
 | **1** | Foundation       | 🟢 Complete    | Working landing page + demo + receiver |
 | **2** | Auth & Dashboard | 🟢 Complete    | Login, dashboard, endpoint management  |
 | **3** | Billing          | 🟢 Complete    | Polar.sh integration, usage tracking   |
-| **4** | Docs & Polish    | 🔴 Not Started | /docs, /installation, smart formatting |
+| **4** | Docs & Polish    | 🟢 Complete    | /docs, /installation, smart formatting |
 | **5** | CLI              | 🟢 Complete    | `whk tunnel`, `whk listen`             |
 | **5H** | Prod Hardening  | 🟢 Complete    | Sentry, error handling, key expiry     |
-| **6** | SDK              | 🔴 Deferred    | npm package, CI/CD helpers             |
-| **7** | Growth           | 🔴 Deferred    | SEO, integrations, team features       |
+| **6** | SDK              | 🟢 Complete    | Client, API routes, typed errors, tests |
+| **6T** | Convex Tests    | 🟢 Complete    | 78 tests: billing, quota, capture      |
+| **7** | Growth           | 🔴 Deferred    | Team features, integrations            |
 
 ---
 
@@ -105,16 +106,30 @@ This roadmap outlines the development path from scaffold to production. Focus is
 
 **Key Deliverables:**
 
-- [ ] /installation page with CLI + SDK tabs
-- [ ] /docs with quick start guide
-- [ ] /docs/dashboard - using the web UI
-- [ ] /docs/webhooks/\* - integration guides (Stripe, GitHub, Shopify)
-- [ ] Smart formatting (XML, form data, not just JSON)
-- [ ] Request search/filter
-- [ ] Export (JSON/CSV)
-- [ ] Request replay button
+- [x] /installation page with CLI + SDK tabs
+- [x] /docs with quick start guide
+- [x] /docs/endpoints, /docs/requests, /docs/mock-responses
+- [x] /docs/cli/\* - CLI reference (install, commands, tunneling)
+- [x] /docs/sdk/\* - SDK reference (install, API, testing patterns)
+- [x] /docs/webhooks/\* - integration guides (Stripe, GitHub, Shopify)
+- [x] Smart formatting (JSON, XML, form data)
+- [x] Request search/filter (client-side)
+- [x] Export (JSON/CSV)
+- [x] Request replay (client-side)
+- [x] Copy as cURL
+- [x] SEO meta tags, sitemap, robots.txt
+- [x] Dark mode, loading skeletons, error boundaries
 
-**Detailed tasks:** See [TODO-phase-4.md](./TODO-phase-4.md)
+**Status:** ✅ Complete
+
+**Detailed tasks:** See [TODO-phase-4-COMPLETED.md](./TODO-phase-4-COMPLETED.md)
+
+**Definition of Done:**
+
+1. ✅ /installation page with CLI + SDK installation tabs
+2. ✅ /docs quick start + full documentation tree
+3. ✅ Smart formatting for JSON, XML, and form data
+4. ✅ Search, export, replay, and copy-as-cURL all working
 
 ---
 
@@ -160,8 +175,10 @@ This roadmap outlines the development path from scaffold to production. Focus is
 - [x] Log standardization across Convex functions
 - [x] Device code indexed query
 - [x] SDK typed errors and telemetry hooks
+- [x] Abuse protection (ephemeral endpoint limits, rate limiting, HMAC auth)
+- [x] Go receiver + CLI test coverage (Phase 4 Go tests)
 
-**Status:** Complete (Phases 1-5)
+**Status:** ✅ Complete
 
 ---
 
@@ -171,20 +188,42 @@ This roadmap outlines the development path from scaffold to production. Focus is
 
 **Key Deliverables:**
 
-- [ ] `@webhooks-cc/sdk` published to npm
-- [ ] `whk.endpoints.create()` / `delete()`
-- [ ] `whk.requests.waitFor()` with timeout
-- [ ] Example CI/CD integration
-- [ ] /docs/sdk reference
+- [x] `@webhooks-cc/sdk` client with full CRUD + `waitFor`
+- [x] API routes (`/api/endpoints/...`, `/api/requests/...`)
+- [x] Typed errors (`WebhooksCCError`, `UnauthorizedError`, `NotFoundError`, etc.)
+- [x] Helper functions (`parseJsonBody`, `isStripeWebhook`, `isGitHubWebhook`, `matchJsonField`)
+- [x] Telemetry hooks (`ClientHooks` for request/response/error instrumentation)
+- [x] Unit tests (20 tests via vitest, mocked fetch)
+- [x] Integration test scaffold (skipped without credentials)
+- [x] /docs/sdk reference pages (overview, API, testing patterns)
+- [x] Package built with tsup (CJS + ESM + types)
 
-**Detailed tasks:** See [TODO-phase-6.md](./TODO-phase-6.md)
+**Status:** ✅ Complete
+
+**Detailed tasks:** See [TODO-phase-6-COMPLETED.md](./TODO-phase-6-COMPLETED.md)
 
 **Definition of Done:**
 
-1. `npm install @webhooks-cc/sdk` works
-2. Create endpoint, send webhook, waitFor returns it
-3. Helper functions for Stripe/GitHub webhook matching
-4. Example tests in documentation
+1. ✅ `@webhooks-cc/sdk` installable (v0.1.1 published)
+2. ✅ Create endpoint, send webhook, `waitFor` returns it
+3. ✅ Helper functions for Stripe/GitHub webhook matching
+4. ✅ SDK docs at /docs/sdk with API reference and testing patterns
+
+---
+
+## Phase 6T: Convex Test Suite
+
+**Goal:** Comprehensive test coverage for Convex backend functions (billing, quota, capture).
+
+**Key Deliverables:**
+
+- [x] `convex-test` infrastructure with vitest + edge-runtime
+- [x] Polar webhook handler tests (29 cases: customer, order, subscription lifecycle)
+- [x] Quota and capture tests (25 cases: period management, usage, getQuota, capture, batch)
+- [x] Free user period reset tests (4 cases: reset, no-op, cleanup)
+- [x] 78 total Convex function tests passing
+
+**Status:** ✅ Complete
 
 ---
 
@@ -214,10 +253,13 @@ This roadmap outlines the development path from scaffold to production. Focus is
 - **Payments:** Polar.sh (developer-friendly)
 - **Hosting:** Self-hosted home server + Caddy
 
+### Decided Since Launch
+
+- **Request retention:** Cron-based cleanup (`cleanupOldRequests` for pro, `resetFreeUserPeriod` + `cleanupUserRequests` for free)
+- **Rate limiting:** Receiver-side via in-memory quota cache (Go receiver queries Convex for quota, caches locally). See `docs/future/distributed-rate-limiting.md` for Redis migration plan.
+
 ### To Decide Later
 
-- Request retention cleanup strategy (cron vs. TTL index)
-- Rate limiting approach (Convex-side vs. receiver-side)
 - Analytics/monitoring stack
 
 ---
@@ -252,9 +294,9 @@ This roadmap outlines the development path from scaffold to production. Focus is
 
 | Risk                     | Likelihood | Impact | Mitigation                           |
 | ------------------------ | ---------- | ------ | ------------------------------------ |
-| Convex rate limits       | Low        | High   | Monitor usage, add caching if needed |
-| Home server downtime     | Medium     | High   | Set up monitoring, alerting          |
-| Polar.sh webhook issues  | Low        | Medium | Extensive testing, retry logic       |
+| Convex rate limits       | Low        | High   | Go receiver quota cache reduces Convex calls |
+| Home server downtime     | Medium     | High   | Docker health checks, systemd auto-restart |
+| Polar.sh webhook issues  | Low        | Medium | 78 Convex tests + error classification + retry logic |
 | Go receiver memory leaks | Low        | Medium | Profile under load, set limits       |
 
 ---

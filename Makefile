@@ -32,6 +32,7 @@ build-cli:
 # Test
 test:
 	pnpm test
+	pnpm test:convex
 	cd apps/receiver && go test ./...
 	cd apps/cli && go test ./...
 
