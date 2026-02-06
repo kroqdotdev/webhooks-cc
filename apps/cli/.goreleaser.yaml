@@ -37,6 +37,19 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# signs the checksum file with cosign (keyless via GitHub Actions OIDC)
+# all archives are included in the checksum, so signing it covers everything
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
 release:
   name_template: "CLI v{{.Version}}"
   header: |

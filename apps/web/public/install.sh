@@ -8,6 +8,10 @@ BINARY="whk"
 INSTALL_DIR="/usr/local/bin"
 RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"
 
+# Cosign keyless verification parameters (GitHub Actions OIDC)
+COSIGN_ISSUER="https://token.actions.githubusercontent.com"
+COSIGN_IDENTITY_REGEXP="^https://github.com/$REPO/"
+
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Error: required command not found: $1" >&2
@@ -85,8 +89,7 @@ FILENAME="${BINARY}_${OS}_${ARCH}.tar.gz"
 RELEASE_BASE="https://github.com/$REPO/releases/download/${VERSION}"
 URL="${RELEASE_BASE}/${FILENAME}"
 CHECKSUMS_URL="${RELEASE_BASE}/checksums.txt"
-MINISIG_URL="${RELEASE_BASE}/checksums.txt.minisig"
-COSIGN_SIG_URL="${RELEASE_BASE}/checksums.txt.sig"
+SIGSTORE_BUNDLE_URL="${RELEASE_BASE}/checksums.txt.sigstore.json"
 
 echo "Preparing install for $BINARY $VERSION ($OS/$ARCH)..."
 
@@ -96,48 +99,27 @@ trap 'rm -rf "$WHK_TMPDIR"' EXIT
 echo "Downloading checksums..."
 curl -fsSL "$CHECKSUMS_URL" -o "$WHK_TMPDIR/checksums.txt"
 
+# Verify checksums signature with cosign (keyless via sigstore bundle)
 signature_verified=0
-
-# Prefer minisign when checksums.txt.minisig is published.
-if download_optional "$MINISIG_URL" "$WHK_TMPDIR/checksums.txt.minisig"; then
-  if ! command -v minisign >/dev/null 2>&1; then
-    echo "Error: checksums signature found but minisign is not installed." >&2
-    echo "Install minisign and set WHK_MINISIGN_PUBKEY to continue." >&2
-    exit 1
-  fi
-  if [ -z "${WHK_MINISIGN_PUBKEY:-}" ]; then
-    echo "Error: checksums signature found but WHK_MINISIGN_PUBKEY is not set." >&2
-    exit 1
-  fi
-  minisign -Vm "$WHK_TMPDIR/checksums.txt" -x "$WHK_TMPDIR/checksums.txt.minisig" -P "$WHK_MINISIGN_PUBKEY" >/dev/null
-  echo "Verified checksums signature with minisign."
-  signature_verified=1
-fi
-
-# Fallback to cosign when checksums.txt.sig is published.
-if [ "$signature_verified" -eq 0 ] && download_optional "$COSIGN_SIG_URL" "$WHK_TMPDIR/checksums.txt.sig"; then
-  if ! command -v cosign >/dev/null 2>&1; then
-    echo "Error: checksums signature found but cosign is not installed." >&2
-    echo "Install cosign and set WHK_COSIGN_PUBKEY to continue." >&2
-    exit 1
-  fi
-  if [ -z "${WHK_COSIGN_PUBKEY:-}" ]; then
-    echo "Error: checksums signature found but WHK_COSIGN_PUBKEY is not set." >&2
-    exit 1
-  fi
-  COSIGN_KEY_FILE="$WHK_TMPDIR/cosign.pub"
-  if [ -f "$WHK_COSIGN_PUBKEY" ]; then
-    cp "$WHK_COSIGN_PUBKEY" "$COSIGN_KEY_FILE"
+if download_optional "$SIGSTORE_BUNDLE_URL" "$WHK_TMPDIR/checksums.txt.sigstore.json"; then
+  if command -v cosign >/dev/null 2>&1; then
+    if cosign verify-blob \
+      --bundle "$WHK_TMPDIR/checksums.txt.sigstore.json" \
+      --certificate-oidc-issuer "$COSIGN_ISSUER" \
+      --certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
+      "$WHK_TMPDIR/checksums.txt" >/dev/null 2>&1; then
+      echo "Signature verified (cosign keyless)."
+      signature_verified=1
+    else
+      echo "Error: cosign signature verification failed." >&2
+      exit 1
+    fi
   else
-    printf '%s\n' "$WHK_COSIGN_PUBKEY" > "$COSIGN_KEY_FILE"
+    echo "Note: cosign not installed, skipping signature verification."
+    echo "      Install cosign (https://docs.sigstore.dev/cosign/system_config/installation/) for full verification."
   fi
-  cosign verify-blob --key "$COSIGN_KEY_FILE" --signature "$WHK_TMPDIR/checksums.txt.sig" "$WHK_TMPDIR/checksums.txt" >/dev/null
-  echo "Verified checksums signature with cosign."
-  signature_verified=1
-fi
-
-if [ "$signature_verified" -eq 0 ]; then
-  echo "Warning: no signed checksum asset published for ${VERSION}; using checksum-only verification."
+else
+  echo "Warning: no signature bundle published for ${VERSION}; using checksum-only verification."
 fi
 
 echo "Downloading $BINARY archive..."
