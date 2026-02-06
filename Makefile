@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test clean db-push
+.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push
 
 # Development
 dev:
@@ -34,6 +34,11 @@ test:
 	pnpm test
 	cd apps/receiver && go test ./...
 	cd apps/cli && go test ./...
+
+# Lint
+lint:
+	cd apps/receiver && golangci-lint run
+	cd apps/cli && golangci-lint run
 
 # Database
 db-push:

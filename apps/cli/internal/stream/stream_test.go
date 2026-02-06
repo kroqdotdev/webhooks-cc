@@ -24,7 +24,7 @@ func runSSETest(t *testing.T, sseData string) []*types.CapturedRequest {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
-		w.Write([]byte(sseData))
+		_, _ = w.Write([]byte(sseData))
 	}))
 	t.Cleanup(server.Close)
 
@@ -42,7 +42,7 @@ func runSSETest(t *testing.T, sseData string) []*types.CapturedRequest {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	s.connect(ctx, handler)
+	_ = s.connect(ctx, handler)
 
 	mu.Lock()
 	defer mu.Unlock()

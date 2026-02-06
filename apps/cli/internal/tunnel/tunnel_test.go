@@ -294,7 +294,7 @@ func TestForward_ResponseStatusCode(t *testing.T) {
 		t.Run(fmt.Sprintf("status_%d", code), func(t *testing.T) {
 			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(code)
-				w.Write([]byte("body"))
+				_, _ = w.Write([]byte("body"))
 			}))
 			t.Cleanup(target.Close)
 

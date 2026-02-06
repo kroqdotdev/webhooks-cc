@@ -66,7 +66,7 @@ func TestFetchChecksum(t *testing.T) {
 	checksumContent := "abc123def456  whk_linux_amd64.tar.gz\n789012fed345  whk_darwin_arm64.tar.gz\n"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(checksumContent))
+		_, _ = w.Write([]byte(checksumContent))
 	}))
 	defer server.Close()
 
@@ -83,7 +83,7 @@ func TestFetchChecksum(t *testing.T) {
 
 func TestFetchChecksum_MissingAsset(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("abc123  other_file.tar.gz\n"))
+		_, _ = w.Write([]byte("abc123  other_file.tar.gz\n"))
 	}))
 	defer server.Close()
 
@@ -161,7 +161,9 @@ func TestExtractTarGz_Success(t *testing.T) {
 		t.Fatalf("extractTarGz: %v", err)
 	}
 
-	destFile.Close()
+	if err := destFile.Close(); err != nil {
+		t.Fatal(err)
+	}
 	got, err := os.ReadFile(destFile.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +182,7 @@ func TestExtractTarGz_MissingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer destFile.Close()
+	defer func() { _ = destFile.Close() }()
 
 	err = extractTarGz(bytes.NewReader(archive), destFile)
 	if err == nil {
@@ -274,7 +276,7 @@ func TestCheck_WithTransportMock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(Release{
+				_ = json.NewEncoder(w).Encode(Release{
 					TagName: tt.latestTag,
 					Assets:  []Asset{{Name: "test.tar.gz"}},
 				})

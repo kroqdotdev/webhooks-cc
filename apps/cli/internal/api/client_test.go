@@ -108,7 +108,7 @@ func TestCreateDeviceCode(t *testing.T) {
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		json.NewEncoder(w).Encode(DeviceCodeResponse{
+		_ = json.NewEncoder(w).Encode(DeviceCodeResponse{
 			DeviceCode:      "dev-code-123",
 			UserCode:        "ABCD-1234",
 			ExpiresAt:       1700000000000,
@@ -140,7 +140,7 @@ func TestPollDeviceCode(t *testing.T) {
 		if code != "dev-code-123" {
 			t.Errorf("expected code=dev-code-123, got %q", code)
 		}
-		json.NewEncoder(w).Encode(PollResponse{Status: "authorized"})
+		_ = json.NewEncoder(w).Encode(PollResponse{Status: "authorized"})
 	}))
 
 	resp, err := c.PollDeviceCode(context.Background(), "dev-code-123")
@@ -171,7 +171,7 @@ func TestClaimDeviceCode(t *testing.T) {
 			t.Errorf("expected deviceCode=dev-code-456, got %q", body["deviceCode"])
 		}
 
-		json.NewEncoder(w).Encode(ClaimResponse{
+		_ = json.NewEncoder(w).Encode(ClaimResponse{
 			APIKey: "api-key-789",
 			UserID: "user-abc",
 			Email:  "user@example.com",
@@ -200,7 +200,7 @@ func TestClaimDeviceCode(t *testing.T) {
 func TestErrorHandling_4xxWithStatusCode(t *testing.T) {
 	c := setupTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(403)
-		w.Write([]byte(`{"error": "forbidden"}`))
+		_, _ = w.Write([]byte(`{"error": "forbidden"}`))
 	}))
 
 	_, err := c.CreateDeviceCode(context.Background())
@@ -215,7 +215,7 @@ func TestErrorHandling_4xxWithStatusCode(t *testing.T) {
 func TestErrorHandling_BodyTruncatedAt200Chars(t *testing.T) {
 	c := setupTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
-		w.Write([]byte(strings.Repeat("x", 500)))
+		_, _ = w.Write([]byte(strings.Repeat("x", 500)))
 	}))
 
 	_, err := c.CreateDeviceCode(context.Background())
@@ -244,7 +244,7 @@ func TestAuthenticatedRequest_UsesToken(t *testing.T) {
 	var receivedAuth string
 	c := setupTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedAuth = r.Header.Get("Authorization")
-		json.NewEncoder(w).Encode([]map[string]string{})
+		_ = json.NewEncoder(w).Encode([]map[string]string{})
 	}))
 
 	_, err := c.ListEndpointsWithContext(context.Background())
