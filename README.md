@@ -4,11 +4,11 @@ Inspect and debug webhooks without deploying to production.
 
 Get a unique URL, point your webhook there, and see every request in real-time. No signup required.
 
-**[Try it now →](https://webhooks.cc)**
+**[Try it now →](https://webhooks.cc/go)**
 
 ## Getting Started
 
-1. Visit [webhooks.cc](https://webhooks.cc)
+1. Visit [webhooks.cc](https://webhooks.cc/go)
 2. Copy your unique webhook URL
 3. Send a test request: `curl -X POST https://go.webhooks.cc/w/<slug> -d '{"test": true}'`
 4. Watch it appear in the dashboard
