@@ -7,6 +7,7 @@ Guidance for Claude Code when working in this repository.
 webhooks.cc is a production webhook inspection and testing service. Users capture incoming webhooks, inspect request details, configure mock responses, and forward requests to localhost via CLI tunneling. The service includes a TypeScript SDK (`@webhooks-cc/sdk`) for programmatic access and test assertions.
 
 **Production URLs:**
+
 - App: `https://webhooks.cc`
 - Webhook receiver: `https://in.webhooks.cc`
 - Convex API: `https://api.webhooks.cc` (.cloud)
@@ -86,13 +87,13 @@ cd apps/receiver && golangci-lint run   # Go lint
 
 ### Service Layout
 
-| Service | Port | Stack | Purpose |
-|---------|------|-------|---------|
-| Web app | 3000 | Next.js 16, React 19, Tailwind v4 | Dashboard, docs, landing page |
-| Receiver | 3001 | Go 1.25, Fiber v2 | Captures webhooks at `/w/{slug}` |
-| Convex | managed | Convex 1.31 | Database, auth, real-time subscriptions, HTTP actions |
-| CLI | n/a | Go 1.25, Cobra | `whk tunnel`, `whk listen`, device auth |
-| SDK | n/a | TypeScript, tsup | `@webhooks-cc/sdk` on npm |
+| Service  | Port    | Stack                             | Purpose                                               |
+| -------- | ------- | --------------------------------- | ----------------------------------------------------- |
+| Web app  | 3000    | Next.js 16, React 19, Tailwind v4 | Dashboard, docs, landing page                         |
+| Receiver | 3001    | Go 1.25, Fiber v2                 | Captures webhooks at `/w/{slug}`                      |
+| Convex   | managed | Convex 1.31                       | Database, auth, real-time subscriptions, HTTP actions |
+| CLI      | n/a     | Go 1.25, Cobra                    | `whk tunnel`, `whk listen`, device auth               |
+| SDK      | n/a     | TypeScript, tsup                  | `@webhooks-cc/sdk` on npm                             |
 
 ### Directory Structure
 
@@ -148,18 +149,18 @@ Receiver env vars: `CONVEX_SITE_URL`, `CAPTURE_SHARED_SECRET`, `PORT` (default 3
 
 ### CLI Commands
 
-| Command | Purpose |
-|---------|---------|
-| `whk auth login` | Device auth flow (browser-based, generates 90-day API key) |
-| `whk auth status` | Show current login status |
-| `whk auth logout` | Clear stored token |
-| `whk tunnel <port>` | Create endpoint + forward webhooks to localhost |
-| `whk listen <slug>` | Stream incoming requests to terminal |
-| `whk create [name]` | Create a new endpoint |
-| `whk list` | List user's endpoints |
-| `whk delete <slug>` | Delete an endpoint |
-| `whk replay <id>` | Replay a captured request |
-| `whk update` | Self-update from GitHub releases (SHA256 verified) |
+| Command             | Purpose                                                    |
+| ------------------- | ---------------------------------------------------------- |
+| `whk auth login`    | Device auth flow (browser-based, generates 90-day API key) |
+| `whk auth status`   | Show current login status                                  |
+| `whk auth logout`   | Clear stored token                                         |
+| `whk tunnel <port>` | Create endpoint + forward webhooks to localhost            |
+| `whk listen <slug>` | Stream incoming requests to terminal                       |
+| `whk create [name]` | Create a new endpoint                                      |
+| `whk list`          | List user's endpoints                                      |
+| `whk delete <slug>` | Delete an endpoint                                         |
+| `whk replay <id>`   | Replay a captured request                                  |
+| `whk update`        | Self-update from GitHub releases (SHA256 verified)         |
 
 Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL` env var. Debug logging via `WHK_DEBUG`.
 
@@ -167,32 +168,33 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 
 **Schema (5 tables + auth system):**
 
-| Table | Key fields | Notes |
-|-------|-----------|-------|
-| `users` | email, plan (free/pro), requestsUsed, requestLimit, polarCustomerId, periodEnd | Indexes: by_email, by_polar_customer, by_plan |
-| `endpoints` | slug, userId?, mockResponse?, isEphemeral, expiresAt? | Indexes: by_slug, by_user, by_expires |
-| `requests` | endpointId, method, path, headers, body, ip, receivedAt | Index: by_endpoint_time |
-| `apiKeys` | userId, keyHash (SHA-256), keyPrefix, expiresAt | Indexes: by_key_hash, by_user |
-| `deviceCodes` | deviceCode, userCode, status, userId?, expiresAt | Indexes: by_device_code, by_user_code, by_status |
+| Table         | Key fields                                                                     | Notes                                            |
+| ------------- | ------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `users`       | email, plan (free/pro), requestsUsed, requestLimit, polarCustomerId, periodEnd | Indexes: by_email, by_polar_customer, by_plan    |
+| `endpoints`   | slug, userId?, mockResponse?, isEphemeral, expiresAt?                          | Indexes: by_slug, by_user, by_expires            |
+| `requests`    | endpointId, method, path, headers, body, ip, receivedAt                        | Index: by_endpoint_time                          |
+| `apiKeys`     | userId, keyHash (SHA-256), keyPrefix, expiresAt                                | Indexes: by_key_hash, by_user                    |
+| `deviceCodes` | deviceCode, userCode, status, userId?, expiresAt                               | Indexes: by_device_code, by_user_code, by_status |
 
 **Key files:**
 
-| File | Purpose |
-|------|---------|
-| `schema.ts` | Database schema definition |
-| `http.ts` | HTTP actions: `/capture`, `/capture-batch`, `/quota`, `/endpoint-info`, `/check-period`, `/validate-api-key`, `/cli/*`, `/polar-webhook` |
-| `auth.ts` | GitHub + Google OAuth via @convex-dev/auth, cross-provider email linking |
-| `users.ts` | `current` (public, filters Polar IDs), `currentFull` (internal, includes Polar IDs), `deleteAccount` with phased deletion |
-| `endpoints.ts` | CRUD with auth checks. Unauth users forced to `isEphemeral: true`. Schedules receiver cache invalidation on update |
-| `requests.ts` | Capture, quota checking (lazy period activation for free users), cleanup crons |
-| `billing.ts` | Polar.sh integration: checkout, cancel, resubscribe, webhook handling (HMAC-SHA256 verified) |
-| `apiKeys.ts` | SHA-256 hashed storage, `whcc_` prefix, O(1) validation by hash lookup, 1-year max TTL |
-| `deviceAuth.ts` | Device flow: create -> authorize -> poll -> claim (API key generated at claim time, one-time use) |
-| `rateLimiter.ts` | Token bucket via @convex-dev/rate-limiter: ephemeral (50/10min), user creation (10/10min), anon creation (20/10min) |
-| `config.ts` | Zod-validated env config: FREE_REQUEST_LIMIT (200), PRO_REQUEST_LIMIT (500k), EPHEMERAL_TTL_MS (10min), BILLING_PERIOD_MS (30d), FREE_PERIOD_MS (24h) |
-| `crons.ts` | Every 5min: cleanup expired endpoints + device codes. Daily: billing period resets, API key cleanup, old request cleanup (30d for pro) |
+| File             | Purpose                                                                                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema.ts`      | Database schema definition                                                                                                                            |
+| `http.ts`        | HTTP actions: `/capture`, `/capture-batch`, `/quota`, `/endpoint-info`, `/check-period`, `/validate-api-key`, `/cli/*`, `/polar-webhook`              |
+| `auth.ts`        | GitHub + Google OAuth via @convex-dev/auth, cross-provider email linking                                                                              |
+| `users.ts`       | `current` (public, filters Polar IDs), `currentFull` (internal, includes Polar IDs), `deleteAccount` with phased deletion                             |
+| `endpoints.ts`   | CRUD with auth checks. Unauth users forced to `isEphemeral: true`. Schedules receiver cache invalidation on update                                    |
+| `requests.ts`    | Capture, quota checking (lazy period activation for free users), cleanup crons                                                                        |
+| `billing.ts`     | Polar.sh integration: checkout, cancel, resubscribe, webhook handling (HMAC-SHA256 verified)                                                          |
+| `apiKeys.ts`     | SHA-256 hashed storage, `whcc_` prefix, O(1) validation by hash lookup, 1-year max TTL                                                                |
+| `deviceAuth.ts`  | Device flow: create -> authorize -> poll -> claim (API key generated at claim time, one-time use)                                                     |
+| `rateLimiter.ts` | Token bucket via @convex-dev/rate-limiter: ephemeral (50/10min), user creation (10/10min), anon creation (20/10min)                                   |
+| `config.ts`      | Zod-validated env config: FREE_REQUEST_LIMIT (200), PRO_REQUEST_LIMIT (500k), EPHEMERAL_TTL_MS (10min), BILLING_PERIOD_MS (30d), FREE_PERIOD_MS (24h) |
+| `crons.ts`       | Every 5min: cleanup expired endpoints + device codes. Daily: billing period resets, API key cleanup, old request cleanup (30d for pro)                |
 
 **Key patterns:**
+
 - `users.current` (public) filters out `polarCustomerId` and `polarSubscriptionId` - use `internal.users.currentFull` for server-side billing access
 - Usage increments scheduled via `ctx.scheduler.runAfter(0, ...)` to avoid OCC read-modify-write races
 - Large deletions (account, request cleanup) split into phases to stay under 10s mutation timeout
@@ -210,6 +212,7 @@ Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono f
 **API routes:** `/api/health`, `/api/auth/device-*` (3 routes), `/api/endpoints` (CRUD), `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/stream/[slug]` (SSE)
 
 **Key directories:**
+
 - `app/` - Pages and API routes
 - `components/` - UI components organized by feature (dashboard/, landing/, billing/, auth/, nav/, ui/)
 - `lib/` - Utilities: env validation (zod), API auth, rate limiting, formatting, SEO, export (JSON/CSV)
@@ -219,11 +222,11 @@ Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono f
 `@webhooks-cc/sdk` v0.2.0 - published to npm, MIT licensed.
 
 ```typescript
-const client = new WebhooksCC({ apiKey: 'whcc_...' });
-const endpoint = await client.endpoints.create({ name: 'test' });
+const client = new WebhooksCC({ apiKey: "whcc_..." });
+const endpoint = await client.endpoints.create({ name: "test" });
 const req = await client.requests.waitFor(endpoint.slug, {
   timeout: 10000,
-  match: matchJsonField('type', 'checkout.session.completed'),
+  match: matchJsonField("type", "checkout.session.completed"),
 });
 ```
 
@@ -233,35 +236,35 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 ### Root `.env.local` (shared)
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `CONVEX_DEPLOYMENT` | yes | Convex deployment identifier |
-| `NEXT_PUBLIC_CONVEX_URL` | yes | Convex `.cloud` URL |
-| `CONVEX_SITE_URL` | yes | Convex `.site` URL (HTTP actions) |
-| `NEXT_PUBLIC_WEBHOOK_URL` | yes | Webhook receiver base URL |
-| `NEXT_PUBLIC_APP_URL` | yes | App base URL |
-| `CAPTURE_SHARED_SECRET` | yes | Shared secret for receiver <-> Convex auth |
+| Variable                  | Required | Purpose                                    |
+| ------------------------- | -------- | ------------------------------------------ |
+| `CONVEX_DEPLOYMENT`       | yes      | Convex deployment identifier               |
+| `NEXT_PUBLIC_CONVEX_URL`  | yes      | Convex `.cloud` URL                        |
+| `CONVEX_SITE_URL`         | yes      | Convex `.site` URL (HTTP actions)          |
+| `NEXT_PUBLIC_WEBHOOK_URL` | yes      | Webhook receiver base URL                  |
+| `NEXT_PUBLIC_APP_URL`     | yes      | App base URL                               |
+| `CAPTURE_SHARED_SECRET`   | yes      | Shared secret for receiver <-> Convex auth |
 
 ### Convex Environment (set via dashboard)
 
-| Variable | Purpose |
-|----------|---------|
-| `CONVEX_SITE_URL` | Auth config |
-| `CAPTURE_SHARED_SECRET` | HTTP action auth |
-| `POLAR_ACCESS_TOKEN` | Polar.sh API |
-| `POLAR_ORGANIZATION_ID` | Polar org |
-| `POLAR_WEBHOOK_SECRET` | Webhook signature verification |
-| `POLAR_PRO_PRODUCT_ID` | Product ID for checkout |
-| `POLAR_PRO_PRICE_ID` | Price ID for checkout |
-| `POLAR_SANDBOX` | `true` for sandbox mode |
+| Variable                | Purpose                        |
+| ----------------------- | ------------------------------ |
+| `CONVEX_SITE_URL`       | Auth config                    |
+| `CAPTURE_SHARED_SECRET` | HTTP action auth               |
+| `POLAR_ACCESS_TOKEN`    | Polar.sh API                   |
+| `POLAR_ORGANIZATION_ID` | Polar org                      |
+| `POLAR_WEBHOOK_SECRET`  | Webhook signature verification |
+| `POLAR_PRO_PRODUCT_ID`  | Product ID for checkout        |
+| `POLAR_PRO_PRICE_ID`    | Price ID for checkout          |
+| `POLAR_SANDBOX`         | `true` for sandbox mode        |
 
 ### Optional
 
-| Variable | Purpose |
-|----------|---------|
-| `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Error tracking |
-| `RECEIVER_DEBUG` | Enable receiver debug logging |
-| `WHK_DEBUG` | Enable CLI debug logging |
+| Variable                                | Purpose                       |
+| --------------------------------------- | ----------------------------- |
+| `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Error tracking                |
+| `RECEIVER_DEBUG`                        | Enable receiver debug logging |
+| `WHK_DEBUG`                             | Enable CLI debug logging      |
 
 ## CI/CD & Releases
 
@@ -283,5 +286,6 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 ## Licensing
 
 Split license model:
+
 - **AGPL-3.0**: `apps/web`, `apps/receiver`, `convex/`
 - **MIT**: `apps/cli`, `packages/sdk`, `apps/go-shared`

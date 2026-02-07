@@ -17,6 +17,7 @@ export interface SitemapPageDefinition {
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
+  { path: "/go", changeFrequency: "weekly", priority: 0.9 },
   { path: "/docs", changeFrequency: "weekly", priority: 0.9 },
   { path: "/docs/endpoints", changeFrequency: "monthly", priority: 0.7 },
   { path: "/docs/requests", changeFrequency: "monthly", priority: 0.7 },

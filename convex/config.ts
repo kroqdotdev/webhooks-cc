@@ -34,7 +34,14 @@ export const FREE_REQUEST_LIMIT = safeParseInt("FREE_REQUEST_LIMIT", 200, 1, 100
 
 export const PRO_REQUEST_LIMIT = safeParseInt("PRO_REQUEST_LIMIT", 500000, 1, 100000000);
 
-export const EPHEMERAL_TTL_MS = safeParseInt("EPHEMERAL_TTL_MS", 600000, 60000, 86400000); // 1min to 24hrs
+// Guest demo endpoints: 10-hour lifetime by default.
+// Keeping this below the free tier (200 requests/day) nudges signups without blocking evaluation.
+export const EPHEMERAL_TTL_MS = safeParseInt(
+  "EPHEMERAL_TTL_MS",
+  10 * 60 * 60 * 1000,
+  60000,
+  86400000
+); // 1min to 24hrs
 
 export const BILLING_PERIOD_MS = safeParseInt(
   "BILLING_PERIOD_MS",

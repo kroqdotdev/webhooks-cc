@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
-import { AuthAwareDemo } from "@/components/landing/auth-aware-demo";
 import { HeroCTA } from "@/components/landing/hero-cta";
 import { Zap, Eye, Terminal, ArrowRight, Check } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
@@ -154,9 +153,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Live Demo - hidden for authenticated users */}
-      <AuthAwareDemo />
-
       {/* Pricing */}
       <section className="py-20 px-4 bg-muted">
         <div className="max-w-6xl mx-auto">
@@ -234,10 +230,10 @@ export default async function Home() {
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
               Join thousands of developers who trust webhooks.cc for their webhook testing needs.
             </p>
-            <a href="#demo" className="neo-btn bg-background text-foreground">
+            <Link href="/go" className="neo-btn bg-background text-foreground">
               Try it free
               <ArrowRight className="inline-block ml-2 h-5 w-5" />
-            </a>
+            </Link>
           </div>
         </div>
       </section>

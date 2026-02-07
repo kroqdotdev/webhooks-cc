@@ -31,10 +31,10 @@ export function HeroCTA() {
 
   return (
     <div className="flex flex-wrap gap-4">
-      <a href="#demo" className="neo-btn-primary">
+      <Link href="/go" className="neo-btn-primary">
         Try it live
         <ArrowRight className="inline-block ml-2 h-5 w-5" />
-      </a>
+      </Link>
       <Link href="/docs" className="neo-btn-outline">
         Read the docs
       </Link>
