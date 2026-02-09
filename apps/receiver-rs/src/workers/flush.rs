@@ -27,8 +27,8 @@ pub fn spawn_flush_workers(
             loop {
                 // Check for shutdown
                 if *shutdown.borrow() {
-                    // Final drain before exit
-                    drain_pass(&redis, &convex, batch_max_size, worker_id, 1).await;
+                    // Final drain — each worker drains its own strided subset
+                    drain_pass(&redis, &convex, batch_max_size, worker_id, worker_count).await;
                     tracing::info!(worker_id, "flush worker shutting down");
                     return;
                 }

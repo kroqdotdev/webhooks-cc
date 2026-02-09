@@ -83,17 +83,21 @@ impl RedisState {
     }
 
     /// Re-enqueue requests that failed to flush (push back to tail for retry).
+    /// Uses a pipeline so the re-enqueue is all-or-nothing.
     pub async fn requeue(&self, slug: &str, requests: &[BufferedRequest]) {
         let key = format!("{BUF_PREFIX}{slug}");
         let mut conn = self.conn.clone();
+        let mut pipe = redis::pipe();
 
         for req in requests {
             let Ok(json) = serde_json::to_string(req) else {
                 continue;
             };
-            let _: Result<(), _> = conn.rpush(&key, &json).await;
+            pipe.rpush(&key, json).ignore();
         }
-        let _: Result<(), _> = conn.sadd(ACTIVE_SET, slug).await;
+        pipe.sadd(ACTIVE_SET, slug).ignore();
+
+        let _: Result<(), _> = pipe.query_async(&mut conn).await;
     }
 
     /// Get the length of a slug's request buffer.

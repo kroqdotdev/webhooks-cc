@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push prod prod-web prod-receiver
+.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-receiver-go dev-cli build build-receiver build-receiver-go build-cli test lint clean db-push prod prod-web prod-receiver
 
 # Development
 dev:
@@ -54,11 +54,13 @@ build-cli:
 test:
 	pnpm test
 	pnpm test:convex
+	cd apps/receiver-rs && cargo test
 	cd apps/receiver && go test ./...
 	cd apps/cli && go test ./...
 
 # Lint
 lint:
+	cd apps/receiver-rs && cargo clippy -- -D warnings
 	cd apps/receiver && golangci-lint run
 	cd apps/cli && golangci-lint run
 

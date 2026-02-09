@@ -43,28 +43,18 @@ impl ConvexClient {
         &self.circuit
     }
 
-    /// Fetch endpoint info from Convex and cache it in Redis.
-    pub async fn fetch_and_cache_endpoint(
-        &self,
-        slug: &str,
-    ) -> Result<Option<EndpointInfo>, ConvexError> {
-        if !self.circuit.allow_request().await {
-            return Err(ConvexError::CircuitOpen);
+    /// Read the response body with a pre-check on Content-Length to avoid unbounded allocation.
+    async fn read_body(&self, resp: reqwest::Response) -> Result<(u16, String), ConvexError> {
+        let status = resp.status().as_u16();
+
+        // Pre-check Content-Length header to reject obviously too-large responses
+        if let Some(len) = resp.content_length()
+            && len > MAX_RESPONSE_SIZE as u64
+        {
+            self.record_failure_sync();
+            return Err(ConvexError::ResponseTooLarge);
         }
 
-        let url = format!("{}/endpoint-info?slug={}", self.base_url, slug);
-        let resp = self
-            .http
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", self.secret))
-            .send()
-            .await
-            .map_err(|e| {
-                self.record_failure_sync();
-                ConvexError::Network(e.to_string())
-            })?;
-
-        let status = resp.status().as_u16();
         let body = resp
             .text()
             .await
@@ -77,6 +67,32 @@ impl ConvexClient {
             self.record_failure_sync();
             return Err(ConvexError::ResponseTooLarge);
         }
+
+        Ok((status, body))
+    }
+
+    /// Fetch endpoint info from Convex and cache it in Redis.
+    pub async fn fetch_and_cache_endpoint(
+        &self,
+        slug: &str,
+    ) -> Result<Option<EndpointInfo>, ConvexError> {
+        if !self.circuit.allow_request().await {
+            return Err(ConvexError::CircuitOpen);
+        }
+
+        let resp = self
+            .http
+            .get(format!("{}/endpoint-info", self.base_url))
+            .query(&[("slug", slug)])
+            .header("Authorization", format!("Bearer {}", self.secret))
+            .send()
+            .await
+            .map_err(|e| {
+                self.record_failure_sync();
+                ConvexError::Network(e.to_string())
+            })?;
+
+        let (status, body) = self.read_body(resp).await?;
 
         if status >= 500 {
             self.record_failure_sync();
@@ -93,7 +109,7 @@ impl ConvexClient {
         let info: EndpointInfo = serde_json::from_str(&body)
             .map_err(|e| ConvexError::ParseError(e.to_string()))?;
 
-        // Don't cache not_found errors
+        // Cache valid responses; skip caching errors (not_found, etc.)
         if info.error.is_empty() {
             self.redis.set_endpoint(slug, &info).await;
         }
@@ -114,10 +130,10 @@ impl ConvexClient {
             return Err(ConvexError::CircuitOpen);
         }
 
-        let url = format!("{}/quota?slug={}", self.base_url, slug);
         let resp = self
             .http
-            .get(&url)
+            .get(format!("{}/quota", self.base_url))
+            .query(&[("slug", slug)])
             .header("Authorization", format!("Bearer {}", self.secret))
             .send()
             .await
@@ -126,11 +142,7 @@ impl ConvexClient {
                 ConvexError::Network(e.to_string())
             })?;
 
-        let status = resp.status().as_u16();
-        let body = resp.text().await.map_err(|e| {
-            self.record_failure_sync();
-            ConvexError::Network(e.to_string())
-        })?;
+        let (status, body) = self.read_body(resp).await?;
 
         if status >= 500 {
             self.record_failure_sync();
@@ -220,11 +232,7 @@ impl ConvexClient {
                 ConvexError::Network(e.to_string())
             })?;
 
-        let status = resp.status().as_u16();
-        let body = resp.text().await.map_err(|e| {
-            self.record_failure_sync();
-            ConvexError::Network(e.to_string())
-        })?;
+        let (status, body) = self.read_body(resp).await?;
 
         if status >= 500 {
             self.record_failure_sync();
@@ -269,11 +277,7 @@ impl ConvexClient {
                 ConvexError::Network(e.to_string())
             })?;
 
-        let status = resp.status().as_u16();
-        let body = resp.text().await.map_err(|e| {
-            self.record_failure_sync();
-            ConvexError::Network(e.to_string())
-        })?;
+        let (status, body) = self.read_body(resp).await?;
 
         if status >= 500 {
             self.record_failure_sync();
@@ -311,13 +315,27 @@ pub enum ConvexError {
     ResponseTooLarge,
 }
 
+impl std::error::Error for ConvexError {}
+
 impl std::fmt::Display for ConvexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConvexError::CircuitOpen => write!(f, "circuit breaker open"),
             ConvexError::Network(e) => write!(f, "network error: {}", e),
-            ConvexError::ServerError(s, b) => write!(f, "server error {}: {}", s, b),
-            ConvexError::ClientError(s, b) => write!(f, "client error {}: {}", s, b),
+            ConvexError::ServerError(s, b) => {
+                let truncated = match b.char_indices().nth(200) {
+                    Some((idx, _)) => &b[..idx],
+                    None => b.as_str(),
+                };
+                write!(f, "server error {}: {}", s, truncated)
+            }
+            ConvexError::ClientError(s, b) => {
+                let truncated = match b.char_indices().nth(200) {
+                    Some((idx, _)) => &b[..idx],
+                    None => b.as_str(),
+                };
+                write!(f, "client error {}: {}", s, truncated)
+            }
             ConvexError::ParseError(e) => write!(f, "parse error: {}", e),
             ConvexError::ResponseTooLarge => write!(f, "response too large"),
         }

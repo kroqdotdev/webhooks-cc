@@ -157,6 +157,82 @@ export const seed = internalAction({
 });
 
 /**
+ * Read-only query to list existing test data without mutations.
+ * Used by --skip-seed and cleanup to discover test users/endpoints.
+ */
+export const listTestDataBatch = internalQuery({
+  args: {
+    batchIndex: v.number(),
+    batchSize: v.number(),
+  },
+  handler: async (ctx, { batchIndex, batchSize }) => {
+    const startIdx = batchIndex * batchSize;
+    const endIdx = Math.min(startIdx + batchSize, TEST_USER_COUNT);
+    const results: Array<{
+      userId: string;
+      email: string;
+      slugs: string[];
+      endpointIds: string[];
+    }> = [];
+
+    for (let i = startIdx; i < endIdx; i++) {
+      const email = `${TEST_EMAIL_PREFIX}${i}${TEST_EMAIL_DOMAIN}`;
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .first();
+      if (!user) continue;
+
+      const endpoints = await ctx.db
+        .query("endpoints")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .take(ENDPOINTS_PER_USER + 1);
+
+      results.push({
+        userId: user._id,
+        email,
+        slugs: endpoints.map((ep) => ep.slug),
+        endpointIds: endpoints.map((ep) => ep._id),
+      });
+    }
+
+    return results;
+  },
+});
+
+/**
+ * Read-only action to list all existing test data.
+ */
+export const listTestData = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const batchSize = 25;
+    const batches = Math.ceil(TEST_USER_COUNT / batchSize);
+    const allResults: Array<{
+      userId: string;
+      email: string;
+      slugs: string[];
+      endpointIds: string[];
+    }> = [];
+
+    for (let i = 0; i < batches; i++) {
+      const batch = await ctx.runQuery(internal.loadTest.listTestDataBatch, {
+        batchIndex: i,
+        batchSize,
+      });
+      allResults.push(...batch);
+    }
+
+    return {
+      userCount: allResults.length,
+      endpointCount: allResults.reduce((sum, u) => sum + u.slugs.length, 0),
+      requestLimitPerUser: REQUEST_LIMIT_PER_USER,
+      users: allResults,
+    };
+  },
+});
+
+/**
  * Count requests per endpoint for verification.
  * Called after load test to check how many requests were actually stored.
  */
@@ -297,15 +373,15 @@ export const cleanup = internalAction({
     const batchSize = 25;
     const batches = Math.ceil(TEST_USER_COUNT / batchSize);
 
-    // Gather all slugs first
+    // Gather all slugs using read-only query (no mutations)
     console.log("Gathering slugs...");
     const allSlugs: string[] = [];
     for (let i = 0; i < batches; i++) {
-      const seedResult = await ctx.runMutation(internal.loadTest.seedBatch, {
+      const batch = await ctx.runQuery(internal.loadTest.listTestDataBatch, {
         batchIndex: i,
         batchSize,
       });
-      for (const u of seedResult) {
+      for (const u of batch) {
         allSlugs.push(...u.slugs);
       }
     }

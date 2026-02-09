@@ -3,9 +3,8 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::convex::types::BufferedRequest;
+use crate::convex::types::{now_ms, BufferedRequest};
 use crate::redis::quota::QuotaResult;
 use crate::AppState;
 
@@ -40,13 +39,6 @@ fn real_ip(headers: &HeaderMap) -> String {
     String::new()
 }
 
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
-}
-
 /// The main webhook handler: GET/POST/PUT/PATCH/DELETE /w/{slug}/*
 pub async fn handle_webhook(
     State(state): State<AppState>,
@@ -75,7 +67,7 @@ pub async fn handle_webhook(
     // 1. Get endpoint info from Redis cache
     let endpoint = match state.redis.get_endpoint(&slug).await {
         Some(ep) => {
-            if !ep.error.is_empty() && ep.error == "not_found" {
+            if ep.error == "not_found" {
                 return (
                     StatusCode::NOT_FOUND,
                     axum::Json(serde_json::json!({"error": "not_found"})),
@@ -196,11 +188,10 @@ async fn buffer_request(
 }
 
 fn build_mock_response(mock: &crate::convex::types::MockResponse) -> Response {
-    let status_code = if (100..=599).contains(&mock.status) {
-        StatusCode::from_u16(mock.status as u16).unwrap_or(StatusCode::OK)
-    } else {
-        StatusCode::OK
-    };
+    let status_code = u16::try_from(mock.status)
+        .ok()
+        .and_then(|s| StatusCode::from_u16(s).ok())
+        .unwrap_or(StatusCode::OK);
 
     let mut builder = axum::http::Response::builder().status(status_code);
 

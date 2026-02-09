@@ -1,7 +1,9 @@
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
+use subtle::ConstantTimeEq;
 
+use crate::handlers::webhook::is_valid_slug;
 use crate::AppState;
 
 pub async fn cache_invalidate(
@@ -17,17 +19,17 @@ pub async fn cache_invalidate(
 
     let expected = format!("Bearer {}", state.config.capture_shared_secret);
 
-    if !constant_time_eq(auth.as_bytes(), expected.as_bytes()) {
+    if auth.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() != 1 {
         return (
             StatusCode::UNAUTHORIZED,
             axum::Json(serde_json::json!({"error": "unauthorized"})),
         );
     }
 
-    if slug.is_empty() {
+    if !is_valid_slug(&slug) {
         return (
             StatusCode::BAD_REQUEST,
-            axum::Json(serde_json::json!({"error": "missing_slug"})),
+            axum::Json(serde_json::json!({"error": "invalid_slug"})),
         );
     }
 
@@ -38,16 +40,4 @@ pub async fn cache_invalidate(
         StatusCode::OK,
         axum::Json(serde_json::json!({"ok": true})),
     )
-}
-
-/// Constant-time comparison to prevent timing attacks.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }

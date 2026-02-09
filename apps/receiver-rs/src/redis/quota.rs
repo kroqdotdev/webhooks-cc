@@ -5,6 +5,16 @@ use super::RedisState;
 const SLUG_PREFIX: &str = "quota:";
 const USER_PREFIX: &str = "quota:user:";
 
+/// Lua script to atomically set user quota only if the key doesn't exist yet.
+/// Prevents TOCTOU race between EXISTS and HSET.
+const SET_QUOTA_IF_NOT_EXISTS: &str = r#"
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+redis.call('HSET', KEYS[1], 'remaining', ARGV[1], 'limit', ARGV[2],
+           'periodEnd', ARGV[3], 'isUnlimited', ARGV[4], 'userId', ARGV[5])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[6]))
+return 1
+"#;
+
 /// Result of an atomic quota check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuotaResult {
@@ -79,30 +89,21 @@ impl RedisState {
             // Per-user quota key (shared across all user's endpoints)
             let user_key = format!("{USER_PREFIX}{user_id}");
 
-            // Only SET if the key doesn't exist yet (first endpoint to warm wins).
-            // If it already exists, don't overwrite — another endpoint already set it
-            // and concurrent requests may have already decremented.
-            let exists: Result<bool, _> = conn.exists(&user_key).await;
-            if matches!(exists, Ok(false)) {
-                let result: Result<(), _> = redis::pipe()
-                    .hset(&user_key, "remaining", remaining)
-                    .ignore()
-                    .hset(&user_key, "limit", limit)
-                    .ignore()
-                    .hset(&user_key, "periodEnd", period_end)
-                    .ignore()
-                    .hset(&user_key, "isUnlimited", unlimited_str)
-                    .ignore()
-                    .hset(&user_key, "userId", user_id)
-                    .ignore()
-                    .expire(&user_key, self.quota_ttl_secs as i64)
-                    .ignore()
-                    .query_async(&mut conn)
-                    .await;
+            // Atomically set quota only if the key doesn't exist yet.
+            // First endpoint to warm wins — avoids overwriting decremented values.
+            let result: Result<i64, _> = redis::Script::new(SET_QUOTA_IF_NOT_EXISTS)
+                .key(&user_key)
+                .arg(remaining)
+                .arg(limit)
+                .arg(period_end)
+                .arg(unlimited_str)
+                .arg(user_id)
+                .arg(self.quota_ttl_secs)
+                .invoke_async(&mut conn)
+                .await;
 
-                if let Err(e) = result {
-                    tracing::warn!(slug, user_id, error = %e, "failed to set user quota in Redis");
-                }
+            if let Err(e) = result {
+                tracing::warn!(slug, user_id, error = %e, "failed to set user quota in Redis");
             }
 
             // Store slug -> userId mapping for cache warmer lookups
@@ -115,18 +116,15 @@ impl RedisState {
                 .query_async(&mut conn)
                 .await;
         } else {
-            // Ephemeral endpoint: per-slug quota
+            // Ephemeral endpoint: per-slug quota (single HSET for atomicity)
             let slug_key = format!("{SLUG_PREFIX}{slug}");
             let result: Result<(), _> = redis::pipe()
-                .hset(&slug_key, "remaining", remaining)
-                .ignore()
-                .hset(&slug_key, "limit", limit)
-                .ignore()
-                .hset(&slug_key, "periodEnd", period_end)
-                .ignore()
-                .hset(&slug_key, "isUnlimited", unlimited_str)
-                .ignore()
-                .hset(&slug_key, "userId", "")
+                .cmd("HSET").arg(&slug_key)
+                    .arg("remaining").arg(remaining)
+                    .arg("limit").arg(limit)
+                    .arg("periodEnd").arg(period_end)
+                    .arg("isUnlimited").arg(unlimited_str)
+                    .arg("userId").arg("")
                 .ignore()
                 .expire(&slug_key, self.quota_ttl_secs as i64)
                 .ignore()

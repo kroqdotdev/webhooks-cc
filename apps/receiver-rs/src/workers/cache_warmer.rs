@@ -34,6 +34,11 @@ pub fn spawn_cache_warmer(
 }
 
 async fn warm_caches(redis: &RedisState, convex: &ConvexClient) {
+    // Skip warming if Convex is unreachable — avoid wasted Redis TTL checks
+    if convex.circuit().is_degraded().await {
+        return;
+    }
+
     let slugs = redis.active_slugs().await;
 
     for slug in &slugs {

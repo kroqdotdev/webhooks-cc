@@ -437,6 +437,10 @@ http.route({
       });
     }
 
+    // Compute timestamp bounds once for the entire batch
+    const now = Date.now();
+    const fiveMinutesAgo = now - 300000;
+
     // Validate each request in the batch (same validation as single /capture)
     for (const req of body.requests) {
       // Validate HTTP method
@@ -497,8 +501,6 @@ http.route({
           headers: { "Content-Type": "application/json" },
         });
       }
-      const now = Date.now();
-      const fiveMinutesAgo = now - 300000;
       if (req.receivedAt < fiveMinutesAgo || req.receivedAt > now + 5000) {
         return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
           status: 400,

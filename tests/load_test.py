@@ -21,7 +21,7 @@ Usage:
 
 import argparse
 import json
-import os
+import random
 import subprocess
 import sys
 import time
@@ -58,18 +58,26 @@ def redis_cmd(*args: str) -> str:
 
 
 def convex_run(fn: str, args_json: str = "{}", timeout: int = 600) -> dict:
-    """Run a Convex function via npx convex run."""
-    result = subprocess.run(
-        ["npx", "convex", "run", fn, args_json],
-        capture_output=True, text=True, timeout=timeout
-    )
-    if result.returncode != 0:
-        print(f"  convex run {fn} failed: {result.stderr[:500]}", file=sys.stderr)
-        return {}
+    """Run a Convex function via npx convex run.
 
-    # The JSON output may be pretty-printed across many lines.
-    # Find where the JSON object/array starts (skip [CONVEX] log lines)
-    output = result.stdout.strip()
+    Uses a temp file for stdout to avoid 64KB pipe buffer truncation
+    on large outputs (e.g. seed returns 153KB of JSON).
+    """
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=True) as tmp:
+        with open(tmp.name, 'w') as stdout_file:
+            result = subprocess.run(
+                ["npx", "convex", "run", fn, args_json],
+                stdout=stdout_file, stderr=subprocess.PIPE,
+                text=True, timeout=timeout
+            )
+        if result.returncode != 0:
+            print(f"  convex run {fn} failed: {result.stderr[:500]}", file=sys.stderr)
+            return {}
+
+        with open(tmp.name, 'r') as f:
+            output = f.read().strip()
+
     lines = output.split("\n")
 
     json_start = -1
@@ -238,11 +246,12 @@ def phase_load_test(slug_map):
     print(f"  Concurrency: {HTTP_CONCURRENCY}")
     print()
 
-    # Build work items
+    # Build work items and shuffle for realistic concurrent multi-user load
     work = []
     for slug in all_slugs:
         for _ in range(REQUESTS_PER_ENDPOINT):
             work.append(slug)
+    random.shuffle(work)
 
     # Track results per endpoint
     results: dict[str, EndpointResult] = {}
@@ -387,13 +396,12 @@ def phase_verify_delivery(results, slug_map, users):
     print(f"  Waiting for flush workers to deliver {total_ok:,} requests to Convex...")
     print(f"  Max wait: {FLUSH_WAIT_SECS}s")
 
-    # Poll Redis buffer length to track flush progress
+    # Phase A: Wait for Redis buffers to drain
     for i in range(FLUSH_WAIT_SECS):
         time.sleep(1)
         active = redis_cmd("SCARD", "buf:active")
         total_buffered = 0
         if active and active != "0":
-            # Use a Lua script to sum all buffer lengths efficiently
             buf_count = redis_cmd(
                 "EVAL",
                 "local s=redis.call('SMEMBERS','buf:active'); local t=0; "
@@ -411,17 +419,61 @@ def phase_verify_delivery(results, slug_map, users):
     else:
         print(f"    WARNING: Timed out after {FLUSH_WAIT_SECS}s with {total_buffered:,} still buffered")
 
-    # Give Convex scheduler a few more seconds to process incrementUsage
-    print(f"  Waiting 10s for Convex scheduler to process pending mutations...")
-    time.sleep(10)
-
-    # Verify request counts in Convex (sample 50 slugs)
+    # Phase B: Poll Convex until delivered count stabilizes.
+    # Flush workers take batches from Redis (emptying the list) BEFORE sending
+    # HTTP calls to Convex, so empty buffers does NOT mean all data has landed.
+    # We poll a small sample until the count stops changing.
     all_slugs = list(results.keys())
     sample_size = min(50, len(all_slugs))
-    sample_slugs = all_slugs[:sample_size]
+    sample_slugs = random.sample(all_slugs, sample_size)
 
-    print(f"\n  Verifying request counts for {sample_size} sampled endpoints...")
+    sample_expected = sum(results[s].ok_count for s in sample_slugs)
+    print(f"\n  Waiting for in-flight flushes to land in Convex...")
+    print(f"  (polling {sample_size} sampled endpoints, expecting ~{sample_expected:,} requests)")
+
+    prev_count = -1
+    stable_ticks = 0
+    max_poll_secs = FLUSH_WAIT_SECS
     batch_size = 25
+
+    for tick in range(max_poll_secs):
+        time.sleep(5)
+        current_count = 0
+        for j in range(0, len(sample_slugs), batch_size):
+            batch = sample_slugs[j:j + batch_size]
+            counts = convex_run("loadTest:verifyBatch", json.dumps({"slugs": batch}))
+            if counts:
+                for slug in batch:
+                    if slug in counts:
+                        current_count += counts[slug]["requestCount"]
+
+        pct = current_count / sample_expected * 100 if sample_expected > 0 else 0
+        print(f"    [{tick * 5}s] Convex has {current_count:,}/{sample_expected:,} ({pct:.1f}%)")
+
+        if current_count == prev_count:
+            stable_ticks += 1
+        else:
+            stable_ticks = 0
+        prev_count = current_count
+
+        # Counts haven't changed for 3 consecutive polls (15s) — all flushes landed
+        if stable_ticks >= 3:
+            print(f"    Counts stabilized after {(tick + 1) * 5}s")
+            break
+
+        # Already at or above expected — done
+        if current_count >= sample_expected:
+            print(f"    All expected requests delivered")
+            break
+    else:
+        print(f"    Max poll time reached")
+
+    # Give Convex scheduler a few more seconds to process incrementUsage
+    print(f"  Waiting 5s for Convex scheduler to process pending mutations...")
+    time.sleep(5)
+
+    # Final verification with the same sample
+    print(f"\n  Final verification for {sample_size} sampled endpoints...")
     total_verified = 0
     total_expected = 0
     mismatches = []
@@ -543,10 +595,11 @@ def main():
     phase_clean_redis()
 
     # Phase 1: Seed Convex (resets requestsUsed to 0)
-    users = phase_seed() if not args.skip_seed else None
-    if users is None and args.skip_seed:
-        print("  Loading existing test data from Convex...")
-        users = convex_run("loadTest:seed").get("users", [])
+    if args.skip_seed:
+        print("  Loading existing test data from Convex (read-only)...")
+        users = convex_run("loadTest:listTestData").get("users", [])
+    else:
+        users = phase_seed()
 
     # Phase 2: Seed Redis caches
     slug_map = phase_seed_redis(users)

@@ -1,5 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Get current time in milliseconds since UNIX epoch.
+pub fn now_ms() -> i64 {
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    (d.as_secs() as i64)
+        .saturating_mul(1000)
+        .saturating_add(d.subsec_millis() as i64)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MockResponse {
@@ -26,11 +37,7 @@ pub struct EndpointInfo {
 impl EndpointInfo {
     pub fn is_expired(&self) -> bool {
         if let Some(expires_at) = self.expires_at {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
-            expires_at < now_ms
+            expires_at < now_ms()
         } else {
             false
         }
