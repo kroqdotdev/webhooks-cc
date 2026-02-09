@@ -490,7 +490,7 @@ http.route({
         });
       }
 
-      // Validate receivedAt timestamp (must be within last 60 seconds to prevent backdating)
+      // Validate receivedAt timestamp (must be within last 5 minutes to prevent backdating)
       if (typeof req.receivedAt !== "number") {
         return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
           status: 400,
@@ -498,8 +498,8 @@ http.route({
         });
       }
       const now = Date.now();
-      const sixtySecondsAgo = now - 60000;
-      if (req.receivedAt < sixtySecondsAgo || req.receivedAt > now + 5000) {
+      const fiveMinutesAgo = now - 300000;
+      if (req.receivedAt < fiveMinutesAgo || req.receivedAt > now + 5000) {
         return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },

@@ -12,6 +12,9 @@ dev-convex:
 	pnpm convex dev
 
 dev-receiver:
+	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && cargo run
+
+dev-receiver-go:
 	@set -a && . ./.env.local && set +a && cd apps/receiver && go run .
 
 dev-cli:
@@ -22,7 +25,7 @@ prod:
 	@echo "Deploying Convex and building..."
 	npx convex deploy
 	pnpm build
-	cd apps/receiver && go build -o ../../dist/receiver .
+	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 	@echo "Starting production servers..."
 	@make -j2 prod-web prod-receiver
 
@@ -35,11 +38,14 @@ prod-receiver:
 # Build
 build:
 	pnpm build
-	cd apps/receiver && go build -o ../../dist/receiver .
+	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 	cd apps/cli && go build -o ../../dist/whk ./cmd/whk
 
 build-receiver:
-	cd apps/receiver && go build -o ../../dist/receiver .
+	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
+
+build-receiver-go:
+	cd apps/receiver && go build -o ../../dist/receiver-go .
 
 build-cli:
 	cd apps/cli && goreleaser build --snapshot --clean
@@ -67,3 +73,4 @@ clean:
 	rm -rf node_modules
 	rm -rf apps/web/node_modules
 	rm -rf packages/sdk/node_modules
+	rm -rf apps/receiver-rs/target

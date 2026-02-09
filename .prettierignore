@@ -7,6 +7,7 @@ dist/
 .next/
 .turbo/
 *.tsbuildinfo
+apps/receiver-rs/target/
 
 # Generated files
 convex/_generated/
