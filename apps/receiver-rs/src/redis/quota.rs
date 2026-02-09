@@ -116,19 +116,19 @@ impl RedisState {
                 .query_async(&mut conn)
                 .await;
         } else {
-            // Ephemeral endpoint: per-slug quota (single HSET for atomicity)
+            // Ephemeral endpoint: per-slug quota.
+            // Use set-if-not-exists to prevent concurrent cold-cache requests
+            // from overwriting each other's decremented values.
             let slug_key = format!("{SLUG_PREFIX}{slug}");
-            let result: Result<(), _> = redis::pipe()
-                .cmd("HSET").arg(&slug_key)
-                    .arg("remaining").arg(remaining)
-                    .arg("limit").arg(limit)
-                    .arg("periodEnd").arg(period_end)
-                    .arg("isUnlimited").arg(unlimited_str)
-                    .arg("userId").arg("")
-                .ignore()
-                .expire(&slug_key, self.quota_ttl_secs as i64)
-                .ignore()
-                .query_async(&mut conn)
+            let result: Result<i64, _> = redis::Script::new(SET_QUOTA_IF_NOT_EXISTS)
+                .key(&slug_key)
+                .arg(remaining)
+                .arg(limit)
+                .arg(period_end)
+                .arg(unlimited_str)
+                .arg("") // empty userId for ephemeral
+                .arg(self.quota_ttl_secs)
+                .invoke_async(&mut conn)
                 .await;
 
             if let Err(e) = result {

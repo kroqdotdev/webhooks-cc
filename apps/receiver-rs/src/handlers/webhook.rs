@@ -77,27 +77,31 @@ pub async fn handle_webhook(
             ep
         }
         None => {
-            // Cache miss: spawn background warm, serve optimistically
-            let convex = state.convex.clone();
-            let slug_clone = slug.clone();
+            // Cache miss: blocking fetch so we know the endpoint type.
+            // Warm quota in parallel to reduce the chance of a second blocking
+            // fetch at step 3 (for guest-ephemeral endpoints).
+            let convex_q = state.convex.clone();
+            let slug_q = slug.clone();
             tokio::spawn(async move {
-                if let Err(e) = convex.fetch_and_cache_endpoint(&slug_clone).await {
-                    tracing::warn!(slug = slug_clone, error = %e, "background endpoint fetch failed");
-                }
+                let _ = convex_q.fetch_and_cache_quota(&slug_q).await;
             });
 
-            // Also warm quota in background
-            let convex2 = state.convex.clone();
-            let slug_clone2 = slug.clone();
-            tokio::spawn(async move {
-                if let Err(e) = convex2.fetch_and_cache_quota(&slug_clone2).await {
-                    tracing::warn!(slug = slug_clone2, error = %e, "background quota fetch failed");
+            match state.convex.fetch_and_cache_endpoint(&slug).await {
+                Ok(Some(ep)) => ep,
+                Ok(None) => {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        axum::Json(serde_json::json!({"error": "not_found"})),
+                    )
+                        .into_response();
                 }
-            });
-
-            // Buffer the request and return 200 OK (fail-open)
-            buffer_request(&state, &slug, &method, &req_path, &headers, &query, &body).await;
-            return (StatusCode::OK, "OK").into_response();
+                Err(e) => {
+                    tracing::warn!(slug, error = %e, "blocking endpoint fetch failed");
+                    // Fetch failed: fall back to buffering optimistically
+                    buffer_request(&state, &slug, &method, &req_path, &headers, &query, &body).await;
+                    return (StatusCode::OK, "OK").into_response();
+                }
+            }
         }
     };
 
@@ -110,6 +114,11 @@ pub async fn handle_webhook(
             .into_response();
     }
 
+    // Guest ephemeral endpoints have a non-replenishable 50-request lifetime cap.
+    // Unlike user endpoints (which fail-open on cache miss), we block on quota
+    // fetch to enforce the limit strictly and prevent unbounded free usage.
+    let is_guest_ephemeral = endpoint.is_ephemeral && endpoint.user_id.is_none();
+
     // 3. Atomic quota check via Redis Lua script (per-user when userId present)
     match state.redis.check_quota(&slug, endpoint.user_id.as_deref()).await {
         QuotaResult::Allowed => {}
@@ -120,8 +129,28 @@ pub async fn handle_webhook(
             )
                 .into_response();
         }
+        QuotaResult::NotFound if is_guest_ephemeral => {
+            // Blocking fetch for guest ephemeral endpoints to enforce quota exactly
+            if let Err(e) = state.convex.fetch_and_cache_quota(&slug).await {
+                tracing::warn!(slug, error = %e, "blocking quota fetch failed for ephemeral endpoint");
+            }
+            // Re-check quota after warming
+            match state.redis.check_quota(&slug, endpoint.user_id.as_deref()).await {
+                QuotaResult::Allowed => {}
+                QuotaResult::Exceeded => {
+                    return (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        axum::Json(serde_json::json!({"error": "quota_exceeded"})),
+                    )
+                        .into_response();
+                }
+                QuotaResult::NotFound => {
+                    // Still no quota data after fetch — fail-open
+                }
+            }
+        }
         QuotaResult::NotFound => {
-            // Cache miss: spawn background warm, fail-open
+            // User endpoints: spawn background warm, fail-open
             let convex = state.convex.clone();
             let slug_clone = slug.clone();
             tokio::spawn(async move {

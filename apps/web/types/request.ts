@@ -15,6 +15,13 @@ export interface Request {
   receivedAt: number;
 }
 
+export interface RequestSummary {
+  _id: Id<"requests">;
+  _creationTime: number;
+  method: HttpMethod | string;
+  receivedAt: number;
+}
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 const METHOD_COLORS_MAP: Record<HttpMethod, string> = {

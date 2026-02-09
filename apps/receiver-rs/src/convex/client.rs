@@ -162,9 +162,11 @@ impl ConvexClient {
             return Ok(());
         }
 
+        let user_id = quota.user_id.as_deref().unwrap_or("");
+
         // Handle free users needing period start
-        if quota.needs_period_start && !quota.user_id.is_empty()
-            && let Ok(period) = self.call_check_period(&quota.user_id).await {
+        if quota.needs_period_start && !user_id.is_empty()
+            && let Ok(period) = self.call_check_period(user_id).await {
                 if period.error.is_empty() {
                     self.redis
                         .set_quota(
@@ -173,7 +175,7 @@ impl ConvexClient {
                             period.limit,
                             period.period_end.unwrap_or(0),
                             false,
-                            &quota.user_id,
+                            user_id,
                         )
                         .await;
                     return Ok(());
@@ -185,7 +187,7 @@ impl ConvexClient {
                             period.limit,
                             period.period_end.unwrap_or(0),
                             false,
-                            &quota.user_id,
+                            user_id,
                         )
                         .await;
                     return Ok(());
@@ -201,7 +203,7 @@ impl ConvexClient {
                 quota.limit,
                 quota.period_end.unwrap_or(0),
                 is_unlimited,
-                &quota.user_id,
+                user_id,
             )
             .await;
 

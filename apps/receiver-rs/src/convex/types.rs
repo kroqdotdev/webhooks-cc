@@ -49,8 +49,7 @@ impl EndpointInfo {
 pub struct QuotaResponse {
     #[serde(default)]
     pub error: String,
-    #[serde(default)]
-    pub user_id: String,
+    pub user_id: Option<String>,
     #[serde(default)]
     pub remaining: i64,
     #[serde(default)]

@@ -2,10 +2,11 @@
 
 import { cn } from "@/lib/utils";
 import { Circle, ArrowUpDown, Search, X } from "lucide-react";
-import { getMethodColor, formatRelativeTime, Request } from "@/types/request";
+import { getMethodColor, formatRelativeTime } from "@/types/request";
+import type { RequestSummary } from "@/types/request";
 
 interface RequestListProps {
-  requests: Request[];
+  requests: RequestSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   liveMode: boolean;

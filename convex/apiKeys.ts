@@ -9,7 +9,7 @@
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { customAlphabet } from "nanoid";
 
@@ -157,6 +157,45 @@ export const validate = internalMutation({
     await ctx.db.patch(apiKey._id, { lastUsedAt: Date.now() });
 
     return { userId: apiKey.userId };
+  },
+});
+
+/**
+ * Read-only API key validation. Returns userId and metadata without writing.
+ * Used by HTTP action for fast validation; updateLastUsed called separately.
+ */
+export const validateQuery = internalQuery({
+  args: {
+    key: v.string(),
+  },
+  handler: async (ctx, { key }) => {
+    const keyHash = await hashKey(key);
+
+    const apiKey = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_key_hash", (q) => q.eq("keyHash", keyHash))
+      .first();
+
+    if (!apiKey) return null;
+
+    if (apiKey.expiresAt && apiKey.expiresAt < Date.now()) return null;
+
+    return { userId: apiKey.userId, apiKeyId: apiKey._id, lastUsedAt: apiKey.lastUsedAt };
+  },
+});
+
+/**
+ * Update the lastUsedAt timestamp on an API key. Fire-and-forget.
+ */
+export const updateLastUsed = internalMutation({
+  args: {
+    apiKeyId: v.id("apiKeys"),
+  },
+  handler: async (ctx, { apiKeyId }) => {
+    const apiKey = await ctx.db.get(apiKeyId);
+    if (apiKey) {
+      await ctx.db.patch(apiKeyId, { lastUsedAt: Date.now() });
+    }
   },
 });
 

@@ -663,12 +663,23 @@ http.route({
       });
     }
 
-    const result = await ctx.runMutation(internal.apiKeys.validate, { key: body.apiKey });
+    const result = await ctx.runQuery(internal.apiKeys.validateQuery, { key: body.apiKey });
     if (!result) {
       return new Response(JSON.stringify({ error: "invalid_api_key" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // Throttle lastUsedAt writes: only update if >5 minutes stale
+    // Wrapped in try-catch so OCC failures don't reject a valid validation
+    const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
+    if (!result.lastUsedAt || Date.now() - result.lastUsedAt > LAST_USED_THROTTLE_MS) {
+      try {
+        await ctx.runMutation(internal.apiKeys.updateLastUsed, { apiKeyId: result.apiKeyId });
+      } catch {
+        // Non-critical: lastUsedAt update failure should not block validation
+      }
     }
 
     return new Response(JSON.stringify({ userId: result.userId }), {
