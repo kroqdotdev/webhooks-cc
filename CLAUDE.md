@@ -145,7 +145,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. Benchmark
 **Architecture:**
 
 - **Axum + Tokio**: Async HTTP server, hot path returns in ~0.3ms (3 pipelined Redis commands)
-- **Redis (localhost:6380)**: All state lives in Redis — endpoint cache, quota, request buffers, circuit breaker
+- **Redis**: All state lives in Redis — endpoint cache, quota, request buffers, circuit breaker. Configured via `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` env vars
 - **No Convex on hot path**: Webhook capture never touches Convex directly, only Redis
 
 **Key components (`src/`):**
@@ -178,9 +178,9 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. Benchmark
 - `buf:active` — Set of slugs with pending requests
 - `cb:failures` / `cb:state` / `cb:last_failure` — Circuit breaker state
 
-Receiver env vars: `CONVEX_SITE_URL`, `CAPTURE_SHARED_SECRET`, `PORT` (default 3001), `RECEIVER_DEBUG`, `REDIS_URL` (default `redis://127.0.0.1:6380`)
+Receiver env vars: `CONVEX_SITE_URL`, `CAPTURE_SHARED_SECRET`, `PORT` (default 3001), `RECEIVER_DEBUG`, `REDIS_HOST` (default `127.0.0.1`), `REDIS_PORT` (default `6380`), `REDIS_PASSWORD`, `REDIS_DB` (default `0`)
 
-**Requires Redis running** — start with: `/home/sauer/cc/utils/redis-server/start.sh`
+**Requires Redis running** — configured via env vars in `.env.local` (default: `192.168.0.20:6379`)
 
 ### CLI Commands
 
@@ -279,6 +279,10 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 | `NEXT_PUBLIC_WEBHOOK_URL` | yes      | Webhook receiver base URL                  |
 | `NEXT_PUBLIC_APP_URL`     | yes      | App base URL                               |
 | `CAPTURE_SHARED_SECRET`   | yes      | Shared secret for receiver <-> Convex auth |
+| `REDIS_HOST`              | yes      | Redis host (e.g. `192.168.0.20`)           |
+| `REDIS_PORT`              | yes      | Redis port (e.g. `6379`)                   |
+| `REDIS_PASSWORD`          | yes      | Redis password                             |
+| `REDIS_DB`                | yes      | Redis database number (e.g. `0`)           |
 
 ### Convex Environment (set via dashboard)
 
@@ -312,7 +316,7 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 - Convex optional fields must be `undefined`, not `null` (except `v.null()` in validators)
 - HTTP actions served from `.convex.site`, not `.convex.cloud`
-- Rust receiver requires Redis on localhost:6380 — start with `~/cc/utils/redis-server/start.sh`
+- Rust receiver requires Redis — configured via `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` in `.env.local`
 - Rust receiver flush uses at-most-once delivery — batches are dropped (not retried) on network/server errors to prevent duplicates
 - `generateUniqueSlug` helper uses `any` type for db parameter (Convex DB types are complex generics)
 - Device auth `apiKey` field in schema is vestigial (raw keys are no longer stored, generated at claim time)
