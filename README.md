@@ -48,10 +48,10 @@ See [webhooks.cc](https://webhooks.cc) for details.
 curl -fsSL https://webhooks.cc/install.sh | sh
 ```
 
-Then authenticate:
+Then launch interactive terminal:
 
 ```bash
-whk auth login
+whk
 ```
 
 ### SDK
