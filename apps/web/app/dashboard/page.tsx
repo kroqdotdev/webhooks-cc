@@ -184,7 +184,7 @@ export default function DashboardPage() {
     setDebouncedSearch("");
     setPendingExport(null);
     exportFilterSnapshot.current = null;
-    lastLoadedRequest.current = undefined;
+    setDisplayRequest(undefined);
   }, [currentEndpointId]);
 
   const handleSelect = useCallback((id: Id<"requests">) => {
