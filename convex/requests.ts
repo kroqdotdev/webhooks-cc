@@ -462,6 +462,34 @@ export const listNewForUser = internalQuery({
   },
 });
 
+// Public query for real-time SSE subscriptions via ConvexClient.onUpdate.
+// Auth is handled by the SSE route (API key validation + endpoint ownership check)
+// before subscribing. Returns null when endpoint is deleted.
+export const listNewForStream = query({
+  args: {
+    endpointId: v.id("endpoints"),
+    afterTimestamp: v.number(),
+    userId: v.string(),
+  },
+  handler: async (ctx, { endpointId, afterTimestamp, userId }) => {
+    const endpoint = await ctx.db.get(endpointId);
+    if (!endpoint) return null;
+
+    // Defense-in-depth: verify endpoint belongs to requesting user
+    if (endpoint.userId === undefined || String(endpoint.userId) !== userId) {
+      return null;
+    }
+
+    return await ctx.db
+      .query("requests")
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gt("receivedAt", afterTimestamp)
+      )
+      .order("asc")
+      .take(100);
+  },
+});
+
 // Maximum number of requests that can be fetched at once
 const MAX_LIST_LIMIT = 100;
 
@@ -612,11 +640,10 @@ export const cleanupExpired = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
 
-    // Use index properly with range query for expiresAt
-    // Note: endpoints with expiresAt: undefined won't match q.lt("expiresAt", now)
+    // Use index range query: gte(0) excludes undefined (sorts before numbers in Convex)
     const expired = await ctx.db
       .query("endpoints")
-      .withIndex("by_expires", (q) => q.lt("expiresAt", now))
+      .withIndex("by_expires", (q) => q.gte("expiresAt", 0).lt("expiresAt", now))
       .take(100);
 
     let deletedEndpoints = 0;
@@ -625,9 +652,6 @@ export const cleanupExpired = internalMutation({
     for (const endpoint of expired) {
       // Safety: only delete ephemeral endpoints
       if (!endpoint.isEphemeral) {
-        console.warn(
-          `Skipping non-ephemeral endpoint ${endpoint._id} with expiresAt=${endpoint.expiresAt}`
-        );
         continue;
       }
 

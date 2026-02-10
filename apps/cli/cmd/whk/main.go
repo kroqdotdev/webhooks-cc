@@ -29,9 +29,12 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
+	tea "github.com/charmbracelet/bubbletea"
 	"webhooks.cc/cli/internal/api"
 	"webhooks.cc/cli/internal/auth"
 	"webhooks.cc/cli/internal/stream"
+	"webhooks.cc/cli/internal/tui"
+	"webhooks.cc/cli/internal/tui/screens"
 	"webhooks.cc/cli/internal/tunnel"
 	"webhooks.cc/cli/internal/update"
 	"webhooks.cc/shared/types"
@@ -61,11 +64,43 @@ func main() {
 		}
 	}
 
+	var nogui bool
+
 	rootCmd := &cobra.Command{
 		Use:     "whk",
 		Short:   "webhooks.cc CLI - Inspect and forward webhooks",
 		Version: version,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if nogui || os.Getenv("WHK_NOGUI") == "1" {
+				return cmd.Help()
+			}
+			client := api.NewClient()
+			return tui.Run(client, version, tui.ScreenFactories{
+				Menu: func(v string) tea.Model {
+					return screens.NewMenu(v)
+				},
+				Auth: func(c *api.Client) tea.Model {
+					return screens.NewAuth(c)
+				},
+				Endpoints: func(c *api.Client, mode string) tea.Model {
+					return screens.NewEndpoints(c, mode)
+				},
+				Update: func(v string) tea.Model {
+					return screens.NewUpdate(v)
+				},
+				Listen: func(c *api.Client, slug string) tea.Model {
+					return screens.NewListen(c, slug)
+				},
+				Tunnel: func(c *api.Client) tea.Model {
+					return screens.NewTunnel(c)
+				},
+				Detail: func(req *types.CapturedRequest) tea.Model {
+					return screens.NewDetail(req)
+				},
+			})
+		},
 	}
+	rootCmd.Flags().BoolVar(&nogui, "nogui", false, "Disable TUI and show help")
 
 	// Auth commands
 	authCmd := &cobra.Command{
@@ -363,7 +398,7 @@ func tunnelCmd() *cobra.Command {
 			slug := endpointSlug
 			createdEndpoint := false
 			if slug == "" {
-				endpoint, err := client.CreateEndpointWithContext(ctx, fmt.Sprintf("tunnel-%s", randomSuffix(6)))
+				endpoint, err := client.CreateEndpointWithContext(ctx, fmt.Sprintf("tunnel-%s", randomSuffix(6)), ephemeral)
 				if err != nil {
 					return fmt.Errorf("failed to create endpoint: %w", err)
 				}
