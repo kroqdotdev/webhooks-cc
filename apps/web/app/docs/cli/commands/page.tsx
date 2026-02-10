@@ -15,6 +15,18 @@ interface CommandDef {
 
 const COMMANDS: CommandDef[] = [
   {
+    name: "whk (interactive)",
+    description:
+      "Launch the interactive TUI. Provides a menu-driven interface for all CLI features with real-time request streaming, color-coded methods, and a request detail viewer.",
+    usage: "whk",
+    flags: [
+      {
+        name: "--nogui",
+        description: "Disable the TUI and print help instead (also: WHK_NOGUI=1)",
+      },
+    ],
+  },
+  {
     name: "auth login",
     description:
       "Log in to webhooks.cc. Opens your browser to verify a device code. Credentials are stored at ~/.config/whk/token.json.",
@@ -91,8 +103,12 @@ export default function CommandsPage() {
   return (
     <article>
       <h1 className="text-3xl md:text-4xl font-bold mb-4">Command Reference</h1>
-      <p className="text-lg text-muted-foreground mb-10">
+      <p className="text-lg text-muted-foreground mb-4">
         All available commands for the <code className="font-mono font-bold">whk</code> CLI.
+      </p>
+      <p className="text-sm text-muted-foreground mb-10">
+        Run <code className="font-mono font-bold">whk</code> with no arguments to launch the
+        interactive TUI, or use the subcommands below for scriptable, plain-text output.
       </p>
 
       <div className="space-y-10">
