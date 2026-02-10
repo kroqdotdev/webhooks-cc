@@ -28,18 +28,26 @@ services:
   receiver:
     build:
       context: .
-      dockerfile: apps/receiver/Dockerfile
+      dockerfile: apps/receiver-rs/Dockerfile
     ports:
       - "3001:3001"
     environment:
       - CONVEX_SITE_URL=${CONVEX_SITE_URL}
       - CAPTURE_SHARED_SECRET=${CAPTURE_SHARED_SECRET}
       - PORT=3001
-      - SENTRY_DSN=${SENTRY_DSN}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
     restart: unless-stopped

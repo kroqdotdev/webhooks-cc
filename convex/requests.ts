@@ -33,10 +33,9 @@ export const capture = internalMutation({
     }
 
     // Note: Rate limits for both ephemeral and authenticated endpoints are enforced
-    // by the Go receiver via the quota cache. This avoids reading user/rate limit
-    // state here, preventing OCC conflicts when many concurrent webhooks hit.
-    // This avoids reading the user document here, preventing OCC conflicts when
-    // many concurrent webhooks hit the same user's endpoints.
+    // by the receiver via the quota cache. This avoids reading user/rate limit
+    // state here, preventing OCC conflicts when many concurrent webhooks hit
+    // the same user's endpoints.
 
     const contentType = args.headers["content-type"] || args.headers["Content-Type"];
     const size = args.body ? new TextEncoder().encode(args.body).length : 0;
@@ -80,7 +79,7 @@ export const capture = internalMutation({
   },
 });
 
-// Get quota information for a slug - used by Go receiver for rate limiting.
+// Get quota information for a slug - used by receiver for rate limiting.
 // Returns remaining quota, limit, period end, and plan for caching in the receiver.
 // For free users, also indicates if period needs to be started.
 export const getQuota = internalQuery({
@@ -163,7 +162,7 @@ export const getQuota = internalQuery({
 });
 
 // Check and start a new period for a free user if needed.
-// Called by Go receiver before capturing requests when needsPeriodStart is true.
+// Called by receiver before capturing requests when needsPeriodStart is true.
 // Returns the new quota information after potentially starting a new period.
 // This mutation is idempotent - concurrent calls will detect if period was already started.
 export const checkAndStartPeriod = internalMutation({
@@ -286,7 +285,7 @@ export const decrementRequestCount = internalMutation({
   },
 });
 
-// Get endpoint info for caching in Go receiver.
+// Get endpoint info for caching in receiver.
 // Returns endpoint details including mock response configuration.
 export const getEndpointInfo = internalQuery({
   args: {
@@ -350,7 +349,7 @@ export const captureBatch = internalMutation({
       return { error: "expired", inserted: 0 };
     }
 
-    // Note: Rate limits enforced by Go receiver via quota cache
+    // Note: Rate limits enforced by receiver via quota cache
 
     // Insert all requests
     let inserted = 0;

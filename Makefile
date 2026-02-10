@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-receiver-go dev-cli build build-receiver build-receiver-go build-cli test lint clean db-push prod prod-web prod-receiver start
+.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push prod prod-web prod-receiver start
 
 # Development
 dev:
@@ -13,9 +13,6 @@ dev-convex:
 
 dev-receiver:
 	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && cargo run
-
-dev-receiver-go:
-	@set -a && . ./.env.local && set +a && cd apps/receiver && go run .
 
 dev-cli:
 	cd apps/cli && go run ./cmd/whk $(ARGS)
@@ -44,9 +41,6 @@ build:
 build-receiver:
 	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 
-build-receiver-go:
-	cd apps/receiver && go build -o ../../dist/receiver-go .
-
 build-cli:
 	cd apps/cli && goreleaser build --snapshot --clean
 
@@ -55,13 +49,11 @@ test:
 	pnpm test
 	pnpm test:convex
 	cd apps/receiver-rs && cargo test
-	cd apps/receiver && go test ./...
 	cd apps/cli && go test ./...
 
 # Lint
 lint:
 	cd apps/receiver-rs && cargo clippy -- -D warnings
-	cd apps/receiver && golangci-lint run
 	cd apps/cli && golangci-lint run
 
 # Database

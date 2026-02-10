@@ -32,16 +32,6 @@ updates:
       - "dependencies"
       - "go"
 
-  - package-ecosystem: "gomod"
-    directory: "/apps/receiver"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "go"
-
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -63,7 +53,7 @@ updates:
       - "docker"
 
   - package-ecosystem: "docker"
-    directory: "/apps/receiver"
+    directory: "/apps/receiver-rs"
     schedule:
       interval: "weekly"
     labels:

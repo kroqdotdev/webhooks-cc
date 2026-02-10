@@ -93,7 +93,7 @@ For compliance or air-gapped environments, the code is here. For most use cases,
 
 This project uses a split license:
 
-- **AGPL-3.0** — The web app, receiver, and Convex backend (`apps/web/`, `apps/receiver/`, `convex/`). See [LICENSE](LICENSE).
+- **AGPL-3.0** — The web app, receiver, and Convex backend (`apps/web/`, `apps/receiver-rs/`, `convex/`). See [LICENSE](LICENSE).
 - **MIT** — The CLI and SDK (`apps/cli/`, `packages/sdk/`, `apps/go-shared/`). See their respective `LICENSE` files.
 
 If you use the CLI or SDK in your own projects, MIT applies. If you fork and host the service, AGPL-3.0 applies.

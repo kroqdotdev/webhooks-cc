@@ -8,7 +8,8 @@ Before you begin, ensure you have the following installed:
 
 - **Node.js** 20+ (with npm)
 - **pnpm** 8+ (`npm install -g pnpm`)
-- **Go** 1.23+
+- **Go** 1.25+
+- **rustc** 1.93.0+
 - **Make** (for running build commands)
 
 You'll also need:
@@ -50,7 +51,7 @@ You'll also need:
    pnpm dev:web
    ```
 
-6. **Start the Go receiver** (in a separate terminal)
+6. **Start the Rust receiver** (in a separate terminal, requires Redis on localhost:6380)
    ```bash
    make dev-receiver
    ```
@@ -139,7 +140,7 @@ docs(readme): update installation instructions
 webhooks-cc/
 ├── apps/
 │   ├── web/          # Next.js dashboard
-│   ├── receiver/     # Go webhook receiver
+│   ├── receiver-rs/  # Rust webhook receiver
 │   └── cli/          # Go CLI tool
 ├── packages/
 │   └── sdk/          # TypeScript SDK
@@ -157,7 +158,7 @@ webhooks-cc/
 
 This project uses a split license. By contributing, you agree that your contributions will be licensed under the license that applies to the component you modify:
 
-- **AGPL-3.0** for `apps/web/`, `apps/receiver/`, and `convex/`
+- **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, and `convex/`
 - **MIT** for `apps/cli/`, `packages/sdk/`, and `apps/go-shared/`
 
 See the root [LICENSE](LICENSE) and each component's `LICENSE` file for details.

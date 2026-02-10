@@ -281,7 +281,7 @@ function createCaptureErrorResponse(result: {
   return null;
 }
 
-// HTTP endpoint for Go receiver to fetch quota information for rate limiting.
+// HTTP endpoint for receiver to fetch quota information for rate limiting.
 // Returns remaining quota for a given slug, enabling the receiver to enforce
 // limits locally and avoid OCC conflicts from concurrent user doc reads.
 // Usage: GET /quota?slug=xxx
@@ -312,7 +312,7 @@ http.route({
   }),
 });
 
-// HTTP endpoint for Go receiver to check and start a free user's period if needed.
+// HTTP endpoint for receiver to check and start a free user's period if needed.
 // Called when getQuota returns needsPeriodStart=true.
 // Usage: POST /check-period with { userId: string }
 http.route({
@@ -363,7 +363,7 @@ http.route({
   }),
 });
 
-// HTTP endpoint for Go receiver to get endpoint info for caching.
+// HTTP endpoint for receiver to get endpoint info for caching.
 // Returns endpoint details including mock response configuration.
 // Usage: GET /endpoint-info?slug=xxx
 http.route({
@@ -393,7 +393,7 @@ http.route({
   }),
 });
 
-// HTTP endpoint for Go receiver to capture webhook requests in batches.
+// HTTP endpoint for receiver to capture webhook requests in batches.
 // Accepts an array of requests for a single slug.
 // Usage: POST /capture-batch
 http.route({
@@ -520,9 +520,9 @@ http.route({
   }),
 });
 
-// HTTP endpoint for Go receiver to capture webhook requests
+// HTTP endpoint for receiver to capture webhook requests
 // SECURITY: This endpoint REQUIRES a shared secret to prevent unauthorized access.
-// The Go receiver must include the secret in the Authorization header.
+// The receiver must include the secret in the Authorization header.
 // If CAPTURE_SHARED_SECRET is not configured, all requests are denied (fail closed).
 http.route({
   path: "/capture",
