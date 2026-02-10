@@ -2,12 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { Circle, ArrowUpDown, Search, X } from "lucide-react";
-import { getMethodColor, formatRelativeTime, Request } from "@/types/request";
+import { getMethodColor, formatRelativeTime } from "@/types/request";
+import type { RequestSummary } from "@/types/request";
+import type { Id } from "@convex/_generated/dataModel";
 
 interface RequestListProps {
-  requests: Request[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  requests: RequestSummary[];
+  selectedId: Id<"requests"> | null;
+  onSelect: (id: Id<"requests">) => void;
   liveMode: boolean;
   onToggleLiveMode: () => void;
   sortNewest: boolean;

@@ -81,6 +81,7 @@ export default defineSchema({
     ),
     isEphemeral: v.boolean(),
     expiresAt: v.optional(v.number()),
+    requestCount: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_slug", ["slug"])

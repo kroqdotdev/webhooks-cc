@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
 import { UrlBar } from "@/components/dashboard/url-bar";
 import { RequestList } from "@/components/dashboard/request-list";
 import { RequestDetail, RequestDetailEmpty } from "@/components/dashboard/request-detail";
@@ -13,7 +14,7 @@ import { Copy, Check, Send, Download, ChevronDown } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
-import type { Request } from "@/types/request";
+import type { RequestSummary } from "@/types/request";
 
 export default function DashboardPage() {
   const endpoints = useQuery(api.endpoints.list);
@@ -22,69 +23,155 @@ export default function DashboardPage() {
 
   const currentEndpoint = endpoints?.find((ep) => ep.slug === endpointSlug) ?? endpoints?.[0];
 
-  const requests = useQuery(
-    api.requests.list,
+  // Lightweight summaries for the sidebar (no body/headers/ip)
+  const summaries = useQuery(
+    api.requests.listSummaries,
     currentEndpoint ? { endpointId: currentEndpoint._id, limit: 50 } : "skip"
   );
 
-  const requestCount = useQuery(
-    api.requests.count,
-    currentEndpoint ? { endpointId: currentEndpoint._id } : "skip"
-  );
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<Id<"requests"> | null>(null);
   const [liveMode, setLiveMode] = useState(true);
   const [sortNewest, setSortNewest] = useState(true);
   const [mobileDetail, setMobileDetail] = useState(false);
   const prevRequestCount = useRef(0);
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [pendingExport, setPendingExport] = useState<"json" | "csv" | null>(null);
+  // Snapshot of filter state at the time export was requested
+  const exportFilterSnapshot = useRef<{ methodFilter: string; searchInput: string } | null>(null);
 
-  // Client-side filtering
-  const filteredRequests = useMemo(() => {
-    if (!requests) return [];
-    return requests.filter((r: Request) => {
-      if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const matchesPath = r.path.toLowerCase().includes(q);
-        const matchesBody = r.body?.toLowerCase().includes(q) ?? false;
-        const matchesId = r._id.toLowerCase().includes(q);
-        if (!matchesPath && !matchesBody && !matchesId) return false;
+  // Debounce search to avoid rapid Convex subscription churn
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (searchInput === "") {
+      setDebouncedSearch("");
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [searchInput]);
+
+  // Full request list — only subscribed when debounced search is active or export is pending
+  const needsFullList = debouncedSearch.length > 0 || pendingExport !== null;
+  const fullRequests = useQuery(
+    api.requests.list,
+    needsFullList && currentEndpoint
+      ? { endpointId: currentEndpoint._id, limit: 50 }
+      : "skip"
+  );
+
+  // Full detail for selected request
+  const selectedRequest = useQuery(
+    api.requests.get,
+    selectedId ? { id: selectedId } : "skip"
+  );
+
+  // Request count from the endpoint doc (denormalized)
+  const requestCount = currentEndpoint?.requestCount ?? 0;
+
+  // Cache last resolved request value (including null for deleted requests).
+  // Clear stale selectedId when the request no longer exists (e.g. cleaned up)
+  useEffect(() => {
+    if (selectedRequest === null && selectedId) {
+      setSelectedId(null);
+    }
+  }, [selectedRequest, selectedId]);
+
+  // Show previous request while new one loads (prevents flicker).
+  // useMemo keeps the last non-undefined value so we avoid a blank flash
+  // during the loading gap when switching selections.
+  const [displayRequest, setDisplayRequest] = useState(selectedRequest);
+  useEffect(() => {
+    if (selectedRequest !== undefined) {
+      setDisplayRequest(selectedRequest);
+    }
+  }, [selectedRequest]);
+
+  // Filter full requests for export using a specific filter snapshot
+  const applyExportFilter = useCallback((
+    requests: NonNullable<typeof fullRequests>,
+    filters: { methodFilter: string; searchInput: string },
+  ) => {
+    return requests.filter((r) => {
+      if (filters.methodFilter !== "ALL" && r.method !== filters.methodFilter) return false;
+      if (filters.searchInput) {
+        const q = filters.searchInput.toLowerCase();
+        return r.path.toLowerCase().includes(q)
+          || (r.body?.toLowerCase().includes(q) ?? false)
+          || r._id.toLowerCase().includes(q);
       }
       return true;
     });
-  }, [requests, methodFilter, searchQuery]);
+  }, []);
 
-  // Track incoming requests for live mode
+  // Handle export when full data arrives (uses snapshotted filters)
   useEffect(() => {
-    if (!requests) return;
+    if (!pendingExport || !fullRequests || !exportFilterSnapshot.current) return;
+    const filtered = applyExportFilter(fullRequests, exportFilterSnapshot.current);
+    if (pendingExport === "json") {
+      downloadFile(exportToJson(filtered), "webhooks-export.json", "application/json");
+    } else {
+      downloadFile(exportToCsv(filtered), "webhooks-export.csv", "text/csv");
+    }
+    setPendingExport(null);
+    exportFilterSnapshot.current = null;
+  }, [pendingExport, fullRequests, applyExportFilter]);
 
-    const currentCount = requests.length;
+  // Client-side filtering on summaries (method filter only when no search).
+  // When search is active AND full data is loaded, filter full requests and map to summaries.
+  // Uses debouncedSearch as the gate so the list stays visible during typing.
+  const filteredSummaries = useMemo(() => {
+    if (debouncedSearch && fullRequests) {
+      const q = debouncedSearch.toLowerCase();
+      return fullRequests
+        .filter((r) => {
+          if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
+          const matchesPath = r.path.toLowerCase().includes(q);
+          const matchesBody = r.body?.toLowerCase().includes(q) ?? false;
+          const matchesId = r._id.toLowerCase().includes(q);
+          return matchesPath || matchesBody || matchesId;
+        })
+        .map((r): RequestSummary => ({
+          _id: r._id,
+          _creationTime: r._creationTime,
+          method: r.method,
+          receivedAt: r.receivedAt,
+        }));
+    }
+    if (!summaries) return [];
+    if (methodFilter === "ALL") return summaries;
+    return summaries.filter((r) => r.method === methodFilter);
+  }, [summaries, fullRequests, methodFilter, debouncedSearch]);
+
+  // Track incoming requests for live mode.
+  // Only reacts to summaries count changes (not filter changes) to avoid
+  // unwanted auto-selection when typing in search.
+  useEffect(() => {
+    if (!summaries) return;
+
+    const currentCount = summaries.length;
     const diff = currentCount - prevRequestCount.current;
 
     if (prevRequestCount.current > 0 && diff > 0) {
       if (liveMode) {
-        // Auto-select newest visible request (respects active filters)
-        if (filteredRequests.length > 0) {
-          setSelectedId(filteredRequests[0]._id);
-        }
+        // Auto-select the newest request (first in the list)
+        setSelectedId(summaries[0]._id);
       } else {
-        // Show "N new" banner
         setNewCount((prev) => prev + diff);
       }
     }
 
     prevRequestCount.current = currentCount;
-  }, [requests, liveMode, filteredRequests]);
+  }, [summaries, liveMode]);
 
   // Auto-select first request when requests load and nothing is selected
   useEffect(() => {
-    if (requests && requests.length > 0 && !selectedId) {
-      setSelectedId(requests[0]._id);
+    if (summaries && summaries.length > 0 && !selectedId) {
+      setSelectedId(summaries[0]._id);
     }
-  }, [requests, selectedId]);
+  }, [summaries, selectedId]);
 
   // Reset state when endpoint changes
   const currentEndpointId = currentEndpoint?._id;
@@ -93,10 +180,14 @@ export default function DashboardPage() {
     setNewCount(0);
     prevRequestCount.current = 0;
     setMethodFilter("ALL");
-    setSearchQuery("");
+    setSearchInput("");
+    setDebouncedSearch("");
+    setPendingExport(null);
+    exportFilterSnapshot.current = null;
+    setDisplayRequest(undefined);
   }, [currentEndpointId]);
 
-  const handleSelect = useCallback((id: string) => {
+  const handleSelect = useCallback((id: Id<"requests">) => {
     setSelectedId(id);
     setMobileDetail(true);
   }, []);
@@ -105,21 +196,33 @@ export default function DashboardPage() {
   const handleToggleSort = useCallback(() => setSortNewest((prev) => !prev), []);
 
   const handleJumpToNew = useCallback(() => {
-    if (requests && requests.length > 0) {
-      setSelectedId(requests[0]._id);
+    if (summaries && summaries.length > 0) {
+      setSelectedId(summaries[0]._id);
       setNewCount(0);
     }
-  }, [requests]);
+  }, [summaries]);
 
   const handleExportJson = useCallback(() => {
-    const data = exportToJson(filteredRequests);
-    downloadFile(data, "webhooks-export.json", "application/json");
-  }, [filteredRequests]);
+    const filters = { methodFilter, searchInput };
+    if (fullRequests) {
+      const filtered = applyExportFilter(fullRequests, filters);
+      downloadFile(exportToJson(filtered), "webhooks-export.json", "application/json");
+    } else {
+      exportFilterSnapshot.current = filters;
+      setPendingExport("json");
+    }
+  }, [fullRequests, applyExportFilter, methodFilter, searchInput]);
 
   const handleExportCsv = useCallback(() => {
-    const data = exportToCsv(filteredRequests);
-    downloadFile(data, "webhooks-export.csv", "text/csv");
-  }, [filteredRequests]);
+    const filters = { methodFilter, searchInput };
+    if (fullRequests) {
+      const filtered = applyExportFilter(fullRequests, filters);
+      downloadFile(exportToCsv(filtered), "webhooks-export.csv", "text/csv");
+    } else {
+      exportFilterSnapshot.current = filters;
+      setPendingExport("csv");
+    }
+  }, [fullRequests, applyExportFilter, methodFilter, searchInput]);
 
   if (endpoints === undefined) {
     return <DashboardSkeleton />;
@@ -131,8 +234,7 @@ export default function DashboardPage() {
 
   if (!currentEndpoint) return null;
 
-  const selectedRequest = filteredRequests.find((r) => r._id === selectedId) ?? null;
-  const hasRequests = requests && requests.length > 0;
+  const hasRequests = summaries && summaries.length > 0;
 
   return (
     <ErrorBoundary resetKey={currentEndpoint._id}>
@@ -156,7 +258,7 @@ export default function DashboardPage() {
           <div className="hidden md:flex flex-1 overflow-hidden">
             <div className="w-80 shrink-0 border-r-2 border-foreground overflow-hidden">
               <RequestList
-                requests={filteredRequests}
+                requests={filteredSummaries}
                 selectedId={selectedId}
                 onSelect={handleSelect}
                 liveMode={liveMode}
@@ -168,14 +270,14 @@ export default function DashboardPage() {
                 totalCount={requestCount}
                 methodFilter={methodFilter}
                 onMethodFilterChange={setMethodFilter}
-                searchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
+                searchQuery={searchInput}
+                onSearchQueryChange={setSearchInput}
               />
             </div>
             <div className="flex-1 overflow-hidden">
               <ErrorBoundary resetKey={selectedId ?? undefined}>
-                {selectedRequest ? (
-                  <RequestDetail request={selectedRequest} />
+                {displayRequest ? (
+                  <RequestDetail request={displayRequest} />
                 ) : (
                   <RequestDetailEmpty />
                 )}
@@ -185,7 +287,7 @@ export default function DashboardPage() {
 
           {/* Mobile: list or detail */}
           <div className="md:hidden flex-1 overflow-hidden flex flex-col">
-            {mobileDetail && selectedRequest ? (
+            {mobileDetail && displayRequest ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 <button
                   onClick={() => setMobileDetail(false)}
@@ -195,13 +297,13 @@ export default function DashboardPage() {
                 </button>
                 <div className="flex-1 overflow-hidden">
                   <ErrorBoundary resetKey={selectedId ?? undefined}>
-                    <RequestDetail request={selectedRequest} />
+                    <RequestDetail request={displayRequest} />
                   </ErrorBoundary>
                 </div>
               </div>
             ) : (
               <RequestList
-                requests={filteredRequests}
+                requests={filteredSummaries}
                 selectedId={selectedId}
                 onSelect={handleSelect}
                 liveMode={liveMode}
@@ -213,8 +315,8 @@ export default function DashboardPage() {
                 totalCount={requestCount}
                 methodFilter={methodFilter}
                 onMethodFilterChange={setMethodFilter}
-                searchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
+                searchQuery={searchInput}
+                onSearchQueryChange={setSearchInput}
               />
             )}
           </div>

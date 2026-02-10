@@ -55,6 +55,11 @@ export const capture = internalMutation({
       receivedAt: Date.now(),
     });
 
+    // Schedule request count increment for the endpoint (all endpoints, including ephemeral)
+    await ctx.scheduler.runAfter(0, internal.requests.incrementRequestCount, {
+      endpointId: endpoint._id,
+    });
+
     // Schedule usage increment to run immediately after this mutation commits.
     // Scheduled mutations run sequentially, avoiding OCC conflicts when many
     // concurrent requests hit the same user's endpoints.
@@ -93,14 +98,8 @@ export const getQuota = internalQuery({
     }
 
     // Ephemeral endpoints get 50 requests for their lifetime
-    // Count actual requests to track usage across Go receiver cache refreshes
-    // Cap read to EPHEMERAL_RATE_LIMIT + 1 to avoid loading excess data
     if (endpoint.isEphemeral) {
-      const requests = await ctx.db
-        .query("requests")
-        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpoint._id))
-        .take(EPHEMERAL_RATE_LIMIT + 1);
-      const used = requests.length;
+      const used = endpoint.requestCount ?? 0;
       const remaining = Math.max(0, EPHEMERAL_RATE_LIMIT - used);
       return {
         userId: null,
@@ -247,6 +246,46 @@ export const incrementUsage = internalMutation({
   },
 });
 
+// Increment the denormalized request count on an endpoint.
+// Called via scheduler from capture/captureBatch to avoid OCC conflicts.
+// No-ops for count <= 0 or deleted endpoints.
+export const incrementRequestCount = internalMutation({
+  args: {
+    endpointId: v.id("endpoints"),
+    count: v.optional(v.number()),
+  },
+  handler: async (ctx, { endpointId, count = 1 }) => {
+    const validCount = Math.min(Math.floor(count), 1000);
+    if (validCount <= 0) return;
+    const endpoint = await ctx.db.get(endpointId);
+    if (endpoint) {
+      await ctx.db.patch(endpointId, {
+        requestCount: (endpoint.requestCount ?? 0) + validCount,
+      });
+    }
+  },
+});
+
+// Decrement the denormalized request count on an endpoint.
+// Used by cleanup paths when requests are deleted from live endpoints.
+// No-ops for count <= 0 or deleted endpoints.
+export const decrementRequestCount = internalMutation({
+  args: {
+    endpointId: v.id("endpoints"),
+    count: v.number(),
+  },
+  handler: async (ctx, { endpointId, count }) => {
+    const validCount = Math.min(Math.floor(count), 1000);
+    if (validCount <= 0) return;
+    const endpoint = await ctx.db.get(endpointId);
+    if (endpoint) {
+      await ctx.db.patch(endpointId, {
+        requestCount: Math.max(0, (endpoint.requestCount ?? 0) - validCount),
+      });
+    }
+  },
+});
+
 // Get endpoint info for caching in Go receiver.
 // Returns endpoint details including mock response configuration.
 export const getEndpointInfo = internalQuery({
@@ -334,6 +373,14 @@ export const captureBatch = internalMutation({
       inserted++;
     }
 
+    // Schedule request count increment for the endpoint
+    if (inserted > 0) {
+      await ctx.scheduler.runAfter(0, internal.requests.incrementRequestCount, {
+        endpointId: endpoint._id,
+        count: inserted,
+      });
+    }
+
     // Schedule single usage increment for the entire batch
     if (endpoint.userId && inserted > 0) {
       await ctx.scheduler.runAfter(0, internal.requests.incrementUsage, {
@@ -419,9 +466,6 @@ export const listNewForUser = internalQuery({
 // Maximum number of requests that can be fetched at once
 const MAX_LIST_LIMIT = 100;
 
-// Maximum count to avoid loading too much data into memory
-const MAX_COUNT = 1000;
-
 export const count = query({
   args: {
     endpointId: v.id("endpoints"),
@@ -429,25 +473,16 @@ export const count = query({
   handler: async (ctx, { endpointId }) => {
     const userId = await getAuthUserId(ctx);
 
-    // Verify the user has access to this endpoint
     const endpoint = await ctx.db.get(endpointId);
     if (!endpoint) return 0;
 
-    // Authorization rules (same as list)
     if (!endpoint.isEphemeral) {
       if (!endpoint.userId || !userId || endpoint.userId !== userId) {
         return 0;
       }
     }
 
-    // Use take() with a cap to avoid loading unlimited data into memory
-    const requests = await ctx.db
-      .query("requests")
-      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId))
-      .take(MAX_COUNT + 1);
-
-    // Return actual count, or MAX_COUNT if there are more
-    return Math.min(requests.length, MAX_COUNT);
+    return endpoint.requestCount ?? 0;
   },
 });
 
@@ -482,6 +517,39 @@ export const list = query({
       .take(actualLimit);
 
     return requests;
+  },
+});
+
+export const listSummaries = query({
+  args: {
+    endpointId: v.id("endpoints"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { endpointId, limit = 50 }) => {
+    const actualLimit = Math.min(Math.max(1, limit), MAX_LIST_LIMIT);
+    const userId = await getAuthUserId(ctx);
+
+    const endpoint = await ctx.db.get(endpointId);
+    if (!endpoint) return [];
+
+    if (!endpoint.isEphemeral) {
+      if (!endpoint.userId || !userId || endpoint.userId !== userId) {
+        return [];
+      }
+    }
+
+    const requests = await ctx.db
+      .query("requests")
+      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId))
+      .order("desc")
+      .take(actualLimit);
+
+    return requests.map((r) => ({
+      _id: r._id,
+      _creationTime: r._creationTime,
+      method: r.method,
+      receivedAt: r.receivedAt,
+    }));
   },
 });
 
@@ -623,6 +691,13 @@ export const cleanupUserRequests = internalMutation({
         deleted++;
       }
 
+      if (requests.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.requests.decrementRequestCount, {
+          endpointId: endpoint._id,
+          count: requests.length,
+        });
+      }
+
       if (requests.length === CLEANUP_BATCH_SIZE) {
         needsMoreRequests = true;
       }
@@ -689,6 +764,13 @@ export const cleanupOldRequests = internalMutation({
           await ctx.db.delete(req._id);
           totalDeleted++;
         }
+
+        if (oldRequests.length > 0) {
+          await ctx.scheduler.runAfter(0, internal.requests.decrementRequestCount, {
+            endpointId: endpoint._id,
+            count: oldRequests.length,
+          });
+        }
       }
 
       // If user has more endpoints, schedule dedicated cleanup for remaining
@@ -745,6 +827,13 @@ export const cleanupOldRequestsForUser = internalMutation({
         deleted++;
       }
 
+      if (oldRequests.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.requests.decrementRequestCount, {
+          endpointId: endpoint._id,
+          count: oldRequests.length,
+        });
+      }
+
       if (oldRequests.length === CLEANUP_BATCH_SIZE) {
         needsMoreRequests = true;
       }
@@ -769,5 +858,41 @@ export const cleanupOldRequestsForUser = internalMutation({
     }
 
     return { deleted, done: true };
+  },
+});
+
+// One-time migration: backfill requestCount on all endpoints.
+// Run once post-deploy via: npx convex run internal.requests.migrateRequestCounts '{}'
+// Safe to re-run. Remove after migration is complete.
+export const migrateRequestCounts = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, { cursor }) => {
+    const PAGE_SIZE = 50;
+    const result = await ctx.db
+      .query("endpoints")
+      .paginate({ cursor: cursor ?? null, numItems: PAGE_SIZE });
+
+    let updated = 0;
+    for (const endpoint of result.page) {
+      const requests = await ctx.db
+        .query("requests")
+        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpoint._id))
+        .take(1001);
+      const count = Math.min(requests.length, 1000);
+      if (count !== (endpoint.requestCount ?? 0)) {
+        await ctx.db.patch(endpoint._id, { requestCount: count });
+        updated++;
+      }
+    }
+
+    if (!result.isDone) {
+      await ctx.scheduler.runAfter(0, internal.requests.migrateRequestCounts, {
+        cursor: result.continueCursor,
+      });
+    }
+
+    return { updated, done: result.isDone };
   },
 });

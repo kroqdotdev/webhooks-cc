@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, test, expect, beforeEach } from "vitest";
 import { modules } from "./test.setup";
 import schema from "./schema";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { FREE_REQUEST_LIMIT, PRO_REQUEST_LIMIT, BILLING_PERIOD_MS, FREE_PERIOD_MS } from "./config";
 
 // Helper to create a free user
@@ -478,5 +478,383 @@ describe("captureBatch", () => {
 
     const user = await t.run(async (ctx) => ctx.db.get(userId));
     expect(user!.requestsUsed).toBe(2);
+  });
+});
+
+describe("requestCount denormalization", () => {
+  let t: ReturnType<typeof convexTest>;
+
+  beforeEach(() => {
+    t = convexTest(schema, modules);
+  });
+
+  test("incrementRequestCount increments on capture", async () => {
+    const endpointId = await createEndpoint(t, { slug: "rc-slug" });
+
+    await t.mutation(internal.requests.capture, {
+      slug: "rc-slug",
+      ...makeRequest(),
+    });
+
+    // Simulate the scheduled incrementRequestCount
+    await t.mutation(internal.requests.incrementRequestCount, {
+      endpointId,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(1);
+  });
+
+  test("incrementRequestCount with count param", async () => {
+    const endpointId = await createEndpoint(t, { slug: "rc-batch" });
+
+    await t.mutation(internal.requests.incrementRequestCount, {
+      endpointId,
+      count: 3,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(3);
+  });
+
+  test("accumulates across multiple increments", async () => {
+    const endpointId = await createEndpoint(t, { slug: "rc-accum" });
+
+    await t.mutation(internal.requests.incrementRequestCount, { endpointId });
+    await t.mutation(internal.requests.incrementRequestCount, { endpointId });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(2);
+  });
+
+  test("count query reads from endpoint.requestCount", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-count",
+      isEphemeral: true,
+      requestCount: 42,
+    });
+
+    // Use the public count query (no auth needed for ephemeral)
+    const count = await t.query(api.requests.count, { endpointId });
+    expect(count).toBe(42);
+  });
+
+  test("count query returns 0 for new endpoint", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-zero",
+      isEphemeral: true,
+    });
+
+    const count = await t.query(api.requests.count, { endpointId });
+    expect(count).toBe(0);
+  });
+
+  test("decrementRequestCount reduces count", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-dec",
+      requestCount: 10,
+    });
+
+    await t.mutation(internal.requests.decrementRequestCount, {
+      endpointId,
+      count: 3,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(7);
+  });
+
+  test("decrementRequestCount floors at 0", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-floor",
+      requestCount: 2,
+    });
+
+    await t.mutation(internal.requests.decrementRequestCount, {
+      endpointId,
+      count: 5,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(0);
+  });
+
+  test("decrementRequestCount no-ops for negative input", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-neg",
+      requestCount: 5,
+    });
+
+    // Negative count should be a no-op (not change the count)
+    await t.mutation(internal.requests.decrementRequestCount, {
+      endpointId,
+      count: -10,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(5); // unchanged
+  });
+
+  test("incrementRequestCount no-ops for zero input", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-zero",
+      requestCount: 5,
+    });
+
+    await t.mutation(internal.requests.incrementRequestCount, {
+      endpointId,
+      count: 0,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(5); // unchanged
+  });
+
+  test("incrementRequestCount no-ops for deleted endpoint", async () => {
+    const endpointId = await createEndpoint(t, { slug: "rc-del-inc" });
+    await t.run(async (ctx) => ctx.db.delete(endpointId));
+
+    // Should not throw
+    await t.mutation(internal.requests.incrementRequestCount, {
+      endpointId,
+    });
+  });
+
+  test("decrementRequestCount no-ops for deleted endpoint", async () => {
+    const endpointId = await createEndpoint(t, { slug: "rc-del-dec", requestCount: 5 });
+    await t.run(async (ctx) => ctx.db.delete(endpointId));
+
+    // Should not throw
+    await t.mutation(internal.requests.decrementRequestCount, {
+      endpointId,
+      count: 3,
+    });
+  });
+
+  test("getQuota ephemeral uses requestCount", async () => {
+    await createEndpoint(t, {
+      slug: "rc-quota",
+      isEphemeral: true,
+      expiresAt: Date.now() + 600000,
+      requestCount: 10,
+    });
+
+    const result = await t.query(internal.requests.getQuota, {
+      slug: "rc-quota",
+    });
+
+    expect(result).toHaveProperty("remaining", 40); // 50 - 10
+    expect(result).toHaveProperty("limit", 50);
+  });
+});
+
+describe("listSummaries", () => {
+  let t: ReturnType<typeof convexTest>;
+
+  beforeEach(() => {
+    t = convexTest(schema, modules);
+  });
+
+  test("returns only summary fields", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "ls-fields",
+      isEphemeral: true,
+    });
+
+    // Insert a request with full data
+    await t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/webhook",
+        headers: { "content-type": "application/json" },
+        body: '{"data":"test"}',
+        queryParams: {},
+        contentType: "application/json",
+        ip: "1.2.3.4",
+        size: 15,
+        receivedAt: Date.now(),
+      });
+    });
+
+    const summaries = await t.query(api.requests.listSummaries, {
+      endpointId,
+    });
+
+    expect(summaries).toHaveLength(1);
+    const s = summaries[0];
+    expect(s).toHaveProperty("_id");
+    expect(s).toHaveProperty("_creationTime");
+    expect(s).toHaveProperty("method", "POST");
+    expect(s).toHaveProperty("receivedAt");
+    // Should NOT have full request fields
+    expect(s).not.toHaveProperty("body");
+    expect(s).not.toHaveProperty("headers");
+    expect(s).not.toHaveProperty("ip");
+    expect(s).not.toHaveProperty("path");
+  });
+
+  test("respects auth for non-ephemeral", async () => {
+    const userId = await createFreeUser(t);
+    const endpointId = await createEndpoint(t, {
+      slug: "ls-auth",
+      userId,
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "GET",
+        path: "/test",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: Date.now(),
+      });
+    });
+
+    // Query without auth should return empty for non-ephemeral
+    const summaries = await t.query(api.requests.listSummaries, {
+      endpointId,
+    });
+
+    expect(summaries).toEqual([]);
+  });
+
+  test("returns results in descending order", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "ls-order",
+      isEphemeral: true,
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "GET",
+        path: "/first",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: 1000,
+      });
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/second",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: 2000,
+      });
+    });
+
+    const summaries = await t.query(api.requests.listSummaries, {
+      endpointId,
+    });
+
+    expect(summaries).toHaveLength(2);
+    // Newest first (desc order)
+    expect(summaries[0].receivedAt).toBe(2000);
+    expect(summaries[1].receivedAt).toBe(1000);
+  });
+
+  test("respects limit parameter", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "ls-limit",
+      isEphemeral: true,
+    });
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 5; i++) {
+        await ctx.db.insert("requests", {
+          endpointId,
+          method: "GET",
+          path: `/req-${i}`,
+          headers: {},
+          queryParams: {},
+          ip: "1.2.3.4",
+          size: 0,
+          receivedAt: Date.now() + i,
+        });
+      }
+    });
+
+    const summaries = await t.query(api.requests.listSummaries, {
+      endpointId,
+      limit: 3,
+    });
+
+    expect(summaries).toHaveLength(3);
+  });
+});
+
+describe("apiKeys.validateQuery", () => {
+  let t: ReturnType<typeof convexTest>;
+
+  beforeEach(() => {
+    t = convexTest(schema, modules);
+  });
+
+  test("returns userId for valid key", async () => {
+    const userId = await createFreeUser(t);
+
+    // Insert an API key with a known hash
+    const { hashKey } = await import("./apiKeys");
+    const testKey = "whcc_testkey12345678901234567890ab";
+    const keyHash = await hashKey(testKey);
+
+    const apiKeyId = await t.run(async (ctx) => {
+      return await ctx.db.insert("apiKeys", {
+        userId,
+        keyHash,
+        keyPrefix: testKey.slice(0, 12),
+        name: "Test key",
+        createdAt: Date.now(),
+      });
+    });
+
+    const result = await t.query(internal.apiKeys.validateQuery, {
+      key: testKey,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.userId).toBe(userId);
+    expect(result!.apiKeyId).toBe(apiKeyId);
+  });
+
+  test("rejects expired keys", async () => {
+    const userId = await createFreeUser(t);
+
+    const { hashKey } = await import("./apiKeys");
+    const testKey = "whcc_expiredkey1234567890123456ab";
+    const keyHash = await hashKey(testKey);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("apiKeys", {
+        userId,
+        keyHash,
+        keyPrefix: testKey.slice(0, 12),
+        name: "Expired key",
+        expiresAt: Date.now() - 1000,
+        createdAt: Date.now() - 100000,
+      });
+    });
+
+    const result = await t.query(internal.apiKeys.validateQuery, {
+      key: testKey,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test("returns null for nonexistent key", async () => {
+    const result = await t.query(internal.apiKeys.validateQuery, {
+      key: "whcc_nonexistentkey123456789012ab",
+    });
+
+    expect(result).toBeNull();
   });
 });

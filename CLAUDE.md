@@ -21,7 +21,8 @@ webhooks.cc is a production webhook inspection and testing service. Users captur
 pnpm install              # Install all dependencies
 pnpm dev:convex           # Start Convex backend (run first, in separate terminal)
 pnpm dev:web              # Start Next.js web app
-make dev-receiver         # Start Go webhook receiver
+make dev-receiver         # Start Rust webhook receiver (primary)
+make dev-receiver-go      # Start Go webhook receiver (legacy fallback)
 make dev-cli ARGS="..."   # Run CLI with arguments
 ```
 
@@ -30,8 +31,8 @@ make dev-cli ARGS="..."   # Run CLI with arguments
 ```bash
 pnpm build                # Build all TypeScript packages (turbo)
 pnpm typecheck            # Type check all packages (turbo)
-make build                # Build everything including Go binaries
-make build-receiver       # Build Go receiver to dist/receiver
+make build                # Build everything including binaries
+make build-receiver       # Build Rust receiver (release) to dist/receiver
 make build-cli            # Build CLI with goreleaser
 ```
 
@@ -48,7 +49,8 @@ Without this step the old binary continues running and code changes have no effe
 ```bash
 make test                 # Run all tests (TS + Go)
 pnpm test:convex          # Convex backend tests only (vitest, 58+ cases)
-cd apps/receiver && go test ./...   # Receiver tests only
+cd apps/receiver-rs && cargo test   # Rust receiver tests
+cd apps/receiver && go test ./...   # Go receiver tests (legacy)
 cd apps/cli && go test ./...        # CLI tests only
 ```
 
@@ -65,7 +67,7 @@ npx convex run <fn> '{}'  # Run a function
 
 ### Systemd Services
 
-The Go receiver runs as a systemd service. The service runs the binary at `dist/receiver`.
+The receiver runs as a systemd service. The service runs the Rust binary at `dist/receiver`.
 
 ```bash
 sudo systemctl restart webhooks-receiver                      # Restart (applies rebuild)
@@ -80,20 +82,22 @@ sudo journalctl -u webhooks-receiver --since "5 minutes ago"  # Recent logs
 pnpm lint                 # ESLint across all packages
 pnpm format:check         # Prettier check
 pnpm format               # Prettier fix
-cd apps/receiver && golangci-lint run   # Go lint
+cd apps/receiver-rs && cargo clippy     # Rust receiver lint
+cd apps/receiver && golangci-lint run   # Go receiver lint (legacy)
 ```
 
 ## Architecture
 
 ### Service Layout
 
-| Service  | Port    | Stack                             | Purpose                                               |
-| -------- | ------- | --------------------------------- | ----------------------------------------------------- |
-| Web app  | 3000    | Next.js 16, React 19, Tailwind v4 | Dashboard, docs, landing page                         |
-| Receiver | 3001    | Go 1.25, Fiber v2                 | Captures webhooks at `/w/{slug}`                      |
-| Convex   | managed | Convex 1.31                       | Database, auth, real-time subscriptions, HTTP actions |
-| CLI      | n/a     | Go 1.25, Cobra                    | `whk tunnel`, `whk listen`, device auth               |
-| SDK      | n/a     | TypeScript, tsup                  | `@webhooks-cc/sdk` on npm                             |
+| Service       | Port    | Stack                             | Purpose                                               |
+| ------------- | ------- | --------------------------------- | ----------------------------------------------------- |
+| Web app       | 3000    | Next.js 16, React 19, Tailwind v4 | Dashboard, docs, landing page                         |
+| Receiver      | 3001    | Rust (Axum, Tokio, Redis)         | Captures webhooks at `/w/{slug}`                      |
+| Receiver (Go) | 3001    | Go 1.25, Fiber v2                 | Legacy fallback at `apps/receiver/`                   |
+| Convex        | managed | Convex 1.31                       | Database, auth, real-time subscriptions, HTTP actions |
+| CLI           | n/a     | Go 1.25, Cobra                    | `whk tunnel`, `whk listen`, device auth               |
+| SDK           | n/a     | TypeScript, tsup                  | `@webhooks-cc/sdk` on npm                             |
 
 ### Directory Structure
 
@@ -101,7 +105,8 @@ cd apps/receiver && golangci-lint run   # Go lint
 webhooks-cc/
 ├── apps/
 │   ├── web/              # Next.js 16 App Router (Tailwind v4, shadcn/ui, Sentry)
-│   ├── receiver/         # Go Fiber webhook capture server (single main.go + tests)
+│   ├── receiver-rs/      # Rust Axum webhook receiver (primary)
+│   ├── receiver/         # Go Fiber webhook receiver (legacy fallback)
 │   ├── cli/              # Go Cobra CLI (cmd/whk + internal packages)
 │   └── go-shared/        # Shared Go types (types/types.go)
 ├── packages/
@@ -119,13 +124,18 @@ webhooks-cc/
 
 ```
 External service -> POST /w/{slug}/path
-  -> Go Receiver:
+  -> Rust Receiver (hot path, ~0.3ms):
      1. Validate slug, extract headers/body/IP
-     2. Fetch endpoint info from cache (60s TTL, 10k max entries)
-     3. Check quota via file-based store (30s staleness TTL)
-     4. Buffer request in RequestBatcher (flush at 50 items or 100ms)
+     2. Fetch endpoint info from Redis cache (300s TTL, warmed proactively)
+     3. Check quota via Redis Lua script (atomic decrement, no locks)
+     4. Push request to Redis list buffer, mark slug active
      5. Return mock response immediately (if configured)
-  -> Convex HTTP action: POST /capture-batch (Bearer CAPTURE_SHARED_SECRET)
+  -> Background flush workers (4x, async):
+     1. Poll active slugs from Redis set
+     2. Atomically take batch from Redis list (Lua script)
+     3. POST to Convex /capture-batch (Bearer CAPTURE_SHARED_SECRET)
+     4. At-most-once delivery (only re-enqueue on CircuitOpen)
+  -> Convex HTTP action:
      1. Look up endpoint, check expiry
      2. Store request(s) in `requests` table
      3. Schedule usage increment (avoids OCC conflicts)
@@ -133,19 +143,49 @@ External service -> POST /w/{slug}/path
   -> CLI: SSE stream at /api/stream/{slug} -> forward to localhost
 ```
 
-### Receiver Internals
+### Receiver Internals (Rust)
 
-The Go receiver (`apps/receiver/main.go`, ~1300 lines) is the performance-critical path:
+The Rust receiver (`apps/receiver-rs/`) replaces the Go receiver for performance. Benchmarked at ~86k RPS (oha), verified 100% delivery accuracy at 3.2k sustained RPS.
 
-- **EndpointCache**: In-memory with single-flight dedup (prevents thundering herd), 60s TTL, 10k max entries
-- **FileQuotaStore**: JSON files in `/tmp/webhooks-quota` for atomic quota tracking (temp + fsync + rename)
-- **RequestBatcher**: Per-slug buffers, flush at 50 items or 100ms, max 1000 buffered per slug
-- **CircuitBreaker**: 3-state (closed/open/half-open) for Convex calls, 5-failure threshold, 30s cooldown
-- **Fail-open**: If no cached quota and Convex is down, requests are allowed through
-- **Header filtering**: Blocks Set-Cookie, HSTS, CSP, X-Frame-Options, CRLF injection in mock responses
-- **Max body size**: 100KB
+**Architecture:**
 
-Receiver env vars: `CONVEX_SITE_URL`, `CAPTURE_SHARED_SECRET`, `PORT` (default 3001), `QUOTA_STORAGE_DIR`, `RECEIVER_DEBUG`, `SENTRY_DSN`
+- **Axum + Tokio**: Async HTTP server, hot path returns in ~0.3ms (3 pipelined Redis commands)
+- **Redis (localhost:6380)**: All state lives in Redis — endpoint cache, quota, request buffers, circuit breaker
+- **No Convex on hot path**: Webhook capture never touches Convex directly, only Redis
+
+**Key components (`src/`):**
+
+- `handlers/webhook.rs` — Hot path: validate slug, check cache, check quota, buffer request
+- `handlers/health.rs` — Health check endpoint
+- `handlers/cache_invalidate.rs` — Convex calls this to invalidate cached endpoint/quota
+- `redis/endpoint_cache.rs` — Endpoint info cache (300s TTL, proactively warmed)
+- `redis/quota.rs` — Atomic quota check via Lua script (decrement + check in one call)
+- `redis/request_buffer.rs` — Redis list per slug, atomic batch-take via Lua script
+- `convex/client.rs` — HTTP client for Convex API (30s timeout, connection pooling)
+- `convex/circuit_breaker.rs` — Redis-backed circuit breaker (5 failures → 30s cooldown)
+- `workers/flush.rs` — 4 concurrent workers drain Redis buffers to Convex
+- `workers/cache_warmer.rs` — Proactively refreshes endpoint/quota cache before TTL expiry
+- `config.rs` — Env var loading
+
+**Flush workers:**
+
+- 4 workers, each processes a strided subset of shuffled slugs for fair distribution
+- Atomic batch-take from Redis lists (Lua script with DEL when fully consumed)
+- At-most-once delivery: only re-enqueue on `CircuitOpen` (request never sent)
+- All other errors (network, server, client) drop the batch to avoid duplicates
+
+**Redis data model:**
+
+- `ep:{slug}` — Cached endpoint info (JSON, 300s TTL)
+- `quota:{slug}` — Quota remaining/limit (hash, 300s TTL)
+- `quota:user:{userId}` — Per-user shared quota across endpoints
+- `buf:{slug}` — Request buffer (list, LPUSH new / LRANGE+DEL old)
+- `buf:active` — Set of slugs with pending requests
+- `cb:failures` / `cb:state` / `cb:last_failure` — Circuit breaker state
+
+Receiver env vars: `CONVEX_SITE_URL`, `CAPTURE_SHARED_SECRET`, `PORT` (default 3001), `RECEIVER_DEBUG`, `REDIS_URL` (default `redis://127.0.0.1:6380`)
+
+**Requires Redis running** — start with: `/home/sauer/cc/utils/redis-server/start.sh`
 
 ### CLI Commands
 
@@ -277,15 +317,17 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 - Convex optional fields must be `undefined`, not `null` (except `v.null()` in validators)
 - HTTP actions served from `.convex.site`, not `.convex.cloud`
-- Go receiver uses `c.UserContext()` not `c.Context()` to avoid Fiber context pool reuse bugs
+- Go receiver (legacy) uses `c.UserContext()` not `c.Context()` to avoid Fiber context pool reuse bugs
+- Rust receiver requires Redis on localhost:6380 — start with `~/cc/utils/redis-server/start.sh`
+- Rust receiver flush uses at-most-once delivery — batches are dropped (not retried) on network/server errors to prevent duplicates
 - `generateUniqueSlug` helper uses `any` type for db parameter (Convex DB types are complex generics)
 - Device auth `apiKey` field in schema is vestigial (raw keys are no longer stored, generated at claim time)
-- The receiver caches endpoint info for 60s - mock response changes won't take effect immediately unless cache is invalidated (Convex mutations schedule invalidation automatically)
+- The Rust receiver caches endpoint info for 300s — mock response changes propagate via cache invalidation (Convex mutations schedule it automatically) or cache warmer refresh
 - Free user billing periods are lazy: `periodEnd` is unset until first request triggers `checkAndStartPeriod`
 
 ## Licensing
 
 Split license model:
 
-- **AGPL-3.0**: `apps/web`, `apps/receiver`, `convex/`
+- **AGPL-3.0**: `apps/web`, `apps/receiver`, `apps/receiver-rs`, `convex/`
 - **MIT**: `apps/cli`, `packages/sdk`, `apps/go-shared`

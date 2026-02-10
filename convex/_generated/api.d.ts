@@ -16,6 +16,7 @@ import type * as crons from "../crons.js";
 import type * as deviceAuth from "../deviceAuth.js";
 import type * as endpoints from "../endpoints.js";
 import type * as http from "../http.js";
+import type * as loadTest from "../loadTest.js";
 import type * as rateLimiter from "../rateLimiter.js";
 import type * as requests from "../requests.js";
 import type * as users from "../users.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   deviceAuth: typeof deviceAuth;
   endpoints: typeof endpoints;
   http: typeof http;
+  loadTest: typeof loadTest;
   rateLimiter: typeof rateLimiter;
   requests: typeof requests;
   users: typeof users;

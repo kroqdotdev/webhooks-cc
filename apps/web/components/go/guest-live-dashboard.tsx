@@ -13,7 +13,8 @@ import { RequestDetail, RequestDetailEmpty } from "@/components/dashboard/reques
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import type { Request } from "@/types/request";
+import type { Id } from "@convex/_generated/dataModel";
+import type { Request, RequestSummary } from "@/types/request";
 import { Check, Circle, Copy, Plus, Send } from "lucide-react";
 
 const REQUEST_LIMIT = 50;
@@ -54,15 +55,27 @@ export function GuestLiveDashboard() {
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<Id<"requests"> | null>(null);
   const [liveMode, setLiveMode] = useState(true);
   const [sortNewest, setSortNewest] = useState(true);
   const [mobileDetail, setMobileDetail] = useState(false);
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const prevRequestCount = useRef(0);
+
+  // Debounce search to avoid rapid Convex subscription churn
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (searchInput === "") {
+      setDebouncedSearch("");
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [searchInput]);
 
   const endpoint = useQuery(
     api.endpoints.getBySlug,
@@ -84,13 +97,44 @@ export function GuestLiveDashboard() {
     );
   }, [endpoint?.expiresAt, endpoint?.isEphemeral, endpointSlug, expiresAt]);
 
-  const requests = useQuery(
-    api.requests.list,
+  const summaries = useQuery(
+    api.requests.listSummaries,
     endpoint ? { endpointId: endpoint._id, limit: REQUEST_LIMIT } : "skip"
   );
 
-  const requestCount = requests?.length ?? 0;
-  const remainingRequests = REQUEST_LIMIT - requestCount;
+  // Full list only needed when debounced search is active (body search)
+  const needsFullList = debouncedSearch.length > 0;
+  const fullRequests = useQuery(
+    api.requests.list,
+    needsFullList && endpoint ? { endpointId: endpoint._id, limit: REQUEST_LIMIT } : "skip"
+  );
+
+  // Full detail for selected request
+  const selectedDetail = useQuery(
+    api.requests.get,
+    selectedId ? { id: selectedId } : "skip"
+  );
+
+  const requestCount = endpoint?.requestCount ?? 0;
+  const remainingRequests = Math.max(0, REQUEST_LIMIT - requestCount);
+
+  // Cache last loaded request to prevent flicker during selection changes
+  const lastLoadedDetail = useRef<typeof selectedDetail>(undefined);
+  useEffect(() => {
+    if (selectedDetail !== undefined) {
+      lastLoadedDetail.current = selectedDetail;
+    }
+  }, [selectedDetail]);
+
+  // Clear stale selectedId when the request no longer exists
+  useEffect(() => {
+    if (selectedDetail === null && selectedId) {
+      setSelectedId(null);
+    }
+  }, [selectedDetail, selectedId]);
+
+  // Show previous request while new one loads (prevents flicker)
+  const displayDetail = selectedDetail !== undefined ? selectedDetail : lastLoadedDetail.current;
 
   const clearDemoEndpoint = useCallback((nextError: string | null = null) => {
     setEndpointSlug(null);
@@ -102,7 +146,8 @@ export function GuestLiveDashboard() {
     setMobileDetail(false);
     setNewCount(0);
     setMethodFilter("ALL");
-    setSearchQuery("");
+    setSearchInput("");
+    setDebouncedSearch("");
     setCreateError(nextError);
     prevRequestCount.current = 0;
     if (typeof window !== "undefined") {
@@ -165,50 +210,51 @@ export function GuestLiveDashboard() {
     clearDemoEndpoint("Your test endpoint expired. Create a new one.");
   }, [clearDemoEndpoint, endpoint, endpointSlug]);
 
-  const filteredRequests = useMemo(() => {
-    if (!requests) return [];
-
-    return requests.filter((request: Request) => {
-      if (methodFilter !== "ALL" && request.method !== methodFilter) {
-        return false;
-      }
-
-      if (!searchQuery) {
-        return true;
-      }
-
-      const normalizedQuery = searchQuery.toLowerCase();
-      const matchesPath = request.path.toLowerCase().includes(normalizedQuery);
-      const matchesBody = request.body?.toLowerCase().includes(normalizedQuery) ?? false;
-      const matchesId = request._id.toLowerCase().includes(normalizedQuery);
-      return matchesPath || matchesBody || matchesId;
-    });
-  }, [requests, methodFilter, searchQuery]);
+  const filteredSummaries = useMemo(() => {
+    if (debouncedSearch && fullRequests) {
+      const q = debouncedSearch.toLowerCase();
+      return fullRequests
+        .filter((r: Request) => {
+          if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
+          const matchesPath = r.path.toLowerCase().includes(q);
+          const matchesBody = r.body?.toLowerCase().includes(q) ?? false;
+          const matchesId = r._id.toLowerCase().includes(q);
+          return matchesPath || matchesBody || matchesId;
+        })
+        .map((r): RequestSummary => ({
+          _id: r._id,
+          _creationTime: r._creationTime,
+          method: r.method,
+          receivedAt: r.receivedAt,
+        }));
+    }
+    if (!summaries) return [];
+    if (methodFilter === "ALL") return summaries;
+    return summaries.filter((r) => r.method === methodFilter);
+  }, [summaries, fullRequests, methodFilter, debouncedSearch]);
 
   useEffect(() => {
-    if (!requests) return;
+    if (!summaries) return;
 
-    const currentCount = requests.length;
+    const currentCount = summaries.length;
     const diff = currentCount - prevRequestCount.current;
 
     if (prevRequestCount.current > 0 && diff > 0) {
       if (liveMode) {
-        if (filteredRequests.length > 0) {
-          setSelectedId(filteredRequests[0]._id);
-        }
+        setSelectedId(summaries[0]._id);
       } else {
         setNewCount((prev) => prev + diff);
       }
     }
 
     prevRequestCount.current = currentCount;
-  }, [requests, liveMode, filteredRequests]);
+  }, [summaries, liveMode]);
 
   useEffect(() => {
-    if (requests && requests.length > 0 && !selectedId) {
-      setSelectedId(requests[0]._id);
+    if (summaries && summaries.length > 0 && !selectedId) {
+      setSelectedId(summaries[0]._id);
     }
-  }, [requests, selectedId]);
+  }, [summaries, selectedId]);
 
   const currentEndpointId = endpoint?._id;
   useEffect(() => {
@@ -216,7 +262,9 @@ export function GuestLiveDashboard() {
     setNewCount(0);
     prevRequestCount.current = 0;
     setMethodFilter("ALL");
-    setSearchQuery("");
+    setSearchInput("");
+    setDebouncedSearch("");
+    lastLoadedDetail.current = undefined;
   }, [currentEndpointId]);
 
   const handleCreateEndpoint = async () => {
@@ -250,7 +298,7 @@ export function GuestLiveDashboard() {
     }
   };
 
-  const handleSelect = useCallback((id: string) => {
+  const handleSelect = useCallback((id: Id<"requests">) => {
     setSelectedId(id);
     setMobileDetail(true);
   }, []);
@@ -264,10 +312,10 @@ export function GuestLiveDashboard() {
   }, []);
 
   const handleJumpToNew = useCallback(() => {
-    if (!requests || requests.length === 0) return;
-    setSelectedId(requests[0]._id);
+    if (!summaries || summaries.length === 0) return;
+    setSelectedId(summaries[0]._id);
     setNewCount(0);
-  }, [requests]);
+  }, [summaries]);
 
   const endpointUrl = endpointSlug ? getWebhookUrl(endpointSlug) : null;
 
@@ -318,8 +366,7 @@ export function GuestLiveDashboard() {
     );
   }
 
-  const selectedRequest = filteredRequests.find((request) => request._id === selectedId) ?? null;
-  const hasRequests = Boolean(requests && requests.length > 0);
+  const hasRequests = Boolean(summaries && summaries.length > 0);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -337,7 +384,7 @@ export function GuestLiveDashboard() {
             <div className="hidden md:flex flex-1 overflow-hidden">
               <div className="w-80 shrink-0 border-r-2 border-foreground overflow-hidden">
                 <RequestList
-                  requests={filteredRequests}
+                  requests={filteredSummaries}
                   selectedId={selectedId}
                   onSelect={handleSelect}
                   liveMode={liveMode}
@@ -346,18 +393,18 @@ export function GuestLiveDashboard() {
                   onToggleSort={handleToggleSort}
                   newCount={newCount}
                   onJumpToNew={handleJumpToNew}
-                  totalCount={requests?.length}
+                  totalCount={requestCount}
                   methodFilter={methodFilter}
                   onMethodFilterChange={setMethodFilter}
-                  searchQuery={searchQuery}
-                  onSearchQueryChange={setSearchQuery}
+                  searchQuery={searchInput}
+                  onSearchQueryChange={setSearchInput}
                 />
               </div>
 
               <div className="flex-1 overflow-hidden">
                 <ErrorBoundary resetKey={selectedId ?? undefined}>
-                  {selectedRequest ? (
-                    <RequestDetail request={selectedRequest} />
+                  {displayDetail ? (
+                    <RequestDetail request={displayDetail} />
                   ) : (
                     <RequestDetailEmpty />
                   )}
@@ -366,7 +413,7 @@ export function GuestLiveDashboard() {
             </div>
 
             <div className="md:hidden flex-1 overflow-hidden flex flex-col">
-              {mobileDetail && selectedRequest ? (
+              {mobileDetail && displayDetail ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <button
                     onClick={() => setMobileDetail(false)}
@@ -376,13 +423,13 @@ export function GuestLiveDashboard() {
                   </button>
                   <div className="flex-1 overflow-hidden">
                     <ErrorBoundary resetKey={selectedId ?? undefined}>
-                      <RequestDetail request={selectedRequest} />
+                      <RequestDetail request={displayDetail} />
                     </ErrorBoundary>
                   </div>
                 </div>
               ) : (
                 <RequestList
-                  requests={filteredRequests}
+                  requests={filteredSummaries}
                   selectedId={selectedId}
                   onSelect={handleSelect}
                   liveMode={liveMode}
@@ -391,11 +438,11 @@ export function GuestLiveDashboard() {
                   onToggleSort={handleToggleSort}
                   newCount={newCount}
                   onJumpToNew={handleJumpToNew}
-                  totalCount={requests?.length}
+                  totalCount={requestCount}
                   methodFilter={methodFilter}
                   onMethodFilterChange={setMethodFilter}
-                  searchQuery={searchQuery}
-                  onSearchQueryChange={setSearchQuery}
+                  searchQuery={searchInput}
+                  onSearchQueryChange={setSearchInput}
                 />
               )}
             </div>

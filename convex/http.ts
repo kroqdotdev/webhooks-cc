@@ -437,6 +437,10 @@ http.route({
       });
     }
 
+    // Compute timestamp bounds once for the entire batch
+    const now = Date.now();
+    const fiveMinutesAgo = now - 300000;
+
     // Validate each request in the batch (same validation as single /capture)
     for (const req of body.requests) {
       // Validate HTTP method
@@ -490,16 +494,14 @@ http.route({
         });
       }
 
-      // Validate receivedAt timestamp (must be within last 60 seconds to prevent backdating)
+      // Validate receivedAt timestamp (must be within last 5 minutes to prevent backdating)
       if (typeof req.receivedAt !== "number") {
         return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
       }
-      const now = Date.now();
-      const sixtySecondsAgo = now - 60000;
-      if (req.receivedAt < sixtySecondsAgo || req.receivedAt > now + 5000) {
+      if (req.receivedAt < fiveMinutesAgo || req.receivedAt > now + 5000) {
         return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
@@ -661,12 +663,19 @@ http.route({
       });
     }
 
-    const result = await ctx.runMutation(internal.apiKeys.validate, { key: body.apiKey });
+    const result = await ctx.runQuery(internal.apiKeys.validateQuery, { key: body.apiKey });
     if (!result) {
       return new Response(JSON.stringify({ error: "invalid_api_key" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // Throttle lastUsedAt writes: only update if >5 minutes stale.
+    // Fire-and-forget via scheduler so it never blocks the validation response.
+    const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
+    if (!result.lastUsedAt || Date.now() - result.lastUsedAt > LAST_USED_THROTTLE_MS) {
+      await ctx.scheduler.runAfter(0, internal.apiKeys.updateLastUsed, { apiKeyId: result.apiKeyId });
     }
 
     return new Response(JSON.stringify({ userId: result.userId }), {

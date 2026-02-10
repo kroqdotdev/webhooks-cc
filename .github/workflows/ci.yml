@@ -119,6 +119,77 @@ jobs:
         run: go test -v -race ./...
         working-directory: apps/${{ matrix.component }}
 
+  build-rust:
+    name: Build Rust Receiver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/receiver-rs/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/receiver-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build
+        working-directory: apps/receiver-rs
+
+  test-rust:
+    name: Test Rust Receiver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/receiver-rs/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/receiver-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test --verbose
+        working-directory: apps/receiver-rs
+
+  lint-rust:
+    name: Lint Rust Receiver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/receiver-rs/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/receiver-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+        working-directory: apps/receiver-rs
+
   lint-go:
     name: Lint Go
     runs-on: ubuntu-latest
