@@ -97,7 +97,8 @@ func (m EndpointsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.nameInput.Cursor.BlinkCmd()
 		case key.Matches(msg, tui.Keys.Delete):
 			if len(m.endpoints) > 0 {
-				return m, m.deleteEndpoint(m.endpoints[m.cursor].Slug)
+				m.loading = true
+				return m, tea.Batch(m.spinner.Tick, m.deleteEndpoint(m.endpoints[m.cursor].Slug))
 			}
 		case key.Matches(msg, tui.Keys.Enter):
 			if len(m.endpoints) > 0 {
@@ -165,27 +166,12 @@ func (m EndpointsModel) updateCreating(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m EndpointsModel) loadEndpoints() tea.Cmd {
-	return func() tea.Msg {
-		eps, err := m.client.ListEndpointsWithContext(context.Background())
-		if err != nil {
-			return tui.EndpointsLoadedMsg{Err: err}
-		}
-		result := make([]tui.Endpoint, len(eps))
-		for i, ep := range eps {
-			result[i] = tui.Endpoint{
-				ID:   ep.ID,
-				Slug: ep.Slug,
-				Name: ep.Name,
-				URL:  ep.URL,
-			}
-		}
-		return tui.EndpointsLoadedMsg{Endpoints: result}
-	}
+	return loadEndpointsCmd(m.client)
 }
 
 func (m EndpointsModel) createEndpoint(name string) tea.Cmd {
 	return func() tea.Msg {
-		ep, err := m.client.CreateEndpointWithContext(context.Background(), name)
+		ep, err := m.client.CreateEndpointWithContext(context.Background(), name, false)
 		if err != nil {
 			return tui.EndpointCreatedMsg{Err: err}
 		}
@@ -199,9 +185,9 @@ func (m EndpointsModel) createEndpoint(name string) tea.Cmd {
 }
 
 func (m EndpointsModel) deleteEndpoint(slug string) tea.Cmd {
-	m.loading = true
+	client := m.client
 	return func() tea.Msg {
-		err := m.client.DeleteEndpointWithContext(context.Background(), slug)
+		err := client.DeleteEndpointWithContext(context.Background(), slug)
 		return tui.EndpointDeletedMsg{Slug: slug, Err: err}
 	}
 }

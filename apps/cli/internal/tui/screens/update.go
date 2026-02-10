@@ -76,7 +76,9 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Available {
 			m.state = updAvailable
-			m.release = msg.Release.(*update.Release)
+			if rel, ok := msg.Release.(*update.Release); ok {
+				m.release = rel
+			}
 			m.newVer = msg.Version
 		} else {
 			m.state = updCurrent

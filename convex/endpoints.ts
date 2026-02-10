@@ -342,8 +342,12 @@ export const getBySlugForUser = internalQuery({
 });
 
 export const createForUser = internalMutation({
-  args: { userId: v.id("users"), name: v.optional(v.string()) },
-  handler: async (ctx, { userId, name }) => {
+  args: {
+    userId: v.id("users"),
+    name: v.optional(v.string()),
+    isEphemeral: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { userId, name, isEphemeral }) => {
     if (name !== undefined) {
       const trimmedName = name.trim();
       if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
@@ -353,12 +357,14 @@ export const createForUser = internalMutation({
 
     const slug = await generateUniqueSlug(ctx.db);
     const createdAt = Date.now();
+    const ephemeral = isEphemeral ?? false;
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,
       slug,
       name: name?.trim(),
-      isEphemeral: false,
+      isEphemeral: ephemeral,
+      expiresAt: ephemeral ? Date.now() + EPHEMERAL_TTL_MS : undefined,
       createdAt,
     });
 

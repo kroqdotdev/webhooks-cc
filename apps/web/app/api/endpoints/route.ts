@@ -31,9 +31,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Name must be between 1 and 100 characters" }, { status: 400 });
   }
 
+  const isEphemeral = body.isEphemeral === true;
+
   const resp = await convexCliRequest("/cli/endpoints", {
     method: "POST",
-    body: { userId: auth.userId, name },
+    body: { userId: auth.userId, name, isEphemeral },
   });
 
   if (!resp.ok) return resp;

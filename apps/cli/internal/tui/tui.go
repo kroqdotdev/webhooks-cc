@@ -9,9 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// SSESession is exported for use by screens
-type SSESession = sseSession
-
 type App struct {
 	client  *api.Client
 	version string

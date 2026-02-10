@@ -116,12 +116,13 @@ type UpdateApplyMsg struct {
 
 // SSE helpers
 
-type sseSession struct {
+// SSESession manages a Server-Sent Events connection for real-time webhook streaming.
+type SSESession struct {
 	cancel context.CancelFunc
 	Ch     chan *types.CapturedRequest
 }
 
-func StartSSE(s *stream.Stream) (*sseSession, tea.Cmd) {
+func StartSSE(s *stream.Stream) (*SSESession, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan *types.CapturedRequest, 32)
 
@@ -135,11 +136,11 @@ func StartSSE(s *stream.Stream) (*sseSession, tea.Cmd) {
 		})
 	}()
 
-	session := &sseSession{cancel: cancel, Ch: ch}
+	session := &SSESession{cancel: cancel, Ch: ch}
 	return session, waitForSSE(ch)
 }
 
-func (s *sseSession) Stop() {
+func (s *SSESession) Stop() {
 	s.cancel()
 }
 

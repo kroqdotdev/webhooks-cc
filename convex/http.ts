@@ -675,7 +675,9 @@ http.route({
     // Fire-and-forget via scheduler so it never blocks the validation response.
     const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
     if (!result.lastUsedAt || Date.now() - result.lastUsedAt > LAST_USED_THROTTLE_MS) {
-      await ctx.scheduler.runAfter(0, internal.apiKeys.updateLastUsed, { apiKeyId: result.apiKeyId });
+      await ctx.scheduler.runAfter(0, internal.apiKeys.updateLastUsed, {
+        apiKeyId: result.apiKeyId,
+      });
     }
 
     return new Response(JSON.stringify({ userId: result.userId }), {
@@ -713,6 +715,7 @@ http.route({
       const result = await ctx.runMutation(internal.endpoints.createForUser, {
         userId: body.userId,
         name: body.name,
+        isEphemeral: body.isEphemeral === true,
       });
       return new Response(JSON.stringify(result), {
         headers: { "Content-Type": "application/json" },

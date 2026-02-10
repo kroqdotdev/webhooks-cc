@@ -398,7 +398,7 @@ func tunnelCmd() *cobra.Command {
 			slug := endpointSlug
 			createdEndpoint := false
 			if slug == "" {
-				endpoint, err := client.CreateEndpointWithContext(ctx, fmt.Sprintf("tunnel-%s", randomSuffix(6)))
+				endpoint, err := client.CreateEndpointWithContext(ctx, fmt.Sprintf("tunnel-%s", randomSuffix(6)), ephemeral)
 				if err != nil {
 					return fmt.Errorf("failed to create endpoint: %w", err)
 				}

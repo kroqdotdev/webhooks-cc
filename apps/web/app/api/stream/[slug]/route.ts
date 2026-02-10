@@ -1,8 +1,11 @@
 import { authenticateRequest, convexCliRequest } from "@/lib/api-auth";
+import { publicEnv } from "@/lib/env";
+import { ConvexClient } from "convex/browser";
+import { api } from "@convex/_generated/api";
+import { Id } from "@convex/_generated/dataModel";
 
 export const dynamic = "force-dynamic";
 
-const POLL_INTERVAL_MS = 500;
 const KEEPALIVE_INTERVAL_MS = 30_000;
 const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -12,7 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
   const { slug } = await params;
 
-  // Verify endpoint ownership
+  // Verify endpoint ownership via Convex HTTP action (one-time check)
   const endpointResp = await convexCliRequest("/cli/endpoint-by-slug", {
     params: { slug, userId: auth.userId },
   });
@@ -30,14 +33,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   ) {
     return Response.json({ error: "Invalid endpoint data" }, { status: 502 });
   }
-  const endpointId = (endpoint as { _id: string })._id;
+  const endpointId = (endpoint as { _id: string })._id as Id<"endpoints">;
+  const userId = auth.userId;
 
   const encoder = new TextEncoder();
-  let lastTimestamp = Date.now();
   const connectionStart = Date.now();
 
   const stream = new ReadableStream({
-    async start(controller) {
+    start(controller) {
       // Send initial connected event
       controller.enqueue(
         encoder.encode(`event: connected\ndata: ${JSON.stringify({ slug, endpointId })}\n\n`)
@@ -45,19 +48,39 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
       const abortSignal = request.signal;
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+      let durationTimer: ReturnType<typeof setTimeout> | null = null;
+      let convex: ConvexClient | null = null;
+      let currentUnsubscribe: (() => void) | null = null;
 
       const cleanup = () => {
-        if (keepaliveTimer) clearInterval(keepaliveTimer);
+        if (keepaliveTimer) {
+          clearInterval(keepaliveTimer);
+          keepaliveTimer = null;
+        }
+        if (durationTimer) {
+          clearTimeout(durationTimer);
+          durationTimer = null;
+        }
+        if (currentUnsubscribe) {
+          currentUnsubscribe();
+          currentUnsubscribe = null;
+        }
+        if (convex) {
+          convex.close().catch(() => {});
+          convex = null;
+        }
       };
 
-      abortSignal.addEventListener("abort", () => {
+      const closeStream = () => {
         cleanup();
         try {
           controller.close();
         } catch {
           // Stream may already be closed
         }
-      });
+      };
+
+      abortSignal.addEventListener("abort", closeStream);
 
       // Send keepalive pings
       keepaliveTimer = setInterval(() => {
@@ -65,37 +88,49 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
         } catch {
-          cleanup();
+          closeStream();
         }
       }, KEEPALIVE_INTERVAL_MS);
 
-      // Poll for new requests
-      const poll = async () => {
-        while (!abortSignal.aborted) {
-          // Enforce max connection duration
-          if (Date.now() - connectionStart > MAX_CONNECTION_DURATION_MS) {
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  `event: timeout\ndata: ${JSON.stringify({ reason: "max_duration" })}\n\n`
-                )
-              );
-            } catch {
-              // Stream may already be closed by abort
-            }
-            break;
-          }
+      // Enforce max connection duration
+      const remainingMs = MAX_CONNECTION_DURATION_MS - (Date.now() - connectionStart);
+      durationTimer = setTimeout(() => {
+        if (abortSignal.aborted) return;
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `event: timeout\ndata: ${JSON.stringify({ reason: "max_duration" })}\n\n`
+            )
+          );
+        } catch {
+          // Stream may already be closed
+        }
+        closeStream();
+      }, remainingMs);
 
-          try {
-            const resp = await convexCliRequest("/cli/requests-since", {
-              params: {
-                endpointId,
-                userId: auth.userId,
-                afterTimestamp: String(lastTimestamp),
-              },
-            });
+      // Set up Convex real-time subscription
+      try {
+        convex = new ConvexClient(publicEnv().NEXT_PUBLIC_CONVEX_URL);
+      } catch (err) {
+        console.error("SSE: failed to create ConvexClient:", err);
+        closeStream();
+        return;
+      }
 
-            if (resp.status === 404) {
+      let afterTimestamp = Date.now();
+      const sentIds = new Set<string>();
+
+      const subscribe = () => {
+        if (!convex || abortSignal.aborted) return;
+
+        currentUnsubscribe = convex.onUpdate(
+          api.requests.listNewForStream,
+          { endpointId, afterTimestamp, userId },
+          (results) => {
+            if (abortSignal.aborted) return;
+
+            // null means endpoint was deleted
+            if (results === null) {
               try {
                 controller.enqueue(
                   encoder.encode(`event: endpoint_deleted\ndata: ${JSON.stringify({ slug })}\n\n`)
@@ -103,58 +138,44 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
               } catch {
                 // Stream may already be closed
               }
-              break;
+              closeStream();
+              return;
             }
 
-            if (resp.ok) {
-              const requests = await resp.json();
-              if (Array.isArray(requests)) {
-                for (const req of requests) {
-                  if (abortSignal.aborted) break;
-                  controller.enqueue(
-                    encoder.encode(`event: request\ndata: ${JSON.stringify(req)}\n\n`)
-                  );
-                  if (req.receivedAt > lastTimestamp) {
-                    lastTimestamp = req.receivedAt;
-                  }
-                }
+            // Send only new requests (subscription returns cumulative results)
+            for (const req of results) {
+              if (sentIds.has(req._id)) continue;
+              sentIds.add(req._id);
+              try {
+                controller.enqueue(
+                  encoder.encode(`event: request\ndata: ${JSON.stringify(req)}\n\n`)
+                );
+              } catch {
+                closeStream();
+                return;
+              }
+              if (req.receivedAt > afterTimestamp) {
+                afterTimestamp = req.receivedAt;
               }
             }
-          } catch {
-            // Connection error during polling - continue
+
+            // If we hit the take(100) limit, re-subscribe with advanced timestamp
+            if (results.length >= 100) {
+              if (currentUnsubscribe) {
+                currentUnsubscribe();
+                currentUnsubscribe = null;
+              }
+              sentIds.clear();
+              subscribe();
+            }
+          },
+          (err) => {
+            console.error("SSE subscription error:", err);
           }
-
-          // Wait before next poll
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, POLL_INTERVAL_MS);
-            abortSignal.addEventListener(
-              "abort",
-              () => {
-                clearTimeout(timer);
-                resolve();
-              },
-              { once: true }
-            );
-          });
-        }
-
-        cleanup();
-        try {
-          controller.close();
-        } catch {
-          // Already closed
-        }
+        );
       };
 
-      poll().catch((err) => {
-        console.error("SSE poll loop error:", err);
-        cleanup();
-        try {
-          controller.close();
-        } catch {
-          // Already closed
-        }
-      });
+      subscribe();
     },
   });
 

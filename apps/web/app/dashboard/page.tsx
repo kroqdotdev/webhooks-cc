@@ -57,16 +57,11 @@ export default function DashboardPage() {
   const needsFullList = debouncedSearch.length > 0 || pendingExport !== null;
   const fullRequests = useQuery(
     api.requests.list,
-    needsFullList && currentEndpoint
-      ? { endpointId: currentEndpoint._id, limit: 50 }
-      : "skip"
+    needsFullList && currentEndpoint ? { endpointId: currentEndpoint._id, limit: 50 } : "skip"
   );
 
   // Full detail for selected request
-  const selectedRequest = useQuery(
-    api.requests.get,
-    selectedId ? { id: selectedId } : "skip"
-  );
+  const selectedRequest = useQuery(api.requests.get, selectedId ? { id: selectedId } : "skip");
 
   // Request count from the endpoint doc (denormalized)
   const requestCount = currentEndpoint?.requestCount ?? 0;
@@ -90,21 +85,26 @@ export default function DashboardPage() {
   }, [selectedRequest]);
 
   // Filter full requests for export using a specific filter snapshot
-  const applyExportFilter = useCallback((
-    requests: NonNullable<typeof fullRequests>,
-    filters: { methodFilter: string; searchInput: string },
-  ) => {
-    return requests.filter((r) => {
-      if (filters.methodFilter !== "ALL" && r.method !== filters.methodFilter) return false;
-      if (filters.searchInput) {
-        const q = filters.searchInput.toLowerCase();
-        return r.path.toLowerCase().includes(q)
-          || (r.body?.toLowerCase().includes(q) ?? false)
-          || r._id.toLowerCase().includes(q);
-      }
-      return true;
-    });
-  }, []);
+  const applyExportFilter = useCallback(
+    (
+      requests: NonNullable<typeof fullRequests>,
+      filters: { methodFilter: string; searchInput: string }
+    ) => {
+      return requests.filter((r) => {
+        if (filters.methodFilter !== "ALL" && r.method !== filters.methodFilter) return false;
+        if (filters.searchInput) {
+          const q = filters.searchInput.toLowerCase();
+          return (
+            r.path.toLowerCase().includes(q) ||
+            (r.body?.toLowerCase().includes(q) ?? false) ||
+            r._id.toLowerCase().includes(q)
+          );
+        }
+        return true;
+      });
+    },
+    []
+  );
 
   // Handle export when full data arrives (uses snapshotted filters)
   useEffect(() => {
@@ -133,12 +133,14 @@ export default function DashboardPage() {
           const matchesId = r._id.toLowerCase().includes(q);
           return matchesPath || matchesBody || matchesId;
         })
-        .map((r): RequestSummary => ({
-          _id: r._id,
-          _creationTime: r._creationTime,
-          method: r.method,
-          receivedAt: r.receivedAt,
-        }));
+        .map(
+          (r): RequestSummary => ({
+            _id: r._id,
+            _creationTime: r._creationTime,
+            method: r.method,
+            receivedAt: r.receivedAt,
+          })
+        );
     }
     if (!summaries) return [];
     if (methodFilter === "ALL") return summaries;

@@ -250,7 +250,7 @@ func FormatRequest(req *types.CapturedRequest) string {
 		t,
 		colorMethod(req.Method),
 		req.Path,
-		formatBytes(req.Size),
+		FormatBytes(req.Size),
 	)
 }
 
@@ -272,8 +272,8 @@ func colorMethod(method string) string {
 	return fmt.Sprintf("%s%s\033[0m", color, method)
 }
 
-// formatBytes converts a byte count to a human-readable string (e.g., "1.5kb").
-func formatBytes(size int) string {
+// FormatBytes converts a byte count to a human-readable string (e.g., "1.5kb").
+func FormatBytes(size int) string {
 	switch {
 	case size < 1024:
 		return fmt.Sprintf("%db", size)

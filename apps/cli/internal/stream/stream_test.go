@@ -202,7 +202,7 @@ func TestFormatRequest(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// formatBytes
+// FormatBytes
 // ---------------------------------------------------------------------------
 
 func TestFormatBytes(t *testing.T) {
@@ -222,9 +222,9 @@ func TestFormatBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%d", tt.size), func(t *testing.T) {
-			got := formatBytes(tt.size)
+			got := FormatBytes(tt.size)
 			if got != tt.want {
-				t.Errorf("formatBytes(%d) = %q, want %q", tt.size, got, tt.want)
+				t.Errorf("FormatBytes(%d) = %q, want %q", tt.size, got, tt.want)
 			}
 		})
 	}

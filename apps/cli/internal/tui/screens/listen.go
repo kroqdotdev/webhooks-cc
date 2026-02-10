@@ -1,7 +1,6 @@
 package screens
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -158,22 +157,7 @@ func (m *ListenModel) cleanup() {
 }
 
 func (m ListenModel) loadEndpoints() tea.Cmd {
-	return func() tea.Msg {
-		eps, err := m.client.ListEndpointsWithContext(context.Background())
-		if err != nil {
-			return tui.EndpointsLoadedMsg{Err: err}
-		}
-		result := make([]tui.Endpoint, len(eps))
-		for i, ep := range eps {
-			result[i] = tui.Endpoint{
-				ID:   ep.ID,
-				Slug: ep.Slug,
-				Name: ep.Name,
-				URL:  ep.URL,
-			}
-		}
-		return tui.EndpointsLoadedMsg{Endpoints: result}
-	}
+	return loadEndpointsCmd(m.client)
 }
 
 func (m *ListenModel) startStream() tea.Cmd {
@@ -260,7 +244,7 @@ func (m ListenModel) View() string {
 					tui.Muted.Render(ts),
 					method,
 					req.Path,
-					tui.Muted.Render(formatBytes(req.Size)),
+					tui.Muted.Render(stream.FormatBytes(req.Size)),
 				)
 			}
 		}
@@ -290,12 +274,3 @@ func (m ListenModel) View() string {
 	return content + fmt.Sprintf("%*s", gap, "\n") + statusBar
 }
 
-func formatBytes(size int) string {
-	if size < 1024 {
-		return fmt.Sprintf("%db", size)
-	}
-	if size < 1024*1024 {
-		return fmt.Sprintf("%.1fkb", float64(size)/1024)
-	}
-	return fmt.Sprintf("%.1fmb", float64(size)/(1024*1024))
-}

@@ -2,6 +2,8 @@ package screens
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -55,7 +57,15 @@ func NewTunnel(client *api.Client) TunnelModel {
 	ti := textinput.New()
 	ti.Placeholder = "8080"
 	ti.Focus()
-	ti.CharLimit = 10
+	ti.CharLimit = 5
+	ti.Validate = func(s string) error {
+		for _, r := range s {
+			if r < '0' || r > '9' {
+				return fmt.Errorf("digits only")
+			}
+		}
+		return nil
+	}
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -137,8 +147,9 @@ func (m TunnelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.slug = msg.Endpoint.Slug
 		m.webhookURL = msg.Endpoint.URL
 		m.epCreated = true
+		m.state = tunnelActive
 		m.tun = tunnel.New(m.slug, m.targetURL)
-		return m, m.connectStream()
+		return m, tea.Batch(m.spinner.Tick, m.connectStream())
 
 	case tui.RequestReceivedMsg:
 		m.state = tunnelActive
@@ -191,7 +202,8 @@ func (m *TunnelModel) cleanup() {
 
 func (m *TunnelModel) createAndConnect() tea.Cmd {
 	return func() tea.Msg {
-		ep, err := m.client.CreateEndpointWithContext(context.Background(), "")
+		name := fmt.Sprintf("tunnel-%s", tunnelRandomSuffix(6))
+		ep, err := m.client.CreateEndpointWithContext(context.Background(), name, true)
 		if err != nil {
 			return tui.EndpointCreatedMsg{Err: err}
 		}
@@ -202,6 +214,12 @@ func (m *TunnelModel) createAndConnect() tea.Cmd {
 			URL:  ep.URL,
 		}}
 	}
+}
+
+func tunnelRandomSuffix(n int) string {
+	b := make([]byte, (n+1)/2)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)[:n]
 }
 
 func (m *TunnelModel) connectStream() tea.Cmd {
