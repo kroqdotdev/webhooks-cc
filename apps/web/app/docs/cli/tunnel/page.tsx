@@ -15,6 +15,35 @@ export default function TunnelPage() {
       </p>
 
       <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Interactive mode</h2>
+        <p className="text-muted-foreground mb-4">
+          The fastest way to start tunneling is through the interactive TUI:
+        </p>
+        <pre className="neo-code text-sm mb-4">{`whk`}</pre>
+        <p className="text-muted-foreground mb-4">
+          Select <span className="font-bold text-foreground">Tunnel</span> from the menu, enter your
+          local port, and the TUI connects automatically. Incoming requests appear in a live stream
+          showing:
+        </p>
+        <ul className="list-disc list-inside space-y-1.5 text-muted-foreground mb-4">
+          <li>Timestamp and color-coded HTTP method</li>
+          <li>Request path</li>
+          <li>Forward result with status code and latency</li>
+        </ul>
+        <p className="text-muted-foreground">
+          Press Enter on any request to open the detail viewer with three tabs:{" "}
+          <span className="font-bold text-foreground">Overview</span> (method, path, IP, size),{" "}
+          <span className="font-bold text-foreground">Headers</span>, and{" "}
+          <span className="font-bold text-foreground">Body</span> (with JSON pretty-printing). Press
+          Esc to go back.
+        </p>
+      </section>
+
+      <section className="mb-10 border-t-2 border-foreground pt-8">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-6">
+          Subcommand mode
+        </p>
+
         <h2 className="text-xl font-bold mb-3">Create and forward</h2>
         <pre className="neo-code text-sm mb-4">{`whk tunnel 3000`}</pre>
         <p className="text-muted-foreground">
@@ -84,6 +113,11 @@ export default function TunnelPage() {
           <li>
             Use <code className="font-mono font-bold">-e</code> for throwaway sessions that clean up
             on exit.
+          </li>
+          <li>
+            Pass <code className="font-mono font-bold">--nogui</code> or set{" "}
+            <code className="font-mono font-bold">WHK_NOGUI=1</code> to disable the TUI and use
+            plain text output.
           </li>
         </ul>
       </section>

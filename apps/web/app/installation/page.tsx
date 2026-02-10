@@ -118,6 +118,14 @@ export default function InstallationPage() {
 
                 <section>
                   <h2 className="text-lg font-bold mb-3">Get started</h2>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Run <code className="font-mono font-bold">whk</code> to open the interactive TUI
+                    with tunneling, live request streaming, and endpoint management:
+                  </p>
+                  <CodeBlock>{`whk`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-4 mb-3">
+                    Or use subcommands directly:
+                  </p>
                   <CodeBlock copyText="whk auth login">{`whk auth login      # authenticate via browser
 whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
                   <p className="text-sm text-muted-foreground mt-2">
