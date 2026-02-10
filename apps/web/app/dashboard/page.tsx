@@ -72,15 +72,6 @@ export default function DashboardPage() {
   const requestCount = currentEndpoint?.requestCount ?? 0;
 
   // Cache last resolved request value (including null for deleted requests).
-  // During the loading state (undefined), displayRequest shows this cached value
-  // to prevent a blank flash while the new request loads.
-  const lastLoadedRequest = useRef<typeof selectedRequest>(undefined);
-  useEffect(() => {
-    if (selectedRequest !== undefined) {
-      lastLoadedRequest.current = selectedRequest;
-    }
-  }, [selectedRequest]);
-
   // Clear stale selectedId when the request no longer exists (e.g. cleaned up)
   useEffect(() => {
     if (selectedRequest === null && selectedId) {
@@ -88,8 +79,15 @@ export default function DashboardPage() {
     }
   }, [selectedRequest, selectedId]);
 
-  // Show previous request while new one loads (prevents flicker)
-  const displayRequest = selectedRequest !== undefined ? selectedRequest : lastLoadedRequest.current;
+  // Show previous request while new one loads (prevents flicker).
+  // useMemo keeps the last non-undefined value so we avoid a blank flash
+  // during the loading gap when switching selections.
+  const [displayRequest, setDisplayRequest] = useState(selectedRequest);
+  useEffect(() => {
+    if (selectedRequest !== undefined) {
+      setDisplayRequest(selectedRequest);
+    }
+  }, [selectedRequest]);
 
   // Filter full requests for export using a specific filter snapshot
   const applyExportFilter = useCallback((

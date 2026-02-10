@@ -140,14 +140,14 @@ impl CircuitBreaker {
             .invoke_async(&mut conn)
             .await;
 
-        if let Ok(count) = result {
-            if count >= THRESHOLD {
-                tracing::warn!(
-                    failures = count,
-                    "circuit breaker opened after {} consecutive failures",
-                    count
-                );
-            }
+        if let Ok(count) = result
+            && count >= THRESHOLD
+        {
+            tracing::warn!(
+                failures = count,
+                "circuit breaker opened after {} consecutive failures",
+                count
+            );
         }
     }
 

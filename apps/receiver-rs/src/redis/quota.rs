@@ -169,11 +169,11 @@ impl RedisState {
 
         let _: Result<(), _> = conn.del(&slug_key).await;
 
-        if let Some(uid) = user_id {
-            if !uid.is_empty() {
-                let user_key = format!("{USER_PREFIX}{uid}");
-                let _: Result<(), _> = conn.del(&user_key).await;
-            }
+        if let Some(uid) = user_id
+            && !uid.is_empty()
+        {
+            let user_key = format!("{USER_PREFIX}{uid}");
+            let _: Result<(), _> = conn.del(&user_key).await;
         }
     }
 }
