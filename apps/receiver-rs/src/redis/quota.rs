@@ -22,7 +22,7 @@ pub enum QuotaResult {
     Allowed,
     /// Quota exceeded.
     Exceeded,
-    /// No cached quota data — caller should warm the cache and fail-open.
+    /// No cached quota data — caller should block-fetch from Convex and re-check.
     NotFound,
 }
 
@@ -65,7 +65,7 @@ impl RedisState {
             Ok(1) => QuotaResult::Allowed,
             Ok(0) => QuotaResult::Exceeded,
             Ok(-1) => QuotaResult::NotFound,
-            _ => QuotaResult::NotFound, // Redis error -> fail-open via NotFound
+            _ => QuotaResult::NotFound, // Redis error -> triggers blocking Convex fetch
         }
     }
 

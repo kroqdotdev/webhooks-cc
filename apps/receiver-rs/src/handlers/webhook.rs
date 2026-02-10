@@ -91,8 +91,8 @@ pub async fn handle_webhook(
         }
         None => {
             // Cache miss: blocking fetch so we know the endpoint type.
-            // Warm quota in parallel to reduce the chance of a second blocking
-            // fetch at step 3 (for guest-ephemeral endpoints).
+            // Warm quota in parallel to reduce the chance of a blocking
+            // fetch at step 3.
             let convex_q = state.convex.clone();
             let slug_q = slug.clone();
             tokio::spawn(async move {
@@ -127,12 +127,9 @@ pub async fn handle_webhook(
             .into_response();
     }
 
-    // Guest ephemeral endpoints have a non-replenishable 50-request lifetime cap.
-    // Unlike user endpoints (which fail-open on cache miss), we block on quota
-    // fetch to enforce the limit strictly and prevent unbounded free usage.
-    let is_guest_ephemeral = endpoint.is_ephemeral && endpoint.user_id.is_none();
-
-    // 3. Atomic quota check via Redis Lua script (per-user when userId present)
+    // 3. Atomic quota check via Redis Lua script (per-user when userId present).
+    // On cache miss, block to fetch fresh quota from Convex so that all endpoints
+    // (guest ephemeral, user ephemeral, and persistent) are strictly enforced.
     match state.redis.check_quota(&slug, endpoint.user_id.as_deref()).await {
         QuotaResult::Allowed => {}
         QuotaResult::Exceeded => {
@@ -142,10 +139,9 @@ pub async fn handle_webhook(
             )
                 .into_response();
         }
-        QuotaResult::NotFound if is_guest_ephemeral => {
-            // Blocking fetch for guest ephemeral endpoints to enforce quota exactly
+        QuotaResult::NotFound => {
             if let Err(e) = state.convex.fetch_and_cache_quota(&slug).await {
-                tracing::warn!(slug, error = %e, "blocking quota fetch failed for ephemeral endpoint");
+                tracing::warn!(slug, error = %e, "blocking quota fetch failed");
             }
             // Re-check quota after warming
             match state.redis.check_quota(&slug, endpoint.user_id.as_deref()).await {
@@ -158,19 +154,9 @@ pub async fn handle_webhook(
                         .into_response();
                 }
                 QuotaResult::NotFound => {
-                    // Still no quota data after fetch — fail-open
+                    tracing::warn!(slug, "quota still not found after blocking fetch — failing open");
                 }
             }
-        }
-        QuotaResult::NotFound => {
-            // User endpoints: spawn background warm, fail-open
-            let convex = state.convex.clone();
-            let slug_clone = slug.clone();
-            tokio::spawn(async move {
-                if let Err(e) = convex.fetch_and_cache_quota(&slug_clone).await {
-                    tracing::warn!(slug = slug_clone, error = %e, "background quota fetch failed");
-                }
-            });
         }
     }
 

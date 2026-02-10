@@ -306,6 +306,33 @@ describe("getQuota", () => {
     expect(result).toHaveProperty("needsPeriodStart", false);
   });
 
+  test("user-owned ephemeral endpoint uses user quota, not ephemeral cap", async () => {
+    const userId = await createFreeUser(t, {
+      requestsUsed: 50,
+      periodStart: Date.now(),
+      periodEnd: Date.now() + FREE_PERIOD_MS,
+    });
+    await createEndpoint(t, {
+      slug: "user-ephemeral",
+      userId,
+      isEphemeral: true,
+      expiresAt: Date.now() + 600000,
+      requestCount: 5,
+    });
+
+    const result = await t.query(internal.requests.getQuota, {
+      slug: "user-ephemeral",
+    });
+
+    // Should use user's requestLimit - requestsUsed (200 - 50 = 150),
+    // NOT the ephemeral 50-request cap (50 - 5 = 45)
+    expect(result).toHaveProperty("remaining", FREE_REQUEST_LIMIT - 50);
+    expect(result).toHaveProperty("limit", FREE_REQUEST_LIMIT);
+    expect(result).toHaveProperty("plan", "free");
+    expect(result).toHaveProperty("userId", userId);
+    expect(result).not.toHaveProperty("error");
+  });
+
   test("returns zero remaining when quota exhausted", async () => {
     const userId = await createProUser(t, {
       requestsUsed: PRO_REQUEST_LIMIT,

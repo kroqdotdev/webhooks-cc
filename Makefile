@@ -12,7 +12,7 @@ dev-convex:
 	pnpm convex dev
 
 dev-receiver:
-	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && cargo run
+	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
 
 dev-cli:
 	cd apps/cli && go run ./cmd/whk $(ARGS)
@@ -22,7 +22,7 @@ prod:
 	@echo "Deploying Convex and building..."
 	npx convex deploy
 	pnpm build
-	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
+	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 	@echo "Starting production servers..."
 	@make -j2 prod-web prod-receiver
 
@@ -35,11 +35,11 @@ prod-receiver:
 # Build
 build:
 	pnpm build
-	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
+	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 	cd apps/cli && go build -o ../../dist/whk ./cmd/whk
 
 build-receiver:
-	cd apps/receiver-rs && cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
+	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 
 build-cli:
 	cd apps/cli && goreleaser build --snapshot --clean
@@ -48,12 +48,12 @@ build-cli:
 test:
 	pnpm test
 	pnpm test:convex
-	cd apps/receiver-rs && cargo test
+	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo test
 	cd apps/cli && go test ./...
 
 # Lint
 lint:
-	cd apps/receiver-rs && cargo clippy -- -D warnings
+	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
 	cd apps/cli && golangci-lint run
 
 # Database
