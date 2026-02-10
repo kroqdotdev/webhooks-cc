@@ -21,8 +21,7 @@ webhooks.cc is a production webhook inspection and testing service. Users captur
 pnpm install              # Install all dependencies
 pnpm dev:convex           # Start Convex backend (run first, in separate terminal)
 pnpm dev:web              # Start Next.js web app
-make dev-receiver         # Start Rust webhook receiver (primary)
-make dev-receiver-go      # Start Go webhook receiver (legacy fallback)
+make dev-receiver         # Start Rust webhook receiver
 make dev-cli ARGS="..."   # Run CLI with arguments
 ```
 
@@ -47,10 +46,9 @@ Without this step the old binary continues running and code changes have no effe
 ### Test
 
 ```bash
-make test                 # Run all tests (TS + Go)
+make test                 # Run all tests (TS + Go + Rust)
 pnpm test:convex          # Convex backend tests only (vitest, 58+ cases)
 cd apps/receiver-rs && cargo test   # Rust receiver tests
-cd apps/receiver && go test ./...   # Go receiver tests (legacy)
 cd apps/cli && go test ./...        # CLI tests only
 ```
 
@@ -83,21 +81,19 @@ pnpm lint                 # ESLint across all packages
 pnpm format:check         # Prettier check
 pnpm format               # Prettier fix
 cd apps/receiver-rs && cargo clippy     # Rust receiver lint
-cd apps/receiver && golangci-lint run   # Go receiver lint (legacy)
 ```
 
 ## Architecture
 
 ### Service Layout
 
-| Service       | Port    | Stack                             | Purpose                                               |
-| ------------- | ------- | --------------------------------- | ----------------------------------------------------- |
-| Web app       | 3000    | Next.js 16, React 19, Tailwind v4 | Dashboard, docs, landing page                         |
-| Receiver      | 3001    | Rust (Axum, Tokio, Redis)         | Captures webhooks at `/w/{slug}`                      |
-| Receiver (Go) | 3001    | Go 1.25, Fiber v2                 | Legacy fallback at `apps/receiver/`                   |
-| Convex        | managed | Convex 1.31                       | Database, auth, real-time subscriptions, HTTP actions |
-| CLI           | n/a     | Go 1.25, Cobra                    | `whk tunnel`, `whk listen`, device auth               |
-| SDK           | n/a     | TypeScript, tsup                  | `@webhooks-cc/sdk` on npm                             |
+| Service  | Port    | Stack                             | Purpose                                               |
+| -------- | ------- | --------------------------------- | ----------------------------------------------------- |
+| Web app  | 3000    | Next.js 16, React 19, Tailwind v4 | Dashboard, docs, landing page                         |
+| Receiver | 3001    | Rust (Axum, Tokio, Redis)         | Captures webhooks at `/w/{slug}`                      |
+| Convex   | managed | Convex 1.31                       | Database, auth, real-time subscriptions, HTTP actions |
+| CLI      | n/a     | Go 1.25, Cobra                    | `whk tunnel`, `whk listen`, device auth               |
+| SDK      | n/a     | TypeScript, tsup                  | `@webhooks-cc/sdk` on npm                             |
 
 ### Directory Structure
 
@@ -105,8 +101,7 @@ cd apps/receiver && golangci-lint run   # Go receiver lint (legacy)
 webhooks-cc/
 ├── apps/
 │   ├── web/              # Next.js 16 App Router (Tailwind v4, shadcn/ui, Sentry)
-│   ├── receiver-rs/      # Rust Axum webhook receiver (primary)
-│   ├── receiver/         # Go Fiber webhook receiver (legacy fallback)
+│   ├── receiver-rs/      # Rust Axum webhook receiver
 │   ├── cli/              # Go Cobra CLI (cmd/whk + internal packages)
 │   └── go-shared/        # Shared Go types (types/types.go)
 ├── packages/
@@ -145,7 +140,7 @@ External service -> POST /w/{slug}/path
 
 ### Receiver Internals (Rust)
 
-The Rust receiver (`apps/receiver-rs/`) replaces the Go receiver for performance. Benchmarked at ~86k RPS (oha), verified 100% delivery accuracy at 3.2k sustained RPS.
+The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. Benchmarked at ~86k RPS (oha), verified 100% delivery accuracy at 3.2k sustained RPS.
 
 **Architecture:**
 
@@ -308,7 +303,7 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 ## CI/CD & Releases
 
-- **CI** (`.github/workflows/ci.yml`): lint, typecheck, build-web, build-go, test-go, lint-go
+- **CI** (`.github/workflows/ci.yml`): lint, typecheck, build-web, build-go, test-go, lint-go, build-rust, test-rust, lint-rust
 - **CLI release** (`cli-release.yml`): triggered by `v*` tags, GoReleaser builds for linux/darwin/windows (amd64/arm64), cosign keyless signing, Homebrew tap publish
 - **SDK publish** (`sdk-publish.yml`): triggered by `sdk-v*` tags, publishes to npm
 - **Security**: Dependabot, CodeQL analysis
@@ -317,7 +312,6 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 - Convex optional fields must be `undefined`, not `null` (except `v.null()` in validators)
 - HTTP actions served from `.convex.site`, not `.convex.cloud`
-- Go receiver (legacy) uses `c.UserContext()` not `c.Context()` to avoid Fiber context pool reuse bugs
 - Rust receiver requires Redis on localhost:6380 — start with `~/cc/utils/redis-server/start.sh`
 - Rust receiver flush uses at-most-once delivery — batches are dropped (not retried) on network/server errors to prevent duplicates
 - `generateUniqueSlug` helper uses `any` type for db parameter (Convex DB types are complex generics)
@@ -329,5 +323,5 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 Split license model:
 
-- **AGPL-3.0**: `apps/web`, `apps/receiver`, `apps/receiver-rs`, `convex/`
+- **AGPL-3.0**: `apps/web`, `apps/receiver-rs`, `convex/`
 - **MIT**: `apps/cli`, `packages/sdk`, `apps/go-shared`

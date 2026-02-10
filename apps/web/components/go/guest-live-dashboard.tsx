@@ -110,10 +110,7 @@ export function GuestLiveDashboard() {
   );
 
   // Full detail for selected request
-  const selectedDetail = useQuery(
-    api.requests.get,
-    selectedId ? { id: selectedId } : "skip"
-  );
+  const selectedDetail = useQuery(api.requests.get, selectedId ? { id: selectedId } : "skip");
 
   const requestCount = endpoint?.requestCount ?? 0;
   const remainingRequests = Math.max(0, REQUEST_LIMIT - requestCount);
@@ -221,12 +218,14 @@ export function GuestLiveDashboard() {
           const matchesId = r._id.toLowerCase().includes(q);
           return matchesPath || matchesBody || matchesId;
         })
-        .map((r): RequestSummary => ({
-          _id: r._id,
-          _creationTime: r._creationTime,
-          method: r.method,
-          receivedAt: r.receivedAt,
-        }));
+        .map(
+          (r): RequestSummary => ({
+            _id: r._id,
+            _creationTime: r._creationTime,
+            method: r.method,
+            receivedAt: r.receivedAt,
+          })
+        );
     }
     if (!summaries) return [];
     if (methodFilter === "ALL") return summaries;

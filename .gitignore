@@ -17,7 +17,6 @@ next-env.d.ts
 # Convex (generated types are committed for CI/contributors)
 
 # Go
-apps/receiver/receiver
 apps/cli/whk
 
 # IDE

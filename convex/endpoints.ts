@@ -248,7 +248,7 @@ export const update = mutation({
   },
 });
 
-/** Notify the Go receiver to evict its cached endpoint info for a slug. */
+/** Notify the receiver to evict its cached endpoint info for a slug. */
 export const invalidateReceiverCache = internalAction({
   args: { slug: v.string() },
   handler: async (_ctx, { slug }) => {

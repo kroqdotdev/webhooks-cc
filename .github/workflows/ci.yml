@@ -82,42 +82,36 @@ jobs:
           NEXT_PUBLIC_APP_URL: https://placeholder.example.com
 
   build-go:
-    name: Build Go
+    name: Build Go CLI
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        component: [cli, receiver]
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: apps/${{ matrix.component }}/go.mod
-          cache-dependency-path: apps/${{ matrix.component }}/go.sum
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
 
-      - name: Build ${{ matrix.component }}
+      - name: Build CLI
         run: go build ./...
-        working-directory: apps/${{ matrix.component }}
+        working-directory: apps/cli
 
   test-go:
-    name: Test Go
+    name: Test Go CLI
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        component: [cli, receiver]
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: apps/${{ matrix.component }}/go.mod
-          cache-dependency-path: apps/${{ matrix.component }}/go.sum
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
 
       - name: Run tests
         run: go test -v -race ./...
-        working-directory: apps/${{ matrix.component }}
+        working-directory: apps/cli
 
   build-rust:
     name: Build Rust Receiver
@@ -191,22 +185,19 @@ jobs:
         working-directory: apps/receiver-rs
 
   lint-go:
-    name: Lint Go
+    name: Lint Go CLI
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        component: [cli, receiver]
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: apps/${{ matrix.component }}/go.mod
-          cache-dependency-path: apps/${{ matrix.component }}/go.sum
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
-          working-directory: apps/${{ matrix.component }}
+          working-directory: apps/cli

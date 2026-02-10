@@ -14,7 +14,6 @@
     "test": "turbo test",
     "test:convex": "vitest run --config convex/vitest.config.ts",
     "typecheck": "turbo typecheck",
-    "receiver": "cd apps/receiver && go run .",
     "cli": "cd apps/cli && go run ./cmd/whk"
   },
   "devDependencies": {
