@@ -9,7 +9,7 @@ webhooks.cc is a production webhook inspection and testing service. Users captur
 **Production URLs:**
 
 - App: `https://webhooks.cc`
-- Webhook receiver: `https://in.webhooks.cc`
+- Webhook receiver: `https://go.webhooks.cc`
 - Convex API: `https://api.webhooks.cc` (.cloud)
 - Convex HTTP actions: `https://site.webhooks.cc` (.site)
 
