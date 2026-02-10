@@ -4,13 +4,14 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+Before you begin, install the following:
 
 - **Node.js** 20+ (with npm)
 - **pnpm** 8+ (`npm install -g pnpm`)
 - **Go** 1.25+
-- **rustc** 1.93.0+
-- **Make** (for running build commands)
+- **Rust** 1.85+ (edition 2024) — install via [rustup](https://rustup.rs)
+- **Redis** 7+ — the Rust receiver stores all state in Redis
+- **Make**
 
 You'll also need:
 
@@ -37,7 +38,7 @@ You'll also need:
    cp .env.example .env.local
    ```
 
-   Edit `.env.local` and fill in your Convex credentials.
+   Fill in your Convex credentials and Redis connection details (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`).
 
 4. **Start the Convex backend** (in a separate terminal)
 
@@ -51,7 +52,10 @@ You'll also need:
    pnpm dev:web
    ```
 
-6. **Start the Rust receiver** (in a separate terminal, requires Redis on localhost:6380)
+6. **Start the Rust receiver** (in a separate terminal)
+
+   The receiver reads Redis connection details from `.env.local`. Make sure Redis is running and reachable.
+
    ```bash
    make dev-receiver
    ```
@@ -70,6 +74,12 @@ You'll also need:
 - Run `go vet` to catch common issues
 - Follow standard Go conventions
 
+### Rust
+
+- Run `cargo fmt` before submitting
+- Run `cargo clippy` and fix all warnings
+- Follow existing patterns in `apps/receiver-rs/`
+
 ## Making Changes
 
 1. **Create a feature branch**
@@ -86,9 +96,10 @@ You'll also need:
 3. **Test your changes**
 
    ```bash
-   pnpm typecheck      # TypeScript type checking
-   make test           # Run all tests
-   make build          # Ensure everything builds
+   pnpm typecheck                        # TypeScript type checking
+   make test                             # Run all tests (TS + Go + Rust)
+   make build                            # Build everything including binaries
+   cd apps/receiver-rs && cargo clippy   # Lint Rust code
    ```
 
 4. **Submit a pull request**
@@ -140,12 +151,13 @@ docs(readme): update installation instructions
 webhooks-cc/
 ├── apps/
 │   ├── web/          # Next.js dashboard
-│   ├── receiver-rs/  # Rust webhook receiver
-│   └── cli/          # Go CLI tool
+│   ├── receiver-rs/  # Rust webhook receiver (Axum + Tokio + Redis)
+│   ├── cli/          # Go CLI with interactive TUI (Bubble Tea)
+│   └── go-shared/    # Shared Go types
 ├── packages/
 │   └── sdk/          # TypeScript SDK
 ├── convex/           # Convex backend functions
-└── docs/             # Documentation
+└── .github/          # CI/CD workflows
 ```
 
 ## Getting Help
