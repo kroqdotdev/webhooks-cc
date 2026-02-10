@@ -640,11 +640,10 @@ export const cleanupExpired = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
 
-    // Use index properly with range query for expiresAt
-    // Note: endpoints with expiresAt: undefined won't match q.lt("expiresAt", now)
+    // Use index range query: gte(0) excludes undefined (sorts before numbers in Convex)
     const expired = await ctx.db
       .query("endpoints")
-      .withIndex("by_expires", (q) => q.lt("expiresAt", now))
+      .withIndex("by_expires", (q) => q.gte("expiresAt", 0).lt("expiresAt", now))
       .take(100);
 
     let deletedEndpoints = 0;
@@ -653,9 +652,6 @@ export const cleanupExpired = internalMutation({
     for (const endpoint of expired) {
       // Safety: only delete ephemeral endpoints
       if (!endpoint.isEphemeral) {
-        console.warn(
-          `Skipping non-ephemeral endpoint ${endpoint._id} with expiresAt=${endpoint.expiresAt}`
-        );
         continue;
       }
 
