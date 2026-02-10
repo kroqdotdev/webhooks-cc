@@ -223,13 +223,22 @@ type Endpoint struct {
 
 // CreateEndpoint creates a new endpoint
 func (c *Client) CreateEndpoint(name string) (*Endpoint, error) {
-	return c.CreateEndpointWithContext(context.Background(), name)
+	return c.CreateEndpointWithContext(context.Background(), name, false)
 }
 
-// CreateEndpointWithContext creates a new endpoint with context for cancellation
-func (c *Client) CreateEndpointWithContext(ctx context.Context, name string) (*Endpoint, error) {
+// CreateEndpointWithContext creates a new endpoint with context for cancellation.
+// If ephemeral is true, the endpoint will auto-expire after the server-configured TTL.
+// If name is empty, the server will use the generated slug as the display name.
+func (c *Client) CreateEndpointWithContext(ctx context.Context, name string, ephemeral bool) (*Endpoint, error) {
 	var result Endpoint
-	err := c.request(ctx, "POST", "/api/endpoints", map[string]string{"name": name}, &result)
+	body := map[string]interface{}{}
+	if name != "" {
+		body["name"] = name
+	}
+	if ephemeral {
+		body["isEphemeral"] = true
+	}
+	err := c.request(ctx, "POST", "/api/endpoints", body, &result)
 	if err != nil {
 		return nil, err
 	}

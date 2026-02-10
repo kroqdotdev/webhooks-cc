@@ -715,6 +715,7 @@ http.route({
       const result = await ctx.runMutation(internal.endpoints.createForUser, {
         userId: body.userId,
         name: body.name,
+        isEphemeral: body.isEphemeral === true,
       });
       return new Response(JSON.stringify(result), {
         headers: { "Content-Type": "application/json" },
