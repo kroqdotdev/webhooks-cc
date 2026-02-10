@@ -211,10 +211,8 @@ export function GuestLiveDashboard() {
   }, [clearDemoEndpoint, endpoint, endpointSlug]);
 
   const filteredSummaries = useMemo(() => {
-    if (searchInput) {
-      // Search active but full data not loaded yet — show empty to prevent unfiltered flash
-      if (!fullRequests) return [];
-      const q = searchInput.toLowerCase();
+    if (debouncedSearch && fullRequests) {
+      const q = debouncedSearch.toLowerCase();
       return fullRequests
         .filter((r: Request) => {
           if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
@@ -233,7 +231,7 @@ export function GuestLiveDashboard() {
     if (!summaries) return [];
     if (methodFilter === "ALL") return summaries;
     return summaries.filter((r) => r.method === methodFilter);
-  }, [summaries, fullRequests, methodFilter, searchInput]);
+  }, [summaries, fullRequests, methodFilter, debouncedSearch]);
 
   useEffect(() => {
     if (!summaries) return;
@@ -243,16 +241,14 @@ export function GuestLiveDashboard() {
 
     if (prevRequestCount.current > 0 && diff > 0) {
       if (liveMode) {
-        if (filteredSummaries.length > 0) {
-          setSelectedId(filteredSummaries[0]._id);
-        }
+        setSelectedId(summaries[0]._id);
       } else {
         setNewCount((prev) => prev + diff);
       }
     }
 
     prevRequestCount.current = currentCount;
-  }, [summaries, liveMode, filteredSummaries]);
+  }, [summaries, liveMode]);
 
   useEffect(() => {
     if (summaries && summaries.length > 0 && !selectedId) {
@@ -302,8 +298,8 @@ export function GuestLiveDashboard() {
     }
   };
 
-  const handleSelect = useCallback((id: string) => {
-    setSelectedId(id as Id<"requests">);
+  const handleSelect = useCallback((id: Id<"requests">) => {
+    setSelectedId(id);
     setMobileDetail(true);
   }, []);
 

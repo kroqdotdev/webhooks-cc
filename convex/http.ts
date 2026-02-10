@@ -671,15 +671,11 @@ http.route({
       });
     }
 
-    // Throttle lastUsedAt writes: only update if >5 minutes stale
-    // Wrapped in try-catch so OCC failures don't reject a valid validation
+    // Throttle lastUsedAt writes: only update if >5 minutes stale.
+    // Fire-and-forget via scheduler so it never blocks the validation response.
     const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
     if (!result.lastUsedAt || Date.now() - result.lastUsedAt > LAST_USED_THROTTLE_MS) {
-      try {
-        await ctx.runMutation(internal.apiKeys.updateLastUsed, { apiKeyId: result.apiKeyId });
-      } catch {
-        // Non-critical: lastUsedAt update failure should not block validation
-      }
+      await ctx.scheduler.runAfter(0, internal.apiKeys.updateLastUsed, { apiKeyId: result.apiKeyId });
     }
 
     return new Response(JSON.stringify({ userId: result.userId }), {

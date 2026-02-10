@@ -579,20 +579,35 @@ describe("requestCount denormalization", () => {
     expect(endpoint!.requestCount).toBe(0);
   });
 
-  test("decrementRequestCount validates negative input", async () => {
+  test("decrementRequestCount no-ops for negative input", async () => {
     const endpointId = await createEndpoint(t, {
       slug: "rc-neg",
       requestCount: 5,
     });
 
-    // Negative count should be clamped to 1 (not increase the count)
+    // Negative count should be a no-op (not change the count)
     await t.mutation(internal.requests.decrementRequestCount, {
       endpointId,
       count: -10,
     });
 
     const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
-    expect(endpoint!.requestCount).toBe(4); // 5 - 1 = 4 (clamped to min 1)
+    expect(endpoint!.requestCount).toBe(5); // unchanged
+  });
+
+  test("incrementRequestCount no-ops for zero input", async () => {
+    const endpointId = await createEndpoint(t, {
+      slug: "rc-zero",
+      requestCount: 5,
+    });
+
+    await t.mutation(internal.requests.incrementRequestCount, {
+      endpointId,
+      count: 0,
+    });
+
+    const endpoint = await t.run(async (ctx) => ctx.db.get(endpointId));
+    expect(endpoint!.requestCount).toBe(5); // unchanged
   });
 
   test("incrementRequestCount no-ops for deleted endpoint", async () => {

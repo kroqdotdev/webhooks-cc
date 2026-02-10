@@ -39,6 +39,8 @@ export default function DashboardPage() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [pendingExport, setPendingExport] = useState<"json" | "csv" | null>(null);
+  // Snapshot of filter state at the time export was requested
+  const exportFilterSnapshot = useRef<{ methodFilter: string; searchInput: string } | null>(null);
 
   // Debounce search to avoid rapid Convex subscription churn
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -69,7 +71,9 @@ export default function DashboardPage() {
   // Request count from the endpoint doc (denormalized)
   const requestCount = currentEndpoint?.requestCount ?? 0;
 
-  // Cache last loaded request to prevent flicker during selection changes
+  // Cache last resolved request value (including null for deleted requests).
+  // During the loading state (undefined), displayRequest shows this cached value
+  // to prevent a blank flash while the new request loads.
   const lastLoadedRequest = useRef<typeof selectedRequest>(undefined);
   useEffect(() => {
     if (selectedRequest !== undefined) {
@@ -87,39 +91,42 @@ export default function DashboardPage() {
   // Show previous request while new one loads (prevents flicker)
   const displayRequest = selectedRequest !== undefined ? selectedRequest : lastLoadedRequest.current;
 
-  // Filter full requests for export (respects active method + search filters)
-  const filterFullRequests = useCallback((requests: NonNullable<typeof fullRequests>) => {
+  // Filter full requests for export using a specific filter snapshot
+  const applyExportFilter = useCallback((
+    requests: NonNullable<typeof fullRequests>,
+    filters: { methodFilter: string; searchInput: string },
+  ) => {
     return requests.filter((r) => {
-      if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
-      if (searchInput) {
-        const q = searchInput.toLowerCase();
+      if (filters.methodFilter !== "ALL" && r.method !== filters.methodFilter) return false;
+      if (filters.searchInput) {
+        const q = filters.searchInput.toLowerCase();
         return r.path.toLowerCase().includes(q)
           || (r.body?.toLowerCase().includes(q) ?? false)
           || r._id.toLowerCase().includes(q);
       }
       return true;
     });
-  }, [methodFilter, searchInput]);
+  }, []);
 
-  // Handle export when full data arrives
+  // Handle export when full data arrives (uses snapshotted filters)
   useEffect(() => {
-    if (!pendingExport || !fullRequests) return;
-    const filtered = filterFullRequests(fullRequests);
+    if (!pendingExport || !fullRequests || !exportFilterSnapshot.current) return;
+    const filtered = applyExportFilter(fullRequests, exportFilterSnapshot.current);
     if (pendingExport === "json") {
       downloadFile(exportToJson(filtered), "webhooks-export.json", "application/json");
     } else {
       downloadFile(exportToCsv(filtered), "webhooks-export.csv", "text/csv");
     }
     setPendingExport(null);
-  }, [pendingExport, fullRequests, filterFullRequests]);
+    exportFilterSnapshot.current = null;
+  }, [pendingExport, fullRequests, applyExportFilter]);
 
-  // Client-side filtering on summaries (method filter only)
-  // When search is active, filter the full requests and map back to summaries
+  // Client-side filtering on summaries (method filter only when no search).
+  // When search is active AND full data is loaded, filter full requests and map to summaries.
+  // Uses debouncedSearch as the gate so the list stays visible during typing.
   const filteredSummaries = useMemo(() => {
-    if (searchInput) {
-      // Search active but full data not loaded yet — show empty to prevent unfiltered flash
-      if (!fullRequests) return [];
-      const q = searchInput.toLowerCase();
+    if (debouncedSearch && fullRequests) {
+      const q = debouncedSearch.toLowerCase();
       return fullRequests
         .filter((r) => {
           if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
@@ -138,9 +145,11 @@ export default function DashboardPage() {
     if (!summaries) return [];
     if (methodFilter === "ALL") return summaries;
     return summaries.filter((r) => r.method === methodFilter);
-  }, [summaries, fullRequests, methodFilter, searchInput]);
+  }, [summaries, fullRequests, methodFilter, debouncedSearch]);
 
-  // Track incoming requests for live mode
+  // Track incoming requests for live mode.
+  // Only reacts to summaries count changes (not filter changes) to avoid
+  // unwanted auto-selection when typing in search.
   useEffect(() => {
     if (!summaries) return;
 
@@ -149,16 +158,15 @@ export default function DashboardPage() {
 
     if (prevRequestCount.current > 0 && diff > 0) {
       if (liveMode) {
-        if (filteredSummaries.length > 0) {
-          setSelectedId(filteredSummaries[0]._id);
-        }
+        // Auto-select the newest request (first in the list)
+        setSelectedId(summaries[0]._id);
       } else {
         setNewCount((prev) => prev + diff);
       }
     }
 
     prevRequestCount.current = currentCount;
-  }, [summaries, liveMode, filteredSummaries]);
+  }, [summaries, liveMode]);
 
   // Auto-select first request when requests load and nothing is selected
   useEffect(() => {
@@ -177,11 +185,12 @@ export default function DashboardPage() {
     setSearchInput("");
     setDebouncedSearch("");
     setPendingExport(null);
+    exportFilterSnapshot.current = null;
     lastLoadedRequest.current = undefined;
   }, [currentEndpointId]);
 
-  const handleSelect = useCallback((id: string) => {
-    setSelectedId(id as Id<"requests">);
+  const handleSelect = useCallback((id: Id<"requests">) => {
+    setSelectedId(id);
     setMobileDetail(true);
   }, []);
 
@@ -196,22 +205,26 @@ export default function DashboardPage() {
   }, [summaries]);
 
   const handleExportJson = useCallback(() => {
+    const filters = { methodFilter, searchInput };
     if (fullRequests) {
-      const filtered = filterFullRequests(fullRequests);
+      const filtered = applyExportFilter(fullRequests, filters);
       downloadFile(exportToJson(filtered), "webhooks-export.json", "application/json");
     } else {
+      exportFilterSnapshot.current = filters;
       setPendingExport("json");
     }
-  }, [fullRequests, filterFullRequests]);
+  }, [fullRequests, applyExportFilter, methodFilter, searchInput]);
 
   const handleExportCsv = useCallback(() => {
+    const filters = { methodFilter, searchInput };
     if (fullRequests) {
-      const filtered = filterFullRequests(fullRequests);
+      const filtered = applyExportFilter(fullRequests, filters);
       downloadFile(exportToCsv(filtered), "webhooks-export.csv", "text/csv");
     } else {
+      exportFilterSnapshot.current = filters;
       setPendingExport("csv");
     }
-  }, [fullRequests, filterFullRequests]);
+  }, [fullRequests, applyExportFilter, methodFilter, searchInput]);
 
   if (endpoints === undefined) {
     return <DashboardSkeleton />;

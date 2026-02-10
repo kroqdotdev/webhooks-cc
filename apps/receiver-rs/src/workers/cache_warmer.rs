@@ -7,6 +7,7 @@ use crate::redis::RedisState;
 const WARM_INTERVAL: Duration = Duration::from_secs(5);
 const ENDPOINT_TTL_REFRESH_THRESHOLD: i64 = 10; // seconds remaining
 const QUOTA_TTL_REFRESH_THRESHOLD: i64 = 5; // seconds remaining
+const MAX_CONCURRENT_WARMS: usize = 8;
 
 /// Spawn a background task that proactively refreshes caches for active slugs.
 pub fn spawn_cache_warmer(
@@ -41,23 +42,46 @@ async fn warm_caches(redis: &RedisState, convex: &ConvexClient) {
 
     let slugs = redis.active_slugs().await;
 
-    for slug in &slugs {
-        // Check endpoint cache TTL
-        if let Some(ttl) = redis.endpoint_ttl(slug).await
-            && ttl < ENDPOINT_TTL_REFRESH_THRESHOLD {
-                tracing::debug!(slug, ttl, "proactively refreshing endpoint cache");
-                if let Err(e) = convex.fetch_and_cache_endpoint(slug).await {
+    // Collect slugs that need refreshing, then warm concurrently
+    let mut tasks = tokio::task::JoinSet::new();
+
+    for slug in slugs {
+        let needs_endpoint = match redis.endpoint_ttl(&slug).await {
+            Some(ttl) => ttl < ENDPOINT_TTL_REFRESH_THRESHOLD,
+            None => false,
+        };
+        let needs_quota = match redis.quota_ttl(&slug).await {
+            Some(ttl) => ttl < QUOTA_TTL_REFRESH_THRESHOLD,
+            None => false,
+        };
+
+        if !needs_endpoint && !needs_quota {
+            continue;
+        }
+
+        // Bound concurrency to avoid overwhelming Convex
+        if tasks.len() >= MAX_CONCURRENT_WARMS {
+            tasks.join_next().await;
+        }
+
+        let convex = convex.clone();
+        let slug = slug.clone();
+        tasks.spawn(async move {
+            if needs_endpoint {
+                tracing::debug!(slug, "proactively refreshing endpoint cache");
+                if let Err(e) = convex.fetch_and_cache_endpoint(&slug).await {
                     tracing::warn!(slug, error = %e, "cache warmer endpoint fetch failed");
                 }
             }
-
-        // Check quota cache TTL
-        if let Some(ttl) = redis.quota_ttl(slug).await
-            && ttl < QUOTA_TTL_REFRESH_THRESHOLD {
-                tracing::debug!(slug, ttl, "proactively refreshing quota cache");
-                if let Err(e) = convex.fetch_and_cache_quota(slug).await {
+            if needs_quota {
+                tracing::debug!(slug, "proactively refreshing quota cache");
+                if let Err(e) = convex.fetch_and_cache_quota(&slug).await {
                     tracing::warn!(slug, error = %e, "cache warmer quota fetch failed");
                 }
             }
+        });
     }
+
+    // Drain remaining tasks
+    while tasks.join_next().await.is_some() {}
 }

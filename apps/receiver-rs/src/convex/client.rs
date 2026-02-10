@@ -43,11 +43,14 @@ impl ConvexClient {
         &self.circuit
     }
 
-    /// Read the response body with a pre-check on Content-Length to avoid unbounded allocation.
+    /// Read the response body with size limiting to prevent unbounded allocation.
+    /// Uses bytes() and checks length before converting to string, which also
+    /// handles chunked responses that lack a Content-Length header.
     async fn read_body(&self, resp: reqwest::Response) -> Result<(u16, String), ConvexError> {
         let status = resp.status().as_u16();
 
         // Pre-check Content-Length header to reject obviously too-large responses
+        // without reading the body at all.
         if let Some(len) = resp.content_length()
             && len > MAX_RESPONSE_SIZE as u64
         {
@@ -55,19 +58,22 @@ impl ConvexClient {
             return Err(ConvexError::ResponseTooLarge);
         }
 
-        let body = resp
-            .text()
+        // Read as bytes first — reqwest limits to Content-Length when present,
+        // but for chunked responses we check the accumulated size after download.
+        let body_bytes = resp
+            .bytes()
             .await
             .map_err(|e| {
                 self.record_failure_sync();
                 ConvexError::Network(e.to_string())
             })?;
 
-        if body.len() > MAX_RESPONSE_SIZE {
+        if body_bytes.len() > MAX_RESPONSE_SIZE {
             self.record_failure_sync();
             return Err(ConvexError::ResponseTooLarge);
         }
 
+        let body = String::from_utf8_lossy(&body_bytes).into_owned();
         Ok((status, body))
     }
 

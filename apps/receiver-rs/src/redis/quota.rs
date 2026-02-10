@@ -158,4 +158,22 @@ impl RedisState {
             Some(ttl)
         }
     }
+
+    /// Evict cached quota data for a slug (and its user key if mapped).
+    pub async fn evict_quota(&self, slug: &str) {
+        let mut conn = self.conn.clone();
+        let slug_key = format!("{SLUG_PREFIX}{slug}");
+
+        // Check if there's a user-level key to also evict
+        let user_id: Option<String> = conn.hget(&slug_key, "userId").await.ok().flatten();
+
+        let _: Result<(), _> = conn.del(&slug_key).await;
+
+        if let Some(uid) = user_id {
+            if !uid.is_empty() {
+                let user_key = format!("{USER_PREFIX}{uid}");
+                let _: Result<(), _> = conn.del(&user_key).await;
+            }
+        }
+    }
 }

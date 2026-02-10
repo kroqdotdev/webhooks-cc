@@ -19,24 +19,37 @@ const BLOCKED_HEADERS: &[&str] = &[
     "x-frame-options",
 ];
 
-/// Validate slug: alphanumeric + hyphen + underscore, 1-64 chars.
+/// Validate slug: alphanumeric + hyphen + underscore, 1-50 chars.
+/// Matches Convex backend SLUG_REGEX = /^[a-zA-Z0-9_-]{1,50}$/.
 pub fn is_valid_slug(slug: &str) -> bool {
-    if slug.is_empty() || slug.len() > 64 {
+    if slug.is_empty() || slug.len() > 50 {
         return false;
     }
     slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 /// Extract the real client IP from proxy headers.
+/// Sanitizes the value to contain only valid IP characters (digits, dots, colons, hex)
+/// to prevent XSS via spoofed headers stored in the database.
 fn real_ip(headers: &HeaderMap) -> String {
-    if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        return ip.to_string();
-    }
-    if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
+    let raw = if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        ip.to_string()
+    } else if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
         && let Some(first) = xff.split(',').next() {
-            return first.trim().to_string();
-        }
-    String::new()
+            first.trim().to_string()
+    } else {
+        return String::new();
+    };
+
+    // Validate: only allow characters valid in IPv4/IPv6 addresses
+    // (digits, a-f, A-F, dots, colons, brackets, percent for zone IDs)
+    if raw.len() <= 45
+        && raw.bytes().all(|b| b.is_ascii_hexdigit() || b == b'.' || b == b':' || b == b'[' || b == b']' || b == b'%')
+    {
+        raw
+    } else {
+        String::new()
+    }
 }
 
 /// The main webhook handler: GET/POST/PUT/PATCH/DELETE /w/{slug}/*

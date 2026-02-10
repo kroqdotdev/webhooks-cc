@@ -1,6 +1,7 @@
 /**
  * Internal functions for load testing the receiver.
  * These are ONLY callable via `npx convex run` (not exposed over HTTP).
+ * Mutations are guarded against accidental production use.
  *
  * Usage:
  *   npx convex run loadTest:seed '{}'
@@ -12,6 +13,13 @@ import { internalMutation, internalQuery, internalAction } from "./_generated/se
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { nanoid } from "nanoid";
+
+function assertNotProduction() {
+  const deployment = process.env.CONVEX_CLOUD_URL ?? "";
+  if (deployment.includes("prod:") || deployment.includes("affable-corgi")) {
+    throw new Error("Load test functions cannot run in production");
+  }
+}
 
 const TEST_USER_COUNT = 500;
 const ENDPOINTS_PER_USER = 2;
@@ -32,6 +40,7 @@ export const seedBatch = internalMutation({
     batchSize: v.number(),
   },
   handler: async (ctx, { batchIndex, batchSize }) => {
+    assertNotProduction();
     const startIdx = batchIndex * batchSize;
     const endIdx = Math.min(startIdx + batchSize, TEST_USER_COUNT);
     const results: Array<{
@@ -120,6 +129,7 @@ export const seedBatch = internalMutation({
 export const seed = internalAction({
   args: {},
   handler: async (ctx) => {
+    assertNotProduction();
     const batchSize = 25; // 25 users per batch to stay under 10s
     const batches = Math.ceil(TEST_USER_COUNT / batchSize);
     const allResults: Array<{
@@ -306,6 +316,7 @@ export const cleanupRequestsBatch = internalMutation({
     slug: v.string(),
   },
   handler: async (ctx, { slug }) => {
+    assertNotProduction();
     const endpoint = await ctx.db
       .query("endpoints")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -334,6 +345,7 @@ export const cleanupEndpointsBatch = internalMutation({
     batchSize: v.number(),
   },
   handler: async (ctx, { batchIndex, batchSize }) => {
+    assertNotProduction();
     const startIdx = batchIndex * batchSize;
     const endIdx = Math.min(startIdx + batchSize, TEST_USER_COUNT);
     let deleted = 0;
@@ -370,6 +382,7 @@ export const cleanupEndpointsBatch = internalMutation({
 export const cleanup = internalAction({
   args: {},
   handler: async (ctx) => {
+    assertNotProduction();
     const batchSize = 25;
     const batches = Math.ceil(TEST_USER_COUNT / batchSize);
 

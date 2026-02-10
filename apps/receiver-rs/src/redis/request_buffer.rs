@@ -46,10 +46,38 @@ impl RedisState {
     }
 
     /// Get all slugs that have pending buffered requests.
+    /// Uses SSCAN to iterate in batches, avoiding unbounded SMEMBERS on large sets.
     pub async fn active_slugs(&self) -> Vec<String> {
         let mut conn = self.conn.clone();
-        let result: Result<Vec<String>, _> = conn.smembers(ACTIVE_SET).await;
-        result.unwrap_or_default()
+        let mut slugs = Vec::new();
+        let mut cursor: u64 = 0;
+        const SCAN_COUNT: usize = 500;
+
+        loop {
+            let result: Result<(u64, Vec<String>), _> = redis::cmd("SSCAN")
+                .arg(ACTIVE_SET)
+                .arg(cursor)
+                .arg("COUNT")
+                .arg(SCAN_COUNT)
+                .query_async(&mut conn)
+                .await;
+
+            match result {
+                Ok((next_cursor, batch)) => {
+                    slugs.extend(batch);
+                    cursor = next_cursor;
+                    if cursor == 0 {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "SSCAN failed on active slugs set");
+                    break;
+                }
+            }
+        }
+
+        slugs
     }
 
     /// Atomically take up to `max` requests from a slug's buffer.

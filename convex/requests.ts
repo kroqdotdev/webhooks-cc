@@ -248,13 +248,15 @@ export const incrementUsage = internalMutation({
 
 // Increment the denormalized request count on an endpoint.
 // Called via scheduler from capture/captureBatch to avoid OCC conflicts.
+// No-ops for count <= 0 or deleted endpoints.
 export const incrementRequestCount = internalMutation({
   args: {
     endpointId: v.id("endpoints"),
     count: v.optional(v.number()),
   },
   handler: async (ctx, { endpointId, count = 1 }) => {
-    const validCount = Math.max(1, Math.min(Math.floor(count), 1000));
+    const validCount = Math.min(Math.floor(count), 1000);
+    if (validCount <= 0) return;
     const endpoint = await ctx.db.get(endpointId);
     if (endpoint) {
       await ctx.db.patch(endpointId, {
@@ -266,13 +268,15 @@ export const incrementRequestCount = internalMutation({
 
 // Decrement the denormalized request count on an endpoint.
 // Used by cleanup paths when requests are deleted from live endpoints.
+// No-ops for count <= 0 or deleted endpoints.
 export const decrementRequestCount = internalMutation({
   args: {
     endpointId: v.id("endpoints"),
     count: v.number(),
   },
   handler: async (ctx, { endpointId, count }) => {
-    const validCount = Math.max(1, Math.min(Math.floor(count), 1000));
+    const validCount = Math.min(Math.floor(count), 1000);
+    if (validCount <= 0) return;
     const endpoint = await ctx.db.get(endpointId);
     if (endpoint) {
       await ctx.db.patch(endpointId, {
