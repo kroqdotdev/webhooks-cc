@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push prod prod-web prod-receiver
+.PHONY: dev dev-all dev-web dev-convex dev-receiver dev-cli build build-receiver build-cli test lint clean db-push prod prod-web prod-receiver start
 
 # Development
 dev:
@@ -59,6 +59,10 @@ lint:
 # Database
 db-push:
 	pnpm convex deploy
+
+# Start (production with mprocs)
+start:
+	$$HOME/.cargo/bin/mprocs --config mprocs.yaml
 
 # Clean
 clean:
