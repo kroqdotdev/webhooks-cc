@@ -89,9 +89,8 @@ export default function CliPage() {
         </p>
 
         <p className="text-sm text-muted-foreground">
-          To disable the TUI entirely, pass{" "}
-          <code className="font-mono font-bold">--nogui</code> or set{" "}
-          <code className="font-mono font-bold">WHK_NOGUI=1</code>.
+          To disable the TUI entirely, pass <code className="font-mono font-bold">--nogui</code> or
+          set <code className="font-mono font-bold">WHK_NOGUI=1</code>.
         </p>
       </section>
 
