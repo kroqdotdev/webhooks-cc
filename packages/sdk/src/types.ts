@@ -53,6 +53,28 @@ export interface CreateEndpointOptions {
 }
 
 /**
+ * Options for updating an existing endpoint.
+ */
+export interface UpdateEndpointOptions {
+  /** New display name */
+  name?: string;
+  /** Mock response config, or null to clear */
+  mockResponse?: { status: number; body: string; headers: Record<string, string> } | null;
+}
+
+/**
+ * Options for sending a test webhook to an endpoint.
+ */
+export interface SendOptions {
+  /** HTTP method (default: "POST") */
+  method?: string;
+  /** HTTP headers to include */
+  headers?: Record<string, string>;
+  /** Request body (will be JSON-serialized if not a string) */
+  body?: unknown;
+}
+
+/**
  * Options for listing captured requests.
  */
 export interface ListRequestsOptions {
@@ -66,12 +88,22 @@ export interface ListRequestsOptions {
  * Options for waitFor() polling behavior.
  */
 export interface WaitForOptions {
-  /** Maximum time to wait in milliseconds (default: 30000) */
-  timeout?: number;
-  /** Interval between polls in milliseconds (default: 500, min: 10, max: 60000) */
-  pollInterval?: number;
+  /** Maximum time to wait (ms or duration string like "30s", "5m") (default: 30000) */
+  timeout?: number | string;
+  /** Interval between polls (ms or duration string) (default: 500, min: 10, max: 60000) */
+  pollInterval?: number | string;
   /** Filter function to match specific requests */
   match?: (request: Request) => boolean;
+}
+
+/**
+ * Options for subscribe() SSE streaming.
+ */
+export interface SubscribeOptions {
+  /** AbortSignal to cancel the subscription */
+  signal?: AbortSignal;
+  /** Maximum time to stream (ms or duration string like "30m") */
+  timeout?: number | string;
 }
 
 /** Info passed to the onRequest hook before a request is sent. */
@@ -114,8 +146,23 @@ export interface ClientOptions {
   apiKey: string;
   /** Base URL for the API (default: https://webhooks.cc) */
   baseUrl?: string;
+  /** Base URL for sending webhooks (default: https://go.webhooks.cc) */
+  webhookUrl?: string;
   /** Request timeout in milliseconds (default: 30000) */
   timeout?: number;
   /** Lifecycle hooks for observability */
   hooks?: ClientHooks;
+}
+
+/** Description of a single SDK operation. */
+export interface OperationDescription {
+  description: string;
+  params: Record<string, string>;
+}
+
+/** Self-describing schema returned by client.describe(). */
+export interface SDKDescription {
+  version: string;
+  endpoints: Record<string, OperationDescription>;
+  requests: Record<string, OperationDescription>;
 }

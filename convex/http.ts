@@ -764,6 +764,71 @@ http.route({
   }),
 });
 
+// Update endpoint for user
+http.route({
+  path: "/cli/endpoints",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof body.userId !== "string" || typeof body.slug !== "string") {
+      return new Response(JSON.stringify({ error: "missing_fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!SLUG_REGEX.test(body.slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.endpoints.updateForUser, {
+        slug: body.slug,
+        userId: body.userId,
+        name: body.name,
+        mockResponse: body.mockResponse,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "not_found") {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (message === "not_authorized") {
+        return new Response(JSON.stringify({ error: "not_authorized" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[http:error] cli/endpoints PATCH:", error);
+      return new Response(JSON.stringify({ error: "Failed to update endpoint" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
 // Delete endpoint for user
 http.route({
   path: "/cli/endpoints",
