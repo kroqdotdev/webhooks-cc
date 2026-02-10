@@ -19,7 +19,7 @@ Get a unique URL, point your webhook there, and see every request in real-time. 
 - **Inspect in real-time** — See requests the moment they arrive via WebSocket
 - **Configure responses** — Return custom status codes, headers, and body for testing error paths
 - **Forward to localhost** — Tunnel webhooks to your local server during development
-- **CLI** — Manage endpoints and tunnel from your terminal with `whk`
+- **CLI with interactive TUI** — Manage endpoints, tunnel, and stream requests from your terminal
 - **TypeScript SDK** — Access webhook data programmatically for automation and testing
 
 ## Use Cases
@@ -64,11 +64,34 @@ See [webhooks.cc/installation](https://webhooks.cc/installation) for Homebrew, m
 
 ## CLI
 
-```bash
-whk endpoints list
-whk endpoints create --name "stripe-test"
-whk tunnel 8080
+Run `whk` to launch the interactive TUI:
+
 ```
+$ whk
+
+  webhooks.cc
+
+  ● Logged in as you@example.com
+
+  ▸ Tunnel    Forward webhooks to localhost
+    Listen    Stream incoming requests
+    Create    Create a new endpoint
+    Endpoints Manage your endpoints
+    Auth      Login / logout
+    Update    Check for updates
+```
+
+All commands also work directly from the command line:
+
+```bash
+whk tunnel 8080                       # Forward webhooks to localhost:8080
+whk listen <slug>                     # Stream incoming requests
+whk create my-endpoint                # Create a new endpoint
+whk list                              # List your endpoints
+whk replay <request-id> --to :3000    # Replay a captured request
+```
+
+Pass `--nogui` or set `WHK_NOGUI=1` to skip the TUI and print help.
 
 ## SDK
 
