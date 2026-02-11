@@ -1,0 +1,55 @@
+{
+  "name": "@webhooks-cc/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for webhooks.cc — AI agent integration for webhook testing",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "webhooks-cc-mcp": "dist/bin/mcp.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "webhook",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agent",
+    "webhooks-cc"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/webhooks-cc/webhooks-cc",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://webhooks.cc",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@webhooks-cc/sdk": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
+  }
+}
