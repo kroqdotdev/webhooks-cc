@@ -47,7 +47,9 @@ export function proxy() {
     convexWsOrigin = "wss://api.webhooks.cc";
   }
 
-  const csp = [
+  const isDev = process.env.NODE_ENV === "development";
+
+  const directives = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
@@ -59,11 +61,20 @@ export function proxy() {
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "upgrade-insecure-requests",
-  ].join("; ");
+  ];
 
-  response.headers.set("Content-Security-Policy", csp);
-  response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  if (!isDev) {
+    directives.push("upgrade-insecure-requests");
+  }
+
+  response.headers.set("Content-Security-Policy", directives.join("; "));
+
+  if (!isDev) {
+    response.headers.set(
+      "Strict-Transport-Security",
+      "max-age=63072000; includeSubDomains; preload"
+    );
+  }
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
