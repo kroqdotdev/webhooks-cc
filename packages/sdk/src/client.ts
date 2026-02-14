@@ -637,5 +637,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function stripTrailingSlashes(url: string): string {
-  return url.replace(/\/+$/, "");
+  let i = url.length;
+  while (i > 0 && url[i - 1] === "/") i--;
+  return i === url.length ? url : url.slice(0, i);
 }
