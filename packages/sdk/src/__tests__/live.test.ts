@@ -454,7 +454,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
       const ep = await client.endpoints.create({ name: "SSE Test" });
       createdSlugs.push(ep.slug);
 
-      const received: any[] = [];
+      const received: unknown[] = [];
       const controller = new AbortController();
 
       // Start subscribing in background
@@ -470,9 +470,10 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
               break;
             }
           }
-        } catch (e: any) {
+        } catch (e: unknown) {
           // Abort errors are expected
-          if (e?.name !== "AbortError" && e?.code !== "ERR_INVALID_STATE") {
+          const err = e as { name?: string; code?: string };
+          if (err?.name !== "AbortError" && err?.code !== "ERR_INVALID_STATE") {
             throw e;
           }
         }
@@ -500,7 +501,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
       await subscribePromise.catch(() => {});
 
       expect(received.length).toBeGreaterThanOrEqual(1);
-      expect(received[0].method).toBe("POST");
+      expect((received[0] as { method: string }).method).toBe("POST");
 
       await client.endpoints.delete(ep.slug);
       createdSlugs.pop();
@@ -513,16 +514,17 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
       const controller = new AbortController();
 
       const subscribePromise = (async () => {
-        const received: any[] = [];
+        const received: unknown[] = [];
         try {
           for await (const request of client.requests.subscribe(ep.slug, {
             signal: controller.signal,
           })) {
             received.push(request);
           }
-        } catch (e: any) {
+        } catch (e: unknown) {
           // Abort errors are expected
-          if (e?.name !== "AbortError" && e?.code !== "ERR_INVALID_STATE") {
+          const err = e as { name?: string; code?: string };
+          if (err?.name !== "AbortError" && err?.code !== "ERR_INVALID_STATE") {
             throw e;
           }
         }
@@ -569,7 +571,6 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
       expect(req.method).toBe("POST");
 
       // Also test array index access
-      const body = JSON.parse(req.body!);
       expect(matchBodyPath("order.items.0.id", "item-1")(req)).toBe(true);
       expect(matchBodyPath("order.items.1.price", 20)(req)).toBe(true);
 
@@ -654,7 +655,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
         { header: "linear-signature", check: isLinearWebhook },
       ];
 
-      for (const { header, check } of providers) {
+      for (const { header } of providers) {
         await client.endpoints.send(ep.slug, {
           method: "POST",
           headers: { [header]: "test-value", "x-provider-name": header },
@@ -759,7 +760,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
 
       await expect(
         client.endpoints.update(ep.slug, {
-          mockResponse: { status: 999 },
+          mockResponse: { status: 999, body: "", headers: {} },
         })
       ).rejects.toThrow();
 
