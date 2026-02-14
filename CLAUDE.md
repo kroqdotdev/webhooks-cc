@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project Overview
 
-webhooks.cc is a production webhook inspection and testing service. Users capture incoming webhooks, inspect request details, configure mock responses, and forward requests to localhost via CLI tunneling. The service includes a TypeScript SDK (`@webhooks-cc/sdk`) for programmatic access and test assertions.
+webhooks.cc is a production webhook inspection and testing service. Users capture incoming webhooks, inspect request details, configure mock responses, and forward requests to localhost via CLI tunneling. The service includes a TypeScript SDK (`@webhooks-cc/sdk`) for programmatic access and test assertions, and an MCP server (`@webhooks-cc/mcp`) for AI coding agent integration.
 
 **Production URLs:**
 
@@ -94,6 +94,7 @@ cd apps/receiver-rs && cargo clippy     # Rust receiver lint
 | Convex   | managed | Convex 1.31                       | Database, auth, real-time subscriptions, HTTP actions |
 | CLI      | n/a     | Go 1.25, Cobra                    | `whk tunnel`, `whk listen`, device auth               |
 | SDK      | n/a     | TypeScript, tsup                  | `@webhooks-cc/sdk` on npm                             |
+| MCP      | n/a     | TypeScript, tsup                  | `@webhooks-cc/mcp` on npm — MCP server for AI agents  |
 
 ### Directory Structure
 
@@ -105,7 +106,8 @@ webhooks-cc/
 │   ├── cli/              # Go Cobra CLI (cmd/whk + internal packages)
 │   └── go-shared/        # Shared Go types (types/types.go)
 ├── packages/
-│   └── sdk/              # @webhooks-cc/sdk (TypeScript, tsup, vitest)
+│   ├── sdk/              # @webhooks-cc/sdk (TypeScript, tsup, vitest)
+│   └── mcp/              # @webhooks-cc/mcp (MCP server for AI agents)
 ├── convex/               # Backend: schema, functions, HTTP actions, crons, tests
 ├── docs/                 # Internal planning docs (gitignored)
 ├── .github/workflows/    # CI, CLI release, SDK publish
@@ -240,11 +242,11 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 
 Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono fonts).
 
-**Public routes:** `/` (landing), `/docs/*` (7 doc pages), `/installation`, `/login`, `/privacy`, `/terms`, `/support`
+**Public routes:** `/` (landing), `/docs/*` (10 doc pages incl. MCP), `/installation` (CLI/SDK/MCP tabs), `/login`, `/privacy`, `/terms`, `/support`
 
 **Authenticated routes:** `/dashboard` (split-pane request viewer), `/account` (profile, billing, API keys), `/endpoints/new`, `/endpoints/[slug]/settings`, `/cli/verify` (device auth)
 
-**API routes:** `/api/health`, `/api/auth/device-*` (3 routes), `/api/endpoints` (CRUD), `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/stream/[slug]` (SSE)
+**API routes:** `/api/health`, `/api/auth/device-*` (3 routes), `/api/endpoints` (CRUD + PATCH), `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/stream/[slug]` (SSE)
 
 **Key directories:**
 
@@ -254,18 +256,47 @@ Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono f
 
 ### SDK
 
-`@webhooks-cc/sdk` v0.2.0 - published to npm, MIT licensed.
+`@webhooks-cc/sdk` v0.3.0 - published to npm, MIT licensed.
 
 ```typescript
 const client = new WebhooksCC({ apiKey: "whcc_..." });
 const endpoint = await client.endpoints.create({ name: "test" });
 const req = await client.requests.waitFor(endpoint.slug, {
-  timeout: 10000,
-  match: matchJsonField("type", "checkout.session.completed"),
+  timeout: "30s",
+  match: matchAll(matchMethod("POST"), matchHeader("stripe-signature")),
 });
 ```
 
-Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `TimeoutError`, `RateLimitError`), helpers (`parseJsonBody`, `isStripeWebhook`, `isGitHubWebhook`, `matchJsonField`).
+**Key methods:**
+
+- `endpoints.create/get/list/delete` — CRUD
+- `endpoints.update(slug, opts)` — rename, set/clear mock response
+- `endpoints.send(slug, {method, headers, body})` — send test webhook
+- `requests.list/waitFor` — list and poll for captured requests
+- `requests.replay(id, targetUrl)` — replay a captured request to any URL
+- `requests.subscribe(slug)` — SSE async iterator for real-time streaming
+- `client.describe()` — self-documenting introspection for AI agents
+
+**Exports:** `WebhooksCC`, `ApiError`, error classes (`WebhooksCCError`, `UnauthorizedError`, `NotFoundError`, `TimeoutError`, `RateLimitError`), matchers (`matchMethod`, `matchHeader`, `matchBodyPath`, `matchAll`, `matchAny`), helpers (`parseJsonBody`, `isStripeWebhook`, `isGitHubWebhook`, `isShopifyWebhook`, `isSlackWebhook`, `isTwilioWebhook`, `isPaddleWebhook`, `isLinearWebhook`, `matchJsonField`), utilities (`parseDuration`, `parseSSE`).
+
+**Features:** Human-readable duration strings (`"30s"`, `"5m"`) for `timeout`/`pollInterval`, actionable error messages with recovery hints, lifecycle hooks (`onRequest`, `onResponse`, `onError`).
+
+### MCP Server
+
+`@webhooks-cc/mcp` v0.1.0 - MCP server for AI coding agents, MIT licensed.
+
+- 11 tools: `create_endpoint`, `list_endpoints`, `get_endpoint`, `update_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `send_webhook`, `wait_for_request`, `replay_request`, `describe`
+- Setup CLI: `npx @webhooks-cc/mcp setup <tool>` for Cursor, VS Code, Windsurf, Claude Desktop
+- Native install: `claude mcp add` (Claude Code), `codex mcp add` (Codex)
+- Transport: stdio via `@modelcontextprotocol/sdk`
+- Depends on `@webhooks-cc/sdk` (workspace link)
+
+**Key files (`packages/mcp/src/`):**
+
+- `index.ts` — MCP server setup, tool registration, stdio transport
+- `tools.ts` — Tool definitions with Zod schemas and handlers
+- `setup.ts` — CLI setup commands for various AI tools
+- `bin/mcp.js` — Binary entry point (`npx` / `webhooks-cc-mcp`)
 
 ## Environment Variables
 
@@ -309,7 +340,8 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 
 - **CI** (`.github/workflows/ci.yml`): lint, typecheck, build-web, build-go, test-go, lint-go, build-rust, test-rust, lint-rust
 - **CLI release** (`cli-release.yml`): triggered by `v*` tags, GoReleaser builds for linux/darwin/windows (amd64/arm64), cosign keyless signing, Homebrew tap publish
-- **SDK publish** (`sdk-publish.yml`): triggered by `sdk-v*` tags, publishes to npm
+- **SDK publish** (`sdk-publish.yml`): triggered by `sdk-v*` tags, publishes `@webhooks-cc/sdk` to npm
+- **MCP publish**: triggered by `mcp-v*` tags, publishes `@webhooks-cc/mcp` to npm
 - **Security**: Dependabot, CodeQL analysis
 
 ## Key Gotchas
@@ -328,4 +360,4 @@ Exports: `WebhooksCC`, error classes (`UnauthorizedError`, `NotFoundError`, `Tim
 Split license model:
 
 - **AGPL-3.0**: `apps/web`, `apps/receiver-rs`, `convex/`
-- **MIT**: `apps/cli`, `packages/sdk`, `apps/go-shared`
+- **MIT**: `apps/cli`, `packages/sdk`, `packages/mcp`, `apps/go-shared`

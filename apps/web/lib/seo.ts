@@ -2,12 +2,12 @@ import type { Metadata, MetadataRoute } from "next";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
-export const DEFAULT_PAGE_TITLE = "webhooks.cc | Inspect webhooks instantly";
+export const DEFAULT_PAGE_TITLE = "webhooks.cc | Webhook Testing Tools — CLI, SDK & MCP Server";
 export const DEFAULT_PAGE_DESCRIPTION =
-  "The fastest way to debug webhooks. Get a URL in one click, inspect requests in real-time, and forward to localhost.";
+  "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test programmatically with the TypeScript SDK, and connect AI coding agents via MCP.";
 export const DEFAULT_OG_IMAGE_PATH = "/og-image.png";
 
-export const LAST_CONTENT_UPDATE = new Date("2026-02-06T00:00:00.000Z");
+export const LAST_CONTENT_UPDATE = new Date("2026-02-10T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;
@@ -28,6 +28,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/docs/sdk", changeFrequency: "monthly", priority: 0.7 },
   { path: "/docs/sdk/api", changeFrequency: "monthly", priority: 0.7 },
   { path: "/docs/sdk/testing", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/docs/mcp", changeFrequency: "monthly", priority: 0.7 },
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "yearly", priority: 0.3 },

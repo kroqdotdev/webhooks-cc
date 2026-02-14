@@ -1,15 +1,15 @@
 import Link from "next/link";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { HeroCTA } from "@/components/landing/hero-cta";
-import { Zap, Eye, Terminal, ArrowRight, Check } from "lucide-react";
+import { Zap, Eye, Terminal, ArrowRight, Check, Bot } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Inspect Webhooks Instantly",
+  title: "Webhook Testing Tools for Developers — CLI, SDK & MCP Server",
   description:
-    "Capture webhooks in real time, inspect headers and payloads, and forward requests to localhost with webhooks.cc.",
+    "Capture and inspect webhooks in real time. Forward to localhost with the CLI, write test assertions with the TypeScript SDK, and connect AI coding agents via MCP. Free to start.",
   path: "/",
 });
 
@@ -45,7 +45,7 @@ export default async function Home() {
     },
     url: "https://webhooks.cc",
     description:
-      "Capture webhooks in real time, inspect requests, and forward to localhost for development.",
+      "Webhook testing tools for developers. Capture and inspect webhooks, forward to localhost with the CLI, test programmatically with the TypeScript SDK, and connect AI coding agents via MCP server.",
   };
 
   return (
@@ -64,17 +64,17 @@ export default async function Home() {
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
             <div className="max-w-3xl">
               <div className="inline-block neo-btn-secondary text-sm py-1 px-3 mb-6">
-                Developer Tools
+                Webhook Testing Tools
               </div>
               <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
                 Inspect webhooks{" "}
                 <span className="bg-primary text-primary-foreground px-2">instantly</span>
               </h1>
               <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-                Get a unique URL in one click. See incoming requests in real-time. Forward to
-                localhost for development.{" "}
-                <span className="text-foreground font-semibold">No signup required.</span>
+                Get a URL, send a webhook, see it live. Forward to localhost with the CLI. Test in
+                CI with the SDK. Let your AI agent handle it via MCP.
               </p>
+              <p className="text-lg font-semibold mb-8">Start free. No credit card required.</p>
               <HeroCTA />
             </div>
 
@@ -90,7 +90,7 @@ export default async function Home() {
             <pre className="text-sm md:text-base">
               <code>
                 <span className="text-muted-foreground">
-                  # Create an endpoint and start capturing webhooks
+                  # Send a webhook — from curl, your app, or your test suite
                 </span>
                 {"\n"}
                 <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
@@ -102,6 +102,16 @@ export default async function Home() {
                 <span className="text-code-string">
                   &apos;{`{"event": "payment.success", "amount": 4999}`}&apos;
                 </span>
+                {"\n\n"}
+                <span className="text-muted-foreground"># Or from your TypeScript tests</span>
+                {"\n"}
+                <span className="text-code-keyword">const</span> req ={" "}
+                <span className="text-code-keyword">await</span> client.requests.waitFor(slug, {"{"}{" "}
+                {"\n"}
+                {"  "}timeout: <span className="text-code-string">&quot;30s&quot;</span>,{"\n"}
+                {"  "}match: matchHeader(
+                <span className="text-code-string">&quot;stripe-signature&quot;</span>),{"\n"}
+                {"}"});
               </code>
             </pre>
           </div>
@@ -112,41 +122,55 @@ export default async function Home() {
       <section className="py-20 px-4 bg-muted">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Everything you need to debug webhooks
+            Webhook tools that fit how you build
           </h2>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
-            Stop guessing what your webhooks look like. Inspect every detail in real-time.
+            Use the dashboard, the CLI, the SDK, or your AI agent. Same webhooks, your workflow.
           </p>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="neo-card transition-neo cursor-pointer">
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="neo-card">
               <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
                 <Eye className="h-6 w-6 text-primary-foreground" />
               </div>
-              <h3 className="font-bold text-xl mb-2">Real-time inspection</h3>
+              <h3 className="font-bold text-xl mb-2">Capture & inspect</h3>
               <p className="text-muted-foreground">
-                See requests as they arrive. Headers, body, query params - all formatted and
-                searchable.
+                See requests the moment they arrive. Headers, body, query params — formatted and
+                searchable. Export as JSON or CSV.
               </p>
             </div>
 
-            <div className="neo-card transition-neo cursor-pointer">
+            <div className="neo-card">
               <div className="w-12 h-12 border-2 border-foreground bg-secondary flex items-center justify-center mb-4 shadow-neo-sm">
                 <Zap className="h-6 w-6 text-secondary-foreground" />
               </div>
-              <h3 className="font-bold text-xl mb-2">Mock responses</h3>
+              <h3 className="font-bold text-xl mb-2">Mock & replay</h3>
               <p className="text-muted-foreground">
-                Configure what your endpoint returns. Set status codes, headers, and body content.
+                Configure what your endpoint returns — status code, headers, body. Replay captured
+                requests to localhost or any URL.
               </p>
             </div>
 
-            <div className="neo-card transition-neo cursor-pointer">
+            <div className="neo-card">
               <div className="w-12 h-12 border-2 border-foreground bg-accent flex items-center justify-center mb-4 shadow-neo-sm">
                 <Terminal className="h-6 w-6 text-accent-foreground" />
               </div>
-              <h3 className="font-bold text-xl mb-2">Local forwarding</h3>
+              <h3 className="font-bold text-xl mb-2">CLI & TypeScript SDK</h3>
               <p className="text-muted-foreground">
-                Forward webhooks to localhost with our CLI. Test integrations without deploying.
+                Forward webhooks to localhost with{" "}
+                <code className="font-mono font-bold">whk tunnel</code>. Write test assertions with
+                composable matchers. Run in CI with GitHub Actions.
+              </p>
+            </div>
+
+            <div className="neo-card">
+              <div className="w-12 h-12 border-2 border-foreground bg-foreground flex items-center justify-center mb-4 shadow-neo-sm">
+                <Bot className="h-6 w-6 text-background" />
+              </div>
+              <h3 className="font-bold text-xl mb-2">MCP server for AI agents</h3>
+              <p className="text-muted-foreground">
+                Connect Claude Code, Cursor, VS Code, or Codex. Your AI agent creates endpoints,
+                sends test webhooks, and replays requests — in natural language.
               </p>
             </div>
           </div>
@@ -176,7 +200,7 @@ export default async function Home() {
                   "200 requests/day",
                   "24-hour data retention",
                   "Unlimited endpoints",
-                  "CLI & SDK access",
+                  "CLI, SDK & MCP access",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -206,7 +230,7 @@ export default async function Home() {
                   "500,000 requests/month",
                   "30-day data retention",
                   "Unlimited endpoints",
-                  "CLI & SDK access",
+                  "CLI, SDK & MCP access",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -226,9 +250,11 @@ export default async function Home() {
       <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="neo-card bg-foreground text-background text-center py-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Start debugging webhooks today</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Your next webhook is one URL away
+            </h2>
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
-              Join thousands of developers who trust webhooks.cc for their webhook testing needs.
+              Create an endpoint, point your service at it, and see what arrives. Takes 10 seconds.
             </p>
             <Link href="/go" className="neo-btn bg-background text-foreground">
               Try it free
@@ -245,7 +271,7 @@ export default async function Home() {
             <div>
               <h4 className="font-bold text-lg mb-4">webhooks.cc</h4>
               <p className="text-muted-foreground text-sm">
-                The fastest way to debug webhooks. Built for developers.
+                Webhook testing tools for developers. Inspect, forward, test, and automate.
               </p>
             </div>
             <div>
@@ -282,6 +308,11 @@ export default async function Home() {
                 <li>
                   <Link href="/docs/sdk" className="text-muted-foreground hover:text-foreground">
                     SDK Reference
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/docs/mcp" className="text-muted-foreground hover:text-foreground">
+                    MCP Server
                   </Link>
                 </li>
               </ul>

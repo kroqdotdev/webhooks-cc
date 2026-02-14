@@ -764,6 +764,142 @@ http.route({
   }),
 });
 
+// Update endpoint for user
+http.route({
+  path: "/cli/endpoints",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (
+      typeof body.userId !== "string" ||
+      body.userId.length === 0 ||
+      typeof body.slug !== "string"
+    ) {
+      return new Response(JSON.stringify({ error: "missing_fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!SLUG_REGEX.test(body.slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate name type if provided
+    if (body.name !== undefined && typeof body.name !== "string") {
+      return new Response(JSON.stringify({ error: "invalid_name" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate mockResponse structure if provided
+    if (body.mockResponse !== undefined && body.mockResponse !== null) {
+      if (
+        typeof body.mockResponse !== "object" ||
+        typeof body.mockResponse.status !== "number" ||
+        typeof body.mockResponse.body !== "string" ||
+        !isStringRecord(body.mockResponse.headers)
+      ) {
+        return new Response(JSON.stringify({ error: "invalid_mock_response" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (body.mockResponse.body.length > MAX_BODY_SIZE) {
+        return new Response(JSON.stringify({ error: "mock_body_too_large" }), {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const headerEntries = Object.entries(body.mockResponse.headers) as [string, string][];
+      if (headerEntries.length > MAX_HEADERS) {
+        return new Response(JSON.stringify({ error: "too_many_mock_headers" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      for (const [hKey, hVal] of headerEntries) {
+        if (hKey.length > 1024 || hVal.length > 8192) {
+          return new Response(JSON.stringify({ error: "mock_header_too_large" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
+
+    // Require at least one update field
+    if (body.name === undefined && body.mockResponse === undefined) {
+      return new Response(JSON.stringify({ error: "no_update_fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.endpoints.updateForUser, {
+        slug: body.slug,
+        userId: body.userId,
+        name: body.name,
+        mockResponse: body.mockResponse,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "not_found") {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (message === "not_authorized") {
+        return new Response(JSON.stringify({ error: "not_authorized" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (message === "endpoint_disappeared") {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (
+        message.startsWith("Endpoint name must be") ||
+        message.startsWith("Mock response status must be")
+      ) {
+        return new Response(JSON.stringify({ error: "invalid_input" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[http:error] cli/endpoints PATCH:", error);
+      return new Response(JSON.stringify({ error: "Failed to update endpoint" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
 // Delete endpoint for user
 http.route({
   path: "/cli/endpoints",

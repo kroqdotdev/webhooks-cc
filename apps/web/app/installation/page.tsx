@@ -1,37 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { Copy, Check } from "lucide-react";
-import { copyToClipboard } from "@/lib/clipboard";
+import { CopyButton } from "@/components/ui/copy-button";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { BackButton } from "@/components/nav/back-button";
 import { DocsSidebar } from "@/components/docs/sidebar";
 
-type Tab = "cli" | "sdk";
+type Tab = "cli" | "sdk" | "mcp";
+const TABS: Tab[] = ["cli", "sdk", "mcp"];
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+const KEY_PLACEHOLDER = "whcc_...";
+const KEY_REGEX = /^whcc_[A-Za-z0-9_-]+$/;
 
-  const handleCopy = async () => {
-    const success = await copyToClipboard(text);
-    if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="absolute top-2 right-2 p-1.5 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-      aria-label="Copy to clipboard"
-    >
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-    </button>
-  );
+function buildCursorUrl(apiKey: string) {
+  const config = JSON.stringify({
+    command: "npx",
+    args: ["-y", "@webhooks-cc/mcp"],
+    env: { WHK_API_KEY: apiKey },
+  });
+  // Use TextEncoder for Unicode safety (btoa only handles Latin-1)
+  const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(config)));
+  return `https://cursor.com/en/install-mcp?name=webhooks-cc&config=${encoded}`;
 }
+
+const VSCODE_URL =
+  "https://insiders.vscode.dev/redirect/mcp/install?name=webhooks-cc&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40webhooks-cc%2Fmcp%22%5D%2C%22env%22%3A%7B%22WHK_API_KEY%22%3A%22%24%7Binput%3Awhk_api_key%7D%22%7D%7D&inputs=%5B%7B%22id%22%3A%22whk_api_key%22%2C%22type%22%3A%22promptString%22%2C%22description%22%3A%22webhooks.cc%20API%20key%20%28get%20yours%20at%20webhooks.cc%2Faccount%29%22%2C%22password%22%3Atrue%7D%5D";
 
 function CodeBlock({ children, copyText }: { children: string; copyText?: string }) {
   return (
@@ -46,6 +41,10 @@ function CodeBlock({ children, copyText }: { children: string; copyText?: string
 
 export default function InstallationPage() {
   const [tab, setTab] = useState<Tab>("cli");
+  const [apiKey, setApiKey] = useState("");
+  const trimmed = apiKey.trim();
+  const key = trimmed && KEY_REGEX.test(trimmed) ? trimmed : KEY_PLACEHOLDER;
+  const cursorUrl = useMemo(() => buildCursorUrl(key), [key]);
 
   return (
     <div className="min-h-screen">
@@ -60,15 +59,33 @@ export default function InstallationPage() {
           <main className="flex-1 min-w-0 px-6 py-10 md:px-10">
             <h1 className="text-3xl md:text-4xl font-bold mb-4">Installation</h1>
             <p className="text-lg text-muted-foreground mb-8">
-              Install the CLI to forward webhooks to localhost, or the SDK for programmatic access.
+              Install the CLI, SDK, or MCP server for your AI coding agent.
             </p>
 
             {/* Tab switcher */}
-            <div className="border-2 border-foreground flex mb-8">
-              {(["cli", "sdk"] as const).map((t) => (
+            <div role="tablist" className="border-2 border-foreground flex mb-8">
+              {TABS.map((t) => (
                 <button
                   key={t}
+                  role="tab"
+                  aria-selected={tab === t}
+                  aria-controls={`tabpanel-${t}`}
+                  id={`tab-${t}`}
+                  tabIndex={tab === t ? 0 : -1}
                   onClick={() => setTab(t)}
+                  onKeyDown={(e) => {
+                    const idx = TABS.indexOf(t);
+                    let next: number | null = null;
+                    if (e.key === "ArrowRight") next = (idx + 1) % TABS.length;
+                    else if (e.key === "ArrowLeft") next = (idx - 1 + TABS.length) % TABS.length;
+                    else if (e.key === "Home") next = 0;
+                    else if (e.key === "End") next = TABS.length - 1;
+                    if (next !== null) {
+                      e.preventDefault();
+                      setTab(TABS[next]);
+                      document.getElementById(`tab-${TABS[next]}`)?.focus();
+                    }
+                  }}
                   className={cn(
                     "flex-1 px-4 py-2.5 text-sm font-bold uppercase tracking-wide cursor-pointer transition-colors border-r-2 border-foreground last:border-r-0",
                     tab === t ? "bg-foreground text-background" : "bg-background hover:bg-muted"
@@ -80,7 +97,12 @@ export default function InstallationPage() {
             </div>
 
             {tab === "cli" && (
-              <div className="space-y-6">
+              <div
+                role="tabpanel"
+                id="tabpanel-cli"
+                aria-labelledby="tab-cli"
+                className="space-y-6"
+              >
                 <section>
                   <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
                   <CodeBlock>{`brew install lohsefar/tap/whk`}</CodeBlock>
@@ -140,7 +162,12 @@ whk tunnel 3000     # forward webhooks to localhost:3000`}</CodeBlock>
             )}
 
             {tab === "sdk" && (
-              <div className="space-y-6">
+              <div
+                role="tabpanel"
+                id="tabpanel-sdk"
+                aria-labelledby="tab-sdk"
+                className="space-y-6"
+              >
                 <section>
                   <h2 className="text-lg font-bold mb-3">npm</h2>
                   <CodeBlock>{`npm install @webhooks-cc/sdk`}</CodeBlock>
@@ -188,6 +215,132 @@ console.log(endpoint.url);`}
                     SDK docs
                   </Link>{" "}
                   for the full API reference.
+                </p>
+              </div>
+            )}
+
+            {tab === "mcp" && (
+              <div
+                role="tabpanel"
+                id="tabpanel-mcp"
+                aria-labelledby="tab-mcp"
+                className="space-y-6"
+              >
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Your API key</h2>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Paste your API key to fill it into every command below. It stays in your browser
+                    only — nothing is sent or stored.
+                  </p>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="whcc_..."
+                    className="w-full px-3 py-2 border-2 border-foreground bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-label="webhooks.cc API key"
+                  />
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Get your key from your{" "}
+                    <Link href="/account" className="text-primary hover:underline font-bold">
+                      account page
+                    </Link>
+                    .
+                  </p>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">One-click install</h2>
+                  <div className="space-y-3">
+                    <div>
+                      <a
+                        href={cursorUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 border-2 border-foreground bg-background font-bold text-sm shadow-neo-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
+                      >
+                        Add to Cursor
+                      </a>
+                      <p className="text-sm text-muted-foreground mt-1.5">
+                        {key !== KEY_PLACEHOLDER
+                          ? "Your key is included in the link — do not share this URL."
+                          : "Paste your key above first — it gets baked into the install link."}
+                      </p>
+                    </div>
+                    <div>
+                      <a
+                        href={VSCODE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 border-2 border-foreground bg-background font-bold text-sm shadow-neo-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
+                      >
+                        Add to VS Code
+                      </a>
+                      <p className="text-sm text-muted-foreground mt-1.5">
+                        VS Code prompts you for your key during install.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Claude Code</h2>
+                  <CodeBlock>{`claude mcp add -s user webhooks-cc -e WHK_API_KEY=${key} -- npx -y @webhooks-cc/mcp`}</CodeBlock>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Cursor (CLI)</h2>
+                  <CodeBlock>{`npx @webhooks-cc/mcp setup cursor --api-key ${key}`}</CodeBlock>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">VS Code (CLI)</h2>
+                  <CodeBlock>{`npx @webhooks-cc/mcp setup vscode --api-key ${key}`}</CodeBlock>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">OpenAI Codex</h2>
+                  <CodeBlock>{`codex mcp add webhooks-cc -e WHK_API_KEY=${key} -- npx -y @webhooks-cc/mcp`}</CodeBlock>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Windsurf</h2>
+                  <CodeBlock>{`npx @webhooks-cc/mcp setup windsurf --api-key ${key}`}</CodeBlock>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Claude Desktop</h2>
+                  <CodeBlock>{`npx @webhooks-cc/mcp setup claude-desktop --api-key ${key}`}</CodeBlock>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Manual config</h2>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    For any tool that reads an MCP config JSON file:
+                  </p>
+                  <CodeBlock>
+                    {`{
+  "mcpServers": {
+    "webhooks-cc": {
+      "command": "npx",
+      "args": ["-y", "@webhooks-cc/mcp"],
+      "env": {
+        "WHK_API_KEY": "${key}"
+      }
+    }
+  }
+}`}
+                  </CodeBlock>
+                </section>
+
+                <p className="text-sm text-muted-foreground">
+                  See the{" "}
+                  <Link href="/docs/mcp" className="text-primary hover:underline font-bold">
+                    MCP docs
+                  </Link>{" "}
+                  for the full tool reference.
                 </p>
               </div>
             )}

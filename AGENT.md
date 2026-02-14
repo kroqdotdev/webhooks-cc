@@ -4,7 +4,7 @@ Operating guide for coding agents working in `webhooks-cc`.
 
 ## Mission
 
-Ship safe, minimal, verified changes in a mixed TypeScript/Rust/Go monorepo that powers webhook capture, inspection, CLI tunneling, and a public SDK.
+Ship safe, minimal, verified changes in a mixed TypeScript/Rust/Go monorepo that powers webhook capture, inspection, CLI tunneling, a public SDK, and an MCP server for AI agents.
 
 ## Stack At A Glance
 
@@ -15,6 +15,7 @@ Ship safe, minimal, verified changes in a mixed TypeScript/Rust/Go monorepo that
 - CLI: Go Cobra (`apps/cli`)
 - Shared Go types: `apps/go-shared`
 - SDK: TypeScript package `@webhooks-cc/sdk` (`packages/sdk`)
+- MCP: MCP server `@webhooks-cc/mcp` for AI agent integration (`packages/mcp`)
 
 ## Repo Map
 
@@ -22,8 +23,9 @@ Ship safe, minimal, verified changes in a mixed TypeScript/Rust/Go monorepo that
 - `convex`: schema, queries/mutations/actions, HTTP actions, cron jobs, billing, device auth
 - `apps/receiver-rs`: high-throughput webhook ingress (Axum + Tokio + Redis), quota via Lua scripts, batching, circuit breaker
 - `apps/cli`: end-user CLI (`auth`, `create/list/delete`, `listen`, `tunnel`, `replay`, `update`)
-- `packages/sdk`: public API client + helpers + tests
-- `.github/workflows`: CI, CLI release, SDK publish
+- `packages/sdk`: public API client + matchers + helpers + tests
+- `packages/mcp`: MCP server (11 tools) + setup CLI for AI coding agents
+- `.github/workflows`: CI, CLI release, SDK publish, MCP publish
 - `docs`: internal docs (currently gitignored by root `.gitignore`)
 
 ## Local Prerequisites
@@ -68,6 +70,7 @@ If using the systemd receiver process, rebuilding is not enough. Restart service
 - Receiver tests: `cd apps/receiver-rs && cargo test`
 - CLI tests: `cd apps/cli && go test ./...`
 - SDK tests: `pnpm --filter @webhooks-cc/sdk test`
+- MCP tests: `pnpm --filter @webhooks-cc/mcp test`
 
 CI also runs Go race tests and golangci-lint on `apps/cli`, and clippy on `apps/receiver-rs`.
 
@@ -100,7 +103,8 @@ Key operational behaviors:
 - Receiver ingest/runtime behavior: `apps/receiver-rs/src/`
 - CLI streaming/tunneling/auth/update: `apps/cli/internal/*`, command wiring in `apps/cli/cmd/whk/main.go`
 - Dashboard/API UX: `apps/web/app/*`, `apps/web/components/*`, `apps/web/lib/*`
-- SDK contract/helpers: `packages/sdk/src/*`
+- SDK contract/helpers/matchers: `packages/sdk/src/*`
+- MCP tool definitions/setup CLI: `packages/mcp/src/*`
 
 ## Non-Obvious Gotchas
 
@@ -132,4 +136,4 @@ Treat these paths as high-regression risk; prefer focused tests when touching th
 ## Licensing Boundaries
 
 - AGPL-3.0: `apps/web`, `apps/receiver-rs`, `convex`
-- MIT: `apps/cli`, `apps/go-shared`, `packages/sdk`
+- MIT: `apps/cli`, `apps/go-shared`, `packages/sdk`, `packages/mcp`

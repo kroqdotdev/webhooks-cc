@@ -406,3 +406,67 @@ export const removeForUser = internalMutation({
     return { success: true };
   },
 });
+
+export const updateForUser = internalMutation({
+  args: {
+    slug: v.string(),
+    userId: v.id("users"),
+    name: v.optional(v.string()),
+    mockResponse: v.optional(
+      v.union(
+        v.object({
+          status: v.number(),
+          body: v.string(),
+          headers: v.record(v.string(), v.string()),
+        }),
+        v.null()
+      )
+    ),
+  },
+  handler: async (ctx, { slug, userId, name, mockResponse }) => {
+    const endpoint = await ctx.db
+      .query("endpoints")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+
+    if (!endpoint) throw new Error("not_found");
+    if (endpoint.userId !== userId) throw new Error("not_authorized");
+
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
+        throw new Error(`Endpoint name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+      }
+    }
+
+    if (mockResponse && mockResponse !== null) {
+      const status = mockResponse.status;
+      if (!Number.isInteger(status) || status < 100 || status > 599) {
+        throw new Error("Mock response status must be an integer between 100 and 599");
+      }
+    }
+
+    await ctx.db.patch(endpoint._id, {
+      ...(name !== undefined && { name: name.trim() }),
+      ...(mockResponse !== undefined && {
+        mockResponse: mockResponse === null ? undefined : mockResponse,
+      }),
+    });
+
+    // Only invalidate when mockResponse changes — name is not cached by the receiver
+    if (mockResponse !== undefined) {
+      await ctx.scheduler.runAfter(2000, internal.endpoints.invalidateReceiverCache, {
+        slug: endpoint.slug,
+      });
+    }
+
+    const updated = await ctx.db.get(endpoint._id);
+    if (!updated) throw new Error("endpoint_disappeared");
+    return {
+      _id: updated._id,
+      slug: updated.slug,
+      name: updated.name,
+      createdAt: updated.createdAt ?? updated._creationTime,
+    };
+  },
+});

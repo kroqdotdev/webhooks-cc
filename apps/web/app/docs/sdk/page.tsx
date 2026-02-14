@@ -13,8 +13,8 @@ export default function SdkPage() {
     <article>
       <h1 className="text-3xl md:text-4xl font-bold mb-4">SDK</h1>
       <p className="text-lg text-muted-foreground mb-10">
-        The TypeScript SDK lets you create endpoints, read captured requests, and integrate
-        webhooks.cc into your application or test suite programmatically.
+        The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks
+        in real-time, and integrate webhooks.cc into your test suite programmatically.
       </p>
 
       <section className="mb-10">
@@ -56,24 +56,61 @@ console.log(endpoint.url);
       </section>
 
       <section className="mb-10">
-        <h2 className="text-xl font-bold mb-3">Read captured requests</h2>
-        <pre className="neo-code text-sm">{`const requests = await client.requests.list(endpoint.slug, {
-  limit: 10,
-});
-
-for (const req of requests) {
-  console.log(req.method, req.path, req.body);
-}`}</pre>
+        <h2 className="text-xl font-bold mb-3">Send a test webhook</h2>
+        <pre className="neo-code text-sm">{`await client.endpoints.send(endpoint.slug, {
+  method: "POST",
+  headers: { "x-event-type": "payment.success" },
+  body: { amount: 4999, currency: "usd" },
+});`}</pre>
       </section>
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Wait for a request</h2>
-        <pre className="neo-code text-sm">{`const request = await client.requests.waitFor(endpoint.slug, {
-  timeout: 10000,
-  match: (r) => r.method === "POST",
+        <p className="text-muted-foreground mb-4">
+          Timeouts accept human-readable strings like{" "}
+          <code className="font-mono font-bold">&quot;30s&quot;</code>,{" "}
+          <code className="font-mono font-bold">&quot;5m&quot;</code>, or milliseconds.
+        </p>
+        <pre className="neo-code text-sm">{`import { matchMethod, matchBodyPath } from "@webhooks-cc/sdk";
+
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "10s",
+  match: matchBodyPath("event", "payment.success"),
 });
 
 console.log(request.body);`}</pre>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Stream requests in real-time</h2>
+        <pre className="neo-code text-sm">{`for await (const request of client.requests.subscribe(endpoint.slug)) {
+  console.log(request.method, request.path);
+  if (request.method === "POST") break;
+}`}</pre>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Replay a captured request</h2>
+        <pre className="neo-code text-sm">{`const response = await client.requests.replay(
+  request.id,
+  "http://localhost:3000/webhooks"
+);
+
+console.log(response.status); // 200`}</pre>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Detect webhook providers</h2>
+        <pre className="neo-code text-sm">{`import {
+  isStripeWebhook,
+  isGitHubWebhook,
+  isShopifyWebhook,
+  isSlackWebhook,
+} from "@webhooks-cc/sdk";
+
+if (isStripeWebhook(request)) {
+  console.log("Stripe webhook received");
+}`}</pre>
       </section>
 
       <section className="border-t-2 border-foreground pt-8">
@@ -83,13 +120,21 @@ console.log(request.body);`}</pre>
             <Link href="/docs/sdk/api" className="text-primary hover:underline font-bold">
               API Reference
             </Link>{" "}
-            <span className="text-muted-foreground">- all methods and types</span>
+            <span className="text-muted-foreground">- all methods, matchers, and types</span>
           </li>
           <li>
             <Link href="/docs/sdk/testing" className="text-primary hover:underline font-bold">
               Testing patterns
             </Link>{" "}
             <span className="text-muted-foreground">- CI/CD integration examples</span>
+          </li>
+          <li>
+            <Link href="/docs/mcp" className="text-primary hover:underline font-bold">
+              MCP Server
+            </Link>{" "}
+            <span className="text-muted-foreground">
+              - AI agent integration for Claude, Cursor, VS Code
+            </span>
           </li>
         </ul>
       </section>

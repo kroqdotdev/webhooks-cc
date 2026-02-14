@@ -155,7 +155,8 @@ webhooks-cc/
 │   ├── cli/          # Go CLI with interactive TUI (Bubble Tea)
 │   └── go-shared/    # Shared Go types
 ├── packages/
-│   └── sdk/          # TypeScript SDK
+│   ├── sdk/          # TypeScript SDK (@webhooks-cc/sdk)
+│   └── mcp/          # MCP server for AI agents (@webhooks-cc/mcp)
 ├── convex/           # Convex backend functions
 └── .github/          # CI/CD workflows
 ```
@@ -171,6 +172,6 @@ webhooks-cc/
 This project uses a split license. By contributing, you agree that your contributions will be licensed under the license that applies to the component you modify:
 
 - **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, and `convex/`
-- **MIT** for `apps/cli/`, `packages/sdk/`, and `apps/go-shared/`
+- **MIT** for `apps/cli/`, `packages/sdk/`, `packages/mcp/`, and `apps/go-shared/`
 
 See the root [LICENSE](LICENSE) and each component's `LICENSE` file for details.

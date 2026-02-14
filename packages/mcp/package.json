@@ -1,10 +1,13 @@
 {
-  "name": "@webhooks-cc/sdk",
-  "version": "0.3.0",
-  "description": "TypeScript SDK for webhooks.cc — create endpoints, capture requests, assert in tests",
+  "name": "@webhooks-cc/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for webhooks.cc — AI agent integration for webhook testing",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "bin": {
+    "webhooks-cc-mcp": "dist/bin/mcp.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,18 +20,18 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "build": "tsup",
+    "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
     "webhook",
-    "testing",
-    "api",
-    "sdk",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agent",
     "webhooks-cc"
   ],
   "author": "",
@@ -36,9 +39,14 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/webhooks-cc/webhooks-cc",
-    "directory": "packages/sdk"
+    "directory": "packages/mcp"
   },
   "homepage": "https://webhooks.cc",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@webhooks-cc/sdk": "workspace:*",
+    "zod": "^3.25.0"
+  },
   "devDependencies": {
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",

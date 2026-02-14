@@ -21,6 +21,7 @@ Get a unique URL, point your webhook there, and see every request in real-time. 
 - **Forward to localhost** — Tunnel webhooks to your local server during development
 - **CLI with interactive TUI** — Manage endpoints, tunnel, and stream requests from your terminal
 - **TypeScript SDK** — Access webhook data programmatically for automation and testing
+- **MCP server** — Connect AI coding agents (Claude Code, Cursor, VS Code, Codex) to your webhooks
 
 ## Use Cases
 
@@ -60,7 +61,17 @@ whk
 npm install @webhooks-cc/sdk
 ```
 
-See [webhooks.cc/installation](https://webhooks.cc/installation) for Homebrew, manual downloads, and other methods.
+### MCP server
+
+```bash
+# Claude Code
+claude mcp add -s user webhooks-cc -e WHK_API_KEY=whcc_... -- npx -y @webhooks-cc/mcp
+
+# Cursor, VS Code, Windsurf, Claude Desktop
+npx @webhooks-cc/mcp setup cursor --api-key whcc_...
+```
+
+See [webhooks.cc/installation](https://webhooks.cc/installation) for all install methods, one-click buttons, and setup guides.
 
 ## CLI
 
@@ -96,15 +107,39 @@ Pass `--nogui` or set `WHK_NOGUI=1` to skip the TUI and print help.
 ## SDK
 
 ```typescript
-import { WebhooksCC } from "@webhooks-cc/sdk";
+import { WebhooksCC, matchMethod, matchHeader, matchAll } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({ apiKey: "whcc_..." });
 
 const endpoint = await client.endpoints.create({ name: "my-webhook" });
 console.log(endpoint.url);
 
-const requests = await client.requests.list(endpoint.slug);
+// Wait for a matching request with human-readable timeout
+const req = await client.requests.waitFor(endpoint.slug, {
+  timeout: "30s",
+  match: matchAll(matchMethod("POST"), matchHeader("stripe-signature")),
+});
+
+// Replay captured requests to your local server
+await client.requests.replay(req.id, "http://localhost:3000/webhooks");
 ```
+
+## MCP server
+
+The `@webhooks-cc/mcp` package exposes 11 tools that let AI agents manage endpoints, inspect webhooks, send test payloads, and replay requests through natural language.
+
+```
+You: "Create a webhook endpoint for testing Stripe"
+Agent: Created endpoint "stripe-test" at https://go.webhooks.cc/w/abc123
+
+You: "Send a test checkout.session.completed event"
+Agent: Sent POST to stripe-test
+
+You: "Replay that to my local server"
+Agent: Replayed to http://localhost:3000/webhooks — 200 OK
+```
+
+See [`packages/mcp/README.md`](packages/mcp/README.md) for full setup and tool reference.
 
 ## Open Source
 
@@ -117,6 +152,6 @@ For compliance or air-gapped environments, the code is here. For most use cases,
 This project uses a split license:
 
 - **AGPL-3.0** — The web app, receiver, and Convex backend (`apps/web/`, `apps/receiver-rs/`, `convex/`). See [LICENSE](LICENSE).
-- **MIT** — The CLI and SDK (`apps/cli/`, `packages/sdk/`, `apps/go-shared/`). See their respective `LICENSE` files.
+- **MIT** — The CLI, SDK, and MCP server (`apps/cli/`, `packages/sdk/`, `packages/mcp/`, `apps/go-shared/`). See their respective `LICENSE` files.
 
-If you use the CLI or SDK in your own projects, MIT applies. If you fork and host the service, AGPL-3.0 applies.
+If you use the CLI, SDK, or MCP server in your own projects, MIT applies. If you fork and host the service, AGPL-3.0 applies.

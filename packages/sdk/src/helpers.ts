@@ -48,3 +48,28 @@ export function matchJsonField(field: string, value: unknown): (request: Request
     return (body as Record<string, unknown>)[field] === value;
   };
 }
+
+/** Check if a request looks like a Shopify webhook. */
+export function isShopifyWebhook(request: Request): boolean {
+  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-shopify-hmac-sha256");
+}
+
+/** Check if a request looks like a Slack webhook. */
+export function isSlackWebhook(request: Request): boolean {
+  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-slack-signature");
+}
+
+/** Check if a request looks like a Twilio webhook. */
+export function isTwilioWebhook(request: Request): boolean {
+  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-twilio-signature");
+}
+
+/** Check if a request looks like a Paddle webhook. */
+export function isPaddleWebhook(request: Request): boolean {
+  return Object.keys(request.headers).some((k) => k.toLowerCase() === "paddle-signature");
+}
+
+/** Check if a request looks like a Linear webhook. */
+export function isLinearWebhook(request: Request): boolean {
+  return Object.keys(request.headers).some((k) => k.toLowerCase() === "linear-signature");
+}

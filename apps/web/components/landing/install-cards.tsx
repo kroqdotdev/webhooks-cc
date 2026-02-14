@@ -5,7 +5,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 
 export function InstallCards() {
   return (
-    <div className="mt-16 grid md:grid-cols-2 gap-6">
+    <div className="mt-16 grid md:grid-cols-3 gap-6">
       <div className="neo-card neo-card-static">
         <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">SDK</p>
         <div className="neo-code !p-3 !shadow-none relative">
@@ -36,6 +36,15 @@ export function InstallCards() {
           </Link>
         </p>
       </div>
+      <Link href="/docs/mcp" className="neo-card neo-card-static block group">
+        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">MCP</p>
+        <p className="text-sm font-bold group-hover:text-primary transition-colors">
+          Connect your AI coding agent — Claude Code, Cursor, VS Code, Codex & more.
+        </p>
+        <p className="text-xs text-primary font-bold mt-2 group-hover:underline">
+          Setup guide &rarr;
+        </p>
+      </Link>
     </div>
   );
 }

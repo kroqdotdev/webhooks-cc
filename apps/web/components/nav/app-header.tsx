@@ -45,6 +45,15 @@ export function AppHeader({
         </div>
 
         <div className="flex items-center gap-3">
+          <Link href="/docs" className="text-sm text-muted-foreground hover:text-foreground">
+            Docs
+          </Link>
+          <Link
+            href="/installation"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Install
+          </Link>
           <ThemeToggle />
           <Link href="/account" className="text-sm text-muted-foreground hover:text-foreground">
             Account

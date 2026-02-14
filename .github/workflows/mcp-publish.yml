@@ -1,0 +1,39 @@
+name: MCP Publish
+
+on:
+  push:
+    tags:
+      - "mcp-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build SDK (dependency)
+        run: pnpm --filter @webhooks-cc/sdk build
+
+      - name: Typecheck
+        run: pnpm --filter @webhooks-cc/mcp typecheck
+
+      - name: Build MCP
+        run: pnpm --filter @webhooks-cc/mcp build
+
+      - name: Run tests
+        run: pnpm --filter @webhooks-cc/mcp test
+
+      - name: Publish to npm
+        run: pnpm --filter @webhooks-cc/mcp publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
