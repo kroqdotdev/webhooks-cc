@@ -2,8 +2,9 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, howToSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
-  title: "CLI Tunneling Docs",
-  description: "Forward webhooks from webhooks.cc to your local development server.",
+  title: "Webhook Tunnel to Localhost",
+  description:
+    "Forward webhooks from webhooks.cc to your local development server with the CLI tunnel. No port forwarding, firewall changes, or ngrok.",
   path: "/docs/cli/tunnel",
 });
 
