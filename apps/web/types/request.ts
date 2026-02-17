@@ -74,7 +74,7 @@ export const METHOD_COLORS: Record<string, string> = {
   ...METHOD_COLORS_MAP,
 };
 
-export function formatRelativeTime(timestamp: number): string {
+export function formatTimestamp(timestamp: number): string {
   const d = new Date(timestamp);
   const now = new Date();
   const time = d.toLocaleTimeString(undefined, {

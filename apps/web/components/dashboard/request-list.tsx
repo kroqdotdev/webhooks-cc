@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Circle, ArrowUpDown, Search, X, Loader2 } from "lucide-react";
-import { getMethodColor, formatRelativeTime } from "@/types/request";
+import { getMethodColor, formatTimestamp } from "@/types/request";
 import type { AnyRequestSummary } from "@/types/request";
 
 /** Extract a string ID from either a Convex RequestSummary or ClickHouseSummary. */
@@ -28,6 +28,8 @@ interface RequestListProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  searchLoading?: boolean;
+  searchError?: boolean;
 }
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -50,6 +52,8 @@ export function RequestList({
   onLoadMore,
   hasMore,
   loadingMore,
+  searchLoading,
+  searchError,
 }: RequestListProps) {
   const sorted = sortNewest ? requests : [...requests].reverse();
   const displayCount = totalCount ?? requests.length;
@@ -137,9 +141,14 @@ export function RequestList({
 
       {/* Request rows */}
       <div className="flex-1 overflow-y-auto">
-        {sorted.length === 0 ? (
+        {searchLoading ? (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold uppercase tracking-wide flex items-center justify-center gap-2">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Searching...
+          </div>
+        ) : sorted.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold uppercase tracking-wide">
-            No matching requests
+            {searchError ? "Search unavailable" : "No matching requests"}
           </div>
         ) : (
           <>
@@ -168,7 +177,7 @@ export function RequestList({
                     #{id.slice(-6)}
                   </span>
                   <span className="text-xs text-muted-foreground font-mono shrink-0">
-                    {formatRelativeTime(request.receivedAt)}
+                    {formatTimestamp(request.receivedAt)}
                   </span>
                 </button>
               );

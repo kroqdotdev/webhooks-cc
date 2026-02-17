@@ -111,20 +111,16 @@ async fn main() {
         clickhouse,
     };
 
-    // CORS: allow all origins (public webhook capture endpoints)
-    let cors = CorsLayer::new()
+    // CORS: allow all origins only on public webhook capture endpoints.
+    // Internal endpoints (/search, /internal/*) have no CORS (server-to-server only).
+    let public_cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build router
-    let app = Router::new()
+    // Public routes: webhook capture + health (need permissive CORS)
+    let public_routes = Router::new()
         .route("/health", get(handlers::health::health))
-        .route("/search", get(handlers::search::search))
-        .route(
-            "/internal/cache-invalidate/{slug}",
-            post(handlers::cache_invalidate::cache_invalidate),
-        )
         .route(
             "/w/{slug}/{*path}",
             any(handlers::webhook::handle_webhook),
@@ -133,8 +129,20 @@ async fn main() {
             "/w/{slug}",
             any(handlers::webhook::handle_webhook_no_path),
         )
+        .layer(public_cors);
+
+    // Internal routes: no CORS (server-to-server only, authenticated via shared secret)
+    let internal_routes = Router::new()
+        .route("/search", get(handlers::search::search))
+        .route(
+            "/internal/cache-invalidate/{slug}",
+            post(handlers::cache_invalidate::cache_invalidate),
+        );
+
+    // Build router
+    let app = public_routes
+        .merge(internal_routes)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
-        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

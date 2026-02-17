@@ -5,6 +5,9 @@ use serde::Deserialize;
 
 use super::types::{ClickHouseRequest, ClickHouseResponseRow, SearchResultRequest};
 
+/// Maximum response size from ClickHouse queries (10 MB).
+const MAX_RESPONSE_SIZE: usize = 10 * 1024 * 1024;
+
 /// ClickHouse HTTP client for inserting and querying request data.
 #[derive(Clone)]
 pub struct ClickHouseClient {
@@ -50,7 +53,7 @@ impl ClickHouseClient {
         );
 
         // Build JSONEachRow body: one JSON object per line
-        let mut body = String::new();
+        let mut body = String::with_capacity(requests.len() * 512);
         for req in requests {
             let line = serde_json::to_string(req).map_err(|e| format!("serialize: {e}"))?;
             body.push_str(&line);
@@ -98,9 +101,20 @@ impl ClickHouseClient {
             return Err(format!("ClickHouse query failed ({status}): {text}"));
         }
 
-        let json_resp: ClickHouseJsonResponse = resp
-            .json()
+        let body_bytes = resp
+            .bytes()
             .await
+            .map_err(|e| format!("read response: {e}"))?;
+
+        if body_bytes.len() > MAX_RESPONSE_SIZE {
+            return Err(format!(
+                "ClickHouse response too large: {} bytes (max {})",
+                body_bytes.len(),
+                MAX_RESPONSE_SIZE
+            ));
+        }
+
+        let json_resp: ClickHouseJsonResponse = serde_json::from_slice(&body_bytes)
             .map_err(|e| format!("parse response: {e}"))?;
 
         Ok(json_resp

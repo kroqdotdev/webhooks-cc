@@ -49,6 +49,8 @@ export default function DashboardPage() {
   const [searchResults, setSearchResults] = useState<ClickHouseRequest[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   // Map of ClickHouse request details by id for quick lookup
   const clickHouseDetailMap = useRef(new Map<string, ClickHouseRequest>());
@@ -98,9 +100,10 @@ export default function DashboardPage() {
   const authToken = useAuthToken();
 
   // ClickHouse search helper — calls Next.js API route (which proxies to receiver)
+  // Returns { data, ok } to distinguish errors from empty results.
   const fetchFromClickHouse = useCallback(
-    async (params: Record<string, string>): Promise<ClickHouseRequest[]> => {
-      if (!authToken) return [];
+    async (params: Record<string, string>): Promise<{ data: ClickHouseRequest[]; ok: boolean }> => {
+      if (!authToken) return { data: [], ok: false };
       try {
         const url = new URL("/api/search/requests", window.location.origin);
         for (const [key, value] of Object.entries(params)) {
@@ -109,13 +112,13 @@ export default function DashboardPage() {
         const resp = await fetch(url.toString(), {
           headers: { Authorization: `Bearer ${authToken}` },
         });
-        if (!resp.ok) return [];
+        if (!resp.ok) return { data: [], ok: false };
         const results: unknown = await resp.json();
-        if (!Array.isArray(results)) return [];
-        return results as ClickHouseRequest[];
+        if (!Array.isArray(results)) return { data: [], ok: false };
+        return { data: results as ClickHouseRequest[], ok: true };
       } catch (err) {
         console.error("ClickHouse search failed:", err);
-        return [];
+        return { data: [], ok: false };
       }
     },
     [authToken]
@@ -144,20 +147,24 @@ export default function DashboardPage() {
     if (!currentEndpoint || !summaries?.length || !authToken) return;
     // Only pre-fetch once per endpoint
     if (prefetchedSlug.current === currentEndpoint.slug) return;
-    prefetchedSlug.current = currentEndpoint.slug;
 
+    const slugToFetch = currentEndpoint.slug;
     let cancelled = false;
 
     fetchFromClickHouse({
-      slug: currentEndpoint.slug,
+      slug: slugToFetch,
       limit: "50",
       order: "desc",
-    }).then((results) => {
+    }).then(({ data: results }) => {
       if (cancelled) return;
+      // Mark as prefetched only after success
+      prefetchedSlug.current = slugToFetch;
       storeClickHouseResults(results);
-      // Map Convex _ids to ClickHouse details by matching receivedAt
+      // Map Convex _ids to ClickHouse details by matching receivedAt + method
       for (const summary of summaries) {
-        const match = results.find((r) => Math.abs(r.receivedAt - summary.receivedAt) < 2);
+        const match = results.find(
+          (r) => r.method === summary.method && Math.abs(r.receivedAt - summary.receivedAt) < 2
+        );
         if (match) {
           clickHouseDetailMap.current.set(summary._id, match);
         }
@@ -183,9 +190,10 @@ export default function DashboardPage() {
       return;
     }
 
-    // Not in cache — fetch from ClickHouse
+    // Not in cache — clear stale detail and fetch from ClickHouse
+    setSelectedDetail(null);
+
     if (!currentEndpoint) {
-      setSelectedDetail(null);
       return;
     }
 
@@ -213,12 +221,17 @@ export default function DashboardPage() {
       params.to = String(receivedAt);
     }
 
-    fetchFromClickHouse(params).then((results) => {
+    fetchFromClickHouse(params).then(({ data: results }) => {
       if (cancelled) return;
       storeClickHouseResults(results);
       if (receivedAt != null && results.length > 0) {
-        // Match by closest timestamp
-        const match = results.reduce((best, r) =>
+        // Match by closest timestamp + method from summary
+        const summaryMethod = summaries?.find((s) => s._id === selectedId)?.method;
+        const candidates = summaryMethod
+          ? results.filter((r) => r.method === summaryMethod)
+          : results;
+        const pool = candidates.length > 0 ? candidates : results;
+        const match = pool.reduce((best, r) =>
           Math.abs(r.receivedAt - receivedAt!) < Math.abs(best.receivedAt - receivedAt!) ? r : best
         );
         clickHouseDetailMap.current.set(selectedId, match);
@@ -243,6 +256,16 @@ export default function DashboardPage() {
     fetchFromClickHouse,
     storeClickHouseResults,
   ]);
+
+  // Clear paginated results when filter changes (avoid stale items from previous filter)
+  const prevMethodFilter = useRef(methodFilter);
+  useEffect(() => {
+    if (prevMethodFilter.current !== methodFilter) {
+      prevMethodFilter.current = methodFilter;
+      setOlderRequests([]);
+      setHasMore(false);
+    }
+  }, [methodFilter]);
 
   // Handle Load More
   const handleLoadMore = useCallback(async () => {
@@ -269,7 +292,7 @@ export default function DashboardPage() {
     if (toTimestamp != null) params.to = String(Math.floor(toTimestamp) - 1);
 
     try {
-      const results = await fetchFromClickHouse(params);
+      const { data: results } = await fetchFromClickHouse(params);
       storeClickHouseResults(results);
       setOlderRequests((prev) => [...prev, ...results]);
       setHasMore(results.length >= CLICKHOUSE_PAGE_SIZE);
@@ -292,10 +315,14 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!debouncedSearch || !currentEndpoint) {
       setSearchResults([]);
+      setSearchError(false);
+      setSearchLoading(false);
       return;
     }
 
     let cancelled = false;
+    setSearchLoading(true);
+    setSearchError(false);
 
     const params: Record<string, string> = {
       slug: currentEndpoint.slug,
@@ -306,13 +333,18 @@ export default function DashboardPage() {
     if (methodFilter !== "ALL") params.method = methodFilter;
 
     fetchFromClickHouse(params)
-      .then((results) => {
+      .then(({ data: results, ok }) => {
         if (cancelled) return;
-        storeClickHouseResults(results);
-        setSearchResults(results);
+        if (!ok) {
+          setSearchError(true);
+          setSearchResults([]);
+        } else {
+          storeClickHouseResults(results);
+          setSearchResults(results);
+        }
       })
-      .catch(() => {
-        // ClickHouse search not available — results stay empty
+      .finally(() => {
+        if (!cancelled) setSearchLoading(false);
       });
 
     return () => {
@@ -340,11 +372,18 @@ export default function DashboardPage() {
         : summaries.filter((r) => r.method === methodFilter)
       : [];
 
-    const olderSummaries: ClickHouseSummary[] = olderRequests.map((r) => ({
-      id: r.id,
-      method: r.method,
-      receivedAt: r.receivedAt,
-    }));
+    // Deduplicate: exclude ClickHouse items whose receivedAt overlaps with Convex summaries
+    const oldestConvex =
+      convexSummaries.length > 0
+        ? convexSummaries[convexSummaries.length - 1].receivedAt
+        : -Infinity;
+    const olderSummaries: ClickHouseSummary[] = olderRequests
+      .filter((r) => r.receivedAt < oldestConvex)
+      .map((r) => ({
+        id: r.id,
+        method: r.method,
+        receivedAt: r.receivedAt,
+      }));
 
     return [...convexSummaries, ...olderSummaries];
   }, [summaries, olderRequests, searchResults, debouncedSearch, methodFilter]);
@@ -388,6 +427,8 @@ export default function DashboardPage() {
     setSearchResults([]);
     setHasMore(false);
     setLoadingMore(false);
+    setSearchLoading(false);
+    setSearchError(false);
     clickHouseDetailMap.current.clear();
     prefetchedSlug.current = null;
   }, [currentEndpointId]);
@@ -418,7 +459,11 @@ export default function DashboardPage() {
     if (methodFilter !== "ALL") params.method = methodFilter;
     if (debouncedSearch) params.q = debouncedSearch;
 
-    const results = await fetchFromClickHouse(params);
+    const { data: results, ok } = await fetchFromClickHouse(params);
+    if (!ok || results.length === 0) {
+      alert("Export failed: could not fetch data. Please try again.");
+      return;
+    }
     downloadFile(exportToJson(results), "webhooks-export.json", "application/json");
   }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
 
@@ -432,7 +477,11 @@ export default function DashboardPage() {
     if (methodFilter !== "ALL") params.method = methodFilter;
     if (debouncedSearch) params.q = debouncedSearch;
 
-    const results = await fetchFromClickHouse(params);
+    const { data: results, ok } = await fetchFromClickHouse(params);
+    if (!ok || results.length === 0) {
+      alert("Export failed: could not fetch data. Please try again.");
+      return;
+    }
     downloadFile(exportToCsv(results), "webhooks-export.csv", "text/csv");
   }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
 
@@ -490,6 +539,8 @@ export default function DashboardPage() {
                 onLoadMore={handleLoadMore}
                 hasMore={showHasMore}
                 loadingMore={loadingMore}
+                searchLoading={searchLoading}
+                searchError={searchError}
               />
             </div>
             <div className="flex-1 overflow-hidden">
@@ -538,6 +589,8 @@ export default function DashboardPage() {
                 onLoadMore={handleLoadMore}
                 hasMore={showHasMore}
                 loadingMore={loadingMore}
+                searchLoading={searchLoading}
+                searchError={searchError}
               />
             )}
           </div>

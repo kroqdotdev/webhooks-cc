@@ -21,7 +21,7 @@ pub struct ClickHouseRequest {
     pub content_type: String,
     pub size: u32,
     pub is_ephemeral: bool,
-    pub received_at: String, // DateTime64 as ISO string
+    pub received_at: String, // DateTime64(3) as decimal seconds (e.g. "1739800496.789")
 }
 
 impl ClickHouseRequest {
@@ -40,7 +40,7 @@ impl ClickHouseRequest {
         let query_json = serde_json::to_string(&req.query_params).unwrap_or_default();
 
         // Convert epoch ms to ISO 8601 with milliseconds for DateTime64(3)
-        let received_at = epoch_ms_to_iso(req.received_at);
+        let received_at = epoch_ms_to_ch_decimal(req.received_at);
 
         Self {
             endpoint_id: info.endpoint_id.clone(),
@@ -63,14 +63,14 @@ impl ClickHouseRequest {
 /// Convert epoch milliseconds to a ClickHouse DateTime64(3) compatible string.
 /// ClickHouse accepts epoch seconds as a float (e.g. "1739800496.789").
 /// Uses div_euclid/rem_euclid for correct handling of negative timestamps.
-fn epoch_ms_to_iso(ms: i64) -> String {
+fn epoch_ms_to_ch_decimal(ms: i64) -> String {
     let secs = ms.div_euclid(1000);
     let subsec_ms = ms.rem_euclid(1000) as u64;
     format!("{secs}.{subsec_ms:03}")
 }
 
 /// A request row returned from ClickHouse queries.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ClickHouseResponseRow {
     pub endpoint_id: String,
     pub slug: String,
@@ -163,7 +163,11 @@ impl SearchResultRequest {
 /// ClickHouse returns DateTime64(3) as "2026-02-17 12:34:56.789" in JSON format.
 fn parse_received_at(s: &str) -> f64 {
     // Try parsing as epoch seconds with millis (e.g. "1739800496.789")
-    if let Ok(f) = s.parse::<f64>() {
+    // Sanity check: epoch seconds should be in a reasonable range (2000-01-01 to 2100-01-01)
+    if let Ok(f) = s.parse::<f64>()
+        && f > 946_684_800.0
+        && f < 4_102_444_800.0
+    {
         return f * 1000.0;
     }
     // Try parsing as "YYYY-MM-DD HH:MM:SS.mmm" format

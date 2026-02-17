@@ -5,6 +5,7 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use crate::handlers::auth::verify_bearer_token;
+use crate::handlers::webhook::is_valid_slug;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +46,14 @@ pub async fn search(
         );
     }
 
+    // user_id is required and must be non-empty
+    if params.user_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "user_id is required"})),
+        );
+    }
+
     // ClickHouse must be enabled
     let clickhouse = match &state.clickhouse {
         Some(ch) => ch,
@@ -57,7 +66,7 @@ pub async fn search(
     };
 
     let limit = params.limit.unwrap_or(50).min(200);
-    let offset = params.offset.unwrap_or(0);
+    let offset = params.offset.unwrap_or(0).min(10_000);
     let order = match params.order.as_deref() {
         Some("asc") => "ASC",
         _ => "DESC",
@@ -71,6 +80,12 @@ pub async fn search(
     )];
 
     if let Some(slug) = &params.slug {
+        if !is_valid_slug(slug) {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"error": "invalid slug"})),
+            );
+        }
         conditions.push(format!(
             "slug = '{}'",
             escape_clickhouse_string(slug)

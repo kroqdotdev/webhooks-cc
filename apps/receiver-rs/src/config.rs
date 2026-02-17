@@ -88,8 +88,9 @@ impl Config {
         // Builds URL from CLICKHOUSE_HOST + CLICKHOUSE_PORT (matches Redis pattern).
         let clickhouse_host = env::var("CLICKHOUSE_HOST").ok().filter(|s| !s.is_empty());
         let clickhouse_port: u16 = parse_env_or("CLICKHOUSE_PORT", 8123);
+        let clickhouse_scheme = env::var("CLICKHOUSE_SCHEME").unwrap_or_else(|_| "http".into());
         let clickhouse_url = clickhouse_host
-            .map(|host| format!("http://{host}:{clickhouse_port}"));
+            .map(|host| format!("{clickhouse_scheme}://{host}:{clickhouse_port}"));
         let clickhouse_user =
             env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
         let clickhouse_password =
