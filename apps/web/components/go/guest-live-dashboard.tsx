@@ -55,7 +55,7 @@ export function GuestLiveDashboard() {
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const [selectedId, setSelectedId] = useState<Id<"requests"> | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [liveMode, setLiveMode] = useState(true);
   const [sortNewest, setSortNewest] = useState(true);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -110,7 +110,10 @@ export function GuestLiveDashboard() {
   );
 
   // Full detail for selected request
-  const selectedDetail = useQuery(api.requests.get, selectedId ? { id: selectedId } : "skip");
+  const selectedDetail = useQuery(
+    api.requests.get,
+    selectedId ? { id: selectedId as Id<"requests"> } : "skip"
+  );
 
   const requestCount = endpoint?.requestCount ?? 0;
   const remainingRequests = Math.max(0, REQUEST_LIMIT - requestCount);
@@ -297,7 +300,7 @@ export function GuestLiveDashboard() {
     }
   };
 
-  const handleSelect = useCallback((id: Id<"requests">) => {
+  const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
     setMobileDetail(true);
   }, []);

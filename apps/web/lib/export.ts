@@ -1,9 +1,16 @@
-import type { Request } from "@/types/request";
+import type { Request, ClickHouseRequest } from "@/types/request";
+
+type ExportableRequest = Request | ClickHouseRequest;
+
+/** Get a string ID from either request type. */
+function getId(r: ExportableRequest): string {
+  return "_id" in r ? r._id : r.id;
+}
 
 /** Export requests as a JSON string. */
-export function exportToJson(requests: Request[]): string {
+export function exportToJson(requests: ExportableRequest[]): string {
   const data = requests.map((r) => ({
-    id: r._id,
+    id: getId(r),
     method: r.method,
     path: r.path,
     headers: r.headers,
@@ -18,10 +25,10 @@ export function exportToJson(requests: Request[]): string {
 }
 
 /** Export requests as a CSV string. */
-export function exportToCsv(requests: Request[]): string {
+export function exportToCsv(requests: ExportableRequest[]): string {
   const headers = ["id", "method", "path", "content_type", "ip", "size", "received_at", "body"];
   const rows = requests.map((r) => [
-    r._id,
+    getId(r),
     r.method,
     r.path,
     r.contentType ?? "",

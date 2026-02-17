@@ -1,15 +1,19 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Circle, ArrowUpDown, Search, X } from "lucide-react";
+import { Circle, ArrowUpDown, Search, X, Loader2 } from "lucide-react";
 import { getMethodColor, formatRelativeTime } from "@/types/request";
-import type { RequestSummary } from "@/types/request";
-import type { Id } from "@convex/_generated/dataModel";
+import type { AnyRequestSummary } from "@/types/request";
+
+/** Extract a string ID from either a Convex RequestSummary or ClickHouseSummary. */
+function getItemId(item: AnyRequestSummary): string {
+  return "_id" in item ? item._id : item.id;
+}
 
 interface RequestListProps {
-  requests: RequestSummary[];
-  selectedId: Id<"requests"> | null;
-  onSelect: (id: Id<"requests">) => void;
+  requests: AnyRequestSummary[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
   liveMode: boolean;
   onToggleLiveMode: () => void;
   sortNewest: boolean;
@@ -21,6 +25,9 @@ interface RequestListProps {
   onMethodFilterChange: (method: string) => void;
   searchQuery: string;
   onSearchQueryChange: (query: string) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -40,6 +47,9 @@ export function RequestList({
   onMethodFilterChange,
   searchQuery,
   onSearchQueryChange,
+  onLoadMore,
+  hasMore,
+  loadingMore,
 }: RequestListProps) {
   const sorted = sortNewest ? requests : [...requests].reverse();
   const displayCount = totalCount ?? requests.length;
@@ -132,33 +142,61 @@ export function RequestList({
             No matching requests
           </div>
         ) : (
-          sorted.map((request) => (
-            <button
-              key={request._id}
-              onClick={() => onSelect(request._id)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer transition-colors border-b border-foreground/10",
-                selectedId === request._id
-                  ? "bg-muted border-l-4 border-l-primary"
-                  : "hover:bg-muted/50 border-l-4 border-l-transparent"
-              )}
-            >
-              <span
-                className={cn(
-                  "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
-                  getMethodColor(request.method)
-                )}
-              >
-                {request.method}
-              </span>
-              <span className="text-xs text-muted-foreground font-mono truncate flex-1">
-                #{request._id.slice(-6)}
-              </span>
-              <span className="text-xs text-muted-foreground font-mono shrink-0">
-                {formatRelativeTime(request.receivedAt)}
-              </span>
-            </button>
-          ))
+          <>
+            {sorted.map((request) => {
+              const id = getItemId(request);
+              return (
+                <button
+                  key={id}
+                  onClick={() => onSelect(id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer transition-colors border-b border-foreground/10",
+                    selectedId === id
+                      ? "bg-muted border-l-4 border-l-primary"
+                      : "hover:bg-muted/50 border-l-4 border-l-transparent"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
+                      getMethodColor(request.method)
+                    )}
+                  >
+                    {request.method}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono truncate flex-1">
+                    #{id.slice(-6)}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono shrink-0">
+                    {formatRelativeTime(request.receivedAt)}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* Load More button */}
+            {hasMore && (
+              <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
+                <button
+                  onClick={onLoadMore}
+                  disabled={loadingMore}
+                  className={cn(
+                    "neo-btn-outline !py-1.5 !px-4 text-xs font-bold uppercase tracking-wide flex items-center gap-2",
+                    loadingMore && "opacity-60 cursor-not-allowed"
+                  )}
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    "Load More"
+                  )}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

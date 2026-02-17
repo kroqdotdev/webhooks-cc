@@ -44,12 +44,85 @@ export function formatBody(body: string, format: BodyFormat): string {
   }
 }
 
+/**
+ * Pretty-print JSON without parsing through JS numbers.
+ * JSON.parse → JSON.stringify destroys precision for integers > 2^53.
+ * This regex-based formatter preserves the raw string exactly.
+ */
 function formatJson(body: string): string {
   try {
-    return JSON.stringify(JSON.parse(body), null, 2);
+    // Validate it's actually JSON first
+    JSON.parse(body);
   } catch {
     return body;
   }
+
+  // Regex-based pretty-printer that preserves raw values
+  let result = "";
+  let indent = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+
+    if (escaped) {
+      result += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\" && inString) {
+      result += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+
+    if (inString) {
+      result += ch;
+      continue;
+    }
+
+    // Skip existing whitespace outside strings
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+      continue;
+    }
+
+    if (ch === "{" || ch === "[") {
+      // Check if empty object/array
+      let j = i + 1;
+      while (
+        j < body.length &&
+        (body[j] === " " || body[j] === "\n" || body[j] === "\r" || body[j] === "\t")
+      )
+        j++;
+      const closing = ch === "{" ? "}" : "]";
+      if (body[j] === closing) {
+        result += ch + closing;
+        i = j;
+        continue;
+      }
+      indent++;
+      result += ch + "\n" + "  ".repeat(indent);
+    } else if (ch === "}" || ch === "]") {
+      indent--;
+      result += "\n" + "  ".repeat(indent) + ch;
+    } else if (ch === ",") {
+      result += ",\n" + "  ".repeat(indent);
+    } else if (ch === ":") {
+      result += ": ";
+    } else {
+      result += ch;
+    }
+  }
+
+  return result;
 }
 
 /** Indent XML with simple regex-based formatter. */

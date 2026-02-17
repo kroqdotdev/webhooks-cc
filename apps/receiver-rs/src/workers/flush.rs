@@ -1,7 +1,11 @@
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
+use crate::clickhouse::client::ClickHouseClient;
+use crate::clickhouse::types::ClickHouseRequest;
 use crate::convex::client::{ConvexClient, ConvexError};
+use crate::convex::types::BufferedRequest;
 use crate::redis::RedisState;
 
 /// How long to sleep when the circuit breaker is open.
@@ -11,14 +15,18 @@ const CIRCUIT_OPEN_BACKOFF: Duration = Duration::from_secs(5);
 pub fn spawn_flush_workers(
     redis: RedisState,
     convex: ConvexClient,
+    clickhouse: Option<ClickHouseClient>,
     worker_count: usize,
     batch_max_size: usize,
     flush_interval: Duration,
     shutdown: watch::Receiver<bool>,
 ) {
+    let clickhouse = clickhouse.map(Arc::new);
+
     for worker_id in 0..worker_count {
         let redis = redis.clone();
         let convex = convex.clone();
+        let clickhouse = clickhouse.clone();
         let mut shutdown = shutdown.clone();
 
         tokio::spawn(async move {
@@ -30,7 +38,7 @@ pub fn spawn_flush_workers(
                     // Final drain — skip if circuit is open (Convex unreachable,
                     // batches stay in Redis for next startup)
                     if !convex.circuit().is_degraded().await {
-                        drain_pass(&redis, &convex, batch_max_size, worker_id, worker_count).await;
+                        drain_pass(&redis, &convex, clickhouse.as_deref(), batch_max_size, worker_id, worker_count).await;
                     }
                     tracing::info!(worker_id, "flush worker shutting down");
                     return;
@@ -47,7 +55,7 @@ pub fn spawn_flush_workers(
                 }
 
                 let did_work =
-                    drain_pass(&redis, &convex, batch_max_size, worker_id, worker_count).await;
+                    drain_pass(&redis, &convex, clickhouse.as_deref(), batch_max_size, worker_id, worker_count).await;
 
                 if !did_work {
                     tokio::select! {
@@ -68,6 +76,7 @@ pub fn spawn_flush_workers(
 async fn drain_pass(
     redis: &RedisState,
     convex: &ConvexClient,
+    clickhouse: Option<&ClickHouseClient>,
     batch_max_size: usize,
     worker_id: usize,
     worker_count: usize,
@@ -130,6 +139,16 @@ async fn drain_pass(
                         inserted = resp.inserted,
                         "flushed batch to Convex"
                     );
+
+                    // Fire-and-forget ClickHouse dual-write after successful Convex flush
+                    if let Some(ch) = clickhouse {
+                        fire_and_forget_clickhouse(
+                            ch.clone(),
+                            redis.clone(),
+                            slug.clone(),
+                            batch.clone(),
+                        );
+                    }
                 }
             }
             Err(ref e) => {
@@ -159,4 +178,35 @@ async fn drain_pass(
     }
 
     did_work
+}
+
+/// Spawn a background task to write a batch to ClickHouse (fire-and-forget).
+/// Looks up endpoint info from Redis cache for metadata enrichment.
+fn fire_and_forget_clickhouse(
+    ch: ClickHouseClient,
+    redis: RedisState,
+    slug: String,
+    batch: Vec<BufferedRequest>,
+) {
+    tokio::spawn(async move {
+        // Get endpoint info from Redis cache for metadata
+        let info = match redis.get_endpoint(&slug).await {
+            Some(info) => info,
+            None => {
+                tracing::debug!(slug, "skipping ClickHouse write: endpoint info not in cache");
+                return;
+            }
+        };
+
+        let rows: Vec<ClickHouseRequest> = batch
+            .iter()
+            .map(|req| ClickHouseRequest::from_buffered(req, &slug, &info))
+            .collect();
+
+        if let Err(e) = ch.insert_requests(&rows).await {
+            tracing::warn!(slug, error = %e, count = rows.len(), "ClickHouse insert failed");
+        } else {
+            tracing::debug!(slug, count = rows.len(), "ClickHouse dual-write complete");
+        }
+    });
 }

@@ -17,6 +17,11 @@ pub struct Config {
     pub flush_interval_ms: u64,
     pub endpoint_cache_ttl_secs: u64,
     pub quota_cache_ttl_secs: u64,
+    // ClickHouse (optional — disabled when clickhouse_url is None)
+    pub clickhouse_url: Option<String>,
+    pub clickhouse_user: String,
+    pub clickhouse_password: String,
+    pub clickhouse_database: String,
 }
 
 impl std::fmt::Debug for Config {
@@ -35,6 +40,10 @@ impl std::fmt::Debug for Config {
             .field("flush_interval_ms", &self.flush_interval_ms)
             .field("endpoint_cache_ttl_secs", &self.endpoint_cache_ttl_secs)
             .field("quota_cache_ttl_secs", &self.quota_cache_ttl_secs)
+            .field("clickhouse_url", &self.clickhouse_url)
+            .field("clickhouse_user", &self.clickhouse_user)
+            .field("clickhouse_password", &"[REDACTED]")
+            .field("clickhouse_database", &self.clickhouse_database)
             .finish()
     }
 }
@@ -75,6 +84,19 @@ impl Config {
         let endpoint_cache_ttl_secs: u64 = parse_env_or("ENDPOINT_CACHE_TTL_SECS", 300);
         let quota_cache_ttl_secs: u64 = parse_env_or("QUOTA_CACHE_TTL_SECS", 300);
 
+        // ClickHouse — optional, disabled when CLICKHOUSE_HOST is empty/unset.
+        // Builds URL from CLICKHOUSE_HOST + CLICKHOUSE_PORT (matches Redis pattern).
+        let clickhouse_host = env::var("CLICKHOUSE_HOST").ok().filter(|s| !s.is_empty());
+        let clickhouse_port: u16 = parse_env_or("CLICKHOUSE_PORT", 8123);
+        let clickhouse_url = clickhouse_host
+            .map(|host| format!("http://{host}:{clickhouse_port}"));
+        let clickhouse_user =
+            env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
+        let clickhouse_password =
+            env::var("CLICKHOUSE_PASSWORD").unwrap_or_default();
+        let clickhouse_database =
+            env::var("CLICKHOUSE_DATABASE").unwrap_or_else(|_| "webhooks".into());
+
         assert!(flush_workers > 0, "FLUSH_WORKERS must be > 0");
         assert!(batch_max_size > 0, "BATCH_MAX_SIZE must be > 0");
 
@@ -93,6 +115,10 @@ impl Config {
             flush_interval_ms,
             endpoint_cache_ttl_secs,
             quota_cache_ttl_secs,
+            clickhouse_url,
+            clickhouse_user,
+            clickhouse_password,
+            clickhouse_database,
         }
     }
 

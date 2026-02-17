@@ -6,12 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { WebhooksCC } from "../client";
-import {
-  WebhooksCCError,
-  UnauthorizedError,
-  NotFoundError,
-  TimeoutError,
-} from "../errors";
+import { WebhooksCCError, UnauthorizedError, NotFoundError, TimeoutError } from "../errors";
 import {
   matchMethod,
   matchHeader,
@@ -749,9 +744,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
     });
 
     it("validates slug format (path traversal protection)", async () => {
-      await expect(
-        client.endpoints.get("../../../etc/passwd")
-      ).rejects.toThrow();
+      await expect(client.endpoints.get("../../../etc/passwd")).rejects.toThrow();
     });
 
     it("validates mock response status range", async () => {
