@@ -1,4 +1,5 @@
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, howToSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "CLI Tunneling Docs",
@@ -6,9 +7,54 @@ export const metadata = createPageMetadata({
   path: "/docs/cli/tunnel",
 });
 
+const TUNNEL_FAQ: FAQItem[] = [
+  {
+    question: "How do I forward webhooks to localhost?",
+    answer:
+      "Run whk tunnel 3000 to create an endpoint and forward all incoming webhooks to your local server. The CLI connects via SSE and replays each request with the original method, headers, and body.",
+  },
+  {
+    question: "Do I need to expose my local port to the internet?",
+    answer:
+      "No. The webhooks.cc CLI creates an outbound connection from your machine. No port forwarding, firewall changes, or public IP address required.",
+  },
+  {
+    question: "Can I use an existing endpoint with the tunnel?",
+    answer:
+      "Yes. Pass --endpoint <slug> to forward an endpoint you already created in the dashboard or CLI, instead of creating a new one.",
+  },
+];
+
 export default function TunnelPage() {
   return (
     <article>
+      <JsonLd
+        data={howToSchema({
+          name: "How to forward webhooks to localhost",
+          description:
+            "Forward webhooks from webhooks.cc to your local development server using the CLI tunnel. No port forwarding or public IP required.",
+          totalTime: "PT2M",
+          steps: [
+            {
+              name: "Start the tunnel",
+              text: "Run whk tunnel 3000 to create an endpoint and start forwarding. The CLI prints the public endpoint URL.",
+            },
+            {
+              name: "Webhook arrives at webhooks.cc",
+              text: "When a webhook is sent to your endpoint URL, the server pushes it to the CLI over Server-Sent Events (SSE).",
+            },
+            {
+              name: "CLI replays to localhost",
+              text: "The CLI replays the request — method, headers, body — to your local port.",
+            },
+            {
+              name: "Local server processes the request",
+              text: "Your local server processes the webhook as if the sender called it directly.",
+            },
+          ],
+        })}
+      />
+      <JsonLd data={faqSchema(TUNNEL_FAQ)} />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">Tunneling</h1>
       <p className="text-lg text-muted-foreground mb-10">
         Forward webhooks to your local server without deploying or exposing ports.

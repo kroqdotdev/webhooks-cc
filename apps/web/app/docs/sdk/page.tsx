@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "SDK Overview Docs",
@@ -8,9 +9,23 @@ export const metadata = createPageMetadata({
   path: "/docs/sdk",
 });
 
+const SDK_FAQ: FAQItem[] = [
+  {
+    question: "What language does the webhooks.cc SDK support?",
+    answer:
+      "The SDK is written in TypeScript and works with any JavaScript or TypeScript runtime including Node.js, Bun, and Deno. Install with npm, pnpm, yarn, or bun.",
+  },
+  {
+    question: "Can I use the webhooks.cc SDK in CI/CD pipelines?",
+    answer:
+      "Yes. Add your API key as a CI secret and run tests with any test runner. The SDK supports Vitest, Jest, Mocha, and any framework that runs async Node.js code.",
+  },
+];
+
 export default function SdkPage() {
   return (
     <article>
+      <JsonLd data={faqSchema(SDK_FAQ)} />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">SDK</h1>
       <p className="text-lg text-muted-foreground mb-10">
         The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks
