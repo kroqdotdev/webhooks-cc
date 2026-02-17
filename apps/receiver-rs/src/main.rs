@@ -1,3 +1,4 @@
+mod clickhouse;
 mod config;
 mod convex;
 mod handlers;
@@ -15,6 +16,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
 
+use clickhouse::client::ClickHouseClient;
 use config::Config;
 use convex::client::ConvexClient;
 use redis::RedisState;
@@ -27,6 +29,7 @@ pub struct AppState {
     pub redis: RedisState,
     pub convex: ConvexClient,
     pub config: Config,
+    pub clickhouse: Option<ClickHouseClient>,
 }
 
 #[tokio::main]
@@ -62,6 +65,25 @@ async fn main() {
     // Create Convex client
     let convex = ConvexClient::new(&config, redis.clone());
 
+    // Initialize ClickHouse client (optional)
+    let clickhouse = if let Some(url) = &config.clickhouse_url {
+        let ch = ClickHouseClient::new(
+            url,
+            &config.clickhouse_user,
+            &config.clickhouse_password,
+            &config.clickhouse_database,
+        );
+        if ch.ping().await {
+            tracing::info!(url, db = config.clickhouse_database, "ClickHouse dual-write enabled");
+        } else {
+            tracing::warn!(url, "ClickHouse not reachable, dual-write enabled but may fail");
+        }
+        Some(ch)
+    } else {
+        tracing::info!("ClickHouse dual-write disabled (CLICKHOUSE_HOST not set)");
+        None
+    };
+
     // Shutdown signal
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
@@ -69,6 +91,7 @@ async fn main() {
     workers::flush::spawn_flush_workers(
         redis.clone(),
         convex.clone(),
+        clickhouse.clone(),
         config.flush_workers,
         config.batch_max_size,
         Duration::from_millis(config.flush_interval_ms),
@@ -85,21 +108,19 @@ async fn main() {
         redis,
         convex,
         config: config.clone(),
+        clickhouse,
     };
 
-    // CORS: allow all origins (public webhook capture endpoints)
-    let cors = CorsLayer::new()
+    // CORS: allow all origins only on public webhook capture endpoints.
+    // Internal endpoints (/search, /internal/*) have no CORS (server-to-server only).
+    let public_cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build router
-    let app = Router::new()
+    // Public routes: webhook capture + health (need permissive CORS)
+    let public_routes = Router::new()
         .route("/health", get(handlers::health::health))
-        .route(
-            "/internal/cache-invalidate/{slug}",
-            post(handlers::cache_invalidate::cache_invalidate),
-        )
         .route(
             "/w/{slug}/{*path}",
             any(handlers::webhook::handle_webhook),
@@ -108,8 +129,20 @@ async fn main() {
             "/w/{slug}",
             any(handlers::webhook::handle_webhook_no_path),
         )
+        .layer(public_cors);
+
+    // Internal routes: no CORS (server-to-server only, authenticated via shared secret)
+    let internal_routes = Router::new()
+        .route("/search", get(handlers::search::search))
+        .route(
+            "/internal/cache-invalidate/{slug}",
+            post(handlers::cache_invalidate::cache_invalidate),
+        );
+
+    // Build router
+    let app = public_routes
+        .merge(internal_routes)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
-        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

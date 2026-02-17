@@ -5,14 +5,18 @@ import { cn } from "@/lib/utils";
 import { Copy, Check } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatBytes, Request } from "@/types/request";
+import { formatBytes } from "@/types/request";
+import type { Request, ClickHouseRequest } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
+
+/** Any request shape that has the fields needed for display. */
+export type DisplayableRequest = Request | ClickHouseRequest;
 
 /** Props for RequestDetail component. */
 interface RequestDetailProps {
   /** The captured webhook request to display. */
-  request: Request;
+  request: DisplayableRequest;
 }
 
 /**
@@ -52,7 +56,7 @@ const VALID_HTTP_METHOD = /^[A-Z]+$/;
  * Skips host (set by curl), content-length (calculated by curl),
  * and connection (managed by curl) headers to avoid conflicts.
  */
-function generateCurlCommand(request: Request): string {
+function generateCurlCommand(request: DisplayableRequest): string {
   // Validate method is alphanumeric to prevent shell injection
   const safeMethod = VALID_HTTP_METHOD.test(request.method) ? request.method : "GET";
   const parts = [`curl -X ${safeMethod}`];

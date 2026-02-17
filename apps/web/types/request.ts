@@ -22,6 +22,31 @@ export interface RequestSummary {
   receivedAt: number;
 }
 
+/** A request from ClickHouse search/pagination (no Convex _id). */
+export interface ClickHouseRequest {
+  id: string;
+  slug: string;
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body?: string;
+  queryParams: Record<string, string>;
+  contentType?: string;
+  ip: string;
+  size: number;
+  receivedAt: number;
+}
+
+/** Summary shape for ClickHouse results displayed in the sidebar list. */
+export interface ClickHouseSummary {
+  id: string;
+  method: string;
+  receivedAt: number;
+}
+
+/** Union type for items in the request list (Convex or ClickHouse). */
+export type AnyRequestSummary = RequestSummary | ClickHouseSummary;
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 const METHOD_COLORS_MAP: Record<HttpMethod, string> = {
@@ -49,16 +74,28 @@ export const METHOD_COLORS: Record<string, string> = {
   ...METHOD_COLORS_MAP,
 };
 
-export function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return new Date(timestamp).toLocaleDateString();
+export function formatTimestamp(timestamp: number): string {
+  const d = new Date(timestamp);
+  const now = new Date();
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  // Same day: show time only. Different day: show date + time.
+  if (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  ) {
+    return time;
+  }
+  const date = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  return `${date} ${time}`;
 }
 
 /**
