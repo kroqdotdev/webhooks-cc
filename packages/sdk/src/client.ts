@@ -461,7 +461,11 @@ export class WebhooksCC {
       const headers: Record<string, string> = {};
       for (const [key, val] of Object.entries(captured.headers)) {
         const lower = key.toLowerCase();
-        if (!HOP_BY_HOP_HEADERS.has(lower) && !SENSITIVE_HEADERS.has(lower) && !PROXY_HEADERS.has(lower)) {
+        if (
+          !HOP_BY_HOP_HEADERS.has(lower) &&
+          !SENSITIVE_HEADERS.has(lower) &&
+          !PROXY_HEADERS.has(lower)
+        ) {
           headers[key] = val;
         }
       }
