@@ -10,6 +10,7 @@ import {
   SITE_NAME,
   SITE_URL,
 } from "@/lib/seo";
+import { JsonLd, organizationSchema } from "@/lib/schemas";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -73,6 +74,7 @@ export default function RootLayout({
             `,
           }}
         />
+        <JsonLd data={organizationSchema()} />
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}>
         <ThemeProvider>

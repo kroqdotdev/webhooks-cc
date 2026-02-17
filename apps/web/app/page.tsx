@@ -4,7 +4,9 @@ import { HeroCTA } from "@/components/landing/hero-cta";
 import { Zap, Eye, Terminal, ArrowRight, Check, Bot } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
+import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools for Developers — CLI, SDK & MCP Server",
@@ -30,30 +32,46 @@ async function getStarCount(): Promise<number | null> {
   }
 }
 
+const LANDING_FAQ: FAQItem[] = [
+  {
+    question: "How do I test webhooks locally?",
+    answer:
+      "Run whk tunnel 3000. The CLI creates a public endpoint and forwards every incoming webhook to your local port — method, headers, and body intact. No port forwarding or ngrok needed.",
+  },
+  {
+    question: "What is a webhook CLI tunnel?",
+    answer:
+      "A tunnel streams HTTP requests from a public URL to your local machine. webhooks.cc creates the endpoint, receives the webhook, and replays it to localhost over SSE. Your local server handles it as if the sender called it directly.",
+  },
+  {
+    question: "How do I test webhooks in TypeScript?",
+    answer:
+      "Install @webhooks-cc/sdk, create an endpoint, and call client.requests.waitFor() with composable matchers. Assert on method, headers, or body fields. Works with Vitest, Jest, and any Node.js test runner.",
+  },
+  {
+    question: "How do I inspect webhook payloads?",
+    answer:
+      "Send a webhook to your endpoint URL and open the dashboard. Each request shows method, headers, body (auto-formatted JSON and XML), query parameters, IP, and timestamp. Export as JSON or CSV.",
+  },
+  {
+    question: "Is webhooks.cc free?",
+    answer:
+      "Yes. The free plan gives you 200 requests per day, unlimited endpoints, and full CLI, SDK, and MCP access. Pro ($8/month) raises the limit to 500,000 requests per month with 30-day retention.",
+  },
+  {
+    question: "How do I connect an AI coding agent?",
+    answer:
+      "Install the MCP server with npx @webhooks-cc/mcp and add it to Claude Code, Cursor, VS Code, Codex, or Windsurf. Your agent creates endpoints, sends test webhooks, inspects requests, and replays them — through natural language.",
+  },
+];
+
 export default async function Home() {
   const stars = await getStarCount();
-  const softwareApplicationJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: "webhooks.cc",
-    applicationCategory: "DeveloperApplication",
-    operatingSystem: "Web",
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "USD",
-    },
-    url: "https://webhooks.cc",
-    description:
-      "Webhook testing tools for developers. Capture and inspect webhooks, forward to localhost with the CLI, test programmatically with the TypeScript SDK, and connect AI coding agents via MCP server.",
-  };
 
   return (
     <main className="min-h-screen">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
-      />
+      <JsonLd data={softwareApplicationSchema()} />
+      <JsonLd data={faqSchema(LANDING_FAQ)} />
 
       {/* Navigation */}
       <FloatingNavbar />
@@ -243,6 +261,17 @@ export default async function Home() {
               </Link>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="py-20 px-4 scroll-mt-20">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">Questions</h2>
+          <p className="text-xl text-muted-foreground mb-10">
+            Common questions about webhooks.cc, answered.
+          </p>
+          <FAQAccordion items={LANDING_FAQ} />
         </div>
       </section>
 

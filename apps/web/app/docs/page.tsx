@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, howToSchema } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "Quick Start Docs",
@@ -11,13 +12,38 @@ export const metadata = createPageMetadata({
 export default function DocsPage() {
   return (
     <article>
+      <JsonLd
+        data={howToSchema({
+          name: "How to test webhooks with webhooks.cc",
+          description:
+            "Start capturing webhooks in under a minute. Create an endpoint, send a webhook, and view it in the dashboard.",
+          totalTime: "PT1M",
+          steps: [
+            {
+              name: "Create an endpoint",
+              text: "Sign in and click New Endpoint in the dashboard. You get a unique URL like https://go.webhooks.cc/w/<slug>. Or create one with the SDK or CLI.",
+              url: "https://webhooks.cc/docs#step-1",
+            },
+            {
+              name: "Send a webhook",
+              text: "Point your service at the endpoint URL or test with curl. The receiver accepts any HTTP method, content type, and body.",
+              url: "https://webhooks.cc/docs#step-2",
+            },
+            {
+              name: "View in the dashboard",
+              text: "Open the dashboard. Requests appear in real time. Inspect headers, body, query parameters, and metadata. Copy as curl, replay, or export as JSON/CSV.",
+              url: "https://webhooks.cc/docs#step-3",
+            },
+          ],
+        })}
+      />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">Quick Start</h1>
       <p className="text-lg text-muted-foreground mb-10">
         Start capturing webhooks in under a minute. Three steps, no configuration.
       </p>
 
       {/* Step 1 */}
-      <section className="mb-10">
+      <section id="step-1" className="mb-10">
         <div className="flex items-center gap-3 mb-4">
           <span className="w-8 h-8 border-2 border-foreground bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm shrink-0">
             1
@@ -43,7 +69,7 @@ export default function DocsPage() {
       </section>
 
       {/* Step 2 */}
-      <section className="mb-10">
+      <section id="step-2" className="mb-10">
         <div className="flex items-center gap-3 mb-4">
           <span className="w-8 h-8 border-2 border-foreground bg-secondary text-secondary-foreground flex items-center justify-center font-bold text-sm shrink-0">
             2
@@ -62,7 +88,7 @@ export default function DocsPage() {
       </section>
 
       {/* Step 3 */}
-      <section className="mb-10">
+      <section id="step-3" className="mb-10">
         <div className="flex items-center gap-3 mb-4">
           <span className="w-8 h-8 border-2 border-foreground bg-accent text-accent-foreground flex items-center justify-center font-bold text-sm shrink-0">
             3

@@ -1,0 +1,106 @@
+# webhooks.cc
+
+> Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.
+
+## What is webhooks.cc?
+
+webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses, forward webhooks to localhost for local development, and write automated test assertions against captured requests.
+
+The Rust receiver handles 86,000+ requests per second with sub-millisecond capture latency. All state is buffered in Redis and flushed to Convex for real-time dashboard updates.
+
+## Core capabilities
+
+- Webhook capture: Send any HTTP request to https://go.webhooks.cc/w/<slug> and inspect it instantly
+- Mock responses: Configure status codes, headers, and response bodies per endpoint
+- CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>` — no port forwarding or ngrok needed
+- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming
+- MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf)
+- Real-time streaming: Dashboard updates via Convex reactive queries, CLI via Server-Sent Events
+- Request replay: Resend captured requests to any URL
+- Provider detection: Built-in helpers for Stripe, GitHub, Shopify, Slack, Twilio, Paddle, and Linear webhooks
+
+## Pricing
+
+- Free: 200 requests/day, unlimited endpoints, 24-hour retention, full CLI/SDK/MCP access
+- Pro ($8/month): 500,000 requests/month, 30-day retention
+
+## Links
+
+- Homepage: https://webhooks.cc
+- Documentation: https://webhooks.cc/docs
+- Installation: https://webhooks.cc/installation
+- CLI docs: https://webhooks.cc/docs/cli
+- CLI tunneling: https://webhooks.cc/docs/cli/tunnel
+- CLI commands: https://webhooks.cc/docs/cli/commands
+- SDK docs: https://webhooks.cc/docs/sdk
+- SDK API reference: https://webhooks.cc/docs/sdk/api
+- SDK testing patterns: https://webhooks.cc/docs/sdk/testing
+- MCP server docs: https://webhooks.cc/docs/mcp
+- GitHub: https://github.com/lohsefar/webhooks-cc
+- npm (SDK): https://www.npmjs.com/package/@webhooks-cc/sdk
+- npm (MCP): https://www.npmjs.com/package/@webhooks-cc/mcp
+
+## API key format
+
+All API keys use the prefix `whcc_`. Keys are generated from the account page at https://webhooks.cc/account or via the CLI with `whk auth login`.
+
+## Webhook endpoint URL format
+
+https://go.webhooks.cc/w/<slug>
+https://go.webhooks.cc/w/<slug>/optional/path
+
+Any HTTP method, content type, and body up to 100KB is accepted.
+
+## CLI commands
+
+whk                  # Interactive TUI
+whk auth login       # Authenticate via browser
+whk auth status      # Show login status
+whk auth logout      # Clear stored token
+whk tunnel <port>    # Forward webhooks to localhost
+whk listen <slug>    # Stream requests to terminal
+whk create [name]    # Create endpoint
+whk list             # List endpoints
+whk delete <slug>    # Delete endpoint
+whk replay <id>      # Replay captured request
+whk update           # Self-update from GitHub releases
+
+## SDK quick start
+
+```typescript
+import { WebhooksCC, matchBodyPath } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY });
+
+// Create an endpoint
+const endpoint = await client.endpoints.create({ name: "test" });
+console.log(endpoint.url); // https://go.webhooks.cc/w/<slug>
+
+// Wait for a webhook to arrive
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "30s",
+  match: matchBodyPath("event", "payment.success"),
+});
+
+// Stream requests in real time
+for await (const req of client.requests.subscribe(endpoint.slug)) {
+  console.log(req.method, req.path);
+}
+
+// Clean up
+await client.endpoints.delete(endpoint.slug);
+```
+
+## MCP server setup
+
+```bash
+# Claude Code
+claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
+
+# Cursor / VS Code / Windsurf
+npx @webhooks-cc/mcp setup cursor
+npx @webhooks-cc/mcp setup vscode
+npx @webhooks-cc/mcp setup windsurf
+```
+
+Set the `WHK_API_KEY` environment variable to your API key.

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 import { McpInstallGuide } from "./mcp-setup";
+import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "MCP Server Docs",
@@ -67,9 +68,23 @@ const TOOLS = [
   },
 ];
 
+const MCP_FAQ: FAQItem[] = [
+  {
+    question: "Which AI coding agents support webhooks.cc?",
+    answer:
+      "The MCP server works with Claude Code, Cursor, VS Code (Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any tool that supports the Model Context Protocol can connect.",
+  },
+  {
+    question: "What can an AI agent do with webhooks.cc?",
+    answer:
+      "Your AI agent can create endpoints, send test webhooks, inspect captured requests, configure mock responses, and replay requests to localhost — all through natural language.",
+  },
+];
+
 export default function McpPage() {
   return (
     <article>
+      <JsonLd data={faqSchema(MCP_FAQ)} />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">MCP Server</h1>
       <p className="text-lg text-muted-foreground mb-6">
         The <code className="font-mono font-bold">@webhooks-cc/mcp</code> package lets AI coding

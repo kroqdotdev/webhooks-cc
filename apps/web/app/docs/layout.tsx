@@ -1,4 +1,5 @@
 import { DocsSidebar } from "@/components/docs/sidebar";
+import { DocsBreadcrumbs } from "@/components/docs/breadcrumbs";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { BackButton } from "@/components/nav/back-button";
 
@@ -17,7 +18,10 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
         <div className="max-w-6xl mx-auto flex">
           <DocsSidebar />
           <main className="flex-1 min-w-0">
-            <div className="max-w-3xl mx-auto px-6 py-10 md:px-10">{children}</div>
+            <div className="max-w-3xl mx-auto px-6 py-10 md:px-10">
+              <DocsBreadcrumbs />
+              {children}
+            </div>
           </main>
         </div>
       </div>

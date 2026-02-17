@@ -7,6 +7,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { BackButton } from "@/components/nav/back-button";
 import { DocsSidebar } from "@/components/docs/sidebar";
+import { DocsBreadcrumbs } from "@/components/docs/breadcrumbs";
 
 type Tab = "cli" | "sdk" | "mcp";
 const TABS: Tab[] = ["cli", "sdk", "mcp"];
@@ -57,6 +58,7 @@ export default function InstallationPage() {
         <div className="max-w-6xl mx-auto flex">
           <DocsSidebar />
           <main className="flex-1 min-w-0 px-6 py-10 md:px-10">
+            <DocsBreadcrumbs />
             <h1 className="text-3xl md:text-4xl font-bold mb-4">Installation</h1>
             <p className="text-lg text-muted-foreground mb-8">
               Install the CLI, SDK, or MCP server for your AI coding agent.

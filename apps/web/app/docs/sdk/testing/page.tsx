@@ -1,4 +1,5 @@
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, howToSchema } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "SDK Testing Docs",
@@ -9,6 +10,36 @@ export const metadata = createPageMetadata({
 export default function TestingPage() {
   return (
     <article>
+      <JsonLd
+        data={howToSchema({
+          name: "How to test webhooks in TypeScript",
+          description:
+            "Use the webhooks.cc SDK to verify webhook integrations end-to-end in your CI/CD pipeline.",
+          totalTime: "PT5M",
+          steps: [
+            {
+              name: "Install the SDK",
+              text: "Run npm install @webhooks-cc/sdk to add the SDK to your project.",
+            },
+            {
+              name: "Create a temporary endpoint",
+              text: "In your test setup (beforeAll), create an endpoint with client.endpoints.create(). This gives you a unique URL to receive webhooks.",
+            },
+            {
+              name: "Trigger your application",
+              text: "Call your application with the endpoint URL so it sends the webhook to webhooks.cc instead of the production destination.",
+            },
+            {
+              name: "Wait for the webhook",
+              text: "Use client.requests.waitFor(endpoint.slug) to poll until the webhook arrives. Add matchers to filter by method, headers, or body content.",
+            },
+            {
+              name: "Assert and clean up",
+              text: "Assert on the captured request body and headers. Delete the endpoint in afterAll to clean up.",
+            },
+          ],
+        })}
+      />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">Testing</h1>
       <p className="text-lg text-muted-foreground mb-10">
         Use the SDK in your test suite to verify webhook integrations end-to-end. Create temporary
