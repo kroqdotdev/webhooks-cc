@@ -26,11 +26,17 @@ export function HeroCTA() {
         </div>
         <p className="text-muted-foreground">
           For more info see the{" "}
-          <Link href="#faq" className="text-foreground font-bold hover:text-primary transition-colors">
+          <Link
+            href="#faq"
+            className="text-foreground font-bold hover:text-primary transition-colors"
+          >
             FAQ
           </Link>{" "}
           or{" "}
-          <Link href="/docs" className="text-foreground font-bold hover:text-primary transition-colors">
+          <Link
+            href="/docs"
+            className="text-foreground font-bold hover:text-primary transition-colors"
+          >
             read the docs
           </Link>
           .
@@ -53,11 +59,17 @@ export function HeroCTA() {
       </div>
       <p className="text-muted-foreground">
         For more info see the{" "}
-        <Link href="#faq" className="text-foreground font-bold hover:text-primary transition-colors">
+        <Link
+          href="#faq"
+          className="text-foreground font-bold hover:text-primary transition-colors"
+        >
           FAQ
         </Link>{" "}
         or{" "}
-        <Link href="/docs" className="text-foreground font-bold hover:text-primary transition-colors">
+        <Link
+          href="/docs"
+          className="text-foreground font-bold hover:text-primary transition-colors"
+        >
           read the docs
         </Link>
         .

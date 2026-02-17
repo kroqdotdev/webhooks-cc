@@ -47,9 +47,7 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
               className={`grid transition-all duration-200 ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
             >
               <div className="overflow-hidden">
-                <p className="px-5 pb-5 text-muted-foreground leading-relaxed">
-                  {item.answer}
-                </p>
+                <p className="px-5 pb-5 text-muted-foreground leading-relaxed">{item.answer}</p>
               </div>
             </div>
           </div>

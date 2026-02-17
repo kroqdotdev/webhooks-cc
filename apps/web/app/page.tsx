@@ -6,12 +6,7 @@ import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { createPageMetadata } from "@/lib/seo";
-import {
-  JsonLd,
-  softwareApplicationSchema,
-  faqSchema,
-  type FAQItem,
-} from "@/lib/schemas";
+import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools for Developers — CLI, SDK & MCP Server",
