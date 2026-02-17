@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
-import { LAST_CONTENT_UPDATE } from "@/lib/seo";
 
 const BREADCRUMB_LABELS: Record<string, string> = {
   "/docs": "Docs",
@@ -19,11 +17,6 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   "/docs/mcp": "MCP Server",
   "/installation": "Installation",
 };
-
-const updatedLabel = LAST_CONTENT_UPDATE.toLocaleDateString("en-US", {
-  month: "short",
-  year: "numeric",
-});
 
 export function DocsBreadcrumbs() {
   const pathname = usePathname();
@@ -69,9 +62,8 @@ export function DocsBreadcrumbs() {
         })}
       </ol>
       <span className="text-xs text-muted-foreground hidden sm:block">
-        Updated {updatedLabel}
+        Updated Feb 2026
       </span>
-      <JsonLd data={breadcrumbSchema(crumbs)} />
     </nav>
   );
 }

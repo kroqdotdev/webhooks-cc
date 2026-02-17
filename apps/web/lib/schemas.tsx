@@ -6,7 +6,9 @@ export function JsonLd({ data }: { data: Record<string, unknown> }) {
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(data).replace(/</g, "\\u003c"),
+      }}
     />
   );
 }
@@ -34,7 +36,6 @@ export function softwareApplicationSchema() {
     "@type": "SoftwareApplication",
     name: "webhooks.cc",
     applicationCategory: "DeveloperApplication",
-    applicationSubCategory: "Webhook Testing",
     operatingSystem: "Web",
     url: SITE_URL,
     downloadUrl: `${SITE_URL}/installation`,

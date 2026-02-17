@@ -14,9 +14,11 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
     <div className="space-y-4">
       {items.map((item, i) => {
         const isOpen = open === i;
+        const buttonId = `faq-button-${i}`;
+        const panelId = `faq-panel-${i}`;
         return (
           <div
-            key={i}
+            key={item.question}
             className="border-2 border-foreground bg-card transition-all"
             style={{
               boxShadow: isOpen
@@ -26,9 +28,11 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
             }}
           >
             <button
+              id={buttonId}
               onClick={() => setOpen(isOpen ? null : i)}
               className="w-full flex items-center justify-between gap-4 p-5 text-left cursor-pointer"
               aria-expanded={isOpen}
+              aria-controls={panelId}
             >
               <span className="font-bold text-lg">{item.question}</span>
               <ChevronDown
@@ -36,6 +40,10 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
               />
             </button>
             <div
+              id={panelId}
+              role="region"
+              aria-labelledby={buttonId}
+              aria-hidden={!isOpen}
               className={`grid transition-all duration-200 ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
             >
               <div className="overflow-hidden">
