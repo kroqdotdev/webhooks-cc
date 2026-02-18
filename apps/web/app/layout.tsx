@@ -77,6 +77,16 @@ export default function RootLayout({
         <JsonLd data={organizationSchema()} />
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}>
+        <noscript>
+          <div style={{ padding: "1rem", fontFamily: "system-ui, sans-serif", lineHeight: 1.5 }}>
+            <strong>webhooks.cc</strong>: Webhook testing tools with CLI, TypeScript SDK, and MCP
+            server. Start at{" "}
+            <a href="https://webhooks.cc/docs" style={{ textDecoration: "underline" }}>
+              /docs
+            </a>
+            .
+          </div>
+        </noscript>
         <ThemeProvider>
           <ConvexAuthProvider>{children}</ConvexAuthProvider>
         </ThemeProvider>

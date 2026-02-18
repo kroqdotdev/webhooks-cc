@@ -2,8 +2,9 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Endpoints Docs",
-  description: "Learn how to create and manage webhook endpoints in webhooks.cc.",
+  title: "Webhook Endpoints Guide",
+  description:
+    "Learn how to create, organize, and manage webhook endpoints in webhooks.cc, including slugs, URL formats, and endpoint settings.",
   path: "/docs/endpoints",
 });
 

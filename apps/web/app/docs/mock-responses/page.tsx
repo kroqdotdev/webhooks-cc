@@ -1,8 +1,9 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Mock Responses Docs",
-  description: "Configure what your webhook endpoint returns: status codes, headers, and body.",
+  title: "Webhook Mock Responses Guide",
+  description:
+    "Configure status codes, headers, and response bodies for webhook endpoints to simulate downstream APIs and test error handling.",
   path: "/docs/mock-responses",
 });
 

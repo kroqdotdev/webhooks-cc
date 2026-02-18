@@ -6,7 +6,7 @@ export const metadata: Metadata = createPageMetadata({
   description:
     "Sign in to webhooks.cc to manage webhook endpoints, inspect requests, and use the CLI.",
   path: "/login",
-  noIndex: true,
+  noIndex: false,
 });
 
 export default function LoginLayout({ children }: { children: React.ReactNode }) {

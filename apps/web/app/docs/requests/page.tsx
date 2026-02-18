@@ -1,8 +1,9 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Requests Docs",
-  description: "Inspect captured webhook requests: body, headers, query parameters, and more.",
+  title: "Webhook Request Inspector Guide",
+  description:
+    "Inspect captured webhook requests in real time, including body, headers, query parameters, delivery metadata, and replay options.",
   path: "/docs/requests",
 });
 

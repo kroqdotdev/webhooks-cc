@@ -1,8 +1,9 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "CLI Commands Docs",
-  description: "Full command reference for the webhooks.cc CLI.",
+  title: "Webhook CLI Command Reference",
+  description:
+    "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, and updates.",
   path: "/docs/cli/commands",
 });
 

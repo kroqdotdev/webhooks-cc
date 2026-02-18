@@ -118,7 +118,11 @@ export default function DashboardPage() {
         // Minimal shape validation: first element must have expected fields
         if (results.length > 0) {
           const first = results[0] as Record<string, unknown>;
-          if (typeof first.id !== "string" || typeof first.method !== "string" || typeof first.receivedAt !== "number") {
+          if (
+            typeof first.id !== "string" ||
+            typeof first.method !== "string" ||
+            typeof first.receivedAt !== "number"
+          ) {
             console.error("ClickHouse response shape mismatch:", first);
             return { data: [], ok: false };
           }
@@ -174,7 +178,10 @@ export default function DashboardPage() {
       const consumed = new Set<string>();
       for (const summary of summaries) {
         const match = results.find(
-          (r) => !consumed.has(r.id) && r.method === summary.method && Math.abs(r.receivedAt - summary.receivedAt) < 2
+          (r) =>
+            !consumed.has(r.id) &&
+            r.method === summary.method &&
+            Math.abs(r.receivedAt - summary.receivedAt) < 2
         );
         if (match) {
           consumed.add(match.id);
@@ -388,9 +395,7 @@ export default function DashboardPage() {
     // Use unfiltered summaries for the boundary so a method filter that excludes all
     // Convex items doesn't collapse oldestConvex to -Infinity and drop everything.
     const oldestConvex =
-      summaries && summaries.length > 0
-        ? summaries[summaries.length - 1].receivedAt
-        : -Infinity;
+      summaries && summaries.length > 0 ? summaries[summaries.length - 1].receivedAt : -Infinity;
     const olderSummaries: ClickHouseSummary[] = olderRequests
       .filter((r) => r.receivedAt < oldestConvex)
       .map((r) => ({

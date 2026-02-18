@@ -4,9 +4,9 @@ import { McpInstallGuide } from "./mcp-setup";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
-  title: "MCP Server Docs",
+  title: "MCP Server for Webhook Testing",
   description:
-    "Connect your AI coding agent to webhooks.cc with the MCP server. Works with Claude Code, Cursor, VS Code, Codex, and Windsurf.",
+    "Connect Claude Code, Cursor, VS Code, Codex, and Windsurf to webhooks.cc via MCP to create endpoints, inspect requests, and replay webhooks.",
   path: "/docs/mcp",
 });
 

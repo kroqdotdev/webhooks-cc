@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * Security headers proxy.
+ * Security headers middleware.
  *
  * Sets Content-Security-Policy and related headers on every response.
  * CSP allows Convex cloud/site domains for API and WebSocket connections.
@@ -25,7 +25,7 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
   }
 }
 
-export function proxy() {
+export function middleware() {
   const response = NextResponse.next();
 
   const webhookOrigin = sanitizeCspOrigin(
@@ -48,6 +48,7 @@ export function proxy() {
   }
 
   const isDev = process.env.NODE_ENV === "development";
+  const edgeSetsSecurityHeaders = process.env.EDGE_SETS_SECURITY_HEADERS === "true";
 
   const directives = [
     "default-src 'self'",
@@ -69,15 +70,18 @@ export function proxy() {
 
   response.headers.set("Content-Security-Policy", directives.join("; "));
 
-  if (!isDev) {
-    response.headers.set(
-      "Strict-Transport-Security",
-      "max-age=63072000; includeSubDomains; preload"
-    );
+  if (!edgeSetsSecurityHeaders) {
+    if (!isDev) {
+      response.headers.set(
+        "Strict-Transport-Security",
+        "max-age=63072000; includeSubDomains; preload"
+      );
+    }
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   }
+
   response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 
   return response;

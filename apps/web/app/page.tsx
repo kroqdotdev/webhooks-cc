@@ -9,9 +9,9 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
-  title: "Webhook Testing Tools for Developers — CLI, SDK & MCP Server",
+  title: "Webhook Testing Platform: CLI, SDK & MCP",
   description:
-    "Capture and inspect webhooks in real time. Forward to localhost with the CLI, write test assertions with the TypeScript SDK, and connect AI coding agents via MCP. Free to start.",
+    "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test in CI with the TypeScript SDK, and automate workflows with the MCP server.",
   path: "/",
 });
 

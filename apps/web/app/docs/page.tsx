@@ -3,9 +3,9 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, howToSchema } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
-  title: "Quick Start Docs",
+  title: "Webhook Testing Quickstart",
   description:
-    "Get started with webhooks.cc in three steps: create an endpoint, send a webhook, and view it in the dashboard.",
+    "Get started in three steps: create a webhook endpoint, send a test request, and inspect payloads and headers in the dashboard.",
   path: "/docs",
 });
 
