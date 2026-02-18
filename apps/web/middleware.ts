@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * Security headers proxy.
+ * Security headers middleware.
  *
  * Sets Content-Security-Policy and related headers on every response.
  * CSP allows Convex cloud/site domains for API and WebSocket connections.
@@ -25,7 +25,7 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
   }
 }
 
-export function proxy() {
+export function middleware() {
   const response = NextResponse.next();
 
   const webhookOrigin = sanitizeCspOrigin(
