@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	repo           = "lohsefar/webhooks-cc"
+	repo           = "kroqdotdev/webhooks-cc"
 	binary         = "whk"
 	maxBinarySize  = 100 * 1024 * 1024 // 100 MB
 	maxAPIResponse = 1 * 1024 * 1024   // 1 MB

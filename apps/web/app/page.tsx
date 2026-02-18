@@ -21,7 +21,7 @@ interface GitHubRepoResponse {
 
 async function getStarCount(): Promise<number | null> {
   try {
-    const res = await fetch("https://api.github.com/repos/lohsefar/webhooks-cc", {
+    const res = await fetch("https://api.github.com/repos/kroqdotdev/webhooks-cc", {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return null;

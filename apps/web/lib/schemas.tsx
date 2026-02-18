@@ -22,7 +22,7 @@ export function organizationSchema() {
     name: "webhooks.cc",
     url: SITE_URL,
     logo: `${SITE_URL}/icon.png`,
-    sameAs: ["https://github.com/lohsefar/webhooks-cc"],
+    sameAs: ["https://github.com/kroqdotdev/webhooks-cc"],
     description:
       "Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.",
   };

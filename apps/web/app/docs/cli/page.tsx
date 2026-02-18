@@ -19,7 +19,7 @@ export default function CliPage() {
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Install</h2>
-        <pre className="neo-code text-sm mb-4">{`brew install lohsefar/tap/whk`}</pre>
+        <pre className="neo-code text-sm mb-4">{`brew install kroqdotdev/tap/whk`}</pre>
         <p className="text-sm text-muted-foreground">
           See{" "}
           <Link href="/installation" className="text-primary hover:underline font-bold">
