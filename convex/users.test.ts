@@ -125,3 +125,103 @@ describe("resetFreeUserPeriod", () => {
     expect(after).toHaveLength(1);
   });
 });
+
+describe("plan queries", () => {
+  let t: ReturnType<typeof convexTest>;
+
+  beforeEach(() => {
+    t = convexTest(schema, modules);
+  });
+
+  test("getPlanById returns current plan and null for missing user", async () => {
+    const freeUserId = await t.run(async (ctx) => {
+      return await ctx.db.insert("users", {
+        email: "plan-free@example.com",
+        plan: "free" as const,
+        requestsUsed: 0,
+        requestLimit: FREE_REQUEST_LIMIT,
+        createdAt: Date.now(),
+      });
+    });
+
+    const freePlan = await t.query(internal.users.getPlanById, { userId: freeUserId });
+    expect(freePlan).toBe("free");
+
+    await t.run(async (ctx) => ctx.db.delete(freeUserId));
+    const missingPlan = await t.query(internal.users.getPlanById, { userId: freeUserId });
+    expect(missingPlan).toBeNull();
+  });
+
+  test("listByPlanPaginated filters users by plan across pages", async () => {
+    const freeUserIds: string[] = [];
+    const proUserIds: string[] = [];
+
+    for (let i = 0; i < 3; i++) {
+      const id = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          email: `plan-free-${i}@example.com`,
+          plan: "free" as const,
+          requestsUsed: 0,
+          requestLimit: FREE_REQUEST_LIMIT,
+          createdAt: Date.now() + i,
+        });
+      });
+      freeUserIds.push(String(id));
+    }
+
+    for (let i = 0; i < 2; i++) {
+      const id = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          email: `plan-pro-${i}@example.com`,
+          plan: "pro" as const,
+          requestsUsed: 0,
+          requestLimit: PRO_REQUEST_LIMIT,
+          periodStart: Date.now(),
+          periodEnd: Date.now() + BILLING_PERIOD_MS,
+          polarCustomerId: `polar_cust_${i}`,
+          polarSubscriptionId: `polar_sub_${i}`,
+          subscriptionStatus: "active" as const,
+          cancelAtPeriodEnd: false,
+          createdAt: Date.now() + i,
+        });
+      });
+      proUserIds.push(String(id));
+    }
+
+    const freePage1 = await t.query(internal.users.listByPlanPaginated, {
+      plan: "free",
+      limit: 2,
+    });
+    expect(freePage1.userIds).toHaveLength(2);
+    expect(freePage1.done).toBe(false);
+    expect(freePage1.nextCursor).toBeTruthy();
+    for (const id of freePage1.userIds) {
+      expect(freeUserIds).toContain(id);
+      expect(proUserIds).not.toContain(id);
+    }
+
+    const freePage2 = await t.query(internal.users.listByPlanPaginated, {
+      plan: "free",
+      limit: 2,
+      cursor: freePage1.nextCursor ?? undefined,
+    });
+    expect(freePage2.done).toBe(true);
+    const allFree = [...freePage1.userIds, ...freePage2.userIds];
+    expect(new Set(allFree).size).toBe(3);
+    for (const id of allFree) {
+      expect(freeUserIds).toContain(id);
+      expect(proUserIds).not.toContain(id);
+    }
+
+    const proPage = await t.query(internal.users.listByPlanPaginated, {
+      plan: "pro",
+      limit: 10,
+    });
+    expect(proPage.done).toBe(true);
+    expect(new Set(proPage.userIds).size).toBe(2);
+    for (const id of proPage.userIds) {
+      expect(proUserIds).toContain(id);
+      expect(freeUserIds).not.toContain(id);
+    }
+  });
+});

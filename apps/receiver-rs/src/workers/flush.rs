@@ -43,7 +43,16 @@ pub fn spawn_flush_workers(
                     // Final drain — skip if circuit is open (Convex unreachable,
                     // batches stay in Redis for next startup)
                     if !convex.circuit().is_degraded().await {
-                        drain_pass(&redis, &convex, clickhouse.as_deref(), &ch_semaphore, batch_max_size, worker_id, worker_count).await;
+                        drain_pass(
+                            &redis,
+                            &convex,
+                            clickhouse.as_deref(),
+                            &ch_semaphore,
+                            batch_max_size,
+                            worker_id,
+                            worker_count,
+                        )
+                        .await;
                     }
                     tracing::info!(worker_id, "flush worker shutting down");
                     return;
@@ -59,8 +68,16 @@ pub fn spawn_flush_workers(
                     continue;
                 }
 
-                let did_work =
-                    drain_pass(&redis, &convex, clickhouse.as_deref(), &ch_semaphore, batch_max_size, worker_id, worker_count).await;
+                let did_work = drain_pass(
+                    &redis,
+                    &convex,
+                    clickhouse.as_deref(),
+                    &ch_semaphore,
+                    batch_max_size,
+                    worker_id,
+                    worker_count,
+                )
+                .await;
 
                 if !did_work {
                     tokio::select! {
@@ -108,7 +125,9 @@ async fn drain_pass(
     seed.hash(&mut h);
     let mut rng_state = h.finish();
     for i in (1..len).rev() {
-        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (rng_state >> 33) as usize % (i + 1);
         slugs.swap(i, j);
     }
@@ -144,11 +163,7 @@ async fn drain_pass(
                         "Convex capture_batch returned error"
                     );
                 } else {
-                    tracing::debug!(
-                        slug,
-                        inserted = resp.inserted,
-                        "flushed batch to Convex"
-                    );
+                    tracing::debug!(slug, inserted = resp.inserted, "flushed batch to Convex");
 
                     // Fire-and-forget ClickHouse dual-write after successful Convex flush.
                     // Semaphore limits concurrent writes to prevent unbounded task spawning.
@@ -171,11 +186,7 @@ async fn drain_pass(
                 // mean Convex committed but we didn't get the response.
                 // Drop the batch to avoid duplicates (at-most-once delivery).
                 if matches!(e, ConvexError::CircuitOpen) {
-                    tracing::warn!(
-                        slug,
-                        count = batch_len,
-                        "circuit open, re-enqueuing batch"
-                    );
+                    tracing::warn!(slug, count = batch_len, "circuit open, re-enqueuing batch");
                     redis.requeue(slug, &batch).await;
                 } else {
                     tracing::error!(
@@ -220,7 +231,11 @@ fn fire_and_forget_clickhouse(
         let info = match redis.get_endpoint(&slug).await {
             Some(info) => info,
             None => {
-                tracing::warn!(slug, count = batch.len(), "skipping ClickHouse write: endpoint info not in cache");
+                tracing::warn!(
+                    slug,
+                    count = batch.len(),
+                    "skipping ClickHouse write: endpoint info not in cache"
+                );
                 return;
             }
         };

@@ -152,11 +152,7 @@ impl RedisState {
         };
 
         let ttl: i64 = conn.ttl(&key).await.ok()?;
-        if ttl < 0 {
-            None
-        } else {
-            Some(ttl)
-        }
+        if ttl < 0 { None } else { Some(ttl) }
     }
 
     /// Evict cached quota data for a slug (and its user key if mapped).

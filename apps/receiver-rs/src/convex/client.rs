@@ -60,13 +60,10 @@ impl ConvexClient {
 
         // Read as bytes first — reqwest limits to Content-Length when present,
         // but for chunked responses we check the accumulated size after download.
-        let body_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| {
-                self.record_failure_sync();
-                ConvexError::Network(e.to_string())
-            })?;
+        let body_bytes = resp.bytes().await.map_err(|e| {
+            self.record_failure_sync();
+            ConvexError::Network(e.to_string())
+        })?;
 
         if body_bytes.len() > MAX_RESPONSE_SIZE {
             self.record_failure_sync();
@@ -112,8 +109,8 @@ impl ConvexClient {
             return Err(ConvexError::ClientError(status, body));
         }
 
-        let info: EndpointInfo = serde_json::from_str(&body)
-            .map_err(|e| ConvexError::ParseError(e.to_string()))?;
+        let info: EndpointInfo =
+            serde_json::from_str(&body).map_err(|e| ConvexError::ParseError(e.to_string()))?;
 
         // Cache valid responses; skip caching errors (not_found, etc.)
         if info.error.is_empty() {
@@ -128,10 +125,7 @@ impl ConvexClient {
     }
 
     /// Fetch quota from Convex and cache it in Redis.
-    pub async fn fetch_and_cache_quota(
-        &self,
-        slug: &str,
-    ) -> Result<(), ConvexError> {
+    pub async fn fetch_and_cache_quota(&self, slug: &str) -> Result<(), ConvexError> {
         if !self.circuit.allow_request().await {
             return Err(ConvexError::CircuitOpen);
         }
@@ -161,8 +155,8 @@ impl ConvexClient {
             return Err(ConvexError::ClientError(status, body));
         }
 
-        let quota: QuotaResponse = serde_json::from_str(&body)
-            .map_err(|e| ConvexError::ParseError(e.to_string()))?;
+        let quota: QuotaResponse =
+            serde_json::from_str(&body).map_err(|e| ConvexError::ParseError(e.to_string()))?;
 
         if quota.error == "not_found" {
             return Ok(());
@@ -171,35 +165,37 @@ impl ConvexClient {
         let user_id = quota.user_id.as_deref().unwrap_or("");
 
         // Handle free users needing period start
-        if quota.needs_period_start && !user_id.is_empty()
-            && let Ok(period) = self.call_check_period(user_id).await {
-                if period.error.is_empty() {
-                    self.redis
-                        .set_quota(
-                            slug,
-                            period.remaining,
-                            period.limit,
-                            period.period_end.unwrap_or(0),
-                            false,
-                            user_id,
-                        )
-                        .await;
-                    return Ok(());
-                } else if period.error == "quota_exceeded" {
-                    self.redis
-                        .set_quota(
-                            slug,
-                            0,
-                            period.limit,
-                            period.period_end.unwrap_or(0),
-                            false,
-                            user_id,
-                        )
-                        .await;
-                    return Ok(());
-                }
+        if quota.needs_period_start
+            && !user_id.is_empty()
+            && let Ok(period) = self.call_check_period(user_id).await
+        {
+            if period.error.is_empty() {
+                self.redis
+                    .set_quota(
+                        slug,
+                        period.remaining,
+                        period.limit,
+                        period.period_end.unwrap_or(0),
+                        false,
+                        user_id,
+                    )
+                    .await;
+                return Ok(());
+            } else if period.error == "quota_exceeded" {
+                self.redis
+                    .set_quota(
+                        slug,
+                        0,
+                        period.limit,
+                        period.period_end.unwrap_or(0),
+                        false,
+                        user_id,
+                    )
+                    .await;
+                return Ok(());
             }
-            // Fall through to use original quota response
+        }
+        // Fall through to use original quota response
 
         let is_unlimited = quota.remaining == -1;
         self.redis
@@ -217,10 +213,7 @@ impl ConvexClient {
     }
 
     /// Call check-period to start a free user's billing period.
-    async fn call_check_period(
-        &self,
-        user_id: &str,
-    ) -> Result<CheckPeriodResponse, ConvexError> {
+    async fn call_check_period(&self, user_id: &str) -> Result<CheckPeriodResponse, ConvexError> {
         if !self.circuit.allow_request().await {
             return Err(ConvexError::CircuitOpen);
         }
@@ -251,6 +244,48 @@ impl ConvexClient {
 
         // 429 contains valid quota_exceeded JSON
         if status != 200 && status != 429 {
+            return Err(ConvexError::ClientError(status, body));
+        }
+
+        serde_json::from_str(&body).map_err(|e| ConvexError::ParseError(e.to_string()))
+    }
+
+    /// List users by plan (paginated) via shared-secret Convex HTTP action.
+    pub async fn list_users_by_plan(
+        &self,
+        plan: &str,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<UsersByPlanResponse, ConvexError> {
+        if !self.circuit.allow_request().await {
+            return Err(ConvexError::CircuitOpen);
+        }
+
+        let mut request = self
+            .http
+            .get(format!("{}/users-by-plan", self.base_url))
+            .query(&[("plan", plan), ("limit", &limit.to_string())])
+            .header("Authorization", format!("Bearer {}", self.secret));
+
+        if let Some(cursor) = cursor {
+            request = request.query(&[("cursor", cursor)]);
+        }
+
+        let resp = request.send().await.map_err(|e| {
+            self.record_failure_sync();
+            ConvexError::Network(e.to_string())
+        })?;
+
+        let (status, body) = self.read_body(resp).await?;
+
+        if status >= 500 {
+            self.record_failure_sync();
+            return Err(ConvexError::ServerError(status, body));
+        }
+
+        self.record_success_sync();
+
+        if !(200..300).contains(&status) {
             return Err(ConvexError::ClientError(status, body));
         }
 

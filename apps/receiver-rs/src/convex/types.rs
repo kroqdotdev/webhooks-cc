@@ -75,6 +75,18 @@ pub struct CheckPeriodResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UsersByPlanResponse {
+    #[serde(default)]
+    pub error: String,
+    #[serde(default)]
+    pub user_ids: Vec<String>,
+    pub next_cursor: Option<String>,
+    #[serde(default)]
+    pub done: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BufferedRequest {
     pub method: String,
     pub path: String,

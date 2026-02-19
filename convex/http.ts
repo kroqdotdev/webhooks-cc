@@ -680,7 +680,44 @@ http.route({
       });
     }
 
-    return new Response(JSON.stringify({ userId: result.userId }), {
+    const plan = await ctx.runQuery(internal.users.getPlanById, {
+      userId: result.userId,
+    });
+
+    return new Response(JSON.stringify({ userId: result.userId, plan }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
+// List users by plan (paginated). Internal-only for receiver retention jobs.
+http.route({
+  path: "/users-by-plan",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const plan = url.searchParams.get("plan");
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+    const limitRaw = Number.parseInt(url.searchParams.get("limit") ?? "200", 10);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 200;
+
+    if (plan !== "free" && plan !== "pro") {
+      return new Response(JSON.stringify({ error: "invalid_plan" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await ctx.runQuery(internal.users.listByPlanPaginated, {
+      plan,
+      cursor,
+      limit,
+    });
+
+    return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
     });
   }),

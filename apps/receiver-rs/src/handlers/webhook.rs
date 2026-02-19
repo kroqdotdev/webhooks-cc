@@ -4,9 +4,9 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::collections::HashMap;
 
-use crate::convex::types::{now_ms, BufferedRequest};
-use crate::redis::quota::QuotaResult;
 use crate::AppState;
+use crate::convex::types::{BufferedRequest, now_ms};
+use crate::redis::quota::QuotaResult;
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
@@ -25,7 +25,8 @@ pub fn is_valid_slug(slug: &str) -> bool {
     if slug.is_empty() || slug.len() > 50 {
         return false;
     }
-    slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    slug.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 /// Extract the real client IP from proxy headers.
@@ -35,8 +36,9 @@ fn real_ip(headers: &HeaderMap) -> String {
     let raw = if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
         ip.to_string()
     } else if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
-        && let Some(first) = xff.split(',').next() {
-            first.trim().to_string()
+        && let Some(first) = xff.split(',').next()
+    {
+        first.trim().to_string()
     } else {
         return String::new();
     };
@@ -44,7 +46,9 @@ fn real_ip(headers: &HeaderMap) -> String {
     // Validate: only allow characters valid in IPv4/IPv6 addresses
     // (digits, a-f, A-F, dots, colons, brackets, percent for zone IDs)
     if raw.len() <= 45
-        && raw.bytes().all(|b| b.is_ascii_hexdigit() || b == b'.' || b == b':' || b == b'[' || b == b']' || b == b'%')
+        && raw.bytes().all(|b| {
+            b.is_ascii_hexdigit() || b == b'.' || b == b':' || b == b'[' || b == b']' || b == b'%'
+        })
     {
         raw
     } else {
@@ -111,7 +115,8 @@ pub async fn handle_webhook(
                 Err(e) => {
                     tracing::warn!(slug, error = %e, "blocking endpoint fetch failed");
                     // Fetch failed: fall back to buffering optimistically
-                    buffer_request(&state, &slug, &method, &req_path, &headers, &query, &body).await;
+                    buffer_request(&state, &slug, &method, &req_path, &headers, &query, &body)
+                        .await;
                     return (StatusCode::OK, "OK").into_response();
                 }
             }
@@ -130,7 +135,11 @@ pub async fn handle_webhook(
     // 3. Atomic quota check via Redis Lua script (per-user when userId present).
     // On cache miss, block to fetch fresh quota from Convex so that all endpoints
     // (guest ephemeral, user ephemeral, and persistent) are strictly enforced.
-    match state.redis.check_quota(&slug, endpoint.user_id.as_deref()).await {
+    match state
+        .redis
+        .check_quota(&slug, endpoint.user_id.as_deref())
+        .await
+    {
         QuotaResult::Allowed => {}
         QuotaResult::Exceeded => {
             return (
@@ -144,7 +153,11 @@ pub async fn handle_webhook(
                 tracing::warn!(slug, error = %e, "blocking quota fetch failed");
             }
             // Re-check quota after warming
-            match state.redis.check_quota(&slug, endpoint.user_id.as_deref()).await {
+            match state
+                .redis
+                .check_quota(&slug, endpoint.user_id.as_deref())
+                .await
+            {
                 QuotaResult::Allowed => {}
                 QuotaResult::Exceeded => {
                     return (
@@ -154,7 +167,10 @@ pub async fn handle_webhook(
                         .into_response();
                 }
                 QuotaResult::NotFound => {
-                    tracing::warn!(slug, "quota still not found after blocking fetch — failing open");
+                    tracing::warn!(
+                        slug,
+                        "quota still not found after blocking fetch — failing open"
+                    );
                 }
             }
         }
@@ -180,7 +196,15 @@ pub async fn handle_webhook_no_path(
     query: axum::extract::Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Response {
-    handle_webhook(state, method, Path((slug, String::new())), headers, query, body).await
+    handle_webhook(
+        state,
+        method,
+        Path((slug, String::new())),
+        headers,
+        query,
+        body,
+    )
+    .await
 }
 
 async fn buffer_request(

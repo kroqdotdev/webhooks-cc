@@ -6,6 +6,13 @@
  */
 import { serverEnv } from "./env";
 
+export type UserPlan = "free" | "pro";
+
+export interface ApiKeyValidation {
+  userId: string;
+  plan?: UserPlan;
+}
+
 /** Extract Bearer token from Authorization header */
 export function extractBearerToken(request: Request): string | null {
   const authHeader = request.headers.get("Authorization");
@@ -23,6 +30,12 @@ function getSharedSecret(): string {
 
 /** Validate an API key via Convex HTTP action. Returns userId or null. */
 export async function validateApiKey(apiKey: string): Promise<string | null> {
+  const result = await validateApiKeyWithPlan(apiKey);
+  return result?.userId ?? null;
+}
+
+/** Validate API key and return userId plus plan when available. */
+export async function validateApiKeyWithPlan(apiKey: string): Promise<ApiKeyValidation | null> {
   let siteUrl: string;
   let secret: string;
   try {
@@ -46,8 +59,12 @@ export async function validateApiKey(apiKey: string): Promise<string | null> {
 
   const data: unknown = await resp.json();
   if (typeof data !== "object" || data === null) return null;
-  const userId = (data as Record<string, unknown>).userId;
-  return typeof userId === "string" ? userId : null;
+  const parsed = data as Record<string, unknown>;
+  const userId = parsed.userId;
+  if (typeof userId !== "string") return null;
+  const plan = parsed.plan;
+  const validPlan: UserPlan | undefined = plan === "free" || plan === "pro" ? plan : undefined;
+  return { userId, plan: validPlan };
 }
 
 /** Call a /cli/* Convex HTTP action with shared secret authentication. */

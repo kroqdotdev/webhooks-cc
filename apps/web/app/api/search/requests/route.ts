@@ -1,4 +1,4 @@
-import { extractBearerToken, validateApiKey } from "@/lib/api-auth";
+import { extractBearerToken, validateApiKeyWithPlan } from "@/lib/api-auth";
 import { serverEnv, publicEnv } from "@/lib/env";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@convex/_generated/api";
@@ -18,14 +18,16 @@ export async function GET(request: Request) {
     }
 
     let userId: string;
+    let plan: "free" | "pro" | undefined;
 
     if (token.startsWith("whcc_")) {
       // API key auth (CLI/SDK)
-      const validatedUserId = await validateApiKey(token);
-      if (!validatedUserId) {
+      const validated = await validateApiKeyWithPlan(token);
+      if (!validated) {
         return Response.json({ error: "Invalid API key" }, { status: 401 });
       }
-      userId = validatedUserId;
+      userId = validated.userId;
+      plan = validated.plan;
     } else {
       // Convex JWT auth (browser dashboard)
       const convex = new ConvexHttpClient(publicEnv().NEXT_PUBLIC_CONVEX_URL);
@@ -35,6 +37,7 @@ export async function GET(request: Request) {
         return Response.json({ error: "Invalid token" }, { status: 401 });
       }
       userId = user._id;
+      plan = user.plan === "free" || user.plan === "pro" ? user.plan : undefined;
     }
 
     const url = new URL(request.url);
@@ -44,6 +47,9 @@ export async function GET(request: Request) {
     // Build receiver search URL with user_id and forwarded params
     const searchUrl = new URL(`${receiverBase}/search`);
     searchUrl.searchParams.set("user_id", userId);
+    if (plan) {
+      searchUrl.searchParams.set("plan", plan);
+    }
 
     // Forward allowed query params
     for (const key of ["slug", "method", "q", "from", "to", "limit", "offset", "order"]) {

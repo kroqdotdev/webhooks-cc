@@ -7,8 +7,8 @@ mod workers;
 
 use std::time::Duration;
 
-use axum::routing::{any, get, post};
 use axum::Router;
+use axum::routing::{any, get, post};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::watch;
@@ -41,8 +41,9 @@ async fn main() {
     let log_level = if config.debug { "debug" } else { "info" };
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| format!("webhooks_receiver={log_level},tower_http=info").into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("webhooks_receiver={log_level},tower_http=info").into()
+            }),
         )
         .init();
 
@@ -74,9 +75,16 @@ async fn main() {
             &config.clickhouse_database,
         );
         if ch.ping().await {
-            tracing::info!(url, db = config.clickhouse_database, "ClickHouse dual-write enabled");
+            tracing::info!(
+                url,
+                db = config.clickhouse_database,
+                "ClickHouse dual-write enabled"
+            );
         } else {
-            tracing::warn!(url, "ClickHouse not reachable, dual-write enabled but may fail");
+            tracing::warn!(
+                url,
+                "ClickHouse not reachable, dual-write enabled but may fail"
+            );
         }
         Some(ch)
     } else {
@@ -97,9 +105,10 @@ async fn main() {
         Duration::from_millis(config.flush_interval_ms),
         shutdown_rx.clone(),
     );
-    workers::cache_warmer::spawn_cache_warmer(
-        redis.clone(),
+    workers::cache_warmer::spawn_cache_warmer(redis.clone(), convex.clone(), shutdown_rx.clone());
+    workers::clickhouse_retention::spawn_clickhouse_retention_worker(
         convex.clone(),
+        clickhouse.clone(),
         shutdown_rx.clone(),
     );
 
@@ -121,14 +130,8 @@ async fn main() {
     // Public routes: webhook capture + health (need permissive CORS)
     let public_routes = Router::new()
         .route("/health", get(handlers::health::health))
-        .route(
-            "/w/{slug}/{*path}",
-            any(handlers::webhook::handle_webhook),
-        )
-        .route(
-            "/w/{slug}",
-            any(handlers::webhook::handle_webhook_no_path),
-        )
+        .route("/w/{slug}/{*path}", any(handlers::webhook::handle_webhook))
+        .route("/w/{slug}", any(handlers::webhook::handle_webhook_no_path))
         .layer(public_cors);
 
     // Internal routes: no CORS (server-to-server only, authenticated via shared secret)

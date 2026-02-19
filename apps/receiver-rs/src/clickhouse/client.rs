@@ -47,10 +47,7 @@ impl ClickHouseClient {
             return Ok(());
         }
 
-        let query = format!(
-            "INSERT INTO {}.requests FORMAT JSONEachRow",
-            self.database
-        );
+        let query = format!("INSERT INTO {}.requests FORMAT JSONEachRow", self.database);
 
         // Build JSONEachRow body: one JSON object per line
         let mut body = String::with_capacity(requests.len() * 512);
@@ -123,14 +120,45 @@ impl ClickHouseClient {
             ));
         }
 
-        let json_resp: ClickHouseJsonResponse = serde_json::from_slice(&body_bytes)
-            .map_err(|e| format!("parse response: {e}"))?;
+        let json_resp: ClickHouseJsonResponse =
+            serde_json::from_slice(&body_bytes).map_err(|e| format!("parse response: {e}"))?;
 
         Ok(json_resp
             .data
             .iter()
             .map(SearchResultRequest::from_row)
             .collect())
+    }
+
+    /// Delete requests older than `retention_days` for the given user IDs.
+    /// Executes a ClickHouse mutation (`ALTER TABLE ... DELETE WHERE ...`).
+    pub async fn delete_old_requests_for_users(
+        &self,
+        user_ids: &[String],
+        retention_days: u32,
+    ) -> Result<(), String> {
+        let Some(sql) = build_delete_sql(&self.database, user_ids, retention_days) else {
+            return Ok(());
+        };
+
+        let resp = self
+            .client
+            .post(&self.base_url)
+            .header("X-ClickHouse-User", &self.user)
+            .header("X-ClickHouse-Key", &self.password)
+            .header("Content-Type", "text/plain")
+            .body(sql)
+            .send()
+            .await
+            .map_err(|e| format!("network: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("ClickHouse delete failed ({status}): {text}"));
+        }
+
+        Ok(())
     }
 
     /// Check if ClickHouse is reachable (simple ping).
@@ -141,5 +169,49 @@ impl ClickHouseClient {
             .send()
             .await
             .is_ok_and(|r| r.status().is_success())
+    }
+}
+
+fn escape_clickhouse_string(input: &str) -> String {
+    input.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn build_delete_sql(database: &str, user_ids: &[String], retention_days: u32) -> Option<String> {
+    if user_ids.is_empty() {
+        return None;
+    }
+
+    let user_list = user_ids
+        .iter()
+        .map(|user_id| format!("'{}'", escape_clickhouse_string(user_id)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Some(format!(
+        "ALTER TABLE {}.requests DELETE \
+         WHERE user_id IN ({}) \
+         AND received_at < now() - INTERVAL {} DAY",
+        database, user_list, retention_days
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_delete_sql;
+
+    #[test]
+    fn build_delete_sql_returns_none_for_empty_user_list() {
+        let sql = build_delete_sql("webhooks", &[], 7);
+        assert!(sql.is_none());
+    }
+
+    #[test]
+    fn build_delete_sql_includes_retention_and_escaped_user_ids() {
+        let user_ids = vec!["user_plain".to_string(), "user'quoted\\slash".to_string()];
+        let sql = build_delete_sql("webhooks", &user_ids, 7).expect("expected SQL");
+
+        assert!(sql.contains("ALTER TABLE webhooks.requests DELETE"));
+        assert!(sql.contains("user_id IN ('user_plain', 'user\\'quoted\\\\slash')"));
+        assert!(sql.contains("INTERVAL 7 DAY"));
     }
 }

@@ -195,7 +195,10 @@ fn parse_received_at(s: &str) -> f64 {
             return (epoch_secs * 1000 + millis as i64) as f64;
         }
     }
-    tracing::warn!(value = s, "failed to parse ClickHouse received_at timestamp");
+    tracing::warn!(
+        value = s,
+        "failed to parse ClickHouse received_at timestamp"
+    );
     0.0
 }
 

@@ -1,4 +1,4 @@
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::env;
 
 #[derive(Clone)]
@@ -31,7 +31,10 @@ impl std::fmt::Debug for Config {
             .field("capture_shared_secret", &"[REDACTED]")
             .field("redis_host", &self.redis_host)
             .field("redis_port", &self.redis_port)
-            .field("redis_password", &self.redis_password.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "redis_password",
+                &self.redis_password.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("redis_db", &self.redis_db)
             .field("port", &self.port)
             .field("debug", &self.debug)
@@ -63,8 +66,7 @@ fn parse_env_or<T: std::str::FromStr>(name: &str, default: T) -> T {
 
 impl Config {
     pub fn from_env() -> Self {
-        let convex_site_url =
-            env::var("CONVEX_SITE_URL").expect("CONVEX_SITE_URL is required");
+        let convex_site_url = env::var("CONVEX_SITE_URL").expect("CONVEX_SITE_URL is required");
         let capture_shared_secret =
             env::var("CAPTURE_SHARED_SECRET").expect("CAPTURE_SHARED_SECRET is required");
 
@@ -89,12 +91,10 @@ impl Config {
         let clickhouse_host = env::var("CLICKHOUSE_HOST").ok().filter(|s| !s.is_empty());
         let clickhouse_port: u16 = parse_env_or("CLICKHOUSE_PORT", 8123);
         let clickhouse_scheme = env::var("CLICKHOUSE_SCHEME").unwrap_or_else(|_| "http".into());
-        let clickhouse_url = clickhouse_host
-            .map(|host| format!("{clickhouse_scheme}://{host}:{clickhouse_port}"));
-        let clickhouse_user =
-            env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
-        let clickhouse_password =
-            env::var("CLICKHOUSE_PASSWORD").unwrap_or_default();
+        let clickhouse_url =
+            clickhouse_host.map(|host| format!("{clickhouse_scheme}://{host}:{clickhouse_port}"));
+        let clickhouse_user = env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
+        let clickhouse_password = env::var("CLICKHOUSE_PASSWORD").unwrap_or_default();
         let clickhouse_database =
             env::var("CLICKHOUSE_DATABASE").unwrap_or_else(|_| "webhooks".into());
 

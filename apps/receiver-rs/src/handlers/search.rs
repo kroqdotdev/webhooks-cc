@@ -4,13 +4,14 @@ use axum::response::IntoResponse;
 
 use serde::Deserialize;
 
+use crate::AppState;
 use crate::handlers::auth::verify_bearer_token;
 use crate::handlers::webhook::is_valid_slug;
-use crate::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct SearchParams {
     user_id: String,
+    plan: Option<String>,
     slug: Option<String>,
     method: Option<String>,
     q: Option<String>,
@@ -26,6 +27,16 @@ pub struct SearchParams {
 /// break out of a ClickHouse string literal).
 fn escape_clickhouse_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn free_retention_clause_for_plan(
+    plan: Option<&str>,
+) -> Result<Option<&'static str>, &'static str> {
+    match plan {
+        Some("free") => Ok(Some("received_at >= now() - INTERVAL 7 DAY")),
+        Some("pro") | None => Ok(None),
+        Some(_) => Err("invalid plan"),
+    }
 }
 
 pub async fn search(
@@ -79,6 +90,17 @@ pub async fn search(
         escape_clickhouse_string(&params.user_id)
     )];
 
+    match free_retention_clause_for_plan(params.plan.as_deref()) {
+        Ok(Some(clause)) => conditions.push(clause.to_string()),
+        Ok(None) => {}
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"error": "invalid plan"})),
+            );
+        }
+    }
+
     if let Some(slug) = &params.slug {
         if !is_valid_slug(slug) {
             return (
@@ -86,19 +108,13 @@ pub async fn search(
                 axum::Json(serde_json::json!({"error": "invalid slug"})),
             );
         }
-        conditions.push(format!(
-            "slug = '{}'",
-            escape_clickhouse_string(slug)
-        ));
+        conditions.push(format!("slug = '{}'", escape_clickhouse_string(slug)));
     }
 
     if let Some(method) = &params.method
         && method != "ALL"
     {
-        conditions.push(format!(
-            "method = '{}'",
-            escape_clickhouse_string(method)
-        ));
+        conditions.push(format!("method = '{}'", escape_clickhouse_string(method)));
     }
 
     // Use multiSearchAny() for substring search — it does exact substring
@@ -150,5 +166,34 @@ pub async fn search(
                 axum::Json(serde_json::json!({"error": "search query failed"})),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::free_retention_clause_for_plan;
+
+    #[test]
+    fn free_plan_gets_retention_clause() {
+        let clause =
+            free_retention_clause_for_plan(Some("free")).expect("free plan should be valid");
+        assert_eq!(clause, Some("received_at >= now() - INTERVAL 7 DAY"));
+    }
+
+    #[test]
+    fn pro_and_missing_plan_have_no_clause() {
+        let pro_clause =
+            free_retention_clause_for_plan(Some("pro")).expect("pro plan should be valid");
+        assert_eq!(pro_clause, None);
+
+        let none_clause =
+            free_retention_clause_for_plan(None).expect("missing plan should be valid");
+        assert_eq!(none_clause, None);
+    }
+
+    #[test]
+    fn invalid_plan_is_rejected() {
+        let result = free_retention_clause_for_plan(Some("enterprise"));
+        assert!(result.is_err());
     }
 }

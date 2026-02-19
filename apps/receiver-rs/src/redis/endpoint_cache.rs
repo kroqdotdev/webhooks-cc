@@ -22,9 +22,7 @@ impl RedisState {
             return;
         };
         let mut conn = self.conn.clone();
-        let _: Result<(), _> = conn
-            .set_ex(&key, &json, self.endpoint_ttl_secs)
-            .await;
+        let _: Result<(), _> = conn.set_ex(&key, &json, self.endpoint_ttl_secs).await;
     }
 
     /// Evict cached endpoint info (called on cache invalidation).
@@ -39,10 +37,6 @@ impl RedisState {
         let key = format!("{KEY_PREFIX}{slug}");
         let mut conn = self.conn.clone();
         let ttl: i64 = conn.ttl(&key).await.ok()?;
-        if ttl < 0 {
-            None
-        } else {
-            Some(ttl)
-        }
+        if ttl < 0 { None } else { Some(ttl) }
     }
 }
