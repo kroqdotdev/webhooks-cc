@@ -904,6 +904,64 @@ describe("retention cleanup", () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0].path).toBe("/pro-old");
   });
+
+  test("cleanupOldFreeRequests schedules follow-up for endpoints with additional stale batches", async () => {
+    const userId = await createFreeUser(t);
+    const endpointId = await createEndpoint(t, { slug: "free-retention-followup", userId });
+
+    const now = Date.now();
+    const cutoff = now - FREE_REQUEST_RETENTION_MS;
+    const oldTs = cutoff - 60_000;
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 250; i++) {
+        await ctx.db.insert("requests", {
+          endpointId,
+          method: "POST",
+          path: `/old-${i}`,
+          headers: {},
+          queryParams: {},
+          ip: "1.2.3.4",
+          size: 0,
+          receivedAt: oldTs,
+        });
+      }
+    });
+
+    const firstPass = await t.mutation(internal.requests.cleanupOldFreeRequests, {});
+    expect(firstPass.done).toBe(true);
+    expect(firstPass.scheduledFollowups).toBeGreaterThan(0);
+
+    const remainingAfterFirstPass = await t.run(async (ctx) =>
+      ctx.db
+        .query("requests")
+        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).lt("receivedAt", cutoff))
+        .collect()
+    );
+    expect(remainingAfterFirstPass.length).toBeGreaterThan(0);
+
+    // Simulate scheduled follow-up passes deterministically in test.
+    let done = false;
+    let safety = 0;
+    while (!done && safety < 10) {
+      const pass = await t.mutation(internal.requests.cleanupOldRequestsForUser, {
+        userId,
+        hasRemainingRequests: safety === 0,
+        cutoffMs: cutoff,
+      });
+      done = pass.done;
+      safety++;
+    }
+
+    expect(done).toBe(true);
+    const remainingAfterFollowups = await t.run(async (ctx) =>
+      ctx.db
+        .query("requests")
+        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).lt("receivedAt", cutoff))
+        .collect()
+    );
+    expect(remainingAfterFollowups).toHaveLength(0);
+  });
 });
 
 describe("apiKeys.validateQuery", () => {

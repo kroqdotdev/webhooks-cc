@@ -752,7 +752,9 @@ export const cleanupUserRequests = internalMutation({
 // Delete requests older than 7 days for free users.
 // Runs daily to enforce free-tier retention.
 // Uses pagination to process all free users across multiple cron invocations.
-// For users with >20 endpoints, schedules cleanupOldRequestsForUser for remaining.
+// Schedules cleanupOldRequestsForUser when:
+// - user has >20 endpoints, or
+// - any endpoint still has at least one full stale request batch remaining.
 export const cleanupOldFreeRequests = internalMutation({
   args: {
     cursor: v.optional(v.string()),
@@ -767,6 +769,7 @@ export const cleanupOldFreeRequests = internalMutation({
       .paginate({ cursor: cursor ?? null, numItems: 5 });
 
     let totalDeleted = 0;
+    let scheduledFollowups = 0;
     for (const user of result.page) {
       // Paginate endpoints to detect overflow beyond first page
       const endpointResult = await ctx.db
@@ -774,6 +777,7 @@ export const cleanupOldFreeRequests = internalMutation({
         .withIndex("by_user", (q) => q.eq("userId", user._id))
         .paginate({ cursor: null, numItems: 20 });
 
+      let needsMoreRequests = false;
       for (const endpoint of endpointResult.page) {
         const oldRequests = await ctx.db
           .query("requests")
@@ -793,15 +797,23 @@ export const cleanupOldFreeRequests = internalMutation({
             count: oldRequests.length,
           });
         }
+
+        // If we consumed a full batch, there may be more stale rows on this endpoint.
+        if (oldRequests.length === CLEANUP_BATCH_SIZE) {
+          needsMoreRequests = true;
+        }
       }
 
-      // If user has more endpoints, schedule dedicated cleanup for remaining
-      if (!endpointResult.isDone) {
+      // Schedule dedicated cleanup when endpoint pagination overflows, or when any endpoint
+      // still has at least one full stale batch remaining.
+      if (!endpointResult.isDone || needsMoreRequests) {
         await ctx.scheduler.runAfter(0, internal.requests.cleanupOldRequestsForUser, {
           userId: user._id,
-          endpointCursor: endpointResult.continueCursor,
+          endpointCursor: endpointResult.isDone ? undefined : endpointResult.continueCursor,
+          hasRemainingRequests: needsMoreRequests,
           cutoffMs: cutoff,
         });
+        scheduledFollowups++;
       }
     }
 
@@ -812,14 +824,16 @@ export const cleanupOldFreeRequests = internalMutation({
       });
     }
 
-    return { deleted: totalDeleted, done: result.isDone };
+    return { deleted: totalDeleted, done: result.isDone, scheduledFollowups };
   },
 });
 
 // Delete requests older than 30 days for pro users.
 // Runs daily to enforce retention policy.
 // Uses pagination to process all pro users across multiple cron invocations.
-// For users with >20 endpoints, schedules cleanupOldRequestsForUser for remaining.
+// Schedules cleanupOldRequestsForUser when:
+// - user has >20 endpoints, or
+// - any endpoint still has at least one full stale request batch remaining.
 // User page size kept small (5) to stay within Convex's 16K write limit per mutation
 // (worst case: 5 users × 20 endpoints × 100 requests = 10,000 writes).
 export const cleanupOldRequests = internalMutation({
@@ -843,6 +857,7 @@ export const cleanupOldRequests = internalMutation({
         .withIndex("by_user", (q) => q.eq("userId", user._id))
         .paginate({ cursor: null, numItems: 20 });
 
+      let needsMoreRequests = false;
       for (const endpoint of endpointResult.page) {
         const oldRequests = await ctx.db
           .query("requests")
@@ -862,13 +877,20 @@ export const cleanupOldRequests = internalMutation({
             count: oldRequests.length,
           });
         }
+
+        // If we consumed a full batch, there may be more stale rows on this endpoint.
+        if (oldRequests.length === CLEANUP_BATCH_SIZE) {
+          needsMoreRequests = true;
+        }
       }
 
-      // If user has more endpoints, schedule dedicated cleanup for remaining
-      if (!endpointResult.isDone) {
+      // Schedule dedicated cleanup when endpoint pagination overflows, or when any endpoint
+      // still has at least one full stale batch remaining.
+      if (!endpointResult.isDone || needsMoreRequests) {
         await ctx.scheduler.runAfter(0, internal.requests.cleanupOldRequestsForUser, {
           userId: user._id,
-          endpointCursor: endpointResult.continueCursor,
+          endpointCursor: endpointResult.isDone ? undefined : endpointResult.continueCursor,
+          hasRemainingRequests: needsMoreRequests,
           cutoffMs: cutoff,
         });
       }
