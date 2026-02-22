@@ -26,7 +26,8 @@ vi.mock("@/lib/rate-limit", () => ({
 
 vi.mock("convex/browser", () => ({
   ConvexHttpClient: class MockConvexHttpClient {
-    constructor(_: string) {}
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    constructor(_url: string) {}
 
     setAuth(token: string) {
       mockFns.convexSetAuth(token);
