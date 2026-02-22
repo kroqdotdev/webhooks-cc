@@ -127,24 +127,22 @@ const TEMPLATE_PRESETS: Record<TemplateProvider, readonly TemplatePreset[]> = {
   ],
 } as const;
 
-function randomToken(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+function randomHex(length: number): string {
+  const bytes = new Uint8Array(Math.ceil(length / 2));
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, length);
 }
 
-function randomHex(length: number): string {
-  let out = "";
-  while (out.length < length) {
-    out += Math.floor(Math.random() * 16).toString(16);
-  }
-  return out.slice(0, length);
+function randomToken(prefix: string): string {
+  return `${prefix}_${randomHex(8)}`;
 }
 
 function randomDigits(length: number): string {
-  let out = "";
-  while (out.length < length) {
-    out += Math.floor(Math.random() * 10).toString(10);
-  }
-  return out.slice(0, length);
+  const bytes = new Uint8Array(length);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => (b % 10).toString()).join("");
 }
 
 function randomSid(prefix: "SM" | "AC" | "CA"): string {
@@ -687,7 +685,9 @@ function toBase64(bytes: Uint8Array): string {
 function buildTwilioSignaturePayload(endpointUrl: string, params: TwilioParamEntry[]): string {
   const sortedParams = params
     .map(([key, value], index) => ({ key, value, index }))
-    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.index - b.index));
+    .sort((a, b) =>
+      a.key < b.key ? -1 : a.key > b.key ? 1 : a.value < b.value ? -1 : a.value > b.value ? 1 : 0
+    );
   let payload = endpointUrl;
   for (const { key, value } of sortedParams) {
     payload += `${key}${value}`;

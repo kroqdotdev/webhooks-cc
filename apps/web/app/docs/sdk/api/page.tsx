@@ -95,6 +95,16 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
             description: "Shared secret used for signature generation",
           },
           { name: "event", type: "string?", description: "Provider event/topic override" },
+          {
+            name: "method",
+            type: "string?",
+            description: "HTTP method override (defaults to POST)",
+          },
+          {
+            name: "timestamp",
+            type: "number?",
+            description: "Unix timestamp override for Stripe signature generation",
+          },
           { name: "headers", type: "Record?", description: "Additional headers" },
           {
             name: "body",

@@ -137,7 +137,10 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
           targetUrl: url,
         });
         requestMethod = template.method;
-        requestHeaders = { ...template.headers, ...customHeaders };
+        const filteredCustom = Object.fromEntries(
+          Object.entries(customHeaders).filter(([k]) => k.toLowerCase() !== "content-type")
+        );
+        requestHeaders = { ...template.headers, ...filteredCustom };
         requestBody = template.body;
       } catch (error) {
         setStatus("error");

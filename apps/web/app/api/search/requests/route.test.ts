@@ -26,9 +26,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 vi.mock("convex/browser", () => ({
   ConvexHttpClient: class MockConvexHttpClient {
-    constructor(_url: string) {
-      void _url;
-    }
+    constructor(_: string) {}
 
     setAuth(token: string) {
       mockFns.convexSetAuth(token);

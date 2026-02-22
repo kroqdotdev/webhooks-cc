@@ -29,7 +29,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Dashboard",
     items: [
       { title: "Endpoints", href: "/docs/endpoints" },
-      { title: "Test Webhooks", href: "/docs/endpoints/test-webhooks" },
+      { title: "Test Webhooks", href: "/docs/endpoints/test-webhooks", depth: 1 },
       { title: "Requests", href: "/docs/requests" },
       { title: "Mock Responses", href: "/docs/mock-responses" },
     ],
