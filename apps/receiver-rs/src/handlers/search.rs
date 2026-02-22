@@ -39,50 +39,13 @@ fn free_retention_clause_for_plan(
     }
 }
 
-pub async fn search(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(params): Query<SearchParams>,
-) -> impl IntoResponse {
-    // Verify shared secret
-    let auth = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !verify_bearer_token(auth, &state.config.capture_shared_secret) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            axum::Json(serde_json::json!({"error": "unauthorized"})),
-        );
-    }
-
-    // user_id is required and must be non-empty
-    if params.user_id.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(serde_json::json!({"error": "user_id is required"})),
-        );
-    }
-
-    // ClickHouse must be enabled
-    let clickhouse = match &state.clickhouse {
-        Some(ch) => ch,
-        None => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                axum::Json(serde_json::json!({"error": "search not available"})),
-            );
-        }
-    };
-
+fn build_search_sql(params: &SearchParams, db: &str) -> Result<String, &'static str> {
     let limit = params.limit.unwrap_or(50).min(200);
     let offset = params.offset.unwrap_or(0).min(10_000);
     let order = match params.order.as_deref() {
         Some("asc") => "ASC",
         _ => "DESC",
     };
-    let db = &state.config.clickhouse_database;
 
     // Build WHERE clauses
     let mut conditions = vec![format!(
@@ -93,20 +56,12 @@ pub async fn search(
     match free_retention_clause_for_plan(params.plan.as_deref()) {
         Ok(Some(clause)) => conditions.push(clause.to_string()),
         Ok(None) => {}
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({"error": "invalid plan"})),
-            );
-        }
+        Err(_) => return Err("invalid plan"),
     }
 
     if let Some(slug) = &params.slug {
         if !is_valid_slug(slug) {
-            return (
-                StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({"error": "invalid slug"})),
-            );
+            return Err("invalid slug");
         }
         conditions.push(format!("slug = '{}'", escape_clickhouse_string(slug)));
     }
@@ -149,13 +104,74 @@ pub async fn search(
 
     let where_clause = conditions.join(" AND ");
 
-    let sql = format!(
+    Ok(format!(
         "SELECT endpoint_id, slug, user_id, method, path, headers, body, query_params, ip, content_type, size, is_ephemeral, received_at \
          FROM {db}.requests \
          WHERE {where_clause} \
          ORDER BY received_at {order} \
          LIMIT {limit} OFFSET {offset}"
-    );
+    ))
+}
+
+pub async fn search(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    // Verify shared secret
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !verify_bearer_token(auth, &state.config.capture_shared_secret) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({"error": "unauthorized"})),
+        );
+    }
+
+    // user_id is required and must be non-empty
+    if params.user_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "user_id is required"})),
+        );
+    }
+
+    // ClickHouse must be enabled
+    let clickhouse = match &state.clickhouse {
+        Some(ch) => ch,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({"error": "search not available"})),
+            );
+        }
+    };
+
+    let sql = match build_search_sql(&params, &state.config.clickhouse_database) {
+        Ok(sql) => sql,
+        Err("invalid plan") => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"error": "invalid plan"})),
+            );
+        }
+        Err("invalid slug") => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"error": "invalid slug"})),
+            );
+        }
+        Err(_) => {
+            tracing::error!("search SQL builder returned unexpected error");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"error": "search query failed"})),
+            );
+        }
+    };
 
     match clickhouse.query_requests(&sql).await {
         Ok(results) => (StatusCode::OK, axum::Json(serde_json::json!(results))),
@@ -171,7 +187,7 @@ pub async fn search(
 
 #[cfg(test)]
 mod tests {
-    use super::free_retention_clause_for_plan;
+    use super::{SearchParams, build_search_sql, free_retention_clause_for_plan};
 
     #[test]
     fn free_plan_gets_retention_clause() {
@@ -195,5 +211,30 @@ mod tests {
     fn invalid_plan_is_rejected() {
         let result = free_retention_clause_for_plan(Some("enterprise"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_search_sql_includes_free_plan_retention_clause() {
+        let params = SearchParams {
+            user_id: "user_123".to_string(),
+            plan: Some("free".to_string()),
+            slug: Some("demo_slug".to_string()),
+            method: Some("POST".to_string()),
+            q: None,
+            from: None,
+            to: None,
+            limit: Some(25),
+            offset: Some(10),
+            order: Some("desc".to_string()),
+        };
+
+        let sql = build_search_sql(&params, "webhooks").expect("sql should build");
+
+        assert!(sql.contains("FROM webhooks.requests"));
+        assert!(sql.contains("user_id = 'user_123'"));
+        assert!(sql.contains("received_at >= now() - INTERVAL 7 DAY"));
+        assert!(sql.contains("slug = 'demo_slug'"));
+        assert!(sql.contains("method = 'POST'"));
+        assert!(sql.contains("LIMIT 25 OFFSET 10"));
     }
 }
