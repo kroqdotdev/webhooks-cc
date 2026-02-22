@@ -284,6 +284,52 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* Compare */}
+      <section className="py-20 px-4">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">See how we compare</h2>
+          <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
+            Honest, developer-focused comparisons against popular alternatives.
+          </p>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              {
+                href: "/compare/webhook-site",
+                title: "vs Webhook.site",
+                summary:
+                  "Compare core webhook inspection features, pricing, and developer workflows.",
+              },
+              {
+                href: "/compare/ngrok",
+                title: "vs ngrok",
+                summary:
+                  "Tradeoffs between a webhook-focused platform and a general tunnel tool.",
+              },
+              {
+                href: "/compare/beeceptor",
+                title: "vs Beeceptor",
+                summary:
+                  "How webhook inspection + SDK + MCP compare against API mocking-first workflows.",
+              },
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="neo-card block transition-colors hover:bg-muted group"
+              >
+                <h3 className="font-bold text-xl mb-2">{item.title}</h3>
+                <p className="text-muted-foreground mb-4">{item.summary}</p>
+                <span className="inline-flex items-center text-sm font-semibold group-hover:underline">
+                  Read comparison
+                  <ArrowRight className="ml-1 h-4 w-4" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* FAQ */}
       <section id="faq" className="py-20 px-4 scroll-mt-20">
         <div className="max-w-3xl mx-auto">
