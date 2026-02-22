@@ -935,7 +935,9 @@ describe("retention cleanup", () => {
     const remainingAfterFirstPass = await t.run(async (ctx) =>
       ctx.db
         .query("requests")
-        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).lt("receivedAt", cutoff))
+        .withIndex("by_endpoint_time", (q) =>
+          q.eq("endpointId", endpointId).lt("receivedAt", cutoff)
+        )
         .collect()
     );
     expect(remainingAfterFirstPass.length).toBeGreaterThan(0);
@@ -957,7 +959,9 @@ describe("retention cleanup", () => {
     const remainingAfterFollowups = await t.run(async (ctx) =>
       ctx.db
         .query("requests")
-        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).lt("receivedAt", cutoff))
+        .withIndex("by_endpoint_time", (q) =>
+          q.eq("endpointId", endpointId).lt("receivedAt", cutoff)
+        )
         .collect()
     );
     expect(remainingAfterFollowups).toHaveLength(0);

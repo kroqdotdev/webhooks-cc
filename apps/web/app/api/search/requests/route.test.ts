@@ -21,7 +21,9 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("convex/browser", () => ({
   ConvexHttpClient: class MockConvexHttpClient {
-    constructor(_url: string) {}
+    constructor(_url: string) {
+      void _url;
+    }
 
     setAuth(token: string) {
       mockFns.convexSetAuth(token);

@@ -120,7 +120,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       secret: z
         .string()
         .optional()
-        .describe("Shared secret for provider signature generation (required when provider is set)"),
+        .describe(
+          "Shared secret for provider signature generation (required when provider is set)"
+        ),
     },
     withErrorHandling(
       async ({ slug, method, headers, body, provider, template, event, secret }) => {
