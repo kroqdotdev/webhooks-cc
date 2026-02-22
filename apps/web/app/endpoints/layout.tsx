@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = createPageMetadata({
@@ -9,5 +10,5 @@ export const metadata: Metadata = createPageMetadata({
 });
 
 export default function EndpointsLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <RequireAuth>{children}</RequireAuth>;
 }

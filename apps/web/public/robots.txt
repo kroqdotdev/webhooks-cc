@@ -6,4 +6,4 @@ Disallow: /endpoints
 Disallow: /api
 Disallow: /cli/verify
 
-Sitemap: https://webhooks.cc/sitemap.xml
+Sitemap: https://webhooks.cc/sitemap-index.xml

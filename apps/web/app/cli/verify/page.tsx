@@ -7,8 +7,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 
 export default function CliVerifyPage() {
+  return (
+    <ConvexAuthProvider>
+      <CliVerifyContent />
+    </ConvexAuthProvider>
+  );
+}
+
+function CliVerifyContent() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const router = useRouter();
   const authorize = useMutation(api.deviceAuth.authorizeDeviceCode);

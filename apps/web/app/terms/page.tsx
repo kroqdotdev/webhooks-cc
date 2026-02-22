@@ -6,7 +6,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata: Metadata = createPageMetadata({
   title: "Terms of Service",
   description:
-    "Read the webhooks.cc terms of service for acceptable use, billing, and legal terms.",
+    "Read the webhooks.cc terms of service covering acceptable use, account responsibilities, billing, plan limits, and legal terms.",
   path: "/terms",
 });
 

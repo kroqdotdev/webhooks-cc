@@ -2,16 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BlogPostShell } from "@/components/blog/blog-post-shell";
 import { getBlogPostBySlug } from "@/lib/blog";
-import { createPageMetadata } from "@/lib/seo";
-
-export const metadata = createPageMetadata({
-  title: "Test Stripe Webhooks Locally (2026)",
-  description:
-    "Set up a local Stripe webhook workflow with webhooks.cc tunnel, live inspection, and signature verification.",
-  path: "/blog/test-stripe-webhooks-locally-2026",
-});
+import { createBlogPostMetadata, createPageMetadata } from "@/lib/seo";
 
 const post = getBlogPostBySlug("test-stripe-webhooks-locally-2026");
+
+export const metadata = post
+  ? createBlogPostMetadata(post)
+  : createPageMetadata({
+      title: "How to test Stripe webhooks locally in 2026",
+      description:
+        "Set up a local Stripe webhook workflow with a stable public endpoint, live request inspection, replay, and signature verification on localhost.",
+      path: "/blog/test-stripe-webhooks-locally-2026",
+    });
 
 const sections = [
   { id: "architecture", label: "Architecture" },

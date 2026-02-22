@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "GitHub Webhook Assertions with Jest",
   description:
-    "Example Jest test that validates GitHub webhook event type and payload fields with @webhooks-cc/sdk.",
+    "Example Jest integration test that validates GitHub webhook event type, headers, and payload fields with @webhooks-cc/sdk.",
   path: "/docs/sdk/testing/github-jest",
 });
 

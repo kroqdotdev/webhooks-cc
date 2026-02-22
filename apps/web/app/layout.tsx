@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
-import { ThemeProvider } from "@/components/providers/theme-provider";
 import {
   DEFAULT_OG_IMAGE_PATH,
   DEFAULT_PAGE_DESCRIPTION,
@@ -22,6 +20,11 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
+const googleSiteVerification =
+  process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || process.env.GOOGLE_SITE_VERIFICATION;
+const bingSiteVerification =
+  process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION || process.env.BING_SITE_VERIFICATION;
+
 export const metadata: Metadata = {
   title: {
     default: DEFAULT_PAGE_TITLE,
@@ -31,6 +34,9 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   alternates: {
     canonical: "/",
+    types: {
+      "application/rss+xml": `${SITE_URL}/feed.xml`,
+    },
   },
   applicationName: SITE_NAME,
   openGraph: {
@@ -52,6 +58,13 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  verification:
+    googleSiteVerification || bingSiteVerification
+      ? {
+          ...(googleSiteVerification ? { google: googleSiteVerification } : {}),
+          ...(bingSiteVerification ? { other: { "msvalidate.01": bingSiteVerification } } : {}),
+        }
+      : undefined,
 };
 
 export default function RootLayout({
@@ -62,6 +75,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link
+          rel="alternate"
+          type="application/rss+xml"
+          title="webhooks.cc Blog"
+          href="/feed.xml"
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -87,9 +106,7 @@ export default function RootLayout({
             .
           </div>
         </noscript>
-        <ThemeProvider>
-          <ConvexAuthProvider>{children}</ConvexAuthProvider>
-        </ThemeProvider>
+        {children}
       </body>
     </html>
   );

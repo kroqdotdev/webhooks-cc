@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3 } from "lucide-react";
 import { BLOG_POSTS, formatBlogDate, type BlogPostMeta } from "@/lib/blog";
+import { JsonLd, blogPostingSchema, breadcrumbSchema } from "@/lib/schemas";
 
 export interface BlogSection {
   id: string;
@@ -18,6 +19,14 @@ export function BlogPostShell({ post, sections, children }: BlogPostShellProps) 
 
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
+      <JsonLd data={blogPostingSchema(post)} />
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Blog", path: "/blog" },
+          { name: post.title, path: post.href },
+        ])}
+      />
       <div className="max-w-6xl mx-auto">
         <Link
           href="/blog"

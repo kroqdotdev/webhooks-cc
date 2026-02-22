@@ -2,16 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BlogPostShell } from "@/components/blog/blog-post-shell";
 import { getBlogPostBySlug } from "@/lib/blog";
-import { createPageMetadata } from "@/lib/seo";
-
-export const metadata = createPageMetadata({
-  title: "Webhook Testing in CI/CD with TypeScript",
-  description:
-    "Write deterministic webhook integration tests in CI using the webhooks.cc TypeScript SDK.",
-  path: "/blog/webhook-testing-cicd-typescript",
-});
+import { createBlogPostMetadata, createPageMetadata } from "@/lib/seo";
 
 const post = getBlogPostBySlug("webhook-testing-cicd-typescript");
+
+export const metadata = post
+  ? createBlogPostMetadata(post)
+  : createPageMetadata({
+      title: "Webhook testing in CI/CD with TypeScript",
+      description:
+        "Create deterministic webhook integration tests in CI with endpoint setup, strict request matching, assertions, and teardown using the TypeScript SDK.",
+      path: "/blog/webhook-testing-cicd-typescript",
+    });
 
 const sections = [
   { id: "why-ci", label: "Why CI webhook tests" },

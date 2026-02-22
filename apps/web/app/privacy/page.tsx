@@ -6,7 +6,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata: Metadata = createPageMetadata({
   title: "Privacy Policy",
   description:
-    "Read the webhooks.cc privacy policy, including data collection, retention, and usage.",
+    "Read the webhooks.cc privacy policy, including data collection, storage, retention, billing processors, and how webhook request data is handled.",
   path: "/privacy",
 });
 

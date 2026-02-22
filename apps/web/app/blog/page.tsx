@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { ArrowRight, CalendarDays, Clock3 } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
 import { BLOG_POSTS, formatBlogDate } from "@/lib/blog";
+import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "webhooks.cc Blog",
   description:
-    "Practical webhook guides for local development, CI assertions, and AI-assisted debugging workflows.",
+    "Practical webhook guides for local development, CI assertions, provider signature verification, and AI-assisted debugging workflows.",
   path: "/blog",
 });
 
@@ -18,6 +19,12 @@ export default function BlogIndexPage() {
 
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Blog", path: "/blog" },
+        ])}
+      />
       <div className="max-w-6xl mx-auto">
         <section className="neo-card neo-card-static p-0 overflow-hidden mb-10">
           <div className="h-2 bg-gradient-to-r from-secondary via-primary to-accent" />

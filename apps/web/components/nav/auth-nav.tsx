@@ -3,6 +3,7 @@
 import { useConvexAuth } from "convex/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const NAV_LINKS = [
@@ -12,6 +13,14 @@ const NAV_LINKS = [
 ];
 
 export function AuthNav() {
+  return (
+    <ConvexAuthProvider>
+      <AuthNavContent />
+    </ConvexAuthProvider>
+  );
+}
+
+function AuthNavContent() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const pathname = usePathname();
 

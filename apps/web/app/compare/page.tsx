@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "webhooks.cc Comparisons",
   description:
-    "Side-by-side comparisons for webhook testing tools: webhooks.cc vs Webhook.site, ngrok, and Beeceptor.",
+    "Side-by-side comparisons for webhook testing tools, including webhooks.cc vs Webhook.site, ngrok, and Beeceptor with workflow-focused tradeoffs.",
   path: "/compare",
 });
 
@@ -30,6 +31,12 @@ const COMPARISONS = [
 export default function CompareIndexPage() {
   return (
     <main className="min-h-screen pt-32 pb-20 px-4">
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Compare", path: "/compare" },
+        ])}
+      />
       <div className="max-w-4xl mx-auto">
         <h1 className="text-4xl md:text-5xl font-bold mb-4">Tool comparisons</h1>
         <p className="text-lg text-muted-foreground mb-10">

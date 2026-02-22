@@ -3,7 +3,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "Dashboard Test Webhooks Docs",
   description:
-    "Use the Send button in the dashboard to send manual requests or realistic provider webhook templates with signatures.",
+    "Use the dashboard Send button to send manual requests or realistic provider webhook templates with signatures for end-to-end verification testing.",
   path: "/docs/endpoints/test-webhooks",
 });
 

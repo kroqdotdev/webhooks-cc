@@ -16,6 +16,7 @@ import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import type { Id } from "@convex/_generated/dataModel";
 import type { Request, RequestSummary } from "@/types/request";
 import { Check, Circle, Copy, Plus, Send } from "lucide-react";
+import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 
 const REQUEST_LIMIT = 50;
 // Local fallback so refreshes immediately after create still restore the slug.
@@ -39,6 +40,14 @@ function formatRemainingTime(ms: number): string {
 }
 
 export function GuestLiveDashboard() {
+  return (
+    <ConvexAuthProvider>
+      <GuestLiveDashboardInner />
+    </ConvexAuthProvider>
+  );
+}
+
+function GuestLiveDashboardInner() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const router = useRouter();
   const createEndpoint = useMutation(api.endpoints.create);

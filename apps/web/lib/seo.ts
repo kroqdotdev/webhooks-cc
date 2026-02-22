@@ -1,4 +1,5 @@
 import type { Metadata, MetadataRoute } from "next";
+import type { BlogPostMeta } from "./blog";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
@@ -13,6 +14,7 @@ export interface SitemapPageDefinition {
   path: string;
   changeFrequency: NonNullable<MetadataRoute.Sitemap[number]["changeFrequency"]>;
   priority: number;
+  lastModified?: Date;
 }
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
@@ -52,6 +54,12 @@ interface PageMetadataInput {
   description: string;
   path: string;
   noIndex?: boolean;
+  keywords?: readonly string[];
+}
+
+function toIsoString(date: string | Date): string {
+  if (date instanceof Date) return date.toISOString();
+  return new Date(`${date}T00:00:00.000Z`).toISOString();
 }
 
 function toAbsoluteUrl(path: string): string {
@@ -67,6 +75,7 @@ export function createPageMetadata({
   description,
   path,
   noIndex = false,
+  keywords,
 }: PageMetadataInput): Metadata {
   const absoluteUrl = toAbsoluteUrl(path);
 
@@ -95,5 +104,45 @@ export function createPageMetadata({
       index: !noIndex,
       follow: !noIndex,
     },
+    keywords: keywords ? [...keywords] : undefined,
+  };
+}
+
+export function createBlogPostMetadata(post: BlogPostMeta): Metadata {
+  const absoluteUrl = toAbsoluteUrl(post.href);
+  const publishedTime = toIsoString(post.publishedAt);
+  const modifiedTime = toIsoString(post.updatedAt);
+
+  return {
+    title: post.title,
+    description: post.description,
+    alternates: {
+      canonical: post.href,
+    },
+    openGraph: {
+      type: "article",
+      locale: "en_US",
+      url: absoluteUrl,
+      siteName: SITE_NAME,
+      title: post.title,
+      description: post.description,
+      images: [DEFAULT_OG_IMAGE_PATH],
+      publishedTime,
+      modifiedTime,
+      tags: [...post.tags],
+      authors: [SITE_NAME],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description: post.description,
+      images: [DEFAULT_OG_IMAGE_PATH],
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
+    keywords: [...post.tags],
+    authors: [{ name: SITE_NAME, url: SITE_URL }],
   };
 }

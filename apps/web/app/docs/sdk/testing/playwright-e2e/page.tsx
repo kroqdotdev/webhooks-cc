@@ -3,7 +3,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "E2E Webhook Testing with Playwright",
   description:
-    "Run full browser-to-backend webhook tests and assert captured events with @webhooks-cc/sdk.",
+    "Run full browser-to-backend webhook tests with Playwright and assert captured webhook events, payloads, and headers using @webhooks-cc/sdk.",
   path: "/docs/sdk/testing/playwright-e2e",
 });
 

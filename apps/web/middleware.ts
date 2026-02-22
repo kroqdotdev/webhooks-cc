@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Security headers middleware.
@@ -25,8 +25,16 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
   }
 }
 
-export function middleware() {
+function shouldNoIndexPath(pathname: string): boolean {
+  if (pathname === "/login") return true;
+
+  const privatePrefixes = ["/dashboard", "/account", "/endpoints", "/api", "/cli/verify"];
+  return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+export function middleware(request: NextRequest) {
   const response = NextResponse.next();
+  const pathname = request.nextUrl.pathname;
 
   const webhookOrigin = sanitizeCspOrigin(
     process.env.NEXT_PUBLIC_WEBHOOK_URL,
@@ -83,6 +91,10 @@ export function middleware() {
 
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+
+  if (shouldNoIndexPath(pathname)) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
 
   return response;
 }

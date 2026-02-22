@@ -1,16 +1,24 @@
 import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
+import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
   title: "webhooks.cc vs Beeceptor",
   description:
-    "Compare webhooks.cc and Beeceptor for webhook inspection, replay, local testing, and developer automation.",
+    "Compare webhooks.cc and Beeceptor for webhook inspection, replay, local testing, SDK assertions, and developer automation with AI agent workflows.",
   path: "/compare/beeceptor",
 });
 
 export default function CompareBeeceptorPage() {
   return (
     <main className="min-h-screen pt-32 pb-20 px-4">
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Compare", path: "/compare" },
+          { name: "webhooks.cc vs Beeceptor", path: "/compare/beeceptor" },
+        ])}
+      />
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
           Comparison

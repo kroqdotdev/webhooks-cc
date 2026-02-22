@@ -1,11 +1,11 @@
 import type { MetadataRoute } from "next";
-import { LAST_CONTENT_UPDATE, PUBLIC_SITEMAP_PAGES, SITE_URL } from "@/lib/seo";
+import { getPublicSitemapEntries } from "@/lib/sitemap-utils";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return PUBLIC_SITEMAP_PAGES.map((page) => ({
-    url: page.path === "/" ? SITE_URL : `${SITE_URL}${page.path}`,
-    lastModified: LAST_CONTENT_UPDATE,
-    changeFrequency: page.changeFrequency,
-    priority: page.priority,
+  return getPublicSitemapEntries().map((entry) => ({
+    url: entry.url,
+    lastModified: entry.lastModified,
+    changeFrequency: entry.changeFrequency,
+    priority: entry.priority,
   }));
 }

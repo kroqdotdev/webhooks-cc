@@ -6,18 +6,21 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import { useConvexAuth } from "convex/react";
+import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-pulse text-muted-foreground">Loading...</div>
-        </div>
-      }
-    >
-      <LoginContent />
-    </Suspense>
+    <ConvexAuthProvider>
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="animate-pulse text-muted-foreground">Loading...</div>
+          </div>
+        }
+      >
+        <LoginContent />
+      </Suspense>
+    </ConvexAuthProvider>
   );
 }
 

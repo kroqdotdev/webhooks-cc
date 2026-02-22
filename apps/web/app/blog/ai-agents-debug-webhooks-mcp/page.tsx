@@ -2,16 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BlogPostShell } from "@/components/blog/blog-post-shell";
 import { getBlogPostBySlug } from "@/lib/blog";
-import { createPageMetadata } from "@/lib/seo";
-
-export const metadata = createPageMetadata({
-  title: "Debug Webhooks with AI Agents via MCP",
-  description:
-    "Connect AI coding agents to webhooks.cc and automate endpoint creation, inspection, sending, and replay.",
-  path: "/blog/ai-agents-debug-webhooks-mcp",
-});
+import { createBlogPostMetadata, createPageMetadata } from "@/lib/seo";
 
 const post = getBlogPostBySlug("ai-agents-debug-webhooks-mcp");
+
+export const metadata = post
+  ? createBlogPostMetadata(post)
+  : createPageMetadata({
+      title: "Using AI agents to debug webhooks with MCP",
+      description:
+        "Connect your coding agent to webhooks.cc for endpoint creation, signed test sends, request inspection, and replay workflows through MCP.",
+      path: "/blog/ai-agents-debug-webhooks-mcp",
+    });
 
 const sections = [
   { id: "why-mcp", label: "Why MCP for webhooks" },

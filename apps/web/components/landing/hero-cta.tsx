@@ -3,8 +3,17 @@
 import { useConvexAuth } from "convex/react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 
 export function HeroCTA() {
+  return (
+    <ConvexAuthProvider>
+      <HeroCTAContent />
+    </ConvexAuthProvider>
+  );
+}
+
+function HeroCTAContent() {
   const { isAuthenticated, isLoading } = useConvexAuth();
 
   if (isLoading) {

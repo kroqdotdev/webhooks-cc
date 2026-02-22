@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "Stripe Webhook Testing with Vitest",
   description:
-    "Example Vitest test using @webhooks-cc/sdk to assert Stripe-style webhook delivery.",
+    "Example Vitest integration test using @webhooks-cc/sdk to assert Stripe webhook delivery, headers, and payload fields in CI.",
   path: "/docs/sdk/testing/stripe-vitest",
 });
 

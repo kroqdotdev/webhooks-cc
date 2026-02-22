@@ -1,4 +1,5 @@
 import { SITE_URL } from "./seo";
+import type { BlogPostMeta } from "./blog";
 
 // --- JsonLd component ---
 
@@ -132,5 +133,43 @@ export function breadcrumbSchema(items: BreadcrumbItem[]) {
       name: item.name,
       item: `${SITE_URL}${item.path}`,
     })),
+  };
+}
+
+// --- BlogPosting ---
+
+export function blogPostingSchema(post: BlogPostMeta) {
+  const datePublished = new Date(`${post.publishedAt}T00:00:00.000Z`).toISOString();
+  const dateModified = new Date(`${post.updatedAt}T00:00:00.000Z`).toISOString();
+  const url = `${SITE_URL}${post.href}`;
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.description,
+    url,
+    mainEntityOfPage: url,
+    datePublished,
+    dateModified,
+    articleSection: post.category,
+    keywords: [...post.tags],
+    inLanguage: "en-US",
+    isAccessibleForFree: true,
+    image: `${SITE_URL}/og-image.png`,
+    author: {
+      "@type": "Organization",
+      name: "webhooks.cc",
+      url: SITE_URL,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "webhooks.cc",
+      url: SITE_URL,
+      logo: {
+        "@type": "ImageObject",
+        url: `${SITE_URL}/icon.png`,
+      },
+    },
   };
 }

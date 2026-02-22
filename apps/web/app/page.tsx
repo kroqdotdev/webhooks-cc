@@ -11,7 +11,7 @@ import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/li
 export const metadata = createPageMetadata({
   title: "Webhook Testing Platform: CLI, SDK & MCP",
   description:
-    "Capture and inspect webhooks in real time. Send signed Stripe, GitHub, Shopify, and Twilio test webhooks from the dashboard. Forward to localhost with the CLI, test in CI with the SDK, and connect AI coding agents via MCP.",
+    "Capture and inspect webhooks in real time. Send signed provider test webhooks, forward to localhost with the CLI, test in CI with the SDK, and debug faster with MCP.",
   path: "/",
 });
 
@@ -303,8 +303,7 @@ export default async function Home() {
               {
                 href: "/compare/ngrok",
                 title: "vs ngrok",
-                summary:
-                  "Tradeoffs between a webhook-focused platform and a general tunnel tool.",
+                summary: "Tradeoffs between a webhook-focused platform and a general tunnel tool.",
               },
               {
                 href: "/compare/beeceptor",
