@@ -2,9 +2,9 @@ import type { Metadata, MetadataRoute } from "next";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
-export const DEFAULT_PAGE_TITLE = "webhooks.cc | Webhook Testing Tools — CLI, SDK & MCP Server";
+export const DEFAULT_PAGE_TITLE = "Webhook Testing Platform: CLI, SDK & MCP";
 export const DEFAULT_PAGE_DESCRIPTION =
-  "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test programmatically with the TypeScript SDK, and connect AI coding agents via MCP.";
+  "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test in CI with the TypeScript SDK, and automate workflows with the MCP server.";
 export const DEFAULT_OG_IMAGE_PATH = "/og-image.png";
 
 export const LAST_CONTENT_UPDATE = new Date("2026-02-19T00:00:00.000Z");

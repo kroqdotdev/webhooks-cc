@@ -36,7 +36,7 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 - SDK API reference: https://webhooks.cc/docs/sdk/api
 - SDK testing patterns: https://webhooks.cc/docs/sdk/testing
 - MCP server docs: https://webhooks.cc/docs/mcp
-- GitHub: https://github.com/lohsefar/webhooks-cc
+- GitHub: https://github.com/kroqdotdev/webhooks-cc
 - npm (SDK): https://www.npmjs.com/package/@webhooks-cc/sdk
 - npm (MCP): https://www.npmjs.com/package/@webhooks-cc/mcp
 

@@ -32,11 +32,31 @@ export function getWebhookUrl(slug: string): string {
 export const SKIP_HEADERS_FOR_CURL: readonly string[] = ["host", "content-length", "connection"];
 
 /**
+ * Proxy/CDN headers added by infrastructure (Cloudflare, Caddy) — not part
+ * of the original sender's request.
+ */
+const PROXY_HEADERS: readonly string[] = [
+  "cdn-loop",
+  "cf-connecting-ip",
+  "cf-ipcountry",
+  "cf-ray",
+  "cf-visitor",
+  "via",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "true-client-ip",
+];
+
+/**
  * Headers to omit when replaying requests.
  * Extends SKIP_HEADERS_FOR_CURL with:
  * - accept-encoding: let the HTTP client handle compression negotiation
+ * - proxy/CDN headers: not part of the original request
  */
 export const SKIP_HEADERS_FOR_REPLAY: readonly string[] = [
   ...SKIP_HEADERS_FOR_CURL,
   "accept-encoding",
+  ...PROXY_HEADERS,
 ];

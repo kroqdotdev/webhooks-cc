@@ -63,6 +63,21 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 const SENSITIVE_HEADERS = new Set(["authorization", "cookie", "proxy-authorization", "set-cookie"]);
 
+// Proxy/CDN headers added by infrastructure — not part of the original request
+const PROXY_HEADERS = new Set([
+  "cdn-loop",
+  "cf-connecting-ip",
+  "cf-ipcountry",
+  "cf-ray",
+  "cf-visitor",
+  "via",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "true-client-ip",
+]);
+
 /**
  * @deprecated Use {@link WebhooksCCError} instead. Kept for backward compatibility.
  */
@@ -469,7 +484,11 @@ export class WebhooksCC {
       const headers: Record<string, string> = {};
       for (const [key, val] of Object.entries(captured.headers)) {
         const lower = key.toLowerCase();
-        if (!HOP_BY_HOP_HEADERS.has(lower) && !SENSITIVE_HEADERS.has(lower)) {
+        if (
+          !HOP_BY_HOP_HEADERS.has(lower) &&
+          !SENSITIVE_HEADERS.has(lower) &&
+          !PROXY_HEADERS.has(lower)
+        ) {
           headers[key] = val;
         }
       }

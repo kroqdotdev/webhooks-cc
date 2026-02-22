@@ -30,6 +30,21 @@ var sensitiveHeaders = map[string]bool{
 	"x-access-token":      true,
 }
 
+// proxyHeaders added by infrastructure (Cloudflare, Caddy) — not part of the original request
+var proxyHeaders = map[string]bool{
+	"cdn-loop":          true,
+	"cf-connecting-ip":  true,
+	"cf-ipcountry":      true,
+	"cf-ray":            true,
+	"cf-visitor":        true,
+	"via":               true,
+	"x-forwarded-for":   true,
+	"x-forwarded-host":  true,
+	"x-forwarded-proto": true,
+	"x-real-ip":         true,
+	"true-client-ip":    true,
+}
+
 // Tunnel forwards captured webhook requests to a local target URL.
 // Filters security-sensitive headers (Authorization, Cookie, etc.)
 // before forwarding to prevent credential leakage.
@@ -92,7 +107,7 @@ func (t *Tunnel) Forward(req *types.CapturedRequest) (*ForwardResult, error) {
 	// Use case-insensitive matching since HTTP headers are case-insensitive per RFC 7230
 	for key, value := range req.Headers {
 		keyLower := strings.ToLower(key)
-		if keyLower != "host" && !sensitiveHeaders[keyLower] {
+		if keyLower != "host" && !sensitiveHeaders[keyLower] && !proxyHeaders[keyLower] {
 			httpReq.Header.Set(key, value)
 		}
 	}

@@ -3,7 +3,7 @@
 # Usage: curl -fsSL https://webhooks.cc/install.sh | sh
 set -eu
 
-REPO="lohsefar/webhooks-cc"
+REPO="kroqdotdev/webhooks-cc"
 BINARY="whk"
 INSTALL_DIR="/usr/local/bin"
 RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"

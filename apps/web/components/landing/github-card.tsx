@@ -1,6 +1,6 @@
 import { Github, Star } from "lucide-react";
 
-const GITHUB_REPO = "lohsefar/webhooks-cc";
+const GITHUB_REPO = "kroqdotdev/webhooks-cc";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
 
 function formatCount(n: number): string {

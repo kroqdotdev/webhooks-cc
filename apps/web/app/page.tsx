@@ -9,7 +9,7 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
-  title: "Webhook Testing Tools for Developers — CLI, SDK & MCP Server",
+  title: "Webhook Testing Platform: CLI, SDK & MCP",
   description:
     "Capture and inspect webhooks in real time. Send signed Stripe, GitHub, Shopify, and Twilio test webhooks from the dashboard. Forward to localhost with the CLI, test in CI with the SDK, and connect AI coding agents via MCP.",
   path: "/",
@@ -21,7 +21,7 @@ interface GitHubRepoResponse {
 
 async function getStarCount(): Promise<number | null> {
   try {
-    const res = await fetch("https://api.github.com/repos/lohsefar/webhooks-cc", {
+    const res = await fetch("https://api.github.com/repos/kroqdotdev/webhooks-cc", {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return null;

@@ -1,3 +1,4 @@
+pub mod dedup;
 pub mod endpoint_cache;
 pub mod quota;
 pub mod request_buffer;

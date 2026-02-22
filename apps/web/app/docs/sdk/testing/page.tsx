@@ -3,8 +3,9 @@ import { JsonLd, howToSchema } from "@/lib/schemas";
 import Link from "next/link";
 
 export const metadata = createPageMetadata({
-  title: "SDK Testing Docs",
-  description: "Use the webhooks.cc SDK in your CI/CD pipeline to verify webhook integrations.",
+  title: "Webhook Testing in CI with SDK",
+  description:
+    "Use the webhooks.cc TypeScript SDK in CI/CD to verify webhook integrations end-to-end with deterministic wait, match, and assertion flows.",
   path: "/docs/sdk/testing",
 });
 

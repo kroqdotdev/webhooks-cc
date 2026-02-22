@@ -2,9 +2,9 @@ import Link from "next/link";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "CLI Overview Docs",
+  title: "Webhook CLI Guide",
   description:
-    "The webhooks.cc CLI lets you forward webhooks to localhost and manage endpoints from the terminal.",
+    "Use the webhooks.cc CLI to forward webhooks to localhost, manage endpoints, and inspect requests directly from your terminal.",
   path: "/docs/cli",
 });
 
@@ -19,7 +19,7 @@ export default function CliPage() {
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Install</h2>
-        <pre className="neo-code text-sm mb-4">{`brew install lohsefar/tap/whk`}</pre>
+        <pre className="neo-code text-sm mb-4">{`brew install kroqdotdev/tap/whk`}</pre>
         <p className="text-sm text-muted-foreground">
           See{" "}
           <Link href="/installation" className="text-primary hover:underline font-bold">

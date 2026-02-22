@@ -107,7 +107,7 @@ export default function InstallationPage() {
               >
                 <section>
                   <h2 className="text-lg font-bold mb-3">Homebrew (macOS / Linux)</h2>
-                  <CodeBlock>{`brew install lohsefar/tap/whk`}</CodeBlock>
+                  <CodeBlock>{`brew install kroqdotdev/tap/whk`}</CodeBlock>
                 </section>
 
                 <section>
@@ -124,7 +124,7 @@ export default function InstallationPage() {
                   <p className="text-sm text-muted-foreground">
                     Download pre-built binaries for macOS, Linux, and Windows from{" "}
                     <a
-                      href="https://github.com/lohsefar/webhooks-cc/releases"
+                      href="https://github.com/kroqdotdev/webhooks-cc/releases"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline font-bold"

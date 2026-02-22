@@ -1,8 +1,9 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "SDK API Reference Docs",
-  description: "Complete API reference for the webhooks.cc TypeScript SDK.",
+  title: "TypeScript SDK API Reference",
+  description:
+    "Reference for every webhooks.cc TypeScript SDK method, including endpoint CRUD, request inspection, replay, and streaming APIs.",
   path: "/docs/sdk/api",
 });
 

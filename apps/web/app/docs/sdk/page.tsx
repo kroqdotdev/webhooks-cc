@@ -3,9 +3,9 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, faqSchema, type FAQItem } from "@/lib/schemas";
 
 export const metadata = createPageMetadata({
-  title: "SDK Overview Docs",
+  title: "TypeScript Webhook SDK Guide",
   description:
-    "The webhooks.cc TypeScript SDK for programmatic endpoint management and webhook inspection.",
+    "Use the webhooks.cc TypeScript SDK for endpoint management, webhook assertions, replay workflows, and real-time request streaming.",
   path: "/docs/sdk",
 });
 
