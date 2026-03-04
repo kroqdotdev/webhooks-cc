@@ -17,6 +17,11 @@ import { Copy, Check, Send, Download, ChevronDown } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
+import {
+  buildRetainedCountParams,
+  computeShowHasMore,
+  incrementRetainedCount,
+} from "@/lib/dashboard-count";
 import type { ClickHouseRequest, ClickHouseSummary, AnyRequestSummary } from "@/types/request";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
@@ -39,7 +44,7 @@ export default function DashboardPage() {
   const [liveMode, setLiveMode] = useState(true);
   const [sortNewest, setSortNewest] = useState(true);
   const [mobileDetail, setMobileDetail] = useState(false);
-  const prevRequestCount = useRef(0);
+  const prevTopSummaryId = useRef<string | null>(null);
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
   const [searchInput, setSearchInput] = useState("");
@@ -49,9 +54,12 @@ export default function DashboardPage() {
   const [olderRequests, setOlderRequests] = useState<ClickHouseRequest[]>([]);
   const [searchResults, setSearchResults] = useState<ClickHouseRequest[]>([]);
   const [hasMore, setHasMore] = useState(false);
+  const [hasLoadedOlderPage, setHasLoadedOlderPage] = useState(false);
+  const [retainedTotalCount, setRetainedTotalCount] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const retainedCountRequestSeq = useRef(0);
 
   // Map of ClickHouse request details by id for quick lookup
   const clickHouseDetailMap = useRef(new Map<string, ClickHouseRequest>());
@@ -76,9 +84,6 @@ export default function DashboardPage() {
     api.requests.get,
     isConvexId && !selectedDetail ? { id: selectedId as Id<"requests"> } : "skip"
   );
-
-  // Request count from the endpoint doc (denormalized)
-  const requestCount = currentEndpoint?.requestCount ?? 0;
 
   // Clear stale selectedId when request doesn't exist in either source
   useEffect(() => {
@@ -132,6 +137,36 @@ export default function DashboardPage() {
       } catch (err) {
         console.error("ClickHouse search failed:", err);
         return { data: [], ok: false };
+      }
+    },
+    [authToken]
+  );
+
+  const fetchCountFromClickHouse = useCallback(
+    async (params: Record<string, string>): Promise<{ count: number | null; ok: boolean }> => {
+      if (!authToken) return { count: null, ok: false };
+      try {
+        const url = new URL("/api/search/requests/count", window.location.origin);
+        for (const [key, value] of Object.entries(params)) {
+          url.searchParams.set(key, value);
+        }
+        const resp = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!resp.ok) return { count: null, ok: false };
+        const data: unknown = await resp.json();
+        if (
+          typeof data !== "object" ||
+          data === null ||
+          !("count" in data) ||
+          typeof (data as { count: unknown }).count !== "number"
+        ) {
+          return { count: null, ok: false };
+        }
+        return { count: (data as { count: number }).count, ok: true };
+      } catch (err) {
+        console.error("ClickHouse count failed:", err);
+        return { count: null, ok: false };
       }
     },
     [authToken]
@@ -284,6 +319,7 @@ export default function DashboardPage() {
       prevMethodFilter.current = methodFilter;
       setOlderRequests([]);
       setHasMore(false);
+      setHasLoadedOlderPage(false);
     }
   }, [methodFilter]);
 
@@ -316,6 +352,7 @@ export default function DashboardPage() {
       storeClickHouseResults(results);
       setOlderRequests((prev) => [...prev, ...results]);
       setHasMore(results.length >= CLICKHOUSE_PAGE_SIZE);
+      setHasLoadedOlderPage(true);
     } catch (err) {
       console.error("Load more failed:", err);
     } finally {
@@ -372,6 +409,51 @@ export default function DashboardPage() {
     };
   }, [debouncedSearch, currentEndpoint, methodFilter, fetchFromClickHouse, storeClickHouseResults]);
 
+  const currentSlug = currentEndpoint?.slug;
+
+  const refreshRetainedCount = useCallback(async () => {
+    if (!currentSlug) return;
+    const requestSeq = ++retainedCountRequestSeq.current;
+    const params = buildRetainedCountParams(currentSlug, methodFilter, debouncedSearch);
+
+    const { count, ok } = await fetchCountFromClickHouse(params);
+    if (requestSeq !== retainedCountRequestSeq.current) return;
+    if (ok && count != null) {
+      setRetainedTotalCount(count);
+    }
+  }, [currentSlug, methodFilter, debouncedSearch, fetchCountFromClickHouse]);
+
+  // ClickHouse-backed retained count (event-driven, no background polling).
+  useEffect(() => {
+    if (!currentSlug || !authToken) {
+      retainedCountRequestSeq.current++;
+      setRetainedTotalCount(null);
+      return;
+    }
+    void refreshRetainedCount();
+  }, [currentSlug, authToken, methodFilter, debouncedSearch, refreshRetainedCount]);
+
+  // Re-sync count when the tab becomes active again.
+  useEffect(() => {
+    if (!currentSlug || !authToken) return;
+
+    const onFocus = () => {
+      void refreshRetainedCount();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshRetainedCount();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [currentSlug, authToken, refreshRetainedCount]);
+
   // Compose the list to display
   const displayedItems = useMemo((): AnyRequestSummary[] => {
     // Search mode: show ClickHouse search results as summaries
@@ -410,21 +492,47 @@ export default function DashboardPage() {
 
   // Track incoming requests for live mode
   useEffect(() => {
-    if (!summaries) return;
+    if (!summaries || summaries.length === 0) {
+      prevTopSummaryId.current = null;
+      return;
+    }
 
-    const currentCount = summaries.length;
-    const diff = currentCount - prevRequestCount.current;
+    const topId = summaries[0]._id;
+    const previousTopId = prevTopSummaryId.current;
 
-    if (prevRequestCount.current > 0 && diff > 0) {
-      if (liveMode) {
-        setSelectedId(summaries[0]._id);
-      } else {
-        setNewCount((prev) => prev + diff);
+    if (previousTopId && topId !== previousTopId) {
+      const previousIdx = summaries.findIndex((s) => s._id === previousTopId);
+      const arrived = previousIdx >= 0 ? previousIdx : 1;
+
+      if (arrived > 0) {
+        if (liveMode) {
+          setSelectedId(topId);
+        } else {
+          setNewCount((prev) => prev + arrived);
+        }
+
+        // Keep ClickHouse count feeling "live" between polling ticks.
+        if (!debouncedSearch) {
+          const newRows = summaries.slice(0, arrived);
+          const matchedCount =
+            methodFilter === "ALL"
+              ? arrived
+              : newRows.filter((r) => r.method === methodFilter).length;
+          if (matchedCount > 0) {
+            setRetainedTotalCount((prev) => incrementRetainedCount(prev, matchedCount));
+          }
+        }
+
+        // If previous top is no longer in the window, we don't know exact arrived count.
+        // Re-sync from ClickHouse immediately.
+        if (previousIdx === -1) {
+          void refreshRetainedCount();
+        }
       }
     }
 
-    prevRequestCount.current = currentCount;
-  }, [summaries, liveMode]);
+    prevTopSummaryId.current = topId;
+  }, [summaries, liveMode, methodFilter, debouncedSearch, refreshRetainedCount]);
 
   // Auto-select first request when requests load and nothing is selected
   useEffect(() => {
@@ -439,13 +547,15 @@ export default function DashboardPage() {
     setSelectedId(null);
     setSelectedDetail(null);
     setNewCount(0);
-    prevRequestCount.current = 0;
+    prevTopSummaryId.current = null;
     setMethodFilter("ALL");
     setSearchInput("");
     setDebouncedSearch("");
     setOlderRequests([]);
     setSearchResults([]);
     setHasMore(false);
+    setHasLoadedOlderPage(false);
+    setRetainedTotalCount(null);
     setLoadingMore(false);
     setSearchLoading(false);
     setSearchError(false);
@@ -486,9 +596,9 @@ export default function DashboardPage() {
     }
     downloadFile(exportToJson(results), "webhooks-export.json", "application/json");
     if (results.length >= 200) {
-      alert(`Exported 200 of ${requestCount} requests. Use search filters to narrow the export.`);
+      alert("Exported first 200 requests. Use search filters to narrow the export.");
     }
-  }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse, requestCount]);
+  }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
 
   const handleExportCsv = useCallback(async () => {
     if (!currentEndpoint) return;
@@ -507,9 +617,9 @@ export default function DashboardPage() {
     }
     downloadFile(exportToCsv(results), "webhooks-export.csv", "text/csv");
     if (results.length >= 200) {
-      alert(`Exported 200 of ${requestCount} requests. Use search filters to narrow the export.`);
+      alert("Exported first 200 requests. Use search filters to narrow the export.");
     }
-  }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse, requestCount]);
+  }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
 
   if (endpoints === undefined) {
     return <DashboardSkeleton />;
@@ -522,9 +632,16 @@ export default function DashboardPage() {
   if (!currentEndpoint) return null;
 
   const hasRequests = summaries && summaries.length > 0;
-  // Show "hasMore" only in non-search mode and when the total count exceeds loaded items
-  const showHasMore =
-    !debouncedSearch && (hasMore || requestCount > (summaries?.length ?? 0) + olderRequests.length);
+  const loadedCount = displayedItems.length;
+  const initialCanLoadMore = (summaries?.length ?? 0) >= CLICKHOUSE_PAGE_SIZE;
+  const showHasMore = computeShowHasMore({
+    searchQuery: debouncedSearch,
+    hasMoreFromPagination: hasMore,
+    retainedTotalCount,
+    loadedCount,
+    hasLoadedOlderPage,
+    initialCanLoadMore,
+  });
 
   return (
     <ErrorBoundary resetKey={currentEndpoint._id}>
@@ -557,7 +674,7 @@ export default function DashboardPage() {
                 onToggleSort={handleToggleSort}
                 newCount={newCount}
                 onJumpToNew={handleJumpToNew}
-                totalCount={requestCount}
+                totalCount={retainedTotalCount ?? undefined}
                 methodFilter={methodFilter}
                 onMethodFilterChange={setMethodFilter}
                 searchQuery={searchInput}
@@ -607,7 +724,7 @@ export default function DashboardPage() {
                 onToggleSort={handleToggleSort}
                 newCount={newCount}
                 onJumpToNew={handleJumpToNew}
-                totalCount={requestCount}
+                totalCount={retainedTotalCount ?? undefined}
                 methodFilter={methodFilter}
                 onMethodFilterChange={setMethodFilter}
                 searchQuery={searchInput}

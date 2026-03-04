@@ -1,7 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { query, internalMutation, internalQuery } from "./_generated/server";
+import { query, internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { type Doc } from "./_generated/dataModel";
 import { EPHEMERAL_RATE_LIMIT } from "./rateLimiter";
 import { FREE_PERIOD_MS, FREE_REQUEST_RETENTION_MS, PRO_REQUEST_RETENTION_MS } from "./config";
 
@@ -404,6 +405,11 @@ export const getForUser = internalQuery({
     const endpoint = await ctx.db.get(request.endpointId);
     if (!endpoint) return null;
     if (endpoint.userId !== userId) return null;
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    if (request.receivedAt >= freeCutoff) return request;
+    const cutoff = await getRetentionCutoff(ctx, endpoint, now);
+    if (request.receivedAt < cutoff) return null;
 
     return request;
   },
@@ -422,21 +428,28 @@ export const listForUser = internalQuery({
     if (endpoint.userId !== userId) return [];
 
     const actualLimit = Math.min(Math.max(1, limit), 1000);
-    const actualSince = since !== undefined ? Math.max(0, since) : undefined;
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    const floor =
+      since !== undefined
+        ? since >= freeCutoff
+          ? since
+          : Math.max(since, await getRetentionCutoff(ctx, endpoint, now))
+        : await getRetentionCutoff(ctx, endpoint, now);
 
-    if (actualSince !== undefined) {
+    if (since !== undefined) {
       return await ctx.db
         .query("requests")
-        .withIndex("by_endpoint_time", (q) =>
-          q.eq("endpointId", endpointId).gt("receivedAt", actualSince)
-        )
+        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).gt("receivedAt", floor))
         .order("desc")
         .take(actualLimit);
     }
 
     return await ctx.db
       .query("requests")
-      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId))
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gte("receivedAt", floor)
+      )
       .order("desc")
       .take(actualLimit);
   },
@@ -452,11 +465,17 @@ export const listNewForUser = internalQuery({
     const endpoint = await ctx.db.get(endpointId);
     if (!endpoint) return null;
     if (endpoint.userId !== userId) return [];
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    const minTimestamp =
+      afterTimestamp >= freeCutoff
+        ? afterTimestamp
+        : Math.max(afterTimestamp, await getRetentionCutoff(ctx, endpoint, now));
 
     return await ctx.db
       .query("requests")
       .withIndex("by_endpoint_time", (q) =>
-        q.eq("endpointId", endpointId).gt("receivedAt", afterTimestamp)
+        q.eq("endpointId", endpointId).gt("receivedAt", minTimestamp)
       )
       .order("asc")
       .take(100);
@@ -480,11 +499,17 @@ export const listNewForStream = query({
     if (endpoint.userId === undefined || String(endpoint.userId) !== userId) {
       return null;
     }
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    const minTimestamp =
+      afterTimestamp >= freeCutoff
+        ? afterTimestamp
+        : Math.max(afterTimestamp, await getRetentionCutoff(ctx, endpoint, now));
 
     return await ctx.db
       .query("requests")
       .withIndex("by_endpoint_time", (q) =>
-        q.eq("endpointId", endpointId).gt("receivedAt", afterTimestamp)
+        q.eq("endpointId", endpointId).gt("receivedAt", minTimestamp)
       )
       .order("asc")
       .take(100);
@@ -493,6 +518,25 @@ export const listNewForStream = query({
 
 // Maximum number of requests that can be fetched at once
 const MAX_LIST_LIMIT = 100;
+
+async function getRetentionCutoff(
+  ctx: QueryCtx,
+  endpoint: Doc<"endpoints">,
+  nowMs: number = Date.now()
+): Promise<number> {
+  // Default to free-tier retention for unowned endpoints or deleted users.
+  // This conservative fallback avoids exposing stale data.
+  if (!endpoint.userId) {
+    return nowMs - FREE_REQUEST_RETENTION_MS;
+  }
+
+  const user = await ctx.db.get(endpoint.userId);
+  if (user?.plan === "pro") {
+    return nowMs - PRO_REQUEST_RETENTION_MS;
+  }
+
+  return nowMs - FREE_REQUEST_RETENTION_MS;
+}
 
 export const count = query({
   args: {
@@ -537,14 +581,33 @@ export const list = query({
         return [];
       }
     }
-
-    const requests = await ctx.db
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    const recentRequests = await ctx.db
       .query("requests")
-      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId))
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gte("receivedAt", freeCutoff)
+      )
       .order("desc")
       .take(actualLimit);
 
-    return requests;
+    // Common case: enough recent requests to fill the page (or endpoint is unowned),
+    // so no need to read user plan.
+    if (recentRequests.length >= actualLimit || !endpoint.userId) {
+      return recentRequests;
+    }
+
+    const cutoff = await getRetentionCutoff(ctx, endpoint, now);
+    if (cutoff >= freeCutoff) {
+      return recentRequests;
+    }
+
+    // Pro users may have additional rows between 7 and 30 days.
+    return await ctx.db
+      .query("requests")
+      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).gte("receivedAt", cutoff))
+      .order("desc")
+      .take(actualLimit);
   },
 });
 
@@ -565,12 +628,29 @@ export const listSummaries = query({
         return [];
       }
     }
-
-    const requests = await ctx.db
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    const recentRequests = await ctx.db
       .query("requests")
-      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId))
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gte("receivedAt", freeCutoff)
+      )
       .order("desc")
       .take(actualLimit);
+
+    let requests = recentRequests;
+    if (recentRequests.length < actualLimit && endpoint.userId) {
+      const cutoff = await getRetentionCutoff(ctx, endpoint, now);
+      if (cutoff < freeCutoff) {
+        requests = await ctx.db
+          .query("requests")
+          .withIndex("by_endpoint_time", (q) =>
+            q.eq("endpointId", endpointId).gte("receivedAt", cutoff)
+          )
+          .order("desc")
+          .take(actualLimit);
+      }
+    }
 
     return requests.map((r) => ({
       _id: r._id,
@@ -601,6 +681,15 @@ export const get = query({
       if (!endpoint.userId || !userId || endpoint.userId !== userId) {
         return null;
       }
+    }
+    const now = Date.now();
+    const freeCutoff = now - FREE_REQUEST_RETENTION_MS;
+    if (request.receivedAt >= freeCutoff) {
+      return request;
+    }
+    const cutoff = await getRetentionCutoff(ctx, endpoint, now);
+    if (request.receivedAt < cutoff) {
+      return null;
     }
 
     return request;

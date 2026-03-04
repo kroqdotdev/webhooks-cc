@@ -9,6 +9,7 @@ import {
   BILLING_PERIOD_MS,
   FREE_PERIOD_MS,
   FREE_REQUEST_RETENTION_MS,
+  PRO_REQUEST_RETENTION_MS,
 } from "./config";
 
 // Helper to create a free user
@@ -760,6 +761,7 @@ describe("listSummaries", () => {
       slug: "ls-order",
       isEphemeral: true,
     });
+    const now = Date.now();
 
     await t.run(async (ctx) => {
       await ctx.db.insert("requests", {
@@ -770,7 +772,7 @@ describe("listSummaries", () => {
         queryParams: {},
         ip: "1.2.3.4",
         size: 0,
-        receivedAt: 1000,
+        receivedAt: now - 2000,
       });
       await ctx.db.insert("requests", {
         endpointId,
@@ -780,7 +782,7 @@ describe("listSummaries", () => {
         queryParams: {},
         ip: "1.2.3.4",
         size: 0,
-        receivedAt: 2000,
+        receivedAt: now - 1000,
       });
     });
 
@@ -790,8 +792,8 @@ describe("listSummaries", () => {
 
     expect(summaries).toHaveLength(2);
     // Newest first (desc order)
-    expect(summaries[0].receivedAt).toBe(2000);
-    expect(summaries[1].receivedAt).toBe(1000);
+    expect(summaries[0].receivedAt).toBe(now - 1000);
+    expect(summaries[1].receivedAt).toBe(now - 2000);
   });
 
   test("respects limit parameter", async () => {
@@ -821,6 +823,215 @@ describe("listSummaries", () => {
     });
 
     expect(summaries).toHaveLength(3);
+  });
+});
+
+describe("retention-aware read queries", () => {
+  let t: ReturnType<typeof convexTest>;
+
+  beforeEach(() => {
+    t = convexTest(schema, modules);
+  });
+
+  test("listSummaries hides requests older than free retention", async () => {
+    const userId = await createFreeUser(t);
+    const endpointId = await createEndpoint(t, {
+      slug: "rr-free-summaries",
+      userId,
+      isEphemeral: true,
+    });
+
+    const now = Date.now();
+    const oldTs = now - FREE_REQUEST_RETENTION_MS - 1000;
+    const freshTs = now - 1000;
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/old",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: oldTs,
+      });
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/fresh",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: freshTs,
+      });
+    });
+
+    const summaries = await t.query(api.requests.listSummaries, { endpointId });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].receivedAt).toBe(freshTs);
+  });
+
+  test("list keeps in-window pro requests while filtering stale ones", async () => {
+    const userId = await createProUser(t);
+    const endpointId = await createEndpoint(t, {
+      slug: "rr-pro-list",
+      userId,
+      isEphemeral: true,
+    });
+
+    const now = Date.now();
+    const staleTs = now - PRO_REQUEST_RETENTION_MS - 1000;
+    const recentTs = now - 20 * 24 * 60 * 60 * 1000;
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/stale",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: staleTs,
+      });
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/recent",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: recentTs,
+      });
+    });
+
+    const requests = await t.query(api.requests.list, { endpointId });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].path).toBe("/recent");
+  });
+
+  test("get returns null for requests older than retention", async () => {
+    const userId = await createFreeUser(t);
+    const endpointId = await createEndpoint(t, {
+      slug: "rr-free-get",
+      userId,
+      isEphemeral: true,
+    });
+
+    const oldTs = Date.now() - FREE_REQUEST_RETENTION_MS - 1000;
+    const requestId = await t.run(async (ctx) =>
+      ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/old",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: oldTs,
+      })
+    );
+
+    const request = await t.query(api.requests.get, { id: requestId });
+    expect(request).toBeNull();
+  });
+
+  test("listForUser and getForUser enforce retention window", async () => {
+    const userId = await createFreeUser(t);
+    const endpointId = await createEndpoint(t, { slug: "rr-internal", userId });
+
+    const now = Date.now();
+    const oldTs = now - FREE_REQUEST_RETENTION_MS - 1000;
+    const freshTs = now - 1000;
+
+    const [oldId, freshId] = await t.run(async (ctx) => {
+      const oldRequestId = await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/old",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: oldTs,
+      });
+      const freshRequestId = await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/fresh",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: freshTs,
+      });
+      return [oldRequestId, freshRequestId] as const;
+    });
+
+    const listed = await t.query(internal.requests.listForUser, {
+      endpointId,
+      userId,
+      since: 0,
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]._id).toBe(freshId);
+
+    const oldRequest = await t.query(internal.requests.getForUser, {
+      requestId: oldId,
+      userId,
+    });
+    expect(oldRequest).toBeNull();
+  });
+
+  test("incremental list queries clamp to retention cutoff", async () => {
+    const userId = await createFreeUser(t);
+    const endpointId = await createEndpoint(t, { slug: "rr-incremental", userId });
+
+    const now = Date.now();
+    const oldTs = now - FREE_REQUEST_RETENTION_MS - 1000;
+    const freshTs = now - 1000;
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/old",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: oldTs,
+      });
+      await ctx.db.insert("requests", {
+        endpointId,
+        method: "POST",
+        path: "/fresh",
+        headers: {},
+        queryParams: {},
+        ip: "1.2.3.4",
+        size: 0,
+        receivedAt: freshTs,
+      });
+    });
+
+    const listNew = await t.query(internal.requests.listNewForUser, {
+      endpointId,
+      userId,
+      afterTimestamp: 0,
+    });
+    expect(listNew).toHaveLength(1);
+    expect(listNew[0].path).toBe("/fresh");
+
+    const streamNew = await t.query(api.requests.listNewForStream, {
+      endpointId,
+      userId: String(userId),
+      afterTimestamp: 0,
+    });
+    expect(streamNew).toHaveLength(1);
+    expect(streamNew?.[0].path).toBe("/fresh");
   });
 });
 

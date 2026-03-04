@@ -133,6 +133,61 @@ impl ClickHouseClient {
             .collect())
     }
 
+    /// Execute a COUNT query and return the resulting scalar.
+    pub async fn query_count(&self, sql: &str) -> Result<u64, String> {
+        let resp = self
+            .client
+            .post(&self.base_url)
+            .query(&[("default_format", "JSON")])
+            .header("X-ClickHouse-User", &self.user)
+            .header("X-ClickHouse-Key", &self.password)
+            .header("Content-Type", "text/plain")
+            .body(sql.to_string())
+            .send()
+            .await
+            .map_err(|e| format!("network: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("ClickHouse query failed ({status}): {text}"));
+        }
+
+        if let Some(cl) = resp.content_length()
+            && cl > MAX_RESPONSE_SIZE as u64
+        {
+            return Err(format!(
+                "ClickHouse response too large: Content-Length {cl} bytes (max {MAX_RESPONSE_SIZE})"
+            ));
+        }
+
+        let body_bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("read response: {e}"))?;
+
+        if body_bytes.len() > MAX_RESPONSE_SIZE {
+            return Err(format!(
+                "ClickHouse response too large: {} bytes (max {})",
+                body_bytes.len(),
+                MAX_RESPONSE_SIZE
+            ));
+        }
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&body_bytes).map_err(|e| format!("parse response: {e}"))?;
+
+        let total = value
+            .get("data")
+            .and_then(|v| v.as_array())
+            .and_then(|rows| rows.first())
+            .and_then(|row| row.get("total"))
+            .and_then(|n| n.as_u64().or_else(|| n.as_str()?.parse::<u64>().ok()))
+            .ok_or_else(|| "count response missing numeric total".to_string())?;
+
+        Ok(total)
+    }
+
     /// Delete requests older than `retention_days` for the given user IDs.
     /// Executes a ClickHouse mutation (`ALTER TABLE ... DELETE WHERE ...`).
     pub async fn delete_old_requests_for_users(

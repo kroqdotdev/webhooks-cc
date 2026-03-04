@@ -41,15 +41,7 @@ fn free_retention_clause_for_plan(
     }
 }
 
-fn build_search_sql(params: &SearchParams, db: &str) -> Result<String, SearchSqlError> {
-    let limit = params.limit.unwrap_or(50).min(200);
-    let offset = params.offset.unwrap_or(0).min(10_000);
-    let order = match params.order.as_deref() {
-        Some("asc") => "ASC",
-        _ => "DESC",
-    };
-
-    // Build WHERE clauses
+fn build_where_conditions(params: &SearchParams) -> Result<Vec<String>, SearchSqlError> {
     let mut conditions = vec![format!(
         "user_id = '{}'",
         escape_clickhouse_string(&params.user_id)
@@ -104,6 +96,18 @@ fn build_search_sql(params: &SearchParams, db: &str) -> Result<String, SearchSql
         ));
     }
 
+    Ok(conditions)
+}
+
+fn build_search_sql(params: &SearchParams, db: &str) -> Result<String, SearchSqlError> {
+    let limit = params.limit.unwrap_or(50).min(200);
+    let offset = params.offset.unwrap_or(0).min(10_000);
+    let order = match params.order.as_deref() {
+        Some("asc") => "ASC",
+        _ => "DESC",
+    };
+
+    let conditions = build_where_conditions(params)?;
     let where_clause = conditions.join(" AND ");
     let db = escape_clickhouse_identifier(db);
 
@@ -113,6 +117,18 @@ fn build_search_sql(params: &SearchParams, db: &str) -> Result<String, SearchSql
          WHERE {where_clause} \
          ORDER BY received_at {order} \
          LIMIT {limit} OFFSET {offset}"
+    ))
+}
+
+fn build_count_sql(params: &SearchParams, db: &str) -> Result<String, SearchSqlError> {
+    let conditions = build_where_conditions(params)?;
+    let where_clause = conditions.join(" AND ");
+    let db = escape_clickhouse_identifier(db);
+
+    Ok(format!(
+        "SELECT count() AS total \
+         FROM `{db}`.`requests` \
+         WHERE {where_clause}"
     ))
 }
 
@@ -188,9 +204,81 @@ pub async fn search(
     }
 }
 
+pub async fn search_count(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !verify_bearer_token(auth, &state.config.capture_shared_secret) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({"error": "unauthorized"})),
+        );
+    }
+
+    if params.user_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "user_id is required"})),
+        );
+    }
+
+    let clickhouse = match &state.clickhouse {
+        Some(ch) => ch,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({"error": "search not available"})),
+            );
+        }
+    };
+
+    let sql = match build_count_sql(&params, &state.config.clickhouse_database) {
+        Ok(sql) => sql,
+        Err(SearchSqlError::InvalidPlan) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"error": "invalid plan"})),
+            );
+        }
+        Err(SearchSqlError::InvalidSlug) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"error": "invalid slug"})),
+            );
+        }
+    };
+
+    match tokio::time::timeout(Duration::from_secs(5), clickhouse.query_count(&sql)).await {
+        Ok(Ok(count)) => (StatusCode::OK, axum::Json(serde_json::json!({ "count": count }))),
+        Ok(Err(e)) => {
+            tracing::error!(error = %e, "ClickHouse count query failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"error": "count query failed"})),
+            )
+        }
+        Err(_) => {
+            tracing::error!("ClickHouse count query timed out");
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                axum::Json(serde_json::json!({"error": "count query timed out"})),
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SearchParams, SearchSqlError, build_search_sql, free_retention_clause_for_plan};
+    use super::{
+        SearchParams, SearchSqlError, build_count_sql, build_search_sql,
+        free_retention_clause_for_plan,
+    };
 
     #[test]
     fn free_plan_gets_retention_clause() {
@@ -258,6 +346,31 @@ mod tests {
 
         let sql = build_search_sql(&params, "webhooks").expect("sql should build");
         assert!(!sql.contains("INTERVAL 7 DAY"));
+    }
+
+    #[test]
+    fn build_count_sql_applies_same_filters_without_limit_order() {
+        let params = SearchParams {
+            user_id: "user_123".to_string(),
+            plan: Some("free".to_string()),
+            slug: Some("demo_slug".to_string()),
+            method: Some("POST".to_string()),
+            q: Some("needle".to_string()),
+            from: Some(1_700_000_000_000),
+            to: Some(1_700_000_100_000),
+            limit: Some(25),
+            offset: Some(10),
+            order: Some("asc".to_string()),
+        };
+
+        let sql = build_count_sql(&params, "webhooks").expect("count sql should build");
+        assert!(sql.contains("SELECT count() AS total"));
+        assert!(sql.contains("FROM `webhooks`.`requests`"));
+        assert!(sql.contains("received_at >= now() - INTERVAL 7 DAY"));
+        assert!(sql.contains("slug = 'demo_slug'"));
+        assert!(sql.contains("method = 'POST'"));
+        assert!(!sql.contains("LIMIT"));
+        assert!(!sql.contains("ORDER BY"));
     }
 
     #[test]

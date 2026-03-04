@@ -137,6 +137,7 @@ async fn main() {
     // Internal routes: no CORS (server-to-server only, authenticated via shared secret)
     let internal_routes = Router::new()
         .route("/search", get(handlers::search::search))
+        .route("/search/count", get(handlers::search::search_count))
         .route(
             "/internal/cache-invalidate/{slug}",
             post(handlers::cache_invalidate::cache_invalidate),
