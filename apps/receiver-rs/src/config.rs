@@ -17,6 +17,7 @@ pub struct Config {
     pub flush_interval_ms: u64,
     pub endpoint_cache_ttl_secs: u64,
     pub quota_cache_ttl_secs: u64,
+    pub log_dir: String,
     // ClickHouse (optional — disabled when clickhouse_url is None)
     pub clickhouse_url: Option<String>,
     pub clickhouse_user: String,
@@ -43,6 +44,7 @@ impl std::fmt::Debug for Config {
             .field("flush_interval_ms", &self.flush_interval_ms)
             .field("endpoint_cache_ttl_secs", &self.endpoint_cache_ttl_secs)
             .field("quota_cache_ttl_secs", &self.quota_cache_ttl_secs)
+            .field("log_dir", &self.log_dir)
             .field("clickhouse_url", &self.clickhouse_url)
             .field("clickhouse_user", &self.clickhouse_user)
             .field("clickhouse_password", &"[REDACTED]")
@@ -79,6 +81,8 @@ impl Config {
 
         let sentry_dsn = env::var("SENTRY_DSN").ok().filter(|s| !s.is_empty());
         let debug = env::var("RECEIVER_DEBUG").is_ok_and(|v| !v.is_empty());
+
+        let log_dir = env::var("RECEIVER_LOG_DIR").unwrap_or_else(|_| "logs".into());
 
         let flush_workers: usize = parse_env_or("FLUSH_WORKERS", 4);
         let batch_max_size: usize = parse_env_or("BATCH_MAX_SIZE", 50);
@@ -119,6 +123,7 @@ impl Config {
             port,
             sentry_dsn,
             debug,
+            log_dir,
             flush_workers,
             batch_max_size,
             flush_interval_ms,

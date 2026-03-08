@@ -37,13 +37,27 @@ async fn main() {
     // Load config
     let config = Config::from_env();
 
-    // Initialize tracing
+    // Initialize tracing — stdout + rotating log file
     let log_level = if config.debug { "debug" } else { "info" };
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!("webhooks_receiver={log_level},tower_http=info").into()
-            }),
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        format!("webhooks_receiver={log_level},tower_http=info").into()
+    });
+
+    let log_dir = std::path::Path::new(&config.log_dir);
+    std::fs::create_dir_all(log_dir).expect("failed to create log directory");
+    let file_appender = tracing_appender::rolling::daily(log_dir, "receiver.log");
+
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(false)
+                .with_writer(file_appender),
         )
         .init();
 
