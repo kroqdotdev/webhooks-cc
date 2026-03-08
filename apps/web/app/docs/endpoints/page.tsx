@@ -91,13 +91,13 @@ export default function EndpointsPage() {
               <tr className="border-b border-foreground/20">
                 <td className="py-2 pr-4">Free</td>
                 <td className="py-2 pr-4">Unlimited</td>
-                <td className="py-2 pr-4">200/day</td>
+                <td className="py-2 pr-4">50/day</td>
                 <td className="py-2">7 days</td>
               </tr>
               <tr>
                 <td className="py-2 pr-4 font-bold">Pro</td>
                 <td className="py-2 pr-4">Unlimited</td>
-                <td className="py-2 pr-4">500K/month</td>
+                <td className="py-2 pr-4">100K/month</td>
                 <td className="py-2">30 days</td>
               </tr>
             </tbody>

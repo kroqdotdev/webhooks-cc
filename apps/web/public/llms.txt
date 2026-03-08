@@ -21,8 +21,8 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 
 ## Pricing
 
-- Free: 200 requests/day, unlimited endpoints, 7-day retention, full CLI/SDK/MCP access
-- Pro ($8/month): 500,000 requests/month, 30-day retention
+- Free: 50 requests/day, unlimited endpoints, 7-day retention, full CLI/SDK/MCP access
+- Pro ($8/month): 100,000 requests/month, 30-day retention
 
 ## Links
 

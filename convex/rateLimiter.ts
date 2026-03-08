@@ -2,20 +2,20 @@
  * Rate limiter configuration for webhooks.cc.
  *
  * Uses token bucket algorithm for ephemeral endpoint rate limiting:
- * - 50 tokens per endpoint lifetime (period = EPHEMERAL_TTL_MS)
- * - Users can burst 50 requests at once, or spread them over the endpoint lifetime
+ * - 25 tokens per endpoint lifetime (period = EPHEMERAL_TTL_MS)
+ * - Users can burst 25 requests at once, or spread them over the endpoint lifetime
  */
 import { RateLimiter } from "@convex-dev/rate-limiter";
 import { components } from "./_generated/api";
 import { EPHEMERAL_TTL_MS } from "./config";
 
-// Rate limit for ephemeral/demo endpoints: 50 requests per endpoint lifetime
-export const EPHEMERAL_RATE_LIMIT = 50;
+// Rate limit for ephemeral/demo endpoints: 25 requests per endpoint lifetime
+export const EPHEMERAL_RATE_LIMIT = 25;
 
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Token bucket for ephemeral endpoints
   // Key: endpoint slug
-  // Capacity: 50 tokens (requests)
+  // Capacity: 25 tokens (requests)
   // Refill: full bucket every EPHEMERAL_TTL_MS (matches endpoint lifetime)
   ephemeralEndpoint: {
     kind: "token bucket",

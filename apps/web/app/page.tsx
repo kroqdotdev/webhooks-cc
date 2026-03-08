@@ -61,7 +61,7 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 200 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access. Pro ($8/month) raises the limit to 500,000 requests per month with 30-day retention.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access. Pro ($8/month) raises the limit to 100,000 requests per month with 30-day retention.",
   },
   {
     question: "How do I connect an AI coding agent?",
@@ -235,7 +235,7 @@ export default async function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  "200 requests/day",
+                  "50 requests/day",
                   "7-day data retention",
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",
@@ -265,7 +265,7 @@ export default async function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  "500,000 requests/month",
+                  "100,000 requests/month",
                   "30-day data retention",
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",

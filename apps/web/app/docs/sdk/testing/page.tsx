@@ -169,7 +169,7 @@ it("handles Polar subscription webhook", async () => {
             Always clean up endpoints in <code className="font-mono font-bold">afterAll</code> /{" "}
             <code className="font-mono font-bold">afterEach</code>
           </li>
-          <li>The free plan supports 200 requests/day — enough for most test suites</li>
+          <li>The free plan supports 50 requests/day — enough for most test suites</li>
         </ul>
       </section>
 

@@ -35,9 +35,9 @@ Get a unique URL, point your webhook there, and see every request in real-time. 
 
 ## Pricing
 
-**Free** — 200 requests/day, 7-day data retention. Enough for development and testing.
+**Free** — 50 requests/day, 7-day data retention. Enough for development and testing.
 
-**Pro ($8/month)** — 500,000 requests/month, 30-day retention. For production monitoring and high-volume testing.
+**Pro ($8/month)** — 100,000 requests/month, 30-day retention. For production monitoring and high-volume testing.
 
 See [webhooks.cc](https://webhooks.cc) for details.
 

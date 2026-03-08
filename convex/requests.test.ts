@@ -128,14 +128,14 @@ describe("checkAndStartPeriod", () => {
     const userId = await createFreeUser(t, {
       periodStart: now,
       periodEnd: now + FREE_PERIOD_MS,
-      requestsUsed: 50,
+      requestsUsed: 10,
     });
 
     const result = await t.mutation(internal.requests.checkAndStartPeriod, {
       userId,
     });
 
-    expect(result).toHaveProperty("remaining", FREE_REQUEST_LIMIT - 50);
+    expect(result).toHaveProperty("remaining", FREE_REQUEST_LIMIT - 10);
     expect(result).toHaveProperty("limit", FREE_REQUEST_LIMIT);
   });
 
@@ -284,8 +284,8 @@ describe("getQuota", () => {
     });
 
     expect(result).toHaveProperty("plan", "ephemeral");
-    expect(result).toHaveProperty("limit", 50);
-    expect(result).toHaveProperty("remaining", 50);
+    expect(result).toHaveProperty("limit", 25);
+    expect(result).toHaveProperty("remaining", 25);
   });
 
   test("returns needsPeriodStart=true for free user with no active period", async () => {
@@ -315,7 +315,7 @@ describe("getQuota", () => {
 
   test("user-owned ephemeral endpoint uses user quota, not ephemeral cap", async () => {
     const userId = await createFreeUser(t, {
-      requestsUsed: 50,
+      requestsUsed: 10,
       periodStart: Date.now(),
       periodEnd: Date.now() + FREE_PERIOD_MS,
     });
@@ -331,9 +331,9 @@ describe("getQuota", () => {
       slug: "user-ephemeral",
     });
 
-    // Should use user's requestLimit - requestsUsed (200 - 50 = 150),
-    // NOT the ephemeral 50-request cap (50 - 5 = 45)
-    expect(result).toHaveProperty("remaining", FREE_REQUEST_LIMIT - 50);
+    // Should use user's requestLimit - requestsUsed (50 - 10 = 40),
+    // NOT the ephemeral 25-request cap (25 - 5 = 20)
+    expect(result).toHaveProperty("remaining", FREE_REQUEST_LIMIT - 10);
     expect(result).toHaveProperty("limit", FREE_REQUEST_LIMIT);
     expect(result).toHaveProperty("plan", "free");
     expect(result).toHaveProperty("userId", userId);
@@ -677,8 +677,8 @@ describe("requestCount denormalization", () => {
       slug: "rc-quota",
     });
 
-    expect(result).toHaveProperty("remaining", 40); // 50 - 10
-    expect(result).toHaveProperty("limit", 50);
+    expect(result).toHaveProperty("remaining", 15); // 25 - 10
+    expect(result).toHaveProperty("limit", 25);
   });
 });
 

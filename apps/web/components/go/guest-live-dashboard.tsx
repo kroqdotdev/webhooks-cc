@@ -32,7 +32,7 @@ const WEBHOOK_SITE_DIFF_ROWS = [
   ["Pricing model", "Core features on every tier", "Feature-gated tiers"],
 ] as const;
 const FREE_ACCOUNT_FEATURES = [
-  "200 requests/day",
+  "50 requests/day",
   "7-day data retention",
   "Unlimited endpoints",
   "CLI, SDK & MCP access",
@@ -65,7 +65,7 @@ const GO_LANDING_FEATURES = [
 ] as const;
 const GO_VALUE_PILLS = [
   "No signup to start",
-  "200 requests/day on free",
+  "50 requests/day on free",
   "CLI, SDK, and MCP included",
 ] as const;
 
@@ -578,7 +578,7 @@ function GoPreCreateLanding({
               </p>
             )}
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Guest endpoints support up to 50 requests and expire after 10 hours.
+              Guest endpoints support up to 25 requests and expire after 10 hours.
             </p>
           </div>
 
@@ -598,7 +598,7 @@ function GoPreCreateLanding({
               ))}
             </ul>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Start on free with no credit card. Pro is $8/month for 500,000 requests/month and
+              Start on free with no credit card. Pro is $8/month for 100,000 requests/month and
               30-day retention.
             </p>
             <div className="flex flex-wrap gap-3">
@@ -810,12 +810,12 @@ function DemoUrlBar({
       <div className="border-b-2 border-foreground bg-amber-500/25 px-4 py-1.5 flex items-center justify-between gap-4">
         <span className="text-xs text-muted-foreground">
           <span className="hidden md:inline">
-            Guest: <strong className="text-foreground">50 requests</strong>, temporary endpoint.
-            Free account: <strong className="text-foreground">200 requests/day</strong>, permanent
+            Guest: <strong className="text-foreground">25 requests</strong>, temporary endpoint.
+            Free account: <strong className="text-foreground">50 requests/day</strong>, permanent
             endpoints, CLI + SDK.
           </span>
           <span className="md:hidden">
-            Free: <strong className="text-foreground">200 requests/day</strong>, permanent endpoints
+            Free: <strong className="text-foreground">50 requests/day</strong>, permanent endpoints
           </span>
         </span>
         <div className="flex items-center gap-3 shrink-0">

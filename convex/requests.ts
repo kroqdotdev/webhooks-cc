@@ -97,7 +97,7 @@ export const getQuota = internalQuery({
       return { error: "not_found" as const };
     }
 
-    // Guest ephemeral endpoints (no user) get 50 requests for their lifetime.
+    // Guest ephemeral endpoints (no user) get 25 requests for their lifetime.
     // User-owned ephemeral endpoints (e.g. CLI tunnel) fall through to user quota.
     if (endpoint.isEphemeral && !endpoint.userId) {
       const used = endpoint.requestCount ?? 0;
