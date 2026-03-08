@@ -63,6 +63,12 @@ const TOOLS = [
     example: '"Replay request abc123 to http://localhost:3000/webhooks"',
   },
   {
+    name: "send_to",
+    description: "Send a signed webhook directly to any URL (localhost, staging, etc.)",
+    example:
+      '"Send a Standard Webhooks signed payload to http://localhost:3000/api/webhooks/polar"',
+  },
+  {
     name: "describe",
     description: "Describe all available SDK operations",
     example: '"What can you do with webhooks.cc?"',
@@ -98,7 +104,7 @@ export default function McpPage() {
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Available tools</h2>
         <p className="text-muted-foreground mb-4">
-          The MCP server exposes 11 tools your AI agent can call:
+          The MCP server exposes 12 tools your AI agent can call:
         </p>
         <p className="text-muted-foreground mb-4">
           For provider templates in <code className="font-mono">send_webhook</code>,{" "}

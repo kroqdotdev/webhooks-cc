@@ -32,6 +32,13 @@ const providerRows = [
     contentType: "application/x-www-form-urlencoded",
     signature: "x-twilio-signature (Base64 HMAC SHA-1 over URL + sorted params)",
   },
+  {
+    provider: "Standard Webhooks",
+    presets: "No presets — user-provided body",
+    contentType: "application/json",
+    signature:
+      "webhook-id + webhook-timestamp + webhook-signature (v1, Base64 HMAC SHA-256 over msgId.timestamp.body)",
+  },
 ] as const;
 
 export default function DashboardTestWebhooksPage() {

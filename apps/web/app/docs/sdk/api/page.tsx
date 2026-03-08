@@ -75,13 +75,13 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
       {
         name: "client.endpoints.sendTemplate",
         description:
-          "Send a provider template webhook (Stripe, GitHub, Shopify, Twilio) with generated signature headers.",
+          "Send a provider template webhook (Stripe, GitHub, Shopify, Twilio, Standard Webhooks) with generated signature headers.",
         signature: "sendTemplate(slug: string, options: SendTemplateOptions): Promise<Response>",
         params: [
           { name: "slug", type: "string", description: "Endpoint slug" },
           {
             name: "provider",
-            type: '"stripe" | "github" | "shopify" | "twilio"',
+            type: '"stripe" | "github" | "shopify" | "twilio" | "standard-webhooks"',
             description: "Provider template to generate",
           },
           {
@@ -103,7 +103,8 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
           {
             name: "timestamp",
             type: "number?",
-            description: "Unix timestamp override for Stripe signature generation",
+            description:
+              "Unix timestamp override for signature generation (Stripe, Standard Webhooks)",
           },
           { name: "headers", type: "Record?", description: "Additional headers" },
           {
@@ -114,6 +115,52 @@ const METHODS: { section: string; methods: MethodDef[] }[] = [
           },
         ],
         returns: "Raw fetch Response from the receiver",
+      },
+    ],
+  },
+  {
+    section: "Direct Delivery",
+    methods: [
+      {
+        name: "client.sendTo",
+        description:
+          "Send a webhook directly to any URL with optional provider signing. Use for local integration testing — send properly signed webhooks to localhost handlers without routing through webhooks.cc.",
+        signature: "sendTo(url: string, options?: SendToOptions): Promise<Response>",
+        params: [
+          {
+            name: "url",
+            type: "string",
+            description: "Target URL (http or https)",
+          },
+          {
+            name: "provider",
+            type: '"stripe" | "github" | "shopify" | "twilio" | "standard-webhooks"?',
+            description: "Provider template for signing (optional)",
+          },
+          {
+            name: "secret",
+            type: "string?",
+            description: "Secret for signature generation (required when provider is set)",
+          },
+          {
+            name: "body",
+            type: "unknown?",
+            description: "Request body (JSON-serialized if not a string)",
+          },
+          { name: "headers", type: "Record?", description: "Additional headers" },
+          { name: "method", type: "string?", description: 'HTTP method (default: "POST")' },
+          {
+            name: "event",
+            type: "string?",
+            description: "Event name (used as webhook-id prefix for Standard Webhooks)",
+          },
+          {
+            name: "timestamp",
+            type: "number?",
+            description: "Unix timestamp override for deterministic signatures in tests",
+          },
+        ],
+        returns: "Raw fetch Response from the target",
       },
     ],
   },
@@ -315,13 +362,14 @@ matchAny(matchMethod("GET"), matchMethod("POST"))`}</pre>
           Each helper checks for a provider-specific header (case-insensitive).
         </p>
         <pre className="neo-code text-sm">{`import {
-  isStripeWebhook,    // stripe-signature
-  isGitHubWebhook,    // x-github-event
-  isShopifyWebhook,   // x-shopify-hmac-sha256
-  isSlackWebhook,     // x-slack-signature
-  isTwilioWebhook,    // x-twilio-signature
-  isPaddleWebhook,    // paddle-signature
-  isLinearWebhook,    // linear-signature
+  isStripeWebhook,      // stripe-signature
+  isGitHubWebhook,      // x-github-event
+  isShopifyWebhook,     // x-shopify-hmac-sha256
+  isSlackWebhook,       // x-slack-signature
+  isTwilioWebhook,      // x-twilio-signature
+  isPaddleWebhook,      // paddle-signature
+  isLinearWebhook,      // linear-signature
+  isStandardWebhook,    // webhook-id + webhook-timestamp + webhook-signature
 } from "@webhooks-cc/sdk";`}</pre>
       </section>
 
@@ -398,12 +446,23 @@ interface SubscribeOptions {
   timeout?: number | string;
 }
 
-type TemplateProvider = "stripe" | "github" | "shopify" | "twilio";
+type TemplateProvider = "stripe" | "github" | "shopify" | "twilio" | "standard-webhooks";
 
 interface SendTemplateOptions {
   provider: TemplateProvider;
   template?: string;
   secret: string;
+  event?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  timestamp?: number;
+}
+
+interface SendToOptions {
+  provider?: TemplateProvider;
+  template?: string;
+  secret?: string;
   event?: string;
   method?: string;
   headers?: Record<string, string>;

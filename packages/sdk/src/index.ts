@@ -15,6 +15,7 @@ export {
   isTwilioWebhook,
   isPaddleWebhook,
   isLinearWebhook,
+  isStandardWebhook,
   matchJsonField,
 } from "./helpers";
 export { matchMethod, matchHeader, matchBodyPath, matchAll, matchAny } from "./matchers";
@@ -33,6 +34,7 @@ export type {
   UpdateEndpointOptions,
   SendOptions,
   SendTemplateOptions,
+  SendToOptions,
   TemplateProvider,
   ListRequestsOptions,
   WaitForOptions,

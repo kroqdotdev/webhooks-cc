@@ -1,6 +1,7 @@
 import type { SendOptions, SendTemplateOptions, TemplateProvider } from "./types";
 
 type TwilioParamEntry = [string, string];
+type SignedTemplateProvider = Exclude<TemplateProvider, "standard-webhooks">;
 
 const DEFAULT_TEMPLATE_BY_PROVIDER = {
   stripe: "payment_intent.succeeded",
@@ -64,7 +65,7 @@ function githubSender() {
   };
 }
 
-function ensureTemplate(provider: TemplateProvider, template?: string): string {
+function ensureTemplate(provider: SignedTemplateProvider, template?: string): string {
   const resolved = template ?? DEFAULT_TEMPLATE_BY_PROVIDER[provider];
   const supported = PROVIDER_TEMPLATES[provider];
   if (!supported.some((item) => item === resolved)) {
@@ -75,7 +76,7 @@ function ensureTemplate(provider: TemplateProvider, template?: string): string {
   return resolved;
 }
 
-function defaultEvent(provider: TemplateProvider, template: string): string {
+function defaultEvent(provider: SignedTemplateProvider, template: string): string {
   if (provider === "github" && template === "pull_request.opened") {
     return "pull_request";
   }
@@ -107,7 +108,7 @@ function asStringRecord(value: unknown): Record<string, string> | null {
 }
 
 function buildTemplatePayload(
-  provider: TemplateProvider,
+  provider: SignedTemplateProvider,
   template: string,
   event: string,
   now: Date,
@@ -578,6 +579,39 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function fromBase64(str: string): Uint8Array {
+  if (typeof atob !== "function") {
+    return new Uint8Array(Buffer.from(str, "base64"));
+  }
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function hmacSignRaw(
+  algorithm: "SHA-256" | "SHA-1",
+  keyBytes: Uint8Array,
+  payload: string
+): Promise<Uint8Array> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("crypto.subtle is required for signature generation");
+  }
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    keyBytes.buffer as ArrayBuffer,
+    { name: "HMAC", hash: algorithm },
+    false,
+    ["sign"]
+  );
+  const signature = await globalThis.crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(payload)
+  );
+  return new Uint8Array(signature);
+}
+
 function buildTwilioSignaturePayload(endpointUrl: string, params: TwilioParamEntry[]): string {
   const sortedParams = params
     .map(([key, value], index) => ({ key, value, index }))
@@ -598,41 +632,74 @@ export async function buildTemplateSendOptions(
   endpointUrl: string,
   options: SendTemplateOptions
 ): Promise<SendOptions> {
+  // Standard Webhooks uses a different signing flow — no predefined templates
+  if (options.provider === "standard-webhooks") {
+    const method = (options.method ?? "POST").toUpperCase();
+    const payload = options.body ?? {};
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+
+    const msgId = options.event ? `msg_${options.event}_${randomHex(8)}` : `msg_${randomHex(16)}`;
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signingInput = `${msgId}.${timestamp}.${body}`;
+
+    // Standard Webhooks secrets are base64-encoded; strip whsec_ prefix if present
+    let rawSecret = options.secret;
+    if (rawSecret.startsWith("whsec_")) {
+      rawSecret = rawSecret.slice(6);
+    }
+    const secretBytes = fromBase64(rawSecret);
+    const signature = await hmacSignRaw("SHA-256", secretBytes, signingInput);
+
+    return {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "webhook-id": msgId,
+        "webhook-timestamp": String(timestamp),
+        "webhook-signature": `v1,${toBase64(signature)}`,
+        ...(options.headers ?? {}),
+      },
+      body,
+    };
+  }
+
+  // After the standard-webhooks early return, provider is one of the signed template providers
+  const provider = options.provider as SignedTemplateProvider;
   const method = (options.method ?? "POST").toUpperCase();
-  const template = ensureTemplate(options.provider, options.template);
-  const event = options.event ?? defaultEvent(options.provider, template);
+  const template = ensureTemplate(provider, options.template);
+  const event = options.event ?? defaultEvent(provider, template);
   const now = new Date();
 
-  const built = buildTemplatePayload(options.provider, template, event, now, options.body);
+  const built = buildTemplatePayload(provider, template, event, now, options.body);
 
   const headers: Record<string, string> = {
     "content-type": built.contentType,
-    "x-webhooks-cc-template-provider": options.provider,
+    "x-webhooks-cc-template-provider": provider,
     "x-webhooks-cc-template-template": template,
     "x-webhooks-cc-template-event": event,
     ...built.headers,
   };
 
-  if (options.provider === "stripe") {
+  if (provider === "stripe") {
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
     headers["stripe-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
   }
 
-  if (options.provider === "github") {
+  if (provider === "github") {
     headers["x-github-event"] = event;
     headers["x-github-delivery"] = randomUuid();
     const signature = await hmacSign("SHA-256", options.secret, built.body);
     headers["x-hub-signature-256"] = `sha256=${toHex(signature)}`;
   }
 
-  if (options.provider === "shopify") {
+  if (provider === "shopify") {
     headers["x-shopify-topic"] = event;
     const signature = await hmacSign("SHA-256", options.secret, built.body);
     headers["x-shopify-hmac-sha256"] = toBase64(signature);
   }
 
-  if (options.provider === "twilio") {
+  if (provider === "twilio") {
     const signaturePayload = built.twilioParams
       ? buildTwilioSignaturePayload(endpointUrl, built.twilioParams)
       : `${endpointUrl}${built.body}`;

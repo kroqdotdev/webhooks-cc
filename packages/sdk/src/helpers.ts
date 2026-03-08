@@ -73,3 +73,17 @@ export function isPaddleWebhook(request: Request): boolean {
 export function isLinearWebhook(request: Request): boolean {
   return Object.keys(request.headers).some((k) => k.toLowerCase() === "linear-signature");
 }
+
+/**
+ * Check if a request looks like a Standard Webhooks request.
+ * Matches on the presence of all three Standard Webhooks headers:
+ * webhook-id, webhook-timestamp, and webhook-signature.
+ */
+export function isStandardWebhook(request: Request): boolean {
+  const keys = Object.keys(request.headers).map((k) => k.toLowerCase());
+  return (
+    keys.includes("webhook-id") &&
+    keys.includes("webhook-timestamp") &&
+    keys.includes("webhook-signature")
+  );
+}

@@ -279,6 +279,175 @@ describe("WebhooksCC", () => {
         })
       ).rejects.toThrow(/non-empty secret/i);
     });
+
+    it("sends a Standard Webhooks template with webhook-id, webhook-timestamp, webhook-signature headers", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      // base64-encode a test secret
+      const rawSecret = "test-secret-bytes";
+      const b64Secret = Buffer.from(rawSecret).toString("base64");
+
+      const client = createClient();
+      await client.endpoints.sendTemplate("abc123", {
+        provider: "standard-webhooks",
+        secret: b64Secret,
+        body: { type: "subscription.created", data: { id: "sub_123" } },
+        timestamp: 1700000000,
+      });
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${WEBHOOK_URL}/w/abc123`);
+      expect(opts.method).toBe("POST");
+      expect(opts.headers["webhook-id"]).toMatch(/^msg_[a-f0-9]+$/);
+      expect(opts.headers["webhook-timestamp"]).toBe("1700000000");
+      expect(opts.headers["webhook-signature"]).toMatch(/^v1,[A-Za-z0-9+/=]+$/);
+      expect(opts.headers["content-type"]).toBe("application/json");
+      expect(opts.body).toContain('"type":"subscription.created"');
+    });
+
+    it("strips whsec_ prefix from Standard Webhooks secret", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const rawSecret = "test-secret-bytes";
+      const b64Secret = Buffer.from(rawSecret).toString("base64");
+
+      const client = createClient();
+
+      // Send with whsec_ prefix
+      await client.endpoints.sendTemplate("abc123", {
+        provider: "standard-webhooks",
+        secret: `whsec_${b64Secret}`,
+        body: { test: true },
+        timestamp: 1700000000,
+      });
+
+      const [, optsWithPrefix] = fetchMock.mock.calls[0];
+
+      // Send without prefix (same base64 secret)
+      await client.endpoints.sendTemplate("abc123", {
+        provider: "standard-webhooks",
+        secret: b64Secret,
+        body: { test: true },
+        timestamp: 1700000000,
+      });
+
+      const [, optsWithout] = fetchMock.mock.calls[1];
+
+      // Both should produce signatures with the same format (content differs due to random msgId)
+      expect(optsWithPrefix.headers["webhook-signature"]).toMatch(/^v1,[A-Za-z0-9+/=]+$/);
+      expect(optsWithout.headers["webhook-signature"]).toMatch(/^v1,[A-Za-z0-9+/=]+$/);
+    });
+
+    it("verifies Standard Webhooks signature is correct", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const rawSecretBytes = new Uint8Array([
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+      ]);
+      const b64Secret = Buffer.from(rawSecretBytes).toString("base64");
+      const body = { type: "test.event" };
+      const bodyStr = JSON.stringify(body);
+
+      const client = createClient();
+      await client.endpoints.sendTemplate("abc123", {
+        provider: "standard-webhooks",
+        secret: b64Secret,
+        body,
+        timestamp: 1700000000,
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      const msgId = opts.headers["webhook-id"];
+      const timestamp = opts.headers["webhook-timestamp"];
+      const sigHeader = opts.headers["webhook-signature"];
+
+      // Verify signature manually
+      const signingInput = `${msgId}.${timestamp}.${bodyStr}`;
+      const key = await globalThis.crypto.subtle.importKey(
+        "raw",
+        rawSecretBytes.buffer as ArrayBuffer,
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      const expectedSig = await globalThis.crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(signingInput)
+      );
+      const expectedB64 = Buffer.from(new Uint8Array(expectedSig)).toString("base64");
+
+      expect(sigHeader).toBe(`v1,${expectedB64}`);
+    });
+
+    it("includes event prefix in Standard Webhooks message ID when event provided", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const b64Secret = Buffer.from("secret").toString("base64");
+      const client = createClient();
+      await client.endpoints.sendTemplate("abc123", {
+        provider: "standard-webhooks",
+        secret: b64Secret,
+        event: "subscription.created",
+        body: { type: "subscription.created" },
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.headers["webhook-id"]).toMatch(/^msg_subscription\.created_[a-f0-9]+$/);
+    });
+
+    it("Standard Webhooks works without body override (defaults to empty object)", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const b64Secret = Buffer.from("secret").toString("base64");
+      const client = createClient();
+      await client.endpoints.sendTemplate("abc123", {
+        provider: "standard-webhooks",
+        secret: b64Secret,
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.body).toBe("{}");
+      expect(opts.headers["webhook-id"]).toBeTruthy();
+      expect(opts.headers["webhook-timestamp"]).toBeTruthy();
+      expect(opts.headers["webhook-signature"]).toMatch(/^v1,/);
+    });
   });
 
   describe("endpoints.get", () => {
@@ -326,6 +495,139 @@ describe("WebhooksCC", () => {
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe(`${BASE_URL}/api/endpoints/abc123`);
       expect(opts.method).toBe("DELETE");
+    });
+  });
+
+  describe("sendTo", () => {
+    it("sends a plain POST to an arbitrary URL", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.sendTo("http://localhost:3000/webhooks", {
+        body: { event: "test" },
+      });
+
+      // First call is to the target URL (not the API)
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:3000/webhooks");
+      expect(opts.method).toBe("POST");
+      expect(opts.headers["Content-Type"]).toBe("application/json");
+      expect(JSON.parse(opts.body)).toEqual({ event: "test" });
+    });
+
+    it("sends with Standard Webhooks signing to an arbitrary URL", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const b64Secret = Buffer.from("test-secret").toString("base64");
+      const client = createClient();
+      await client.sendTo("http://localhost:3000/api/webhooks/polar", {
+        provider: "standard-webhooks",
+        secret: b64Secret,
+        body: { type: "subscription.created", data: { id: "sub_123" } },
+      });
+
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:3000/api/webhooks/polar");
+      expect(opts.method).toBe("POST");
+      expect(opts.headers["webhook-id"]).toBeTruthy();
+      expect(opts.headers["webhook-timestamp"]).toBeTruthy();
+      expect(opts.headers["webhook-signature"]).toMatch(/^v1,/);
+      expect(opts.headers["content-type"]).toBe("application/json");
+    });
+
+    it("sends with Stripe signing to an arbitrary URL", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.sendTo("http://localhost:3000/webhooks/stripe", {
+        provider: "stripe",
+        secret: "whsec_test",
+        timestamp: 1700000000,
+      });
+
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:3000/webhooks/stripe");
+      expect(opts.headers["stripe-signature"]).toMatch(/^t=1700000000,v1=/);
+    });
+
+    it("sends without body or signing", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.sendTo("http://localhost:3000/health", { method: "GET" });
+
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe("http://localhost:3000/health");
+      expect(opts.method).toBe("GET");
+      expect(opts.body).toBeUndefined();
+    });
+
+    it("merges custom headers", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.sendTo("http://localhost:3000/webhooks", {
+        headers: { "x-custom": "value" },
+        body: { test: true },
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.headers["x-custom"]).toBe("value");
+      expect(opts.headers["Content-Type"]).toBe("application/json");
+    });
+
+    it("rejects invalid URLs", async () => {
+      const client = createClient();
+      await expect(client.sendTo("not-a-url")).rejects.toThrow(/not a valid URL/);
+    });
+
+    it("rejects non-http protocols", async () => {
+      const client = createClient();
+      await expect(client.sendTo("ftp://example.com/file")).rejects.toThrow(/only http and https/);
+    });
+
+    it("throws when provider set without secret", async () => {
+      const client = createClient();
+      await expect(
+        client.sendTo("http://localhost:3000/webhooks", {
+          provider: "standard-webhooks",
+        })
+      ).rejects.toThrow(/non-empty secret/);
     });
   });
 

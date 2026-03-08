@@ -106,7 +106,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       headers: z.record(z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body (will be JSON-serialized)"),
       provider: z
-        .enum(["stripe", "github", "shopify", "twilio"])
+        .enum(["stripe", "github", "shopify", "twilio", "standard-webhooks"])
         .optional()
         .describe("Optional provider template to send with signed headers"),
       template: z
@@ -223,6 +223,68 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     },
     withErrorHandling(async ({ requestId, targetUrl }) => {
       const response = await client.requests.replay(requestId, targetUrl);
+      const responseBody = await readBodyTruncated(response);
+      return textContent(
+        JSON.stringify(
+          { status: response.status, statusText: response.statusText, body: responseBody },
+          null,
+          2
+        )
+      );
+    })
+  );
+
+  server.tool(
+    "send_to",
+    "Send a webhook directly to any URL with optional provider signing. Use this for local integration testing — send properly signed webhooks to localhost handlers without routing through webhooks.cc infrastructure.",
+    {
+      url: z
+        .string()
+        .url()
+        .refine(
+          (u) => {
+            try {
+              const p = new URL(u).protocol;
+              return p === "http:" || p === "https:";
+            } catch {
+              return false;
+            }
+          },
+          { message: "Only http and https URLs are supported" }
+        )
+        .describe("Target URL to send the webhook to"),
+      method: z
+        .enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+        .default("POST")
+        .describe("HTTP method (default: POST)"),
+      headers: z.record(z.string()).optional().describe("HTTP headers to include"),
+      body: z.unknown().optional().describe("Request body (will be JSON-serialized)"),
+      provider: z
+        .enum(["stripe", "github", "shopify", "twilio", "standard-webhooks"])
+        .optional()
+        .describe("Optional provider template for signing"),
+      template: z
+        .string()
+        .optional()
+        .describe("Provider-specific template preset (not used for standard-webhooks)"),
+      event: z.string().optional().describe("Provider event/topic name"),
+      secret: z
+        .string()
+        .optional()
+        .describe(
+          "Shared secret for provider signature generation (required when provider is set)"
+        ),
+    },
+    withErrorHandling(async ({ url, method, headers, body, provider, template, event, secret }) => {
+      const response = await client.sendTo(url, {
+        method,
+        headers,
+        body,
+        provider,
+        template,
+        event,
+        secret,
+      });
       const responseBody = await readBodyTruncated(response);
       return textContent(
         JSON.stringify(

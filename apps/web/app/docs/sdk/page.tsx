@@ -88,6 +88,34 @@ console.log(endpoint.url);
   // Optional:
   // event: "checkout.session.completed",
 });`}</pre>
+        <p className="text-sm text-muted-foreground mt-4">
+          Supports <strong className="text-foreground">Standard Webhooks</strong> (Polar.sh, Svix,
+          Clerk, Resend) alongside Stripe, GitHub, Shopify, and Twilio:
+        </p>
+        <pre className="neo-code text-sm mt-2">{`await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "standard-webhooks",
+  secret: process.env.POLAR_WEBHOOK_SECRET!,
+  body: { type: "subscription.created", data: { id: "sub_123" } },
+});`}</pre>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Send signed webhooks to localhost</h2>
+        <p className="text-muted-foreground mb-4">
+          Use <code className="font-mono font-bold">sendTo</code> to send properly signed webhooks
+          directly to any URL — no webhooks.cc infrastructure required. Ideal for local integration
+          testing.
+        </p>
+        <pre className="neo-code text-sm">{`const res = await client.sendTo("http://localhost:3000/api/webhooks/polar", {
+  provider: "standard-webhooks",
+  secret: process.env.POLAR_WEBHOOK_SECRET!,
+  body: {
+    type: "subscription.created",
+    data: { id: "sub_123", status: "active" },
+  },
+});
+
+console.log(res.status); // 200`}</pre>
       </section>
 
       <section className="mb-10">
@@ -132,7 +160,12 @@ console.log(response.status); // 200`}</pre>
   isGitHubWebhook,
   isShopifyWebhook,
   isSlackWebhook,
+  isStandardWebhook,
 } from "@webhooks-cc/sdk";
+
+if (isStandardWebhook(request)) {
+  console.log("Standard Webhooks request (Polar, Svix, Clerk, Resend)");
+}
 
 if (isStripeWebhook(request)) {
   console.log("Stripe webhook received");

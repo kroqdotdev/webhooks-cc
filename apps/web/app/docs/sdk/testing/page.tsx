@@ -127,6 +127,41 @@ const req = await client.requests.waitFor(endpoint.slug, {
       </section>
 
       <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Testing localhost webhook handlers</h2>
+        <p className="text-muted-foreground mb-4">
+          Use <code className="font-mono font-bold">sendTo</code> to send signed webhooks directly
+          to your local server. No webhooks.cc endpoint needed — the request goes straight to
+          localhost with proper provider signatures.
+        </p>
+        <pre className="neo-code text-sm">{`import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+it("handles Polar subscription webhook", async () => {
+  const res = await client.sendTo("http://localhost:3000/api/webhooks/polar", {
+    provider: "standard-webhooks",
+    secret: process.env.POLAR_WEBHOOK_SECRET!,
+    body: {
+      type: "subscription.created",
+      data: {
+        id: "sub_test_123",
+        status: "active",
+        customer: { email: "test@example.com" },
+      },
+    },
+  });
+
+  expect(res.status).toBe(200);
+});`}</pre>
+        <p className="text-sm text-muted-foreground mt-4">
+          Works with all providers: <code className="font-mono">standard-webhooks</code> (Polar,
+          Svix, Clerk, Resend), <code className="font-mono">stripe</code>,{" "}
+          <code className="font-mono">github</code>, <code className="font-mono">shopify</code>,{" "}
+          <code className="font-mono">twilio</code>.
+        </p>
+      </section>
+
+      <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Tips</h2>
         <ul className="list-disc list-inside space-y-2 text-muted-foreground">
           <li>Use unique endpoint names per test run to avoid conflicts in parallel CI</li>

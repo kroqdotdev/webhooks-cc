@@ -22,6 +22,7 @@ import type {
   UpdateEndpointOptions,
   SendOptions,
   SendTemplateOptions,
+  SendToOptions,
   ListRequestsOptions,
   WaitForOptions,
   SubscribeOptions,
@@ -41,7 +42,7 @@ import { buildTemplateSendOptions } from "./templates";
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
 const DEFAULT_TIMEOUT = 30000;
-const SDK_VERSION = "0.3.0";
+const SDK_VERSION = "0.5.0";
 
 // Poll interval bounds: 10ms minimum prevents busy loops, 60s maximum prevents stale connections
 const MIN_POLL_INTERVAL = 10;
@@ -263,11 +264,21 @@ export class WebhooksCC {
           description: "Send a provider template webhook with signed headers",
           params: {
             slug: "string",
-            provider: '"stripe"|"github"|"shopify"|"twilio"',
+            provider: '"stripe"|"github"|"shopify"|"twilio"|"standard-webhooks"',
             template: "string?",
             secret: "string",
             event: "string?",
           },
+        },
+      },
+      sendTo: {
+        description: "Send a webhook directly to any URL with optional provider signing",
+        params: {
+          url: "string",
+          provider: '"stripe"|"github"|"shopify"|"twilio"|"standard-webhooks"?',
+          secret: "string?",
+          body: "unknown?",
+          headers: "Record<string, string>?",
         },
       },
       requests: {
@@ -368,6 +379,81 @@ export class WebhooksCC {
       const sendOptions = await buildTemplateSendOptions(endpointUrl, options);
       return this.endpoints.send(slug, sendOptions);
     },
+  };
+
+  /**
+   * Send a webhook directly to any URL with optional provider signing.
+   * Use this for local integration testing — send properly signed webhooks
+   * to localhost handlers without routing through webhooks.cc infrastructure.
+   *
+   * @param url - Target URL to send the webhook to (http or https)
+   * @param options - Method, headers, body, and optional provider signing
+   * @returns Raw fetch Response from the target
+   */
+  sendTo = async (url: string, options: SendToOptions = {}): Promise<Response> => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid URL: "${url}" is not a valid URL`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Invalid URL: only http and https protocols are supported");
+    }
+
+    if (options.provider) {
+      if (!options.secret || typeof options.secret !== "string") {
+        throw new Error("sendTo with a provider requires a non-empty secret");
+      }
+      const sendOptions = await buildTemplateSendOptions(url, {
+        provider: options.provider,
+        template: options.template,
+        secret: options.secret,
+        event: options.event,
+        body: options.body,
+        method: options.method,
+        headers: options.headers,
+        timestamp: options.timestamp,
+      });
+
+      const method = (sendOptions.method ?? "POST").toUpperCase();
+      return fetch(url, {
+        method,
+        headers: sendOptions.headers ?? {},
+        body:
+          sendOptions.body !== undefined
+            ? typeof sendOptions.body === "string"
+              ? sendOptions.body
+              : JSON.stringify(sendOptions.body)
+            : undefined,
+        signal: AbortSignal.timeout(this.timeout),
+      });
+    }
+
+    // Plain request without provider signing
+    const method = (options.method ?? "POST").toUpperCase();
+    if (!ALLOWED_METHODS.has(method)) {
+      throw new Error(
+        `Invalid HTTP method: "${options.method}". Must be one of: ${[...ALLOWED_METHODS].join(", ")}`
+      );
+    }
+    const headers: Record<string, string> = { ...(options.headers ?? {}) };
+    const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === "content-type");
+    if (options.body !== undefined && !hasContentType) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    return fetch(url, {
+      method,
+      headers,
+      body:
+        options.body !== undefined
+          ? typeof options.body === "string"
+            ? options.body
+            : JSON.stringify(options.body)
+          : undefined,
+      signal: AbortSignal.timeout(this.timeout),
+    });
   };
 
   requests = {

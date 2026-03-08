@@ -74,7 +74,7 @@ export interface SendOptions {
   body?: unknown;
 }
 
-export type TemplateProvider = "stripe" | "github" | "shopify" | "twilio";
+export type TemplateProvider = "stripe" | "github" | "shopify" | "twilio" | "standard-webhooks";
 
 /**
  * Options for sending a provider template webhook with signed headers.
@@ -184,9 +184,33 @@ export interface OperationDescription {
   params: Record<string, string>;
 }
 
+/**
+ * Options for sending a webhook directly to an arbitrary URL.
+ * Supports optional provider signing (Standard Webhooks, Stripe, etc.).
+ */
+export interface SendToOptions {
+  /** Provider template for signing (optional). When set, secret is required. */
+  provider?: TemplateProvider;
+  /** Provider-specific template preset (e.g. "checkout.session.completed" for Stripe) */
+  template?: string;
+  /** Secret for provider signature generation (required when provider is set) */
+  secret?: string;
+  /** Event name for provider headers */
+  event?: string;
+  /** HTTP method (default: "POST") */
+  method?: string;
+  /** HTTP headers to include */
+  headers?: Record<string, string>;
+  /** Request body (will be JSON-serialized if not a string) */
+  body?: unknown;
+  /** Unix timestamp (seconds) override for deterministic signatures in tests */
+  timestamp?: number;
+}
+
 /** Self-describing schema returned by client.describe(). */
 export interface SDKDescription {
   version: string;
   endpoints: Record<string, OperationDescription>;
+  sendTo: OperationDescription;
   requests: Record<string, OperationDescription>;
 }

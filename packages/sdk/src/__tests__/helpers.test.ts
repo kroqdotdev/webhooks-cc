@@ -8,6 +8,7 @@ import {
   isTwilioWebhook,
   isPaddleWebhook,
   isLinearWebhook,
+  isStandardWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -121,5 +122,52 @@ describe("isLinearWebhook", () => {
 
   it("returns false without header", () => {
     expect(isLinearWebhook(makeRequest())).toBe(false);
+  });
+});
+
+describe("isStandardWebhook", () => {
+  it("detects all three Standard Webhooks headers", () => {
+    expect(
+      isStandardWebhook(
+        makeRequest({
+          headers: {
+            "webhook-id": "msg_123",
+            "webhook-timestamp": "1700000000",
+            "webhook-signature": "v1,abc123",
+          },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(
+      isStandardWebhook(
+        makeRequest({
+          headers: {
+            "Webhook-Id": "msg_123",
+            "Webhook-Timestamp": "1700000000",
+            "Webhook-Signature": "v1,abc123",
+          },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("returns false when only some headers present", () => {
+    expect(
+      isStandardWebhook(
+        makeRequest({
+          headers: {
+            "webhook-id": "msg_123",
+            "webhook-timestamp": "1700000000",
+          },
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("returns false without headers", () => {
+    expect(isStandardWebhook(makeRequest())).toBe(false);
   });
 });

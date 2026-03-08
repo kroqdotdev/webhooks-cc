@@ -14,18 +14,19 @@ const EXPECTED_TOOLS = [
   "get_request",
   "wait_for_request",
   "replay_request",
+  "send_to",
   "describe",
 ];
 
 describe("registerTools", () => {
-  it("registers all 11 tools", () => {
+  it("registers all 12 tools", () => {
     const server = new McpServer({ name: "test", version: "0.0.0" });
     const toolSpy = vi.spyOn(server, "tool");
 
     const client = new WebhooksCC({ apiKey: "whcc_test" });
     registerTools(server, client);
 
-    expect(toolSpy).toHaveBeenCalledTimes(11);
+    expect(toolSpy).toHaveBeenCalledTimes(12);
 
     const registeredNames = toolSpy.mock.calls.map((call) => call[0]);
     for (const name of EXPECTED_TOOLS) {
