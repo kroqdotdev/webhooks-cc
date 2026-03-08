@@ -154,6 +154,35 @@ console.log(response.status); // 200`}</pre>
       </section>
 
       <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Lifecycle hooks</h2>
+        <p className="text-muted-foreground mb-4">
+          Use hooks for debugging, logging, or telemetry integration:
+        </p>
+        <pre className="neo-code text-sm">{`const client = new WebhooksCC({
+  apiKey: process.env.WHK_API_KEY!,
+  hooks: {
+    onRequest: ({ method, url }) => console.log(\`→ \${method} \${url}\`),
+    onResponse: ({ status, durationMs }) => console.log(\`← \${status} (\${durationMs}ms)\`),
+    onError: ({ error }) => console.error(\`✗ \${error.message}\`),
+  },
+});`}</pre>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Error handling in tests</h2>
+        <p className="text-muted-foreground mb-4">
+          When testing webhook handlers, include the response body in your assertion message for
+          better failure diagnostics:
+        </p>
+        <pre className="neo-code text-sm">{`// Basic — failure message is just "expected 200, received 500"
+expect(res.status).toBe(200);
+
+// Better — shows the server's error in test output
+const text = await res.text();
+expect(res.status, \`Server responded: \${text}\`).toBe(200);`}</pre>
+      </section>
+
+      <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Detect webhook providers</h2>
         <pre className="neo-code text-sm">{`import {
   isStripeWebhook,

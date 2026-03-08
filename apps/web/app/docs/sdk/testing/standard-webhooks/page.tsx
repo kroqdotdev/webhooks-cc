@@ -128,9 +128,25 @@ describe("polar webhook handler", () => {
           </table>
         </div>
         <p className="text-muted-foreground">
-          The secret should be base64-encoded, matching what providers give you. Secrets with a{" "}
-          <code className="font-mono font-bold">whsec_</code> prefix are handled automatically.
+          Secrets with a <code className="font-mono font-bold">whsec_</code> prefix are handled
+          automatically. The SDK auto-detects whether the secret is base64-encoded (Svix, Clerk) or
+          raw UTF-8 (Polar.sh) after stripping the prefix.
         </p>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-3">Body timestamp field</h2>
+        <p className="text-muted-foreground mb-4">
+          Many Standard Webhooks providers (including Polar.sh) require a{" "}
+          <code className="font-mono font-bold">timestamp</code> ISO-8601 field in the payload body
+          in addition to the <code className="font-mono font-bold">webhook-timestamp</code> header.
+          The SDK generates the header automatically but you must include the body field yourself:
+        </p>
+        <pre className="neo-code text-sm">{`body: {
+  type: "subscription.created",
+  timestamp: new Date().toISOString(),  // required by Polar
+  data: { /* ... */ },
+}`}</pre>
       </section>
 
       <section className="mb-10">
@@ -194,27 +210,68 @@ describe("standard webhooks inspection", () => {
 
       <section className="mb-10">
         <h2 className="text-xl font-bold mb-3">Services using Standard Webhooks</h2>
-        <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-          <li>
-            <strong className="text-foreground">Polar.sh</strong> — subscription, order, and benefit
-            events
-          </li>
-          <li>
-            <strong className="text-foreground">Svix</strong> — webhook delivery infrastructure
-          </li>
-          <li>
-            <strong className="text-foreground">Clerk</strong> — user and session events
-          </li>
-          <li>
-            <strong className="text-foreground">Resend</strong> — email delivery events
-          </li>
-          <li>
-            <strong className="text-foreground">Liveblocks</strong> — collaboration events
-          </li>
-          <li>
-            <strong className="text-foreground">Novu</strong> — notification events
-          </li>
-        </ul>
+        <div className="neo-code text-sm overflow-x-auto mb-4">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-foreground/20">
+                <th className="text-left py-1.5 pr-3 font-bold">Service</th>
+                <th className="text-left py-1.5 pr-3 font-bold">Secret format</th>
+                <th className="text-left py-1.5 font-bold">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-foreground/20">
+                <td className="py-1.5 pr-3 font-bold">Polar.sh</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">
+                  <code>whsec_&lt;raw-string&gt;</code>
+                </td>
+                <td className="py-1.5 text-muted-foreground">
+                  Secret is raw UTF-8, not base64 after prefix
+                </td>
+              </tr>
+              <tr className="border-b border-foreground/20">
+                <td className="py-1.5 pr-3 font-bold">Svix</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">
+                  <code>whsec_&lt;base64&gt;</code>
+                </td>
+                <td className="py-1.5 text-muted-foreground">Spec-compliant base64 after prefix</td>
+              </tr>
+              <tr className="border-b border-foreground/20">
+                <td className="py-1.5 pr-3 font-bold">Clerk</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">
+                  <code>whsec_&lt;base64&gt;</code>
+                </td>
+                <td className="py-1.5 text-muted-foreground">Spec-compliant</td>
+              </tr>
+              <tr className="border-b border-foreground/20">
+                <td className="py-1.5 pr-3 font-bold">Resend</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">
+                  <code>whsec_&lt;base64&gt;</code>
+                </td>
+                <td className="py-1.5 text-muted-foreground">Spec-compliant</td>
+              </tr>
+              <tr className="border-b border-foreground/20">
+                <td className="py-1.5 pr-3 font-bold">Liveblocks</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">
+                  <code>whsec_&lt;base64&gt;</code>
+                </td>
+                <td className="py-1.5 text-muted-foreground">Spec-compliant</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 pr-3 font-bold">Novu</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">
+                  <code>whsec_&lt;base64&gt;</code>
+                </td>
+                <td className="py-1.5 text-muted-foreground">Spec-compliant</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-muted-foreground">
+          The SDK auto-detects the format. If the part after{" "}
+          <code className="font-mono font-bold">whsec_</code> isn&apos;t valid base64, it falls back to
+          raw UTF-8 bytes.
+        </p>
       </section>
 
       <section className="border-t-2 border-foreground pt-8">
@@ -237,6 +294,17 @@ describe("standard webhooks inspection", () => {
               GitHub + Jest
             </Link>{" "}
             <span className="text-muted-foreground">- push event verification</span>
+          </li>
+          <li>
+            <Link
+              href="/docs/sdk/testing/polar-playwright"
+              className="text-primary hover:underline font-bold"
+            >
+              Polar.sh + Playwright
+            </Link>{" "}
+            <span className="text-muted-foreground">
+              - subscription lifecycle E2E testing
+            </span>
           </li>
           <li>
             <Link

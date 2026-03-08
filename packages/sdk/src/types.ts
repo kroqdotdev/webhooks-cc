@@ -212,5 +212,6 @@ export interface SDKDescription {
   version: string;
   endpoints: Record<string, OperationDescription>;
   sendTo: OperationDescription;
+  buildRequest: OperationDescription;
   requests: Record<string, OperationDescription>;
 }

@@ -42,7 +42,7 @@ import { buildTemplateSendOptions } from "./templates";
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
 const DEFAULT_TIMEOUT = 30000;
-const SDK_VERSION = "0.5.0";
+const SDK_VERSION = "0.6.0";
 
 // Poll interval bounds: 10ms minimum prevents busy loops, 60s maximum prevents stale connections
 const MIN_POLL_INTERVAL = 10;
@@ -281,6 +281,17 @@ export class WebhooksCC {
           headers: "Record<string, string>?",
         },
       },
+      buildRequest: {
+        description:
+          "Build a request without sending it — returns computed method, URL, headers, and body including provider signatures",
+        params: {
+          url: "string",
+          provider: '"stripe"|"github"|"shopify"|"twilio"|"standard-webhooks"?',
+          secret: "string?",
+          body: "unknown?",
+          headers: "Record<string, string>?",
+        },
+      },
       requests: {
         list: {
           description: "List captured requests",
@@ -379,6 +390,83 @@ export class WebhooksCC {
       const sendOptions = await buildTemplateSendOptions(endpointUrl, options);
       return this.endpoints.send(slug, sendOptions);
     },
+  };
+
+  /**
+   * Build a request without sending it. Returns the computed method, URL,
+   * headers, and body — including any provider signatures. Useful for
+   * debugging what sendTo would actually send.
+   *
+   * @param url - Target URL (http or https)
+   * @param options - Same options as sendTo
+   * @returns The computed request details
+   */
+  buildRequest = async (
+    url: string,
+    options: SendToOptions = {}
+  ): Promise<{ url: string; method: string; headers: Record<string, string>; body?: string }> => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid URL: "${url}" is not a valid URL`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Invalid URL: only http and https protocols are supported");
+    }
+
+    if (options.provider) {
+      if (!options.secret || typeof options.secret !== "string") {
+        throw new Error("buildRequest with a provider requires a non-empty secret");
+      }
+      const sendOptions = await buildTemplateSendOptions(url, {
+        provider: options.provider,
+        template: options.template,
+        secret: options.secret,
+        event: options.event,
+        body: options.body,
+        method: options.method,
+        headers: options.headers,
+        timestamp: options.timestamp,
+      });
+
+      return {
+        url,
+        method: (sendOptions.method ?? "POST").toUpperCase(),
+        headers: sendOptions.headers ?? {},
+        body:
+          sendOptions.body !== undefined
+            ? typeof sendOptions.body === "string"
+              ? sendOptions.body
+              : JSON.stringify(sendOptions.body)
+            : undefined,
+      };
+    }
+
+    // Plain request without provider signing
+    const method = (options.method ?? "POST").toUpperCase();
+    if (!ALLOWED_METHODS.has(method)) {
+      throw new Error(
+        `Invalid HTTP method: "${options.method}". Must be one of: ${[...ALLOWED_METHODS].join(", ")}`
+      );
+    }
+    const headers: Record<string, string> = { ...(options.headers ?? {}) };
+    const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === "content-type");
+    if (options.body !== undefined && !hasContentType) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    return {
+      url,
+      method,
+      headers,
+      body:
+        options.body !== undefined
+          ? typeof options.body === "string"
+            ? options.body
+            : JSON.stringify(options.body)
+          : undefined,
+    };
   };
 
   /**

@@ -642,12 +642,22 @@ export async function buildTemplateSendOptions(
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signingInput = `${msgId}.${timestamp}.${body}`;
 
-    // Standard Webhooks secrets are base64-encoded; strip whsec_ prefix if present
+    // Standard Webhooks secrets: strip whsec_ prefix, then try base64 decode.
+    // If the remainder isn't valid base64 (e.g. Polar.sh raw secrets), fall back
+    // to treating the original secret (with prefix) as raw UTF-8 bytes. This
+    // matches how Polar's SDK passes secrets to the standardwebhooks library.
     let rawSecret = options.secret;
-    if (rawSecret.startsWith("whsec_")) {
+    const hadPrefix = rawSecret.startsWith("whsec_");
+    if (hadPrefix) {
       rawSecret = rawSecret.slice(6);
     }
-    const secretBytes = fromBase64(rawSecret);
+    let secretBytes: Uint8Array;
+    try {
+      secretBytes = fromBase64(rawSecret);
+    } catch {
+      const raw = hadPrefix ? options.secret : rawSecret;
+      secretBytes = new TextEncoder().encode(raw);
+    }
     const signature = await hmacSignRaw("SHA-256", secretBytes, signingInput);
 
     return {

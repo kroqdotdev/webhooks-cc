@@ -205,6 +205,17 @@ it("handles Polar subscription webhook", async () => {
           </li>
           <li>
             <Link
+              href="/docs/sdk/testing/polar-playwright"
+              className="text-primary hover:underline font-bold"
+            >
+              Polar.sh + Playwright
+            </Link>{" "}
+            <span className="text-muted-foreground">
+              - subscription lifecycle E2E testing
+            </span>
+          </li>
+          <li>
+            <Link
               href="/docs/sdk/testing/playwright-e2e"
               className="text-primary hover:underline font-bold"
             >
