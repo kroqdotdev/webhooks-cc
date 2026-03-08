@@ -226,8 +226,8 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 | `billing.ts`     | Polar.sh integration: checkout, cancel, resubscribe, webhook handling (HMAC-SHA256 verified)                                                          |
 | `apiKeys.ts`     | SHA-256 hashed storage, `whcc_` prefix, O(1) validation by hash lookup, 1-year max TTL                                                                |
 | `deviceAuth.ts`  | Device flow: create -> authorize -> poll -> claim (API key generated at claim time, one-time use)                                                     |
-| `rateLimiter.ts` | Token bucket via @convex-dev/rate-limiter: ephemeral (25/10hrs), user creation (10/10min), anon creation (20/10min)                                   |
-| `config.ts`      | Zod-validated env config: FREE_REQUEST_LIMIT (50), PRO_REQUEST_LIMIT (100k), EPHEMERAL_TTL_MS (10hrs), BILLING_PERIOD_MS (30d), FREE_PERIOD_MS (24h)  |
+| `rateLimiter.ts` | Token bucket via @convex-dev/rate-limiter: ephemeral (25/12hrs), user creation (10/10min), anon creation (20/10min)                                   |
+| `config.ts`      | Zod-validated env config: FREE_REQUEST_LIMIT (50), PRO_REQUEST_LIMIT (100k), EPHEMERAL_TTL_MS (12hrs), BILLING_PERIOD_MS (30d), FREE_PERIOD_MS (24h)  |
 | `crons.ts`       | Every 5min: cleanup expired endpoints + device codes. Daily: billing period resets, API key cleanup, old request cleanup (30d for pro)                |
 
 **Key patterns:**

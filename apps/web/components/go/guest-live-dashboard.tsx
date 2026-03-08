@@ -20,7 +20,7 @@ import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider"
 const REQUEST_LIMIT = 50;
 // Local fallback so refreshes immediately after create still restore the slug.
 // This is overwritten with the authoritative `endpoint.expiresAt` once Convex returns it.
-const EXPIRY_MS = 10 * 60 * 60 * 1000;
+const EXPIRY_MS = 12 * 60 * 60 * 1000;
 const COPY_FEEDBACK_MS = 2000;
 const SEND_FEEDBACK_MS = 3000;
 const DEMO_ENDPOINT_STORAGE_KEY = "demo_endpoint";
@@ -578,7 +578,7 @@ function GoPreCreateLanding({
               </p>
             )}
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Guest endpoints support up to 25 requests and expire after 10 hours.
+              Guest endpoints support up to 25 requests and expire after 12 hours.
             </p>
           </div>
 
