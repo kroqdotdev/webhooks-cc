@@ -24,6 +24,7 @@ pub struct MockResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointInfo {
+    #[serde(default)]
     pub endpoint_id: String,
     pub user_id: Option<String>,
     #[serde(default)]
