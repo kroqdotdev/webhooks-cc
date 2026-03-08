@@ -48,6 +48,7 @@ const NAV_SECTIONS: NavSection[] = [
       { title: "Overview", href: "/docs/sdk" },
       { title: "API Reference", href: "/docs/sdk/api" },
       { title: "Testing", href: "/docs/sdk/testing" },
+      { title: "Standard Webhooks", href: "/docs/sdk/testing/standard-webhooks", depth: 1 },
       { title: "Stripe + Vitest", href: "/docs/sdk/testing/stripe-vitest", depth: 1 },
       { title: "GitHub + Jest", href: "/docs/sdk/testing/github-jest", depth: 1 },
       { title: "Playwright E2E", href: "/docs/sdk/testing/playwright-e2e", depth: 1 },

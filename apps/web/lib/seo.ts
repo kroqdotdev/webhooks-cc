@@ -31,6 +31,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/docs/sdk", changeFrequency: "monthly", priority: 0.7 },
   { path: "/docs/sdk/api", changeFrequency: "monthly", priority: 0.7 },
   { path: "/docs/sdk/testing", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/docs/sdk/testing/standard-webhooks", changeFrequency: "monthly", priority: 0.6 },
   { path: "/docs/sdk/testing/stripe-vitest", changeFrequency: "monthly", priority: 0.6 },
   { path: "/docs/sdk/testing/github-jest", changeFrequency: "monthly", priority: 0.6 },
   { path: "/docs/sdk/testing/playwright-e2e", changeFrequency: "monthly", priority: 0.6 },

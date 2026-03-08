@@ -178,6 +178,15 @@ it("handles Polar subscription webhook", async () => {
         <ul className="space-y-2">
           <li>
             <Link
+              href="/docs/sdk/testing/standard-webhooks"
+              className="text-primary hover:underline font-bold"
+            >
+              Standard Webhooks + Vitest
+            </Link>{" "}
+            <span className="text-muted-foreground">- Polar, Svix, Clerk, Resend with sendTo</span>
+          </li>
+          <li>
+            <Link
               href="/docs/sdk/testing/stripe-vitest"
               className="text-primary hover:underline font-bold"
             >
