@@ -17,7 +17,7 @@ import type { Request, RequestSummary } from "@/types/request";
 import { ArrowRight, Bot, Check, Circle, Copy, Eye, Plus, Send, Terminal } from "lucide-react";
 import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
 
-const REQUEST_LIMIT = 50;
+const REQUEST_LIMIT = 25;
 // Local fallback so refreshes immediately after create still restore the slug.
 // This is overwritten with the authoritative `endpoint.expiresAt` once Convex returns it.
 const EXPIRY_MS = 12 * 60 * 60 * 1000;
