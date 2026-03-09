@@ -40,7 +40,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: February 4, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: March 9, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -97,7 +97,59 @@ export default function PrivacyPage() {
               <span className="font-bold text-foreground">Polar.sh</span> processes subscription
               payments.
             </p>
-            <p>We do not use analytics trackers or advertising networks.</p>
+            <p>
+              <span className="font-bold text-foreground">PostHog</span> provides privacy-friendly
+              product analytics. See the Analytics section below for details.
+            </p>
+            <p>We do not use advertising networks.</p>
+          </div>
+        </section>
+
+        {/* Analytics */}
+        <section className="border-t-2 border-foreground pt-8 mt-8">
+          <h2 className="text-xl font-bold mb-3">Analytics</h2>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              We use{" "}
+              <a
+                href="https://posthog.com"
+                className="text-primary hover:underline font-bold"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                PostHog
+              </a>{" "}
+              to understand how people use webhooks.cc. PostHog is configured in cookie-free mode:
+              no cookies are set, no data is stored on your device, and no cross-site tracking
+              occurs.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">What we collect.</span> Page views,
+              button clicks, referrer URL, and UTM campaign parameters. For logged-in users we
+              associate analytics events with your account to understand usage patterns.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">What we do not collect.</span> We do not
+              fingerprint your browser, track you across sites, or build advertising profiles.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Legal basis.</span> We process this data
+              under legitimate interest (GDPR Art.&nbsp;6(1)(f)) to improve our service. You can
+              opt out by using a standard content blocker that blocks PostHog.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Data location.</span> Analytics data is
+              processed by PostHog, Inc. in the United States under their{" "}
+              <a
+                href="https://posthog.com/privacy"
+                className="text-primary hover:underline font-bold"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                privacy policy
+              </a>
+              .
+            </p>
           </div>
         </section>
 
@@ -126,7 +178,8 @@ export default function PrivacyPage() {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               Authentication is managed by Convex and uses standard session mechanisms. We store
-              your theme preference (light/dark) in localStorage. We do not use tracking cookies.
+              your theme preference (light/dark) in localStorage. We do not use tracking cookies
+              or store analytics data on your device.
             </p>
           </div>
         </section>
