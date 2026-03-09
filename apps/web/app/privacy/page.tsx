@@ -139,7 +139,7 @@ export default function PrivacyPage() {
             </p>
             <p>
               <span className="font-bold text-foreground">Data location.</span> Analytics data is
-              processed by PostHog, Inc. in the United States under their{" "}
+              processed and stored within the European Union by PostHog under their{" "}
               <a
                 href="https://posthog.com/privacy"
                 className="text-primary hover:underline font-bold"
