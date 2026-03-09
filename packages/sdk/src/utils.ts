@@ -1,4 +1,4 @@
-const DURATION_REGEX = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/;
+const DURATION_REGEX = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/;
 
 /**
  * Parse a duration value into milliseconds.
@@ -6,7 +6,7 @@ const DURATION_REGEX = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/;
  * Accepts:
  * - Numbers: passed through as-is (treated as milliseconds)
  * - Numeric strings: `"500"` → 500
- * - Duration strings: `"30s"` → 30000, `"5m"` → 300000, `"1.5s"` → 1500, `"500ms"` → 500
+ * - Duration strings: `"30s"` → 30000, `"5m"` → 300000, `"1.5s"` → 1500, `"500ms"` → 500, `"7d"` → 604800000
  *
  * @throws {Error} If the input string is not a valid duration format
  */
@@ -44,6 +44,8 @@ export function parseDuration(input: number | string): number {
       return value * 60_000;
     case "h":
       return value * 3_600_000;
+    case "d":
+      return value * 86_400_000;
     default:
       throw new Error(`Invalid duration: "${input}"`);
   }

@@ -1,4 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { query, internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -440,18 +441,60 @@ export const listForUser = internalQuery({
     if (since !== undefined) {
       return await ctx.db
         .query("requests")
-        .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).gt("receivedAt", floor))
+        .withIndex("by_endpoint_time", (q) =>
+          q.eq("endpointId", endpointId).gt("receivedAt", floor)
+        )
         .order("desc")
         .take(actualLimit);
     }
 
     return await ctx.db
       .query("requests")
-      .withIndex("by_endpoint_time", (q) =>
-        q.eq("endpointId", endpointId).gte("receivedAt", floor)
-      )
+      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).gte("receivedAt", floor))
       .order("desc")
       .take(actualLimit);
+  },
+});
+
+export const listPaginatedForUser = internalQuery({
+  args: {
+    endpointId: v.id("endpoints"),
+    userId: v.id("users"),
+    cutoff: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { endpointId, userId, cutoff, paginationOpts }) => {
+    const endpoint = await ctx.db.get(endpointId);
+    if (!endpoint) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+        cutoff: cutoff ?? 0,
+      };
+    }
+    if (endpoint.userId !== userId) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+        cutoff: cutoff ?? 0,
+      };
+    }
+
+    const effectiveCutoff = cutoff ?? (await getRetentionCutoff(ctx, endpoint, Date.now()));
+
+    const result = await ctx.db
+      .query("requests")
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gte("receivedAt", effectiveCutoff)
+      )
+      .paginate(paginationOpts);
+
+    return {
+      ...result,
+      cutoff: effectiveCutoff,
+    };
   },
 });
 
@@ -605,7 +648,9 @@ export const list = query({
     // Pro users may have additional rows between 7 and 30 days.
     return await ctx.db
       .query("requests")
-      .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpointId).gte("receivedAt", cutoff))
+      .withIndex("by_endpoint_time", (q) =>
+        q.eq("endpointId", endpointId).gte("receivedAt", cutoff)
+      )
       .order("desc")
       .take(actualLimit);
   },
@@ -835,6 +880,65 @@ export const cleanupUserRequests = internalMutation({
     }
 
     return { deleted, complete: true };
+  },
+});
+
+// Delete requests for a single endpoint owned by a user.
+// Deletes in bounded batches and reschedules itself when more rows remain.
+export const clearEndpointRequestsForUser = internalMutation({
+  args: {
+    userId: v.id("users"),
+    slug: v.string(),
+    before: v.optional(v.number()),
+    endpointId: v.optional(v.id("endpoints")),
+  },
+  handler: async (ctx, { userId, slug, before, endpointId }) => {
+    const endpoint =
+      endpointId !== undefined
+        ? await ctx.db.get(endpointId)
+        : await ctx.db
+            .query("endpoints")
+            .withIndex("by_slug", (q) => q.eq("slug", slug))
+            .first();
+
+    if (!endpoint) throw new Error("not_found");
+    if (endpoint.userId !== userId) throw new Error("not_authorized");
+
+    const requests =
+      before !== undefined
+        ? await ctx.db
+            .query("requests")
+            .withIndex("by_endpoint_time", (q) =>
+              q.eq("endpointId", endpoint._id).lt("receivedAt", before)
+            )
+            .take(CLEANUP_BATCH_SIZE)
+        : await ctx.db
+            .query("requests")
+            .withIndex("by_endpoint_time", (q) => q.eq("endpointId", endpoint._id))
+            .take(CLEANUP_BATCH_SIZE);
+
+    for (const request of requests) {
+      await ctx.db.delete(request._id);
+    }
+
+    if (requests.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.requests.decrementRequestCount, {
+        endpointId: endpoint._id,
+        count: requests.length,
+      });
+    }
+
+    const complete = requests.length < CLEANUP_BATCH_SIZE;
+    if (!complete) {
+      await ctx.scheduler.runAfter(0, internal.requests.clearEndpointRequestsForUser, {
+        userId,
+        slug: endpoint.slug,
+        before,
+        endpointId: endpoint._id,
+      });
+    }
+
+    return { deleted: requests.length, complete };
   },
 });
 

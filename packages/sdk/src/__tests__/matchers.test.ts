@@ -3,6 +3,10 @@ import {
   matchMethod,
   matchHeader,
   matchBodyPath,
+  matchPath,
+  matchQueryParam,
+  matchBodySubset,
+  matchContentType,
   matchAll,
   matchAny,
   matchJsonField,
@@ -103,6 +107,113 @@ describe("matchBodyPath", () => {
   it("handles undefined body", () => {
     const matcher = matchBodyPath("type", "test");
     expect(matcher(makeRequest({ body: undefined }))).toBe(false);
+  });
+});
+
+describe("matchPath", () => {
+  it("matches exact paths", () => {
+    const matcher = matchPath("/webhooks/stripe");
+    expect(matcher(makeRequest({ path: "/webhooks/stripe" }))).toBe(true);
+    expect(matcher(makeRequest({ path: "/webhooks/github" }))).toBe(false);
+  });
+
+  it("supports single-segment wildcards", () => {
+    const matcher = matchPath("/webhooks/*");
+    expect(matcher(makeRequest({ path: "/webhooks/stripe" }))).toBe(true);
+    expect(matcher(makeRequest({ path: "/webhooks/stripe/retry" }))).toBe(false);
+  });
+
+  it("supports multi-segment wildcards", () => {
+    const matcher = matchPath("/webhooks/**");
+    expect(matcher(makeRequest({ path: "/webhooks/stripe/retry" }))).toBe(true);
+    expect(matcher(makeRequest({ path: "/events/stripe" }))).toBe(false);
+  });
+});
+
+describe("matchQueryParam", () => {
+  it("matches query parameter presence", () => {
+    const matcher = matchQueryParam("retry");
+    expect(matcher(makeRequest({ queryParams: { retry: "1" } }))).toBe(true);
+  });
+
+  it("matches query parameter values", () => {
+    const matcher = matchQueryParam("event", "push");
+    expect(matcher(makeRequest({ queryParams: { event: "push" } }))).toBe(true);
+    expect(matcher(makeRequest({ queryParams: { event: "ping" } }))).toBe(false);
+  });
+
+  it("rejects missing query parameters", () => {
+    const matcher = matchQueryParam("missing");
+    expect(matcher(makeRequest({ queryParams: {} }))).toBe(false);
+  });
+});
+
+describe("matchBodySubset", () => {
+  it("matches nested JSON subsets", () => {
+    const matcher = matchBodySubset({ data: { object: { id: "evt_123" } } });
+    expect(
+      matcher(
+        makeRequest({
+          body: JSON.stringify({
+            data: { object: { id: "evt_123", amount: 2000 } },
+            type: "payment_intent.succeeded",
+          }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("matches array subsets by position", () => {
+    const matcher = matchBodySubset({ items: [{ id: "a1" }] });
+    expect(
+      matcher(
+        makeRequest({
+          body: JSON.stringify({
+            items: [
+              { id: "a1", qty: 1 },
+              { id: "a2", qty: 2 },
+            ],
+          }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("rejects non-matching subsets", () => {
+    const matcher = matchBodySubset({ data: { object: { id: "evt_456" } } });
+    expect(
+      matcher(makeRequest({ body: JSON.stringify({ data: { object: { id: "evt_123" } } }) }))
+    ).toBe(false);
+  });
+
+  it("rejects non-JSON bodies", () => {
+    const matcher = matchBodySubset({ ok: true });
+    expect(matcher(makeRequest({ body: "not json" }))).toBe(false);
+  });
+});
+
+describe("matchContentType", () => {
+  it("matches content-type headers ignoring parameters", () => {
+    const matcher = matchContentType("application/json");
+    expect(
+      matcher(
+        makeRequest({
+          headers: { "content-type": "application/json; charset=utf-8" },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("falls back to request.contentType", () => {
+    const matcher = matchContentType("application/json");
+    expect(matcher(makeRequest({ contentType: "application/json" }))).toBe(true);
+  });
+
+  it("rejects other content types", () => {
+    const matcher = matchContentType("application/json");
+    expect(matcher(makeRequest({ headers: { "content-type": "text/plain; charset=utf-8" } }))).toBe(
+      false
+    );
   });
 });
 

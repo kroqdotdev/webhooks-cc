@@ -142,6 +142,8 @@ export function formatEndpoint(doc: Record<string, unknown>): Record<string, unk
     slug: doc.slug,
     name: doc.name,
     url: typeof doc.slug === "string" ? webhookUrl(doc.slug) : undefined,
+    isEphemeral: doc.isEphemeral === true,
+    expiresAt: typeof doc.expiresAt === "number" ? doc.expiresAt : undefined,
     createdAt: doc.createdAt ?? doc._creationTime,
   };
 }

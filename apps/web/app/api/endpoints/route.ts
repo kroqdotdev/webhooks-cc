@@ -31,11 +31,55 @@ export async function POST(request: Request) {
     return Response.json({ error: "Name must be between 1 and 100 characters" }, { status: 400 });
   }
 
-  const isEphemeral = body.isEphemeral === true;
+  if (body.isEphemeral !== undefined && typeof body.isEphemeral !== "boolean") {
+    return Response.json({ error: "isEphemeral must be a boolean" }, { status: 400 });
+  }
+
+  const expiresAt =
+    typeof body.expiresAt === "number" && Number.isFinite(body.expiresAt)
+      ? body.expiresAt
+      : undefined;
+  if (body.expiresAt !== undefined && (expiresAt === undefined || expiresAt <= Date.now())) {
+    return Response.json({ error: "expiresAt must be a future timestamp" }, { status: 400 });
+  }
+
+  if (body.mockResponse !== undefined && body.mockResponse !== null) {
+    if (typeof body.mockResponse !== "object" || Array.isArray(body.mockResponse)) {
+      return Response.json({ error: "Invalid mockResponse" }, { status: 400 });
+    }
+    const mr = body.mockResponse as Record<string, unknown>;
+    if (
+      typeof mr.status !== "number" ||
+      mr.status < 100 ||
+      mr.status > 599 ||
+      !Number.isInteger(mr.status)
+    ) {
+      return Response.json({ error: "Invalid status code" }, { status: 400 });
+    }
+    if (typeof mr.body !== "string") {
+      return Response.json({ error: "Invalid mockResponse body" }, { status: 400 });
+    }
+    if (typeof mr.headers !== "object" || mr.headers === null || Array.isArray(mr.headers)) {
+      return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
+    }
+    for (const val of Object.values(mr.headers as Record<string, unknown>)) {
+      if (typeof val !== "string") {
+        return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
+      }
+    }
+  }
+
+  const isEphemeral = body.isEphemeral === true || expiresAt !== undefined;
 
   const resp = await convexCliRequest("/cli/endpoints", {
     method: "POST",
-    body: { userId: auth.userId, name, isEphemeral },
+    body: {
+      userId: auth.userId,
+      name,
+      isEphemeral,
+      expiresAt,
+      mockResponse: body.mockResponse,
+    },
   });
 
   if (!resp.ok) return resp;
