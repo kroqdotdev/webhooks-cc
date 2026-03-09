@@ -7,14 +7,18 @@ import { Tabs, Tab } from "./mdx/tabs";
 import { LinkCard } from "./mdx/link-card";
 import { ProviderCard } from "./mdx/provider-card";
 import { ApiMethod, ParamTable } from "./mdx/api-method";
-import { FAQ } from "./mdx/faq";
+import { FAQ, FAQItem } from "./mdx/faq";
 
 export const mdxComponents: MDXComponents = {
   // --- HTML element overrides ---
 
-  pre: (props) => <CodeBlock {...props} />,
+  pre: (props: React.ComponentProps<"pre">) => <CodeBlock {...props} />,
 
-  a: ({ href, children, ...props }) => {
+  a: ({
+    href,
+    children,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
     if (href?.startsWith("/") || href?.startsWith("#")) {
       return (
         <Link href={href} className="text-primary hover:underline font-bold" {...props}>
@@ -35,15 +39,15 @@ export const mdxComponents: MDXComponents = {
     );
   },
 
-  table: (props) => (
+  table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
     <div className="my-6 overflow-x-auto border-2 border-foreground shadow-neo-sm">
       <table className="w-full text-sm" {...props} />
     </div>
   ),
-  th: (props) => (
+  th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
     <th className="text-left font-bold py-2 px-3 border-b-2 border-foreground bg-muted" {...props} />
   ),
-  td: (props) => (
+  td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => (
     <td className="py-2 px-3 border-b border-foreground/20" {...props} />
   ),
 
@@ -58,4 +62,5 @@ export const mdxComponents: MDXComponents = {
   ApiMethod,
   ParamTable,
   FAQ,
+  FAQItem,
 };

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-function FAQItem({
+export function FAQItem({
   question,
   children,
 }: {

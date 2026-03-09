@@ -19,7 +19,7 @@ export function SearchModal() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [pagefind, setPagefind] = useState<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const router = useRouter();
 
   // Load Pagefind on first open
@@ -28,9 +28,8 @@ export function SearchModal() {
 
     async function loadPagefind() {
       try {
-        const pf = await import(
-          /* webpackIgnore: true */ "/_pagefind/pagefind.js"
-        );
+        // @ts-expect-error -- Pagefind is generated at build time, not a real module
+        const pf = await import(/* webpackIgnore: true */ "/_pagefind/pagefind.js");
         await pf.init();
         setPagefind(pf);
       } catch {

@@ -1,22 +1,25 @@
 "use client";
 
-import { useState, Children, isValidElement } from "react";
+import { useState, Children, isValidElement, type ReactElement } from "react";
 import { cn } from "@/lib/utils";
 
 export function Tabs({
   items,
   children,
 }: {
-  items: string[];
+  items?: string[];
   children: React.ReactNode;
 }) {
   const [active, setActive] = useState(0);
-  const tabs = Children.toArray(children).filter(isValidElement);
+  const tabs = Children.toArray(children).filter(isValidElement) as ReactElement<{ label?: string }>[];
+
+  // Derive labels from items prop, or from Tab label props, or fallback to "Tab N"
+  const labels = items ?? tabs.map((tab, i) => tab.props.label ?? `Tab ${i + 1}`);
 
   return (
     <div className="my-6 border-2 border-foreground shadow-neo-sm">
       <div className="flex border-b-2 border-foreground">
-        {items.map((label, i) => (
+        {labels.map((label, i) => (
           <button
             key={label}
             onClick={() => setActive(i)}
@@ -39,6 +42,6 @@ export function Tabs({
   );
 }
 
-export function Tab({ children }: { children: React.ReactNode }) {
+export function Tab({ label, children }: { label?: string; children: React.ReactNode }) {
   return <div>{children}</div>;
 }
