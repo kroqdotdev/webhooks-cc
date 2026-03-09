@@ -3,21 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SITE_URL } from "@/lib/seo";
+import { getBreadcrumbLabels } from "@/lib/docs-nav";
 
-const BREADCRUMB_LABELS: Record<string, string> = {
-  "/docs": "Docs",
-  "/docs/endpoints": "Endpoints",
-  "/docs/requests": "Requests",
-  "/docs/mock-responses": "Mock Responses",
-  "/docs/cli": "CLI",
-  "/docs/cli/commands": "Commands",
-  "/docs/cli/tunnel": "Tunneling",
-  "/docs/sdk": "SDK",
-  "/docs/sdk/api": "API Reference",
-  "/docs/sdk/testing": "Testing",
-  "/docs/mcp": "MCP Server",
-  "/installation": "Installation",
-};
+const BREADCRUMB_LABELS = getBreadcrumbLabels();
 
 export function DocsBreadcrumbs() {
   const pathname = usePathname();
