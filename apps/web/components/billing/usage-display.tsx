@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
+import { trackQuotaWarningShown } from "@/lib/analytics";
 
 export function UsageDisplay() {
   const user = useQuery(api.users.current);
@@ -23,6 +25,14 @@ export function UsageDisplay() {
   const percentage =
     user.requestLimit > 0 ? Math.min((user.requestsUsed / user.requestLimit) * 100, 100) : 0;
   const isNearLimit = percentage > 80;
+
+  const warningFired = useRef(false);
+  useEffect(() => {
+    if (isNearLimit && !warningFired.current) {
+      warningFired.current = true;
+      trackQuotaWarningShown(user.plan, percentage);
+    }
+  }, [isNearLimit, user.plan, percentage]);
 
   return (
     <div className="space-y-2">

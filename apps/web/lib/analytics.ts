@@ -46,6 +46,11 @@ export function trackSubscriptionReactivated() {
   capture("subscription_reactivated");
 }
 
+// ── Quota ───────────────────────────────────────────────────────
+export function trackQuotaWarningShown(plan: string, usagePercent: number) {
+  capture("quota_warning_shown", { plan, usage_percent: Math.round(usagePercent) });
+}
+
 // ── Account ─────────────────────────────────────────────────────
 export function trackApiKeyCreated() {
   capture("api_key_created");

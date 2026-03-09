@@ -119,9 +119,10 @@ export default function PrivacyPage() {
               >
                 PostHog
               </a>{" "}
-              to understand how people use webhooks.cc. PostHog is configured in cookie-free mode:
-              no cookies are set, no data is stored on your device, and no cross-site tracking
-              occurs.
+              to understand how people use webhooks.cc. PostHog is configured without cookies: no
+              cookies are set and no cross-site tracking occurs. A random anonymous identifier is
+              stored in your browser&apos;s localStorage to recognize returning visitors on
+              webhooks.cc.
             </p>
             <p>
               <span className="font-bold text-foreground">What we collect.</span> Page views,
@@ -182,8 +183,8 @@ export default function PrivacyPage() {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               Authentication is managed by Convex and uses standard session mechanisms. We store
-              your theme preference (light/dark) in localStorage. We do not use tracking cookies
-              or store analytics data on your device.
+              your theme preference (light/dark) and a PostHog anonymous identifier in
+              localStorage. We do not use tracking cookies.
             </p>
           </div>
         </section>

@@ -60,11 +60,11 @@ export function middleware(request: NextRequest) {
 
   const directives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud ${convexOrigin} ${convexWsOrigin} ${webhookOrigin}`,
+    `connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud ${convexOrigin} ${convexWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc`,
     "object-src 'none'",
     "worker-src 'self'",
     "frame-ancestors 'none'",

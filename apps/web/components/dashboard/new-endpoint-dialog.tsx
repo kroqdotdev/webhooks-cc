@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
 import { Plus } from "lucide-react";
 import { parseStatusCode } from "@/lib/http";
+import { trackEndpointCreated } from "@/lib/analytics";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +49,7 @@ export function NewEndpointDialog() {
           : undefined,
       });
 
+      trackEndpointCreated();
       setOpen(false);
       resetForm();
       router.push(`/dashboard?endpoint=${result.slug}`);

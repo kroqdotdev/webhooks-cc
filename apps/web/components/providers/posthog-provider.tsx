@@ -8,10 +8,9 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY as string, {
       api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-      persistence: "memory",
+      ui_host: "https://eu.posthog.com",
+      persistence: "localStorage",
       capture_pageleave: true,
-      mask_all_text: true,
-      mask_all_element_attributes: true,
       autocapture: {
         dom_event_allowlist: ["click"],
         element_allowlist: ["a", "button"],
