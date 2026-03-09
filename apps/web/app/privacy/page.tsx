@@ -138,8 +138,12 @@ export default function PrivacyPage() {
               opt out by using a standard content blocker that blocks PostHog.
             </p>
             <p>
-              <span className="font-bold text-foreground">Data location.</span> Analytics data is
-              processed and stored within the European Union by PostHog under their{" "}
+              <span className="font-bold text-foreground">Data location.</span> By default,
+              analytics data is processed and stored within the European Union by PostHog.
+              Self-hosted deployments may override the analytics host via the{" "}
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">NEXT_PUBLIC_POSTHOG_HOST</code>{" "}
+              environment variable. For the production deployment at webhooks.cc, data is sent to
+              PostHog&apos;s EU endpoint. See PostHog&apos;s{" "}
               <a
                 href="https://posthog.com/privacy"
                 className="text-primary hover:underline font-bold"

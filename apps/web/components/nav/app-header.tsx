@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { EndpointSwitcher } from "@/components/dashboard/endpoint-switcher";
 import { NewEndpointDialog } from "@/components/dashboard/new-endpoint-dialog";
 import { ArrowLeft } from "lucide-react";
+import { resetUser } from "@/lib/analytics";
 
 interface AppHeaderProps {
   showEndpointSwitcher?: boolean;
@@ -65,7 +66,7 @@ export function AppHeader({
           <Link href="/account" className="text-sm text-muted-foreground hover:text-foreground">
             Account
           </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut()}>
+          <Button variant="ghost" size="sm" onClick={() => { resetUser(); signOut(); }}>
             Sign out
           </Button>
         </div>

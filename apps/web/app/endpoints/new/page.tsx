@@ -48,7 +48,7 @@ function NewEndpointForm() {
           : undefined,
       });
 
-      trackEndpointCreated(result.slug);
+      trackEndpointCreated();
       router.push(`/dashboard?endpoint=${result.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create endpoint");

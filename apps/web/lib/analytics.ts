@@ -25,8 +25,8 @@ export function trackSignInStarted(provider: "github" | "google") {
 }
 
 // ── Dashboard ───────────────────────────────────────────────────
-export function trackEndpointCreated(slug: string) {
-  capture("endpoint_created", { slug });
+export function trackEndpointCreated() {
+  capture("endpoint_created");
 }
 
 // ── Billing / Upgrade ───────────────────────────────────────────
@@ -60,6 +60,15 @@ export function identifyUser(userId: string, properties?: Record<string, unknown
   if (typeof window === "undefined") return;
   try {
     posthog.identify(userId, properties);
+  } catch {
+    // PostHog not initialized
+  }
+}
+
+export function resetUser() {
+  if (typeof window === "undefined") return;
+  try {
+    posthog.reset();
   } catch {
     // PostHog not initialized
   }

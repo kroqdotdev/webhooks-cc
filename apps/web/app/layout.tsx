@@ -10,8 +10,7 @@ import {
 } from "@/lib/seo";
 import { JsonLd, organizationSchema } from "@/lib/schemas";
 import { ThemeProvider } from "@/components/providers/theme-provider";
-import { PostHogProvider, PostHogPageview } from "@/components/providers/posthog-provider";
-import { Suspense } from "react";
+import { PostHogProvider } from "@/components/providers/posthog-provider";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -100,9 +99,6 @@ export default function RootLayout({
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}>
         <PostHogProvider>
-          <Suspense fallback={null}>
-            <PostHogPageview />
-          </Suspense>
           <ThemeProvider>
             <noscript>
               <div style={{ padding: "1rem", fontFamily: "var(--font-sans), sans-serif", lineHeight: 1.5 }}>

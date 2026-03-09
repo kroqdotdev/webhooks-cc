@@ -23,7 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { UpgradeButton } from "@/components/billing/upgrade-button";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
-import { trackUpgradeCompleted, trackAccountDeleted } from "@/lib/analytics";
+import { trackUpgradeCompleted, trackAccountDeleted, resetUser } from "@/lib/analytics";
 
 function UsageResetCountdown({ periodEnd }: { periodEnd: number }) {
   const [timeRemaining, setTimeRemaining] = useState<string>("");
@@ -146,6 +146,7 @@ export default function AccountPage() {
     try {
       await deleteAccountMutation({});
       trackAccountDeleted();
+      resetUser();
       setConfirmDialogOpen(false);
       await signOut();
       router.push("/");
