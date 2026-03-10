@@ -115,7 +115,7 @@ export function BlogPostShell({
           <article className="neo-card neo-card-static p-0 overflow-hidden min-w-0">
             <div className="h-2 bg-gradient-to-r from-secondary via-primary to-secondary" />
             <div className="p-6 md:p-10">
-              <div className="prose prose-neutral dark:prose-invert max-w-none prose-headings:font-bold prose-headings:tracking-tight prose-p:text-base prose-p:leading-7 prose-pre:my-4 prose-pre:p-0 prose-pre:bg-transparent prose-pre:border-0 prose-code:before:content-none prose-code:after:content-none">
+              <div className="docs-content">
                 {children}
               </div>
             </div>

@@ -155,13 +155,14 @@ export function blogPostingSchema(post: BlogPostData) {
     datePublished,
     dateModified,
     articleSection: post.category,
-    keywords: [...post.keywords, ...post.tags],
+    keywords: [...new Set([...post.keywords, ...post.tags.map((t) => t.toLowerCase())])],
     inLanguage: "en-US",
     isAccessibleForFree: true,
     image: `${SITE_URL}/og-image.png`,
     author: {
-      "@type": "Person",
+      "@type": "Organization",
       name: post.authorName,
+      url: SITE_URL,
     },
     publisher: {
       "@type": "Organization",
