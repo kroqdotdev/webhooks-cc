@@ -14,6 +14,24 @@ The package also ships a testing entrypoint:
 import { captureDuring, assertRequest } from "@webhooks-cc/sdk/testing";
 ```
 
+## API key setup
+
+The SDK needs an API key in `whcc_...` format. You can pass the key directly, but most projects load it from `WHK_API_KEY` so the same code works locally and in CI.
+
+For local development, set the env var in your shell or `.env.local`:
+
+```bash
+export WHK_API_KEY=whcc_...
+```
+
+For GitHub Actions, store the key as a repository secret and expose it in the workflow:
+
+```yaml
+# .github/workflows/test.yml
+env:
+  WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
+```
+
 ## Quick start
 
 ```typescript
@@ -58,7 +76,7 @@ const client = new WebhooksCC({
 
 | Option | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `apiKey` | `string` | required | API key in `whcc_...` format |
+| `apiKey` | `string` | required | API key in `whcc_...` format. Often read from `process.env.WHK_API_KEY`. |
 | `baseUrl` | `string` | `https://webhooks.cc` | API base URL |
 | `webhookUrl` | `string` | `https://go.webhooks.cc` | receiver base URL used by `endpoints.send()` |
 | `timeout` | `number` | `30000` | request timeout in milliseconds |
