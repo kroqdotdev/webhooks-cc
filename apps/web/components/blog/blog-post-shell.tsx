@@ -1,33 +1,75 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3 } from "lucide-react";
-import { BLOG_POSTS, formatBlogDate, type BlogPostMeta } from "@/lib/blog";
 import { JsonLd, blogPostingSchema, breadcrumbSchema } from "@/lib/schemas";
+import type { TocItem } from "@/components/docs/toc";
 
-export interface BlogSection {
-  id: string;
-  label: string;
+export interface BlogPostData {
+  slug: string;
+  title: string;
+  description: string;
+  category: string;
+  readMinutes: number;
+  publishedAt?: number;
+  updatedAt: number;
+  tags: string[];
+  seoTitle: string;
+  seoDescription: string;
+  keywords: string[];
+  schemaType: "howto" | "tech-article" | "faq" | "blog-posting";
+  authorName: string;
+  canonicalUrl?: string;
+  featured: boolean;
+}
+
+export interface RelatedPost {
+  slug: string;
+  title: string;
+  description: string;
+}
+
+function formatBlogDate(timestamp: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(timestamp));
 }
 
 interface BlogPostShellProps {
-  post: BlogPostMeta;
-  sections: readonly BlogSection[];
+  post: BlogPostData;
+  headings: TocItem[];
+  relatedPosts: RelatedPost[];
+  isDraft?: boolean;
   children: React.ReactNode;
 }
 
-export function BlogPostShell({ post, sections, children }: BlogPostShellProps) {
-  const relatedPosts = BLOG_POSTS.filter((item) => item.slug !== post.slug).slice(0, 2);
-
+export function BlogPostShell({
+  post,
+  headings,
+  relatedPosts,
+  isDraft,
+  children,
+}: BlogPostShellProps) {
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
-      <JsonLd data={blogPostingSchema(post)} />
-      <JsonLd
-        data={breadcrumbSchema([
-          { name: "Home", path: "/" },
-          { name: "Blog", path: "/blog" },
-          { name: post.title, path: post.href },
-        ])}
-      />
+      {!isDraft && <JsonLd data={blogPostingSchema(post)} />}
+      {!isDraft && (
+        <JsonLd
+          data={breadcrumbSchema([
+            { name: "Home", path: "/" },
+            { name: "Blog", path: "/blog" },
+            { name: post.title, path: `/blog/${post.slug}` },
+          ])}
+        />
+      )}
       <div className="max-w-6xl mx-auto">
+        {isDraft && (
+          <div className="mb-5 border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-950 px-4 py-3 text-sm font-bold text-yellow-800 dark:text-yellow-200">
+            DRAFT — Not published
+          </div>
+        )}
+
         <Link
           href="/blog"
           className="inline-flex items-center gap-2 text-sm font-bold mb-5 hover:underline"
@@ -55,10 +97,12 @@ export function BlogPostShell({ post, sections, children }: BlogPostShellProps) 
             <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-4">{post.title}</h1>
             <p className="text-lg text-muted-foreground max-w-3xl mb-5">{post.description}</p>
             <div className="flex flex-wrap items-center gap-4 text-sm font-medium text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-4 w-4" />
-                {formatBlogDate(post.publishedAt)}
-              </span>
+              {post.publishedAt && (
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarDays className="h-4 w-4" />
+                  {formatBlogDate(post.publishedAt)}
+                </span>
+              )}
               <span className="inline-flex items-center gap-1.5">
                 <Clock3 className="h-4 w-4" />
                 {post.readMinutes} min read
@@ -71,9 +115,7 @@ export function BlogPostShell({ post, sections, children }: BlogPostShellProps) 
           <article className="neo-card neo-card-static p-0 overflow-hidden min-w-0">
             <div className="h-2 bg-gradient-to-r from-secondary via-primary to-secondary" />
             <div className="p-6 md:p-10">
-              <div className="prose prose-neutral dark:prose-invert max-w-none prose-headings:font-bold prose-headings:tracking-tight prose-p:text-base prose-p:leading-7 prose-pre:my-4 prose-pre:p-0 prose-pre:bg-transparent prose-pre:border-0 prose-code:before:content-none prose-code:after:content-none">
-                {children}
-              </div>
+              <div className="docs-content">{children}</div>
             </div>
           </article>
 
@@ -83,31 +125,38 @@ export function BlogPostShell({ post, sections, children }: BlogPostShellProps) 
                 On this page
               </p>
               <ul className="space-y-2">
-                {sections.map((section) => (
-                  <li key={section.id}>
-                    <a href={`#${section.id}`} className="text-sm font-medium hover:underline">
-                      {section.label}
+                {headings.map((heading) => (
+                  <li key={heading.id}>
+                    <a
+                      href={`#${heading.id}`}
+                      className={`text-sm font-medium hover:underline ${heading.level === 3 ? "pl-3" : ""}`}
+                    >
+                      {heading.text}
                     </a>
                   </li>
                 ))}
               </ul>
             </div>
 
-            <div className="neo-card neo-card-static p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
-                More guides
-              </p>
-              <div className="space-y-3">
-                {relatedPosts.map((related) => (
-                  <Link key={related.slug} href={related.href} className="block group">
-                    <p className="font-bold leading-snug group-hover:underline">{related.title}</p>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {related.description}
-                    </p>
-                  </Link>
-                ))}
+            {relatedPosts.length > 0 && (
+              <div className="neo-card neo-card-static p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+                  More guides
+                </p>
+                <div className="space-y-3">
+                  {relatedPosts.map((related) => (
+                    <Link key={related.slug} href={`/blog/${related.slug}`} className="block group">
+                      <p className="font-bold leading-snug group-hover:underline">
+                        {related.title}
+                      </p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {related.description}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <Link href="/go" className="neo-btn-primary w-full text-center block">
               Try webhooks.cc

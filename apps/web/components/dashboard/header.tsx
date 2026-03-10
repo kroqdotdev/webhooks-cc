@@ -28,7 +28,14 @@ export function DashboardHeader() {
           <Link href="/account" className="text-sm text-muted-foreground hover:text-foreground">
             Account
           </Link>
-          <Button variant="ghost" size="sm" onClick={() => { resetUser(); signOut(); }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              resetUser();
+              signOut();
+            }}
+          >
             Sign out
           </Button>
         </div>

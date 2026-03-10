@@ -16,6 +16,10 @@
  * - deviceCodes.by_user_code: Browser lookup when user enters code to authorize
  * - deviceCodes.by_expires: Cleanup cron finds expired device codes
  * - deviceCodes.by_status: Efficient count of pending codes for flood protection
+ * - blogPosts.by_slug: Lookup blog post by URL slug
+ * - blogPosts.by_status: List posts by draft/published status
+ * - blogPosts.by_status_featured: Find featured published posts for hero slot
+ * - blogPosts.by_status_publishedAt: List published posts sorted by date
  */
 import { defineSchema, defineTable } from "convex/server";
 import { authTables } from "@convex-dev/auth/server";
@@ -113,4 +117,35 @@ export default defineSchema({
     .index("by_user_code", ["userCode"])
     .index("by_expires", ["expiresAt"])
     .index("by_status", ["status"]),
+
+  blogPosts: defineTable({
+    slug: v.string(),
+    title: v.string(),
+    description: v.string(),
+    content: v.string(),
+    category: v.string(),
+    readMinutes: v.number(),
+    tags: v.array(v.string()),
+    status: v.union(v.literal("draft"), v.literal("published")),
+    publishedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+    authorName: v.string(),
+    seoTitle: v.string(),
+    seoDescription: v.string(),
+    canonicalUrl: v.optional(v.string()),
+    featured: v.boolean(),
+    keywords: v.array(v.string()),
+    schemaType: v.union(
+      v.literal("howto"),
+      v.literal("tech-article"),
+      v.literal("faq"),
+      v.literal("blog-posting")
+    ),
+    changeFrequency: v.union(v.literal("weekly"), v.literal("monthly"), v.literal("yearly")),
+    priority: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_status", ["status"])
+    .index("by_status_featured", ["status", "featured"])
+    .index("by_status_publishedAt", ["status", "publishedAt"]),
 });

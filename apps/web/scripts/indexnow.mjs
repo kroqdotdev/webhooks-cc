@@ -16,11 +16,7 @@ const INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow";
 /** Collect all public URLs from the sitemap page definitions + docs. */
 async function getAllUrls() {
   // Fetch the sitemap index to discover sub-sitemaps
-  const sitemapPaths = [
-    "/sitemaps/pages.xml",
-    "/sitemaps/docs.xml",
-    "/sitemaps/blog.xml",
-  ];
+  const sitemapPaths = ["/sitemaps/pages.xml", "/sitemaps/docs.xml", "/sitemaps/blog.xml"];
 
   const urls = new Set();
 

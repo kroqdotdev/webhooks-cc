@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { ArrowRight, CalendarDays, Clock3 } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
-import { BLOG_POSTS, formatBlogDate } from "@/lib/blog";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "@convex/_generated/api";
+
+export const dynamic = "force-dynamic";
 
 export const metadata = createPageMetadata({
   title: "webhooks.cc Blog",
@@ -12,10 +14,32 @@ export const metadata = createPageMetadata({
   path: "/blog",
 });
 
-export default function BlogIndexPage() {
-  const featured = BLOG_POSTS[0];
-  if (!featured) notFound();
-  const posts = BLOG_POSTS.slice(1);
+function formatBlogDate(timestamp: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(timestamp));
+}
+
+export default async function BlogIndexPage() {
+  const convex = getConvexClient();
+  const posts = await convex.query(api.blogPosts.listPublished);
+
+  if (posts.length === 0) {
+    return (
+      <main className="min-h-screen pt-28 pb-20 px-4">
+        <div className="max-w-6xl mx-auto text-center">
+          <h1 className="text-4xl font-bold mb-4">Blog</h1>
+          <p className="text-muted-foreground">No posts yet. Check back soon.</p>
+        </div>
+      </main>
+    );
+  }
+
+  const featured = posts.find((p) => p.featured) ?? posts[0]!;
+  const rest = posts.filter((p) => p.slug !== featured.slug);
 
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
@@ -69,17 +93,22 @@ export default function BlogIndexPage() {
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
             Featured
           </p>
-          <Link href={featured.href} className="neo-card block p-0 overflow-hidden group">
+          <Link
+            href={`/blog/${featured.slug}`}
+            className="neo-card block p-0 overflow-hidden group"
+          >
             <div className="h-2 bg-primary" />
             <div className="p-6 md:p-8">
               <div className="flex flex-wrap items-center gap-3 mb-4">
                 <span className="text-xs font-bold uppercase tracking-wide border-2 border-foreground px-2 py-1 bg-secondary text-secondary-foreground">
                   {featured.category}
                 </span>
-                <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
-                  <CalendarDays className="h-4 w-4" />
-                  {formatBlogDate(featured.publishedAt)}
-                </span>
+                {featured.publishedAt && (
+                  <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
+                    <CalendarDays className="h-4 w-4" />
+                    {formatBlogDate(featured.publishedAt)}
+                  </span>
+                )}
                 <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
                   <Clock3 className="h-4 w-4" />
                   {featured.readMinutes} min read
@@ -97,37 +126,41 @@ export default function BlogIndexPage() {
           </Link>
         </section>
 
-        <section>
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
-            Latest posts
-          </p>
-          <div className="grid gap-4 md:grid-cols-2">
-            {posts.map((post, index) => (
-              <Link
-                key={post.slug}
-                href={post.href}
-                className="neo-card neo-card-static block p-0 overflow-hidden group"
-              >
-                <div className={index % 2 === 0 ? "h-2 bg-secondary" : "h-2 bg-accent"} />
-                <div className="p-5">
-                  <div className="flex flex-wrap items-center gap-3 mb-3">
-                    <span className="text-xs font-bold uppercase tracking-wide border-2 border-foreground px-2 py-1 bg-background">
-                      {post.category}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatBlogDate(post.publishedAt)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{post.readMinutes} min</span>
+        {rest.length > 0 && (
+          <section>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
+              Latest posts
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              {rest.map((post, index) => (
+                <Link
+                  key={post.slug}
+                  href={`/blog/${post.slug}`}
+                  className="neo-card neo-card-static block p-0 overflow-hidden group"
+                >
+                  <div className={index % 2 === 0 ? "h-2 bg-secondary" : "h-2 bg-accent"} />
+                  <div className="p-5">
+                    <div className="flex flex-wrap items-center gap-3 mb-3">
+                      <span className="text-xs font-bold uppercase tracking-wide border-2 border-foreground px-2 py-1 bg-background">
+                        {post.category}
+                      </span>
+                      {post.publishedAt && (
+                        <span className="text-xs text-muted-foreground">
+                          {formatBlogDate(post.publishedAt)}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">{post.readMinutes} min</span>
+                    </div>
+                    <h3 className="text-xl font-bold mb-2 leading-snug group-hover:underline">
+                      {post.title}
+                    </h3>
+                    <p className="text-muted-foreground">{post.description}</p>
                   </div>
-                  <h3 className="text-xl font-bold mb-2 leading-snug group-hover:underline">
-                    {post.title}
-                  </h3>
-                  <p className="text-muted-foreground">{post.description}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

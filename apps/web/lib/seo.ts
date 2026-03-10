@@ -1,5 +1,5 @@
 import type { Metadata, MetadataRoute } from "next";
-import type { BlogPostMeta } from "./blog";
+import type { BlogPostData } from "@/components/blog/blog-post-shell";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
@@ -25,10 +25,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/compare/webhook-site", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/ngrok", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/beeceptor", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/blog", changeFrequency: "weekly", priority: 0.7 },
-  { path: "/blog/test-stripe-webhooks-locally-2026", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/blog/webhook-testing-cicd-typescript", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/blog/ai-agents-debug-webhooks-mcp", changeFrequency: "monthly", priority: 0.6 },
+  // Blog pages are dynamically generated from Convex in sitemaps/blog.xml
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "yearly", priority: 0.3 },
@@ -41,11 +38,6 @@ interface PageMetadataInput {
   path: string;
   noIndex?: boolean;
   keywords?: readonly string[];
-}
-
-function toIsoString(date: string | Date): string {
-  if (date instanceof Date) return date.toISOString();
-  return new Date(`${date}T00:00:00.000Z`).toISOString();
 }
 
 function toAbsoluteUrl(path: string): string {
@@ -94,41 +86,45 @@ export function createPageMetadata({
   };
 }
 
-export function createBlogPostMetadata(post: BlogPostMeta): Metadata {
-  const absoluteUrl = toAbsoluteUrl(post.href);
-  const publishedTime = toIsoString(post.publishedAt);
-  const modifiedTime = toIsoString(post.updatedAt);
+export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
+  const title = post.seoTitle || post.title;
+  const description = post.seoDescription || post.description;
+  const canonical = post.canonicalUrl ?? `/blog/${post.slug}`;
+  const absoluteUrl = toAbsoluteUrl(`/blog/${post.slug}`);
+  const publishedTime = post.publishedAt ? new Date(post.publishedAt).toISOString() : undefined;
+  const modifiedTime = new Date(post.updatedAt).toISOString();
 
   return {
-    title: post.title,
-    description: post.description,
+    title,
+    description,
     alternates: {
-      canonical: post.href,
+      canonical,
     },
     openGraph: {
       type: "article",
       locale: "en_US",
       url: absoluteUrl,
       siteName: SITE_NAME,
-      title: post.title,
-      description: post.description,
+      title,
+      description,
       images: [DEFAULT_OG_IMAGE_PATH],
       publishedTime,
       modifiedTime,
+      section: post.category,
       tags: [...post.tags],
-      authors: [SITE_NAME],
+      authors: [post.authorName],
     },
     twitter: {
       card: "summary_large_image",
-      title: post.title,
-      description: post.description,
+      title,
+      description,
       images: [DEFAULT_OG_IMAGE_PATH],
     },
     robots: {
       index: true,
       follow: true,
     },
-    keywords: [...post.tags],
-    authors: [{ name: SITE_NAME, url: SITE_URL }],
+    keywords: [...new Set([...post.keywords, ...post.tags.map((t) => t.toLowerCase())])],
+    authors: [{ name: post.authorName, url: SITE_URL }],
   };
 }

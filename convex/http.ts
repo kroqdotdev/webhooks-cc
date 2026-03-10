@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
@@ -644,6 +644,31 @@ async function verifySharedSecret(request: Request): Promise<Response | null> {
 
   if (!expectedSecret) {
     console.error("[http:error] CAPTURE_SHARED_SECRET is not configured - denying request");
+    return new Response(JSON.stringify({ error: "internal_error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const providedSecret = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const isValid = await secureCompare(providedSecret, expectedSecret);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return null;
+}
+
+/** Helper to verify blog API secret and return error response if invalid */
+async function verifyBlogSecret(request: Request): Promise<Response | null> {
+  const authHeader = request.headers.get("Authorization");
+  const expectedSecret = process.env.BLOG_API_SECRET;
+
+  if (!expectedSecret) {
+    console.error("[http:error] BLOG_API_SECRET is not configured - denying request");
     return new Response(JSON.stringify({ error: "internal_error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
@@ -1483,6 +1508,201 @@ http.route({
     } catch (error) {
       console.error("[http:error] cli/endpoint-by-slug GET:", error);
       return new Response(JSON.stringify({ error: "Failed to get endpoint" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// --- Blog API HTTP actions (BLOG_API_SECRET authenticated for writes) ---
+
+// Create a blog post (requires auth)
+http.route({
+  path: "/blog",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifyBlogSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.blogPosts.create, body);
+      return new Response(JSON.stringify(result), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "slug_exists") {
+        return new Response(JSON.stringify({ error: "slug_exists" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[http:error] blog POST:", error);
+      return new Response(JSON.stringify({ error: "Failed to create blog post" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// List blog posts — authenticated: all posts; unauthenticated: published only
+http.route({
+  path: "/blog",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authHeader = request.headers.get("Authorization");
+    const hasAuth = authHeader?.startsWith("Bearer ");
+
+    if (hasAuth) {
+      const authError = await verifyBlogSecret(request);
+      if (authError) return authError;
+
+      const posts = await ctx.runQuery(internal.blogPosts.listAll);
+      return new Response(JSON.stringify(posts), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Public: return published posts only with cache headers
+    const published = await ctx.runQuery(api.blogPosts.listPublished);
+    return new Response(JSON.stringify(published), {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      },
+    });
+  }),
+});
+
+// Get/Update/Delete a blog post by slug
+http.route({
+  pathPrefix: "/blog/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const slug = url.pathname.split("/blog/")[1];
+
+    if (!slug) {
+      return new Response(JSON.stringify({ error: "missing_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const post = await ctx.runQuery(internal.blogPosts.getBySlug, { slug });
+    if (!post) {
+      return new Response(JSON.stringify({ error: "not_found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Draft posts require auth
+    if (post.status === "draft") {
+      const authError = await verifyBlogSecret(request);
+      if (authError) return authError;
+    }
+
+    return new Response(JSON.stringify(post), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }),
+});
+
+http.route({
+  pathPrefix: "/blog/",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifyBlogSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const slug = url.pathname.split("/blog/")[1];
+
+    if (!slug) {
+      return new Response(JSON.stringify({ error: "missing_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.blogPosts.update, {
+        slug,
+        updates: body,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "not_found") {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[http:error] blog PATCH:", error);
+      return new Response(JSON.stringify({ error: "Failed to update blog post" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+http.route({
+  pathPrefix: "/blog/",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifyBlogSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const slug = url.pathname.split("/blog/")[1];
+
+    if (!slug) {
+      return new Response(JSON.stringify({ error: "missing_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.blogPosts.remove, { slug });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "not_found") {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[http:error] blog DELETE:", error);
+      return new Response(JSON.stringify({ error: "Failed to delete blog post" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });

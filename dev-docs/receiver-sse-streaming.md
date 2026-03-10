@@ -79,10 +79,10 @@ Option A is simpler — one Convex call per new connection, cached in Redis. The
 
 ### CLI changes
 
-| File                                        | Change                                                                    |
-| ------------------------------------------- | ------------------------------------------------------------------------- |
-| `internal/tunnel/stream.go` (or equivalent) | Point SSE URL to receiver instead of web app                              |
-| CLI config                                  | Use `WHK_WEBHOOK_URL` (receiver) for streaming instead of app URL         |
+| File                                        | Change                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| `internal/tunnel/stream.go` (or equivalent) | Point SSE URL to receiver instead of web app                      |
+| CLI config                                  | Use `WHK_WEBHOOK_URL` (receiver) for streaming instead of app URL |
 
 ### Redis pub/sub data model
 

@@ -1,5 +1,5 @@
 import { SITE_URL } from "./seo";
-import type { BlogPostMeta } from "./blog";
+import type { BlogPostData } from "@/components/blog/blog-post-shell";
 
 // --- JsonLd component ---
 
@@ -138,28 +138,30 @@ export function breadcrumbSchema(items: BreadcrumbItem[]) {
 
 // --- BlogPosting ---
 
-export function blogPostingSchema(post: BlogPostMeta) {
-  const datePublished = new Date(`${post.publishedAt}T00:00:00.000Z`).toISOString();
-  const dateModified = new Date(`${post.updatedAt}T00:00:00.000Z`).toISOString();
-  const url = `${SITE_URL}${post.href}`;
+export function blogPostingSchema(post: BlogPostData) {
+  const datePublished = post.publishedAt
+    ? new Date(post.publishedAt).toISOString()
+    : new Date(post.updatedAt).toISOString();
+  const dateModified = new Date(post.updatedAt).toISOString();
+  const url = `${SITE_URL}/blog/${post.slug}`;
 
   return {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    headline: post.title,
-    description: post.description,
+    headline: post.seoTitle || post.title,
+    description: post.seoDescription || post.description,
     url,
     mainEntityOfPage: url,
     datePublished,
     dateModified,
     articleSection: post.category,
-    keywords: [...post.tags],
+    keywords: [...new Set([...post.keywords, ...post.tags.map((t) => t.toLowerCase())])],
     inLanguage: "en-US",
     isAccessibleForFree: true,
     image: `${SITE_URL}/og-image.png`,
     author: {
       "@type": "Organization",
-      name: "webhooks.cc",
+      name: post.authorName,
       url: SITE_URL,
     },
     publisher: {

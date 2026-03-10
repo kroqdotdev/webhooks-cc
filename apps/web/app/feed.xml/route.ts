@@ -1,6 +1,8 @@
-import { BLOG_POSTS } from "@/lib/blog";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "@convex/_generated/api";
 import { SITE_NAME, SITE_URL } from "@/lib/seo";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 3600;
 
 function xmlEscape(value: string): string {
@@ -12,25 +14,26 @@ function xmlEscape(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function toPubDate(date: string): string {
-  return new Date(`${date}T00:00:00.000Z`).toUTCString();
-}
+export async function GET() {
+  const convex = getConvexClient();
+  const posts = await convex.query(api.blogPosts.listPublished);
 
-export function GET() {
-  const sortedPosts = [...BLOG_POSTS].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
-  const lastBuildDate = sortedPosts[0]
-    ? toPubDate(sortedPosts[0].updatedAt || sortedPosts[0].publishedAt)
+  const lastBuildDate = posts[0]
+    ? new Date(posts[0].updatedAt).toUTCString()
     : new Date().toUTCString();
 
-  const items = sortedPosts
+  const items = posts
     .map((post) => {
-      const url = `${SITE_URL}${post.href}`;
+      const url = `${SITE_URL}/blog/${post.slug}`;
+      const pubDate = post.publishedAt
+        ? new Date(post.publishedAt).toUTCString()
+        : new Date(post.updatedAt).toUTCString();
       return `<item>
   <title>${xmlEscape(post.title)}</title>
   <link>${url}</link>
   <guid>${url}</guid>
-  <pubDate>${toPubDate(post.updatedAt || post.publishedAt)}</pubDate>
-  <description>${xmlEscape(post.description)}</description>
+  <pubDate>${pubDate}</pubDate>
+  <description>${xmlEscape(post.seoDescription || post.description)}</description>
   <category>${xmlEscape(post.category)}</category>
 </item>`;
     })
