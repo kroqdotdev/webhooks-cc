@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getConvexClient } from "@/lib/convex-client";
@@ -10,26 +11,28 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+const getPost = cache(async (slug: string) => {
+  const convex = getConvexClient();
+  return await convex.query(api.blogPosts.getPublishedBySlug, { slug });
+});
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const convex = getConvexClient();
-  const post = await convex.query(api.blogPosts.getPublishedBySlug, { slug });
-
+  const post = await getPost(slug);
   if (!post) return {};
-
   return createDynamicBlogPostMetadata(post as BlogPostData);
 }
 
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
-  const convex = getConvexClient();
-  const post = await convex.query(api.blogPosts.getPublishedBySlug, { slug });
-
+  const post = await getPost(slug);
   if (!post) notFound();
 
-  const { content, headings } = await compileBlogMDX(post.content);
+  const [{ content, headings }, allPosts] = await Promise.all([
+    compileBlogMDX(post.content),
+    getConvexClient().query(api.blogPosts.listPublished),
+  ]);
 
-  const allPosts = await convex.query(api.blogPosts.listPublished);
   const relatedPosts = allPosts
     .filter((p) => p.slug !== post.slug)
     .slice(0, 2)

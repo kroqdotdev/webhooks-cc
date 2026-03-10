@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
@@ -1575,12 +1575,8 @@ http.route({
       });
     }
 
-    // Public: return published posts with cache headers
-    const posts = await ctx.runQuery(internal.blogPosts.listAll);
-    // Filter to published only for public access
-    const published = posts.filter(
-      (p: { status: string }) => p.status === "published"
-    );
+    // Public: return published posts only with cache headers
+    const published = await ctx.runQuery(api.blogPosts.listPublished);
     return new Response(JSON.stringify(published), {
       headers: {
         "Content-Type": "application/json",
