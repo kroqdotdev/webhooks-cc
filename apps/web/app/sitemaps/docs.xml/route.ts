@@ -1,5 +1,5 @@
 import { getAllDocSlugs, getDocFrontmatter } from "@/lib/docs";
-import { SITE_URL } from "@/lib/seo";
+import { LAST_CONTENT_UPDATE, SITE_URL } from "@/lib/seo";
 import { renderSitemapUrlSetXml } from "@/lib/sitemap-utils";
 import type { PublicSitemapEntry } from "@/lib/sitemap-utils";
 
@@ -21,7 +21,7 @@ export async function GET() {
           ? fm.lastUpdated instanceof Date
             ? fm.lastUpdated
             : new Date(`${fm.lastUpdated}T00:00:00.000Z`)
-          : new Date(),
+          : LAST_CONTENT_UPDATE,
         changeFrequency: "monthly" as const,
         priority: isGuide ? 0.8 : path === "/docs" ? 0.9 : 0.7,
       };

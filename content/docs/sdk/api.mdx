@@ -603,7 +603,7 @@ interface UsageInfo {
   limit: number;
   remaining: number;
   plan: "free" | "pro";
-  periodEnd: string;
+  periodEnd: number | null;
 }
 
 interface PaginatedResult<T> {

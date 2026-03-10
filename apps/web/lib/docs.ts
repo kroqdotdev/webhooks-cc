@@ -58,7 +58,8 @@ export async function getDocBySlug(slug: string): Promise<DocPage | null> {
       frontmatter: data as DocFrontmatter,
       content,
     };
-  } catch {
+  } catch (err: unknown) {
+    if (!(err && typeof err === "object" && "code" in err && err.code === "ENOENT")) throw err;
     // Also try index.mdx for directory paths
     if (slug !== "") {
       const indexPath = path.join(CONTENT_DIR, slug, "index.mdx");
@@ -70,7 +71,9 @@ export async function getDocBySlug(slug: string): Promise<DocPage | null> {
           frontmatter: data as DocFrontmatter,
           content,
         };
-      } catch {
+      } catch (err2: unknown) {
+        if (!(err2 && typeof err2 === "object" && "code" in err2 && err2.code === "ENOENT"))
+          throw err2;
         return null;
       }
     }
@@ -98,8 +101,9 @@ export async function getAllDocSlugs(): Promise<string[]> {
     let entries;
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") return;
+      throw err;
     }
 
     for (const entry of entries) {

@@ -213,12 +213,17 @@ function isStringRecord(obj: unknown): obj is Record<string, string> {
 }
 
 function encodePaginatedCursor(cursor: string, cutoff: number): string {
-  return btoa(JSON.stringify({ cursor, cutoff }));
+  return btoa(JSON.stringify({ cursor, cutoff }))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 function decodePaginatedCursor(value: string): { cursor: string; cutoff: number } | null {
   try {
-    const decoded = JSON.parse(atob(value)) as Record<string, unknown>;
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const decoded = JSON.parse(atob(padded)) as Record<string, unknown>;
     if (typeof decoded.cursor !== "string" || typeof decoded.cutoff !== "number") {
       return null;
     }
@@ -834,7 +839,14 @@ http.route({
       });
     }
 
-    if (body.mockResponse !== undefined && body.mockResponse !== null) {
+    if (body.mockResponse === null) {
+      return new Response(JSON.stringify({ error: "invalid_mock_response" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (body.mockResponse !== undefined) {
       if (
         typeof body.mockResponse !== "object" ||
         typeof body.mockResponse.status !== "number" ||
@@ -854,7 +866,7 @@ http.route({
         name: body.name,
         isEphemeral: body.isEphemeral === true,
         expiresAt: body.expiresAt,
-        mockResponse: body.mockResponse,
+        mockResponse: body.mockResponse ?? undefined,
       });
       return new Response(JSON.stringify(result), {
         headers: { "Content-Type": "application/json" },
@@ -1366,13 +1378,14 @@ http.route({
       });
     }
 
-    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
-    if (parsedLimit !== undefined && (isNaN(parsedLimit) || parsedLimit < 1)) {
+    const parsedLimitRaw = limit ? parseInt(limit, 10) : 50;
+    if (isNaN(parsedLimitRaw) || parsedLimitRaw < 1) {
       return new Response(JSON.stringify({ error: "invalid_limit" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
+    const parsedLimit = Math.min(parsedLimitRaw, 500);
 
     const decodedCursor = cursor ? decodePaginatedCursor(cursor) : null;
     if (cursor && !decodedCursor) {
@@ -1400,7 +1413,7 @@ http.route({
         cutoff: decodedCursor?.cutoff,
         paginationOpts: {
           cursor: decodedCursor?.cursor ?? null,
-          numItems: parsedLimit ?? 50,
+          numItems: parsedLimit,
         },
       });
 

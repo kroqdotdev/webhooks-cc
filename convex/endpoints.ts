@@ -96,7 +96,7 @@ export const create = mutation({
           q.eq("isEphemeral", true).gt("expiresAt", Date.now())
         )
         .take(MAX_EPHEMERAL_ENDPOINTS + 1);
-      if (activeEphemeral.length > MAX_EPHEMERAL_ENDPOINTS) {
+      if (activeEphemeral.length >= MAX_EPHEMERAL_ENDPOINTS) {
         throw new Error("Too many active demo endpoints. Please try again later.");
       }
     }
@@ -386,7 +386,7 @@ export const createForUser = internalMutation({
           q.eq("isEphemeral", true).gt("expiresAt", Date.now())
         )
         .take(MAX_EPHEMERAL_ENDPOINTS + 1);
-      if (activeEphemeral.length > MAX_EPHEMERAL_ENDPOINTS) {
+      if (activeEphemeral.length >= MAX_EPHEMERAL_ENDPOINTS) {
         throw new Error("Too many active demo endpoints. Please try again later.");
       }
     }

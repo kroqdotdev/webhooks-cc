@@ -15,8 +15,8 @@ function stripToText(raw: string): string {
     raw
       // Remove code fences (```...```)
       .replace(/```[\s\S]*?```/g, "")
-      // Remove inline code
-      .replace(/`[^`]+`/g, "")
+      // Strip backticks but keep inline code text
+      .replace(/`([^`]+)`/g, "$1")
       // Remove JSX/HTML tags
       .replace(/<[^>]+>/g, "")
       // Remove markdown links but keep text: [text](url) → text

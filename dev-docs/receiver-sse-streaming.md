@@ -38,7 +38,7 @@ Two additions to the receiver:
 | ---------------------------------- | ------------------------ | ------------------------------ |
 | Convex calls per tunnel            | 120/min                  | **0**                          |
 | Latency to CLI                     | ~500ms (poll interval)   | **<5ms** (pub/sub)             |
-| Concurrent tunnels at 25M calls/mo | ~200 always-on           | **Unlimited** (no Convex cost) |
+| Concurrent tunnels at 25M calls/mo | ~5 always-on             | **Unlimited** (no Convex cost) |
 | Bottleneck                         | Convex function calls    | Tokio connections (~50k+)      |
 
 This single change removes the biggest Convex cost driver and makes tunnels essentially free from a billing perspective.
@@ -82,7 +82,7 @@ Option A is simpler — one Convex call per new connection, cached in Redis. The
 | File                                        | Change                                                                    |
 | ------------------------------------------- | ------------------------------------------------------------------------- |
 | `internal/tunnel/stream.go` (or equivalent) | Point SSE URL to receiver instead of web app                              |
-| CLI config                                  | Use `NEXT_PUBLIC_WEBHOOK_URL` (receiver) for streaming instead of app URL |
+| CLI config                                  | Use `WHK_WEBHOOK_URL` (receiver) for streaming instead of app URL         |
 
 ### Redis pub/sub data model
 
