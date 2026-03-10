@@ -11,22 +11,28 @@ import type { FAQItem as FAQSchemaItem, HowToStep } from "./schemas";
  * Returns plain text suitable for JSON-LD answer/step descriptions.
  */
 function stripToText(raw: string): string {
-  return (
-    raw
-      // Remove code fences (```...```)
-      .replace(/```[\s\S]*?```/g, "")
-      // Strip backticks but keep inline code text
-      .replace(/`([^`]+)`/g, "$1")
-      // Remove JSX/HTML tags
-      .replace(/<[^>]+>/g, "")
-      // Remove markdown links but keep text: [text](url) → text
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      // Remove markdown bold/italic
-      .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")
-      // Collapse whitespace
-      .replace(/\s+/g, " ")
-      .trim()
-  );
+  let result = raw
+    // Remove code fences (```...```)
+    .replace(/```[\s\S]*?```/g, "")
+    // Strip backticks but keep inline code text
+    .replace(/`([^`]+)`/g, "$1")
+    // Remove markdown links but keep text: [text](url) → text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Remove markdown bold/italic
+    .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1");
+
+  // Remove HTML/JSX tags — loop until stable to handle nested/broken tags
+  let prev;
+  do {
+    prev = result;
+    result = result.replace(/<[^>]*>/g, "");
+  } while (result !== prev);
+
+  // Remove any remaining angle brackets (e.g. unclosed <script)
+  result = result.replace(/</g, "").replace(/>/g, "");
+
+  // Collapse whitespace
+  return result.replace(/\s+/g, " ").trim();
 }
 
 /**
