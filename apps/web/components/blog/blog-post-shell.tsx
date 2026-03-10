@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3 } from "lucide-react";
-import { JsonLd, blogPostingSchema, breadcrumbSchema } from "@/lib/schemas";
+import { JsonLd, blogPostingSchema, howToSchema, breadcrumbSchema, type HowToStep } from "@/lib/schemas";
 import type { TocItem } from "@/components/docs/toc";
 
 export interface BlogPostData {
@@ -41,6 +41,7 @@ interface BlogPostShellProps {
   headings: TocItem[];
   relatedPosts: RelatedPost[];
   isDraft?: boolean;
+  howToSteps?: HowToStep[];
   children: React.ReactNode;
 }
 
@@ -49,11 +50,24 @@ export function BlogPostShell({
   headings,
   relatedPosts,
   isDraft,
+  howToSteps,
   children,
 }: BlogPostShellProps) {
+  const useHowTo = post.schemaType === "howto" && howToSteps && howToSteps.length > 0;
+
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
-      {!isDraft && <JsonLd data={blogPostingSchema(post)} />}
+      {!isDraft && useHowTo && (
+        <JsonLd
+          data={howToSchema({
+            name: post.seoTitle || post.title,
+            description: post.seoDescription || post.description,
+            steps: howToSteps,
+            totalTime: `PT${post.readMinutes}M`,
+          })}
+        />
+      )}
+      {!isDraft && !useHowTo && <JsonLd data={blogPostingSchema(post)} />}
       {!isDraft && (
         <JsonLd
           data={breadcrumbSchema([

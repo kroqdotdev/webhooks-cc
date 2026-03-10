@@ -1,11 +1,13 @@
 import { getAllDocSlugs, getDocFrontmatter } from "@/lib/docs";
 import { LAST_CONTENT_UPDATE, SITE_URL } from "@/lib/seo";
 import { getLatestSitemapUpdate, splitPublicSitemapEntries } from "@/lib/sitemap-utils";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "@convex/_generated/api";
 
 export const revalidate = 3600;
 
 export async function GET() {
-  const { pages, blog } = splitPublicSitemapEntries();
+  const { pages } = splitPublicSitemapEntries();
 
   // Compute docs lastmod from actual MDX frontmatter
   const slugs = await getAllDocSlugs();
@@ -21,10 +23,18 @@ export async function GET() {
     }
   }
 
+  // Compute blog lastmod from actual published posts
+  const convex = getConvexClient();
+  const posts = await convex.query(api.blogPosts.listPublished);
+  const blogLastmod = posts.reduce<Date>((latest, post) => {
+    const d = new Date(post.updatedAt);
+    return d > latest ? d : latest;
+  }, LAST_CONTENT_UPDATE);
+
   const sitemaps = [
     { loc: `${SITE_URL}/sitemaps/pages.xml`, lastmod: getLatestSitemapUpdate(pages) },
     { loc: `${SITE_URL}/sitemaps/docs.xml`, lastmod: docsLastmod },
-    { loc: `${SITE_URL}/sitemaps/blog.xml`, lastmod: getLatestSitemapUpdate(blog) },
+    { loc: `${SITE_URL}/sitemaps/blog.xml`, lastmod: blogLastmod },
   ];
   const sitemapEntries = sitemaps
     .map(

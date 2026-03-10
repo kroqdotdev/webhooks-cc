@@ -6,6 +6,7 @@ import { api } from "@convex/_generated/api";
 import { compileBlogMDX } from "@/lib/blog-mdx";
 import { createDynamicBlogPostMetadata } from "@/lib/seo";
 import { BlogPostShell, type BlogPostData } from "@/components/blog/blog-post-shell";
+import { extractHowToSteps } from "@/lib/mdx-schema-extract";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +41,16 @@ export default async function BlogPostPage({ params }: PageProps) {
     .slice(0, 2)
     .map((p) => ({ slug: p.slug, title: p.title, description: p.description }));
 
+  const howToSteps =
+    post.schemaType === "howto" ? extractHowToSteps(post.content) : undefined;
+
   return (
-    <BlogPostShell post={post as BlogPostData} headings={headings} relatedPosts={relatedPosts}>
+    <BlogPostShell
+      post={post as BlogPostData}
+      headings={headings}
+      relatedPosts={relatedPosts}
+      howToSteps={howToSteps}
+    >
       {content}
     </BlogPostShell>
   );
