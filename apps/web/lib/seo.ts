@@ -1,5 +1,6 @@
 import type { Metadata, MetadataRoute } from "next";
 import type { BlogPostMeta } from "./blog";
+import type { BlogPostData } from "@/components/blog/blog-post-shell";
 
 export const SITE_URL = "https://webhooks.cc";
 export const SITE_NAME = "webhooks.cc";
@@ -25,10 +26,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/compare/webhook-site", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/ngrok", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/beeceptor", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/blog", changeFrequency: "weekly", priority: 0.7 },
-  { path: "/blog/test-stripe-webhooks-locally-2026", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/blog/webhook-testing-cicd-typescript", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/blog/ai-agents-debug-webhooks-mcp", changeFrequency: "monthly", priority: 0.6 },
+  // Blog pages are dynamically generated from Convex in sitemaps/blog.xml
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "yearly", priority: 0.3 },
@@ -91,6 +89,51 @@ export function createPageMetadata({
       follow: !noIndex,
     },
     keywords: keywords ? [...keywords] : undefined,
+  };
+}
+
+export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
+  const title = post.seoTitle || post.title;
+  const description = post.seoDescription || post.description;
+  const canonical = post.canonicalUrl ?? `/blog/${post.slug}`;
+  const absoluteUrl = toAbsoluteUrl(`/blog/${post.slug}`);
+  const publishedTime = post.publishedAt
+    ? new Date(post.publishedAt).toISOString()
+    : undefined;
+  const modifiedTime = new Date(post.updatedAt).toISOString();
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical,
+    },
+    openGraph: {
+      type: "article",
+      locale: "en_US",
+      url: absoluteUrl,
+      siteName: SITE_NAME,
+      title,
+      description,
+      images: [DEFAULT_OG_IMAGE_PATH],
+      publishedTime,
+      modifiedTime,
+      section: post.category,
+      tags: [...post.tags],
+      authors: [post.authorName],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [DEFAULT_OG_IMAGE_PATH],
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
+    keywords: [...post.keywords, ...post.tags],
+    authors: [{ name: post.authorName, url: SITE_URL }],
   };
 }
 

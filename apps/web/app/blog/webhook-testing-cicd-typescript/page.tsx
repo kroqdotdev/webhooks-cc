@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BlogPostShell } from "@/components/blog/blog-post-shell";
+import { BlogPostShell, type BlogPostData } from "@/components/blog/blog-post-shell";
 import { getBlogPostBySlug } from "@/lib/blog";
 import { createBlogPostMetadata, createPageMetadata } from "@/lib/seo";
 
-const post = getBlogPostBySlug("webhook-testing-cicd-typescript");
+const meta = getBlogPostBySlug("webhook-testing-cicd-typescript");
 
-export const metadata = post
-  ? createBlogPostMetadata(post)
+export const metadata = meta
+  ? createBlogPostMetadata(meta)
   : createPageMetadata({
       title: "Webhook testing in CI/CD with TypeScript",
       description:
@@ -15,19 +15,38 @@ export const metadata = post
       path: "/blog/webhook-testing-cicd-typescript",
     });
 
-const sections = [
-  { id: "why-ci", label: "Why CI webhook tests" },
-  { id: "install", label: "Install and auth" },
-  { id: "test-flow", label: "End-to-end test flow" },
-  { id: "matcher-strategy", label: "Matcher strategy" },
-  { id: "cleanup", label: "Cleanup and isolation" },
-] as const;
+const post: BlogPostData | null = meta
+  ? {
+      slug: meta.slug,
+      title: meta.title,
+      description: meta.description,
+      category: meta.category,
+      readMinutes: meta.readMinutes,
+      publishedAt: new Date(`${meta.publishedAt}T00:00:00.000Z`).getTime(),
+      updatedAt: new Date(`${meta.updatedAt}T00:00:00.000Z`).getTime(),
+      tags: [...meta.tags],
+      seoTitle: meta.title,
+      seoDescription: meta.description,
+      keywords: [...meta.tags],
+      schemaType: "tech-article",
+      authorName: "webhooks.cc",
+      featured: false,
+    }
+  : null;
+
+const headings = [
+  { id: "why-ci", text: "Why CI webhook tests", level: 2 as const },
+  { id: "install", text: "Install and auth", level: 2 as const },
+  { id: "test-flow", text: "End-to-end test flow", level: 2 as const },
+  { id: "matcher-strategy", text: "Matcher strategy", level: 2 as const },
+  { id: "cleanup", text: "Cleanup and isolation", level: 2 as const },
+];
 
 export default function CiTypescriptBlogPage() {
   if (!post) notFound();
 
   return (
-    <BlogPostShell post={post} sections={sections}>
+    <BlogPostShell post={post} headings={headings} relatedPosts={[]}>
       <p>
         Manual testing catches obvious issues, but CI is where webhook regressions should fail fast.
         The SDK gives you a repeatable pattern: create endpoint, trigger behavior, wait for a

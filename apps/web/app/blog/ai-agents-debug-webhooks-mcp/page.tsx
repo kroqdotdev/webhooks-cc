@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BlogPostShell } from "@/components/blog/blog-post-shell";
+import { BlogPostShell, type BlogPostData } from "@/components/blog/blog-post-shell";
 import { getBlogPostBySlug } from "@/lib/blog";
 import { createBlogPostMetadata, createPageMetadata } from "@/lib/seo";
 
-const post = getBlogPostBySlug("ai-agents-debug-webhooks-mcp");
+const meta = getBlogPostBySlug("ai-agents-debug-webhooks-mcp");
 
-export const metadata = post
-  ? createBlogPostMetadata(post)
+export const metadata = meta
+  ? createBlogPostMetadata(meta)
   : createPageMetadata({
       title: "Using AI agents to debug webhooks with MCP",
       description:
@@ -15,19 +15,38 @@ export const metadata = post
       path: "/blog/ai-agents-debug-webhooks-mcp",
     });
 
-const sections = [
-  { id: "why-mcp", label: "Why MCP for webhooks" },
-  { id: "setup", label: "Setup" },
-  { id: "workflow", label: "Debug workflow" },
-  { id: "signed-templates", label: "Signed templates" },
-  { id: "guardrails", label: "Guardrails" },
-] as const;
+const post: BlogPostData | null = meta
+  ? {
+      slug: meta.slug,
+      title: meta.title,
+      description: meta.description,
+      category: meta.category,
+      readMinutes: meta.readMinutes,
+      publishedAt: new Date(`${meta.publishedAt}T00:00:00.000Z`).getTime(),
+      updatedAt: new Date(`${meta.updatedAt}T00:00:00.000Z`).getTime(),
+      tags: [...meta.tags],
+      seoTitle: meta.title,
+      seoDescription: meta.description,
+      keywords: [...meta.tags],
+      schemaType: "blog-posting",
+      authorName: "webhooks.cc",
+      featured: false,
+    }
+  : null;
+
+const headings = [
+  { id: "why-mcp", text: "Why MCP for webhooks", level: 2 as const },
+  { id: "setup", text: "Setup", level: 2 as const },
+  { id: "workflow", text: "Debug workflow", level: 2 as const },
+  { id: "signed-templates", text: "Signed templates", level: 2 as const },
+  { id: "guardrails", text: "Guardrails", level: 2 as const },
+];
 
 export default function McpDebugBlogPage() {
   if (!post) notFound();
 
   return (
-    <BlogPostShell post={post} sections={sections}>
+    <BlogPostShell post={post} headings={headings} relatedPosts={[]}>
       <p>
         MCP lets your coding agent call webhook tools directly: create endpoints, send test
         payloads, inspect captured requests, and replay to local targets. You can keep the whole

@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BlogPostShell } from "@/components/blog/blog-post-shell";
+import { BlogPostShell, type BlogPostData } from "@/components/blog/blog-post-shell";
 import { getBlogPostBySlug } from "@/lib/blog";
 import { createBlogPostMetadata, createPageMetadata } from "@/lib/seo";
 
-const post = getBlogPostBySlug("test-stripe-webhooks-locally-2026");
+const meta = getBlogPostBySlug("test-stripe-webhooks-locally-2026");
 
-export const metadata = post
-  ? createBlogPostMetadata(post)
+export const metadata = meta
+  ? createBlogPostMetadata(meta)
   : createPageMetadata({
       title: "How to test Stripe webhooks locally in 2026",
       description:
@@ -15,20 +15,39 @@ export const metadata = post
       path: "/blog/test-stripe-webhooks-locally-2026",
     });
 
-const sections = [
-  { id: "architecture", label: "Architecture" },
-  { id: "start-handler", label: "Start local handler" },
-  { id: "open-tunnel", label: "Open tunnel" },
-  { id: "configure-stripe", label: "Configure Stripe endpoint" },
-  { id: "verify-signature", label: "Verify signature" },
-  { id: "debug-loop", label: "Debug loop" },
-] as const;
+const post: BlogPostData | null = meta
+  ? {
+      slug: meta.slug,
+      title: meta.title,
+      description: meta.description,
+      category: meta.category,
+      readMinutes: meta.readMinutes,
+      publishedAt: new Date(`${meta.publishedAt}T00:00:00.000Z`).getTime(),
+      updatedAt: new Date(`${meta.updatedAt}T00:00:00.000Z`).getTime(),
+      tags: [...meta.tags],
+      seoTitle: meta.title,
+      seoDescription: meta.description,
+      keywords: [...meta.tags],
+      schemaType: "howto",
+      authorName: "webhooks.cc",
+      featured: false,
+    }
+  : null;
+
+const headings = [
+  { id: "architecture", text: "Architecture", level: 2 as const },
+  { id: "start-handler", text: "Start local handler", level: 2 as const },
+  { id: "open-tunnel", text: "Open tunnel", level: 2 as const },
+  { id: "configure-stripe", text: "Configure Stripe endpoint", level: 2 as const },
+  { id: "verify-signature", text: "Verify signature", level: 2 as const },
+  { id: "debug-loop", text: "Debug loop", level: 2 as const },
+];
 
 export default function StripeLocalBlogPage() {
   if (!post) notFound();
 
   return (
-    <BlogPostShell post={post} sections={sections}>
+    <BlogPostShell post={post} headings={headings} relatedPosts={[]}>
       <p>
         Stripe webhook testing is fastest when you can receive real event payloads on localhost
         without exposing your machine directly. The workflow below gives you three things in one
