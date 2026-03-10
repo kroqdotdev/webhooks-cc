@@ -1,0 +1,150 @@
+---
+title: "Shopify + Vitest"
+description: "Test your Shopify webhook handlers with signed HMAC-SHA256 payloads using the webhooks.cc SDK and Vitest."
+section: sdk
+order: 9
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["shopify webhooks", "shopify vitest", "test shopify webhooks", "webhook handler testing"]
+seo:
+  ogTitle: "Test Shopify Webhooks with Vitest — webhooks.cc"
+  ogDescription: "Test your Shopify webhook handlers locally with signed HMAC-SHA256 payloads using the webhooks.cc SDK and Vitest."
+---
+
+Test Shopify webhook handlers by sending signed payloads directly to localhost with `sendTo`. The SDK signs requests with Shopify's HMAC-SHA256 algorithm so your handler's signature verification works.
+
+## Basic test
+
+```ts
+import { test, expect } from "vitest";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const WEBHOOK_URL = "http://localhost:3000/api/webhooks/shopify";
+
+test("handles orders/create webhook", async () => {
+  const res = await client.sendTo(WEBHOOK_URL, {
+    provider: "shopify",
+    secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+    body: {
+      id: 820982911946154508,
+      email: "jon@example.com",
+      created_at: "2026-03-10T10:00:00-05:00",
+      updated_at: "2026-03-10T10:00:00-05:00",
+      total_price: "199.00",
+      currency: "USD",
+      financial_status: "paid",
+      name: "#1001",
+      line_items: [
+        {
+          id: 866550311766439020,
+          title: "Pro Plan Subscription",
+          quantity: 1,
+          price: "199.00",
+        },
+      ],
+      customer: {
+        id: 115310627314723954,
+        email: "jon@example.com",
+        first_name: "Jon",
+        last_name: "Snow",
+      },
+    },
+  });
+
+  expect(res.status).toBe(200);
+});
+```
+
+## Using templates
+
+```ts
+test("handles orders/paid template", async () => {
+  const res = await client.sendTo(WEBHOOK_URL, {
+    provider: "shopify",
+    template: "orders/paid",
+    secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+  });
+
+  expect(res.status).toBe(200);
+});
+```
+
+Available Shopify templates: `orders/create`, `orders/paid`, `products/update`, `app/uninstalled`.
+
+## Multiple events
+
+```ts
+import { describe, test, expect } from "vitest";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const WEBHOOK_URL = "http://localhost:3000/api/webhooks/shopify";
+
+describe("Shopify webhooks", () => {
+  const events = ["orders/create", "orders/paid", "products/update", "app/uninstalled"] as const;
+
+  for (const event of events) {
+    test(`handles ${event}`, async () => {
+      const res = await client.sendTo(WEBHOOK_URL, {
+        provider: "shopify",
+        template: event,
+        secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+      });
+
+      expect(res.status).toBe(200);
+    });
+  }
+});
+```
+
+## Verify the signature
+
+Use `buildRequest` to inspect the computed headers and signature without sending:
+
+```ts
+import { WebhooksCC, verifyShopifySignature } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+test("signature is valid", async () => {
+  const { headers, body } = await client.buildRequest(
+    "http://localhost:3000/api/webhooks/shopify",
+    {
+      provider: "shopify",
+      secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+      body: { id: 123, email: "test@example.com" },
+    }
+  );
+
+  // The x-shopify-hmac-sha256 header contains the base64-encoded HMAC
+  expect(headers["x-shopify-hmac-sha256"]).toBeDefined();
+});
+```
+
+## Tips
+
+- **Shopify uses HMAC-SHA256 with base64 encoding** -- The signature in `x-shopify-hmac-sha256` is base64-encoded, not hex.
+- **Topic header** -- Shopify sends `x-shopify-topic` with the event type (e.g., `orders/create`). The SDK includes this header in template webhooks.
+- **Domain header** -- Shopify sends `x-shopify-shop-domain`. The SDK templates include a mock domain.
+- **Error diagnosis** -- If your handler returns 500, read the response body: `const text = await res.text(); expect(res.status, text).toBe(200);`
+
+## More examples
+
+<LinkCard
+  href="/docs/sdk/testing/stripe-vitest"
+  title="Stripe + Vitest"
+  description="Payment webhook assertions."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing/standard-webhooks"
+  title="Standard Webhooks + Vitest"
+  description="Handler testing with signed payloads."
+/>
+
+<LinkCard
+  href="/docs/sdk/signatures"
+  title="Signature Verification"
+  description="Verify signatures for 9 providers."
+/>

@@ -299,6 +299,32 @@ export const getPlanById = internalQuery({
 });
 
 /**
+ * Internal query to fetch a user's aggregate usage and quota information.
+ * Used by shared-secret authenticated SDK/CLI HTTP routes.
+ */
+export const getUsageById = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      return null;
+    }
+
+    const now = Date.now();
+    const periodActive = user.periodEnd !== undefined && user.periodEnd > now;
+    const used = user.plan === "free" && !periodActive ? 0 : user.requestsUsed;
+
+    return {
+      used,
+      limit: user.requestLimit,
+      remaining: Math.max(0, user.requestLimit - used),
+      plan: user.plan,
+      periodEnd: periodActive ? (user.periodEnd ?? null) : null,
+    };
+  },
+});
+
+/**
  * Internal query to page users by plan.
  * Used by receiver retention workers to enforce plan-specific retention in ClickHouse.
  */

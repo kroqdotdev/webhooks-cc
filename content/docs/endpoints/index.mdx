@@ -1,0 +1,49 @@
+---
+title: "Endpoints"
+description: "Endpoints are unique URLs that capture incoming webhooks. Each endpoint has its own request history, mock response configuration, and settings."
+section: dashboard
+order: 1
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["webhook endpoint", "webhook URL", "create endpoint"]
+seo:
+  ogTitle: "Webhook Endpoints Guide — webhooks.cc"
+  ogDescription: "Learn how to create, organize, and manage webhook endpoints in webhooks.cc, including slugs, URL formats, and endpoint settings."
+---
+
+## Creating an endpoint
+
+Click **New Endpoint** in the dashboard header. Give it a name and configure an optional mock response.
+
+Each endpoint gets an auto-generated slug that forms its webhook URL:
+
+```
+https://go.webhooks.cc/w/<slug>
+```
+
+Copy the full URL from the dashboard URL bar.
+
+## Switching endpoints
+
+Use the endpoint switcher dropdown in the dashboard header to switch between endpoints. The request list updates in real-time when you switch.
+
+## Sending test webhooks from the dashboard
+
+Use the **Send** button in the URL bar to send a manual request or a signed provider template (Stripe, GitHub, Shopify, Twilio).
+
+See [Dashboard test webhook docs](/docs/endpoints/test-webhooks) for template presets, signature headers, and verification tips.
+
+## Endpoint settings
+
+Click the gear icon next to the endpoint name in the URL bar to open settings. You can:
+
+- Rename the endpoint
+- Configure a [mock response](/docs/mock-responses)
+- Delete the endpoint and all its captured requests
+
+## Limits
+
+| Plan    | Endpoints | Requests   | Retention |
+| ------- | --------- | ---------- | --------- |
+| Free    | Unlimited | 50/day     | 7 days    |
+| **Pro** | Unlimited | 100K/month | 30 days   |

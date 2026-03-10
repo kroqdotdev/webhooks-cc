@@ -1,0 +1,379 @@
+---
+title: "Webhook Testing in CI/CD"
+description: "Run webhook integration tests in GitHub Actions, GitLab CI, and other CI environments with deterministic, signed payloads."
+section: guides
+order: 6
+lastUpdated: 2026-03-10
+schema: howto
+keywords:
+  [
+    "webhook CI/CD",
+    "webhook integration testing",
+    "webhook GitHub Actions",
+    "automated webhook testing",
+  ]
+seo:
+  ogTitle: "Webhook Testing in CI/CD — webhooks.cc"
+  ogDescription: "Step-by-step guide to running webhook integration tests in CI/CD with signed payloads, assertions, and cleanup."
+---
+
+Webhook handlers are integration points. They receive external HTTP requests, verify signatures, parse payloads, and trigger business logic. Testing them locally is straightforward, but testing them in CI/CD adds three challenges: you need real-looking payloads with valid signatures, you need to wait for asynchronous processing, and you need deterministic cleanup so parallel pipelines do not collide.
+
+webhooks.cc solves all three. The SDK sends signed payloads that match real provider formats, provides polling and assertion utilities for async workflows, and auto-cleans up endpoints when tests complete.
+
+## What you'll build
+
+A CI/CD pipeline that sends signed webhooks to your handler, waits for processing to complete, asserts on the results, and cleans up automatically. Examples cover GitHub Actions and GitLab CI, but the approach works in any CI environment that runs Node.js.
+
+## Prerequisites
+
+- **webhooks.cc account** with an API key (generate one at [your account page](/account))
+- **Node.js 18+** in your CI environment
+- **@webhooks-cc/sdk** installed as a dev dependency
+- A webhook handler to test (running locally or started as part of CI)
+
+## Step-by-step setup
+
+<Steps>
+<Step title="Install the SDK">
+
+Add the SDK as a dev dependency. The testing utilities are included via a subpath export.
+
+```bash
+npm install --save-dev @webhooks-cc/sdk
+```
+
+</Step>
+<Step title="Write a direct handler test with sendTo">
+
+The simplest pattern: send a signed webhook directly to your handler and assert on the HTTP response. No webhooks.cc endpoint needed. The request goes straight to your server with proper provider signatures.
+
+```ts
+import { describe, it, expect } from "vitest";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+describe("payment webhook handler", () => {
+  it("processes checkout.session.completed", async () => {
+    const res = await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
+      provider: "stripe",
+      secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      body: {
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            id: "cs_test_abc123",
+            payment_status: "paid",
+            amount_total: 4999,
+            currency: "usd",
+          },
+        },
+      },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects invalid signatures", async () => {
+    const res = await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
+      provider: "stripe",
+      secret: "whsec_wrong_secret_value",
+      body: {
+        type: "checkout.session.completed",
+        data: { object: { id: "cs_test_invalid" } },
+      },
+    });
+
+    expect(res.status).toBe(401);
+  });
+});
+```
+
+`sendTo` computes the correct signature headers for the provider you specify. The payload above arrives at your handler with a valid `stripe-signature` header signed with your test secret.
+
+</Step>
+<Step title="Test outbound webhooks with withEndpoint">
+
+When your application sends webhooks (rather than receiving them), use `withEndpoint` to create a temporary capture endpoint, trigger your app, and wait for the webhook to arrive.
+
+```ts
+import { describe, it, expect } from "vitest";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+import { withEndpoint } from "@webhooks-cc/sdk/testing";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+describe("order fulfillment webhooks", () => {
+  it("sends order.shipped webhook", async () => {
+    const request = await withEndpoint(client, async (endpoint) => {
+      // Configure your app to send webhooks to the temporary endpoint
+      await createOrder({
+        webhookUrl: endpoint.url,
+        items: [{ sku: "WIDGET-1", quantity: 2 }],
+      });
+
+      await fulfillOrder("order_test_123");
+
+      // Wait for the webhook to arrive at the endpoint
+      return client.requests.waitFor(endpoint.slug, {
+        timeout: "15s",
+        match: (r) => {
+          if (r.method !== "POST") return false;
+          const body = JSON.parse(r.body ?? "{}");
+          return body.event === "order.shipped";
+        },
+      });
+    });
+
+    const body = JSON.parse(request.body!);
+    expect(body.event).toBe("order.shipped");
+    expect(body.data.items).toHaveLength(2);
+  });
+});
+```
+
+`withEndpoint` creates the endpoint before the callback runs and deletes it after the callback returns (or throws). No manual cleanup needed.
+
+</Step>
+<Step title="Capture multiple webhooks with captureDuring">
+
+When a single action triggers multiple webhooks, use `captureDuring` to collect them all:
+
+```ts
+import { captureDuring, assertRequest } from "@webhooks-cc/sdk/testing";
+
+const requests = await captureDuring(
+  client,
+  async (endpoint) => {
+    // Trigger your app to send webhooks to the endpoint
+    await processSubscription({
+      webhookUrl: endpoint.url,
+      plan: "pro",
+      customerId: "cust_test_456",
+    });
+  },
+  { count: 2, timeout: "15s" }
+);
+
+// Assert on the captured requests
+assertRequest(requests[0], {
+  method: "POST",
+  bodyJson: { event: "subscription.created" },
+});
+
+assertRequest(requests[1], {
+  method: "POST",
+  bodyJson: { event: "invoice.created" },
+});
+```
+
+`captureDuring` creates a temporary endpoint, runs your action, polls until `count` matching requests arrive, and cleans up the endpoint. Requests are returned sorted by timestamp.
+
+</Step>
+<Step title="Configure GitHub Actions">
+
+Add your API key and webhook secrets as repository secrets. Start your application server before running tests.
+
+```yaml
+# .github/workflows/webhook-tests.yml
+name: Webhook Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Start application server
+        run: npm run dev &
+      - name: Wait for server to be ready
+        run: npx wait-on http://localhost:3000/api/health --timeout 30000
+      - name: Run webhook tests
+        run: npx vitest run tests/webhooks/
+```
+
+<Callout type="tip">
+  Use a health check endpoint and a tool like `wait-on` to ensure your server is ready before tests
+  run. Without this, early tests may fail with connection errors.
+</Callout>
+
+</Step>
+<Step title="Configure GitLab CI">
+
+The same pattern works in GitLab CI. Set `WHK_API_KEY` as a masked CI/CD variable in your project settings.
+
+```yaml
+# .gitlab-ci.yml
+webhook-tests:
+  image: node:20
+  variables:
+    WHK_API_KEY: $WHK_API_KEY
+    STRIPE_WEBHOOK_SECRET: $STRIPE_WEBHOOK_SECRET
+  script:
+    - npm ci
+    - npm run dev &
+    - npx wait-on http://localhost:3000/api/health --timeout 30000
+    - npx vitest run tests/webhooks/
+```
+
+</Step>
+<Step title="Use structured assertions">
+
+`assertRequest` provides structured diffs when assertions fail, making it easier to debug failures in CI logs:
+
+```ts
+import { assertRequest } from "@webhooks-cc/sdk/testing";
+
+const result = assertRequest(request, {
+  method: "POST",
+  path: "/api/webhooks/stripe",
+  headers: {
+    "content-type": "application/json",
+  },
+  bodyJson: {
+    event: "payment.completed",
+    data: { amount: 4999 },
+  },
+});
+
+// result.pass is true if all fields match
+// result.diff contains structured differences when they don't
+expect(result.pass).toBe(true);
+```
+
+When `bodyJson` is used, `assertRequest` performs a partial match. Only the fields you specify are checked. Extra fields in the actual body are ignored. This keeps assertions stable as provider payload formats evolve.
+
+</Step>
+</Steps>
+
+## How it works
+
+The SDK provides four testing primitives that handle the complexity of async webhook flows:
+
+- **`sendTo`** sends a request directly to any URL with optional provider signing. No webhooks.cc endpoint is involved. The request goes straight to your handler with valid signature headers. Use this for testing inbound webhook handlers.
+
+- **`withEndpoint`** creates a temporary webhooks.cc endpoint, passes it to your callback, and deletes it when the callback completes (whether it succeeds or throws). Use this when your application sends outbound webhooks and you need a capture target.
+
+- **`captureDuring`** extends `withEndpoint` with polling. It runs your action, then polls until the expected number of matching requests arrive. Returns them sorted by timestamp. Use this when a single action triggers one or more webhooks.
+
+- **`assertRequest`** compares a captured request against expected values and produces structured diffs. Supports exact string matching on `body` or partial object matching on `bodyJson`.
+
+## Testing utilities reference
+
+| Utility                                             | Purpose                                                                  | Cleanup                                      |
+| --------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
+| `withEndpoint(client, callback, options?)`          | Create a temporary endpoint, run callback, delete endpoint               | Automatic                                    |
+| `withEphemeralEndpoint(client, callback, options?)` | Same as `withEndpoint` but creates an ephemeral endpoint                 | Automatic (also auto-expires after 12 hours) |
+| `captureDuring(client, action, options?)`           | Create endpoint, run action, poll for `count` requests, delete endpoint  | Automatic                                    |
+| `assertRequest(request, expected, options?)`        | Compare a captured request against expectations, return `{ pass, diff }` | N/A                                          |
+
+## Tips for CI webhook testing
+
+**Use unique endpoint names per CI run.** If parallel pipelines share endpoint names, tests can capture each other's requests. `withEndpoint` and `captureDuring` generate unique slugs automatically. If you create endpoints manually, include the CI job ID in the name:
+
+```ts
+const endpoint = await client.endpoints.create({
+  name: `test-${process.env.CI_JOB_ID || Date.now()}`,
+});
+```
+
+**Increase timeouts in CI.** Network latency in CI environments is higher than localhost. Use `timeout: "15s"` or `timeout: "30s"` instead of the 5-second default:
+
+```ts
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "15s",
+});
+```
+
+**Start your server before tests and wait for it.** The most common CI failure is tests running before the server is ready. Use a health check endpoint and `wait-on` or a similar tool.
+
+**Test negative cases.** Send webhooks with wrong secrets and assert your handler returns 401. Send malformed payloads and assert your handler does not crash. These tests catch regressions in error handling paths that are rarely exercised in development.
+
+**Keep test payloads minimal.** Only include the fields your handler reads. Minimal payloads are easier to maintain and make test intent clear.
+
+## Common issues
+
+**"API key not found"**
+
+Set `WHK_API_KEY` as a CI secret (GitHub: repository settings > Secrets and Variables > Actions; GitLab: Settings > CI/CD > Variables). Never commit API keys to source code. The SDK throws an `UnauthorizedError` if the key is missing or invalid.
+
+**"Connection refused to localhost"**
+
+Your server is not running or not ready when tests start. Start it in the background (`npm run dev &`) and wait for the health check endpoint before running tests. Some frameworks take several seconds to compile and start.
+
+**"Timeout waiting for request"**
+
+Three possible causes:
+
+1. Your server did not start successfully. Check the server startup logs.
+2. Network latency exceeded the timeout. Increase `timeout` to `"15s"` or `"30s"`.
+3. Your handler threw an error and did not forward the webhook. Check handler logs for exceptions.
+
+**"Tests pass locally but fail in CI"**
+
+CI environments often have restricted outbound network access. Verify that your CI environment can reach `https://api.webhooks.cc`. If your CI uses a proxy, configure the SDK's HTTP client accordingly.
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Do I need a paid plan for CI?">
+
+The free plan includes 50 requests per 24-hour window. For most test suites (10-30 webhook tests), this is sufficient. If your suite sends more than 50 webhooks per day, the Pro plan provides 100,000 requests per month. Direct `sendTo` calls that skip webhooks.cc endpoints do not count toward your quota.
+
+</FAQItem>
+<FAQItem question="Can I run tests in parallel?">
+
+Yes. Use `withEndpoint` or `captureDuring`, which generate unique slugs for each test automatically. If you create endpoints manually, include a unique identifier (CI job ID, random suffix) in the endpoint name to avoid cross-test interference.
+
+</FAQItem>
+<FAQItem question="How do I test webhook retries?">
+
+Send the same payload multiple times with `sendTo` and assert that your handler is idempotent. Use a unique idempotency key in the payload body and verify your handler processes the event only once, even after multiple deliveries:
+
+```ts
+for (let i = 0; i < 3; i++) {
+  await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
+    provider: "stripe",
+    secret: process.env.STRIPE_WEBHOOK_SECRET!,
+    body: {
+      type: "payment_intent.succeeded",
+      data: { object: { id: "pi_idempotent_test" } },
+    },
+  });
+}
+
+// Assert the payment was processed exactly once
+const payments = await db.query("SELECT * FROM payments WHERE stripe_id = 'pi_idempotent_test'");
+expect(payments).toHaveLength(1);
+```
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing Reference"
+  description="Full documentation for withEndpoint, captureDuring, assertRequest, and other testing utilities."
+/>
+
+<LinkCard
+  href="/docs/guides/verify-webhook-signatures"
+  title="How to Verify Webhook Signatures"
+  description="Verify signatures for 9 providers with the SDK. Protect your handlers from forged payloads."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing/standard-webhooks"
+  title="Standard Webhooks + Vitest"
+  description="Test Polar, Svix, Clerk, and Resend webhook handlers with signed payloads."
+/>

@@ -1,0 +1,213 @@
+---
+title: "Core Concepts"
+description: "Understand the key concepts behind webhooks.cc: endpoints, slugs, request capture, mock responses, tunneling, and quotas."
+section: getting-started
+order: 3
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["webhook concepts", "webhook endpoint", "webhook testing concepts", "webhook capture"]
+seo:
+  ogTitle: "Core Concepts — webhooks.cc"
+  ogDescription: "Learn the building blocks of webhooks.cc — endpoints, slugs, request capture, mock responses, tunneling, and quotas."
+---
+
+## Endpoints
+
+A webhook endpoint is a unique URL that captures incoming HTTP requests. Each endpoint has a slug (short identifier) and a URL in the format:
+
+```
+https://go.webhooks.cc/w/{slug}
+```
+
+Endpoints can be **permanent** (tied to your user account, persisted until you delete them) or **ephemeral** (auto-deleted after 12 hours). Create endpoints from the dashboard, CLI, SDK, or MCP server.
+
+```ts
+// SDK
+const endpoint = await client.endpoints.create({ name: "stripe-prod" });
+```
+
+```bash
+# CLI
+whk create stripe-prod
+```
+
+## Slugs
+
+The slug is the short, unique identifier in each endpoint URL. It is auto-generated when you create an endpoint and guaranteed unique across the platform. You use slugs to reference endpoints everywhere:
+
+```bash
+# CLI — listen to incoming requests
+whk listen abc123
+
+# CLI — forward to localhost
+whk tunnel 3000 --endpoint abc123
+```
+
+```ts
+// SDK — fetch endpoint details
+const endpoint = await client.endpoints.get("abc123");
+```
+
+## Request capture
+
+When a webhook hits your endpoint URL, the Rust receiver captures the full HTTP request in under 1ms. Every detail is preserved: method, path, headers, body, query parameters, source IP, and timestamp.
+
+Captured requests appear in the dashboard in real-time. No polling, no refresh needed. You can also retrieve them programmatically:
+
+```ts
+const requests = await client.requests.list(endpoint.slug);
+```
+
+<Callout type="tip">
+  The receiver accepts any HTTP method, content type, and body size. There is no validation or
+  filtering on the incoming request.
+</Callout>
+
+## Mock responses
+
+By default, endpoints return `200 OK` with an empty body. Configure a mock response to control what the sender sees — status code (100-599), response headers, and body content.
+
+This is useful when the sending service expects a specific response. For example, Stripe retries delivery if it does not receive a 2xx status code.
+
+```ts
+await client.endpoints.update(endpoint.slug, {
+  mockResponse: {
+    statusCode: 200,
+    headers: { "Content-Type": "application/json" },
+    body: '{"received": true}',
+  },
+});
+```
+
+You can also set mock responses from the dashboard (gear icon), CLI (`whk update`), or MCP server.
+
+## Ephemeral endpoints
+
+Ephemeral endpoints are temporary — they auto-delete after 12 hours along with all their captured requests. They are created when you use webhooks.cc without logging in, or explicitly via the SDK:
+
+```ts
+const endpoint = await client.endpoints.create({
+  name: "quick-test",
+  ephemeral: true,
+});
+```
+
+Guest users (no account) can create up to 25 ephemeral endpoints per 12-hour window. No cleanup needed — expired endpoints and their requests are removed automatically.
+
+<Callout type="tip">
+  Ephemeral endpoints are perfect for quick testing. No account required, no cleanup needed.
+</Callout>
+
+## Tunneling
+
+Tunneling forwards captured webhooks to your local development server. The CLI creates an outbound SSE connection from your machine — no port forwarding, firewall changes, or public IP required.
+
+```bash
+whk tunnel 3000
+```
+
+This creates an endpoint, prints its URL, and forwards every incoming request to `localhost:3000`. Path preservation is built in: a request to `/w/{slug}/api/webhooks` forwards to `localhost:3000/api/webhooks`.
+
+```bash
+# Forward an existing endpoint
+whk tunnel 3000 --endpoint abc123
+
+# Delete the endpoint when the tunnel exits
+whk tunnel 3000 -e
+```
+
+<Callout type="tip">
+  Your local server's response does not affect what the webhook sender receives. The sender always
+  gets your configured mock response.
+</Callout>
+
+## Provider templates
+
+Provider templates are pre-built webhook payloads for common services. Each template includes realistic data and proper cryptographic signatures so your handler can verify them.
+
+Supported providers: **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, and **Standard Webhooks** (Polar, Svix, Clerk, Resend).
+
+```ts
+await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "stripe",
+  template: "checkout.session.completed",
+  secret: "whsec_test_123",
+});
+```
+
+Send templates from the dashboard (Send button), SDK, or MCP server.
+
+## Signature verification
+
+Most webhook providers sign payloads with HMAC-SHA256 so you can verify the request came from them and was not tampered with in transit. The SDK includes detection helpers for common providers:
+
+```ts
+import { isStripeWebhook, isGitHubWebhook, isStandardWebhook } from "@webhooks-cc/sdk";
+
+if (isStripeWebhook(request)) {
+  // Verify with your Stripe signing secret
+}
+```
+
+Verification requires the provider's signing secret, which you configure in your application. The SDK supports signature detection for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Standard Webhooks, and Discord (Ed25519).
+
+## Quotas
+
+Quotas limit how many webhook requests your endpoints can capture within a billing period. Limits vary by plan:
+
+| Plan    | Requests | Period   |
+| ------- | -------- | -------- |
+| Guest   | 25       | 12 hours |
+| Free    | 50       | 24 hours |
+| **Pro** | 100,000  | 30 days  |
+
+Quotas are enforced at the receiver level using atomic Redis operations, ensuring accuracy even under high concurrency. When your quota is exhausted, the receiver returns `429 Too Many Requests` to the sender.
+
+<Callout type="tip">
+  Free plan periods activate lazily — your 24-hour window starts when you receive your first
+  request, not when you sign up.
+</Callout>
+
+## API keys
+
+API keys authenticate requests from the SDK, CLI, and MCP server. Keys are prefixed with `whcc_` and stored as SHA-256 hashes — the raw key is shown only once at creation time.
+
+Generate a key from your [account page](/account). Set it as an environment variable:
+
+```bash
+export WHK_API_KEY="whcc_your_key_here"
+```
+
+```ts
+const client = new WebhooksCC({
+  apiKey: process.env.WHK_API_KEY,
+});
+```
+
+Keys have a maximum TTL of 1 year. You can revoke a key at any time from the account page.
+
+## Next steps
+
+<LinkCard
+  href="/docs"
+  title="Quick Start"
+  description="Create your first endpoint and capture a webhook in under a minute."
+/>
+
+<LinkCard
+  href="/docs/sdk"
+  title="SDK"
+  description="Integrate webhooks.cc into your test suite with the TypeScript SDK."
+/>
+
+<LinkCard
+  href="/docs/cli"
+  title="CLI"
+  description="Tunnel webhooks to localhost and manage endpoints from the terminal."
+/>
+
+<LinkCard
+  href="/docs/mcp"
+  title="MCP Server"
+  description="Connect your AI coding agent to webhooks.cc via the Model Context Protocol."
+/>

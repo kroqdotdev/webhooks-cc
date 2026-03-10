@@ -1,0 +1,39 @@
+---
+title: "GitHub + Jest"
+description: "Validate push and pull request webhook events in a Jest integration suite."
+section: sdk
+order: 6
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["github webhooks", "github jest", "github webhook testing"]
+seo:
+  ogTitle: "GitHub Webhook Assertions with Jest — webhooks.cc"
+  ogDescription: "Example Jest integration test that validates GitHub webhook event type, headers, and payload fields with @webhooks-cc/sdk."
+---
+
+Validate push and pull request webhook events in a Jest integration suite.
+
+```ts
+import { WebhooksCC, matchHeader, matchBodyPath, matchAll } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+test("receives GitHub push webhook", async () => {
+  const endpoint = await client.endpoints.create({ name: "github-jest" });
+  try {
+    await triggerGitHubPush({ webhookUrl: endpoint.url! });
+
+    const req = await client.requests.waitFor(endpoint.slug, {
+      timeout: "20s",
+      match: matchAll(
+        matchHeader("x-github-event", "push"),
+        matchBodyPath("ref", "refs/heads/main")
+      ),
+    });
+
+    expect(req.headers["x-github-event"]).toBe("push");
+  } finally {
+    await client.endpoints.delete(endpoint.slug);
+  }
+});
+```

@@ -34,12 +34,12 @@ Two additions to the receiver:
 
 ## Impact
 
-| Metric | Current (Convex polling) | Receiver SSE |
-|---|---|---|
-| Convex calls per tunnel | 120/min | **0** |
-| Latency to CLI | ~500ms (poll interval) | **<5ms** (pub/sub) |
-| Concurrent tunnels at 25M calls/mo | ~200 always-on | **Unlimited** (no Convex cost) |
-| Bottleneck | Convex function calls | Tokio connections (~50k+) |
+| Metric                             | Current (Convex polling) | Receiver SSE                   |
+| ---------------------------------- | ------------------------ | ------------------------------ |
+| Convex calls per tunnel            | 120/min                  | **0**                          |
+| Latency to CLI                     | ~500ms (poll interval)   | **<5ms** (pub/sub)             |
+| Concurrent tunnels at 25M calls/mo | ~5 always-on             | **Unlimited** (no Convex cost) |
+| Bottleneck                         | Convex function calls    | Tokio connections (~50k+)      |
 
 This single change removes the biggest Convex cost driver and makes tunnels essentially free from a billing perspective.
 
@@ -69,20 +69,20 @@ Option A is simpler — one Convex call per new connection, cached in Redis. The
 
 ### Receiver changes
 
-| File | Change |
-|---|---|
+| File                       | Change                                                     |
+| -------------------------- | ---------------------------------------------------------- |
 | `handlers/stream.rs` (new) | SSE endpoint with API key auth, Redis pub/sub subscription |
-| `redis/pubsub.rs` (new) | Pub/sub subscribe + publish helpers |
-| `handlers/webhook.rs` | Add publish call after buffering (one line) |
-| `redis/mod.rs` | Expose pub/sub module |
-| `main.rs` | Register `/stream/{slug}` route |
+| `redis/pubsub.rs` (new)    | Pub/sub subscribe + publish helpers                        |
+| `handlers/webhook.rs`      | Add publish call after buffering (one line)                |
+| `redis/mod.rs`             | Expose pub/sub module                                      |
+| `main.rs`                  | Register `/stream/{slug}` route                            |
 
 ### CLI changes
 
-| File | Change |
-|---|---|
-| `internal/tunnel/stream.go` (or equivalent) | Point SSE URL to receiver instead of web app |
-| CLI config | Use `NEXT_PUBLIC_WEBHOOK_URL` (receiver) for streaming instead of app URL |
+| File                                        | Change                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| `internal/tunnel/stream.go` (or equivalent) | Point SSE URL to receiver instead of web app                              |
+| CLI config                                  | Use `WHK_WEBHOOK_URL` (receiver) for streaming instead of app URL         |
 
 ### Redis pub/sub data model
 

@@ -1,0 +1,270 @@
+---
+title: "Webhook Testing Tools Compared"
+description: "Compare webhook testing tools: webhooks.cc, ngrok, Svix, RequestBin, Hookdeck, Beeceptor, and Webhook.site. Find the right tool for your workflow."
+section: guides
+order: 8
+lastUpdated: 2026-03-10
+schema: faq
+keywords:
+  [
+    "webhook testing tools",
+    "webhook tools comparison",
+    "RequestBin alternative",
+    "Webhook.site alternative",
+  ]
+seo:
+  ogTitle: "Webhook Testing Tools Compared — webhooks.cc"
+  ogDescription: "Compare webhook testing tools: webhooks.cc, ngrok, RequestBin, Hookdeck, and more. Features, pricing, and use cases."
+---
+
+Several tools help with webhook development -- from simple capture endpoints to full-featured testing platforms. They solve different problems: some capture and display incoming requests, some expose localhost to the internet, some handle outbound webhook delivery, and some focus on testing and CI/CD integration.
+
+This comparison covers the most popular options, what each does well, and where each falls short. The goal is to help you pick the right tool (or combination of tools) for your specific workflow.
+
+## Comparison table
+
+| Tool         | Capture & Inspect                         | Mock Responses                                       | Local Forwarding                 | Provider Signing                            | CI/CD SDK                              | Free Tier                |
+| ------------ | ----------------------------------------- | ---------------------------------------------------- | -------------------------------- | ------------------------------------------- | -------------------------------------- | ------------------------ |
+| webhooks.cc  | Full request details, real-time dashboard | Yes (per-endpoint, configurable status/headers/body) | Yes (CLI tunnel via SSE)         | 9 providers (Stripe, GitHub, Shopify, etc.) | Yes (TypeScript SDK with test helpers) | 50 req/day               |
+| ngrok        | Basic inspect (general HTTP)              | No                                                   | Yes (core feature, any HTTP/TCP) | No                                          | No                                     | Limited connections      |
+| RequestBin   | Full request display                      | Limited                                              | No                               | No                                          | No                                     | Free (Pipedream account) |
+| Webhook.site | Full request display                      | Yes (custom actions on paid plans)                   | Yes (paid, via CLI)              | No                                          | No                                     | Free (limited history)   |
+| Hookdeck     | Full event log with filtering             | Yes (transformations)                                | Yes (CLI)                        | No                                          | Yes (REST API)                         | 100K events/month        |
+| Svix         | Full event log (outgoing)                 | No (outgoing webhook platform)                       | No                               | Standard Webhooks                           | Yes (multi-language SDKs)              | Self-host free           |
+| Beeceptor    | Full request display                      | Yes (rule-based routing)                             | Yes (paid plans)                 | No                                          | No                                     | 50 req/day               |
+
+## webhooks.cc
+
+**Focus:** Webhook-specific development and testing platform.
+
+webhooks.cc captures incoming webhooks, signs outbound test payloads for 9 providers, verifies signatures on captured requests, and provides a TypeScript SDK for CI/CD integration. The Rust receiver captures requests in under 1ms and stores them for inspection, replay, and programmatic access.
+
+The `sendTo` method sends signed webhooks directly to any URL -- including localhost -- without creating a public endpoint or running a tunnel. This makes CI/CD tests fast, deterministic, and independent of external services.
+
+**Strengths:**
+
+- Provider-specific signing for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Discord, and Standard Webhooks (Polar, Svix, Clerk, Resend)
+- TypeScript SDK with testing utilities (`withEndpoint`, `captureDuring`, `assertRequest`, matchers)
+- MCP server for AI agent integration -- AI coding tools can create endpoints, send webhooks, and inspect requests
+- Sub-1ms capture latency (Rust receiver with Redis buffering)
+- Request replay to any URL from dashboard, CLI, or SDK
+- Ephemeral endpoints (12 hours, no signup) for quick testing
+
+**Limitations:**
+
+- HTTP webhooks only -- no TCP/TLS tunneling
+- No custom domains
+- TypeScript SDK only (no Python, Go, Java SDKs)
+
+**Pricing:** Free: 50 req/day. Pro: $8/month, 100K req/month.
+
+## ngrok
+
+**Focus:** General-purpose localhost exposure.
+
+ngrok creates public URLs that proxy traffic to your local machine. It handles any HTTP, TCP, or TLS traffic -- not just webhooks. Widely used in webhook development because it solves the "external service cannot reach localhost" problem, but it does not provide webhook-specific features.
+
+The ngrok inspect interface (`http://localhost:4040`) shows request/response pairs passing through the tunnel. You can replay requests from the inspect UI. The data is ephemeral -- it disappears when the tunnel stops.
+
+**Strengths:**
+
+- Any HTTP, TCP, or TLS traffic -- not limited to webhooks
+- Custom domains and stable URLs on paid plans
+- Large ecosystem with integrations across many platforms
+- IP restrictions and access control (paid plans)
+- WebSocket support
+
+**Limitations:**
+
+- No webhook-specific signing or verification
+- No CI/CD SDK -- tests require a running tunnel and real provider events
+- Inspect data is ephemeral -- lost when tunnel stops
+- No mock responses
+
+**Pricing:** Free: 1 agent, random URLs, limited connections. Personal: $8/month. Pro: $20/month. Enterprise: custom.
+
+## RequestBin (Pipedream)
+
+**Focus:** Simple webhook capture and display.
+
+RequestBin was one of the original webhook inspection tools. It gives you a URL, you point webhooks at it, and you see the captured requests in a browser. Pipedream acquired RequestBin and integrated it into their workflow automation platform.
+
+The tool does one thing and does it well: show you what a webhook payload looks like. It is useful for initial exploration when integrating with a new provider. You do not need to write any code or install anything.
+
+**Strengths:**
+
+- Simple -- create a URL and start capturing in seconds
+- Free with a Pipedream account
+- Part of Pipedream's broader workflow platform if you need automation
+
+**Limitations:**
+
+- No provider-specific signing or verification
+- No local forwarding -- you can see the webhook but cannot forward it to localhost
+- No CI/CD SDK or programmatic access
+- URLs and captured requests expire
+- No mock responses (the endpoint always returns 200)
+
+**Pricing:** Free with Pipedream account.
+
+## Webhook.site
+
+**Focus:** Online webhook capture with custom actions.
+
+Webhook.site provides unique URLs for capturing and inspecting HTTP requests. The free tier shows request details in a browser. Paid plans add custom actions (modify responses, extract data, forward requests), local forwarding via a CLI tool, and longer request history.
+
+**Strengths:**
+
+- No signup required for basic capture
+- Custom actions on paid plans (conditionally respond, forward, transform)
+- Token-based URLs with configurable responses (paid)
+- Local forwarding via CLI (paid)
+
+**Limitations:**
+
+- No provider-specific signing -- cannot generate valid Stripe, GitHub, or other provider signatures
+- No CI/CD SDK or testing utilities
+- Limited request history on free tier
+- Custom actions and forwarding require paid plans
+
+**Pricing:** Free (limited). Pro: $12/month. Enterprise: custom.
+
+## Hookdeck
+
+**Focus:** Webhook infrastructure and event gateway.
+
+Hookdeck sits between webhook providers and your application. It receives webhooks, applies transformations and filters, handles retries with backoff, and delivers events to your endpoints. It is more of an operational tool than a development/testing tool -- built for reliable production webhook delivery.
+
+Hookdeck includes a CLI for local forwarding during development, an event log with filtering, and a REST API. It handles high-volume webhook traffic with automatic retries and dead letter queues.
+
+**Strengths:**
+
+- Event routing with transformations and filters
+- Automatic retries with configurable backoff
+- High-volume handling with rate limiting and queuing
+- CLI for local development forwarding
+- REST API for programmatic access
+- Generous free tier (100K events/month)
+
+**Limitations:**
+
+- No provider-specific signing -- cannot generate valid provider signatures for testing
+- More complex setup for simple capture-and-inspect workflows
+- Oriented toward production webhook delivery rather than development testing
+- No TypeScript testing SDK with matchers and assertions
+
+**Pricing:** Free: 100K events/month. Team: $75/month. Enterprise: custom.
+
+## Svix
+
+**Focus:** Outgoing webhook infrastructure.
+
+Svix helps you send webhooks from your application to your customers. It handles delivery, retries, signing (using the Standard Webhooks specification), and provides a management UI. Svix is the opposite direction from the other tools on this list -- it is for sending webhooks, not receiving or testing them.
+
+If you are building an application that needs to send webhooks to your users, Svix handles the infrastructure. If you are testing inbound webhook handlers, Svix does not apply.
+
+**Strengths:**
+
+- Standard Webhooks specification for consistent signing
+- Multi-language SDKs (TypeScript, Python, Go, Java, Kotlin, Ruby, C#)
+- Self-hostable (open source)
+- Management portal for your customers to configure their webhook endpoints
+- Delivery retry logic with exponential backoff
+
+**Limitations:**
+
+- Outgoing webhooks only -- does not help with testing inbound webhook handlers
+- No capture or inspection of incoming webhooks
+- No local forwarding or tunneling
+- Standard Webhooks signing only -- does not cover Stripe, GitHub, Shopify, etc.
+
+**Pricing:** Self-host: free (open source). Cloud: starts at $50/month.
+
+## Beeceptor
+
+**Focus:** Mock API server with webhook capture.
+
+Beeceptor creates mock API endpoints with configurable rules. It captures incoming requests and lets you define responses based on path, method, and body content. It works for both webhook testing and general API mocking.
+
+**Strengths:**
+
+- Rule-based response configuration (different responses per path/method)
+- Request capture with full details
+- API mocking beyond just webhooks
+- Local forwarding on paid plans (proxy mode)
+
+**Limitations:**
+
+- No provider-specific signing or verification
+- No CI/CD SDK or programmatic testing
+- Local forwarding only on paid plans
+- Limited free tier (50 requests/day)
+
+**Pricing:** Free: 50 req/day. Pro: $7/month. Team: $15/month.
+
+## Choosing the right tool
+
+Different tools serve different stages and requirements. Here is a decision guide based on what you need to accomplish.
+
+**I need to test webhook handlers in CI/CD** -- Use webhooks.cc. The SDK sends signed webhooks directly to your handler without a tunnel. Tests are deterministic and run without network access to external providers.
+
+**I need to expose localhost for general development** -- Use ngrok. It handles any HTTP traffic, not just webhooks, and offers custom domains on paid plans.
+
+**I need to quickly inspect a webhook payload** -- Use RequestBin or Webhook.site. Both let you create a URL and see what arrives without installing anything. Good for initial exploration when integrating with a new provider.
+
+**I need webhook infrastructure for production** -- Use Hookdeck for inbound webhook routing with retries and transformations. Use Svix for sending webhooks from your application to your customers.
+
+**I need AI agent integration for webhook testing** -- Use webhooks.cc. The MCP server exposes webhook operations to AI coding tools (Claude Code, Cursor, VS Code Copilot, Windsurf, Codex) so agents can create endpoints, send signed webhooks, and inspect captured requests.
+
+**I need to test with valid provider signatures** -- Use webhooks.cc. It signs payloads for 9 providers using the correct algorithm and header format. Other tools either do not sign at all or only support Standard Webhooks.
+
+**I need to capture real webhooks and replay them later** -- Use webhooks.cc. Captured requests are stored permanently (within your plan limits) and can be replayed to any URL via dashboard, CLI, or SDK. ngrok's inspect data disappears when the tunnel closes.
+
+## Combining tools
+
+These tools are not mutually exclusive. Common combinations:
+
+- **webhooks.cc + ngrok:** Use webhooks.cc for webhook testing (signed payloads, CI/CD) and ngrok for general localhost exposure (API demos, browser testing, WebSocket debugging).
+- **webhooks.cc + Hookdeck:** Use webhooks.cc during development and testing. Use Hookdeck in production for reliable webhook delivery with retries and transformations.
+- **webhooks.cc + Svix:** Use Svix to send webhooks from your app to customers. Use webhooks.cc to test your own inbound webhook handlers.
+- **RequestBin + webhooks.cc:** Use RequestBin for quick payload exploration with a new provider. Switch to webhooks.cc when you need signing, testing, and CI/CD integration.
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Which tool is best for testing Stripe webhooks?">
+
+webhooks.cc. It signs payloads with Stripe's HMAC-SHA256 algorithm and includes the `stripe-signature` header with the correct `t=timestamp,v1=hash` format. Your handler's existing `stripe.webhooks.constructEvent()` verification works without changes. Other tools require you to either disable signature verification or manually construct the signature header.
+
+</FAQItem>
+<FAQItem question="Can I use multiple tools together?">
+
+Yes, and many teams do. A typical setup: webhooks.cc for development testing and CI/CD (signed payloads, replay, SDK assertions), ngrok for general localhost exposure during interactive development, and Hookdeck or a custom solution for production webhook routing. Each tool handles a different part of the webhook lifecycle.
+
+</FAQItem>
+<FAQItem question="Which tools are free for hobby projects?">
+
+All tools on this list offer free tiers. For the simplest capture-and-inspect workflow without signup, use Webhook.site. For webhook testing with signing and a development SDK, webhooks.cc's free tier includes 50 requests/day. Hookdeck's free tier is the most generous at 100K events/month, though it is oriented toward production webhook routing rather than development testing. Svix is self-hostable and open source if you need outgoing webhook infrastructure.
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/guides/ngrok-vs-webhooks-cc"
+  title="ngrok vs webhooks.cc"
+  description="Detailed comparison of ngrok and webhooks.cc for webhook development."
+/>
+
+<LinkCard
+  href="/docs/guides/test-webhooks-locally"
+  title="Test Webhooks Locally"
+  description="Three methods for testing webhooks on localhost: capture and replay, signed payloads, and real-time tunneling."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing with the SDK"
+  description="CI/CD integration patterns and test utilities for webhook handlers."
+/>

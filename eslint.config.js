@@ -16,6 +16,8 @@ export default tseslint.config(
       "**/convex/_generated/**",
       "**/*.config.js",
       "**/*.config.mjs",
+      "**/public/_pagefind/**",
+      "**/scripts/**",
     ],
   },
 

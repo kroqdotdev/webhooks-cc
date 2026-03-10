@@ -1,0 +1,44 @@
+---
+title: "Mock Responses"
+description: "Control what your endpoint returns to the sender. Set status codes, response headers, and body content to simulate real API behavior."
+section: dashboard
+order: 4
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["mock response", "webhook response", "status code", "simulate API"]
+seo:
+  ogTitle: "Webhook Mock Responses Guide — webhooks.cc"
+  ogDescription: "Configure status codes, headers, and response bodies for webhook endpoints to simulate downstream APIs and test error handling."
+---
+
+## How it works
+
+By default, endpoints return `200 OK` with an empty body. Configure a mock response to change this behavior.
+
+When a webhook hits your endpoint, the receiver captures the request and returns your configured response. The sender sees your custom status code, headers, and body.
+
+## Configuration
+
+Open endpoint settings (gear icon in the URL bar) to configure the mock response:
+
+- **Status code** — any valid HTTP status (100-599). Common choices: 200, 201, 204, 400, 404, 500.
+- **Response headers** — key-value pairs sent back to the caller. Example: `Content-Type: application/json`
+- **Response body** — the content returned. Can be JSON, XML, plain text, or any other format.
+
+## Use cases
+
+- **Simulate success** — return 200 with a JSON body to satisfy webhook senders that expect confirmation
+- **Test error handling** — return 500 or 503 to verify your sender retries on failure
+- **Validate signatures** — return the expected response format for services like Stripe that check the response
+
+## Example
+
+To simulate a Stripe-compatible webhook endpoint:
+
+```
+Status: 200
+Headers:
+  Content-Type: application/json
+Body:
+  {"received": true}
+```

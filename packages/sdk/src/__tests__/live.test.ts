@@ -1,5 +1,5 @@
 /**
- * Comprehensive live tests for @webhooks-cc/sdk v0.3.0
+ * Comprehensive live tests for @webhooks-cc/sdk v0.6.0
  * Covers every client method and edge case against the production API.
  *
  * Run with: WHK_API_KEY=whcc_... pnpm test -- src/__tests__/live.test.ts
@@ -24,6 +24,7 @@ import {
   isTwilioWebhook,
   isPaddleWebhook,
   isLinearWebhook,
+  isDiscordWebhook,
 } from "../helpers";
 
 const API_KEY = process.env.WHK_API_KEY;
@@ -636,7 +637,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
       createdSlugs.pop();
     }, 15000);
 
-    it("provider detection: all 7 providers", async () => {
+    it("provider detection: header-based providers", async () => {
       const ep = await client.endpoints.create({ name: "Providers" });
       createdSlugs.push(ep.slug);
 
@@ -674,6 +675,17 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
         }
       }
 
+      expect(
+        isDiscordWebhook({
+          ...requests[0],
+          headers: {
+            ...requests[0].headers,
+            "x-signature-ed25519": "deadbeef",
+            "x-signature-timestamp": "1700000000",
+          },
+        })
+      ).toBe(true);
+
       await client.endpoints.delete(ep.slug);
       createdSlugs.pop();
     }, 30000);
@@ -685,7 +697,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
     it("returns complete SDK description", () => {
       const desc = client.describe();
 
-      expect(desc.version).toBe("0.3.0");
+      expect(desc.version).toBe("0.6.0");
 
       // Endpoint operations
       expect(desc.endpoints.create).toBeDefined();
@@ -694,15 +706,31 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
       expect(desc.endpoints.update).toBeDefined();
       expect(desc.endpoints.delete).toBeDefined();
       expect(desc.endpoints.send).toBeDefined();
-      expect(Object.keys(desc.endpoints)).toHaveLength(6);
+      expect(desc.endpoints.sendTemplate).toBeDefined();
+      expect(Object.keys(desc.endpoints)).toHaveLength(7);
+
+      // Template metadata operations
+      expect(desc.templates.listProviders).toBeDefined();
+      expect(desc.templates.get).toBeDefined();
+      expect(Object.keys(desc.templates)).toHaveLength(2);
+
+      // Usage
+      expect(desc.usage).toBeDefined();
+      expect(desc.flow).toBeDefined();
 
       // Request operations
       expect(desc.requests.list).toBeDefined();
+      expect(desc.requests.listPaginated).toBeDefined();
       expect(desc.requests.get).toBeDefined();
+      expect(desc.requests.waitForAll).toBeDefined();
       expect(desc.requests.waitFor).toBeDefined();
       expect(desc.requests.subscribe).toBeDefined();
       expect(desc.requests.replay).toBeDefined();
-      expect(Object.keys(desc.requests)).toHaveLength(5);
+      expect(desc.requests.export).toBeDefined();
+      expect(desc.requests.search).toBeDefined();
+      expect(desc.requests.count).toBeDefined();
+      expect(desc.requests.clear).toBeDefined();
+      expect(Object.keys(desc.requests)).toHaveLength(11);
 
       // Each operation has description and params
       for (const op of Object.values(desc.endpoints)) {

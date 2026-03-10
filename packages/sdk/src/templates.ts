@@ -1,4 +1,9 @@
-import type { SendOptions, SendTemplateOptions, TemplateProvider } from "./types";
+import type {
+  SendOptions,
+  SendTemplateOptions,
+  TemplateProvider,
+  TemplateProviderInfo,
+} from "./types";
 
 type TwilioParamEntry = [string, string];
 type SignedTemplateProvider = Exclude<TemplateProvider, "standard-webhooks">;
@@ -8,6 +13,9 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   github: "push",
   shopify: "orders/create",
   twilio: "messaging.inbound",
+  slack: "event_callback",
+  paddle: "transaction.completed",
+  linear: "issue.create",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -15,7 +23,87 @@ const PROVIDER_TEMPLATES = {
   github: ["push", "pull_request.opened", "ping"] as const,
   shopify: ["orders/create", "orders/paid", "products/update", "app/uninstalled"] as const,
   twilio: ["messaging.inbound", "messaging.status_callback", "voice.incoming_call"] as const,
+  slack: ["event_callback", "slash_command", "url_verification"] as const,
+  paddle: ["transaction.completed", "subscription.created", "subscription.updated"] as const,
+  linear: ["issue.create", "issue.update", "comment.create"] as const,
 } as const;
+
+export const TEMPLATE_PROVIDERS = [
+  "stripe",
+  "github",
+  "shopify",
+  "twilio",
+  "slack",
+  "paddle",
+  "linear",
+  "standard-webhooks",
+] as const satisfies readonly TemplateProvider[];
+
+export const TEMPLATE_METADATA = Object.freeze({
+  stripe: Object.freeze({
+    provider: "stripe",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.stripe]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.stripe,
+    secretRequired: true,
+    signatureHeader: "stripe-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  github: Object.freeze({
+    provider: "github",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.github]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.github,
+    secretRequired: true,
+    signatureHeader: "x-hub-signature-256",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  shopify: Object.freeze({
+    provider: "shopify",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.shopify]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.shopify,
+    secretRequired: true,
+    signatureHeader: "x-shopify-hmac-sha256",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  twilio: Object.freeze({
+    provider: "twilio",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.twilio]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.twilio,
+    secretRequired: true,
+    signatureHeader: "x-twilio-signature",
+    signatureAlgorithm: "hmac-sha1",
+  }),
+  slack: Object.freeze({
+    provider: "slack",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.slack]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.slack,
+    secretRequired: true,
+    signatureHeader: "x-slack-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  paddle: Object.freeze({
+    provider: "paddle",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.paddle]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.paddle,
+    secretRequired: true,
+    signatureHeader: "paddle-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  linear: Object.freeze({
+    provider: "linear",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.linear]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.linear,
+    secretRequired: true,
+    signatureHeader: "linear-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  "standard-webhooks": Object.freeze({
+    provider: "standard-webhooks",
+    templates: Object.freeze([]),
+    secretRequired: true,
+    signatureHeader: "webhook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+}) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
 
 function randomHex(length: number): string {
   const bytes = new Uint8Array(Math.ceil(length / 2));
@@ -453,6 +541,191 @@ function buildTemplatePayload(
   }
 
   if (provider !== "twilio") {
+    if (provider === "slack") {
+      const eventCallbackPayload = {
+        token: randomHex(24),
+        team_id: `T${randomHex(8).toUpperCase()}`,
+        api_app_id: `A${randomHex(8).toUpperCase()}`,
+        type: "event_callback",
+        event: {
+          type: "app_mention",
+          user: `U${randomHex(8).toUpperCase()}`,
+          text: "hello from webhooks.cc",
+          ts: `${nowSec}.000100`,
+          channel: `C${randomHex(8).toUpperCase()}`,
+          event_ts: `${nowSec}.000100`,
+        },
+        event_id: `Ev${randomHex(12)}`,
+        event_time: nowSec,
+        authed_users: [`U${randomHex(8).toUpperCase()}`],
+      };
+      const verificationPayload = {
+        token: randomHex(24),
+        challenge: randomHex(16),
+        type: "url_verification",
+      };
+      const defaultSlashCommand = {
+        token: randomHex(24),
+        team_id: `T${randomHex(8).toUpperCase()}`,
+        team_domain: "webhooks-cc",
+        channel_id: `C${randomHex(8).toUpperCase()}`,
+        channel_name: "general",
+        user_id: `U${randomHex(8).toUpperCase()}`,
+        user_name: "webhooks-bot",
+        command: "/webhook-test",
+        text: "hello world",
+        response_url: "https://hooks.slack.com/commands/demo",
+        trigger_id: randomHex(12),
+      };
+
+      if (template === "slash_command") {
+        let body: string;
+        if (bodyOverride === undefined) {
+          body = formEncode(defaultSlashCommand);
+        } else if (typeof bodyOverride === "string") {
+          body = bodyOverride;
+        } else {
+          const params = asStringRecord(bodyOverride);
+          if (!params) {
+            throw new Error("Slack slash_command body override must be a string or an object");
+          }
+          body = formEncode(params);
+        }
+
+        return {
+          body,
+          contentType: "application/x-www-form-urlencoded",
+          headers: {
+            "user-agent": "Slackbot 1.0 (+https://api.slack.com/robots)",
+          },
+        };
+      }
+
+      const payload =
+        bodyOverride ??
+        (template === "url_verification" ? verificationPayload : eventCallbackPayload);
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "user-agent": "Slackbot 1.0 (+https://api.slack.com/robots)",
+        },
+      };
+    }
+
+    if (provider === "paddle") {
+      const payloadByTemplate: Record<string, unknown> = {
+        "transaction.completed": {
+          event_id: randomUuid(),
+          event_type: "transaction.completed",
+          occurred_at: nowIso,
+          notification_id: randomUuid(),
+          data: {
+            id: `txn_${randomHex(12)}`,
+            status: "completed",
+            customer_id: `ctm_${randomHex(12)}`,
+            currency_code: "USD",
+            total: "49.00",
+          },
+        },
+        "subscription.created": {
+          event_id: randomUuid(),
+          event_type: "subscription.created",
+          occurred_at: nowIso,
+          notification_id: randomUuid(),
+          data: {
+            id: `sub_${randomHex(12)}`,
+            status: "active",
+            customer_id: `ctm_${randomHex(12)}`,
+            next_billed_at: nowIso,
+          },
+        },
+        "subscription.updated": {
+          event_id: randomUuid(),
+          event_type: "subscription.updated",
+          occurred_at: nowIso,
+          notification_id: randomUuid(),
+          data: {
+            id: `sub_${randomHex(12)}`,
+            status: "past_due",
+            customer_id: `ctm_${randomHex(12)}`,
+            next_billed_at: nowIso,
+          },
+        },
+      };
+
+      const payload = bodyOverride ?? payloadByTemplate[template];
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "user-agent": "Paddle/1.0",
+        },
+      };
+    }
+
+    if (provider === "linear") {
+      const issueId = randomUuid();
+      const payloadByTemplate: Record<string, unknown> = {
+        "issue.create": {
+          action: "create",
+          type: "Issue",
+          webhookTimestamp: nowIso,
+          data: {
+            id: issueId,
+            identifier: "ENG-42",
+            title: "Investigate webhook retry regression",
+            description: "Created from the webhooks.cc Linear template",
+            url: `https://linear.app/webhooks-cc/issue/ENG-42/${issueId}`,
+          },
+        },
+        "issue.update": {
+          action: "update",
+          type: "Issue",
+          webhookTimestamp: nowIso,
+          data: {
+            id: issueId,
+            identifier: "ENG-42",
+            title: "Investigate webhook retry regression",
+            state: {
+              name: "In Progress",
+            },
+            url: `https://linear.app/webhooks-cc/issue/ENG-42/${issueId}`,
+          },
+        },
+        "comment.create": {
+          action: "create",
+          type: "Comment",
+          webhookTimestamp: nowIso,
+          data: {
+            id: randomUuid(),
+            body: "Looks good from the webhook sandbox.",
+            issue: {
+              id: issueId,
+              identifier: "ENG-42",
+              title: "Investigate webhook retry regression",
+            },
+            user: {
+              id: randomUuid(),
+              name: "webhooks.cc bot",
+            },
+          },
+        },
+      };
+
+      const payload = bodyOverride ?? payloadByTemplate[template];
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "user-agent": "Linear/1.0",
+        },
+      };
+    }
+
     throw new Error(`Unsupported provider: ${provider}`);
   }
 
@@ -541,7 +814,7 @@ function buildTemplatePayload(
   };
 }
 
-async function hmacSign(
+export async function hmacSign(
   algorithm: "SHA-256" | "SHA-1",
   secret: string,
   payload: string
@@ -564,13 +837,13 @@ async function hmacSign(
   return new Uint8Array(signature);
 }
 
-function toHex(bytes: Uint8Array): string {
+export function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
   if (typeof btoa !== "function") {
     return Buffer.from(bytes).toString("base64");
   }
@@ -589,7 +862,7 @@ function fromBase64(str: string): Uint8Array {
   return bytes;
 }
 
-async function hmacSignRaw(
+export async function hmacSignRaw(
   algorithm: "SHA-256" | "SHA-1",
   keyBytes: Uint8Array,
   payload: string
@@ -612,7 +885,10 @@ async function hmacSignRaw(
   return new Uint8Array(signature);
 }
 
-function buildTwilioSignaturePayload(endpointUrl: string, params: TwilioParamEntry[]): string {
+export function buildTwilioSignaturePayload(
+  endpointUrl: string,
+  params: TwilioParamEntry[]
+): string {
   const sortedParams = params
     .map(([key, value], index) => ({ key, value, index }))
     .sort((a, b) =>
@@ -623,6 +899,21 @@ function buildTwilioSignaturePayload(endpointUrl: string, params: TwilioParamEnt
     payload += `${key}${value}`;
   }
   return payload;
+}
+
+export function decodeStandardWebhookSecret(secret: string): Uint8Array {
+  let rawSecret = secret;
+  const hadPrefix = rawSecret.startsWith("whsec_");
+  if (hadPrefix) {
+    rawSecret = rawSecret.slice(6);
+  }
+
+  try {
+    return fromBase64(rawSecret);
+  } catch {
+    const raw = hadPrefix ? secret : rawSecret;
+    return new TextEncoder().encode(raw);
+  }
 }
 
 /**
@@ -646,18 +937,7 @@ export async function buildTemplateSendOptions(
     // If the remainder isn't valid base64 (e.g. Polar.sh raw secrets), fall back
     // to treating the original secret (with prefix) as raw UTF-8 bytes. This
     // matches how Polar's SDK passes secrets to the standardwebhooks library.
-    let rawSecret = options.secret;
-    const hadPrefix = rawSecret.startsWith("whsec_");
-    if (hadPrefix) {
-      rawSecret = rawSecret.slice(6);
-    }
-    let secretBytes: Uint8Array;
-    try {
-      secretBytes = fromBase64(rawSecret);
-    } catch {
-      const raw = hadPrefix ? options.secret : rawSecret;
-      secretBytes = new TextEncoder().encode(raw);
-    }
+    const secretBytes = decodeStandardWebhookSecret(options.secret);
     const signature = await hmacSignRaw("SHA-256", secretBytes, signingInput);
 
     return {
@@ -715,6 +995,24 @@ export async function buildTemplateSendOptions(
       : `${endpointUrl}${built.body}`;
     const signature = await hmacSign("SHA-1", options.secret, signaturePayload);
     headers["x-twilio-signature"] = toBase64(signature);
+  }
+
+  if (provider === "slack") {
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSign("SHA-256", options.secret, `v0:${timestamp}:${built.body}`);
+    headers["x-slack-request-timestamp"] = String(timestamp);
+    headers["x-slack-signature"] = `v0=${toHex(signature)}`;
+  }
+
+  if (provider === "paddle") {
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}:${built.body}`);
+    headers["paddle-signature"] = `ts=${timestamp};h1=${toHex(signature)}`;
+  }
+
+  if (provider === "linear") {
+    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    headers["linear-signature"] = `sha256=${toHex(signature)}`;
   }
 
   return {

@@ -1,0 +1,347 @@
+---
+title: "How to Test GitHub Webhooks"
+description: "Test GitHub webhook handlers with signed push, PR, and ping events. Send HMAC-SHA256 signed payloads to your localhost handler."
+section: guides
+order: 3
+lastUpdated: 2026-03-10
+schema: howto
+keywords:
+  [
+    "test github webhooks",
+    "github webhook testing",
+    "github webhook localhost",
+    "github signature verification",
+  ]
+seo:
+  ogTitle: "How to Test GitHub Webhooks — webhooks.cc"
+  ogDescription: "Step-by-step guide to testing GitHub webhook handlers with signed payloads and signature verification."
+---
+
+GitHub sends webhooks for pushes, pull requests, issues, and 40+ other events. Each webhook is signed with HMAC-SHA256 via the `x-hub-signature-256` header. Testing these handlers requires properly signed payloads -- your handler should reject unsigned requests. webhooks.cc sends signed GitHub webhooks to your handler, no GitHub repo configuration needed.
+
+## What you'll build
+
+A test that sends signed GitHub push and pull request events to your local webhook handler and verifies that signature validation works correctly. By the end, you will have a repeatable test suite that covers the most common GitHub webhook events without touching a GitHub repository.
+
+## Prerequisites
+
+- A [webhooks.cc account](https://webhooks.cc/login) and API key (generate one at [Account > API Keys](https://webhooks.cc/account))
+- A GitHub webhook secret (the same string configured in your handler's environment)
+- Node.js 18 or later
+- A local webhook handler running on localhost (e.g., `http://localhost:3000/api/webhooks/github`)
+
+## Send signed GitHub webhooks to localhost
+
+<Steps>
+<Step title="Install the SDK">
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+Set your API key and GitHub webhook secret as environment variables:
+
+```bash
+export WHK_API_KEY="whcc_your_api_key"
+export GITHUB_WEBHOOK_SECRET="your_webhook_secret"
+```
+
+</Step>
+<Step title="Send a signed push event">
+
+Use `sendTo` to send a signed GitHub `push` webhook directly to your local handler. The SDK computes the HMAC-SHA256 signature and sets all required GitHub headers automatically.
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+const res = await client.sendTo("http://localhost:3000/api/webhooks/github", {
+  provider: "github",
+  template: "push",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+});
+
+expect(res.status).toBe(200);
+```
+
+The `push` template generates a realistic payload with a commit, repository metadata, and a `refs/heads/main` ref. The SDK sets `x-hub-signature-256`, `x-github-event`, and `x-github-delivery` headers.
+
+</Step>
+<Step title="Send a pull_request.opened event">
+
+Test your handler's pull request logic with the `pull_request.opened` template:
+
+```ts
+const res = await client.sendTo("http://localhost:3000/api/webhooks/github", {
+  provider: "github",
+  template: "pull_request.opened",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+});
+
+expect(res.status).toBe(200);
+```
+
+This template includes a pull request object with head/base branches, author information, and a realistic diff URL.
+
+</Step>
+<Step title="Send a custom payload with specific commit data">
+
+Override the template body when you need to test against specific repository or commit details:
+
+```ts
+const res = await client.sendTo("http://localhost:3000/api/webhooks/github", {
+  provider: "github",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  event: "push",
+  body: {
+    ref: "refs/heads/feature/payment-flow",
+    before: "0000000000000000000000000000000000000000",
+    after: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    repository: {
+      id: 123456789,
+      full_name: "your-org/your-repo",
+      private: true,
+    },
+    pusher: {
+      name: "deploy-bot",
+      email: "bot@your-org.com",
+    },
+    commits: [
+      {
+        id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        message: "Add payment webhook handler",
+        timestamp: "2026-03-10T14:30:00Z",
+        author: { name: "deploy-bot", email: "bot@your-org.com" },
+        added: ["src/webhooks/payment.ts"],
+        modified: [],
+        removed: [],
+      },
+    ],
+  },
+});
+
+expect(res.status).toBe(200);
+```
+
+When you pass `event` instead of `template`, the SDK uses your body as-is, signs it with your secret, and sets `x-github-event` to the value you provide.
+
+</Step>
+<Step title="Verify the signature on a captured request">
+
+Capture a webhook on a webhooks.cc endpoint, then verify the signature matches using `verifyGitHubSignature`:
+
+```ts
+import { WebhooksCC, verifyGitHubSignature, matchHeader } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+// Create an endpoint and send a signed push event to it
+const endpoint = await client.endpoints.create({ name: "github-sig-test" });
+
+try {
+  await client.endpoints.sendTemplate(endpoint.slug, {
+    provider: "github",
+    template: "push",
+    secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  });
+
+  // Wait for the request to arrive
+  const req = await client.requests.waitFor(endpoint.slug, {
+    timeout: "10s",
+    match: matchHeader("x-hub-signature-256"),
+  });
+
+  // Verify the signature
+  const valid = await verifyGitHubSignature(
+    req.body!,
+    req.headers["x-hub-signature-256"],
+    process.env.GITHUB_WEBHOOK_SECRET!
+  );
+
+  expect(valid).toBe(true);
+  expect(req.headers["x-github-event"]).toBe("push");
+} finally {
+  await client.endpoints.delete(endpoint.slug);
+}
+```
+
+This confirms the full round-trip: the SDK signs the payload, webhooks.cc captures it with the original headers and body intact, and the signature verifies against your secret.
+
+</Step>
+</Steps>
+
+## How it works
+
+GitHub computes HMAC-SHA256 of the raw request body using your webhook secret. The resulting hex digest goes in the `x-hub-signature-256` header as `sha256=<hex>`. The SDK replicates this exact process when you set `provider: "github"`.
+
+GitHub sends three headers with every webhook delivery:
+
+| Header                | Purpose                                    | Example value                          |
+| --------------------- | ------------------------------------------ | -------------------------------------- |
+| `x-hub-signature-256` | HMAC-SHA256 hex digest of the body         | `sha256=a1b2c3...`                     |
+| `x-github-event`      | The event type that triggered the delivery | `push`, `pull_request`                 |
+| `x-github-delivery`   | A unique UUID for this delivery            | `72d3162e-cc78-11e3-81ab-4c9367dc0958` |
+
+The signature format is `sha256=` followed by 64 hex characters. GitHub uses the raw bytes of the request body -- before any JSON parsing or transformation -- as input to the HMAC function. This is why your handler must read the body as a raw string or buffer before any middleware processes it.
+
+Your handler should follow this sequence:
+
+1. Read the raw body bytes before any JSON parsing.
+2. Compute HMAC-SHA256 of the raw bytes using the shared secret.
+3. Compare the computed hash against the `x-hub-signature-256` header value using a timing-safe comparison. A timing-safe comparison prevents attackers from inferring the correct signature by measuring response times.
+4. Route the request based on the `x-github-event` header value.
+5. Parse the JSON body only after signature verification succeeds.
+
+## Available GitHub templates
+
+| Template              | Event header   | Description                                                                                                                                         |
+| --------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `push`                | `push`         | Commit pushed to a branch. Includes ref, commits array, repository, and pusher fields.                                                              |
+| `pull_request.opened` | `pull_request` | Pull request opened. Includes PR number, title, head/base branches, and author.                                                                     |
+| `ping`                | `ping`         | Sent when a webhook is first configured. Includes the hook configuration and a zen message. Use this to test your handler's initial setup response. |
+
+## Putting it together: a full test suite
+
+```ts
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { WebhooksCC, verifyGitHubSignature, matchHeader } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const HANDLER_URL = "http://localhost:3000/api/webhooks/github";
+
+describe("GitHub webhook handler", () => {
+  it("accepts signed push events", async () => {
+    const res = await client.sendTo(HANDLER_URL, {
+      provider: "github",
+      template: "push",
+      secret: process.env.GITHUB_WEBHOOK_SECRET!,
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts signed pull_request events", async () => {
+    const res = await client.sendTo(HANDLER_URL, {
+      provider: "github",
+      template: "pull_request.opened",
+      secret: process.env.GITHUB_WEBHOOK_SECRET!,
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("responds to ping events", async () => {
+    const res = await client.sendTo(HANDLER_URL, {
+      provider: "github",
+      template: "ping",
+      secret: process.env.GITHUB_WEBHOOK_SECRET!,
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects requests with invalid signatures", async () => {
+    const res = await client.sendTo(HANDLER_URL, {
+      provider: "github",
+      template: "push",
+      secret: "wrong-secret-value",
+    });
+
+    expect(res.status).toBe(401);
+  });
+});
+```
+
+## Common issues
+
+**"Signature mismatch"** -- Your handler must verify the signature against the raw body bytes, not parsed and re-serialized JSON. JSON serialization can reorder keys, add or remove whitespace, or change number formatting. Read the raw body from the request before any middleware parses it.
+
+In Express:
+
+```ts
+app.post("/api/webhooks/github", express.raw({ type: "application/json" }), (req, res) => {
+  const signature = req.headers["x-hub-signature-256"];
+  const body = req.body; // Buffer, not parsed JSON
+  // verify signature against body
+});
+```
+
+In Next.js App Router:
+
+```ts
+export async function POST(request: Request) {
+  const body = await request.text(); // raw string, not .json()
+  const signature = request.headers.get("x-hub-signature-256");
+  // verify signature against body
+}
+```
+
+**"Missing x-github-event header"** -- The SDK includes this header automatically when you use `template` or set `event`. If you send a completely custom request without either, set the header manually via `headers: { "x-github-event": "push" }`.
+
+**"Handler ignores the event"** -- Many handlers route by the `x-github-event` header value. Verify your handler checks this header and that the value matches one of your supported event types. The `push` template sets the event to `push`; the `pull_request.opened` template sets it to `pull_request`. Note that for pull request events, the event header is `pull_request` (not `pull_request.opened`) -- the action is in the body's `action` field.
+
+**"Timing-safe comparison fails"** -- Use `crypto.timingSafeEqual` in Node.js to compare the expected and received signatures. A naive string comparison with `===` is vulnerable to timing attacks and may also fail if the buffers have different lengths. Convert both values to Buffers of equal length before comparing:
+
+```ts
+import { createHmac, timingSafeEqual } from "crypto";
+
+function verifySignature(body: string, signature: string, secret: string): boolean {
+  const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+  if (expected.length !== signature.length) return false;
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+```
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Can I test GitHub webhooks without a GitHub repo?">
+
+Yes. The SDK generates signed payloads locally using your webhook secret. No GitHub repository, app, or organization is needed. The payloads match GitHub's documented webhook format, and the signatures are computed with the same HMAC-SHA256 algorithm GitHub uses.
+
+</FAQItem>
+<FAQItem question="How do I test organization-level events?">
+
+Send a custom payload with organization data in the body. Set `event` to the event type you want to test (e.g., `organization`, `membership`, `team`) and include the relevant organization fields:
+
+```ts
+const res = await client.sendTo(HANDLER_URL, {
+  provider: "github",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  event: "organization",
+  body: {
+    action: "member_added",
+    membership: { user: { login: "newuser" }, role: "member" },
+    organization: { login: "your-org", id: 12345 },
+  },
+});
+```
+
+</FAQItem>
+<FAQItem question="Does the ping template work like GitHub's real ping?">
+
+Yes. GitHub sends a `ping` event when you first configure a webhook on a repository or organization. The template generates a payload with the hook configuration object and a `zen` field. Use this to verify your handler responds correctly to initial webhook setup -- most handlers should return 200 for ping events.
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/sdk/testing/github-jest"
+  title="GitHub + Jest"
+  description="Full Jest integration test example for GitHub webhooks."
+/>
+
+<LinkCard
+  href="/docs/sdk/signatures"
+  title="Signature Verification"
+  description="Verify signatures for GitHub and 8 other providers."
+/>
+
+<LinkCard
+  href="/docs/guides/test-shopify-webhooks"
+  title="Test Shopify Webhooks"
+  description="Send signed Shopify webhook payloads to localhost."
+/>

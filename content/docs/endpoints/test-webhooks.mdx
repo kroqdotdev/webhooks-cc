@@ -1,0 +1,59 @@
+---
+title: "Dashboard Test Webhooks"
+description: "Use the dashboard Send button to send manual requests or realistic provider webhook templates with signatures for end-to-end verification testing."
+section: dashboard
+order: 2
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["test webhook", "webhook template", "provider webhook", "stripe webhook test"]
+seo:
+  ogTitle: "Dashboard Test Webhooks — webhooks.cc"
+  ogDescription: "Send manual requests or signed provider webhook templates from the dashboard for end-to-end verification testing."
+---
+
+## Open the sender
+
+1. Open an endpoint in the dashboard.
+2. Click **Send** in the URL bar.
+3. Select either manual mode or a provider template mode.
+4. Send the request and inspect the captured result in the request list.
+
+## Manual mode
+
+Manual mode lets you choose method, path, headers, and body. Use this when you need a custom request shape or when you are debugging a non-standard sender.
+
+```
+Method: POST
+Path: /stripe/webhook
+Headers:
+  Content-Type: application/json
+Body:
+  {"event":"test.manual"}
+```
+
+## Provider template mode
+
+Provider templates generate realistic payload structure and signature headers so you can test verification logic, not just transport.
+
+| Provider              | Presets                                                            | Content-Type                        | Signature header                                                                                             |
+| --------------------- | ------------------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Stripe**            | payment_intent.succeeded, checkout.session.completed, invoice.paid | `application/json`                  | `stripe-signature` (HMAC SHA-256 over timestamp.payload)                                                     |
+| **GitHub**            | push, pull_request.opened, ping                                    | `application/json`                  | `x-hub-signature-256` (HMAC SHA-256 over raw body)                                                           |
+| **Shopify**           | orders/create, orders/paid, products/update, app/uninstalled       | `application/json`                  | `x-shopify-hmac-sha256` (Base64 HMAC SHA-256 over raw body)                                                  |
+| **Twilio**            | messaging.inbound, messaging.status_callback, voice.incoming_call  | `application/x-www-form-urlencoded` | `x-twilio-signature` (Base64 HMAC SHA-1 over URL + sorted params)                                            |
+| **Standard Webhooks** | No presets — user-provided body                                    | `application/json`                  | `webhook-id` + `webhook-timestamp` + `webhook-signature` (v1, Base64 HMAC SHA-256 over msgId.timestamp.body) |
+
+## Mock webhook secret and event override
+
+Enter your provider signing secret in **Mock webhook secret**. The sender signs the generated payload with that secret and sets the provider-specific signature header.
+
+Leave **Event/topic override** empty to use the preset default. Use override only when you need to test a specific event name.
+
+Twilio signatures are computed from URL + sorted form params. If you override a Twilio body as a string, provide URL-encoded key/value pairs (not raw JSON).
+
+## Verification checklist
+
+- Verify your server reads the raw request body before parsing JSON.
+- Verify signature checks fail if you change the secret.
+- Verify your handler branches on provider event/topic correctly.
+- Verify Twilio handlers parse form-encoded payloads.

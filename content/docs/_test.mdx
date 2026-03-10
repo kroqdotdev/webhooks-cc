@@ -1,0 +1,150 @@
+---
+title: "Infrastructure Test Page"
+description: "Temporary page to validate the MDX pipeline. Delete after Phase 1."
+section: getting-started
+order: 99
+lastUpdated: 2026-03-09
+schema: none
+---
+
+# Infrastructure Test Page
+
+This page validates the entire MDX pipeline. Visit `/docs/_test` to verify.
+
+## Code Blocks
+
+```ts title="example.ts"
+const client = new WebhooksCC({ apiKey: "whcc_test123" });
+const endpoint = await client.endpoints.create({ name: "test" });
+console.log(endpoint.url);
+```
+
+```bash
+curl -X POST https://go.webhooks.cc/w/test-slug \
+  -H "Content-Type: application/json" \
+  -d '{"event": "test"}'
+```
+
+## Callouts
+
+<Callout type="info">This is an info callout with a [link](/docs).</Callout>
+
+<Callout type="warning">This is a warning callout.</Callout>
+
+<Callout type="tip">This is a tip callout.</Callout>
+
+<Callout type="danger">This is a danger callout.</Callout>
+
+## Steps
+
+<Steps>
+<Step title="Install the SDK">
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+</Step>
+<Step title="Create a client">
+
+```ts
+const client = new WebhooksCC({ apiKey: "whcc_..." });
+```
+
+</Step>
+<Step title="Capture a webhook">
+
+Send a POST request to your endpoint URL.
+
+</Step>
+</Steps>
+
+## Tabs
+
+<Tabs>
+<Tab label="npm">
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+</Tab>
+<Tab label="pnpm">
+
+```bash
+pnpm add @webhooks-cc/sdk
+```
+
+</Tab>
+<Tab label="bun">
+
+```bash
+bun add @webhooks-cc/sdk
+```
+
+</Tab>
+</Tabs>
+
+## Link Cards
+
+<LinkCard
+  href="/docs/sdk"
+  title="SDK Overview"
+  description="Learn how to use the TypeScript SDK for webhook testing."
+/>
+
+<LinkCard
+  href="/docs/cli"
+  title="CLI Overview"
+  description="Install and use the command-line tool."
+/>
+
+## Provider Card
+
+<ProviderCard
+  name="Stripe"
+  signatureHeader="stripe-signature"
+  algorithm="HMAC-SHA256"
+  docsUrl="https://stripe.com/docs/webhooks"
+/>
+
+## API Method
+
+<ApiMethod method="POST" path="/endpoints" title="Create Endpoint">
+
+Creates a new webhook endpoint and returns its URL and slug.
+
+<ParamTable>
+
+| Param       | Type      | Required | Description                   |
+| ----------- | --------- | -------- | ----------------------------- |
+| `name`      | `string`  | no       | Display name for the endpoint |
+| `ephemeral` | `boolean` | no       | Auto-delete after TTL         |
+
+</ParamTable>
+</ApiMethod>
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Is this a test?">
+
+Yes, this page validates the MDX pipeline.
+
+</FAQItem>
+<FAQItem question="Will this page be deleted?">
+
+Yes, after Phase 1 validation is complete.
+
+</FAQItem>
+</FAQ>
+
+## Table
+
+| Feature             | Status  |
+| ------------------- | ------- |
+| MDX rendering       | Testing |
+| Syntax highlighting | Testing |
+| Components          | Testing |
+| TOC                 | Testing |
+| Search              | Testing |

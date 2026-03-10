@@ -1,0 +1,64 @@
+---
+title: "Quick Start"
+description: "Start capturing webhooks in under a minute. Three steps, no configuration."
+section: getting-started
+order: 1
+lastUpdated: 2026-03-10
+schema: howto
+keywords: ["webhook testing", "webhook capture", "webhook quickstart"]
+seo:
+  ogTitle: "Webhook Testing Quickstart — webhooks.cc"
+  ogDescription: "Get started in three steps: create a webhook endpoint, send a test request, and inspect payloads and headers in the dashboard."
+---
+
+<Steps>
+<Step title="Create an endpoint">
+
+Sign in and click **New Endpoint** in the dashboard. You get a unique URL like:
+
+```
+https://go.webhooks.cc/w/<slug>
+```
+
+Or create one programmatically with the [SDK](/docs/sdk) or [CLI](/docs/cli).
+
+</Step>
+<Step title="Send a webhook">
+
+Point your service at the endpoint URL. Or test it with curl:
+
+```bash
+curl -X POST https://go.webhooks.cc/w/<slug> \
+  -H "Content-Type: application/json" \
+  -d '{"event": "payment.success", "amount": 4999}'
+```
+
+The receiver accepts any HTTP method, content type, and body.
+
+</Step>
+<Step title="View in the dashboard">
+
+Open the [dashboard](/dashboard). Requests appear in real-time. Inspect headers, body, query parameters, and metadata. Copy as curl, replay to another URL, or export as JSON/CSV.
+
+</Step>
+</Steps>
+
+## Next steps
+
+<LinkCard
+  href="/docs/mock-responses"
+  title="Configure mock responses"
+  description="Control what your endpoint returns to the sender."
+/>
+
+<LinkCard
+  href="/docs/cli/tunnel"
+  title="Set up local tunneling"
+  description="Forward webhooks to localhost."
+/>
+
+<LinkCard
+  href="/docs/sdk"
+  title="Use the SDK"
+  description="Integrate webhooks.cc into your test suite."
+/>

@@ -1,4 +1,57 @@
-import type { Request } from "./types";
+import type { ParsedBody, ParsedFormBody, Request } from "./types";
+
+function getHeaderValue(headers: Record<string, string>, name: string): string | undefined {
+  const target = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function getContentType(request: Request): string | undefined {
+  return request.contentType ?? getHeaderValue(request.headers, "content-type");
+}
+
+function normalizeContentType(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value.split(";", 1)[0]?.trim().toLowerCase();
+}
+
+function getJsonPathValue(body: unknown, path: string): unknown {
+  const parts = path.split(".");
+  let current: unknown = body;
+
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    if (Array.isArray(current)) {
+      const index = Number(part);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        return undefined;
+      }
+      current = current[index];
+      continue;
+    }
+
+    if (typeof current !== "object") {
+      return undefined;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(current, part)) {
+      return undefined;
+    }
+
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
+}
 
 /**
  * Safely parse a JSON request body.
@@ -49,6 +102,71 @@ export function matchJsonField(field: string, value: unknown): (request: Request
   };
 }
 
+/**
+ * Parse an application/x-www-form-urlencoded request body.
+ * Repeated keys are returned as string arrays.
+ */
+export function parseFormBody(request: Request): ParsedFormBody | undefined {
+  if (!request.body) {
+    return undefined;
+  }
+
+  const contentType = normalizeContentType(getContentType(request));
+  if (contentType !== "application/x-www-form-urlencoded") {
+    return undefined;
+  }
+
+  const parsed: ParsedFormBody = {};
+  for (const [key, value] of new URLSearchParams(request.body).entries()) {
+    const existing = parsed[key];
+    if (existing === undefined) {
+      parsed[key] = value;
+      continue;
+    }
+    if (Array.isArray(existing)) {
+      existing.push(value);
+      continue;
+    }
+    parsed[key] = [existing, value];
+  }
+
+  return parsed;
+}
+
+/**
+ * Parse the request body based on content-type.
+ * JSON and urlencoded bodies are decoded; other bodies are returned as raw text.
+ */
+export function parseBody(request: Request): ParsedBody {
+  if (!request.body) {
+    return undefined;
+  }
+
+  const contentType = normalizeContentType(getContentType(request));
+  if (contentType === "application/json" || contentType?.endsWith("+json")) {
+    const parsed = parseJsonBody(request);
+    return parsed === undefined ? request.body : parsed;
+  }
+
+  if (contentType === "application/x-www-form-urlencoded") {
+    return parseFormBody(request);
+  }
+
+  return request.body;
+}
+
+/**
+ * Extract a nested JSON field from the request body using dot notation.
+ * Returns undefined if the body is missing, invalid JSON, or the path is absent.
+ */
+export function extractJsonField<T>(request: Request, path: string): T | undefined {
+  const body = parseJsonBody(request);
+  if (body === undefined) {
+    return undefined;
+  }
+  return getJsonPathValue(body, path) as T | undefined;
+}
+
 /** Check if a request looks like a Shopify webhook. */
 export function isShopifyWebhook(request: Request): boolean {
   return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-shopify-hmac-sha256");
@@ -72,6 +190,12 @@ export function isPaddleWebhook(request: Request): boolean {
 /** Check if a request looks like a Linear webhook. */
 export function isLinearWebhook(request: Request): boolean {
   return Object.keys(request.headers).some((k) => k.toLowerCase() === "linear-signature");
+}
+
+/** Check if a request looks like a Discord interaction webhook. */
+export function isDiscordWebhook(request: Request): boolean {
+  const keys = Object.keys(request.headers).map((k) => k.toLowerCase());
+  return keys.includes("x-signature-ed25519") && keys.includes("x-signature-timestamp");
 }
 
 /**

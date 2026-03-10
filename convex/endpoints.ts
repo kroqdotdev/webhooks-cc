@@ -96,7 +96,7 @@ export const create = mutation({
           q.eq("isEphemeral", true).gt("expiresAt", Date.now())
         )
         .take(MAX_EPHEMERAL_ENDPOINTS + 1);
-      if (activeEphemeral.length > MAX_EPHEMERAL_ENDPOINTS) {
+      if (activeEphemeral.length >= MAX_EPHEMERAL_ENDPOINTS) {
         throw new Error("Too many active demo endpoints. Please try again later.");
       }
     }
@@ -346,8 +346,16 @@ export const createForUser = internalMutation({
     userId: v.id("users"),
     name: v.optional(v.string()),
     isEphemeral: v.optional(v.boolean()),
+    expiresAt: v.optional(v.number()),
+    mockResponse: v.optional(
+      v.object({
+        status: v.number(),
+        body: v.string(),
+        headers: v.record(v.string(), v.string()),
+      })
+    ),
   },
-  handler: async (ctx, { userId, name, isEphemeral }) => {
+  handler: async (ctx, { userId, name, isEphemeral, expiresAt, mockResponse }) => {
     if (name !== undefined) {
       const trimmedName = name.trim();
       if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
@@ -355,20 +363,52 @@ export const createForUser = internalMutation({
       }
     }
 
+    if (mockResponse) {
+      const status = mockResponse.status;
+      if (!Number.isInteger(status) || status < 100 || status > 599) {
+        throw new Error("Mock response status must be an integer between 100 and 599");
+      }
+    }
+
     const slug = await generateUniqueSlug(ctx.db);
     const createdAt = Date.now();
-    const ephemeral = isEphemeral ?? false;
+    const ephemeral = isEphemeral === true || expiresAt !== undefined;
+    const resolvedExpiresAt = ephemeral ? (expiresAt ?? createdAt + EPHEMERAL_TTL_MS) : undefined;
+
+    if (resolvedExpiresAt !== undefined && resolvedExpiresAt <= createdAt) {
+      throw new Error("expires_at_must_be_future");
+    }
+
+    if (ephemeral) {
+      const activeEphemeral = await ctx.db
+        .query("endpoints")
+        .withIndex("by_ephemeral_expires", (q) =>
+          q.eq("isEphemeral", true).gt("expiresAt", Date.now())
+        )
+        .take(MAX_EPHEMERAL_ENDPOINTS + 1);
+      if (activeEphemeral.length >= MAX_EPHEMERAL_ENDPOINTS) {
+        throw new Error("Too many active demo endpoints. Please try again later.");
+      }
+    }
 
     const endpointId = await ctx.db.insert("endpoints", {
       userId,
       slug,
       name: name?.trim(),
+      mockResponse,
       isEphemeral: ephemeral,
-      expiresAt: ephemeral ? Date.now() + EPHEMERAL_TTL_MS : undefined,
+      expiresAt: resolvedExpiresAt,
       createdAt,
     });
 
-    return { id: endpointId, slug, name: name?.trim(), createdAt };
+    return {
+      id: endpointId,
+      slug,
+      name: name?.trim(),
+      isEphemeral: ephemeral,
+      expiresAt: resolvedExpiresAt,
+      createdAt,
+    };
   },
 });
 

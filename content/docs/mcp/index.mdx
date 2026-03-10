@@ -1,0 +1,141 @@
+---
+title: "MCP Server"
+description: "The @webhooks-cc/mcp package lets AI coding agents create endpoints, inspect webhooks, send test payloads, and replay captured requests — all through natural language."
+section: mcp
+order: 1
+lastUpdated: 2026-03-10
+schema: faq
+keywords: ["MCP server", "AI webhook testing", "Claude Code webhooks", "Cursor webhooks"]
+seo:
+  ogTitle: "MCP Server for Webhook Testing — webhooks.cc"
+  ogDescription: "Connect Claude Code, Cursor, VS Code, Codex, and Windsurf to webhooks.cc via MCP to create endpoints, inspect requests, and replay webhooks."
+---
+
+<McpInstallGuide />
+
+## Available tools
+
+The MCP server exposes 25 tools your AI agent can call:
+
+For provider templates in `send_webhook`, **secret is required**. The MCP server does not inject a default secret.
+
+### Endpoint management
+
+| Tool               | Description                                   |
+| ------------------ | --------------------------------------------- |
+| `create_endpoint`  | Create a new webhook endpoint                 |
+| `list_endpoints`   | List all your endpoints                       |
+| `get_endpoint`     | Get details for an endpoint by slug           |
+| `update_endpoint`  | Update an endpoint name or mock response      |
+| `delete_endpoint`  | Delete an endpoint and its requests           |
+| `create_endpoints` | Create multiple endpoints in one call (1-20)  |
+| `delete_endpoints` | Delete multiple endpoints in one call (1-100) |
+
+### Sending and testing
+
+| Tool                | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
+| `send_webhook`      | Send a test webhook (manual or provider template) to an endpoint        |
+| `send_to`           | Send a signed webhook directly to any URL (localhost, staging, etc.)    |
+| `preview_webhook`   | Preview a webhook request without sending it                            |
+| `test_webhook_flow` | Run a full test flow: create, mock, send, wait, verify, replay, cleanup |
+
+### Request management
+
+| Tool                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `list_requests`     | List captured requests for an endpoint                        |
+| `get_request`       | Get full details of a captured request                        |
+| `wait_for_request`  | Wait for an incoming request (polling)                        |
+| `wait_for_requests` | Wait for multiple incoming requests                           |
+| `search_requests`   | Search requests across endpoints with full-text search        |
+| `count_requests`    | Count requests matching filters                               |
+| `clear_requests`    | Delete requests for an endpoint without deleting the endpoint |
+
+### Request analysis
+
+| Tool                   | Description                                          |
+| ---------------------- | ---------------------------------------------------- |
+| `replay_request`       | Replay a captured request to a target URL            |
+| `compare_requests`     | Compare two requests and show structured differences |
+| `extract_from_request` | Extract specific JSON fields from a request body     |
+| `verify_signature`     | Verify the webhook signature on a captured request   |
+
+### Utilities
+
+| Tool                      | Description                                               |
+| ------------------------- | --------------------------------------------------------- |
+| `list_provider_templates` | List supported providers, templates, and signing metadata |
+| `get_usage`               | Check current request usage, quota, and plan              |
+| `describe`                | Describe all available SDK operations                     |
+
+## Prompts
+
+The MCP server provides 3 prompt templates for common workflows:
+
+- **debug_webhook_delivery** — diagnose why webhook delivery is failing or missing
+- **setup_provider_testing** — set up webhook testing for a specific provider
+- **compare_webhook_attempts** — compare two webhook deliveries or retries
+
+## Resources
+
+Three resources provide read-only access to your webhook data:
+
+- **endpoints-overview** (`webhooks://endpoints`) — all endpoints with recent activity
+- **endpoint-recent-requests** (`webhooks://endpoint/{slug}/recent`) — last 10 requests at an endpoint
+- **request-details** (`webhooks://request/{id}`) — full details of a specific request
+
+## Example conversation
+
+With the MCP server connected, you can talk to your AI agent naturally:
+
+```
+You: "Create a webhook endpoint for testing Stripe"
+Agent: Created endpoint "stripe-test" at https://go.webhooks.cc/w/abc123
+
+You: "Set it to return 201 with {"received": true}"
+Agent: Updated mock response for stripe-test
+
+You: "Send a Stripe checkout.session.completed template webhook to stripe-test"
+Agent: Sent signed Stripe template to stripe-test
+
+You: "Show me what was captured"
+Agent: 1 request captured:
+  POST /w/abc123 — stripe-signature + checkout.session.completed payload
+
+You: "Replay that to my local server"
+Agent: Replayed to http://localhost:3000/webhooks — got 200 OK
+```
+
+## Learn more
+
+<LinkCard
+  href="/docs/sdk"
+  title="SDK Overview"
+  description="The TypeScript SDK that powers the MCP server."
+/>
+
+<LinkCard
+  href="/docs/sdk/api"
+  title="API Reference"
+  description="All methods, matchers, and types."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing patterns"
+  description="CI/CD integration examples."
+/>
+
+<FAQ>
+<FAQItem question="Which AI coding agents support webhooks.cc?">
+
+The MCP server works with Claude Code, Cursor, VS Code (Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any tool that supports the Model Context Protocol can connect.
+
+</FAQItem>
+<FAQItem question="What can an AI agent do with webhooks.cc?">
+
+Your AI agent can create endpoints, send test webhooks, inspect captured requests, configure mock responses, and replay requests to localhost — all through natural language.
+
+</FAQItem>
+</FAQ>

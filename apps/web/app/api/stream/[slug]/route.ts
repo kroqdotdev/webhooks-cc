@@ -14,6 +14,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (!auth.success) return auth.response;
 
   const { slug } = await params;
+  const url = new URL(request.url);
+  const sinceRaw = url.searchParams.get("since");
+  const since =
+    sinceRaw === null
+      ? undefined
+      : Number.isFinite(Number(sinceRaw)) && Number(sinceRaw) >= 0
+        ? Number(sinceRaw)
+        : NaN;
+
+  if (Number.isNaN(since)) {
+    return Response.json({ error: "Invalid since timestamp" }, { status: 400 });
+  }
 
   // Verify endpoint ownership via Convex HTTP action (one-time check)
   const endpointResp = await convexCliRequest("/cli/endpoint-by-slug", {
@@ -117,7 +129,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         return;
       }
 
-      let afterTimestamp = connectionStart;
+      let afterTimestamp = since ?? connectionStart;
       const sentIds = new Set<string>();
 
       const subscribe = () => {

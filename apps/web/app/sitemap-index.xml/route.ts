@@ -1,13 +1,29 @@
-import { SITE_URL } from "@/lib/seo";
+import { getAllDocSlugs, getDocFrontmatter } from "@/lib/docs";
+import { LAST_CONTENT_UPDATE, SITE_URL } from "@/lib/seo";
 import { getLatestSitemapUpdate, splitPublicSitemapEntries } from "@/lib/sitemap-utils";
 
 export const revalidate = 3600;
 
-export function GET() {
-  const { pages, docs, blog } = splitPublicSitemapEntries();
+export async function GET() {
+  const { pages, blog } = splitPublicSitemapEntries();
+
+  // Compute docs lastmod from actual MDX frontmatter
+  const slugs = await getAllDocSlugs();
+  let docsLastmod = LAST_CONTENT_UPDATE;
+  for (const slug of slugs) {
+    const fm = await getDocFrontmatter(slug);
+    if (fm?.lastUpdated) {
+      const d =
+        fm.lastUpdated instanceof Date
+          ? fm.lastUpdated
+          : new Date(`${fm.lastUpdated}T00:00:00.000Z`);
+      if (d > docsLastmod) docsLastmod = d;
+    }
+  }
+
   const sitemaps = [
     { loc: `${SITE_URL}/sitemaps/pages.xml`, lastmod: getLatestSitemapUpdate(pages) },
-    { loc: `${SITE_URL}/sitemaps/docs.xml`, lastmod: getLatestSitemapUpdate(docs) },
+    { loc: `${SITE_URL}/sitemaps/docs.xml`, lastmod: docsLastmod },
     { loc: `${SITE_URL}/sitemaps/blog.xml`, lastmod: getLatestSitemapUpdate(blog) },
   ];
   const sitemapEntries = sitemaps

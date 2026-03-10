@@ -1,0 +1,640 @@
+---
+title: "API Reference"
+description: "Complete method reference for the webhooks.cc TypeScript SDK."
+section: sdk
+order: 2
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
+seo:
+  ogTitle: "TypeScript SDK API Reference — webhooks.cc"
+  ogDescription: "Reference for every webhooks.cc TypeScript SDK method, including endpoint CRUD, request inspection, replay, and streaming APIs."
+---
+
+## Constructor
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({
+  apiKey: string,        // Required. Your API key.
+  baseUrl?: string,      // Optional. Override API base URL.
+  webhookUrl?: string,   // Optional. Override webhook receiver URL.
+  timeout?: number,      // Optional. Request timeout in ms (default: 30000).
+  retry?: RetryOptions,  // Optional. Automatic retry configuration.
+  hooks?: ClientHooks,   // Optional. Lifecycle hooks for observability.
+});
+```
+
+## Endpoints
+
+<ApiMethod method="POST" path="/endpoints" title="client.endpoints.create">
+
+Create a new webhook endpoint. The slug is auto-generated.
+
+```ts
+create(options?: CreateEndpointOptions): Promise<Endpoint>
+```
+
+<ParamTable>
+
+| Param          | Type           | Required | Description            |
+| -------------- | -------------- | -------- | ---------------------- |
+| `name`         | `string`       | no       | Display name           |
+| `ephemeral`    | `boolean`      | no       | Auto-delete after TTL  |
+| `expiresIn`    | `string`       | no       | Custom expiry duration |
+| `mockResponse` | `MockResponse` | no       | Mock response config   |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints" title="client.endpoints.list">
+
+List all endpoints for your account.
+
+```ts
+list(): Promise<Endpoint[]>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug" title="client.endpoints.get">
+
+Get a single endpoint by slug.
+
+```ts
+get(slug: string): Promise<Endpoint>
+```
+
+</ApiMethod>
+
+<ApiMethod method="PATCH" path="/endpoints/:slug" title="client.endpoints.update">
+
+Update an endpoint's name or mock response configuration.
+
+```ts
+update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
+```
+
+<ParamTable>
+
+| Param          | Type             | Required | Description                                                          |
+| -------------- | ---------------- | -------- | -------------------------------------------------------------------- |
+| `slug`         | `string`         | yes      | Endpoint slug                                                        |
+| `name`         | `string`         | no       | New display name                                                     |
+| `mockResponse` | `object \| null` | no       | Mock response config `{ status, body, headers }`, or `null` to clear |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/endpoints/:slug" title="client.endpoints.delete">
+
+Delete an endpoint and all its captured requests.
+
+```ts
+delete(slug: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/w/:slug" title="client.endpoints.send">
+
+Send a test webhook to an endpoint. Sends directly to the receiver, does not go through the API.
+
+```ts
+send(slug: string, options?: SendOptions): Promise<Response>
+```
+
+<ParamTable>
+
+| Param     | Type                     | Required | Description                     |
+| --------- | ------------------------ | -------- | ------------------------------- |
+| `slug`    | `string`                 | yes      | Endpoint slug                   |
+| `method`  | `string`                 | no       | HTTP method (default: `"POST"`) |
+| `headers` | `Record<string, string>` | no       | HTTP headers to include         |
+| `body`    | `unknown`                | no       | Request body (JSON-serialized)  |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="POST" path="/w/:slug" title="client.endpoints.sendTemplate">
+
+Send a provider template webhook with generated signature headers.
+
+```ts
+sendTemplate(slug: string, options: SendTemplateOptions): Promise<Response>
+```
+
+<ParamTable>
+
+| Param       | Type                     | Required | Description                                      |
+| ----------- | ------------------------ | -------- | ------------------------------------------------ |
+| `slug`      | `string`                 | yes      | Endpoint slug                                    |
+| `provider`  | `TemplateProvider`       | yes      | Provider template to generate                    |
+| `template`  | `string`                 | no       | Provider-specific template preset                |
+| `secret`    | `string`                 | yes      | Shared secret for signature generation           |
+| `event`     | `string`                 | no       | Provider event/topic override                    |
+| `method`    | `string`                 | no       | HTTP method override (defaults to POST)          |
+| `timestamp` | `number`                 | no       | Unix timestamp override for signature generation |
+| `headers`   | `Record<string, string>` | no       | Additional headers                               |
+| `body`      | `unknown`                | no       | Template body override                           |
+
+</ParamTable>
+</ApiMethod>
+
+## Direct Delivery
+
+<ApiMethod method="POST" path="(any URL)" title="client.sendTo">
+
+Send a webhook directly to any URL with optional provider signing. Use for local integration testing — send properly signed webhooks to localhost handlers without routing through webhooks.cc.
+
+```ts
+sendTo(url: string, options?: SendToOptions): Promise<Response>
+```
+
+<ParamTable>
+
+| Param       | Type                     | Required | Description                                                     |
+| ----------- | ------------------------ | -------- | --------------------------------------------------------------- |
+| `url`       | `string`                 | yes      | Target URL (http or https)                                      |
+| `provider`  | `TemplateProvider`       | no       | Provider template for signing                                   |
+| `secret`    | `string`                 | no       | Secret for signature generation (required when provider is set) |
+| `body`      | `unknown`                | no       | Request body (JSON-serialized if not a string)                  |
+| `headers`   | `Record<string, string>` | no       | Additional headers                                              |
+| `method`    | `string`                 | no       | HTTP method (default: `"POST"`)                                 |
+| `event`     | `string`                 | no       | Event name                                                      |
+| `timestamp` | `number`                 | no       | Unix timestamp override for deterministic signatures in tests   |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="POST" path="(build only)" title="client.buildRequest">
+
+Build a signed webhook request without sending it. Returns the computed URL, method, headers, and body.
+
+```ts
+buildRequest(url: string, options?: SendToOptions): Promise<{url, method, headers, body?}>
+```
+
+</ApiMethod>
+
+## Requests
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.list">
+
+List captured requests for an endpoint.
+
+```ts
+list(endpointSlug: string, options?: ListRequestsOptions): Promise<Request[]>
+```
+
+<ParamTable>
+
+| Param          | Type     | Required | Description                                    |
+| -------------- | -------- | -------- | ---------------------------------------------- |
+| `endpointSlug` | `string` | yes      | Endpoint slug                                  |
+| `limit`        | `number` | no       | Max results (default: 50)                      |
+| `since`        | `number` | no       | Only return requests after this timestamp (ms) |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.listPaginated">
+
+List captured requests with cursor-based pagination.
+
+```ts
+listPaginated(slug: string, options?: ListPaginatedRequestsOptions): Promise<PaginatedResult<Request>>
+```
+
+<ParamTable>
+
+| Param    | Type     | Required | Description               |
+| -------- | -------- | -------- | ------------------------- |
+| `slug`   | `string` | yes      | Endpoint slug             |
+| `limit`  | `number` | no       | Max results per page      |
+| `cursor` | `string` | no       | Cursor from previous page |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id" title="client.requests.get">
+
+Get a single captured request by ID.
+
+```ts
+get(requestId: string): Promise<Request>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.waitFor">
+
+Poll for incoming requests until one matches or timeout expires. Accepts human-readable duration strings.
+
+```ts
+waitFor(endpointSlug: string, options?: WaitForOptions): Promise<Request>
+```
+
+<ParamTable>
+
+| Param          | Type                   | Required | Description                                                    |
+| -------------- | ---------------------- | -------- | -------------------------------------------------------------- |
+| `endpointSlug` | `string`               | yes      | Endpoint slug to monitor                                       |
+| `timeout`      | `number \| string`     | no       | Max wait time — ms or `"30s"`, `"5m"`, `"1h"` (default: 30000) |
+| `pollInterval` | `number \| string`     | no       | Interval between polls (default: 500)                          |
+| `match`        | `(request) => boolean` | no       | Filter function                                                |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.waitForAll">
+
+Wait for multiple matching requests to arrive.
+
+```ts
+waitForAll(slug: string, options: WaitForAllOptions): Promise<Request[]>
+```
+
+<ParamTable>
+
+| Param     | Type                   | Required | Description                   |
+| --------- | ---------------------- | -------- | ----------------------------- |
+| `slug`    | `string`               | yes      | Endpoint slug                 |
+| `count`   | `number`               | yes      | Number of requests to collect |
+| `timeout` | `number \| string`     | no       | Max wait time                 |
+| `match`   | `(request) => boolean` | no       | Filter function               |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/api/stream/:slug" title="client.requests.subscribe">
+
+Stream incoming requests via SSE as an async iterator.
+
+```ts
+subscribe(slug: string, options?: SubscribeOptions): AsyncIterable<Request>
+```
+
+<ParamTable>
+
+| Param                  | Type               | Required | Description                       |
+| ---------------------- | ------------------ | -------- | --------------------------------- |
+| `slug`                 | `string`           | yes      | Endpoint slug                     |
+| `signal`               | `AbortSignal`      | no       | Signal to cancel the subscription |
+| `timeout`              | `number \| string` | no       | Max stream duration               |
+| `reconnect`            | `boolean`          | no       | Auto-reconnect on disconnect      |
+| `maxReconnectAttempts` | `number`           | no       | Max reconnection attempts         |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/replay" title="client.requests.replay">
+
+Replay a captured request to a target URL. Sends the original method, headers, and body. Hop-by-hop headers are stripped.
+
+```ts
+replay(requestId: string, targetUrl: string): Promise<Response>
+```
+
+<ParamTable>
+
+| Param       | Type     | Required | Description                         |
+| ----------- | -------- | -------- | ----------------------------------- |
+| `requestId` | `string` | yes      | ID of the captured request          |
+| `targetUrl` | `string` | yes      | URL to send the replayed request to |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/search" title="client.requests.search">
+
+Search captured webhook requests across endpoints with full-text search.
+
+```ts
+search(filters?: SearchFilters): Promise<SearchResult[]>
+```
+
+<ParamTable>
+
+| Param    | Type              | Required | Description                        |
+| -------- | ----------------- | -------- | ---------------------------------- |
+| `slug`   | `string`          | no       | Filter by endpoint slug            |
+| `method` | `string`          | no       | Filter by HTTP method              |
+| `q`      | `string`          | no       | Free-text search                   |
+| `from`   | `string`          | no       | Start time (duration or timestamp) |
+| `to`     | `string`          | no       | End time (duration or timestamp)   |
+| `limit`  | `number`          | no       | Max results (default: 50)          |
+| `offset` | `number`          | no       | Pagination offset                  |
+| `order`  | `"asc" \| "desc"` | no       | Sort order (default: `"desc"`)     |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/count" title="client.requests.count">
+
+Count captured webhook requests matching the given filters.
+
+```ts
+count(filters?: SearchFilters): Promise<number>
+```
+
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/endpoints/:slug/requests" title="client.requests.clear">
+
+Delete captured requests for an endpoint without deleting the endpoint itself.
+
+```ts
+clear(slug: string, options?: ClearRequestsOptions): Promise<void>
+```
+
+<ParamTable>
+
+| Param    | Type     | Required | Description                                    |
+| -------- | -------- | -------- | ---------------------------------------------- |
+| `slug`   | `string` | yes      | Endpoint slug                                  |
+| `before` | `string` | no       | Delete requests before this duration/timestamp |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests/export" title="client.requests.export">
+
+Export captured requests as HAR 1.2 or cURL commands.
+
+```ts
+export(slug: string, options: ExportRequestsOptions): Promise<RequestsExport>
+```
+
+<ParamTable>
+
+| Param    | Type              | Required | Description                               |
+| -------- | ----------------- | -------- | ----------------------------------------- |
+| `slug`   | `string`          | yes      | Endpoint slug                             |
+| `format` | `"har" \| "curl"` | yes      | Export format                             |
+| `limit`  | `number`          | no       | Max requests to export                    |
+| `since`  | `number`          | no       | Only export requests after this timestamp |
+
+</ParamTable>
+</ApiMethod>
+
+## Templates
+
+<ApiMethod method="GET" path="(local)" title="client.templates.listProviders">
+
+List all supported webhook provider templates. No API call made.
+
+```ts
+listProviders(): TemplateProvider[]
+// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "standard-webhooks"]
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(local)" title="client.templates.get">
+
+Get metadata for a specific provider template.
+
+```ts
+get(provider: TemplateProvider): TemplateProviderInfo
+```
+
+</ApiMethod>
+
+## Usage
+
+<ApiMethod method="GET" path="/usage" title="client.usage">
+
+Get current request quota and usage.
+
+```ts
+usage(): Promise<UsageInfo>
+// Returns: { used, limit, remaining, plan, periodEnd }
+```
+
+</ApiMethod>
+
+## Flow Builder
+
+<ApiMethod method="POST" path="(chained)" title="client.flow">
+
+Create a fluent workflow builder for common webhook capture, verify, and replay workflows.
+
+```ts
+const result = await client
+  .flow()
+  .createEndpoint({ name: "test" })
+  .send({ body: { event: "test" } })
+  .waitForCapture({ timeout: "10s" })
+  .verifySignature({ provider: "stripe", secret: "whsec_..." })
+  .replayTo("http://localhost:3000/webhooks")
+  .cleanup()
+  .run();
+```
+
+</ApiMethod>
+
+## Introspection
+
+<ApiMethod method="GET" path="(local)" title="client.describe">
+
+Returns a static description of all SDK operations and their parameters. No API call is made. Useful for AI agents and tool discovery.
+
+```ts
+describe(): SDKDescription
+```
+
+</ApiMethod>
+
+## Matchers
+
+Composable functions that return `(request) => boolean`. Use with `waitFor` or filter logic.
+
+```ts
+import {
+  matchMethod,
+  matchHeader,
+  matchPath,
+  matchQueryParam,
+  matchBodyPath,
+  matchBodySubset,
+  matchContentType,
+  matchJsonField,
+  matchAll,
+  matchAny,
+} from "@webhooks-cc/sdk";
+
+matchMethod("POST"); // match by HTTP method
+matchHeader("x-github-event"); // match header presence
+matchHeader("x-github-event", "push"); // match header value
+matchPath("/webhooks/**"); // match path with glob wildcards
+matchQueryParam("token"); // match query param presence
+matchQueryParam("token", "abc"); // match query param value
+matchBodyPath("data.object.id", "obj_123"); // match nested JSON path
+matchBodySubset({ type: "checkout" }); // match deep partial subset
+matchContentType("application/json"); // match content-type ignoring charset
+matchJsonField("type", "checkout"); // match top-level JSON field
+matchAll(matchMethod("POST"), matchHeader("stripe-signature"));
+matchAny(matchMethod("GET"), matchMethod("POST"));
+```
+
+## Provider Detection
+
+Each helper checks for a provider-specific header (case-insensitive).
+
+```ts
+import {
+  isStripeWebhook, // stripe-signature
+  isGitHubWebhook, // x-github-event
+  isShopifyWebhook, // x-shopify-hmac-sha256
+  isSlackWebhook, // x-slack-signature
+  isTwilioWebhook, // x-twilio-signature
+  isPaddleWebhook, // paddle-signature
+  isLinearWebhook, // linear-signature
+  isDiscordWebhook, // x-signature-ed25519 + x-signature-timestamp
+  isStandardWebhook, // webhook-id + webhook-timestamp + webhook-signature
+} from "@webhooks-cc/sdk";
+```
+
+## Body Parsing
+
+```ts
+import { parseJsonBody, parseFormBody, parseBody, extractJsonField } from "@webhooks-cc/sdk";
+
+// Parse JSON body safely (returns undefined on failure)
+const json = parseJsonBody(request);
+
+// Parse form-encoded body
+const form = parseFormBody(request);
+
+// Auto-detect and parse by content-type
+const parsed = parseBody(request);
+
+// Extract nested JSON field by dot notation
+const email = extractJsonField<string>(request, "data.customer.email");
+```
+
+## Request Diffing
+
+```ts
+import { diffRequests } from "@webhooks-cc/sdk";
+
+const diff = diffRequests(requestA, requestB);
+console.log(diff.matches); // boolean
+console.log(diff.differences); // { method?, path?, headers?, body? }
+```
+
+## Signature Verification
+
+```ts
+import {
+  verifySignature,
+  verifyStripeSignature,
+  verifyGitHubSignature,
+  verifyShopifySignature,
+  verifySlackSignature,
+  verifyTwilioSignature,
+  verifyPaddleSignature,
+  verifyLinearSignature,
+  verifyDiscordSignature,
+  verifyStandardWebhookSignature,
+} from "@webhooks-cc/sdk";
+
+// Universal verifier (dispatches by provider)
+const result = await verifySignature(request, {
+  provider: "stripe",
+  secret: "whsec_...",
+});
+console.log(result.valid); // boolean
+
+// Provider-specific verifiers
+const valid = await verifyStripeSignature(body, signatureHeader, secret);
+const valid = await verifyGitHubSignature(body, signatureHeader, secret);
+```
+
+## Duration Strings
+
+`timeout` and `pollInterval` accept human-readable strings alongside milliseconds.
+
+```
+"500ms"  →    500
+"30s"    →  30000
+"5m"     → 300000
+"1h"     → 3600000
+500      →    500    // numbers passed through
+```
+
+## Types
+
+```ts
+interface Endpoint {
+  id: string;
+  slug: string;
+  name?: string;
+  url?: string;
+  isEphemeral?: boolean;
+  expiresAt?: number;
+  createdAt: number;
+}
+
+interface Request {
+  id: string;
+  endpointId: string;
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body?: string;
+  queryParams: Record<string, string>;
+  contentType?: string;
+  ip: string;
+  size: number;
+  receivedAt: number;
+}
+
+interface MockResponse {
+  status: number; // 100-599
+  body: string;
+  headers: Record<string, string>;
+}
+
+interface UsageInfo {
+  used: number;
+  limit: number;
+  remaining: number;
+  plan: "free" | "pro";
+  periodEnd: number | null;
+}
+
+interface PaginatedResult<T> {
+  items: T[];
+  cursor?: string;
+  hasMore: boolean;
+}
+
+type TemplateProvider =
+  | "stripe"
+  | "github"
+  | "shopify"
+  | "twilio"
+  | "slack"
+  | "paddle"
+  | "linear"
+  | "standard-webhooks";
+
+type VerifyProvider = TemplateProvider | "discord";
+```
+
+## Error Classes
+
+Errors include actionable recovery hints when the server message is generic.
+
+```ts
+import {
+  WebhooksCCError, // Base error (has statusCode)
+  UnauthorizedError, // 401 — includes link to get API key
+  NotFoundError, // 404 — suggests using endpoints.list()
+  RateLimitError, // 429 — includes retryAfter seconds
+  TimeoutError, // Request timeout
+} from "@webhooks-cc/sdk";
+```

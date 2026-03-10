@@ -1,0 +1,193 @@
+---
+title: "ngrok vs webhooks.cc"
+description: "Compare ngrok and webhooks.cc for webhook testing. Feature comparison, pricing, and when to use each tool."
+section: guides
+order: 7
+lastUpdated: 2026-03-10
+schema: faq
+keywords:
+  ["ngrok vs webhooks.cc", "ngrok alternative", "webhook testing tools", "ngrok webhook testing"]
+seo:
+  ogTitle: "ngrok vs webhooks.cc — Webhook Testing Comparison"
+  ogDescription: "Compare ngrok and webhooks.cc for webhook development and testing. Feature comparison, pricing, and use cases."
+---
+
+ngrok and webhooks.cc solve overlapping but distinct problems. ngrok exposes local ports to the internet with a public URL. webhooks.cc captures, inspects, and replays webhooks with built-in provider signing. Both tools appear in webhook development workflows, but they approach the problem from opposite directions -- ngrok starts with networking, webhooks.cc starts with the webhook itself.
+
+This comparison covers where each tool fits, where they overlap, and when you should reach for one, the other, or both.
+
+## Feature comparison
+
+| Feature                        | webhooks.cc                                      | ngrok                                 |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------- |
+| Expose localhost to internet   | Yes (CLI tunnel)                                 | Yes (core feature)                    |
+| Webhook capture and inspection | Yes (full request details, split-pane dashboard) | Limited (ngrok inspect, general HTTP) |
+| Mock responses                 | Yes (configurable per endpoint)                  | No                                    |
+| Provider signature signing     | Yes (9 providers: Stripe, GitHub, Shopify, etc.) | No                                    |
+| Signature verification         | Yes (SDK, 9 providers)                           | No                                    |
+| Request replay                 | Yes (to any URL, from dashboard or SDK)          | Yes (ngrok inspect)                   |
+| Real-time dashboard            | Yes                                              | Yes (ngrok inspect)                   |
+| CI/CD integration              | Yes (SDK + testing utilities, no tunnel needed)  | Limited (requires running tunnel)     |
+| MCP server for AI agents       | Yes                                              | No                                    |
+| TypeScript SDK                 | Yes (typed client, matchers, test helpers)       | No (REST API only)                    |
+| Ephemeral endpoints            | Yes (12hr, no signup required)                   | No (requires account)                 |
+| Custom domains                 | No                                               | Yes (paid plans)                      |
+| TCP/TLS tunneling              | No (HTTP webhooks only)                          | Yes                                   |
+| WebSocket support              | No                                               | Yes                                   |
+
+## Webhook capture and inspection
+
+webhooks.cc captures the full request -- method, headers, body, query params, IP address, and timestamp -- and displays everything in a split-pane dashboard with syntax-highlighted JSON. Requests appear in real-time via reactive queries. You can filter by method, search headers and bodies, and compare multiple requests side by side.
+
+ngrok's inspect interface (`http://localhost:4040`) shows similar raw data for any HTTP traffic passing through the tunnel. It handles all protocols, not just webhooks. The interface shows request/response pairs, which is useful for debugging general HTTP issues but does not include webhook-specific features like provider detection or signature verification status.
+
+The key difference: webhooks.cc treats each captured request as a first-class object you can retrieve later via API, replay to other URLs, or assert against in tests. ngrok's inspect is a live view of tunnel traffic that disappears when the tunnel stops.
+
+## Local forwarding
+
+ngrok creates a public URL that proxies all traffic to your localhost port. Any HTTP request to the ngrok URL arrives at your local server. This works for web pages, APIs, WebSocket connections, and webhooks alike.
+
+webhooks.cc's CLI tunnel (`whk tunnel <port>`) forwards webhooks to localhost via Server-Sent Events. The CLI opens an outbound connection to webhooks.cc, receives captured webhook data over the SSE stream, and replays each request to your local port. Path segments after the slug are preserved:
+
+```
+POST https://go.webhooks.cc/w/abc123/api/stripe
+  -> POST http://localhost:3000/api/stripe
+```
+
+ngrok's tunneling is more general-purpose -- it handles any HTTP traffic, including browser sessions, API calls, and long-lived connections. webhooks.cc's tunnel is webhook-specific -- it captures the request first, then forwards it, so you get both the tunnel and a permanent record of every webhook received.
+
+## Testing workflows
+
+This is where the two tools diverge most.
+
+webhooks.cc provides `sendTo` for sending signed webhooks directly to any URL -- including localhost -- without creating a public endpoint or running a tunnel. The SDK computes the correct provider signature (HMAC-SHA256 for Stripe, GitHub, Shopify; Ed25519 for Discord; HMAC-SHA1 for Twilio) and includes all provider-specific headers.
+
+```ts
+const res = await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
+  provider: "stripe",
+  template: "checkout.session.completed",
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+});
+
+expect(res.status).toBe(200);
+```
+
+This means CI/CD tests do not need a tunnel, a public URL, or any network connectivity to external services. Tests run against localhost with deterministic payloads and valid signatures.
+
+The SDK also provides structured test patterns:
+
+- `withEndpoint` -- create a temporary endpoint, run assertions, clean up automatically
+- `captureDuring` -- send requests and capture them in a single operation
+- `assertRequest` -- match captured requests against expected values
+- `waitFor` with matchers -- poll for a request matching specific criteria (method, headers, body fields)
+
+ngrok does not offer programmatic testing tools. To test webhooks with ngrok, you need to start a tunnel, configure the provider to send to the ngrok URL, trigger a real event, and verify your handler processed it. This requires the provider to actually send the webhook, which introduces external dependencies and non-determinism into your test suite.
+
+## Signing and verification
+
+webhooks.cc signs payloads for 9 providers so your handler's signature verification works during testing without modification. The signing happens locally in the SDK -- no request to external servers.
+
+Supported providers and their signing algorithms:
+
+| Provider          | Algorithm            | Signature header                                 |
+| ----------------- | -------------------- | ------------------------------------------------ |
+| Stripe            | HMAC-SHA256          | `stripe-signature` (with timestamp)              |
+| GitHub            | HMAC-SHA256          | `x-hub-signature-256`                            |
+| Shopify           | HMAC-SHA256 (base64) | `x-shopify-hmac-sha256`                          |
+| Twilio            | HMAC-SHA1            | `x-twilio-signature`                             |
+| Slack             | HMAC-SHA256          | `x-slack-signature` (with timestamp)             |
+| Paddle            | HMAC-SHA256          | `paddle-signature` (with timestamp)              |
+| Linear            | HMAC-SHA256          | `linear-signature`                               |
+| Discord           | Ed25519              | `x-signature-ed25519`                            |
+| Standard Webhooks | HMAC-SHA256          | `webhook-signature` (Polar, Svix, Clerk, Resend) |
+
+With ngrok, you need the real provider to send webhooks -- or you disable signature verification in your test environment. Disabling verification is common but risky: it means your tests do not cover the verification code path, and you might deploy a handler that fails signature checks in production.
+
+webhooks.cc also verifies signatures on captured requests. If you capture a real Stripe webhook, you can confirm the signature is valid using the SDK's `verifySignature` function. This is useful for debugging -- if a webhook fails in production, capture it and verify the signature to determine whether the issue is authentication or handler logic.
+
+## Pricing
+
+Both tools offer free tiers with different trade-offs.
+
+**webhooks.cc:**
+
+- Free: 50 requests/day, unlimited endpoints, all features including signing and verification
+- Pro: $8/month, 100,000 requests/month
+
+**ngrok:**
+
+- Free: 1 agent, random URLs, limited connections per minute
+- Personal: $8/month, 1 persistent domain, higher connection limits
+- Pro: $20/month, custom domains, IP restrictions, TLS termination
+- Enterprise: custom pricing
+
+For webhook development specifically, webhooks.cc's free tier covers most individual developer needs. If you need general localhost exposure with stable URLs, ngrok's paid tiers are the relevant comparison.
+
+## When to use each
+
+**Use webhooks.cc when:**
+
+- You need webhook-specific tooling -- capture, inspect, replay, sign, verify
+- You want deterministic CI/CD webhook tests without external dependencies
+- You need to test signature verification with properly signed payloads
+- You want an AI agent to interact with webhooks via MCP
+- You need to capture and replay real webhook payloads from providers
+
+**Use ngrok when:**
+
+- You need general-purpose localhost exposure for any HTTP traffic
+- You need TCP or TLS tunneling (non-HTTP protocols)
+- You need custom domains or stable URLs across sessions
+- You are debugging non-webhook HTTP traffic (APIs, web pages, WebSockets)
+- You need IP restrictions or access control on your tunnel
+
+**Use both when:**
+
+- You want ngrok for general development exposure (browser testing, API demos) and webhooks.cc for webhook-specific capture, signing, and testing
+- You capture webhooks with webhooks.cc, then replay them to an ngrok URL that forwards to your local server
+- Your CI tests use webhooks.cc's SDK for deterministic signed payloads, while your interactive development uses ngrok for broader HTTP access
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Is webhooks.cc a drop-in replacement for ngrok?">
+
+Not entirely. ngrok handles all HTTP and TCP traffic -- web pages, APIs, WebSockets, arbitrary TCP connections. webhooks.cc focuses on webhooks: capture, signing, verification, replay, and testing. For webhook development specifically, webhooks.cc offers more than ngrok (signing, SDK, CI integration). For general localhost exposure, ngrok covers more ground. The two tools complement each other well.
+
+</FAQItem>
+<FAQItem question="Can I use ngrok with webhooks.cc?">
+
+Yes. A common pattern: point your webhook provider at a webhooks.cc endpoint for capture and inspection, then replay captured requests to an ngrok URL that forwards to your local server. This gives you the inspection and replay features of webhooks.cc with the general-purpose tunneling of ngrok.
+
+</FAQItem>
+<FAQItem question="Which is better for CI/CD?">
+
+webhooks.cc. The SDK sends signed webhooks directly to your handler -- no tunnel needed in CI. Tests are deterministic (you control the payload), fast (no network round-trip to an external provider), and self-contained (no tunnel process to manage). With ngrok, CI tests require starting a tunnel, configuring an external provider, and triggering real events, which adds complexity, latency, and flakiness.
+
+</FAQItem>
+<FAQItem question="Which has a better free tier?">
+
+Depends on what you need. webhooks.cc's free tier includes 50 requests/day with all features: signing, verification, SDK access, replay, and MCP. ngrok's free tier gives you a tunnel with random URLs and connection limits. For webhook testing, webhooks.cc's free tier is more useful. For general localhost exposure, ngrok's free tier works but has tighter usage restrictions.
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/guides/test-webhooks-locally"
+  title="Test Webhooks Locally"
+  description="Three methods for testing webhooks on localhost: capture and replay, signed payloads, and real-time tunneling."
+/>
+
+<LinkCard
+  href="/docs/guides/webhook-testing-tools"
+  title="Webhook Testing Tools Compared"
+  description="Compare webhooks.cc, ngrok, RequestBin, Hookdeck, Svix, and more."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing with the SDK"
+  description="CI/CD integration patterns and test utilities for webhook handlers."
+/>

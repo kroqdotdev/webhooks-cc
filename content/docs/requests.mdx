@@ -1,0 +1,44 @@
+---
+title: "Requests"
+description: "Every webhook sent to your endpoint is captured and displayed in real-time. Inspect every detail of the incoming request."
+section: dashboard
+order: 3
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["webhook request", "request inspector", "webhook body", "webhook headers"]
+seo:
+  ogTitle: "Webhook Request Inspector Guide — webhooks.cc"
+  ogDescription: "Inspect captured webhook requests in real time, including body, headers, query parameters, delivery metadata, and replay options."
+---
+
+## Request list
+
+The left panel shows captured requests sorted by time. Each entry displays the HTTP method, a short ID, and relative timestamp.
+
+- **Live mode** — new requests are auto-selected as they arrive
+- **Paused mode** — review at your pace; a banner shows how many new requests arrived
+- **Sort** — toggle between newest-first and oldest-first
+- **Filter** — filter by HTTP method or search by path, body, or request ID
+
+## Request detail
+
+Click a request to view its details. Four tabs organize the data:
+
+- **Body** — auto-formatted based on content type (JSON, XML, form data, plain text)
+- **Headers** — all request headers in a key-value table
+- **Query** — parsed query string parameters
+- **Raw** — unformatted request body
+
+A format badge (JSON, XML, FORM, TEXT) appears above the body for quick identification.
+
+## Copy as curl
+
+Click the **cURL** button to copy a curl command that reproduces the captured request. Headers, method, body, and query parameters are preserved. Use this to replay the request from your terminal.
+
+## Replay
+
+Click **Replay** to send the captured request to a different URL. Enter a destination URL (http or https), and the request is sent with the original method, headers, and body. Useful for testing your local or staging server.
+
+## Export
+
+Use the **Export** dropdown in the URL bar to download requests as JSON or CSV. Exports include the currently visible (filtered) requests.

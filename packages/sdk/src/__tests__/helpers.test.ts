@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   parseJsonBody,
+  parseFormBody,
+  parseBody,
+  extractJsonField,
   isStripeWebhook,
   isGitHubWebhook,
   isShopifyWebhook,
@@ -8,6 +11,7 @@ import {
   isTwilioWebhook,
   isPaddleWebhook,
   isLinearWebhook,
+  isDiscordWebhook,
   isStandardWebhook,
 } from "../helpers";
 import type { Request } from "../types";
@@ -38,6 +42,95 @@ describe("parseJsonBody", () => {
 
   it("returns undefined for invalid JSON", () => {
     expect(parseJsonBody(makeRequest({ body: "not json" }))).toBeUndefined();
+  });
+});
+
+describe("parseFormBody", () => {
+  it("parses urlencoded bodies", () => {
+    expect(
+      parseFormBody(
+        makeRequest({
+          body: "foo=bar&foo=baz&hello=world",
+          contentType: "application/x-www-form-urlencoded",
+        })
+      )
+    ).toEqual({
+      foo: ["bar", "baz"],
+      hello: "world",
+    });
+  });
+
+  it("returns undefined for non-form content types", () => {
+    expect(
+      parseFormBody(
+        makeRequest({
+          body: '{"foo":"bar"}',
+          contentType: "application/json",
+        })
+      )
+    ).toBeUndefined();
+  });
+});
+
+describe("parseBody", () => {
+  it("parses JSON when content-type is application/json", () => {
+    expect(
+      parseBody(
+        makeRequest({
+          body: '{"foo":{"bar":42}}',
+          contentType: "application/json; charset=utf-8",
+        })
+      )
+    ).toEqual({ foo: { bar: 42 } });
+  });
+
+  it("parses form data when content-type is urlencoded", () => {
+    expect(
+      parseBody(
+        makeRequest({
+          body: "foo=bar&baz=qux",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        })
+      )
+    ).toEqual({ foo: "bar", baz: "qux" });
+  });
+
+  it("returns raw text for unsupported content types", () => {
+    expect(
+      parseBody(
+        makeRequest({
+          body: "<xml />",
+          contentType: "application/xml",
+        })
+      )
+    ).toBe("<xml />");
+  });
+});
+
+describe("extractJsonField", () => {
+  it("extracts nested JSON values using dot notation", () => {
+    expect(
+      extractJsonField<number>(
+        makeRequest({
+          body: '{"data":{"object":{"amount":4999}}}',
+          contentType: "application/json",
+        }),
+        "data.object.amount"
+      )
+    ).toBe(4999);
+  });
+
+  it("supports array indexing and returns undefined for missing paths", () => {
+    expect(
+      extractJsonField<string>(
+        makeRequest({
+          body: '{"items":[{"id":"a"},{"id":"b"}]}',
+          contentType: "application/json",
+        }),
+        "items.1.id"
+      )
+    ).toBe("b");
+    expect(extractJsonField(makeRequest({ body: '{"items":[]}' }), "items.0.id")).toBeUndefined();
   });
 });
 
@@ -122,6 +215,33 @@ describe("isLinearWebhook", () => {
 
   it("returns false without header", () => {
     expect(isLinearWebhook(makeRequest())).toBe(false);
+  });
+});
+
+describe("isDiscordWebhook", () => {
+  it("detects both Discord signature headers", () => {
+    expect(
+      isDiscordWebhook(
+        makeRequest({
+          headers: {
+            "x-signature-ed25519": "deadbeef",
+            "x-signature-timestamp": "1700000000",
+          },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("returns false when either Discord header is missing", () => {
+    expect(
+      isDiscordWebhook(
+        makeRequest({
+          headers: {
+            "x-signature-ed25519": "deadbeef",
+          },
+        })
+      )
+    ).toBe(false);
   });
 });
 

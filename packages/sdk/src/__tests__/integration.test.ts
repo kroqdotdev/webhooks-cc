@@ -10,6 +10,7 @@ import {
   isTwilioWebhook,
   isPaddleWebhook,
   isLinearWebhook,
+  isDiscordWebhook,
 } from "../helpers";
 import { parseDuration } from "../utils";
 
@@ -27,6 +28,24 @@ describe.skipIf(!API_KEY)("SDK integration tests", () => {
       webhookUrl: WEBHOOK_URL,
     });
   });
+
+  async function waitForRetainedSearch(
+    fn: () => Promise<boolean>,
+    options: { timeoutMs?: number; intervalMs?: number } = {}
+  ): Promise<void> {
+    const timeoutMs = options.timeoutMs ?? 10000;
+    const intervalMs = options.intervalMs ?? 250;
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      if (await fn()) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(`Timed out waiting for retained search after ${timeoutMs}ms`);
+  }
 
   it("full round-trip: create, send webhook, waitFor, delete", async () => {
     // Create endpoint
@@ -142,6 +161,41 @@ describe.skipIf(!API_KEY)("SDK integration tests", () => {
     }
   }, 15000);
 
+  it("endpoints.create: supports ephemeral metadata and create-time mock response", async () => {
+    const startedAt = Date.now();
+    const endpoint = await client.endpoints.create({
+      name: "Ephemeral Create Test",
+      expiresIn: "1h",
+      mockResponse: {
+        status: 202,
+        body: '{"queued":true}',
+        headers: { "x-created-mock": "yes" },
+      },
+    });
+
+    try {
+      expect(endpoint.isEphemeral).toBe(true);
+      expect(endpoint.expiresAt).toBeGreaterThan(startedAt + 55 * 60 * 1000);
+
+      const fetched = await client.endpoints.get(endpoint.slug);
+      expect(fetched.isEphemeral).toBe(true);
+      expect(fetched.expiresAt).toBeGreaterThan(startedAt + 55 * 60 * 1000);
+
+      const endpoints = await client.endpoints.list();
+      const listed = endpoints.find((e) => e.slug === endpoint.slug);
+      expect(listed?.isEphemeral).toBe(true);
+      expect(listed?.expiresAt).toBeGreaterThan(startedAt + 55 * 60 * 1000);
+
+      const res = await client.endpoints.send(endpoint.slug, {
+        method: "POST",
+        body: { source: "create-mock" },
+      });
+      expect(res.status).toBe(202);
+    } finally {
+      await client.endpoints.delete(endpoint.slug);
+    }
+  }, 15000);
+
   it("endpoints.send: sends test webhook and captures it", async () => {
     const endpoint = await client.endpoints.create({ name: "Send Test" });
     try {
@@ -199,6 +253,246 @@ describe.skipIf(!API_KEY)("SDK integration tests", () => {
     }
   }, 30000);
 
+  it("requests.search and requests.count: find retained requests via local search API", async () => {
+    const endpoint = await client.endpoints.create({ name: "Search Integration Test" });
+    const marker = `sdk-search-${Date.now()}`;
+
+    try {
+      await client.endpoints.send(endpoint.slug, {
+        method: "POST",
+        headers: { "x-search-marker": marker },
+        body: { marker, source: "search-integration" },
+      });
+
+      await client.requests.waitFor(endpoint.slug, {
+        timeout: "10s",
+        pollInterval: "200ms",
+        match: matchHeader("x-search-marker", marker),
+      });
+
+      let searchResults = await client.requests.search({
+        slug: endpoint.slug,
+        q: marker,
+        from: "5m",
+        limit: 10,
+      });
+      let count = await client.requests.count({
+        slug: endpoint.slug,
+        q: marker,
+        from: "5m",
+      });
+
+      if (searchResults.length === 0 || count === 0) {
+        await waitForRetainedSearch(async () => {
+          searchResults = await client.requests.search({
+            slug: endpoint.slug,
+            q: marker,
+            from: "5m",
+            limit: 10,
+          });
+          count = await client.requests.count({
+            slug: endpoint.slug,
+            q: marker,
+            from: "5m",
+          });
+          return searchResults.length > 0 && count > 0;
+        });
+      }
+
+      expect(count).toBeGreaterThanOrEqual(1);
+      expect(searchResults.length).toBeGreaterThanOrEqual(1);
+      expect(searchResults[0].slug).toBe(endpoint.slug);
+      expect(searchResults.some((result) => result.body?.includes(marker))).toBe(true);
+    } finally {
+      await client.endpoints.delete(endpoint.slug);
+    }
+  }, 30000);
+
+  it("requests.clear: clears older requests selectively, then clears remaining requests", async () => {
+    const endpoint = await client.endpoints.create({ name: "Clear Requests Test" });
+
+    try {
+      await client.endpoints.send(endpoint.slug, {
+        method: "POST",
+        headers: { "x-clear-marker": "old" },
+        body: { marker: "old" },
+      });
+      await client.requests.waitFor(endpoint.slug, {
+        timeout: "10s",
+        pollInterval: "200ms",
+        match: matchHeader("x-clear-marker", "old"),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+
+      await client.endpoints.send(endpoint.slug, {
+        method: "POST",
+        headers: { "x-clear-marker": "new" },
+        body: { marker: "new" },
+      });
+      await client.requests.waitFor(endpoint.slug, {
+        timeout: "10s",
+        pollInterval: "200ms",
+        match: matchHeader("x-clear-marker", "new"),
+      });
+
+      await client.requests.clear(endpoint.slug, { before: "1s" });
+      const afterSelectiveClear = await client.requests.list(endpoint.slug);
+      expect(
+        afterSelectiveClear.some((request) => request.headers["x-clear-marker"] === "old")
+      ).toBe(false);
+      expect(
+        afterSelectiveClear.some((request) => request.headers["x-clear-marker"] === "new")
+      ).toBe(true);
+
+      await client.requests.clear(endpoint.slug);
+      const afterFullClear = await client.requests.list(endpoint.slug);
+      expect(afterFullClear).toHaveLength(0);
+    } finally {
+      await client.endpoints.delete(endpoint.slug);
+    }
+  }, 30000);
+
+  it("usage: returns aggregate quota information", async () => {
+    const usage = await client.usage();
+
+    expect(usage.limit).toBeGreaterThan(0);
+    expect(usage.used).toBeGreaterThanOrEqual(0);
+    expect(usage.remaining).toBe(Math.max(0, usage.limit - usage.used));
+    expect(["free", "pro"]).toContain(usage.plan);
+  });
+
+  it("requests.listPaginated: pages through captured requests with a cursor", async () => {
+    const endpoint = await client.endpoints.create({ name: "Pagination Test" });
+    const markers = [`page-${Date.now()}-1`, `page-${Date.now()}-2`, `page-${Date.now()}-3`];
+
+    try {
+      for (const marker of markers) {
+        await client.endpoints.send(endpoint.slug, {
+          method: "POST",
+          headers: { "x-page-marker": marker },
+          body: { marker },
+        });
+      }
+
+      let combined: Array<{ id: string; body?: string }> = [];
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < 10000) {
+        const page1 = await client.requests.listPaginated(endpoint.slug, { limit: 2 });
+        const page2 =
+          page1.hasMore && page1.cursor
+            ? await client.requests.listPaginated(endpoint.slug, {
+                limit: 2,
+                cursor: page1.cursor,
+              })
+            : { items: [], hasMore: false };
+
+        combined = [...page1.items, ...page2.items];
+        if (new Set(combined.map((item) => item.id)).size >= 3) {
+          expect(page1.items).toHaveLength(2);
+          expect(page1.cursor).toBeTruthy();
+          expect(page1.hasMore).toBe(true);
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+
+      const bodies = combined
+        .map((item) => item.body)
+        .filter((body): body is string => typeof body === "string");
+
+      expect(new Set(combined.map((item) => item.id)).size).toBeGreaterThanOrEqual(3);
+      for (const marker of markers) {
+        expect(bodies.some((body) => body.includes(marker))).toBe(true);
+      }
+    } finally {
+      await client.endpoints.delete(endpoint.slug);
+    }
+  }, 20000);
+
+  it("requests.waitForAll and requests.export: collect multiple requests and export them", async () => {
+    const endpoint = await client.endpoints.create({ name: "waitForAll Export Test" });
+    const markers = [`multi-${Date.now()}-1`, `multi-${Date.now()}-2`];
+
+    try {
+      for (const marker of markers) {
+        await client.endpoints.send(endpoint.slug, {
+          method: "POST",
+          headers: { "x-multi-marker": marker },
+          body: { marker },
+        });
+      }
+
+      const requests = await client.requests.waitForAll(endpoint.slug, {
+        count: 2,
+        timeout: "10s",
+        match: matchHeader("x-multi-marker"),
+      });
+
+      expect(requests).toHaveLength(2);
+      expect(new Set(requests.map((request) => request.id)).size).toBe(2);
+
+      const curlExport = await client.requests.export(endpoint.slug, {
+        format: "curl",
+        limit: 2,
+      });
+      expect(Array.isArray(curlExport)).toBe(true);
+      if (!Array.isArray(curlExport)) {
+        throw new Error("Expected cURL export output");
+      }
+      expect(curlExport).toHaveLength(2);
+      expect(curlExport[0]).toContain(endpoint.slug);
+
+      const harExport = await client.requests.export(endpoint.slug, {
+        format: "har",
+        limit: 2,
+      });
+      expect(Array.isArray(harExport)).toBe(false);
+      if (Array.isArray(harExport)) {
+        throw new Error("Expected HAR export output");
+      }
+      expect(harExport.log.entries).toHaveLength(2);
+    } finally {
+      await client.endpoints.delete(endpoint.slug);
+    }
+  }, 20000);
+
+  it("flow: captures, verifies, replays, and cleans up in one run", async () => {
+    const replayTarget = await client.endpoints.create({ name: "Flow Replay Target" });
+
+    try {
+      const result = await client
+        .flow()
+        .createEndpoint({ name: "Flow Builder Test", ephemeral: true })
+        .sendTemplate({
+          provider: "stripe",
+          secret: "whsec_flow_test",
+          timestamp: 1700000000,
+        })
+        .waitForCapture({ timeout: "10s" })
+        .verifySignature({ provider: "stripe", secret: "whsec_flow_test" })
+        .replayTo(`${WEBHOOK_URL}/w/${replayTarget.slug}`)
+        .cleanup()
+        .run();
+
+      expect(result.verification?.valid).toBe(true);
+      expect(result.cleanedUp).toBe(true);
+      expect(result.replayResponse?.status).toBe(200);
+
+      const replayed = await client.requests.waitFor(replayTarget.slug, {
+        timeout: "10s",
+        match: matchMethod("POST"),
+      });
+      expect(replayed.body).toContain('"type":"payment_intent.succeeded"');
+
+      await expect(client.endpoints.get(result.endpoint.slug)).rejects.toBeInstanceOf(ApiError);
+    } finally {
+      await client.endpoints.delete(replayTarget.slug);
+    }
+  }, 30000);
+
   it("waitFor with human-readable duration strings", async () => {
     const endpoint = await client.endpoints.create({ name: "Duration Test" });
     try {
@@ -245,11 +539,15 @@ describe.skipIf(!API_KEY)("SDK integration tests", () => {
   it("describe: returns SDK description without API call", () => {
     const description = client.describe();
 
-    expect(description.version).toBe("0.3.0");
+    expect(description.version).toBe("0.6.0");
     expect(description.endpoints).toBeDefined();
+    expect(description.templates).toBeDefined();
+    expect(description.usage).toBeDefined();
+    expect(description.flow).toBeDefined();
     expect(description.requests).toBeDefined();
-    expect(Object.keys(description.endpoints).length).toBe(6);
-    expect(Object.keys(description.requests).length).toBe(5);
+    expect(Object.keys(description.endpoints).length).toBe(7);
+    expect(Object.keys(description.templates).length).toBe(2);
+    expect(Object.keys(description.requests).length).toBe(11);
 
     // Verify structure
     const createOp = description.endpoints.create;
@@ -279,6 +577,7 @@ describe.skipIf(!API_KEY)("SDK integration tests", () => {
       expect(isTwilioWebhook(request)).toBe(false);
       expect(isPaddleWebhook(request)).toBe(false);
       expect(isLinearWebhook(request)).toBe(false);
+      expect(isDiscordWebhook(request)).toBe(false);
     } finally {
       await client.endpoints.delete(endpoint.slug);
     }

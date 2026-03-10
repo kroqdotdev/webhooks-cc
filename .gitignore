@@ -42,6 +42,10 @@ feat/
 
 # Documentation (internal planning docs, root only)
 /docs/
+/branch-docs/
+
+# Pagefind search index (generated at build time)
+apps/web/public/_pagefind/
 
 # Temporary files
 tmp/

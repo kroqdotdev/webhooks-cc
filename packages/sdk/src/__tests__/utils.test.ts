@@ -64,6 +64,16 @@ describe("parseDuration", () => {
     });
   });
 
+  describe("days", () => {
+    it("parses '7d'", () => {
+      expect(parseDuration("7d")).toBe(604800000);
+    });
+
+    it("parses '1d'", () => {
+      expect(parseDuration("1d")).toBe(86400000);
+    });
+  });
+
   describe("fractional durations", () => {
     it("parses '1.5s'", () => {
       expect(parseDuration("1.5s")).toBe(1500);
@@ -100,7 +110,7 @@ describe("parseDuration", () => {
     });
 
     it("throws on unsupported unit", () => {
-      expect(() => parseDuration("5d")).toThrow('Invalid duration: "5d"');
+      expect(() => parseDuration("5w")).toThrow('Invalid duration: "5w"');
     });
 
     it("throws on negative duration string", () => {

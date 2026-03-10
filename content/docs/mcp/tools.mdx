@@ -1,0 +1,289 @@
+---
+title: "Tool Reference"
+description: "Complete reference for all 24 MCP tools — parameters, return types, and usage examples for each tool."
+section: mcp
+order: 2
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
+seo:
+  ogTitle: "MCP Tool Reference — webhooks.cc"
+  ogDescription: "Full parameter reference for all 24 webhooks.cc MCP tools — endpoint management, webhook sending, request inspection, and more."
+---
+
+## Endpoint management
+
+### create_endpoint
+
+Create a new webhook endpoint. Returns the endpoint slug and full URL.
+
+| Parameter      | Type      | Required | Description                                           |
+| -------------- | --------- | -------- | ----------------------------------------------------- |
+| `name`         | `string`  | no       | Display name for the endpoint                         |
+| `ephemeral`    | `boolean` | no       | Auto-delete after 12 hours                            |
+| `expiresIn`    | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`)         |
+| `mockResponse` | `object`  | no       | Mock response config with `status`, `body`, `headers` |
+
+### create_endpoints
+
+Create 1--20 endpoints in a single call. Returns an array of created endpoints.
+
+| Parameter    | Type      | Required | Description                           |
+| ------------ | --------- | -------- | ------------------------------------- |
+| `count`      | `number`  | yes      | Number of endpoints to create (1--20) |
+| `namePrefix` | `string`  | no       | Prefix for auto-generated names       |
+| `ephemeral`  | `boolean` | no       | Auto-delete after 12 hours            |
+| `expiresIn`  | `string`  | no       | Custom expiry duration                |
+
+### list_endpoints
+
+List all your endpoints. No parameters.
+
+### get_endpoint
+
+Get details for an endpoint by slug.
+
+| Parameter | Type     | Required | Description   |
+| --------- | -------- | -------- | ------------- |
+| `slug`    | `string` | yes      | Endpoint slug |
+
+### update_endpoint
+
+Update an endpoint's name or mock response configuration.
+
+| Parameter      | Type     | Required | Description                                                          |
+| -------------- | -------- | -------- | -------------------------------------------------------------------- |
+| `slug`         | `string` | yes      | Endpoint slug                                                        |
+| `name`         | `string` | no       | New display name                                                     |
+| `mockResponse` | `object` | no       | Mock response config `{ status, body, headers }`, or `null` to clear |
+
+### delete_endpoint
+
+Delete an endpoint and all its captured requests.
+
+| Parameter | Type     | Required | Description   |
+| --------- | -------- | -------- | ------------- |
+| `slug`    | `string` | yes      | Endpoint slug |
+
+### delete_endpoints
+
+Delete 1--100 endpoints in a single call.
+
+| Parameter | Type       | Required | Description                                |
+| --------- | ---------- | -------- | ------------------------------------------ |
+| `slugs`   | `string[]` | yes      | Array of endpoint slugs to delete (1--100) |
+
+## Sending and testing
+
+### send_webhook
+
+Send a test webhook to a hosted webhooks.cc endpoint. Supports manual payloads and provider-signed templates.
+
+| Parameter  | Type     | Required                | Description                                                                                                      |
+| ---------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `slug`     | `string` | yes                     | Endpoint slug                                                                                                    |
+| `method`   | `string` | no                      | HTTP method (default: `"POST"`)                                                                                  |
+| `headers`  | `object` | no                      | HTTP headers to include                                                                                          |
+| `body`     | `any`    | no                      | Request body                                                                                                     |
+| `provider` | `string` | no                      | Provider for signing (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `standard-webhooks`) |
+| `template` | `string` | no                      | Template name (e.g., `checkout.session.completed`)                                                               |
+| `event`    | `string` | no                      | Event type override                                                                                              |
+| `secret`   | `string` | yes (if `provider` set) | Signing secret                                                                                                   |
+
+### send_to
+
+Send a webhook directly to any URL -- localhost, staging, production. Same signing support as `send_webhook`.
+
+| Parameter  | Type     | Required                | Description                     |
+| ---------- | -------- | ----------------------- | ------------------------------- |
+| `url`      | `string` | yes                     | Target URL (http or https)      |
+| `method`   | `string` | no                      | HTTP method (default: `"POST"`) |
+| `headers`  | `object` | no                      | HTTP headers to include         |
+| `body`     | `any`    | no                      | Request body                    |
+| `provider` | `string` | no                      | Provider for signing            |
+| `template` | `string` | no                      | Template name                   |
+| `event`    | `string` | no                      | Event type override             |
+| `secret`   | `string` | yes (if `provider` set) | Signing secret                  |
+
+### preview_webhook
+
+Build a webhook request without sending it. Returns the computed URL, method, headers, and body so you can inspect signatures before delivery.
+
+| Parameter  | Type     | Required                | Description          |
+| ---------- | -------- | ----------------------- | -------------------- |
+| `url`      | `string` | yes                     | Target URL           |
+| `method`   | `string` | no                      | HTTP method          |
+| `headers`  | `object` | no                      | HTTP headers         |
+| `body`     | `any`    | no                      | Request body         |
+| `provider` | `string` | no                      | Provider for signing |
+| `template` | `string` | no                      | Template name        |
+| `event`    | `string` | no                      | Event type override  |
+| `secret`   | `string` | yes (if `provider` set) | Signing secret       |
+
+### test_webhook_flow
+
+Run a full end-to-end test: create endpoint, set mock response, send webhook, wait for capture, verify signature, replay to target, clean up.
+
+| Parameter         | Type      | Required | Description                                          |
+| ----------------- | --------- | -------- | ---------------------------------------------------- |
+| `provider`        | `string`  | no       | Provider template to use                             |
+| `event`           | `string`  | no       | Event type                                           |
+| `secret`          | `string`  | no       | Signing secret                                       |
+| `mockStatus`      | `number`  | no       | HTTP status for mock response                        |
+| `targetUrl`       | `string`  | no       | URL to replay the captured request to                |
+| `verifySignature` | `boolean` | no       | Verify the webhook signature after capture           |
+| `cleanup`         | `boolean` | no       | Delete the endpoint after the test (default: `true`) |
+
+## Request management
+
+### list_requests
+
+List captured requests for an endpoint, newest first.
+
+| Parameter      | Type     | Required | Description                                   |
+| -------------- | -------- | -------- | --------------------------------------------- |
+| `endpointSlug` | `string` | yes      | Endpoint slug                                 |
+| `limit`        | `number` | no       | Max results to return                         |
+| `since`        | `string` | no       | Only return requests after this ISO timestamp |
+
+### get_request
+
+Get full details of a captured request, including headers and body.
+
+| Parameter   | Type     | Required | Description |
+| ----------- | -------- | -------- | ----------- |
+| `requestId` | `string` | yes      | Request ID  |
+
+### wait_for_request
+
+Poll until a request arrives at an endpoint, then return it.
+
+| Parameter      | Type     | Required | Description                            |
+| -------------- | -------- | -------- | -------------------------------------- |
+| `endpointSlug` | `string` | yes      | Endpoint slug                          |
+| `timeout`      | `number` | no       | Max wait time in milliseconds          |
+| `pollInterval` | `number` | no       | Interval between polls in milliseconds |
+
+### wait_for_requests
+
+Poll until a specified number of requests arrive at an endpoint.
+
+| Parameter      | Type     | Required | Description                            |
+| -------------- | -------- | -------- | -------------------------------------- |
+| `endpointSlug` | `string` | yes      | Endpoint slug                          |
+| `count`        | `number` | yes      | Number of requests to wait for         |
+| `timeout`      | `number` | no       | Max wait time in milliseconds          |
+| `pollInterval` | `number` | no       | Interval between polls in milliseconds |
+| `method`       | `string` | no       | Filter by HTTP method                  |
+
+### search_requests
+
+Full-text search across captured requests. Supports time ranges, method filters, and pagination.
+
+| Parameter | Type     | Required | Description                                                  |
+| --------- | -------- | -------- | ------------------------------------------------------------ |
+| `slug`    | `string` | no       | Filter by endpoint slug                                      |
+| `method`  | `string` | no       | Filter by HTTP method                                        |
+| `q`       | `string` | no       | Search query (searches headers and body)                     |
+| `from`    | `string` | no       | Start time -- relative duration like `"1h"` or ISO timestamp |
+| `to`      | `string` | no       | End time -- relative duration or ISO timestamp               |
+| `limit`   | `number` | no       | Max results                                                  |
+| `offset`  | `number` | no       | Pagination offset                                            |
+| `order`   | `string` | no       | `"asc"` or `"desc"`                                          |
+
+### count_requests
+
+Count requests matching the given filters. Accepts the same filter parameters as `search_requests`.
+
+| Parameter | Type     | Required | Description             |
+| --------- | -------- | -------- | ----------------------- |
+| `slug`    | `string` | no       | Filter by endpoint slug |
+| `method`  | `string` | no       | Filter by HTTP method   |
+| `q`       | `string` | no       | Search query            |
+| `from`    | `string` | no       | Start time              |
+| `to`      | `string` | no       | End time                |
+| `limit`   | `number` | no       | Max results             |
+| `offset`  | `number` | no       | Pagination offset       |
+| `order`   | `string` | no       | `"asc"` or `"desc"`     |
+
+### clear_requests
+
+Delete captured requests for an endpoint without deleting the endpoint itself.
+
+| Parameter | Type     | Required | Description                                |
+| --------- | -------- | -------- | ------------------------------------------ |
+| `slug`    | `string` | yes      | Endpoint slug                              |
+| `before`  | `string` | no       | Delete only requests before this timestamp |
+
+## Request analysis
+
+### replay_request
+
+Replay a captured request to a target URL. Sends the original method, headers, and body.
+
+| Parameter   | Type     | Required | Description                         |
+| ----------- | -------- | -------- | ----------------------------------- |
+| `requestId` | `string` | yes      | ID of the captured request          |
+| `targetUrl` | `string` | yes      | URL to send the replayed request to |
+
+### compare_requests
+
+Diff two captured requests. Returns structured differences in method, headers, and body.
+
+| Parameter        | Type       | Required | Description                             |
+| ---------------- | ---------- | -------- | --------------------------------------- |
+| `leftRequestId`  | `string`   | yes      | First request ID                        |
+| `rightRequestId` | `string`   | yes      | Second request ID                       |
+| `ignoreHeaders`  | `string[]` | no       | Header names to exclude from comparison |
+
+### extract_from_request
+
+Extract specific JSON fields from a captured request body using dot-notation paths.
+
+| Parameter   | Type       | Required | Description                                                        |
+| ----------- | ---------- | -------- | ------------------------------------------------------------------ |
+| `requestId` | `string`   | yes      | Request ID                                                         |
+| `jsonPaths` | `string[]` | yes      | Dot-notation paths to extract (e.g., `["data.object.id", "type"]`) |
+
+### verify_signature
+
+Verify the webhook signature on a captured request.
+
+| Parameter   | Type     | Required | Description                                                                                                          |
+| ----------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `requestId` | `string` | yes      | Request ID                                                                                                           |
+| `provider`  | `string` | yes      | Provider name (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `discord`, `standard-webhooks`) |
+| `secret`    | `string` | no       | Signing secret (required for HMAC-based providers)                                                                   |
+| `publicKey` | `string` | no       | Public key (required for Discord Ed25519 verification)                                                               |
+| `url`       | `string` | no       | Request URL (required for Twilio signature verification)                                                             |
+
+## Utilities
+
+### list_provider_templates
+
+List supported webhook providers and their available templates.
+
+| Parameter  | Type     | Required | Description                 |
+| ---------- | -------- | -------- | --------------------------- |
+| `provider` | `string` | no       | Filter to a single provider |
+
+### describe
+
+Self-documenting schema of all available operations and their parameters. No parameters.
+
+<Callout type="info">
+  For provider templates in `send_webhook` and `send_to`, the `secret` parameter is required. The
+  MCP server does not inject a default secret.
+</Callout>
+
+<LinkCard
+  href="/docs/mcp"
+  title="MCP Overview"
+  description="Installation, setup, and getting started with the MCP server."
+/>
+
+<LinkCard
+  href="/docs/mcp/workflows"
+  title="Agent Workflows"
+  description="Multi-turn conversation examples for common webhook tasks."
+/>

@@ -1,0 +1,74 @@
+---
+title: "CLI"
+description: "The webhooks.cc CLI forwards incoming webhooks to your local development server. No port forwarding, no ngrok, no configuration."
+section: cli
+order: 1
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["webhook CLI", "whk", "webhook forward", "localhost webhook"]
+seo:
+  ogTitle: "Webhook CLI Guide — webhooks.cc"
+  ogDescription: "Use the webhooks.cc CLI to forward webhooks to localhost, manage endpoints, and inspect requests directly from your terminal."
+---
+
+## Install
+
+```bash
+brew install kroqdotdev/tap/whk
+```
+
+See [all installation options](/installation) (shell script, GitHub Releases).
+
+## Interactive mode
+
+Run `whk` with no arguments to launch the interactive TUI:
+
+```bash
+whk
+```
+
+The main menu gives you access to every feature:
+
+- **Tunnel** — create an endpoint and forward webhooks to localhost
+- **Listen** — stream incoming requests in real time
+- **Endpoints** — create, list, and delete endpoints
+- **Auth** — log in and out
+- **Update** — check for new versions
+
+Requests are streamed in real time with color-coded HTTP methods, timestamps, and forward results. Press Enter on any request to inspect its headers and body. Navigation uses arrow keys or vim-style `j`/`k`.
+
+## Subcommand mode
+
+Every feature is also available as a direct subcommand, useful for scripting or when you prefer plain text output.
+
+### Authenticate
+
+```bash
+whk auth login
+```
+
+Opens your browser to verify a device code. Credentials are stored at `~/.config/whk/token.json`.
+
+### Forward to localhost
+
+```bash
+whk tunnel 3000
+```
+
+Creates an endpoint, prints its URL, and forwards every incoming webhook to `localhost:3000` in real time.
+
+To disable the TUI entirely, pass `--nogui` or set `WHK_NOGUI=1`.
+
+## Learn more
+
+<LinkCard
+  href="/docs/cli/commands"
+  title="Command reference"
+  description="All commands and flags."
+/>
+
+<LinkCard
+  href="/docs/cli/tunnel"
+  title="Tunneling deep dive"
+  description="Advanced tunneling configuration."
+/>

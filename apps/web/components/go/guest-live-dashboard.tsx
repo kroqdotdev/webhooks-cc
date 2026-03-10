@@ -619,7 +619,9 @@ function GoPreCreateLanding({
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               Workflow coverage
             </p>
-            <h2 className="text-2xl md:text-3xl font-bold">One platform for manual tests and automation</h2>
+            <h2 className="text-2xl md:text-3xl font-bold">
+              One platform for manual tests and automation
+            </h2>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

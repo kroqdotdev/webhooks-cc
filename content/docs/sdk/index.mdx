@@ -1,0 +1,203 @@
+---
+title: "SDK"
+description: "The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks in real-time, and integrate webhooks.cc into your test suite programmatically."
+section: sdk
+order: 1
+lastUpdated: 2026-03-10
+schema: faq
+keywords: ["webhook SDK", "TypeScript SDK", "webhook testing SDK", "@webhooks-cc/sdk"]
+seo:
+  ogTitle: "TypeScript Webhook SDK Guide — webhooks.cc"
+  ogDescription: "Use the webhooks.cc TypeScript SDK for endpoint management, webhook assertions, replay workflows, and real-time request streaming."
+---
+
+## Install
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+See [all installation options](/installation).
+
+## Authentication
+
+Generate an API key from your [account page](/account). Pass it when creating the client:
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({
+  apiKey: process.env.WHK_API_KEY,
+});
+```
+
+## Create an endpoint
+
+```ts
+const endpoint = await client.endpoints.create({
+  name: "test-payments",
+});
+
+console.log(endpoint.url);
+// https://go.webhooks.cc/w/<slug>
+```
+
+## Send a test webhook
+
+```ts
+await client.endpoints.send(endpoint.slug, {
+  method: "POST",
+  headers: { "x-event-type": "payment.success" },
+  body: { amount: 4999, currency: "usd" },
+});
+```
+
+## Send provider templates with signatures
+
+```ts
+await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "stripe",
+  template: "checkout.session.completed",
+  secret: "whsec_test_123",
+});
+```
+
+Supports **Standard Webhooks** (Polar.sh, Svix, Clerk, Resend) alongside Stripe, GitHub, Shopify, and Twilio:
+
+```ts
+await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "standard-webhooks",
+  secret: process.env.POLAR_WEBHOOK_SECRET!,
+  body: { type: "subscription.created", data: { id: "sub_123" } },
+});
+```
+
+## Send signed webhooks to localhost
+
+Use `sendTo` to send properly signed webhooks directly to any URL — no webhooks.cc infrastructure required. Ideal for local integration testing.
+
+```ts
+const res = await client.sendTo("http://localhost:3000/api/webhooks/polar", {
+  provider: "standard-webhooks",
+  secret: process.env.POLAR_WEBHOOK_SECRET!,
+  body: {
+    type: "subscription.created",
+    data: { id: "sub_123", status: "active" },
+  },
+});
+
+console.log(res.status); // 200
+```
+
+## Wait for a request
+
+Timeouts accept human-readable strings like `"30s"`, `"5m"`, or milliseconds.
+
+```ts
+import { matchMethod, matchBodyPath } from "@webhooks-cc/sdk";
+
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "10s",
+  match: matchBodyPath("event", "payment.success"),
+});
+
+console.log(request.body);
+```
+
+## Stream requests in real-time
+
+```ts
+for await (const request of client.requests.subscribe(endpoint.slug)) {
+  console.log(request.method, request.path);
+  if (request.method === "POST") break;
+}
+```
+
+## Replay a captured request
+
+```ts
+const response = await client.requests.replay(request.id, "http://localhost:3000/webhooks");
+
+console.log(response.status); // 200
+```
+
+## Lifecycle hooks
+
+Use hooks for debugging, logging, or telemetry integration:
+
+```ts
+const client = new WebhooksCC({
+  apiKey: process.env.WHK_API_KEY!,
+  hooks: {
+    onRequest: ({ method, url }) => console.log(`→ ${method} ${url}`),
+    onResponse: ({ status, durationMs }) => console.log(`← ${status} (${durationMs}ms)`),
+    onError: ({ error }) => console.error(`✗ ${error.message}`),
+  },
+});
+```
+
+## Error handling in tests
+
+When testing webhook handlers, include the response body in your assertion message for better failure diagnostics:
+
+```ts
+// Basic — failure message is just "expected 200, received 500"
+expect(res.status).toBe(200);
+
+// Better — shows the server's error in test output
+const text = await res.text();
+expect(res.status, `Server responded: ${text}`).toBe(200);
+```
+
+## Detect webhook providers
+
+```ts
+import {
+  isStripeWebhook,
+  isGitHubWebhook,
+  isShopifyWebhook,
+  isSlackWebhook,
+  isStandardWebhook,
+} from "@webhooks-cc/sdk";
+
+if (isStandardWebhook(request)) {
+  console.log("Standard Webhooks request (Polar, Svix, Clerk, Resend)");
+}
+
+if (isStripeWebhook(request)) {
+  console.log("Stripe webhook received");
+}
+```
+
+## Learn more
+
+<LinkCard
+  href="/docs/sdk/api"
+  title="API Reference"
+  description="All methods, matchers, and types."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing patterns"
+  description="CI/CD integration examples."
+/>
+
+<LinkCard
+  href="/docs/mcp"
+  title="MCP Server"
+  description="AI agent integration for Claude, Cursor, VS Code."
+/>
+
+<FAQ>
+<FAQItem question="What language does the webhooks.cc SDK support?">
+
+The SDK is written in TypeScript and works with any JavaScript or TypeScript runtime including Node.js, Bun, and Deno. Install with npm, pnpm, yarn, or bun.
+
+</FAQItem>
+<FAQItem question="Can I use the webhooks.cc SDK in CI/CD pipelines?">
+
+Yes. Add your API key as a CI secret and run tests with any test runner. The SDK supports Vitest, Jest, Mocha, and any framework that runs async Node.js code.
+
+</FAQItem>
+</FAQ>

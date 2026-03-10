@@ -1,0 +1,41 @@
+---
+title: "Playwright E2E"
+description: "Combine browser automation with webhook assertions for end-to-end checkout or onboarding flows."
+section: sdk
+order: 7
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["playwright webhooks", "E2E webhook testing", "browser webhook testing"]
+seo:
+  ogTitle: "E2E Webhook Testing with Playwright — webhooks.cc"
+  ogDescription: "Run full browser-to-backend webhook tests with Playwright and assert captured webhook events, payloads, and headers using @webhooks-cc/sdk."
+---
+
+Combine browser automation with webhook assertions for end-to-end checkout or onboarding flows.
+
+```ts
+import { test, expect } from "@playwright/test";
+import { WebhooksCC, matchJsonField } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+test("checkout triggers webhook", async ({ page }) => {
+  const endpoint = await client.endpoints.create({ name: "playwright-e2e" });
+  try {
+    await page.goto(process.env.APP_URL!);
+    await page.fill("[name=email]", "qa@example.com");
+    await page.click("button[data-testid=checkout]");
+
+    const req = await client.requests.waitFor(endpoint.slug, {
+      timeout: "45s",
+      match: matchJsonField("event", "checkout.completed"),
+    });
+
+    expect(req.method).toBe("POST");
+  } finally {
+    await client.endpoints.delete(endpoint.slug);
+  }
+});
+```
+
+Tip: keep endpoint creation/deletion inside each test for parallel-safe runs.

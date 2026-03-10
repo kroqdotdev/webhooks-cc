@@ -1,0 +1,271 @@
+---
+title: "Signature Verification"
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Discord, and Standard Webhooks using the SDK."
+section: sdk
+order: 5
+lastUpdated: 2026-03-10
+schema: faq
+keywords:
+  ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
+seo:
+  ogTitle: "Webhook Signature Verification — webhooks.cc SDK"
+  ogDescription: "Verify webhook signatures for 9 providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, and Ed25519."
+---
+
+## Overview
+
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 9 providers, plus a generic `verifySignature` that dispatches by provider name.
+
+Generic verifier (works with any supported provider):
+
+```ts
+import { verifySignature } from "@webhooks-cc/sdk";
+```
+
+Provider-specific verifiers (when you know the provider at build time):
+
+```ts
+import {
+  verifyStripeSignature,
+  verifyGitHubSignature,
+  verifyShopifySignature,
+  verifyTwilioSignature,
+  verifySlackSignature,
+  verifyPaddleSignature,
+  verifyLinearSignature,
+  verifyDiscordSignature,
+  verifyStandardWebhookSignature,
+} from "@webhooks-cc/sdk";
+```
+
+## Provider reference
+
+| Provider          | Header                                                   | Algorithm            | Secret format      |
+| ----------------- | -------------------------------------------------------- | -------------------- | ------------------ |
+| Stripe            | `stripe-signature`                                       | HMAC-SHA256          | `whsec_...` string |
+| GitHub            | `x-hub-signature-256`                                    | HMAC-SHA256          | Hex string         |
+| Shopify           | `x-shopify-hmac-sha256`                                  | HMAC-SHA256 (base64) | Hex string         |
+| Twilio            | `x-twilio-signature`                                     | HMAC-SHA1            | Auth token         |
+| Slack             | `x-slack-signature` + `x-slack-request-timestamp`        | HMAC-SHA256          | Signing secret     |
+| Paddle            | `paddle-signature` (ts + h1)                             | HMAC-SHA256          | Hex string         |
+| Linear            | `linear-signature`                                       | HMAC-SHA256          | Hex string         |
+| Discord           | `x-signature-ed25519` + `x-signature-timestamp`          | Ed25519              | Hex public key     |
+| Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256          | `whsec_...` or raw |
+
+### Stripe
+
+Stripe uses a `t=timestamp,v1=hash` format in the `stripe-signature` header. The SDK parses the header, reconstructs the signed payload as `{timestamp}.{body}`, and compares the HMAC-SHA256 hash.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "stripe",
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+});
+```
+
+### GitHub
+
+GitHub sends a `sha256=hash` value in `x-hub-signature-256`. The SDK computes HMAC-SHA256 over the raw body and compares.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "github",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+});
+```
+
+### Shopify
+
+Shopify sends a base64-encoded HMAC-SHA256 hash in `x-shopify-hmac-sha256`. The SDK computes the hash over the raw body and compares the base64 output.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "shopify",
+  secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+});
+```
+
+### Twilio
+
+<Callout type="warning">
+  Twilio verification requires the full signed URL -- the callback URL your endpoint was configured
+  at, not just the request body. Pass it as the `url` option.
+</Callout>
+
+Twilio signs using HMAC-SHA1 over the full callback URL concatenated with sorted form parameters. The signature is base64-encoded and sent in `x-twilio-signature`.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "twilio",
+  secret: process.env.TWILIO_AUTH_TOKEN!,
+  url: "https://example.com/api/twilio/webhook",
+});
+```
+
+Without the `url` option, verification throws an error.
+
+### Slack
+
+Slack sends two headers: `x-slack-signature` (format `v0=hash`) and `x-slack-request-timestamp`. The SDK constructs the base string as `v0:{timestamp}:{body}` and computes HMAC-SHA256.
+
+Slack rejects signatures when the timestamp is older than 5 minutes, so verify promptly after capture.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "slack",
+  secret: process.env.SLACK_SIGNING_SECRET!,
+});
+```
+
+### Paddle
+
+Paddle uses a two-part signature format: `ts=timestamp;h1=hash` in the `paddle-signature` header. The SDK parses both parts, reconstructs the signed payload as `{timestamp}:{body}`, and compares the HMAC-SHA256 hash.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "paddle",
+  secret: process.env.PADDLE_WEBHOOK_SECRET!,
+});
+```
+
+### Linear
+
+Linear sends an HMAC-SHA256 hash in the `linear-signature` header, optionally prefixed with `sha256=`. The SDK handles both formats.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "linear",
+  secret: process.env.LINEAR_WEBHOOK_SECRET!,
+});
+```
+
+### Discord
+
+<Callout type="warning">
+  Discord uses Ed25519 public-key verification, not HMAC. Pass `publicKey` instead of `secret`. The
+  key is your Discord application's hex-encoded public key.
+</Callout>
+
+Discord sends `x-signature-ed25519` (hex-encoded signature) and `x-signature-timestamp`. The SDK verifies using `crypto.subtle.verify` with Ed25519.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "discord",
+  publicKey: process.env.DISCORD_PUBLIC_KEY!,
+});
+```
+
+### Standard Webhooks
+
+Standard Webhooks is used by Polar, Svix, Clerk, and Resend. It sends three headers: `webhook-id`, `webhook-timestamp`, and `webhook-signature`. The signed payload is `{messageId}.{timestamp}.{body}`, hashed with HMAC-SHA256 and base64-encoded.
+
+Secrets can include the `whsec_` prefix (base64-encoded key after the prefix) or be passed as raw base64.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "standard-webhooks",
+  secret: process.env.POLAR_WEBHOOK_SECRET!,
+});
+```
+
+## Generic verifier
+
+`verifySignature` accepts a captured request and dispatches to the correct provider-specific function. It returns `{ valid: boolean }`.
+
+```ts
+import { verifySignature } from "@webhooks-cc/sdk";
+
+const result = await verifySignature(request, {
+  provider: "stripe",
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+});
+
+if (result.valid) {
+  // Signature verified — safe to process
+}
+```
+
+The options type is a discriminated union:
+
+```ts
+// HMAC-based providers (stripe, github, shopify, twilio, slack, paddle, linear, standard-webhooks)
+{
+  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "standard-webhooks";
+  secret: string;
+  url?: string;    // Required for twilio
+}
+
+// Ed25519-based provider (discord)
+{
+  provider: "discord";
+  publicKey: string;
+}
+```
+
+## Using with captured requests
+
+Verify a request captured by webhooks.cc. Headers and body are preserved exactly as received, so signatures remain valid.
+
+```ts
+const request = await client.requests.get(requestId);
+
+const result = await verifySignature(request, {
+  provider: "stripe",
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+});
+
+console.log(result.valid); // true
+```
+
+You can also use provider-specific functions directly. These accept the raw body, signature header, and secret as separate arguments:
+
+```ts
+import { verifyStripeSignature } from "@webhooks-cc/sdk";
+
+const request = await client.requests.get(requestId);
+const valid = await verifyStripeSignature(
+  request.body,
+  request.headers["stripe-signature"],
+  process.env.STRIPE_WEBHOOK_SECRET!
+);
+```
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Can I verify signatures on requests captured by webhooks.cc?">
+
+Yes. webhooks.cc preserves the original headers and raw body exactly as received. Signature verification works the same as it would on your own server.
+
+</FAQItem>
+<FAQItem question="Why does Twilio verification need a URL?">
+
+Twilio's signature algorithm covers the full callback URL concatenated with sorted form parameters, not just the body. Without the URL, the SDK cannot reconstruct the signed payload. Pass the URL your endpoint was configured at in Twilio's dashboard using the `url` option.
+
+</FAQItem>
+<FAQItem question="Does Discord use HMAC?">
+
+No. Discord uses Ed25519 public-key cryptography instead of HMAC. When verifying Discord signatures, pass `publicKey` (your application's hex-encoded public key from the Discord developer portal) instead of `secret`. The SDK uses `crypto.subtle` for Ed25519 verification.
+
+</FAQItem>
+</FAQ>
+
+## Learn more
+
+<LinkCard
+  href="/docs/sdk/matchers"
+  title="Matchers & Helpers"
+  description="Filter and parse webhook requests."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing"
+  description="CI/CD integration and testing patterns."
+/>
+
+<LinkCard
+  href="/docs/sdk/api"
+  title="API Reference"
+  description="Complete method reference for the SDK."
+/>

@@ -3,7 +3,7 @@ Allow: /
 Disallow: /dashboard
 Disallow: /account
 Disallow: /endpoints
-Disallow: /api
+Disallow: /api/
 Disallow: /cli/verify
 
 Sitemap: https://webhooks.cc/sitemap-index.xml

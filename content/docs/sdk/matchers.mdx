@@ -1,0 +1,327 @@
+---
+title: "Matchers & Helpers"
+description: "Filter, detect, and parse webhook requests with built-in matchers, provider detection, and body parsing utilities."
+section: sdk
+order: 4
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["webhook matchers", "request matching", "webhook body parsing", "provider detection"]
+seo:
+  ogTitle: "Matchers & Helpers — webhooks.cc SDK"
+  ogDescription: "Filter webhook requests with matchers, detect providers, and parse bodies using the webhooks.cc TypeScript SDK."
+---
+
+## Matchers
+
+Matchers are predicate functions that return `(request) => boolean`. Use them with `waitFor`, `waitForAll`, and `subscribe` to filter incoming requests by method, headers, path, body content, and more.
+
+```ts
+import {
+  matchMethod,
+  matchHeader,
+  matchPath,
+  matchQueryParam,
+  matchBodyPath,
+  matchBodySubset,
+  matchContentType,
+  matchAll,
+  matchAny,
+} from "@webhooks-cc/sdk";
+```
+
+### matchMethod
+
+Match by HTTP method. Comparison is case-insensitive.
+
+```ts
+matchMethod(method: string): (request: Request) => boolean
+```
+
+```ts
+const req = await client.requests.waitFor(slug, {
+  match: matchMethod("POST"),
+});
+```
+
+### matchHeader
+
+Match by header presence, or by header name and exact value. Header names are matched case-insensitively. Values are matched with exact (case-sensitive) equality.
+
+```ts
+matchHeader(name: string, value?: string): (request: Request) => boolean
+```
+
+```ts
+// Header exists (any value)
+matchHeader("stripe-signature");
+
+// Header exists with exact value
+matchHeader("x-github-event", "push");
+```
+
+### matchPath
+
+Match request paths using glob-style wildcards. `*` matches a single path segment, `**` matches multiple segments.
+
+```ts
+matchPath(pattern: string): (request: Request) => boolean
+```
+
+```ts
+matchPath("/webhooks/*"); // matches /webhooks/stripe, not /webhooks/stripe/events
+matchPath("/webhooks/**"); // matches /webhooks/stripe/events/123
+matchPath("/api/*/webhooks"); // matches /api/v1/webhooks
+```
+
+### matchQueryParam
+
+Match query parameter presence or a specific value.
+
+```ts
+matchQueryParam(key: string, value?: string): (request: Request) => boolean
+```
+
+```ts
+// Parameter exists (any value)
+matchQueryParam("token");
+
+// Parameter exists with exact value
+matchQueryParam("token", "abc123");
+```
+
+### matchBodyPath
+
+Match a value at a dot-notation path into the parsed JSON body. Supports array indexing with numeric path segments.
+
+```ts
+matchBodyPath(path: string, value: unknown): (request: Request) => boolean
+```
+
+```ts
+matchBodyPath("type", "checkout.session.completed");
+matchBodyPath("data.object.id", "obj_123");
+matchBodyPath("items.0.name", "Widget");
+```
+
+### matchBodySubset
+
+Deep partial match against the parsed JSON body. Returns true if every key/value in the subset exists in the body, recursively.
+
+```ts
+matchBodySubset(subset: Record<string, unknown>): (request: Request) => boolean
+```
+
+```ts
+matchBodySubset({
+  type: "checkout.session.completed",
+  data: { object: { status: "complete" } },
+});
+```
+
+### matchContentType
+
+Match the `Content-Type` header, ignoring charset and other parameters.
+
+```ts
+matchContentType(type: string): (request: Request) => boolean
+```
+
+```ts
+matchContentType("application/json");
+// matches "application/json; charset=utf-8"
+```
+
+### matchAll
+
+Logical AND -- returns true only when every matcher matches. Requires at least one matcher.
+
+```ts
+matchAll(...matchers: Array<(request: Request) => boolean>): (request: Request) => boolean
+```
+
+```ts
+matchAll(matchMethod("POST"), matchHeader("content-type", "application/json"));
+```
+
+### matchAny
+
+Logical OR -- returns true when at least one matcher matches. Requires at least one matcher.
+
+```ts
+matchAny(...matchers: Array<(request: Request) => boolean>): (request: Request) => boolean
+```
+
+```ts
+matchAny(matchMethod("PUT"), matchMethod("PATCH"));
+```
+
+### Combining matchers
+
+Compose matchers to build precise filters for `waitFor`:
+
+```ts
+const req = await client.requests.waitFor(slug, {
+  timeout: "10s",
+  match: matchAll(
+    matchMethod("POST"),
+    matchHeader("stripe-signature"),
+    matchBodyPath("type", "checkout.session.completed")
+  ),
+});
+```
+
+Nest `matchAll` and `matchAny` for complex logic:
+
+```ts
+const req = await client.requests.waitFor(slug, {
+  timeout: "30s",
+  match: matchAll(
+    matchMethod("POST"),
+    matchAny(matchBodyPath("type", "invoice.paid"), matchBodyPath("type", "invoice.payment_failed"))
+  ),
+});
+```
+
+## Provider detection
+
+Detector functions return `true` or `false` based on the presence of provider-specific headers. Use them to route captured requests by provider.
+
+```ts
+import {
+  isStripeWebhook,
+  isGitHubWebhook,
+  isShopifyWebhook,
+  isSlackWebhook,
+  isTwilioWebhook,
+  isPaddleWebhook,
+  isLinearWebhook,
+  isDiscordWebhook,
+  isStandardWebhook,
+} from "@webhooks-cc/sdk";
+```
+
+| Function                     | Header(s) checked                                            |
+| ---------------------------- | ------------------------------------------------------------ |
+| `isStripeWebhook(request)`   | `stripe-signature`                                           |
+| `isGitHubWebhook(request)`   | `x-github-event`                                             |
+| `isShopifyWebhook(request)`  | `x-shopify-hmac-sha256`                                      |
+| `isSlackWebhook(request)`    | `x-slack-signature`                                          |
+| `isTwilioWebhook(request)`   | `x-twilio-signature`                                         |
+| `isPaddleWebhook(request)`   | `paddle-signature`                                           |
+| `isLinearWebhook(request)`   | `linear-signature`                                           |
+| `isDiscordWebhook(request)`  | `x-signature-ed25519` AND `x-signature-timestamp`            |
+| `isStandardWebhook(request)` | `webhook-id` AND `webhook-timestamp` AND `webhook-signature` |
+
+All header comparisons are case-insensitive. Discord and Standard Webhooks require multiple headers to be present simultaneously.
+
+### Router example
+
+```ts
+const request = await client.requests.waitFor(slug, { timeout: "10s" });
+
+if (isStripeWebhook(request)) {
+  // Verify Stripe signature and handle event
+} else if (isGitHubWebhook(request)) {
+  // Verify GitHub signature and handle event
+} else if (isStandardWebhook(request)) {
+  // Standard Webhooks request (Polar, Svix, Clerk, Resend)
+} else {
+  console.log("Unknown provider");
+}
+```
+
+## Body parsing
+
+Four utilities for extracting structured data from captured request bodies.
+
+```ts
+import { parseJsonBody, parseFormBody, parseBody, extractJsonField } from "@webhooks-cc/sdk";
+```
+
+### parseJsonBody
+
+Safely parse a JSON request body. Returns `undefined` if the body is empty or not valid JSON. Never throws.
+
+```ts
+parseJsonBody(request: Request): unknown | undefined
+```
+
+```ts
+const body = parseJsonBody(request);
+if (body) {
+  console.log(body);
+}
+```
+
+### parseFormBody
+
+Parse an `application/x-www-form-urlencoded` body. Returns `undefined` if the content type does not match. Repeated keys are collected into arrays.
+
+```ts
+parseFormBody(request: Request): Record<string, string | string[]> | undefined
+```
+
+```ts
+const form = parseFormBody(request);
+if (form) {
+  console.log(form.email); // "user@example.com"
+  console.log(form.tags); // ["a", "b"] if repeated
+}
+```
+
+### parseBody
+
+Auto-detect content type and parse accordingly. JSON and form-encoded bodies are decoded; other content types are returned as raw text.
+
+```ts
+parseBody(request: Request): unknown | Record<string, string | string[]> | string | undefined
+```
+
+```ts
+const parsed = parseBody(request);
+```
+
+### extractJsonField
+
+Extract a nested field from the JSON body using dot-notation. Supports array indexing. Returns `undefined` if the body is missing, invalid JSON, or the path does not exist.
+
+```ts
+extractJsonField<T>(request: Request, path: string): T | undefined
+```
+
+```ts
+const email = extractJsonField<string>(request, "data.customer.email");
+const firstItem = extractJsonField<string>(request, "items.0.name");
+```
+
+### matchJsonField
+
+A convenience matcher that checks whether a top-level JSON field equals an expected value. Works like `matchBodyPath` but limited to top-level fields.
+
+```ts
+import { matchJsonField } from "@webhooks-cc/sdk";
+
+const req = await client.requests.waitFor(slug, {
+  match: matchJsonField("type", "checkout.session.completed"),
+});
+```
+
+## Learn more
+
+<LinkCard
+  href="/docs/sdk/api"
+  title="API Reference"
+  description="Complete method reference for the SDK."
+/>
+
+<LinkCard
+  href="/docs/sdk/signatures"
+  title="Signature Verification"
+  description="Verify webhook signatures for 9 providers."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing"
+  description="CI/CD integration and testing patterns."
+/>

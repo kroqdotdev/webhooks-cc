@@ -150,11 +150,12 @@ describe("GET /api/search/requests/count", () => {
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ nope: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ nope: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
       )
     );
 
@@ -165,4 +166,3 @@ describe("GET /api/search/requests/count", () => {
     await expect(response.json()).resolves.toEqual({ error: "Unexpected response format" });
   });
 });
-

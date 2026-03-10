@@ -1,0 +1,46 @@
+---
+title: "Stripe + Vitest"
+description: "End-to-end Stripe webhook assertion pattern using endpoint lifecycle setup/teardown."
+section: sdk
+order: 5
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["stripe webhooks", "stripe vitest", "stripe webhook testing"]
+seo:
+  ogTitle: "Stripe Webhook Testing with Vitest — webhooks.cc"
+  ogDescription: "Example Vitest integration test using @webhooks-cc/sdk to assert Stripe webhook delivery, headers, and payload fields in CI."
+---
+
+End-to-end Stripe webhook assertion pattern using endpoint lifecycle setup/teardown.
+
+```ts
+import { WebhooksCC, matchHeader, matchJsonField, matchAll } from "@webhooks-cc/sdk";
+import { describe, beforeAll, afterAll, it, expect } from "vitest";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+let endpoint: Awaited<ReturnType<typeof client.endpoints.create>>;
+
+describe("stripe webhooks", () => {
+  beforeAll(async () => {
+    endpoint = await client.endpoints.create({ name: "stripe-vitest" });
+  });
+
+  afterAll(async () => {
+    await client.endpoints.delete(endpoint.slug);
+  });
+
+  it("captures payment_intent.succeeded", async () => {
+    await triggerStripeCheckout({ webhookUrl: endpoint.url! });
+
+    const req = await client.requests.waitFor(endpoint.slug, {
+      timeout: "30s",
+      match: matchAll(
+        matchHeader("stripe-signature"),
+        matchJsonField("type", "payment_intent.succeeded")
+      ),
+    });
+
+    expect(req.method).toBe("POST");
+  });
+});
+```

@@ -212,6 +212,30 @@ function isStringRecord(obj: unknown): obj is Record<string, string> {
   return Object.values(obj).every((v) => typeof v === "string");
 }
 
+function encodePaginatedCursor(cursor: string, cutoff: number): string {
+  return btoa(JSON.stringify({ cursor, cutoff }))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodePaginatedCursor(value: string): { cursor: string; cutoff: number } | null {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const decoded = JSON.parse(atob(padded)) as Record<string, unknown>;
+    if (typeof decoded.cursor !== "string" || typeof decoded.cutoff !== "number") {
+      return null;
+    }
+    return {
+      cursor: decoded.cursor,
+      cutoff: decoded.cutoff,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Constant-time string comparison to prevent timing attacks.
  * Uses HMAC-based comparison which runs in constant time.
@@ -690,6 +714,47 @@ http.route({
   }),
 });
 
+// Fetch aggregate user usage/quota for SDK and CLI consumers.
+http.route({
+  path: "/cli/usage",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const userId = url.searchParams.get("userId");
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "missing_user_id" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const usage = await ctx.runQuery(internal.users.getUsageById, {
+        userId: userId as Id<"users">,
+      });
+      if (!usage) {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify(usage), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("[http:error] cli/usage GET:", error);
+      return new Response(JSON.stringify({ error: "Failed to fetch usage" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
 // List users by plan (paginated). Internal-only for receiver retention jobs.
 http.route({
   path: "/users-by-plan",
@@ -748,16 +813,76 @@ http.route({
       });
     }
 
+    if (body.name !== undefined && typeof body.name !== "string") {
+      return new Response(JSON.stringify({ error: "invalid_name" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (body.isEphemeral !== undefined && typeof body.isEphemeral !== "boolean") {
+      return new Response(JSON.stringify({ error: "invalid_is_ephemeral" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (
+      body.expiresAt !== undefined &&
+      (typeof body.expiresAt !== "number" ||
+        !Number.isFinite(body.expiresAt) ||
+        body.expiresAt <= Date.now())
+    ) {
+      return new Response(JSON.stringify({ error: "invalid_expires_at" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (body.mockResponse === null) {
+      return new Response(JSON.stringify({ error: "invalid_mock_response" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (body.mockResponse !== undefined) {
+      if (
+        typeof body.mockResponse !== "object" ||
+        typeof body.mockResponse.status !== "number" ||
+        typeof body.mockResponse.body !== "string" ||
+        !isStringRecord(body.mockResponse.headers)
+      ) {
+        return new Response(JSON.stringify({ error: "invalid_mock_response" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
     try {
       const result = await ctx.runMutation(internal.endpoints.createForUser, {
         userId: body.userId,
         name: body.name,
         isEphemeral: body.isEphemeral === true,
+        expiresAt: body.expiresAt,
+        mockResponse: body.mockResponse ?? undefined,
       });
       return new Response(JSON.stringify(result), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.startsWith("Endpoint name must be") ||
+        message.startsWith("Mock response status must be") ||
+        message === "expires_at_must_be_future"
+      ) {
+        return new Response(JSON.stringify({ error: "invalid_input" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       console.error("[http:error] cli/endpoints POST:", error);
       return new Response(JSON.stringify({ error: "Failed to create endpoint" }), {
         status: 500,
@@ -1023,6 +1148,80 @@ http.route({
   }),
 });
 
+// Clear requests for an endpoint owned by a user
+http.route({
+  path: "/cli/requests",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof body.userId !== "string" || typeof body.slug !== "string") {
+      return new Response(JSON.stringify({ error: "missing_fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!SLUG_REGEX.test(body.slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (
+      body.before !== undefined &&
+      (typeof body.before !== "number" || !Number.isFinite(body.before) || body.before < 0)
+    ) {
+      return new Response(JSON.stringify({ error: "invalid_before" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.requests.clearEndpointRequestsForUser, {
+        userId: body.userId,
+        slug: body.slug,
+        before: body.before,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "not_found") {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (message === "not_authorized") {
+        return new Response(JSON.stringify({ error: "not_authorized" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      console.error("[http:error] cli/requests DELETE:", error);
+      return new Response(JSON.stringify({ error: "Failed to clear requests" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
 // Get requests since timestamp for SSE polling
 http.route({
   path: "/cli/requests-since",
@@ -1145,6 +1344,95 @@ http.route({
     } catch (error) {
       console.error("[http:error] cli/requests-list GET:", error);
       return new Response(JSON.stringify({ error: "Failed to list requests" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+http.route({
+  path: "/cli/requests-list-paginated",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authError = await verifySharedSecret(request);
+    if (authError) return authError;
+
+    const url = new URL(request.url);
+    const slug = url.searchParams.get("slug");
+    const userId = url.searchParams.get("userId");
+    const limit = url.searchParams.get("limit");
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+
+    if (!slug || !userId) {
+      return new Response(JSON.stringify({ error: "missing_params" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      return new Response(JSON.stringify({ error: "invalid_slug" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const parsedLimitRaw = limit ? parseInt(limit, 10) : 50;
+    if (isNaN(parsedLimitRaw) || parsedLimitRaw < 1) {
+      return new Response(JSON.stringify({ error: "invalid_limit" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const parsedLimit = Math.min(parsedLimitRaw, 500);
+
+    const decodedCursor = cursor ? decodePaginatedCursor(cursor) : null;
+    if (cursor && !decodedCursor) {
+      return new Response(JSON.stringify({ error: "invalid_cursor" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const endpoint = await ctx.runQuery(internal.endpoints.getBySlugForUser, {
+        slug,
+        userId: userId as Id<"users">,
+      });
+      if (!endpoint) {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const result = await ctx.runQuery(internal.requests.listPaginatedForUser, {
+        endpointId: endpoint._id,
+        userId: userId as Id<"users">,
+        cutoff: decodedCursor?.cutoff,
+        paginationOpts: {
+          cursor: decodedCursor?.cursor ?? null,
+          numItems: parsedLimit,
+        },
+      });
+
+      return new Response(
+        JSON.stringify({
+          items: result.page,
+          cursor:
+            result.isDone || !result.continueCursor
+              ? undefined
+              : encodePaginatedCursor(result.continueCursor, result.cutoff),
+          hasMore: !result.isDone,
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    } catch (error) {
+      console.error("[http:error] cli/requests-list-paginated GET:", error);
+      return new Response(JSON.stringify({ error: "Failed to list paginated requests" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });

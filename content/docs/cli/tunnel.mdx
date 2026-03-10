@@ -1,0 +1,103 @@
+---
+title: "Tunneling"
+description: "Forward webhooks to your local server without deploying or exposing ports."
+section: cli
+order: 3
+lastUpdated: 2026-03-10
+schema: howto
+keywords: ["webhook tunnel", "localhost forwarding", "webhook forward", "local development"]
+seo:
+  ogTitle: "Webhook Tunnel to Localhost — webhooks.cc"
+  ogDescription: "Forward webhooks from webhooks.cc to your local development server with the CLI tunnel. No port forwarding, firewall changes, or ngrok."
+---
+
+## Interactive mode
+
+The fastest way to start tunneling is through the interactive TUI:
+
+```bash
+whk
+```
+
+Select **Tunnel** from the menu, enter your local port, and the TUI connects automatically. Incoming requests appear in a live stream showing:
+
+- Timestamp and color-coded HTTP method
+- Request path
+- Forward result with status code and latency
+
+Press Enter on any request to open the detail viewer with three tabs: **Overview** (method, path, IP, size), **Headers**, and **Body** (with JSON pretty-printing). Press Esc to go back.
+
+## Create and forward
+
+```bash
+whk tunnel 3000
+```
+
+Creates an endpoint, prints its URL, and forwards every incoming request to `localhost:3000`. The sender receives the mock response you configured (200 OK by default).
+
+## Forward an existing endpoint
+
+Use `--endpoint` to forward an endpoint you already created in the dashboard or CLI:
+
+```bash
+whk tunnel 3000 --endpoint <slug>
+```
+
+## Ephemeral mode
+
+Delete the endpoint when the tunnel exits:
+
+```bash
+whk tunnel 3000 -e
+```
+
+## Custom headers
+
+Inject headers into every forwarded request with `-H` (repeatable):
+
+```bash
+whk tunnel 3000 -H "Authorization: Bearer test-token" -H "X-Custom: value"
+```
+
+## Listen without forwarding
+
+Stream requests to the terminal without forwarding them to a local server:
+
+```bash
+whk listen <slug>
+```
+
+## How it works
+
+1. The CLI creates (or connects to) an endpoint on webhooks.cc.
+2. When a webhook arrives, the server pushes it to the CLI over Server-Sent Events (SSE).
+3. The CLI replays the request — method, headers, body — to your local port.
+4. Your local server processes it as if the sender called it directly.
+
+Sensitive headers (Authorization, Cookie) from the original request are filtered out before forwarding. Use `-H` to inject authentication headers your local server needs.
+
+## Tips
+
+- The tunnel reconnects on network interruptions.
+- Your local server's response does not affect what the webhook sender receives.
+- Multiple tunnels can run against different endpoints simultaneously.
+- Use `-e` for throwaway sessions that clean up on exit.
+- Pass `--nogui` or set `WHK_NOGUI=1` to disable the TUI and use plain text output.
+
+<FAQ>
+<FAQItem question="How do I forward webhooks to localhost?">
+
+Run `whk tunnel 3000` to create an endpoint and forward all incoming webhooks to your local server. The CLI connects via SSE and replays each request with the original method, headers, and body.
+
+</FAQItem>
+<FAQItem question="Do I need to expose my local port to the internet?">
+
+No. The webhooks.cc CLI creates an outbound connection from your machine. No port forwarding, firewall changes, or public IP address required.
+
+</FAQItem>
+<FAQItem question="Can I use an existing endpoint with the tunnel?">
+
+Yes. Pass `--endpoint <slug>` to forward an endpoint you already created in the dashboard or CLI, instead of creating a new one.
+
+</FAQItem>
+</FAQ>

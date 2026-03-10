@@ -1,249 +1,425 @@
 # @webhooks-cc/sdk
 
-TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints, capture requests, match and replay them, and stream events in real time.
+TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints, capture and search requests, send signed test webhooks, verify provider signatures, and build webhook tests with less boilerplate.
 
 ## Install
 
 ```bash
-npm install @webhooks-cc/sdk
-# or: pnpm add / yarn add / bun add
+pnpm add @webhooks-cc/sdk
+```
+
+The package also ships a testing entrypoint:
+
+```typescript
+import { captureDuring, assertRequest } from "@webhooks-cc/sdk/testing";
+```
+
+## API key setup
+
+The SDK needs an API key in `whcc_...` format. You can pass the key directly, but most projects load it from `WHK_API_KEY` so the same code works locally and in CI.
+
+For local development, set the env var in your shell or `.env.local`:
+
+```bash
+export WHK_API_KEY=whcc_...
+```
+
+For GitHub Actions, store the key as a repository secret and expose it in the workflow:
+
+```yaml
+# .github/workflows/test.yml
+env:
+  WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
 ```
 
 ## Quick start
 
 ```typescript
-import { WebhooksCC, matchAll, matchMethod, matchHeader } from "@webhooks-cc/sdk";
+import { WebhooksCC, matchAll, matchHeader, matchMethod } from "@webhooks-cc/sdk";
 
-const client = new WebhooksCC({ apiKey: "whcc_..." });
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
 
-// Create an endpoint
-const endpoint = await client.endpoints.create({ name: "stripe-test" });
-console.log(endpoint.url); // https://go.webhooks.cc/w/abc123
+const endpoint = await client.endpoints.create({
+  name: "stripe-test",
+  expiresIn: "1h",
+});
 
-// Point your service at endpoint.url, then wait for the webhook
+await yourApp.registerWebhook(endpoint.url!);
+await yourApp.triggerCheckout();
+
 const request = await client.requests.waitFor(endpoint.slug, {
   timeout: "30s",
   match: matchAll(matchMethod("POST"), matchHeader("stripe-signature")),
 });
 
-console.log(request.body); // '{"type":"checkout.session.completed",...}'
+console.log(request.body);
 
-// Clean up
 await client.endpoints.delete(endpoint.slug);
 ```
 
 ## Client options
 
 ```typescript
-new WebhooksCC(options);
-```
-
-| Option       | Type          | Default                  | Description               |
-| ------------ | ------------- | ------------------------ | ------------------------- |
-| `apiKey`     | `string`      | _required_               | API key (`whcc_...`)      |
-| `baseUrl`    | `string`      | `https://webhooks.cc`    | API base URL              |
-| `webhookUrl` | `string`      | `https://go.webhooks.cc` | Webhook receiver URL      |
-| `timeout`    | `number`      | `30000`                  | HTTP request timeout (ms) |
-| `hooks`      | `ClientHooks` | —                        | Lifecycle callbacks       |
-
-### Hooks
-
-```typescript
 const client = new WebhooksCC({
   apiKey: "whcc_...",
+  retry: {
+    maxAttempts: 3,
+    backoffMs: 500,
+  },
   hooks: {
-    onRequest: (info) => console.log(info.method, info.url),
-    onResponse: (info) => console.log(info.status),
-    onError: (info) => console.error(info.error),
+    onRequest: ({ method, url }) => console.log(method, url),
+    onResponse: ({ status, durationMs }) => console.log(status, durationMs),
+    onError: ({ error }) => console.error(error),
   },
 });
 ```
 
+| Option       | Type           | Default                  | Notes                                                                    |
+| ------------ | -------------- | ------------------------ | ------------------------------------------------------------------------ |
+| `apiKey`     | `string`       | required                 | API key in `whcc_...` format. Often read from `process.env.WHK_API_KEY`. |
+| `baseUrl`    | `string`       | `https://webhooks.cc`    | API base URL                                                             |
+| `webhookUrl` | `string`       | `https://go.webhooks.cc` | receiver base URL used by `endpoints.send()`                             |
+| `timeout`    | `number`       | `30000`                  | request timeout in milliseconds                                          |
+| `retry`      | `RetryOptions` | `1` attempt              | retries transient SDK requests                                           |
+| `hooks`      | `ClientHooks`  | none                     | lifecycle callbacks for request logging                                  |
+
+## API overview
+
+- `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `send`, `sendTemplate`
+- `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `count`, `clear`, `export`
+- `client.templates`: `listProviders`, `get`
+- top-level client methods: `usage()`, `sendTo()`, `buildRequest()`, `flow()`, `describe()`
+
 ## Endpoints
 
+Create persistent or ephemeral endpoints. You can also attach a mock response at creation time.
+
 ```typescript
-// Create
-const endpoint = await client.endpoints.create({ name: "my-test" });
-
-// List all
-const endpoints = await client.endpoints.list();
-
-// Get by slug
-const endpoint = await client.endpoints.get("abc123");
-
-// Update name or mock response
-await client.endpoints.update("abc123", {
-  name: "New Name",
-  mockResponse: { status: 201, body: '{"ok":true}', headers: {} },
+const endpoint = await client.endpoints.create({
+  name: "billing-webhooks",
+  expiresIn: "12h",
+  mockResponse: {
+    status: 202,
+    body: '{"queued":true}',
+    headers: { "x-webhooks-cc": "mock" },
+  },
 });
 
-// Clear mock response
-await client.endpoints.update("abc123", { mockResponse: null });
+const fetched = await client.endpoints.get(endpoint.slug);
+console.log(fetched.isEphemeral, fetched.expiresAt);
 
-// Send a test webhook
-const res = await client.endpoints.send("abc123", {
+await client.endpoints.update(endpoint.slug, {
+  name: "billing-webhooks-renamed",
+  mockResponse: null,
+});
+```
+
+Send plain test requests through the hosted receiver:
+
+```typescript
+await client.endpoints.send(endpoint.slug, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: { event: "test" },
+  body: { event: "invoice.paid" },
 });
-
-// Delete
-await client.endpoints.delete("abc123");
 ```
 
 ## Requests
 
+List, paginate, wait, stream, replay, export, and clear captured requests.
+
 ```typescript
-// List captured requests
-const requests = await client.requests.list("endpoint-slug", {
+const recent = await client.requests.list(endpoint.slug, {
   limit: 50,
-  since: Date.now() - 60000,
+  since: Date.now() - 60_000,
 });
 
-// Get a single request by ID
-const request = await client.requests.get("request-id");
+const page1 = await client.requests.listPaginated(endpoint.slug, { limit: 100 });
+const page2 = page1.cursor
+  ? await client.requests.listPaginated(endpoint.slug, { limit: 100, cursor: page1.cursor })
+  : { items: [], hasMore: false };
 
-// Poll until a matching request arrives
-const request = await client.requests.waitFor("endpoint-slug", {
-  timeout: "30s", // human-readable or milliseconds
-  pollInterval: "500ms",
+const firstMatch = await client.requests.waitFor(endpoint.slug, {
+  timeout: "20s",
   match: matchHeader("stripe-signature"),
 });
 
-// Replay a captured request to a target URL
-const res = await client.requests.replay(request.id, "http://localhost:3000/webhooks");
+const allMatches = await client.requests.waitForAll(endpoint.slug, {
+  count: 3,
+  timeout: "30s",
+  match: matchMethod("POST"),
+});
 
-// Stream requests in real time via SSE
-for await (const req of client.requests.subscribe("endpoint-slug")) {
-  console.log(req.method, req.body);
+for await (const request of client.requests.subscribe(endpoint.slug, { reconnect: true })) {
+  console.log(request.method, request.path);
 }
 ```
 
-## Matchers
-
-Composable functions for `waitFor`'s `match` option:
+Replay, export, and clear requests:
 
 ```typescript
-import { matchMethod, matchHeader, matchBodyPath, matchAll, matchAny } from "@webhooks-cc/sdk";
+await client.requests.replay(firstMatch.id, "http://localhost:3001/webhooks");
 
-// Match POST requests with a specific header
-matchAll(matchMethod("POST"), matchHeader("x-event-type", "payment.success"));
+const curlExport = await client.requests.export(endpoint.slug, {
+  format: "curl",
+  limit: 10,
+});
 
-// Match header presence (any value)
-matchHeader("stripe-signature");
+const harExport = await client.requests.export(endpoint.slug, {
+  format: "har",
+  since: Date.now() - 3_600_000,
+});
 
-// Match a nested JSON body field
-matchBodyPath("data.object.id", "sub_123");
-
-// Match any of several conditions
-matchAny(matchHeader("stripe-signature"), matchHeader("x-github-event"));
+await client.requests.clear(endpoint.slug, { before: "24h" });
 ```
 
-## Provider helpers
-
-Detect webhook sources by their signature headers:
+Search and count use the retained request store rather than the live endpoint request table:
 
 ```typescript
-import { isStripeWebhook, isGitHubWebhook } from "@webhooks-cc/sdk";
+const retained = await client.requests.search({
+  slug: endpoint.slug,
+  q: "checkout.session.completed",
+  from: "7d",
+  limit: 20,
+});
 
-if (isStripeWebhook(request)) {
-  // has stripe-signature header
+const total = await client.requests.count({
+  slug: endpoint.slug,
+  q: "checkout.session.completed",
+  from: "7d",
+});
+```
+
+`search()` returns `SearchResult[]`. Their `id` field is synthetic and is not valid for `requests.get()` or `requests.replay()`.
+
+## Templates, sendTo, and buildRequest
+
+The SDK can generate signed webhook payloads for:
+
+- `stripe`
+- `github`
+- `shopify`
+- `twilio`
+- `slack`
+- `paddle`
+- `linear`
+- `standard-webhooks`
+
+Inspect the static provider metadata:
+
+```typescript
+const providers = client.templates.listProviders();
+const stripe = client.templates.get("stripe");
+
+console.log(providers);
+console.log(stripe.signatureHeader, stripe.templates);
+```
+
+If you prefer a static export, import `TEMPLATE_METADATA` from `@webhooks-cc/sdk`.
+
+Send a signed provider template through a hosted endpoint:
+
+```typescript
+await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "slack",
+  template: "slash_command",
+  secret: process.env.SLACK_SIGNING_SECRET!,
+});
+```
+
+Build or send a signed request directly to any URL:
+
+```typescript
+const preview = await client.buildRequest("http://localhost:3001/webhooks", {
+  provider: "stripe",
+  template: "checkout.session.completed",
+  secret: "whsec_test_123",
+});
+
+await client.sendTo("http://localhost:3001/webhooks", {
+  provider: "github",
+  template: "push",
+  secret: "github_secret",
+});
+```
+
+## Signature verification
+
+The SDK includes provider-specific verification helpers and a provider-agnostic `verifySignature()`.
+
+Provider-specific helpers such as `verifyStripeSignature()` and `verifyDiscordSignature()` are also exported.
+
+Supported verification providers:
+
+- `stripe`
+- `github`
+- `shopify`
+- `twilio`
+- `slack`
+- `paddle`
+- `linear`
+- `discord`
+- `standard-webhooks`
+
+```typescript
+import { isDiscordWebhook, verifySignature } from "@webhooks-cc/sdk";
+
+if (isDiscordWebhook(request)) {
+  const result = await verifySignature(request, {
+    provider: "discord",
+    publicKey: process.env.DISCORD_PUBLIC_KEY!,
+  });
+
+  console.log(result.valid);
 }
 ```
 
-Available: `isStripeWebhook`, `isGitHubWebhook`, `isShopifyWebhook`, `isSlackWebhook`, `isTwilioWebhook`, `isPaddleWebhook`, `isLinearWebhook`.
-
-## Self-description
-
-AI agents can call `client.describe()` to get a structured summary of all SDK operations, parameters, and return types — no API call required.
+For Twilio, pass the original signed URL:
 
 ```typescript
-const desc = client.describe();
-// { version: "0.3.0", endpoints: { create: { ... }, ... }, requests: { ... } }
+const result = await verifySignature(request, {
+  provider: "twilio",
+  secret: process.env.TWILIO_AUTH_TOKEN!,
+  url: "https://example.com/webhooks/twilio",
+});
+```
+
+Discord support is verification-only. It is not part of the template generation API.
+
+Request detection helpers are exported too: `isStripeWebhook()`, `isGitHubWebhook()`, `isShopifyWebhook()`, `isSlackWebhook()`, `isTwilioWebhook()`, `isPaddleWebhook()`, `isLinearWebhook()`, `isDiscordWebhook()`, and `isStandardWebhook()`.
+
+## Matchers, parsing, and diffing
+
+Use matchers with `waitFor()` or `waitForAll()`:
+
+```typescript
+import {
+  matchAll,
+  matchBodySubset,
+  matchContentType,
+  matchHeader,
+  matchPath,
+  matchQueryParam,
+} from "@webhooks-cc/sdk";
+
+const request = await client.requests.waitFor(endpoint.slug, {
+  match: matchAll(
+    matchPath("/webhooks/stripe"),
+    matchHeader("stripe-signature"),
+    matchContentType("application/json"),
+    matchQueryParam("tenant", "acme"),
+    matchBodySubset({ type: "checkout.session.completed" })
+  ),
+});
+```
+
+`matchAny()`, `matchBodyPath()`, and `matchJsonField()` are available when you need looser matching.
+
+Parse request bodies and diff captures:
+
+```typescript
+import { diffRequests, extractJsonField, parseBody, parseFormBody } from "@webhooks-cc/sdk";
+
+const parsed = parseBody(request);
+const form = parseFormBody(request);
+const eventType = extractJsonField<string>(request, "type");
+
+const diff = diffRequests(previousRequest, request, {
+  ignoreHeaders: ["date", "x-request-id"],
+});
+
+console.log(parsed, form, eventType, diff.matches);
+```
+
+## Testing helpers
+
+`@webhooks-cc/sdk/testing` adds a small test-oriented layer:
+
+- `withEndpoint()`
+- `withEphemeralEndpoint()`
+- `captureDuring()`
+- `assertRequest()`
+
+```typescript
+import { matchHeader, WebhooksCC } from "@webhooks-cc/sdk";
+import { assertRequest, captureDuring } from "@webhooks-cc/sdk/testing";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+const [request] = await captureDuring(
+  client,
+  async (endpoint) => {
+    await yourApp.registerWebhook(endpoint.url!);
+    await yourApp.triggerCheckout();
+  },
+  {
+    expiresIn: "1h",
+    timeout: "20s",
+    match: matchHeader("stripe-signature"),
+  }
+);
+
+assertRequest(
+  request,
+  {
+    method: "POST",
+    bodyJson: { type: "checkout.session.completed" },
+  },
+  { throwOnFailure: true }
+);
+```
+
+## Flow builder
+
+`client.flow()` composes the common test sequence into one chain: create endpoint, optionally set a mock, send a request, wait for capture, verify the signature, replay the request, and clean up.
+
+```typescript
+const result = await client
+  .flow()
+  .createEndpoint({ expiresIn: "1h" })
+  .sendTemplate({
+    provider: "github",
+    template: "push",
+    secret: "github_secret",
+  })
+  .waitForCapture({ timeout: "15s" })
+  .verifySignature({
+    provider: "github",
+    secret: "github_secret",
+  })
+  .cleanup()
+  .run();
+
+console.log(result.request?.id, result.verification?.valid, result.cleanedUp);
+```
+
+## Usage and self-description
+
+Check quota state from code:
+
+```typescript
+const usage = await client.usage();
+console.log(usage.used, usage.limit, usage.remaining, usage.plan);
+```
+
+Ask the client what it supports without making an API call:
+
+```typescript
+const description = client.describe();
+console.log(description.requests.waitForAll);
 ```
 
 ## Errors
 
-All API errors extend `WebhooksCCError` and include actionable recovery hints:
+API failures throw typed errors:
 
-```typescript
-import { WebhooksCC, WebhooksCCError, NotFoundError } from "@webhooks-cc/sdk";
+- `WebhooksCCError`
+- `UnauthorizedError`
+- `NotFoundError`
+- `TimeoutError`
+- `RateLimitError`
 
-try {
-  await client.endpoints.get("nonexistent");
-} catch (error) {
-  if (error instanceof WebhooksCCError) {
-    console.log(error.statusCode); // 404
-    console.log(error.message); // includes what went wrong and how to fix it
-  }
-}
-```
-
-Error classes: `WebhooksCCError`, `UnauthorizedError`, `NotFoundError`, `TimeoutError`, `RateLimitError`. The legacy `ApiError` alias is still exported for backward compatibility.
-
-## GitHub Actions
-
-Add your API key as a repository secret named `WHK_API_KEY`:
-
-```yaml
-- name: Run webhook tests
-  env:
-    WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
-  run: npx vitest run
-```
-
-```typescript
-// webhook.test.ts
-import { describe, it, expect, afterAll } from "vitest";
-import { WebhooksCC, matchHeader } from "@webhooks-cc/sdk";
-
-const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
-
-describe("webhook integration", () => {
-  let slug: string;
-
-  it("receives Stripe webhook", async () => {
-    const endpoint = await client.endpoints.create({ name: "CI Test" });
-    slug = endpoint.slug;
-
-    // Trigger your service to send a webhook to endpoint.url
-    await yourService.registerWebhook(endpoint.url!);
-    await yourService.createOrder();
-
-    const req = await client.requests.waitFor(slug, {
-      timeout: "15s",
-      match: matchHeader("stripe-signature"),
-    });
-
-    const body = JSON.parse(req.body!);
-    expect(body.type).toBe("checkout.session.completed");
-  });
-
-  afterAll(async () => {
-    if (slug) await client.endpoints.delete(slug);
-  });
-});
-```
-
-## Types
-
-All types are exported:
-
-```typescript
-import type {
-  ClientOptions,
-  ClientHooks,
-  Endpoint,
-  Request,
-  CreateEndpointOptions,
-  UpdateEndpointOptions,
-  SendOptions,
-  ListRequestsOptions,
-  WaitForOptions,
-  SubscribeOptions,
-  SDKDescription,
-} from "@webhooks-cc/sdk";
-```
+`ApiError` is still exported as a legacy alias of `WebhooksCCError`.
 
 ## License
 

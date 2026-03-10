@@ -17,15 +17,28 @@ import type {
   ClientOptions,
   ClientHooks,
   Endpoint,
+  MockResponse,
   Request,
+  UsageInfo,
   CreateEndpointOptions,
   UpdateEndpointOptions,
   SendOptions,
   SendTemplateOptions,
   SendToOptions,
+  TemplateProvider,
+  TemplateProviderInfo,
   ListRequestsOptions,
+  ListPaginatedRequestsOptions,
+  PaginatedResult,
+  ClearRequestsOptions,
+  ExportRequestsOptions,
+  RequestsExport,
+  SearchFilters,
+  SearchResult,
   WaitForOptions,
+  WaitForAllOptions,
   SubscribeOptions,
+  RetryOptions,
   SDKDescription,
 } from "./types";
 import {
@@ -37,12 +50,20 @@ import {
 } from "./errors";
 import { parseDuration } from "./utils";
 import { parseSSE } from "./sse";
-import { buildTemplateSendOptions } from "./templates";
+import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "./templates";
+import { buildCurlExport, buildHarExport } from "./request-export";
+import { WebhookFlowBuilder } from "./flow";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
 const DEFAULT_TIMEOUT = 30000;
+const DEFAULT_RETRY_ATTEMPTS = 1;
+const DEFAULT_RETRY_BACKOFF_MS = 1000;
+const DEFAULT_RETRY_STATUSES = [429, 500, 502, 503, 504];
 const SDK_VERSION = "0.6.0";
+const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
+const DEFAULT_EXPORT_PAGE_SIZE = 100;
+const PROVIDER_PARAM_DESCRIPTION = TEMPLATE_PROVIDERS.map((provider) => `"${provider}"`).join("|");
 
 // Poll interval bounds: 10ms minimum prevents busy loops, 60s maximum prevents stale connections
 const MIN_POLL_INTERVAL = 10;
@@ -131,6 +152,249 @@ function validatePathSegment(segment: string, name: string): void {
   }
 }
 
+function resolveTimestampFilter(value: number | string, now: number): number {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Invalid timestamp filter: value cannot be empty");
+  }
+
+  const asNumber = Number(trimmed);
+  if (!Number.isNaN(asNumber)) {
+    return asNumber;
+  }
+
+  return now - parseDuration(trimmed);
+}
+
+function buildSearchQuery(filters: SearchFilters, includePagination: boolean): string {
+  const params = new URLSearchParams();
+  const now = Date.now();
+
+  if (filters.slug !== undefined) {
+    validatePathSegment(filters.slug, "slug");
+    params.set("slug", filters.slug);
+  }
+  if (filters.method !== undefined) {
+    params.set("method", filters.method);
+  }
+  if (filters.q !== undefined) {
+    params.set("q", filters.q);
+  }
+  if (filters.from !== undefined) {
+    params.set("from", String(resolveTimestampFilter(filters.from, now)));
+  }
+  if (filters.to !== undefined) {
+    params.set("to", String(resolveTimestampFilter(filters.to, now)));
+  }
+  if (includePagination && filters.limit !== undefined) {
+    params.set("limit", String(filters.limit));
+  }
+  if (includePagination && filters.offset !== undefined) {
+    params.set("offset", String(filters.offset));
+  }
+  if (includePagination && filters.order !== undefined) {
+    params.set("order", filters.order);
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function buildClearQuery(options: ClearRequestsOptions = {}): string {
+  const params = new URLSearchParams();
+  if (options.before !== undefined) {
+    params.set("before", String(resolveTimestampFilter(options.before, Date.now())));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function buildPaginatedListQuery(options: ListPaginatedRequestsOptions = {}): string {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.cursor !== undefined) {
+    params.set("cursor", options.cursor);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function parseRetryAfterHeader(response: Response): number | undefined {
+  const retryAfterHeader = response.headers.get("retry-after");
+  if (!retryAfterHeader) {
+    return undefined;
+  }
+
+  const parsedSeconds = parseInt(retryAfterHeader, 10);
+  if (!Number.isNaN(parsedSeconds) && parsedSeconds >= 0) {
+    return parsedSeconds;
+  }
+
+  return undefined;
+}
+
+function normalizeRetryOptions(retry?: RetryOptions): {
+  maxAttempts: number;
+  backoffMs: number;
+  retryOn: Set<number>;
+} {
+  const maxAttempts = Math.max(1, Math.floor(retry?.maxAttempts ?? DEFAULT_RETRY_ATTEMPTS));
+  const backoffMs = Math.max(0, Math.floor(retry?.backoffMs ?? DEFAULT_RETRY_BACKOFF_MS));
+  return {
+    maxAttempts,
+    backoffMs,
+    retryOn: new Set(retry?.retryOn ?? DEFAULT_RETRY_STATUSES),
+  };
+}
+
+function normalizeExportPageSize(limit: number | undefined): number {
+  if (limit === undefined) {
+    return DEFAULT_EXPORT_PAGE_SIZE;
+  }
+  return Math.max(1, Math.min(DEFAULT_EXPORT_PAGE_SIZE, Math.floor(limit)));
+}
+
+function buildStreamPath(slug: string, since?: number): string {
+  const params = new URLSearchParams();
+  if (since !== undefined) {
+    params.set("since", String(Math.max(0, Math.floor(since))));
+  }
+  const query = params.toString();
+  return `/api/stream/${slug}${query ? `?${query}` : ""}`;
+}
+
+function normalizeReconnectBackoff(value: number | string | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_RETRY_BACKOFF_MS;
+  }
+  return Math.max(0, parseDuration(value));
+}
+
+function shouldReconnectStreamError(error: unknown): boolean {
+  if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
+    return false;
+  }
+
+  if (error instanceof WebhooksCCError) {
+    return error.statusCode === 429 || error.statusCode >= 500;
+  }
+
+  return error instanceof Error;
+}
+
+function parseStreamRequest(data: string): Request | null {
+  try {
+    const parsed = JSON.parse(data) as Record<string, unknown>;
+    if (
+      typeof parsed.endpointId !== "string" ||
+      typeof parsed.method !== "string" ||
+      typeof parsed.receivedAt !== "number" ||
+      typeof parsed.headers !== "object" ||
+      parsed.headers === null
+    ) {
+      return null;
+    }
+
+    return {
+      id:
+        typeof parsed._id === "string"
+          ? parsed._id
+          : typeof parsed.id === "string"
+            ? parsed.id
+            : "",
+      endpointId: parsed.endpointId,
+      method: parsed.method,
+      path: typeof parsed.path === "string" ? parsed.path : "/",
+      headers: parsed.headers as Record<string, string>,
+      body: typeof parsed.body === "string" ? parsed.body : undefined,
+      queryParams:
+        typeof parsed.queryParams === "object" && parsed.queryParams !== null
+          ? (parsed.queryParams as Record<string, string>)
+          : {},
+      contentType: typeof parsed.contentType === "string" ? parsed.contentType : undefined,
+      ip: typeof parsed.ip === "string" ? parsed.ip : "unknown",
+      size: typeof parsed.size === "number" ? parsed.size : 0,
+      receivedAt: parsed.receivedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function collectMatchingRequests(
+  fetchRequests: (since: number) => Promise<Request[]>,
+  options: WaitForAllOptions
+): Promise<Request[]> {
+  const timeout = parseDuration(options.timeout ?? 30000);
+  const rawPollInterval = parseDuration(options.pollInterval ?? 500);
+  const safePollInterval = Math.max(
+    MIN_POLL_INTERVAL,
+    Math.min(MAX_POLL_INTERVAL, rawPollInterval)
+  );
+  const desiredCount = Math.max(1, Math.floor(options.count));
+  const start = Date.now();
+  let lastChecked = start - WAIT_FOR_LOOKBACK_MS;
+  let iterations = 0;
+  const MAX_ITERATIONS = 10000;
+  const collected: Request[] = [];
+  const seenRequestIds = new Set<string>();
+
+  while (Date.now() - start < timeout && iterations < MAX_ITERATIONS) {
+    iterations++;
+    const checkTime = Date.now();
+
+    try {
+      const requests = (await fetchRequests(lastChecked))
+        .slice()
+        .sort((left, right) => left.receivedAt - right.receivedAt);
+
+      lastChecked = checkTime;
+
+      for (const request of requests) {
+        if (seenRequestIds.has(request.id)) {
+          continue;
+        }
+        seenRequestIds.add(request.id);
+
+        if (options.match && !options.match(request)) {
+          continue;
+        }
+
+        collected.push(request);
+        if (collected.length >= desiredCount) {
+          return collected.slice(0, desiredCount);
+        }
+      }
+    } catch (error) {
+      if (error instanceof WebhooksCCError) {
+        if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
+          throw error;
+        }
+        if (error.statusCode < 500 && !(error instanceof RateLimitError)) {
+          throw error;
+        }
+      }
+    }
+
+    await sleep(safePollInterval);
+  }
+
+  throw new TimeoutError(timeout);
+}
+
+function validateMockResponse(mockResponse: MockResponse, fieldName: string): void {
+  const { status } = mockResponse;
+  if (!Number.isInteger(status) || status < 100 || status > 599) {
+    throw new Error(`Invalid ${fieldName} status: ${status}. Must be an integer 100-599.`);
+  }
+}
+
 /**
  * Client for the webhooks.cc API.
  *
@@ -143,6 +407,7 @@ export class WebhooksCC {
   private readonly baseUrl: string;
   private readonly webhookUrl: string;
   private readonly timeout: number;
+  private readonly retry: ReturnType<typeof normalizeRetryOptions>;
   private readonly hooks: ClientHooks;
 
   constructor(options: ClientOptions) {
@@ -153,81 +418,128 @@ export class WebhooksCC {
     this.baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
     this.webhookUrl = stripTrailingSlashes(options.webhookUrl ?? DEFAULT_WEBHOOK_URL);
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.retry = normalizeRetryOptions(options.retry);
     this.hooks = options.hooks ?? {};
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-    const start = Date.now();
+    let attempt = 0;
 
-    try {
-      this.hooks.onRequest?.({ method, url });
-    } catch {
-      // Hooks must not break the request flow
-    }
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-
-      const durationMs = Date.now() - start;
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        const sanitizedError = errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
-        const error = mapStatusToError(response.status, sanitizedError, response);
-        try {
-          this.hooks.onError?.({ method, url, error, durationMs });
-        } catch {
-          // Hooks must not break the request flow
-        }
-        throw error;
-      }
+    while (true) {
+      attempt++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      const start = Date.now();
 
       try {
-        this.hooks.onResponse?.({ method, url, status: response.status, durationMs });
+        this.hooks.onRequest?.({ method, url });
       } catch {
         // Hooks must not break the request flow
       }
 
-      // Handle empty responses (204 No Content)
-      if (response.status === 204 || response.headers.get("content-length") === "0") {
-        return undefined as T;
-      }
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
 
-      // Validate Content-Type before parsing JSON
-      const contentType = response.headers.get("content-type");
-      if (contentType && !contentType.includes("application/json")) {
-        throw new Error(`Unexpected content type: ${contentType}`);
-      }
-      return response.json() as Promise<T>;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        const timeoutError = new TimeoutError(this.timeout);
+        const durationMs = Date.now() - start;
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const sanitizedError =
+            errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
+          const error = mapStatusToError(response.status, sanitizedError, response);
+          try {
+            this.hooks.onError?.({ method, url, error, durationMs });
+          } catch {
+            // Hooks must not break the request flow
+          }
+
+          if (attempt < this.retry.maxAttempts && this.retry.retryOn.has(response.status)) {
+            const retryDelayMs =
+              response.status === 429 && parseRetryAfterHeader(response) !== undefined
+                ? (parseRetryAfterHeader(response) ?? 0) * 1000
+                : this.retry.backoffMs * 2 ** (attempt - 1);
+            await sleep(retryDelayMs);
+            continue;
+          }
+
+          throw error;
+        }
+
         try {
-          this.hooks.onError?.({
-            method,
-            url,
-            error: timeoutError,
-            durationMs: Date.now() - start,
-          });
+          this.hooks.onResponse?.({ method, url, status: response.status, durationMs });
         } catch {
           // Hooks must not break the request flow
         }
-        throw timeoutError;
+
+        // Handle empty responses (204 No Content)
+        if (response.status === 204 || response.headers.get("content-length") === "0") {
+          return undefined as T;
+        }
+
+        // Validate Content-Type before parsing JSON
+        const contentType = response.headers.get("content-type");
+        if (contentType && !contentType.includes("application/json")) {
+          throw new Error(`Unexpected content type: ${contentType}`);
+        }
+        return response.json() as Promise<T>;
+      } catch (error) {
+        if (error instanceof WebhooksCCError) {
+          throw error;
+        }
+
+        if (error instanceof Error && error.name === "AbortError") {
+          const timeoutError = new TimeoutError(this.timeout);
+          try {
+            this.hooks.onError?.({
+              method,
+              url,
+              error: timeoutError,
+              durationMs: Date.now() - start,
+            });
+          } catch {
+            // Hooks must not break the request flow
+          }
+
+          if (attempt < this.retry.maxAttempts) {
+            await sleep(this.retry.backoffMs * 2 ** (attempt - 1));
+            continue;
+          }
+
+          throw timeoutError;
+        }
+
+        const isNetworkError = error instanceof Error;
+        if (isNetworkError) {
+          try {
+            this.hooks.onError?.({
+              method,
+              url,
+              error,
+              durationMs: Date.now() - start,
+            });
+          } catch {
+            // Hooks must not break the request flow
+          }
+        }
+
+        if (attempt < this.retry.maxAttempts && isNetworkError) {
+          await sleep(this.retry.backoffMs * 2 ** (attempt - 1));
+          continue;
+        }
+
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
@@ -238,7 +550,12 @@ export class WebhooksCC {
       endpoints: {
         create: {
           description: "Create a webhook endpoint",
-          params: { name: "string?" },
+          params: {
+            name: "string?",
+            ephemeral: "boolean?",
+            expiresIn: "number|string?",
+            mockResponse: "object?",
+          },
         },
         list: {
           description: "List all endpoints",
@@ -264,18 +581,38 @@ export class WebhooksCC {
           description: "Send a provider template webhook with signed headers",
           params: {
             slug: "string",
-            provider: '"stripe"|"github"|"shopify"|"twilio"|"standard-webhooks"',
+            provider: PROVIDER_PARAM_DESCRIPTION,
             template: "string?",
             secret: "string",
             event: "string?",
           },
         },
       },
+      templates: {
+        listProviders: {
+          description: "List supported template providers",
+          params: {},
+        },
+        get: {
+          description: "Get static metadata for a template provider",
+          params: {
+            provider: PROVIDER_PARAM_DESCRIPTION,
+          },
+        },
+      },
+      usage: {
+        description: "Get current request usage and remaining quota",
+        params: {},
+      },
+      flow: {
+        description: "Create a fluent webhook flow builder for common capture/verify/replay flows",
+        params: {},
+      },
       sendTo: {
         description: "Send a webhook directly to any URL with optional provider signing",
         params: {
           url: "string",
-          provider: '"stripe"|"github"|"shopify"|"twilio"|"standard-webhooks"?',
+          provider: `${PROVIDER_PARAM_DESCRIPTION}?`,
           secret: "string?",
           body: "unknown?",
           headers: "Record<string, string>?",
@@ -286,7 +623,7 @@ export class WebhooksCC {
           "Build a request without sending it — returns computed method, URL, headers, and body including provider signatures",
         params: {
           url: "string",
-          provider: '"stripe"|"github"|"shopify"|"twilio"|"standard-webhooks"?',
+          provider: `${PROVIDER_PARAM_DESCRIPTION}?`,
           secret: "string?",
           body: "unknown?",
           headers: "Record<string, string>?",
@@ -297,9 +634,23 @@ export class WebhooksCC {
           description: "List captured requests",
           params: { endpointSlug: "string", limit: "number?", since: "number?" },
         },
+        listPaginated: {
+          description: "List captured requests with cursor-based pagination",
+          params: { endpointSlug: "string", limit: "number?", cursor: "string?" },
+        },
         get: {
           description: "Get request by ID",
           params: { requestId: "string" },
+        },
+        waitForAll: {
+          description: "Poll until multiple matching requests arrive",
+          params: {
+            endpointSlug: "string",
+            count: "number",
+            timeout: "number|string?",
+            pollInterval: "number|string?",
+            match: "function?",
+          },
         },
         waitFor: {
           description: "Poll until a matching request arrives",
@@ -311,11 +662,58 @@ export class WebhooksCC {
         },
         subscribe: {
           description: "Stream requests via SSE",
-          params: { slug: "string", signal: "AbortSignal?", timeout: "number|string?" },
+          params: {
+            slug: "string",
+            signal: "AbortSignal?",
+            timeout: "number|string?",
+            reconnect: "boolean?",
+            maxReconnectAttempts: "number?",
+            reconnectBackoffMs: "number|string?",
+            onReconnect: "function?",
+          },
         },
         replay: {
           description: "Replay a captured request to a URL",
           params: { requestId: "string", targetUrl: "string" },
+        },
+        export: {
+          description: "Export captured requests as HAR or cURL commands",
+          params: {
+            endpointSlug: "string",
+            format: '"har"|"curl"',
+            limit: "number?",
+            since: "number?",
+          },
+        },
+        search: {
+          description: "Search retained requests across path, body, and headers",
+          params: {
+            slug: "string?",
+            method: "string?",
+            q: "string?",
+            from: "number|string?",
+            to: "number|string?",
+            limit: "number?",
+            offset: "number?",
+            order: '"asc"|"desc"?',
+          },
+        },
+        count: {
+          description: "Count retained requests matching search filters",
+          params: {
+            slug: "string?",
+            method: "string?",
+            q: "string?",
+            from: "number|string?",
+            to: "number|string?",
+          },
+        },
+        clear: {
+          description: "Delete captured requests for an endpoint",
+          params: {
+            endpointSlug: "string",
+            before: "number|string?",
+          },
         },
       },
     };
@@ -323,7 +721,31 @@ export class WebhooksCC {
 
   endpoints = {
     create: async (options: CreateEndpointOptions = {}): Promise<Endpoint> => {
-      return this.request<Endpoint>("POST", "/endpoints", options);
+      if (options.mockResponse) {
+        validateMockResponse(options.mockResponse, "mock response");
+      }
+
+      const body: Record<string, unknown> = {};
+      if (options.name !== undefined) {
+        body.name = options.name;
+      }
+      if (options.mockResponse !== undefined) {
+        body.mockResponse = options.mockResponse;
+      }
+
+      const isEphemeral = options.ephemeral === true || options.expiresIn !== undefined;
+      if (isEphemeral) {
+        body.isEphemeral = true;
+      }
+      if (options.expiresIn !== undefined) {
+        const durationMs = parseDuration(options.expiresIn);
+        if (durationMs <= 0) {
+          throw new Error("expiresIn must be greater than 0");
+        }
+        body.expiresAt = Date.now() + durationMs;
+      }
+
+      return this.request<Endpoint>("POST", "/endpoints", body);
     },
 
     list: async (): Promise<Endpoint[]> => {
@@ -338,10 +760,7 @@ export class WebhooksCC {
     update: async (slug: string, options: UpdateEndpointOptions): Promise<Endpoint> => {
       validatePathSegment(slug, "slug");
       if (options.mockResponse && options.mockResponse !== null) {
-        const { status } = options.mockResponse;
-        if (!Number.isInteger(status) || status < 100 || status > 599) {
-          throw new Error(`Invalid mock response status: ${status}. Must be an integer 100-599.`);
-        }
+        validateMockResponse(options.mockResponse, "mock response");
       }
       return this.request<Endpoint>("PATCH", `/endpoints/${slug}`, options);
     },
@@ -390,6 +809,24 @@ export class WebhooksCC {
       const sendOptions = await buildTemplateSendOptions(endpointUrl, options);
       return this.endpoints.send(slug, sendOptions);
     },
+  };
+
+  templates = {
+    listProviders: (): TemplateProvider[] => {
+      return [...TEMPLATE_PROVIDERS];
+    },
+
+    get: (provider: TemplateProvider): TemplateProviderInfo => {
+      return TEMPLATE_METADATA[provider];
+    },
+  };
+
+  usage = async (): Promise<UsageInfo> => {
+    return this.request<UsageInfo>("GET", "/usage");
+  };
+
+  flow = (): WebhookFlowBuilder => {
+    return new WebhookFlowBuilder(this);
   };
 
   /**
@@ -558,9 +995,104 @@ export class WebhooksCC {
       );
     },
 
+    listPaginated: async (
+      endpointSlug: string,
+      options: ListPaginatedRequestsOptions = {}
+    ): Promise<PaginatedResult<Request>> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      return this.request<PaginatedResult<Request>>(
+        "GET",
+        `/endpoints/${endpointSlug}/requests/paginated${buildPaginatedListQuery(options)}`
+      );
+    },
+
     get: async (requestId: string): Promise<Request> => {
       validatePathSegment(requestId, "requestId");
       return this.request<Request>("GET", `/requests/${requestId}`);
+    },
+
+    waitForAll: async (endpointSlug: string, options: WaitForAllOptions): Promise<Request[]> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const listLimit = Math.min(1000, Math.max(100, Math.floor(options.count) * 2));
+      return collectMatchingRequests(
+        (since) =>
+          this.requests.list(endpointSlug, {
+            since,
+            limit: listLimit,
+          }),
+        options
+      );
+    },
+
+    search: async (filters: SearchFilters = {}): Promise<SearchResult[]> => {
+      return this.request<SearchResult[]>(
+        "GET",
+        `/search/requests${buildSearchQuery(filters, true)}`
+      );
+    },
+
+    count: async (filters: SearchFilters = {}): Promise<number> => {
+      const response = await this.request<{ count: number }>(
+        "GET",
+        `/search/requests/count${buildSearchQuery(filters, false)}`
+      );
+      return response.count;
+    },
+
+    clear: async (endpointSlug: string, options: ClearRequestsOptions = {}): Promise<void> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      await this.request<{ deleted: number; complete: boolean }>(
+        "DELETE",
+        `/endpoints/${endpointSlug}/requests${buildClearQuery(options)}`
+      );
+    },
+
+    export: async (
+      endpointSlug: string,
+      options: ExportRequestsOptions
+    ): Promise<RequestsExport> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const endpoint = await this.endpoints.get(endpointSlug);
+      const endpointUrl = endpoint.url ?? `${this.webhookUrl}/w/${endpoint.slug}`;
+      const requests: Request[] = [];
+      const pageSize = normalizeExportPageSize(options.limit);
+      let cursor: string | undefined;
+
+      while (true) {
+        const remaining =
+          options.limit !== undefined ? Math.max(0, options.limit - requests.length) : pageSize;
+        if (options.limit !== undefined && remaining === 0) {
+          break;
+        }
+
+        const page = await this.requests.listPaginated(endpointSlug, {
+          limit: options.limit !== undefined ? Math.min(pageSize, remaining) : pageSize,
+          cursor,
+        });
+
+        for (const request of page.items) {
+          if (options.since !== undefined && request.receivedAt <= options.since) {
+            continue;
+          }
+          requests.push(request);
+          if (options.limit !== undefined && requests.length >= options.limit) {
+            break;
+          }
+        }
+
+        if (!page.hasMore || !page.cursor) {
+          break;
+        }
+        if (options.limit !== undefined && requests.length >= options.limit) {
+          break;
+        }
+        cursor = page.cursor;
+      }
+
+      if (options.format === "curl") {
+        return buildCurlExport(endpointUrl, requests);
+      }
+      return buildHarExport(endpointUrl, requests, SDK_VERSION);
     },
 
     /**
@@ -576,60 +1108,11 @@ export class WebhooksCC {
      * @throws Error if timeout expires or max iterations (10000) reached
      */
     waitFor: async (endpointSlug: string, options: WaitForOptions = {}): Promise<Request> => {
-      validatePathSegment(endpointSlug, "endpointSlug");
-      const timeout = parseDuration(options.timeout ?? 30000);
-      const rawPollInterval = parseDuration(options.pollInterval ?? 500);
-      const { match } = options;
-      // Clamp pollInterval to safe bounds
-      const safePollInterval = Math.max(
-        MIN_POLL_INTERVAL,
-        Math.min(MAX_POLL_INTERVAL, rawPollInterval)
-      );
-      const start = Date.now();
-      // Start from 5 minutes before to catch requests that were sent just before
-      // waitFor was called but haven't been flushed to the database yet
-      let lastChecked = start - 5 * 60 * 1000;
-      const MAX_ITERATIONS = 10000;
-      let iterations = 0;
-
-      while (Date.now() - start < timeout && iterations < MAX_ITERATIONS) {
-        iterations++;
-        const checkTime = Date.now();
-
-        try {
-          const requests = await this.requests.list(endpointSlug, {
-            since: lastChecked,
-            limit: 100,
-          });
-
-          lastChecked = checkTime;
-
-          const matched = match ? requests.find(match) : requests[0];
-          if (matched) {
-            return matched;
-          }
-        } catch (error) {
-          // Throw on non-transient errors - don't continue polling with invalid credentials
-          if (error instanceof WebhooksCCError) {
-            if (error instanceof UnauthorizedError) {
-              throw error;
-            }
-            if (error instanceof NotFoundError) {
-              throw error;
-            }
-            // Continue polling only for transient errors (5xx, rate limit)
-            if (error.statusCode < 500 && !(error instanceof RateLimitError)) {
-              throw error;
-            }
-          }
-          // Continue polling for transient errors (network issues, 5xx) without updating lastChecked
-          // to avoid missing requests during temporary issues
-        }
-
-        await sleep(safePollInterval);
-      }
-
-      throw new TimeoutError(timeout);
+      const [request] = await this.requests.waitForAll(endpointSlug, {
+        ...options,
+        count: 1,
+      });
+      return request;
     },
 
     /**
@@ -687,14 +1170,16 @@ export class WebhooksCC {
      * The connection is closed when the iterator is broken, the signal is aborted,
      * or the timeout expires.
      *
-     * No automatic reconnection — if the connection drops, the iterator ends.
+     * Reconnection is opt-in and resumes from the last yielded request timestamp.
      */
     subscribe: (slug: string, options: SubscribeOptions = {}): AsyncIterable<Request> => {
       validatePathSegment(slug, "slug");
-      const { signal, timeout } = options;
+      const { signal, timeout, reconnect = false, onReconnect } = options;
       const baseUrl = this.baseUrl;
       const apiKey = this.apiKey;
       const timeoutMs = timeout !== undefined ? parseDuration(timeout) : undefined;
+      const maxReconnectAttempts = Math.max(0, Math.floor(options.maxReconnectAttempts ?? 5));
+      const reconnectBackoffMs = normalizeReconnectBackoff(options.reconnectBackoffMs);
 
       return {
         [Symbol.asyncIterator](): AsyncIterableIterator<Request> {
@@ -702,6 +1187,9 @@ export class WebhooksCC {
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
           let iterator: AsyncGenerator<{ event: string; data: string }> | null = null;
           let started = false;
+          let reconnectAttempts = 0;
+          let lastReceivedAt: number | undefined;
+          const seenRequestIds = new Set<string>();
 
           // Link external signal to our controller
           const onAbort = () => controller.abort();
@@ -723,7 +1211,10 @@ export class WebhooksCC {
           };
 
           const start = async () => {
-            const url = `${baseUrl}/api/stream/${slug}`;
+            const url = `${baseUrl}${buildStreamPath(
+              slug,
+              lastReceivedAt !== undefined ? lastReceivedAt - 1 : undefined
+            )}`;
             // Use a separate signal for connection timeout so it doesn't conflict with stream duration
             const connectController = new AbortController();
             const connectTimeout = setTimeout(() => connectController.abort(), 30000);
@@ -742,13 +1233,11 @@ export class WebhooksCC {
             }
 
             if (!response.ok) {
-              cleanup();
               const text = await response.text();
               throw mapStatusToError(response.status, text, response);
             }
 
             if (!response.body) {
-              cleanup();
               throw new Error("SSE response has no body");
             }
 
@@ -766,6 +1255,32 @@ export class WebhooksCC {
             return parseSSE(response.body);
           };
 
+          const reconnectStream = async (): Promise<boolean> => {
+            if (
+              !reconnect ||
+              reconnectAttempts >= maxReconnectAttempts ||
+              controller.signal.aborted
+            ) {
+              cleanup();
+              return false;
+            }
+
+            reconnectAttempts++;
+            try {
+              onReconnect?.(reconnectAttempts);
+            } catch {
+              // Hooks must not break the subscription flow
+            }
+
+            await sleep(reconnectBackoffMs * 2 ** (reconnectAttempts - 1));
+            if (controller.signal.aborted) {
+              cleanup();
+              return false;
+            }
+            iterator = await start();
+            return true;
+          };
+
           return {
             [Symbol.asyncIterator]() {
               return this;
@@ -780,37 +1295,29 @@ export class WebhooksCC {
                 while (iterator) {
                   const { done, value } = await iterator.next();
                   if (done) {
-                    cleanup();
+                    iterator = null;
+                    if (await reconnectStream()) {
+                      continue;
+                    }
                     return { done: true, value: undefined };
                   }
 
+                  reconnectAttempts = 0;
+
                   // Only yield actual request events
                   if (value.event === "request") {
-                    try {
-                      const data = JSON.parse(value.data);
-                      // Validate required fields exist
-                      if (!data.endpointId || !data.method || !data.headers || !data.receivedAt) {
-                        continue; // Skip malformed frames
-                      }
-                      // Transform SSE data to Request shape
-                      const req: Request = {
-                        id: data._id ?? data.id,
-                        endpointId: data.endpointId,
-                        method: data.method,
-                        path: data.path ?? "/",
-                        headers: data.headers,
-                        body: data.body ?? undefined,
-                        queryParams: data.queryParams ?? {},
-                        contentType: data.contentType ?? undefined,
-                        ip: data.ip ?? "unknown",
-                        size: data.size ?? 0,
-                        receivedAt: data.receivedAt,
-                      };
-                      return { done: false, value: req };
-                    } catch {
-                      // Skip malformed data frames
+                    const req = parseStreamRequest(value.data);
+                    if (!req) {
                       continue;
                     }
+                    if (req.id && seenRequestIds.has(req.id)) {
+                      continue;
+                    }
+                    if (req.id) {
+                      seenRequestIds.add(req.id);
+                    }
+                    lastReceivedAt = req.receivedAt;
+                    return { done: false, value: req };
                   }
 
                   // Close on terminal events
@@ -825,12 +1332,18 @@ export class WebhooksCC {
                 cleanup();
                 return { done: true, value: undefined };
               } catch (error) {
-                cleanup();
-                controller.abort();
                 // AbortError means the consumer broke out or signal was aborted — that's normal
                 if (error instanceof Error && error.name === "AbortError") {
+                  cleanup();
+                  controller.abort();
                   return { done: true, value: undefined };
                 }
+                iterator = null;
+                if (shouldReconnectStreamError(error) && (await reconnectStream())) {
+                  return this.next();
+                }
+                cleanup();
+                controller.abort();
                 throw error;
               }
             },

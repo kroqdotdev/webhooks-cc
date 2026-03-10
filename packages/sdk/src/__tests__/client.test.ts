@@ -1,12 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WebhooksCC } from "../client";
 import { WebhooksCCError, UnauthorizedError, NotFoundError } from "../errors";
+import { TEMPLATE_METADATA } from "../index";
 
 const API_KEY = "whcc_testkey123";
 const BASE_URL = "https://test.webhooks.cc";
 const WEBHOOK_URL = "https://go.test.webhooks.cc";
 
-function createClient(opts?: { timeout?: number; webhookUrl?: string }) {
+function createClient(opts?: {
+  timeout?: number;
+  webhookUrl?: string;
+  retry?: {
+    maxAttempts?: number;
+    backoffMs?: number;
+    retryOn?: number[];
+  };
+}) {
   return new WebhooksCC({
     apiKey: API_KEY,
     baseUrl: BASE_URL,
@@ -51,6 +60,26 @@ function mockFetch(response: {
   });
 }
 
+function mockSSEStream(...frames: string[]) {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) {
+        controller.enqueue(encoder.encode(frame));
+      }
+      controller.close();
+    },
+  });
+
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body,
+    text: () => Promise.resolve(frames.join("")),
+  };
+}
+
 describe("WebhooksCC", () => {
   let originalFetch: typeof globalThis.fetch;
 
@@ -60,6 +89,7 @@ describe("WebhooksCC", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -103,6 +133,38 @@ describe("WebhooksCC", () => {
       const [, opts] = fetchMock.mock.calls[0];
       expect(JSON.parse(opts.body)).toEqual({});
     });
+
+    it("maps ephemeral create options to API fields", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-09T12:00:00.000Z"));
+
+      const endpoint = {
+        id: "ep1",
+        slug: "abc123",
+        url: "https://r.webhooks.cc/w/abc123",
+        isEphemeral: true,
+        expiresAt: Date.now() + 3600000,
+        createdAt: Date.now(),
+      };
+      const fetchMock = mockFetch({ body: endpoint });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.endpoints.create({
+        name: "Temp",
+        ephemeral: false,
+        expiresIn: "1h",
+        mockResponse: { status: 202, body: "queued", headers: { "x-mock": "true" } },
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(JSON.parse(opts.body)).toEqual({
+        name: "Temp",
+        isEphemeral: true,
+        expiresAt: Date.now() + 3600000,
+        mockResponse: { status: 202, body: "queued", headers: { "x-mock": "true" } },
+      });
+    });
   });
 
   describe("endpoints.list", () => {
@@ -120,6 +182,51 @@ describe("WebhooksCC", () => {
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe(`${BASE_URL}/api/endpoints`);
       expect(opts.method).toBe("GET");
+    });
+  });
+
+  describe("templates", () => {
+    it("lists supported template providers in a stable order", () => {
+      const providers = createClient().templates.listProviders();
+
+      expect(providers).toEqual([
+        "stripe",
+        "github",
+        "shopify",
+        "twilio",
+        "slack",
+        "paddle",
+        "linear",
+        "standard-webhooks",
+      ]);
+    });
+
+    it("returns static provider metadata", () => {
+      const info = createClient().templates.get("stripe");
+
+      expect(info).toEqual({
+        provider: "stripe",
+        templates: ["payment_intent.succeeded", "checkout.session.completed", "invoice.paid"],
+        defaultTemplate: "payment_intent.succeeded",
+        secretRequired: true,
+        signatureHeader: "stripe-signature",
+        signatureAlgorithm: "hmac-sha256",
+      });
+      expect(TEMPLATE_METADATA["slack"]).toEqual({
+        provider: "slack",
+        templates: ["event_callback", "slash_command", "url_verification"],
+        defaultTemplate: "event_callback",
+        secretRequired: true,
+        signatureHeader: "x-slack-signature",
+        signatureAlgorithm: "hmac-sha256",
+      });
+      expect(TEMPLATE_METADATA["standard-webhooks"]).toEqual({
+        provider: "standard-webhooks",
+        templates: [],
+        secretRequired: true,
+        signatureHeader: "webhook-signature",
+        signatureAlgorithm: "hmac-sha256",
+      });
     });
   });
 
@@ -226,6 +333,72 @@ describe("WebhooksCC", () => {
       expect(opts.headers["x-twilio-signature"]).toMatch(/^[A-Za-z0-9+/=]+$/);
       expect(opts.body).toContain("MessageSid=");
       expect(opts.body).toContain("MessageStatus=delivered");
+    });
+
+    it("sends a Slack template webhook with signed headers", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      await createClient().endpoints.sendTemplate("abc123", {
+        provider: "slack",
+        secret: "slack_secret",
+        template: "slash_command",
+        timestamp: 1700000000,
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.headers["x-slack-request-timestamp"]).toBe("1700000000");
+      expect(opts.headers["x-slack-signature"]).toMatch(/^v0=[a-f0-9]+$/);
+      expect(opts.body).toContain("command=%2Fwebhook-test");
+    });
+
+    it("sends a Paddle template webhook with paddle-signature", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      await createClient().endpoints.sendTemplate("abc123", {
+        provider: "paddle",
+        secret: "paddle_secret",
+        timestamp: 1700000000,
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.headers["paddle-signature"]).toMatch(/^ts=1700000000;h1=[a-f0-9]+$/);
+      expect(opts.body).toContain('"event_type":"transaction.completed"');
+    });
+
+    it("sends a Linear template webhook with linear-signature", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      await createClient().endpoints.sendTemplate("abc123", {
+        provider: "linear",
+        secret: "linear_secret",
+        template: "issue.update",
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.headers["linear-signature"]).toMatch(/^sha256=[a-f0-9]+$/);
+      expect(opts.body).toContain('"type":"Issue"');
+      expect(opts.body).toContain('"action":"update"');
     });
 
     it("signs Twilio string body override using URL + sorted params", async () => {
@@ -657,6 +830,52 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("usage", () => {
+    it("sends GET /api/usage", async () => {
+      const usage = {
+        used: 42,
+        limit: 50,
+        remaining: 8,
+        plan: "free" as const,
+        periodEnd: 1710460800000,
+      };
+      const fetchMock = mockFetch({ body: usage });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.usage();
+
+      expect(result).toEqual(usage);
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/usage`);
+      expect(opts.method).toBe("GET");
+    });
+  });
+
+  describe("requests.listPaginated", () => {
+    it("sends GET /api/endpoints/{slug}/requests/paginated with cursor params", async () => {
+      const page = {
+        items: [{ id: "r1", method: "POST", receivedAt: Date.now() }],
+        cursor: "cursor-1",
+        hasMore: true,
+      };
+      const fetchMock = mockFetch({ body: page });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.requests.listPaginated("abc123", {
+        limit: 10,
+        cursor: "cursor-0",
+      });
+
+      expect(result).toEqual(page);
+      const [url] = fetchMock.mock.calls[0];
+      expect(url).toBe(
+        `${BASE_URL}/api/endpoints/abc123/requests/paginated?limit=10&cursor=cursor-0`
+      );
+    });
+  });
+
   describe("requests.get", () => {
     it("sends GET /api/requests/{id}", async () => {
       const request = { id: "r1", method: "POST" };
@@ -669,6 +888,353 @@ describe("WebhooksCC", () => {
       expect(result).toEqual(request);
       const [url] = fetchMock.mock.calls[0];
       expect(url).toBe(`${BASE_URL}/api/requests/r1`);
+    });
+  });
+
+  describe("requests.waitForAll", () => {
+    it("collects multiple matching requests in chronological order", async () => {
+      const req1 = { id: "r1", method: "POST", receivedAt: 1000 };
+      const req2 = { id: "r2", method: "POST", receivedAt: 1001 };
+
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        const body = callCount === 1 ? [] : [req2, req1];
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve(body),
+          text: () => Promise.resolve(JSON.stringify(body)),
+        });
+      });
+
+      const result = await createClient().requests.waitForAll("abc123", {
+        count: 2,
+        timeout: 5000,
+        pollInterval: 10,
+        match: (request) => request.method === "POST",
+      });
+
+      expect(result.map((request) => request.id)).toEqual(["r1", "r2"]);
+    });
+  });
+
+  describe("requests.search", () => {
+    it("sends GET /api/search/requests with normalized filters", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-09T12:00:00.000Z"));
+
+      const results = [
+        {
+          id: "abc:1741514400000:deadbeef",
+          slug: "abc",
+          method: "POST",
+          path: "/hooks/stripe",
+          headers: { "content-type": "application/json" },
+          body: '{"type":"payment_intent.succeeded"}',
+          queryParams: { test: "1" },
+          contentType: "application/json",
+          ip: "127.0.0.1",
+          size: 42,
+          receivedAt: 1741514400000,
+        },
+      ];
+      const fetchMock = mockFetch({ body: results });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.requests.search({
+        slug: "abc",
+        method: "POST",
+        q: "payment_intent",
+        from: "1h",
+        to: "15m",
+        limit: 25,
+        offset: 5,
+        order: "asc",
+      });
+
+      expect(result).toEqual(results);
+
+      const [rawUrl, opts] = fetchMock.mock.calls[0];
+      const url = new URL(rawUrl);
+      expect(url.pathname).toBe("/api/search/requests");
+      expect(url.searchParams.get("slug")).toBe("abc");
+      expect(url.searchParams.get("method")).toBe("POST");
+      expect(url.searchParams.get("q")).toBe("payment_intent");
+      expect(url.searchParams.get("from")).toBe(String(Date.now() - 3600000));
+      expect(url.searchParams.get("to")).toBe(String(Date.now() - 900000));
+      expect(url.searchParams.get("limit")).toBe("25");
+      expect(url.searchParams.get("offset")).toBe("5");
+      expect(url.searchParams.get("order")).toBe("asc");
+      expect(opts.method).toBe("GET");
+    });
+
+    it("rejects invalid slug filters", async () => {
+      const client = createClient();
+      await expect(client.requests.search({ slug: "../admin" })).rejects.toThrow("Invalid slug");
+    });
+  });
+
+  describe("requests.count", () => {
+    it("sends GET /api/search/requests/count and returns count", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-09T12:00:00.000Z"));
+
+      const fetchMock = mockFetch({ body: { count: 7 } });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const count = await client.requests.count({
+        slug: "abc",
+        q: "payment_intent",
+        from: "7d",
+        to: 1741521600000,
+        limit: 99,
+        offset: 10,
+        order: "desc",
+      });
+
+      expect(count).toBe(7);
+
+      const [rawUrl, opts] = fetchMock.mock.calls[0];
+      const url = new URL(rawUrl);
+      expect(url.pathname).toBe("/api/search/requests/count");
+      expect(url.searchParams.get("slug")).toBe("abc");
+      expect(url.searchParams.get("q")).toBe("payment_intent");
+      expect(url.searchParams.get("from")).toBe(String(Date.now() - 604800000));
+      expect(url.searchParams.get("to")).toBe("1741521600000");
+      expect(url.searchParams.get("limit")).toBeNull();
+      expect(url.searchParams.get("offset")).toBeNull();
+      expect(url.searchParams.get("order")).toBeNull();
+      expect(opts.method).toBe("GET");
+    });
+  });
+
+  describe("requests.clear", () => {
+    it("sends DELETE /api/endpoints/{slug}/requests with normalized before cutoff", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-09T12:00:00.000Z"));
+
+      const fetchMock = mockFetch({ body: { deleted: 1, complete: true } });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.requests.clear("abc123", { before: "1h" });
+
+      const [rawUrl, opts] = fetchMock.mock.calls[0];
+      const url = new URL(rawUrl);
+      expect(url.pathname).toBe("/api/endpoints/abc123/requests");
+      expect(url.searchParams.get("before")).toBe(String(Date.now() - 3600000));
+      expect(opts.method).toBe("DELETE");
+    });
+  });
+
+  describe("requests.export", () => {
+    it("exports captured requests as cURL commands", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () =>
+            Promise.resolve({
+              id: "ep1",
+              slug: "abc123",
+              url: "https://go.test.webhooks.cc/w/abc123",
+              createdAt: Date.now(),
+            }),
+          text: () =>
+            Promise.resolve(
+              '{"id":"ep1","slug":"abc123","url":"https://go.test.webhooks.cc/w/abc123","createdAt":0}'
+            ),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () =>
+            Promise.resolve({
+              items: [
+                {
+                  id: "r1",
+                  endpointId: "ep1",
+                  method: "POST",
+                  path: "/webhook",
+                  headers: {
+                    host: "localhost",
+                    "content-type": "application/json",
+                    authorization: "Bearer secret",
+                    "x-test": "yes",
+                  },
+                  body: '{"ok":true}',
+                  queryParams: { foo: "bar" },
+                  contentType: "application/json",
+                  ip: "127.0.0.1",
+                  size: 11,
+                  receivedAt: 1000,
+                },
+              ],
+              hasMore: false,
+            }),
+          text: () => Promise.resolve("[]"),
+        });
+
+      const result = await createClient().requests.export("abc123", { format: "curl" });
+
+      expect(Array.isArray(result)).toBe(true);
+      if (!Array.isArray(result)) {
+        throw new Error("Expected cURL export");
+      }
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain("curl -X POST");
+      expect(result[0]).toContain('-H "content-type: application/json"');
+      expect(result[0]).toContain('-H "x-test: yes"');
+      expect(result[0]).not.toContain("authorization");
+      expect(result[0]).toContain("https://go.test.webhooks.cc/w/abc123/webhook?foo=bar");
+    });
+
+    it("exports captured requests as HAR", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () =>
+            Promise.resolve({
+              id: "ep1",
+              slug: "abc123",
+              url: "https://go.test.webhooks.cc/w/abc123",
+              createdAt: Date.now(),
+            }),
+          text: () =>
+            Promise.resolve(
+              '{"id":"ep1","slug":"abc123","url":"https://go.test.webhooks.cc/w/abc123","createdAt":0}'
+            ),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () =>
+            Promise.resolve({
+              items: [
+                {
+                  id: "r1",
+                  endpointId: "ep1",
+                  method: "POST",
+                  path: "/hooks",
+                  headers: { "content-type": "application/json" },
+                  body: '{"ok":true}',
+                  queryParams: {},
+                  contentType: "application/json",
+                  ip: "127.0.0.1",
+                  size: 11,
+                  receivedAt: 1000,
+                },
+              ],
+              hasMore: false,
+            }),
+          text: () => Promise.resolve("[]"),
+        });
+
+      const result = await createClient().requests.export("abc123", { format: "har" });
+
+      expect(Array.isArray(result)).toBe(false);
+      if (Array.isArray(result)) {
+        throw new Error("Expected HAR export");
+      }
+      expect(result.log.entries).toHaveLength(1);
+      expect(result.log.creator.name).toBe("@webhooks-cc/sdk");
+      expect(result.log.entries[0].request.url).toBe("https://go.test.webhooks.cc/w/abc123/hooks");
+      expect(result.log.entries[0].request.postData?.text).toBe('{"ok":true}');
+    });
+  });
+
+  describe("describe", () => {
+    it("includes flow, export, waitForAll, and retained search operations", () => {
+      const description = createClient().describe();
+
+      expect(description.version).toBe("0.6.0");
+      expect(description.usage).toBeDefined();
+      expect(description.flow).toBeDefined();
+      expect(description.templates.listProviders).toBeDefined();
+      expect(description.templates.get).toBeDefined();
+      expect(Object.keys(description.templates)).toHaveLength(2);
+      expect(description.requests.listPaginated).toBeDefined();
+      expect(description.requests.waitForAll).toBeDefined();
+      expect(description.requests.export).toBeDefined();
+      expect(description.requests.search).toBeDefined();
+      expect(description.requests.count).toBeDefined();
+      expect(description.requests.clear).toBeDefined();
+      expect(description.requests.subscribe.params.reconnect).toBe("boolean?");
+      expect(Object.keys(description.requests)).toHaveLength(11);
+    });
+  });
+
+  describe("requests.subscribe", () => {
+    it("reconnects from the last received timestamp and deduplicates replayed events", async () => {
+      const request1 = {
+        _id: "r1",
+        endpointId: "ep1",
+        method: "POST",
+        path: "/hook",
+        headers: { "content-type": "application/json" },
+        body: '{"step":1}',
+        queryParams: {},
+        contentType: "application/json",
+        ip: "127.0.0.1",
+        size: 10,
+        receivedAt: 1000,
+      };
+      const request2 = {
+        ...request1,
+        _id: "r2",
+        body: '{"step":2}',
+        receivedAt: 1001,
+      };
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockSSEStream(`event: request\ndata: ${JSON.stringify(request1)}\n\n`)
+        )
+        .mockResolvedValueOnce(
+          mockSSEStream(
+            `event: request\ndata: ${JSON.stringify(request1)}\n\n`,
+            `event: request\ndata: ${JSON.stringify(request2)}\n\n`,
+            "event: endpoint_deleted\ndata: {}\n\n"
+          )
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 2,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const second = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(second.value?.id).toBe("r2");
+      expect(done.done).toBe(true);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=999`,
+        expect.objectContaining({
+          headers: { Authorization: `Bearer ${API_KEY}` },
+        })
+      );
     });
   });
 
@@ -832,6 +1398,101 @@ describe("WebhooksCC", () => {
       } catch (error) {
         expect((error as WebhooksCCError).message.length).toBeLessThan(300);
       }
+    });
+  });
+
+  describe("retry", () => {
+    it("retries configured transient responses with exponential backoff", async () => {
+      vi.useFakeTimers();
+
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve({ error: "internal" }),
+          text: () => Promise.resolve('{"error":"internal"}'),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve("[]"),
+        });
+
+      const promise = createClient({
+        retry: { maxAttempts: 2, backoffMs: 25, retryOn: [500] },
+      }).endpoints.list();
+
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toEqual([]);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("honors Retry-After when retrying 429 responses", async () => {
+      vi.useFakeTimers();
+
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          headers: new Headers({
+            "content-type": "application/json",
+            "retry-after": "2",
+          }),
+          json: () => Promise.resolve({ error: "rate_limited" }),
+          text: () => Promise.resolve('{"error":"rate_limited"}'),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () =>
+            Promise.resolve({
+              used: 1,
+              limit: 50,
+              remaining: 49,
+              plan: "free",
+              periodEnd: null,
+            }),
+          text: () =>
+            Promise.resolve('{"used":1,"limit":50,"remaining":49,"plan":"free","periodEnd":null}'),
+        });
+
+      const promise = createClient({
+        retry: { maxAttempts: 2, backoffMs: 10, retryOn: [429] },
+      }).usage();
+
+      await Promise.resolve();
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(promise).resolves.toMatchObject({ remaining: 49 });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry deterministic 4xx responses", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: () => Promise.resolve({ error: "bad_request" }),
+        text: () => Promise.resolve('{"error":"bad_request"}'),
+      });
+
+      await expect(
+        createClient({
+          retry: { maxAttempts: 3, backoffMs: 10, retryOn: [429, 500] },
+        }).endpoints.list()
+      ).rejects.toBeInstanceOf(WebhooksCCError);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
   });
 

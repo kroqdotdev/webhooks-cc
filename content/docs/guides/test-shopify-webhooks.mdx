@@ -1,0 +1,373 @@
+---
+title: "How to Test Shopify Webhooks"
+description: "Test Shopify webhook handlers with HMAC-SHA256 signed payloads for orders, products, and app events. No Shopify admin needed."
+section: guides
+order: 4
+lastUpdated: 2026-03-10
+schema: howto
+keywords:
+  [
+    "test shopify webhooks",
+    "shopify webhook testing",
+    "shopify HMAC verification",
+    "shopify webhook localhost",
+  ]
+seo:
+  ogTitle: "How to Test Shopify Webhooks — webhooks.cc"
+  ogDescription: "Step-by-step guide to testing Shopify webhook handlers with signed payloads and HMAC-SHA256 verification."
+---
+
+Shopify sends webhooks for orders, products, customers, and app lifecycle events. Each payload is signed with HMAC-SHA256 and the hash is base64-encoded in the `x-shopify-hmac-sha256` header. Testing these handlers during development means generating correctly signed payloads -- and Shopify's admin panel cannot send test events to localhost. webhooks.cc solves this by signing payloads locally with your secret and sending them directly to your handler.
+
+## What you'll build
+
+A test suite that sends signed Shopify webhook events to your local handler, covers the order lifecycle from creation through payment, and verifies HMAC signature validation. You will test individual events, run a multi-event lifecycle sequence, and confirm your handler rejects tampered signatures.
+
+## Prerequisites
+
+- A [webhooks.cc account](https://webhooks.cc/login) and API key (generate one at [Account > API Keys](https://webhooks.cc/account))
+- Your Shopify webhook secret (from your app's partner dashboard, under **Webhooks > Signing secret**)
+- Node.js 18 or later
+- A local webhook handler running on localhost (e.g., `http://localhost:3000/api/webhooks/shopify`)
+
+## Send signed Shopify webhooks to localhost
+
+<Steps>
+<Step title="Install the SDK">
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+Set your API key and Shopify webhook secret as environment variables:
+
+```bash
+export WHK_API_KEY="whcc_your_api_key"
+export SHOPIFY_WEBHOOK_SECRET="your_shopify_webhook_secret"
+```
+
+</Step>
+<Step title="Send an orders/create event with a custom payload">
+
+Use `sendTo` to send a signed Shopify webhook with a realistic order payload directly to your local handler:
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const WEBHOOK_URL = "http://localhost:3000/api/webhooks/shopify";
+
+const res = await client.sendTo(WEBHOOK_URL, {
+  provider: "shopify",
+  secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+  body: {
+    id: 820982911946154508,
+    email: "jon@example.com",
+    created_at: "2026-03-10T10:00:00-05:00",
+    updated_at: "2026-03-10T10:00:00-05:00",
+    total_price: "199.00",
+    currency: "USD",
+    financial_status: "paid",
+    name: "#1001",
+    line_items: [
+      {
+        id: 866550311766439020,
+        title: "Pro Plan Subscription",
+        quantity: 1,
+        price: "199.00",
+      },
+    ],
+    customer: {
+      id: 115310627314723954,
+      email: "jon@example.com",
+      first_name: "Jon",
+      last_name: "Snow",
+    },
+  },
+});
+
+expect(res.status).toBe(200);
+```
+
+The SDK computes HMAC-SHA256 of the JSON body using your Shopify secret, base64-encodes the result, and sets `x-shopify-hmac-sha256`. It also sets `x-shopify-topic` and `x-shopify-shop-domain` headers.
+
+</Step>
+<Step title="Send events using templates">
+
+Templates generate realistic payloads so you do not need to construct full order objects for every test. Use the `template` parameter to select a preset:
+
+```ts
+const res = await client.sendTo(WEBHOOK_URL, {
+  provider: "shopify",
+  template: "orders/create",
+  secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+});
+
+expect(res.status).toBe(200);
+```
+
+Templates include properly structured Shopify payloads with all required fields. The SDK signs them the same way it signs custom bodies.
+
+</Step>
+<Step title="Test the full order lifecycle">
+
+Shopify sends multiple webhooks during an order's lifecycle. Test that your handler processes each event in sequence:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const WEBHOOK_URL = "http://localhost:3000/api/webhooks/shopify";
+
+describe("Shopify order lifecycle", () => {
+  const lifecycle = ["orders/create", "orders/paid", "orders/updated"] as const;
+
+  for (const event of lifecycle) {
+    it(`handles ${event}`, async () => {
+      const res = await client.sendTo(WEBHOOK_URL, {
+        provider: "shopify",
+        template: event === "orders/updated" ? "orders/create" : event,
+        secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+        event,
+      });
+
+      expect(res.status).toBe(200);
+    });
+  }
+});
+```
+
+The `event` parameter overrides the `x-shopify-topic` header value. This lets you reuse a template body while testing different topic routing in your handler. For events without a dedicated template (like `orders/updated`), use a related template body and set the event explicitly.
+
+</Step>
+<Step title="Verify the HMAC signature on a captured request">
+
+Capture a Shopify webhook on a webhooks.cc endpoint, then verify the signature to confirm the full signing pipeline works:
+
+```ts
+import {
+  WebhooksCC,
+  verifyShopifySignature,
+  isShopifyWebhook,
+  matchHeader,
+} from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+const endpoint = await client.endpoints.create({ name: "shopify-sig-test" });
+
+try {
+  await client.endpoints.sendTemplate(endpoint.slug, {
+    provider: "shopify",
+    template: "orders/create",
+    secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+  });
+
+  const req = await client.requests.waitFor(endpoint.slug, {
+    timeout: "10s",
+    match: matchHeader("x-shopify-hmac-sha256"),
+  });
+
+  // Confirm it looks like a Shopify webhook
+  expect(isShopifyWebhook(req)).toBe(true);
+
+  // Verify the HMAC signature
+  const valid = await verifyShopifySignature(
+    req.body!,
+    req.headers["x-shopify-hmac-sha256"],
+    process.env.SHOPIFY_WEBHOOK_SECRET!
+  );
+
+  expect(valid).toBe(true);
+  expect(req.headers["x-shopify-topic"]).toBe("orders/create");
+} finally {
+  await client.endpoints.delete(endpoint.slug);
+}
+```
+
+</Step>
+</Steps>
+
+## How it works
+
+Shopify computes HMAC-SHA256 of the raw JSON body using your webhook secret. The result is **base64-encoded** (not hex) and sent in the `x-shopify-hmac-sha256` header. The SDK replicates this process exactly when you set `provider: "shopify"`.
+
+Shopify also sends additional headers with every webhook delivery:
+
+| Header                  | Purpose                                      | Example value                      |
+| ----------------------- | -------------------------------------------- | ---------------------------------- |
+| `x-shopify-hmac-sha256` | Base64-encoded HMAC-SHA256 of the body       | `XGh5N2tPJ3R5bXB...`               |
+| `x-shopify-topic`       | The event type                               | `orders/create`, `products/update` |
+| `x-shopify-shop-domain` | The shop that sent the webhook               | `your-store.myshopify.com`         |
+| `x-shopify-api-version` | The API version used to generate the payload | `2024-01`                          |
+
+Your handler should:
+
+1. Read the raw body string before any JSON parsing or middleware transformation.
+2. Compute HMAC-SHA256 of the raw string using the shared secret.
+3. Base64-encode the result.
+4. Compare the encoded hash against the `x-shopify-hmac-sha256` header value using a timing-safe comparison.
+
+## Shopify-specific notes
+
+**Base64 encoding, not hex.** Most webhook providers (GitHub, Stripe, Linear) encode their HMAC signatures as hexadecimal strings. Shopify uses base64. If you copy verification code from a GitHub webhook handler, you will get mismatches because the encoding differs.
+
+**Payloads use snake_case field names.** Shopify sends all fields in snake_case (`line_items`, `created_at`, `financial_status`). If your handler maps these to camelCase internally, make sure the mapping happens after signature verification.
+
+**The `x-shopify-topic` header contains the event type.** Your handler should route based on this header, not by parsing the body to detect the event type. This header is also what distinguishes `orders/create` from `orders/paid` when the payload structures overlap.
+
+**Available templates:**
+
+| Template          | Topic header      | Description                                                                     |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `orders/create`   | `orders/create`   | New order placed. Includes line items, customer, pricing, and shipping address. |
+| `orders/paid`     | `orders/paid`     | Payment confirmed on an order. Financial status set to `paid`.                  |
+| `products/update` | `products/update` | Product details changed. Includes variants, images, and inventory data.         |
+| `app/uninstalled` | `app/uninstalled` | Your app was removed from a store. Includes the shop domain and app ID.         |
+
+## Putting it together: a full test suite
+
+```ts
+import { describe, it, expect } from "vitest";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const WEBHOOK_URL = "http://localhost:3000/api/webhooks/shopify";
+
+describe("Shopify webhook handler", () => {
+  const templates = ["orders/create", "orders/paid", "products/update", "app/uninstalled"] as const;
+
+  for (const template of templates) {
+    it(`handles ${template}`, async () => {
+      const res = await client.sendTo(WEBHOOK_URL, {
+        provider: "shopify",
+        template,
+        secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+      });
+
+      expect(res.status).toBe(200);
+    });
+  }
+
+  it("rejects requests with invalid HMAC", async () => {
+    const res = await client.sendTo(WEBHOOK_URL, {
+      provider: "shopify",
+      template: "orders/create",
+      secret: "wrong-secret-value",
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it("handles custom order payloads", async () => {
+    const res = await client.sendTo(WEBHOOK_URL, {
+      provider: "shopify",
+      secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+      event: "orders/create",
+      body: {
+        id: 987654321,
+        email: "buyer@example.com",
+        total_price: "49.99",
+        currency: "EUR",
+        financial_status: "pending",
+        name: "#2001",
+        line_items: [{ id: 111222333, title: "Starter Plan", quantity: 1, price: "49.99" }],
+      },
+    });
+
+    expect(res.status).toBe(200);
+  });
+});
+```
+
+## Common issues
+
+**"HMAC verification fails"** -- Your handler must compute the HMAC on the raw body string, not on re-serialized JSON. When you parse JSON and serialize it again, key order can change, whitespace can be added or removed, and number formatting can differ. All of these produce a different HMAC.
+
+In Express, use `express.raw()` to get the body as a Buffer:
+
+```ts
+app.post("/api/webhooks/shopify", express.raw({ type: "application/json" }), (req, res) => {
+  const hmac = req.headers["x-shopify-hmac-sha256"];
+  const body = req.body; // Buffer -- use this for HMAC computation
+  // verify HMAC against body
+});
+```
+
+In Next.js App Router:
+
+```ts
+export async function POST(request: Request) {
+  const body = await request.text(); // raw string, not .json()
+  const hmac = request.headers.get("x-shopify-hmac-sha256");
+  // verify HMAC against body
+}
+```
+
+**"Missing topic header"** -- When sending custom payloads without a `template`, set `event` to populate the `x-shopify-topic` header. Templates include this header automatically. Without it, handlers that route by topic will not know which event type to process.
+
+**"Handler returns 500"** -- Read the response body for details. Add diagnostic output to your test:
+
+```ts
+const res = await client.sendTo(WEBHOOK_URL, {
+  provider: "shopify",
+  template: "orders/create",
+  secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+});
+
+const text = await res.text();
+expect(res.status, `Handler error: ${text}`).toBe(200);
+```
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Can I test Shopify webhooks without a Shopify store?">
+
+Yes. The SDK signs payloads locally using your webhook secret. No Shopify store, partner account, or admin panel access is needed. The generated payloads match Shopify's documented webhook format, and the HMAC signatures use the same algorithm Shopify uses -- HMAC-SHA256 with base64 encoding.
+
+</FAQItem>
+<FAQItem question="How do I test the app/uninstalled event?">
+
+Use the `app/uninstalled` template. This event fires when a merchant removes your app from their store. Your handler should clean up any stored data for that shop:
+
+```ts
+const res = await client.sendTo(WEBHOOK_URL, {
+  provider: "shopify",
+  template: "app/uninstalled",
+  secret: process.env.SHOPIFY_WEBHOOK_SECRET!,
+});
+
+expect(res.status).toBe(200);
+```
+
+The template includes the shop domain, app ID, and other fields Shopify sends with this event.
+
+</FAQItem>
+<FAQItem question="Does the SDK signature match what Shopify actually sends?">
+
+Yes. The SDK uses the same HMAC-SHA256 algorithm and base64 encoding that Shopify uses in production. The computed `x-shopify-hmac-sha256` header value is identical to what Shopify would produce for the same body and secret. If your handler verifies signatures correctly against the SDK-generated payloads, it will verify correctly against real Shopify webhooks.
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/sdk/testing/shopify-vitest"
+  title="Shopify + Vitest"
+  description="Focused Vitest integration tests for Shopify handlers."
+/>
+
+<LinkCard
+  href="/docs/sdk/signatures"
+  title="Signature Verification"
+  description="Verify signatures for Shopify and 8 other providers."
+/>
+
+<LinkCard
+  href="/docs/guides/test-github-webhooks"
+  title="Test GitHub Webhooks"
+  description="Send signed GitHub webhook payloads to localhost."
+/>

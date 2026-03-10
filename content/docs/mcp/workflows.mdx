@@ -1,0 +1,201 @@
+---
+title: "Agent Workflows"
+description: "Multi-turn conversation examples showing how AI agents use webhooks.cc MCP tools to test, debug, and verify webhooks."
+section: mcp
+order: 3
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["MCP workflows", "AI agent webhook testing", "Claude Code webhooks", "webhook debugging"]
+seo:
+  ogTitle: "Agent Workflows — webhooks.cc MCP"
+  ogDescription: "See how AI agents use webhooks.cc MCP tools in multi-turn conversations to create, test, debug, and verify webhooks."
+---
+
+## Quick capture and inspect
+
+Create an endpoint, capture a webhook from an external service, inspect the payload, and replay it locally.
+
+```
+You: "Create an endpoint for testing my payment service"
+Agent: [calls create_endpoint] Created "payment-test" at https://go.webhooks.cc/w/abc123
+
+You: "I just triggered a payment — check what arrived"
+Agent: [calls list_requests] 1 request captured:
+  POST /w/abc123 — application/json, 342 bytes
+  Body: {"event": "payment.completed", "amount": 4999}
+
+You: "Replay that to my local server"
+Agent: [calls replay_request] Replayed to http://localhost:3000/webhooks — 200 OK
+```
+
+The agent handles the full lifecycle: endpoint creation, request inspection, and replay. No manual curl commands or dashboard switching needed.
+
+## Provider template testing
+
+Test with provider-signed webhooks. The agent creates an endpoint, configures a mock response, sends a signed Stripe template, and verifies the signature.
+
+```
+You: "Set up a Stripe webhook test"
+Agent: [calls create_endpoint] Created endpoint "stripe-test" at https://go.webhooks.cc/w/def456
+       [calls update_endpoint] Set mock response: 200 {"received": true}
+       [calls send_webhook with provider: "stripe", template: "checkout.session.completed", secret: "whsec_test123"]
+       Sent signed Stripe webhook
+
+You: "Did the signature verify?"
+Agent: [calls verify_signature] Valid stripe-signature (HMAC-SHA256)
+
+You: "Show me the headers"
+Agent: [calls get_request] Headers:
+  stripe-signature: t=1710000000,v1=abc123...
+  content-type: application/json
+  user-agent: Stripe/1.0
+```
+
+This workflow validates that your handler receives correctly signed payloads and returns the expected response.
+
+## Debug missing webhooks
+
+Diagnose why webhooks stopped arriving. The agent checks endpoint status, reviews recent request history, and sends a test to isolate the problem.
+
+```
+You: "My Shopify webhooks aren't arriving at my endpoint"
+Agent: [calls get_endpoint] Endpoint "shopify-prod" exists, URL: https://go.webhooks.cc/w/xyz789
+       [calls list_requests with limit: 5] Last 5 requests — all from 2 days ago, none recent
+
+You: "Can you send a test to see if it works?"
+Agent: [calls send_webhook with provider: "shopify", event: "orders/create"]
+       Sent signed Shopify webhook
+       [calls wait_for_request] Request arrived in 340ms
+       Response: 200 OK
+
+Agent: The endpoint is working. The issue is likely on Shopify's side —
+       check your webhook configuration in Shopify admin.
+
+You: "Compare the test webhook to the last real one"
+Agent: [calls compare_requests] Differences:
+  - Headers: test has x-shopify-test: true (missing in production)
+  - Body: product IDs differ (test uses mock data)
+  - Signature: Both valid
+```
+
+By comparing a test webhook against a real one, the agent helps isolate whether the issue is on the sender side or the receiver side.
+
+## CI/CD webhook verification
+
+Run a full end-to-end test in one step. The `test_webhook_flow` tool creates an endpoint, sends a signed webhook, verifies the signature, replays to your local handler, and cleans up.
+
+```
+You: "Help me test my webhook handler before deploying"
+Agent: [calls test_webhook_flow with provider: "stripe",
+        event: "payment_intent.succeeded",
+        secret: "whsec_test123",
+        targetUrl: "http://localhost:3000/api/webhooks/stripe",
+        verifySignature: true]
+
+Result:
+  Created endpoint "test-abc"
+  Set mock response: 200
+  Sent signed Stripe webhook
+  Request captured in 280ms
+  Signature verified (HMAC-SHA256)
+  Replayed to localhost:3000 — 200 OK
+  Cleaned up endpoint
+```
+
+This single tool call replaces a multi-step manual setup. Use it in CI pipelines or before deploys to confirm your handler processes signed webhooks correctly.
+
+## Multi-endpoint comparison
+
+Compare webhook formats across providers by creating multiple endpoints and sending different provider templates side by side.
+
+```
+You: "I need to compare how Stripe and GitHub webhooks differ"
+Agent: [calls create_endpoints with count: 2, namePrefix: "compare"]
+       Created compare-1 and compare-2
+
+You: "Send a Stripe payment to the first and a GitHub push to the second"
+Agent: [calls send_webhook with slug: "compare-1", provider: "stripe",
+        template: "payment_intent.succeeded", secret: "whsec_test"]
+       [calls send_webhook with slug: "compare-2", provider: "github",
+        event: "push", secret: "ghsec_test"]
+       Sent both webhooks
+
+You: "Compare the two requests"
+Agent: [calls compare_requests]
+  Method: Both POST
+  Headers: Stripe uses stripe-signature, GitHub uses x-hub-signature-256
+  Body: Stripe wraps in {type, data}, GitHub uses {ref, commits, pusher}
+  Content-Type: Both application/json
+
+You: "Clean up"
+Agent: [calls delete_endpoints] Deleted both endpoints
+```
+
+Batch creation and deletion keep multi-endpoint workflows fast. The structured diff output makes it straightforward to understand format differences across providers.
+
+## Prompts
+
+The MCP server provides three built-in prompt templates that guide agents through common multi-step workflows.
+
+### debug_webhook_delivery
+
+Use when webhooks are not arriving or are failing. Walks through: checking that the endpoint exists, listing recent requests, sending a test webhook, verifying the signature, and comparing retries.
+
+| Argument       | Type     | Required | Description                                 |
+| -------------- | -------- | -------- | ------------------------------------------- |
+| `provider`     | `string` | no       | Webhook provider (e.g., `stripe`, `github`) |
+| `endpointSlug` | `string` | no       | Endpoint to investigate                     |
+| `targetUrl`    | `string` | no       | URL where webhooks should be delivered      |
+
+### setup_provider_testing
+
+Guided setup for testing webhooks from a specific provider. Lists available templates, creates an endpoint, previews the signed request, sends it, waits for capture, and verifies the signature.
+
+| Argument    | Type     | Required | Description                  |
+| ----------- | -------- | -------- | ---------------------------- |
+| `provider`  | `string` | yes      | Webhook provider to set up   |
+| `targetUrl` | `string` | no       | URL for replay after capture |
+
+### compare_webhook_attempts
+
+Compare two webhook deliveries or retries to understand what changed between them. Finds relevant requests, runs `compare_requests`, and explains the differences.
+
+| Argument         | Type     | Required | Description                     |
+| ---------------- | -------- | -------- | ------------------------------- |
+| `endpointSlug`   | `string` | no       | Endpoint to search for requests |
+| `leftRequestId`  | `string` | no       | First request ID to compare     |
+| `rightRequestId` | `string` | no       | Second request ID to compare    |
+
+## Resources
+
+Three MCP resources provide read-only access to your webhook data. Agents can read these without calling tools.
+
+### endpoints-overview
+
+**URI:** `webhooks://endpoints`
+
+Returns all endpoints (up to 25) with a summary of each endpoint's last request.
+
+### endpoint-recent-requests
+
+**URI:** `webhooks://endpoint/{slug}/recent`
+
+Returns the last 10 captured requests for a specific endpoint, including method, path, headers, and body.
+
+### request-details
+
+**URI:** `webhooks://request/{id}`
+
+Returns full details of a single captured request -- headers, body, IP, timestamp, and size.
+
+<LinkCard
+  href="/docs/mcp"
+  title="MCP Overview"
+  description="Installation, setup, and getting started with the MCP server."
+/>
+
+<LinkCard
+  href="/docs/mcp/tools"
+  title="Tool Reference"
+  description="Complete parameter reference for all 24 MCP tools."
+/>

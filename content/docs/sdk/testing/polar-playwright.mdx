@@ -1,0 +1,157 @@
+---
+title: "Polar.sh + Playwright"
+description: "Simulate the full Polar subscription lifecycle — created, updated, canceled, reactivated — by sending signed Standard Webhooks payloads to your localhost handler with Playwright."
+section: sdk
+order: 8
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["polar webhooks", "polar playwright", "subscription lifecycle testing"]
+seo:
+  ogTitle: "Polar.sh Subscription Lifecycle with Playwright — webhooks.cc"
+  ogDescription: "Simulate the full Polar subscription lifecycle by sending signed Standard Webhooks payloads to your localhost handler with Playwright."
+---
+
+Simulate the full Polar subscription lifecycle — created, updated, canceled, reactivated — by sending signed Standard Webhooks payloads directly to your localhost handler. No Polar dashboard needed.
+
+## Full lifecycle test
+
+Use `test.describe.serial` so each step depends on the previous one creating state in your database:
+
+```ts
+import { test, expect } from "@playwright/test";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const WEBHOOK_URL = "http://localhost:3000/api/webhooks/polar";
+
+test.describe.serial("Polar subscription lifecycle", () => {
+  test("subscription.created provisions tenant", async () => {
+    const res = await client.sendTo(WEBHOOK_URL, {
+      provider: "standard-webhooks",
+      secret: process.env.POLAR_WEBHOOK_SECRET!,
+      body: {
+        type: "subscription.created",
+        timestamp: new Date().toISOString(),
+        data: {
+          id: "sub_test_001",
+          status: "active",
+          customer: {
+            id: "cust_001",
+            email: "test@example.com",
+            name: "Test User",
+          },
+          product: {
+            id: "prod_001",
+            name: "Pro Plan",
+          },
+          recurring_interval: "month",
+          current_period_start: "2026-03-08T00:00:00Z",
+          current_period_end: "2026-04-08T00:00:00Z",
+        },
+      },
+    });
+
+    const text = await res.text();
+    expect(res.status, `Server responded: ${text}`).toBe(200);
+  });
+
+  test("subscription.updated upgrades plan", async () => {
+    const res = await client.sendTo(WEBHOOK_URL, {
+      provider: "standard-webhooks",
+      secret: process.env.POLAR_WEBHOOK_SECRET!,
+      body: {
+        type: "subscription.updated",
+        timestamp: new Date().toISOString(),
+        data: {
+          id: "sub_test_001",
+          status: "active",
+          customer: {
+            id: "cust_001",
+            email: "test@example.com",
+            name: "Test User",
+          },
+          product: {
+            id: "prod_002",
+            name: "Enterprise Plan",
+          },
+          recurring_interval: "year",
+          current_period_end: "2027-03-08T00:00:00Z",
+        },
+      },
+    });
+
+    const text = await res.text();
+    expect(res.status, `Server responded: ${text}`).toBe(200);
+  });
+
+  test("subscription.canceled suspends tenant", async () => {
+    const res = await client.sendTo(WEBHOOK_URL, {
+      provider: "standard-webhooks",
+      secret: process.env.POLAR_WEBHOOK_SECRET!,
+      body: {
+        type: "subscription.canceled",
+        timestamp: new Date().toISOString(),
+        data: {
+          id: "sub_test_001",
+          status: "canceled",
+          cancel_at_period_end: true,
+          customer: {
+            id: "cust_001",
+            email: "test@example.com",
+            name: "Test User",
+          },
+        },
+      },
+    });
+
+    const text = await res.text();
+    expect(res.status, `Server responded: ${text}`).toBe(200);
+  });
+});
+```
+
+## Inspect what the SDK sends
+
+Use `buildRequest` to inspect the computed headers and signature without sending:
+
+```ts
+const { url, method, headers, body } = await client.buildRequest(
+  "http://localhost:3000/api/webhooks/polar",
+  {
+    provider: "standard-webhooks",
+    secret: process.env.POLAR_WEBHOOK_SECRET!,
+    body: { type: "subscription.created", data: { id: "sub_1" } },
+  }
+);
+
+console.log(headers["webhook-signature"]); // v1,<base64>
+console.log(headers["webhook-id"]); // msg_<hex>
+console.log(body); // JSON string
+```
+
+## Tips
+
+- **Capture first, test later** — Don't build payloads from scratch. Point your Polar webhook to a webhooks.cc endpoint first, trigger a real event, then copy the captured payload as your test fixture. Polar's SDK validates many required fields in snake_case — getting them right manually is tedious.
+- **snake_case field names** — Polar's webhook payloads use snake_case (`recurring_interval`, `current_period_end`). Their Zod schema rejects camelCase.
+- **Body timestamp** — Polar requires a `timestamp` ISO-8601 field in the body alongside `type` and `data`. The SDK generates the header timestamp but the body timestamp is your responsibility.
+- **Error diagnosis** — If your handler returns 500, read the response body: `const text = await res.text(); expect(res.status, text).toBe(200);`
+
+## More examples
+
+<LinkCard
+  href="/docs/sdk/testing/standard-webhooks"
+  title="Standard Webhooks + Vitest"
+  description="Handler testing with signed payloads."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing/playwright-e2e"
+  title="Playwright E2E"
+  description="Browser flow + webhook assertions."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing/stripe-vitest"
+  title="Stripe + Vitest"
+  description="Payment webhook assertions."
+/>

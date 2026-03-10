@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebhooksCC } from "@webhooks-cc/sdk";
+import { registerPrompts } from "./prompts";
+import { registerResources } from "./resources";
 import { registerTools } from "./tools";
 
 declare const PKG_VERSION: string | undefined;
@@ -16,7 +18,7 @@ export interface CreateServerOptions {
 }
 
 /**
- * Create an MCP server with all webhooks.cc tools registered.
+ * Create an MCP server with all webhooks.cc tools, prompts, and resources registered.
  *
  * @example
  * ```ts
@@ -45,8 +47,12 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   });
 
   registerTools(server, client);
+  registerPrompts(server);
+  registerResources(server, client);
 
   return server;
 }
 
 export { registerTools } from "./tools";
+export { registerPrompts } from "./prompts";
+export { registerResources } from "./resources";

@@ -1,0 +1,291 @@
+---
+title: "How to Test Webhooks Locally"
+description: "Send real webhook payloads to your localhost development server. Capture, inspect, and replay webhooks without deploying."
+section: guides
+order: 1
+lastUpdated: 2026-03-10
+schema: howto
+keywords:
+  ["test webhooks locally", "localhost webhook testing", "webhook development", "webhook debugging"]
+seo:
+  ogTitle: "How to Test Webhooks Locally — webhooks.cc"
+  ogDescription: "Step-by-step guide to testing webhooks on localhost with capture, inspection, and replay."
+---
+
+Testing webhooks during development is hard. External services cannot reach localhost, signatures break when you proxy through generic tunneling tools, and real webhook events fire at unpredictable times with unpredictable payloads. webhooks.cc gives you three approaches that solve different parts of the problem: capture and replay real webhooks, send signed payloads directly to localhost, or tunnel live webhooks to your local server in real-time.
+
+## What you'll build
+
+By the end of this guide, you will be able to:
+
+- Capture incoming webhooks from any provider and inspect their full payloads
+- Replay captured requests to your localhost server on demand
+- Send signed test webhooks directly to your local handler with `sendTo`
+- Set up a real-time tunnel that forwards live webhooks to localhost
+
+<Callout type="info">
+  You need a webhooks.cc account and an API key from your [account page](/account). The free plan
+  includes 50 requests per day, enough for local development.
+</Callout>
+
+## Prerequisites
+
+- **Node.js 18+** (for SDK) or any HTTP client (for manual testing)
+- **A local server** running on any port (e.g., `localhost:3000`)
+- **An API key** from your [account page](/account) -- set it as `WHK_API_KEY`
+
+## Method 1: Capture and replay
+
+Capture real webhooks from your provider, then replay them against your local server as many times as you need. This is the best approach when you want to test with actual production-shaped payloads.
+
+<Steps>
+<Step title="Create an endpoint">
+
+Create an endpoint from the dashboard, CLI, or SDK. Each endpoint gets a unique URL.
+
+```bash
+# CLI -- creates an endpoint and prints the URL
+whk create my-test
+```
+
+```ts
+// SDK
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const endpoint = await client.endpoints.create({ name: "my-test" });
+console.log(endpoint.url);
+// https://go.webhooks.cc/w/abc123
+```
+
+</Step>
+<Step title="Point your provider at the endpoint">
+
+Copy the endpoint URL and paste it into your webhook provider's settings. For example, in the Stripe Dashboard, go to **Developers > Webhooks > Add endpoint** and enter your endpoint URL.
+
+The endpoint accepts any HTTP method, content type, and body. No configuration needed on the webhooks.cc side.
+
+</Step>
+<Step title="Trigger a webhook">
+
+Perform the action that triggers a webhook from your provider. For Stripe, that might be completing a test-mode checkout. For GitHub, push a commit to a repository with a webhook configured.
+
+</Step>
+<Step title="Inspect the captured request">
+
+Open the [dashboard](/dashboard). The captured request appears in real-time -- no refresh needed. You can inspect:
+
+- HTTP method, path, and query parameters
+- All request headers (including signature headers)
+- Full request body with JSON pretty-printing
+- Source IP address and timestamp
+
+You can also retrieve captured requests programmatically:
+
+```ts
+const requests = await client.requests.list(endpoint.slug);
+const latest = requests[0];
+console.log(latest.method, latest.headers, latest.body);
+```
+
+</Step>
+<Step title="Replay to localhost">
+
+Replay the captured request to your local server. The replay sends the original method, headers, and body -- your handler processes it as if the provider sent it directly.
+
+```ts
+const res = await client.requests.replay(latest.id, "http://localhost:3000/api/webhooks");
+console.log(res.status); // 200
+```
+
+From the CLI:
+
+```bash
+whk replay <request-id> --target http://localhost:3000/api/webhooks
+```
+
+Replay as many times as you need. Edit your handler, replay again, iterate until it works.
+
+</Step>
+</Steps>
+
+## Method 2: Send signed payloads directly
+
+Send webhooks straight to your localhost handler with proper provider signatures. No webhooks.cc endpoint needed -- the request goes directly from your machine to localhost. This is the best approach for automated tests and deterministic payloads.
+
+<Steps>
+<Step title="Install the SDK">
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+</Step>
+<Step title="Send a signed webhook">
+
+Use `sendTo` to send a webhook directly to your local server. The SDK computes the correct provider signature and includes the appropriate headers.
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+const res = await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
+  provider: "stripe",
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+  body: {
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_test_123",
+        amount_total: 4999,
+        currency: "usd",
+        payment_status: "paid",
+      },
+    },
+  },
+});
+
+console.log(res.status); // 200
+```
+
+The `stripe-signature` header is computed using your webhook secret, so your handler's existing signature verification works without changes.
+
+</Step>
+<Step title="Use provider templates">
+
+For common event types, use built-in templates instead of writing the full payload:
+
+```ts
+const res = await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
+  provider: "stripe",
+  template: "checkout.session.completed",
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+});
+```
+
+Supported providers: `stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `standard-webhooks` (Polar, Svix, Clerk, Resend).
+
+</Step>
+</Steps>
+
+## Method 3: Real-time tunnel
+
+Forward live webhooks to your local server in real-time. The CLI creates an outbound connection from your machine -- no port forwarding, firewall changes, or public IP required.
+
+<Steps>
+<Step title="Install the CLI">
+
+```bash
+# macOS / Linux
+brew install webhooks-cc/tap/whk
+
+# Or install directly with Go
+go install github.com/webhooks-cc/cli/cmd/whk@latest
+```
+
+</Step>
+<Step title="Start the tunnel">
+
+```bash
+whk tunnel 3000
+```
+
+This creates an endpoint, prints its URL, and forwards every incoming request to `localhost:3000`. Configure this URL in your webhook provider.
+
+</Step>
+<Step title="Receive webhooks in real-time">
+
+Webhooks arrive at your local server as they happen. The CLI preserves the original method, headers, and body. Path segments after the slug are preserved too:
+
+```
+POST https://go.webhooks.cc/w/abc123/api/webhooks
+  -> POST http://localhost:3000/api/webhooks
+```
+
+The terminal shows each forwarded request with its status code and latency.
+
+</Step>
+<Step title="Use an existing endpoint">
+
+If you already have an endpoint configured in your provider, forward it without creating a new one:
+
+```bash
+whk tunnel 3000 --endpoint abc123
+```
+
+Add `-e` to delete the endpoint when you stop the tunnel:
+
+```bash
+whk tunnel 3000 -e
+```
+
+</Step>
+</Steps>
+
+## How it works
+
+The three methods use different parts of the webhooks.cc infrastructure:
+
+**Capture and replay** -- The Rust receiver captures incoming requests in under 1ms and buffers them in Redis. Requests are flushed to the Convex database, where the dashboard displays them in real-time via reactive queries. Replay re-sends the stored request data to your target URL.
+
+**sendTo** -- The SDK sends the request directly from your machine to your localhost URL. When you specify a provider, the SDK computes the correct cryptographic signature (HMAC-SHA256 for most providers, Ed25519 for Discord) and includes the provider-specific headers. No intermediary server is involved.
+
+**Tunneling** -- The CLI opens a Server-Sent Events (SSE) connection to webhooks.cc. When a webhook arrives at your endpoint, the server pushes it through the SSE stream. The CLI reconstructs the request and sends it to your local port. The connection is outbound-only -- your machine initiates it, so no firewall rules or port exposure is needed.
+
+## Common issues
+
+**"Connection refused"** -- Your local server is not running, or the port does not match. Verify your server is listening: `curl http://localhost:3000/health`. Check that you passed the correct port to `whk tunnel` or the correct URL to `sendTo`.
+
+**"Signature verification failed"** -- The signing secret does not match. For Stripe, use the `whsec_...` secret from **Dashboard > Developers > Webhooks**, not your Stripe API key. For GitHub, use the secret you set when creating the webhook, not your personal access token.
+
+**"Request never arrives"** -- Check the endpoint slug. Verify the external service is sending to the correct URL (`https://go.webhooks.cc/w/{slug}`). Check the [dashboard](/dashboard) to see if the request was captured -- if it is there but not forwarded, the tunnel may have disconnected.
+
+**"Handler returns 400 or 500"** -- Read your handler's error output. Common cause: your framework parses the request body before your webhook handler reads it. Stripe and other providers require the raw body for signature verification. In Next.js, use `export const config = { api: { bodyParser: false } }` or the App Router raw body approach.
+
+<FAQ>
+<FAQItem question="Do I need to expose my localhost to the internet?">
+
+No. `sendTo` connects directly from your machine to localhost -- no network traversal at all. Tunneling uses an outbound SSE connection that your machine initiates. In both cases, your local port is never exposed to the public internet.
+
+</FAQItem>
+<FAQItem question="Can I test with real provider webhooks?">
+
+Yes. Create an endpoint, configure it in your provider's webhook settings, and trigger real events. The endpoint captures the full request. You can then inspect it in the dashboard and replay it to localhost as many times as needed.
+
+</FAQItem>
+<FAQItem question="Does this work in Docker?">
+
+Yes. For `sendTo`, use `http://host.docker.internal:3000` (Docker Desktop) or `http://172.17.0.1:3000` (Linux bridge network) instead of `localhost`. For tunneling, run the CLI on the host or inside the container with host networking enabled.
+
+</FAQItem>
+<FAQItem question="Which method should I use?">
+
+Use **sendTo** for automated tests -- it is deterministic, fast, and requires no external service interaction. Use **capture and replay** when you need real payloads from a provider. Use **tunneling** for interactive development when you want to receive live webhooks as you code.
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/cli/tunnel"
+  title="CLI Tunneling"
+  description="Full reference for whk tunnel options and behavior."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing with the SDK"
+  description="CI/CD integration patterns and test utilities."
+/>
+
+<LinkCard
+  href="/docs/mock-responses"
+  title="Mock Responses"
+  description="Control what your endpoint returns to webhook senders."
+/>
+
+<LinkCard
+  href="/docs/sdk/signatures"
+  title="Signature Verification"
+  description="Verify webhook signatures for Stripe, GitHub, Shopify, and 6 more providers."
+/>

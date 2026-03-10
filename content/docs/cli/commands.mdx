@@ -1,0 +1,130 @@
+---
+title: "Command Reference"
+description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, and updates."
+section: cli
+order: 2
+lastUpdated: 2026-03-10
+schema: none
+keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
+seo:
+  ogTitle: "Webhook CLI Command Reference — webhooks.cc"
+  ogDescription: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, and updates."
+---
+
+All available commands for the `whk` CLI.
+
+Run `whk` with no arguments to launch the interactive TUI, or use the subcommands below for scriptable, plain-text output.
+
+## whk (interactive)
+
+Launch the interactive TUI. Provides a menu-driven interface for all CLI features with real-time request streaming, color-coded methods, and a request detail viewer.
+
+```bash
+whk
+```
+
+| Flag      | Description                                                  |
+| --------- | ------------------------------------------------------------ |
+| `--nogui` | Disable the TUI and print help instead (also: `WHK_NOGUI=1`) |
+
+## auth login
+
+Log in to webhooks.cc. Opens your browser to verify a device code. Credentials are stored at `~/.config/whk/token.json`.
+
+```bash
+whk auth login
+```
+
+## auth logout
+
+Remove stored credentials from your machine.
+
+```bash
+whk auth logout
+```
+
+## auth status
+
+Show current authentication status and email.
+
+```bash
+whk auth status
+```
+
+## create
+
+Create a new endpoint. An optional name can be provided; the slug is auto-generated.
+
+```bash
+whk create [name]
+```
+
+## list
+
+List all your endpoints with their slugs, names, and URLs.
+
+```bash
+whk list
+```
+
+## delete
+
+Delete an endpoint. Prompts for confirmation unless `--force` is set.
+
+```bash
+whk delete <slug>
+```
+
+| Flag          | Description                  |
+| ------------- | ---------------------------- |
+| `--force, -f` | Skip the confirmation prompt |
+
+## tunnel
+
+Forward webhooks to a local port. Creates a new endpoint unless `--endpoint` is set.
+
+```bash
+whk tunnel <port>
+```
+
+| Flag              | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `--endpoint`      | Use an existing endpoint instead of creating one                            |
+| `--ephemeral, -e` | Delete the endpoint when the tunnel exits                                   |
+| `--header, -H`    | Add a custom header to forwarded requests (repeatable, format: `Key:Value`) |
+
+## listen
+
+Stream incoming requests for an endpoint to the terminal without forwarding them.
+
+```bash
+whk listen <slug>
+```
+
+## replay
+
+Replay a captured request to a target URL.
+
+```bash
+whk replay <request-id>
+```
+
+| Flag   | Description                                              |
+| ------ | -------------------------------------------------------- |
+| `--to` | Target URL for replay (default: `http://localhost:8080`) |
+
+## update
+
+Update whk to the latest version.
+
+```bash
+whk update
+```
+
+## --version
+
+Print the CLI version.
+
+```bash
+whk --version
+```
