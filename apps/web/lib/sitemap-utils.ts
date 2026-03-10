@@ -1,4 +1,3 @@
-import { BLOG_POSTS } from "./blog";
 import { LAST_CONTENT_UPDATE, PUBLIC_SITEMAP_PAGES, SITE_URL } from "./seo";
 
 export interface PublicSitemapEntry {
@@ -9,31 +8,11 @@ export interface PublicSitemapEntry {
   priority: number;
 }
 
-function blogUpdatedAt(path: string): Date | null {
-  const post = BLOG_POSTS.find((item) => item.href === path);
-  if (!post) return null;
-  return new Date(`${post.updatedAt}T00:00:00.000Z`);
-}
-
-function latestBlogUpdatedAt(): Date | null {
-  return BLOG_POSTS.reduce<Date | null>((latest, post) => {
-    const current = new Date(`${post.updatedAt}T00:00:00.000Z`);
-    if (!latest || current > latest) return current;
-    return latest;
-  }, null);
-}
-
 export function getPublicSitemapEntries(): PublicSitemapEntry[] {
-  const latestBlogUpdate = latestBlogUpdatedAt();
-
   return PUBLIC_SITEMAP_PAGES.map((page) => ({
     path: page.path,
     url: page.path === "/" ? SITE_URL : `${SITE_URL}${page.path}`,
-    lastModified:
-      page.lastModified ??
-      (page.path === "/blog" ? latestBlogUpdate : null) ??
-      blogUpdatedAt(page.path) ??
-      LAST_CONTENT_UPDATE,
+    lastModified: page.lastModified ?? LAST_CONTENT_UPDATE,
     changeFrequency: page.changeFrequency,
     priority: page.priority,
   }));

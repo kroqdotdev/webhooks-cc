@@ -1,5 +1,4 @@
 import type { Metadata, MetadataRoute } from "next";
-import type { BlogPostMeta } from "./blog";
 import type { BlogPostData } from "@/components/blog/blog-post-shell";
 
 export const SITE_URL = "https://webhooks.cc";
@@ -39,11 +38,6 @@ interface PageMetadataInput {
   path: string;
   noIndex?: boolean;
   keywords?: readonly string[];
-}
-
-function toIsoString(date: string | Date): string {
-  if (date instanceof Date) return date.toISOString();
-  return new Date(`${date}T00:00:00.000Z`).toISOString();
 }
 
 function toAbsoluteUrl(path: string): string {
@@ -137,41 +131,3 @@ export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
   };
 }
 
-export function createBlogPostMetadata(post: BlogPostMeta): Metadata {
-  const absoluteUrl = toAbsoluteUrl(post.href);
-  const publishedTime = toIsoString(post.publishedAt);
-  const modifiedTime = toIsoString(post.updatedAt);
-
-  return {
-    title: post.title,
-    description: post.description,
-    alternates: {
-      canonical: post.href,
-    },
-    openGraph: {
-      type: "article",
-      locale: "en_US",
-      url: absoluteUrl,
-      siteName: SITE_NAME,
-      title: post.title,
-      description: post.description,
-      images: [DEFAULT_OG_IMAGE_PATH],
-      publishedTime,
-      modifiedTime,
-      tags: [...post.tags],
-      authors: [SITE_NAME],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: post.title,
-      description: post.description,
-      images: [DEFAULT_OG_IMAGE_PATH],
-    },
-    robots: {
-      index: true,
-      follow: true,
-    },
-    keywords: [...post.tags],
-    authors: [{ name: SITE_NAME, url: SITE_URL }],
-  };
-}

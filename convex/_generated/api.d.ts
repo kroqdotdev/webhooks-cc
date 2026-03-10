@@ -11,6 +11,7 @@
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
+import type * as blogPosts from "../blogPosts.js";
 import type * as config from "../config.js";
 import type * as crons from "../crons.js";
 import type * as deviceAuth from "../deviceAuth.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   auth: typeof auth;
   billing: typeof billing;
+  blogPosts: typeof blogPosts;
   config: typeof config;
   crons: typeof crons;
   deviceAuth: typeof deviceAuth;
