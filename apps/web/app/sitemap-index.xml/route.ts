@@ -24,12 +24,17 @@ export async function GET() {
   }
 
   // Compute blog lastmod from actual published posts
-  const convex = getConvexClient();
-  const posts = await convex.query(api.blogPosts.listPublished);
-  const blogLastmod = posts.reduce<Date>((latest, post) => {
-    const d = new Date(post.updatedAt);
-    return d > latest ? d : latest;
-  }, LAST_CONTENT_UPDATE);
+  let blogLastmod = LAST_CONTENT_UPDATE;
+  try {
+    const convex = getConvexClient();
+    const posts = await convex.query(api.blogPosts.listPublished);
+    blogLastmod = posts.reduce<Date>((latest, post) => {
+      const d = new Date(post.updatedAt);
+      return d > latest ? d : latest;
+    }, LAST_CONTENT_UPDATE);
+  } catch {
+    // Convex unavailable (e.g. CI build with placeholder URL) — use fallback
+  }
 
   const sitemaps = [
     { loc: `${SITE_URL}/sitemaps/pages.xml`, lastmod: getLatestSitemapUpdate(pages) },
