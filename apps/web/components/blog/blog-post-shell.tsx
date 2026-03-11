@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3 } from "lucide-react";
-import { JsonLd, blogPostingSchema, howToSchema, breadcrumbSchema, type HowToStep } from "@/lib/schemas";
+import {
+  JsonLd,
+  blogPostingSchema,
+  howToSchema,
+  breadcrumbSchema,
+  type HowToStep,
+} from "@/lib/schemas";
 import type { TocItem } from "@/components/docs/toc";
 
 export interface BlogPostData {

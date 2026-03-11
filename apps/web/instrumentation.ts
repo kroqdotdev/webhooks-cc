@@ -1,8 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
-export function onRequestError(
-  ...args: Parameters<typeof Sentry.captureRequestError>
-) {
+export function onRequestError(...args: Parameters<typeof Sentry.captureRequestError>) {
   Sentry.captureRequestError(...args);
 }
 

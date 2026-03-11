@@ -41,8 +41,7 @@ export default async function BlogPostPage({ params }: PageProps) {
     .slice(0, 2)
     .map((p) => ({ slug: p.slug, title: p.title, description: p.description }));
 
-  const howToSteps =
-    post.schemaType === "howto" ? extractHowToSteps(post.content) : undefined;
+  const howToSteps = post.schemaType === "howto" ? extractHowToSteps(post.content) : undefined;
 
   return (
     <BlogPostShell
