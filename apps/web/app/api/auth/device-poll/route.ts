@@ -1,5 +1,6 @@
 import { getConvexClient } from "@/lib/convex-client";
 import { checkRateLimit } from "@/lib/rate-limit";
+import * as Sentry from "@sentry/nextjs";
 import { api } from "@convex/_generated/api";
 
 export async function GET(request: Request) {
@@ -20,7 +21,8 @@ export async function GET(request: Request) {
 
     // Only return the status field to unauthenticated callers
     return Response.json({ status: result.status });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

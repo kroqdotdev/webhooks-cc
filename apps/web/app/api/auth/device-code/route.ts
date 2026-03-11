@@ -1,5 +1,6 @@
 import { getConvexClient } from "@/lib/convex-client";
 import { checkRateLimit } from "@/lib/rate-limit";
+import * as Sentry from "@sentry/nextjs";
 import { api } from "@convex/_generated/api";
 
 export async function POST(request: Request) {
@@ -18,7 +19,8 @@ export async function POST(request: Request) {
       expiresAt: result.expiresAt,
       verificationUrl: `${appUrl}/cli/verify`,
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

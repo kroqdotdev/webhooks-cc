@@ -1,6 +1,7 @@
 import { extractBearerToken, validateApiKeyWithPlan } from "@/lib/api-auth";
 import { serverEnv, publicEnv } from "@/lib/env";
 import { checkRateLimitByKey } from "@/lib/rate-limit";
+import * as Sentry from "@sentry/nextjs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@convex/_generated/api";
 
@@ -31,12 +32,20 @@ export async function GET(request: Request) {
     } else {
       const convex = new ConvexHttpClient(publicEnv().NEXT_PUBLIC_CONVEX_URL);
       convex.setAuth(token);
-      const user = await convex.query(api.users.current);
-      if (!user?._id) {
-        return Response.json({ error: "Invalid token" }, { status: 401 });
+      try {
+        const user = await convex.query(api.users.current);
+        if (!user?._id) {
+          return Response.json({ error: "Invalid token" }, { status: 401 });
+        }
+        userId = user._id;
+        plan = user.plan === "free" || user.plan === "pro" ? user.plan : undefined;
+      } catch (authErr: unknown) {
+        const msg = authErr instanceof Error ? authErr.message : String(authErr);
+        if (msg.includes("Unauthenticated") || msg.includes("OIDC token")) {
+          return Response.json({ error: "Token expired" }, { status: 401 });
+        }
+        throw authErr;
       }
-      userId = user._id;
-      plan = user.plan === "free" || user.plan === "pro" ? user.plan : undefined;
     }
 
     const rateLimited = checkRateLimitByKey(`search-count:${userId}`, 120, 10 * 60_000);
@@ -88,6 +97,7 @@ export async function GET(request: Request) {
 
     return Response.json({ count: (data as { count: number }).count });
   } catch (err) {
+    Sentry.captureException(err);
     console.error("Search count API route error:", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }

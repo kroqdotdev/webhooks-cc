@@ -1,5 +1,6 @@
 import { authenticateRequest, convexCliRequest } from "@/lib/api-auth";
 import { publicEnv } from "@/lib/env";
+import * as Sentry from "@sentry/nextjs";
 import { ConvexClient } from "convex/browser";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
@@ -124,6 +125,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       try {
         convex = new ConvexClient(publicEnv().NEXT_PUBLIC_CONVEX_URL);
       } catch (err) {
+        Sentry.captureException(err);
         console.error("SSE: failed to create ConvexClient:", err);
         closeStream();
         return;
@@ -182,6 +184,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             }
           },
           (err) => {
+            Sentry.captureException(err);
             console.error("SSE subscription error:", err);
           }
         );
