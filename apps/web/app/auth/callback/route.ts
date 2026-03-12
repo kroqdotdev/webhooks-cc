@@ -4,7 +4,18 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+
+  // Validate next param to prevent open redirect
+  const rawNext = searchParams.get("next") ?? "/dashboard";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
+
+  // Surface OAuth provider errors (e.g. user denied consent)
+  const errorDescription = searchParams.get("error_description");
+  if (errorDescription) {
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent(errorDescription)}`
+    );
+  }
 
   if (code) {
     const supabase = await createClient();
