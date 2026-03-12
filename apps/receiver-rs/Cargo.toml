@@ -15,6 +15,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "trace"] }
 tower = "0.5"
+sentry = { version = "0.35", default-features = false, features = ["backtrace", "contexts", "panic", "tracing", "reqwest", "rustls"] }
 bytes = "1"
 http = "1"
 http-body-util = "0.1"

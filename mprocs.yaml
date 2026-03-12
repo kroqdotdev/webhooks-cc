@@ -1,8 +1,8 @@
 procs:
   web:
-    cmd: ["pnpm", "--filter", "web", "start"]
+    cmd: ["journalctl", "--user", "-u", "webhooks-web", "-f", "--no-hostname", "-o", "cat"]
   receiver:
-    shell: "set -a && . ./.env.local && set +a && ./dist/receiver"
+    cmd: ["journalctl", "--user", "-u", "webhooks-receiver", "-f", "--no-hostname", "-o", "cat"]
   deploy:
     shell: "npx convex deploy && echo '✓ Convex deployed successfully'"
-    autostart: true
+    autostart: false

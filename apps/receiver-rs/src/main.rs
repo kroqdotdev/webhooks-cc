@@ -37,7 +37,18 @@ async fn main() {
     // Load config
     let config = Config::from_env();
 
-    // Initialize tracing — stdout + rotating log file
+    // Initialize Sentry — must be before tracing so the layer can capture events.
+    // When DSN is empty/unset, sentry creates a disabled (no-op) client.
+    let _sentry_guard = sentry::init((
+        config.sentry_dsn.clone().unwrap_or_default(),
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            environment: Some("production".into()),
+            ..Default::default()
+        },
+    ));
+
+    // Initialize tracing — stdout + rotating log file + Sentry
     let log_level = if config.debug { "debug" } else { "info" };
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         format!("webhooks_receiver={log_level},tower_http=info").into()
@@ -50,6 +61,17 @@ async fn main() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
+    // Sentry layer: captures WARN and ERROR as Sentry events, INFO+ as breadcrumbs.
+    let sentry_layer =
+        sentry::integrations::tracing::layer().event_filter(|md: &tracing::Metadata<'_>| {
+            match *md.level() {
+                tracing::Level::ERROR | tracing::Level::WARN => {
+                    sentry::integrations::tracing::EventFilter::Event
+                }
+                _ => sentry::integrations::tracing::EventFilter::Breadcrumb,
+            }
+        });
+
     tracing_subscriber::registry()
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer().with_target(false))
@@ -59,6 +81,7 @@ async fn main() {
                 .with_target(false)
                 .with_writer(file_appender),
         )
+        .with(sentry_layer)
         .init();
 
     // Connect to Redis
