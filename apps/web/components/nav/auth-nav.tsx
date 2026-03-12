@@ -1,9 +1,8 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
+import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const NAV_LINKS = [
@@ -14,14 +13,14 @@ const NAV_LINKS = [
 
 export function AuthNav() {
   return (
-    <ConvexAuthProvider>
+    <SupabaseAuthProvider>
       <AuthNavContent />
-    </ConvexAuthProvider>
+    </SupabaseAuthProvider>
   );
 }
 
 function AuthNavContent() {
-  const { isAuthenticated, isLoading } = useConvexAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const pathname = usePathname();
 
   return (

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { EndpointSwitcher } from "@/components/dashboard/endpoint-switcher";
@@ -22,7 +23,14 @@ export function AppHeader({
   showBackToDashboard = false,
   showBlogLink = true,
 }: AppHeaderProps) {
-  const { signOut } = useAuthActions();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    resetUser();
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   return (
     <header className="border-b-2 border-foreground shrink-0 bg-background sticky top-0 z-50">
@@ -69,10 +77,7 @@ export function AppHeader({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              resetUser();
-              signOut();
-            }}
+            onClick={handleSignOut}
           >
             Sign out
           </Button>

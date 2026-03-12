@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { EndpointSwitcher } from "./endpoint-switcher";
 import { resetUser } from "@/lib/analytics";
 
 export function DashboardHeader() {
-  const { signOut } = useAuthActions();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    resetUser();
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   return (
     <header className="border-b">
@@ -31,10 +39,7 @@ export function DashboardHeader() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              resetUser();
-              signOut();
-            }}
+            onClick={handleSignOut}
           >
             Sign out
           </Button>
