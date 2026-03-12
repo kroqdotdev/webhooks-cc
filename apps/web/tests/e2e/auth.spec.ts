@@ -41,16 +41,16 @@ test.describe("Authentication", () => {
 
     await expect(page.getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
     await expect(page.getByText(testUser.email)).toBeVisible();
-    await expect(page.getByText("Free")).toBeVisible();
+    await expect(page.getByText("Free", { exact: true })).toBeVisible();
   });
 
   test("sign out redirects away from protected pages", async ({ page }) => {
     await signInTestUser(page, testUser, "/account");
     await expect(page.getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
 
-    // Click sign out — redirects to home page
-    await page.getByRole("button", { name: "Sign Out" }).click();
-    await expect(page).toHaveURL("/", { timeout: 10000 });
+    // Click sign out — the account page is protected, so middleware redirects to /login
+    await page.getByRole("button", { name: "Sign Out", exact: true }).click();
+    await expect(page).toHaveURL(/\/(login)?$/, { timeout: 10000 });
 
     // Verify we can't access protected routes anymore
     await page.goto("/dashboard");

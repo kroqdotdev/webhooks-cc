@@ -38,38 +38,68 @@ export async function deleteTestUser(userId: string): Promise<void> {
 }
 
 /**
- * Sign in a test user by calling signInWithPassword in the browser context.
- * This uses the actual Supabase client in the browser, which correctly sets
- * cookies via @supabase/ssr — no manual cookie manipulation needed.
+ * Sign in a test user by calling signInWithPassword via the Supabase REST API
+ * from Node.js, then injecting the session tokens into the browser via cookies
+ * and localStorage so the app picks them up.
  */
 export async function signInTestUser(
   page: Page,
   testUser: TestUser,
   targetPath = "/account"
 ): Promise<void> {
-  // Navigate to any page first so we're on the correct origin
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? SUPABASE_URL;
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!;
+
+  // Sign in via Node.js Supabase client to get tokens
+  const { createClient: createNodeClient } = await import("@supabase/supabase-js");
+  const nodeClient = createNodeClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await nodeClient.auth.signInWithPassword({
+    email: testUser.email,
+    password: testUser.password,
+  });
+  if (error) throw new Error(`signInWithPassword failed: ${error.message}`);
+
+  const session = data.session!;
+  const origin = new URL(supabaseUrl).origin;
+
+  // Navigate to any page to establish the correct origin
   await page.goto("/login");
   await page.waitForLoadState("domcontentloaded");
 
-  // Call signInWithPassword inside the browser via the Supabase client.
-  // The @supabase/ssr createBrowserClient handles cookie storage automatically.
-  await page.evaluate(
-    async ({ email, password, supabaseUrl, anonKey }) => {
-      // Dynamic import to use the browser-bundled Supabase client
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabase = createClient(supabaseUrl, anonKey);
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw new Error(`signInWithPassword failed: ${error.message}`);
-    },
-    {
-      email: testUser.email,
-      password: testUser.password,
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? SUPABASE_URL,
-      anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!,
-    }
-  );
+  // Set Supabase auth cookies that @supabase/ssr expects.
+  // The cookie name follows the pattern: sb-<project-ref>-auth-token
+  // For self-hosted, project ref is extracted from the URL hostname.
+  const url = new URL(supabaseUrl);
+  const projectRef = url.hostname.split(".")[0];
+  const cookieBase = `sb-${projectRef}-auth-token`;
 
-  // Navigate to target — the middleware will refresh the session from cookies
+  // @supabase/ssr stores the session as chunked cookies
+  const sessionPayload = JSON.stringify({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    expires_in: session.expires_in,
+    expires_at: session.expires_at,
+    token_type: session.token_type,
+    user: session.user,
+  });
+
+  // Set the session cookie on the app's domain
+  await page.context().addCookies([
+    {
+      name: `${cookieBase}.0`,
+      value: `base64-${Buffer.from(sessionPayload).toString("base64")}`,
+      domain: "localhost",
+      path: "/",
+      httpOnly: false,
+      secure: false,
+      sameSite: "Lax",
+    },
+  ]);
+
+  // Navigate to target — the middleware will read the session from cookies
   await page.goto(targetPath);
   await page.waitForLoadState("networkidle");
 }
