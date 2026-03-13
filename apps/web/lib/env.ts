@@ -22,16 +22,16 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
 });
 
 const serverEnvSchema = z.object({
   CONVEX_SITE_URL: z.string().url(),
   CAPTURE_SHARED_SECRET: z.string().min(1),
   SENTRY_DSN: z.string().optional(),
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 });
 
 /** Validated public env vars (available in both server and client). */
