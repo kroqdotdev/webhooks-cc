@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import dynamic from "next/dynamic";
 import { EndpointSwitcher } from "@/components/dashboard/endpoint-switcher";
+import { ArrowLeft } from "lucide-react";
+import { resetUser } from "@/lib/analytics";
 
 const NewEndpointDialog = dynamic(() =>
   import("@/components/dashboard/new-endpoint-dialog").then((m) => ({ default: m.NewEndpointDialog })),
   { ssr: false }
 );
-import { ArrowLeft } from "lucide-react";
-import { resetUser } from "@/lib/analytics";
 
 interface AppHeaderProps {
   showEndpointSwitcher?: boolean;
