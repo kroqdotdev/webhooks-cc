@@ -1,3 +1,4 @@
+import { updateBlogPostSchema } from "@/lib/blog-api-schema";
 import { verifyBlogSecret } from "@/lib/blog-api-auth";
 import {
   deleteBlogPostBySlug,
@@ -46,11 +47,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
 
+  const parsed = updateBlogPostSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ error: "invalid_body" }, { status: 400 });
+  }
+
   try {
-    const result = await updateBlogPostBySlug(
-      slug,
-      body as Parameters<typeof updateBlogPostBySlug>[1]
-    );
+    const result = await updateBlogPostBySlug(slug, parsed.data);
     return Response.json(result);
   } catch (error) {
     if (error instanceof Error && error.message === "not_found") {

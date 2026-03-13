@@ -1,5 +1,14 @@
+import { createBlogPostSchema } from "@/lib/blog-api-schema";
 import { verifyBlogSecret } from "@/lib/blog-api-auth";
 import { createBlogPost, listAllBlogPosts, listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
+
+function isSlugExistsError(error: unknown): boolean {
+  if (error instanceof Error && error.message === "slug_exists") {
+    return true;
+  }
+
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
+}
 
 export async function POST(request: Request) {
   const authError = verifyBlogSecret(request);
@@ -12,11 +21,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
 
+  const parsed = createBlogPostSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ error: "invalid_body" }, { status: 400 });
+  }
+
   try {
-    const result = await createBlogPost(body as Parameters<typeof createBlogPost>[0]);
+    const result = await createBlogPost(parsed.data);
     return Response.json(result, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "slug_exists") {
+    if (isSlugExistsError(error)) {
       return Response.json({ error: "slug_exists" }, { status: 409 });
     }
 

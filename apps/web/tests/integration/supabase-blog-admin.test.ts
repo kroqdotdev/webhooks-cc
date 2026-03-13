@@ -144,4 +144,90 @@ describe("Supabase Blog Admin API Integration", () => {
       deleted: true,
     });
   });
+
+  it("returns 400s for invalid create and update payloads instead of bubbling database errors", async () => {
+    const slug = `api-blog-invalid-${Date.now()}`;
+
+    const invalidCreateResponse = await createBlogPostRoute(
+      new Request("https://webhooks.cc/api/blog", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${BLOG_API_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          slug,
+          title: "Invalid Blog Post",
+          description: "Missing required fields and wrong types",
+          content: "# Invalid",
+          category: "Guides",
+          readMinutes: "5",
+          tags: ["api"],
+          status: "draft",
+          authorName: "webhooks.cc",
+          seoTitle: "Invalid",
+          seoDescription: "Invalid",
+          featured: false,
+          keywords: ["api"],
+          schemaType: "tech-article",
+          changeFrequency: "monthly",
+          priority: 0.5,
+        }),
+      })
+    );
+
+    expect(invalidCreateResponse.status).toBe(400);
+    await expect(invalidCreateResponse.json()).resolves.toEqual({
+      error: "invalid_body",
+    });
+
+    const createResponse = await createBlogPostRoute(
+      new Request("https://webhooks.cc/api/blog", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${BLOG_API_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          slug,
+          title: "Valid Blog Post",
+          description: "Valid Blog Post Description",
+          content: "# Valid Blog Post",
+          category: "Guides",
+          readMinutes: 5,
+          tags: ["api"],
+          status: "draft",
+          authorName: "webhooks.cc",
+          seoTitle: "Valid Blog Post",
+          seoDescription: "SEO description",
+          featured: false,
+          keywords: ["api"],
+          schemaType: "tech-article",
+          changeFrequency: "monthly",
+          priority: 0.5,
+        }),
+      })
+    );
+
+    expect(createResponse.status).toBe(201);
+
+    const invalidUpdateResponse = await updateBlogPostRoute(
+      new Request(`https://webhooks.cc/api/blog/${slug}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${BLOG_API_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: "scheduled",
+        }),
+      }),
+      { params: Promise.resolve({ slug }) }
+    );
+
+    expect(invalidUpdateResponse.status).toBe(400);
+    await expect(invalidUpdateResponse.json()).resolves.toEqual({
+      error: "invalid_body",
+    });
+  });
 });
