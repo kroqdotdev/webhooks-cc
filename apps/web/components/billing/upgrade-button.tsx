@@ -1,22 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { useAction } from "convex/react";
-import { api } from "@convex/_generated/api";
+import { createBillingCheckout } from "@/lib/billing-api";
 import { Button } from "@/components/ui/button";
 import { trackUpgradeClicked } from "@/lib/analytics";
 
-export function UpgradeButton() {
-  const createCheckout = useAction(api.billing.createCheckout);
+export function UpgradeButton({ accessToken }: { accessToken: string | null }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleUpgrade = async () => {
+    if (!accessToken) {
+      setError("Your session expired. Please sign in again.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     trackUpgradeClicked();
     try {
-      const url = await createCheckout();
+      const url = await createBillingCheckout(accessToken);
       // Set a timeout to reset if redirect doesn't happen (e.g., popup blocker)
       setTimeout(() => {
         setLoading(false);
@@ -32,7 +35,7 @@ export function UpgradeButton() {
 
   return (
     <div>
-      <Button onClick={handleUpgrade} disabled={loading}>
+      <Button onClick={handleUpgrade} disabled={loading || !accessToken}>
         {loading ? "Redirecting..." : "Upgrade to Pro"}
       </Button>
       {error && (

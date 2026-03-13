@@ -69,6 +69,7 @@ Companion execution plan for the next slice:
 - **The original Phase 2 control-plane slice is complete**. API key validation, device auth, endpoint CRUD, usage reads, and `/cli/verify` no longer depend on Convex.
 - **Request data migration is mostly complete on the web/API side**. `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/search/requests`, `/api/search/requests/count`, the dashboard request list/detail path, and the dashboard endpoint management UI now use Supabase-backed routes and helpers.
 - **Blog reads and admin writes are now split onto Supabase-backed web routes/helpers**. The blog index/post pages, blog preview, `feed.xml`, `sitemap-index.xml`, `sitemaps/blog.xml`, and the web app's `/api/blog` admin endpoints no longer depend on Convex storage.
+- **Phase 2b is complete in dev on the web/API side**. Polar checkout, cancel, resubscribe, webhook handling, and account deletion now run through Supabase-backed web routes/helpers, and the account page billing UI no longer depends on Convex.
 - **Receiver bridge work is in place for dev**. The branch includes Supabase-backed internal receiver control-plane routes plus receiver config support so endpoint creation, request capture, and quota enforcement can be exercised against the Supabase path in development before the full receiver rewrite.
 - **Live dev validation completed**:
   - GitHub OAuth login works end-to-end.
@@ -77,9 +78,10 @@ Companion execution plan for the next slice:
   - Webhook capture works.
   - Usage/quota enforcement works.
   - Retained request search now runs on Postgres/Supabase in integration tests.
+  - Blog admin writes work through `/api/blog`.
 - **Still pending before the data layer phase can close**:
-  - Finish remaining Convex-backed pages and account/billing UI.
   - Close the remaining Phase 2a cleanup items (endpoint rate limiting coverage and a few missing verification cases).
+  - Finish the remaining account/API-key UI migration work.
   - Migrate realtime/SSE.
   - Rewrite the receiver hot path and remove Redis/ClickHouse entirely.
 
@@ -161,22 +163,24 @@ Companion execution plan for the next slice:
 
 **Goal**: billing flows (Polar checkout, cancel, resubscribe), webhook handling, and account deletion work via Supabase.
 
+**Status**: complete in dev for the web/API path. The remaining unverified item is full Playwright/live sandbox coverage.
+
 **Deliverables**:
-- [ ] Rewrite billing mutations (Polar checkout, cancel, resubscribe) using Supabase admin client
-- [ ] Rewrite Polar webhook handler with all event types (subscription.created/updated/canceled/uncanceled/revoked/active, customer.*, order.*)
-- [ ] Account deletion: call `supabase.auth.admin.deleteUser()` which cascades to `public.users` via FK. Add cleanup for orphaned requests (no FK on requests table).
-- [ ] Account page shows usage stats, billing status, cancel/resubscribe buttons
+- [x] Rewrite billing mutations (Polar checkout, cancel, resubscribe) using Supabase admin client
+- [x] Rewrite Polar webhook handler with all event types (subscription.created/updated/canceled/uncanceled/revoked/active, customer.*, order.*)
+- [x] Account deletion: call `supabase.auth.admin.deleteUser()` which cascades to `public.users` via FK. Add cleanup for orphaned requests (no FK on requests table).
+- [x] Account page shows usage stats, billing status, cancel/resubscribe buttons
 
 **Tests**:
-- [ ] Integration: Polar webhook `subscription.created` upgrades user to pro with correct period
-- [ ] Integration: Polar webhook `subscription.canceled` sets `cancel_at_period_end`
-- [ ] Integration: Polar webhook `subscription.revoked` downgrades to free, resets usage
-- [ ] Integration: account deletion cascades to endpoints, api_keys, device_codes
-- [ ] Integration: account deletion cleans up orphaned requests
+- [x] Integration: Polar webhook `subscription.created` upgrades user to pro with correct period
+- [x] Integration: Polar webhook `subscription.canceled` sets `cancel_at_period_end`
+- [x] Integration: Polar webhook `subscription.revoked` downgrades to free, resets usage
+- [x] Integration: account deletion cascades to endpoints, api_keys, device_codes
+- [x] Integration: account deletion cleans up orphaned requests
 - [ ] Playwright e2e: account page shows correct plan/usage
 - [ ] Playwright e2e: cancel subscription flow (if testable with sandbox)
 
-**Completion**: all tests pass, commit and mark phase complete.
+**Completion**: integration coverage is complete on this branch. Playwright/live sandbox coverage can be added as follow-up verification.
 
 ---
 

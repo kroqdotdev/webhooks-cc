@@ -1,15 +1,15 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "@convex/_generated/api";
 import { AlertTriangle } from "lucide-react";
 
 const POLAR_SUBSCRIPTION_URL = "https://polar.sh/purchases/subscriptions";
 
-export function PastDueBanner() {
-  const user = useQuery(api.users.current);
-
-  if (!user || user.subscriptionStatus !== "past_due") return null;
+export function PastDueBanner({
+  subscriptionStatus,
+}: {
+  subscriptionStatus: "active" | "canceled" | "past_due" | null;
+}) {
+  if (subscriptionStatus !== "past_due") return null;
 
   return (
     <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">

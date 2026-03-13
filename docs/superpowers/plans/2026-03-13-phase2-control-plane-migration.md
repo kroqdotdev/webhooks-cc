@@ -99,15 +99,16 @@ The branch has already moved past the original control-plane boundary:
 - dashboard endpoint management and request views no longer rely on Convex hooks
 - receiver-facing internal control-plane routes exist so the dev receiver can exercise Supabase-backed capture flows
 
-That follow-on work has now landed too: request list/detail, usage reads in the dashboard, and request search are all Supabase-backed on this branch.
+That follow-on work has now landed too: request list/detail, usage reads in the dashboard, request search, public blog/feed/sitemap reads, blog admin writes, and billing/account management are all Supabase-backed on this branch.
 
-## Next Phase After This One
+## Remaining Major Phases
 
-Once this phase lands, the next phase is **dashboard and request data migration**:
+The remaining major phases after the web/API migration are:
 
 - [x] request list/detail reads
 - [x] request search
 - [x] usage reads in the dashboard
-- public read-only blog/feed/sitemap queries
+- [x] public read-only blog/feed/sitemap queries
+- [x] billing/account management
 
-The next active gaps on the web side are the remaining Convex-backed pages/components plus public read-only blog/feed/sitemap queries. The receiver rewrite still stays after that work so we do not mix hot-path ingestion risk with the remaining web/API migration work.
+The next active gaps are realtime/SSE, the remaining account/API-key UI cleanup, cron cleanup/reset jobs, and then the receiver rewrite that finally removes Redis/ClickHouse/Convex from the hot path.

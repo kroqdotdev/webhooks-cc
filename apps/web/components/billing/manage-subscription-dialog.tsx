@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useAction } from "convex/react";
-import { api } from "@convex/_generated/api";
+import type { AccountProfile } from "@/lib/account-profile";
+import {
+  cancelBillingSubscription,
+  resubscribeBillingSubscription,
+} from "@/lib/billing-api";
 import {
   Dialog,
   DialogContent,
@@ -24,28 +27,39 @@ import {
 import { Button } from "@/components/ui/button";
 import { trackSubscriptionCancelled, trackSubscriptionReactivated } from "@/lib/analytics";
 
-export function ManageSubscriptionDialog() {
-  const user = useQuery(api.users.current);
-  const cancelSubscription = useAction(api.billing.cancelSubscription);
-  const resubscribe = useAction(api.billing.resubscribe);
+export function ManageSubscriptionDialog({
+  accessToken,
+  profile,
+  onUpdated,
+}: {
+  accessToken: string | null;
+  profile: AccountProfile | null;
+  onUpdated?: () => Promise<void> | void;
+}) {
   const [open, setOpen] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [resubscribing, setResubscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!user || user.plan !== "pro") return null;
+  if (!profile || profile.plan !== "pro") return null;
 
   const handleCancelClick = () => {
     setConfirmCancelOpen(true);
   };
 
   const handleConfirmCancel = async () => {
+    if (!accessToken) {
+      setError("Your session expired. Please sign in again.");
+      return;
+    }
+
     setCanceling(true);
     setError(null);
     try {
-      await cancelSubscription();
+      await cancelBillingSubscription(accessToken);
       trackSubscriptionCancelled();
+      await onUpdated?.();
       setConfirmCancelOpen(false);
       setOpen(false);
     } catch (err) {
@@ -58,11 +72,18 @@ export function ManageSubscriptionDialog() {
   };
 
   const handleResubscribe = async () => {
+    if (!accessToken) {
+      setError("Your session expired. Please sign in again.");
+      return;
+    }
+
     setResubscribing(true);
     setError(null);
     try {
-      await resubscribe();
+      await resubscribeBillingSubscription(accessToken);
       trackSubscriptionReactivated();
+      await onUpdated?.();
+      setOpen(false);
     } catch (err) {
       console.error("Resubscribe error:", err);
       setError("Failed to reactivate subscription. Please try again.");
@@ -71,8 +92,8 @@ export function ManageSubscriptionDialog() {
     }
   };
 
-  const nextPaymentDate = user.periodEnd
-    ? new Date(user.periodEnd).toLocaleDateString("en-US", {
+  const nextPaymentDate = profile.period_end
+    ? new Date(profile.period_end).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
@@ -95,7 +116,7 @@ export function ManageSubscriptionDialog() {
           <DialogDescription>You&apos;re on the Pro plan</DialogDescription>
         </DialogHeader>
 
-        {!user.cancelAtPeriodEnd && (
+        {!profile.cancel_at_period_end && (
           <div className="space-y-4 py-4">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Next payment</span>
@@ -114,7 +135,7 @@ export function ManageSubscriptionDialog() {
           </p>
         )}
 
-        {user.cancelAtPeriodEnd ? (
+        {profile.cancel_at_period_end ? (
           <div className="space-y-3">
             <div className="rounded-md bg-muted p-3 text-sm">
               Your subscription will end on {nextPaymentDate}. You&apos;ll be downgraded to the free

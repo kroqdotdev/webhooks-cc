@@ -1,28 +1,26 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@convex/_generated/api";
+import type { AccountProfile } from "@/lib/account-profile";
 import { trackQuotaWarningShown } from "@/lib/analytics";
 
-export function UsageDisplay() {
-  const user = useQuery(api.users.current);
+export function UsageDisplay({ profile }: { profile: AccountProfile | null }) {
   const warningFired = useRef(false);
 
   const percentage =
-    user && user.requestLimit > 0
-      ? Math.min((user.requestsUsed / user.requestLimit) * 100, 100)
+    profile && profile.request_limit > 0
+      ? Math.min((profile.requests_used / profile.request_limit) * 100, 100)
       : 0;
   const isNearLimit = percentage > 80;
 
   useEffect(() => {
-    if (user && isNearLimit && !warningFired.current) {
+    if (profile && isNearLimit && !warningFired.current) {
       warningFired.current = true;
-      trackQuotaWarningShown(user.plan, percentage);
+      trackQuotaWarningShown(profile.plan, percentage);
     }
-  }, [user, isNearLimit, percentage]);
+  }, [profile, isNearLimit, percentage]);
 
-  if (user === undefined) {
+  if (profile === null) {
     return (
       <div className="space-y-2 animate-pulse">
         <div className="flex justify-between">
@@ -34,14 +32,12 @@ export function UsageDisplay() {
     );
   }
 
-  if (user === null) return null;
-
   return (
     <div className="space-y-2">
       <div className="flex justify-between text-sm">
-        <span>{user.plan === "free" ? "Requests today" : "Requests this period"}</span>
+        <span>{profile.plan === "free" ? "Requests today" : "Requests this period"}</span>
         <span className={isNearLimit ? "text-destructive font-medium" : "font-medium"}>
-          {user.requestsUsed.toLocaleString()} / {user.requestLimit.toLocaleString()}
+          {profile.requests_used.toLocaleString()} / {profile.request_limit.toLocaleString()}
         </span>
       </div>
       <div
@@ -50,16 +46,16 @@ export function UsageDisplay() {
         aria-valuenow={percentage}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`Usage: ${user.requestsUsed.toLocaleString()} of ${user.requestLimit.toLocaleString()} requests`}
+        aria-label={`Usage: ${profile.requests_used.toLocaleString()} of ${profile.request_limit.toLocaleString()} requests`}
       >
         <div
           className={`h-full transition-all ${isNearLimit ? "bg-destructive" : "bg-primary"}`}
           style={{ width: `${percentage}%` }}
         />
       </div>
-      {user.periodEnd && (
+      {profile.period_end && (
         <p className="text-xs text-muted-foreground">
-          Resets {new Date(user.periodEnd).toLocaleDateString()}
+          Resets {new Date(profile.period_end).toLocaleDateString()}
         </p>
       )}
     </div>

@@ -1,25 +1,18 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
+import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
+import { PastDueBanner } from "@/components/billing/past-due-banner";
+import { UpgradeButton } from "@/components/billing/upgrade-button";
 import { Badge } from "@/components/ui/badge";
-import { Github, CheckCircle, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
+import { trackUpgradeCompleted, resetUser } from "@/lib/analytics";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
-import { trackUpgradeCompleted, resetUser } from "@/lib/analytics";
-
-interface UserProfile {
-  id: string;
-  email: string;
-  name: string | null;
-  image: string | null;
-  plan: string;
-  requests_used: number;
-  request_limit: number;
-  period_end: string | null;
-  cancel_at_period_end: boolean;
-}
+import { CheckCircle, Github, LogOut } from "lucide-react";
 
 function UsageResetCountdown({ periodEnd }: { periodEnd: string }) {
   const [timeRemaining, setTimeRemaining] = useState<string>("");
@@ -61,7 +54,7 @@ function UpgradeSuccessBanner() {
   if (!show) return null;
 
   return (
-    <div className="rounded-md bg-green-500/10 border border-green-500/20 p-4 mb-4">
+    <div className="rounded-md border border-green-500/20 bg-green-500/10 p-4 mb-4">
       <div className="flex items-center gap-3">
         <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
         <div>
@@ -79,30 +72,36 @@ function UpgradeSuccessBanner() {
 }
 
 export default function AccountPage() {
-  const { user: authUser, isLoading: authLoading } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { user: authUser, session, isLoading: authLoading } = useAuth();
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const router = useRouter();
 
-  // Fetch user profile from Supabase public.users table
-  useEffect(() => {
-    if (!authUser) return;
-
+  const refreshProfile = async (userId: string) => {
     const supabase = createClient();
-    supabase
+    const { data, error } = await supabase
       .from("users")
-      .select(
-        "id, email, name, image, plan, requests_used, request_limit, period_end, cancel_at_period_end"
-      )
-      .eq("id", authUser.id)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Failed to fetch user profile:", error);
-        }
-        setProfile(data);
-        setProfileLoading(false);
-      });
+      .select(ACCOUNT_PROFILE_SELECT)
+      .eq("id", userId)
+      .single<AccountProfile>();
+
+    if (error) {
+      console.error("Failed to fetch user profile:", error);
+    }
+
+    setProfile(data ?? null);
+    setProfileLoading(false);
+  };
+
+  useEffect(() => {
+    if (!authUser) {
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+
+    setProfileLoading(true);
+    void refreshProfile(authUser.id);
   }, [authUser]);
 
   const handleSignOut = async () => {
@@ -128,7 +127,6 @@ export default function AccountPage() {
     );
   }
 
-  // Extract linked OAuth providers from Supabase user identities
   const providers =
     authUser?.identities?.map((identity) => identity.provider).filter(Boolean) ?? [];
 
@@ -137,6 +135,7 @@ export default function AccountPage() {
       ? Math.min((profile.requests_used / profile.request_limit) * 100, 100)
       : 0;
   const isNearLimit = usagePercent > 80;
+  const accessToken = session?.access_token ?? null;
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-2xl space-y-8">
@@ -144,7 +143,8 @@ export default function AccountPage() {
         <UpgradeSuccessBanner />
       </Suspense>
 
-      {/* Account Info */}
+      <PastDueBanner subscriptionStatus={profile.subscription_status} />
+
       <section className="space-y-4">
         <h1 className="text-2xl font-bold">Account</h1>
 
@@ -197,7 +197,6 @@ export default function AccountPage() {
         </div>
       </section>
 
-      {/* Billing & Usage */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Billing & Usage</h2>
 
@@ -240,17 +239,17 @@ export default function AccountPage() {
 
           {profile.plan === "free" ? (
             <div className="pt-2 border-t space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="font-medium">Free Plan</p>
                   <p className="text-sm text-muted-foreground">
                     50 requests/day, 7-day data retention
                   </p>
                 </div>
+                <UpgradeButton accessToken={accessToken} />
               </div>
               <p className="text-sm text-muted-foreground">
                 Upgrade to Pro for 100,000 requests/month and 30-day data retention ($8/month).
-                Billing migration in progress.
               </p>
             </div>
           ) : (
@@ -264,6 +263,11 @@ export default function AccountPage() {
                 </div>
                 <p className="font-medium">$8/month</p>
               </div>
+              <ManageSubscriptionDialog
+                accessToken={accessToken}
+                profile={profile}
+                onUpdated={() => refreshProfile(profile.id)}
+              />
               {profile.cancel_at_period_end && profile.period_end && (
                 <div className="rounded-md bg-muted p-3 text-sm">
                   Your subscription will end on{" "}
@@ -280,7 +284,6 @@ export default function AccountPage() {
         </div>
       </section>
 
-      {/* API Keys — stub until Phase 2a */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">API Keys</h2>
         <div className="border rounded-lg p-6 bg-card">
@@ -290,7 +293,16 @@ export default function AccountPage() {
         </div>
       </section>
 
-      {/* Sign Out */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-destructive">Danger Zone</h2>
+        <div className="border rounded-lg p-6 bg-card space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Permanently delete your account and all captured request data.
+          </p>
+          <DeleteAccountDialog accessToken={accessToken} />
+        </div>
+      </section>
+
       <section className="space-y-4">
         <Button variant="outline" onClick={handleSignOut} className="flex items-center gap-2">
           <LogOut className="h-4 w-4" />
