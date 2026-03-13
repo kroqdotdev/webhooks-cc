@@ -645,6 +645,8 @@ export function useDashboardState() {
     initialCanLoadMore,
   });
 
+  // Zustand store actions are stable references (never change identity),
+  // so calling getStore().actionName here is safe and won't cause re-renders.
   return {
     // Data
     endpoints,
