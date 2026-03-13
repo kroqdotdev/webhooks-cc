@@ -1,7 +1,6 @@
-import { getConvexClient } from "@/lib/convex-client";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { pollDeviceCodeStatus } from "@/lib/supabase/device-auth";
 import * as Sentry from "@sentry/nextjs";
-import { api } from "@convex/_generated/api";
 
 export async function GET(request: Request) {
   const rateLimited = checkRateLimit(request, 30);
@@ -14,10 +13,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const convex = getConvexClient();
-    const result = await convex.query(api.deviceAuth.pollDeviceCode, {
-      deviceCode: code,
-    });
+    const result = await pollDeviceCodeStatus(code);
 
     // Only return the status field to unauthenticated callers
     return Response.json({ status: result.status });

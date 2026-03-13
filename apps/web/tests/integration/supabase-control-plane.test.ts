@@ -8,6 +8,7 @@ import {
   listEndpointsForUser,
   updateEndpointBySlugForUser,
 } from "@/lib/supabase/endpoints";
+import { getUsageForUser } from "@/lib/supabase/usage";
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://192.168.0.247:8000";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -130,5 +131,27 @@ describe("Supabase Control Plane Integration", () => {
 
     const missing = await getEndpointBySlugForUser(testUserId, created.slug);
     expect(missing).toBeNull();
+  });
+
+  it("returns usage in the SDK/CLI response shape", async () => {
+    const { error: updateError } = await admin
+      .from("users")
+      .update({
+        requests_used: 12,
+        request_limit: 50,
+        period_end: new Date(Date.now() + 60_000).toISOString(),
+      })
+      .eq("id", testUserId);
+
+    expect(updateError).toBeNull();
+
+    const usage = await getUsageForUser(testUserId);
+    expect(usage).toEqual({
+      used: 12,
+      limit: 50,
+      remaining: 38,
+      plan: "free",
+      periodEnd: expect.any(Number),
+    });
   });
 });

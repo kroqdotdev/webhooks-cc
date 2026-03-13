@@ -1,26 +1,23 @@
 "use client";
 
-import { useConvexAuth, useMutation } from "convex/react";
-import { api } from "@convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
+import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 
 export default function CliVerifyPage() {
   return (
-    <ConvexAuthProvider>
+    <SupabaseAuthProvider>
       <CliVerifyContent />
-    </ConvexAuthProvider>
+    </SupabaseAuthProvider>
   );
 }
 
 function CliVerifyContent() {
-  const { isAuthenticated, isLoading } = useConvexAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const authorize = useMutation(api.deviceAuth.authorizeDeviceCode);
 
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
@@ -46,14 +43,23 @@ function CliVerifyContent() {
     setError(null);
 
     try {
-      const result = await authorize({ userCode: code });
+      const response = await fetch("/api/auth/device-authorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userCode: code }),
+      });
+
+      const result = (await response.json()) as { email?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(result.error || "Authorization failed");
+      }
+
       setStatus("success");
       setEmail(result.email ?? null);
     } catch (err) {
       setStatus("error");
       const message = err instanceof Error ? err.message : "Authorization failed";
-      // Clean up Convex error prefix
-      setError(message.replace(/^Uncaught Error:\s*/, ""));
+      setError(message);
     }
   };
 

@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto";
+import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
 import type { Database } from "./database";
 
 export type UserPlan = "free" | "pro";
+export const MAX_KEYS_PER_USER = 10;
+
+const generateApiKeyBody = customAlphabet(
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+  32
+);
 
 type ApiKeyRow = Database["public"]["Tables"]["api_keys"]["Row"];
 type UserRow = Database["public"]["Tables"]["users"]["Row"];
@@ -10,6 +17,10 @@ type UserRow = Database["public"]["Tables"]["users"]["Row"];
 export interface ApiKeyValidationResult {
   userId: string;
   plan: UserPlan;
+}
+
+export function generateApiKey(): string {
+  return `whcc_${generateApiKeyBody()}`;
 }
 
 export function hashApiKey(apiKey: string): string {

@@ -1,19 +1,19 @@
-import { authenticateRequest, convexCliRequest } from "@/lib/api-auth";
+import { authenticateRequest } from "@/lib/api-auth";
+import { getUsageForUser } from "@/lib/supabase/usage";
 
 export async function GET(request: Request) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const resp = await convexCliRequest("/cli/usage", {
-    params: { userId: auth.userId },
-  });
+  try {
+    const usage = await getUsageForUser(auth.userId);
+    if (!usage) {
+      return Response.json({ error: "Usage not found" }, { status: 404 });
+    }
 
-  if (!resp.ok) return resp;
-
-  const data: unknown = await resp.json();
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    return Response.json({ error: "Unexpected response format" }, { status: 502 });
+    return Response.json(usage);
+  } catch (error) {
+    console.error("Failed to fetch usage:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  return Response.json(data);
 }
