@@ -1,8 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./database";
 
-let _admin: ReturnType<typeof createClient> | null = null;
+let _admin: SupabaseClient<Database> | null = null;
 
-export function createAdminClient() {
+export function createAdminClient(): SupabaseClient<Database> {
   if (_admin) return _admin;
 
   const url = process.env.SUPABASE_URL;
@@ -12,7 +13,7 @@ export function createAdminClient() {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
   }
 
-  _admin = createClient(url, key, {
+  _admin = createClient<Database>(url, key, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

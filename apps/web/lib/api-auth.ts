@@ -1,10 +1,11 @@
 /**
  * @fileoverview API authentication helpers for CLI-facing API routes.
  *
- * Validates API keys by calling the Convex /validate-api-key HTTP action,
- * and provides a helper to call /cli/* Convex HTTP actions with the shared secret.
+ * Validates API keys against Supabase and keeps a helper for the remaining
+ * Convex-backed /cli/* routes during the migration transition.
  */
 import { serverEnv } from "./env";
+import { validateApiKeyWithMetadata } from "./supabase/api-keys";
 
 export type UserPlan = "free" | "pro";
 
@@ -36,35 +37,12 @@ export async function validateApiKey(apiKey: string): Promise<string | null> {
 
 /** Validate API key and return userId plus plan when available. */
 export async function validateApiKeyWithPlan(apiKey: string): Promise<ApiKeyValidation | null> {
-  let siteUrl: string;
-  let secret: string;
   try {
-    siteUrl = getConvexSiteUrl();
-    secret = getSharedSecret();
+    return await validateApiKeyWithMetadata(apiKey);
   } catch {
-    console.error("Missing CONVEX_SITE_URL or CAPTURE_SHARED_SECRET");
+    console.error("Failed to validate API key against Supabase");
     return null;
   }
-
-  const resp = await fetch(`${siteUrl}/validate-api-key`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify({ apiKey }),
-  });
-
-  if (!resp.ok) return null;
-
-  const data: unknown = await resp.json();
-  if (typeof data !== "object" || data === null) return null;
-  const parsed = data as Record<string, unknown>;
-  const userId = parsed.userId;
-  if (typeof userId !== "string") return null;
-  const plan = parsed.plan;
-  const validPlan: UserPlan | undefined = plan === "free" || plan === "pro" ? plan : undefined;
-  return { userId, plan: validPlan };
 }
 
 /** Call a /cli/* Convex HTTP action with shared secret authentication. */

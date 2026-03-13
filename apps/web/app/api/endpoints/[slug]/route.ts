@@ -1,4 +1,9 @@
-import { authenticateRequest, convexCliRequest, formatEndpoint } from "@/lib/api-auth";
+import { authenticateRequest } from "@/lib/api-auth";
+import {
+  deleteEndpointBySlugForUser,
+  getEndpointBySlugForUser,
+  updateEndpointBySlugForUser,
+} from "@/lib/supabase/endpoints";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequest(request);
@@ -6,14 +11,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
   const { slug } = await params;
 
-  const resp = await convexCliRequest("/cli/endpoint-by-slug", {
-    params: { slug, userId: auth.userId },
-  });
+  try {
+    const endpoint = await getEndpointBySlugForUser(auth.userId, slug);
+    if (!endpoint) {
+      return Response.json({ error: "Endpoint not found" }, { status: 404 });
+    }
 
-  if (!resp.ok) return resp;
-
-  const data = (await resp.json()) as Record<string, unknown>;
-  return Response.json(formatEndpoint(data));
+    return Response.json(endpoint);
+  } catch (error) {
+    console.error("Failed to fetch endpoint:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -61,15 +69,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     }
   }
 
-  const resp = await convexCliRequest("/cli/endpoints", {
-    method: "PATCH",
-    body: { userId: auth.userId, slug, name: body.name, mockResponse: body.mockResponse },
-  });
+  try {
+    const endpoint = await updateEndpointBySlugForUser({
+      userId: auth.userId,
+      slug,
+      name: body.name as string | undefined,
+      mockResponse:
+        body.mockResponse === undefined ? undefined : (body.mockResponse as Record<string, unknown> | null),
+    });
 
-  if (!resp.ok) return resp;
+    if (!endpoint) {
+      return Response.json({ error: "Endpoint not found" }, { status: 404 });
+    }
 
-  const data = (await resp.json()) as Record<string, unknown>;
-  return Response.json(formatEndpoint(data));
+    return Response.json(endpoint);
+  } catch (error) {
+    console.error("Failed to update endpoint:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -78,8 +95,15 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
   const { slug } = await params;
 
-  return convexCliRequest("/cli/endpoints", {
-    method: "DELETE",
-    body: { userId: auth.userId, slug },
-  });
+  try {
+    const deleted = await deleteEndpointBySlugForUser(auth.userId, slug);
+    if (!deleted) {
+      return Response.json({ error: "Endpoint not found" }, { status: 404 });
+    }
+
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    console.error("Failed to delete endpoint:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

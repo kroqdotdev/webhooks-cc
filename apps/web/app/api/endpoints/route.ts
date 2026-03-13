@@ -1,21 +1,18 @@
-import { authenticateRequest, convexCliRequest, formatEndpoint } from "@/lib/api-auth";
+import { authenticateRequest } from "@/lib/api-auth";
 import { parseJsonBody } from "@/lib/request-validation";
+import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
 
 export async function GET(request: Request) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const resp = await convexCliRequest("/cli/endpoints", {
-    params: { userId: auth.userId },
-  });
-
-  if (!resp.ok) return resp;
-
-  const data: unknown = await resp.json();
-  if (!Array.isArray(data)) {
-    return Response.json({ error: "Unexpected response format" }, { status: 502 });
+  try {
+    const endpoints = await listEndpointsForUser(auth.userId);
+    return Response.json(endpoints);
+  } catch (error) {
+    console.error("Failed to list endpoints:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
-  return Response.json(data.map((e) => formatEndpoint(e as Record<string, unknown>)));
 }
 
 export async function POST(request: Request) {
@@ -71,19 +68,21 @@ export async function POST(request: Request) {
 
   const isEphemeral = body.isEphemeral === true || expiresAt !== undefined;
 
-  const resp = await convexCliRequest("/cli/endpoints", {
-    method: "POST",
-    body: {
+  try {
+    const created = await createEndpointForUser({
       userId: auth.userId,
       name,
       isEphemeral,
       expiresAt,
-      mockResponse: body.mockResponse,
-    },
-  });
+    });
 
-  if (!resp.ok) return resp;
+    return Response.json(created);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Too many active demo endpoints")) {
+      return Response.json({ error: error.message }, { status: 429 });
+    }
 
-  const created = (await resp.json()) as Record<string, unknown>;
-  return Response.json(formatEndpoint(created));
+    console.error("Failed to create endpoint:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
