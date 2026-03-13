@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "convex/react";
 import { useRouter, useParams } from "next/navigation";
-import { api } from "@convex/_generated/api";
+import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { parseStatusCode } from "@/lib/http";
 import { copyToClipboard } from "@/lib/clipboard";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
+import {
+  deleteDashboardEndpoint,
+  fetchDashboardEndpoint,
+  type DashboardEndpoint,
+  updateDashboardEndpoint,
+} from "@/lib/dashboard-api";
 import {
   Dialog,
   DialogContent,
@@ -24,15 +30,21 @@ import Link from "next/link";
 import { Copy, Check } from "lucide-react";
 
 export default function EndpointSettingsPage() {
+  return (
+    <RequireAuth>
+      <EndpointSettingsForm />
+    </RequireAuth>
+  );
+}
+
+function EndpointSettingsForm() {
   const params = useParams();
   const router = useRouter();
+  const { session } = useAuth();
   const rawSlug = params.slug;
   const slug = Array.isArray(rawSlug) ? rawSlug[0] : (rawSlug ?? "");
 
-  const endpoint = useQuery(api.endpoints.getBySlug, slug ? { slug } : "skip");
-  const updateEndpoint = useMutation(api.endpoints.update);
-  const deleteEndpoint = useMutation(api.endpoints.remove);
-
+  const [endpoint, setEndpoint] = useState<DashboardEndpoint | null | undefined>(undefined);
   const [name, setName] = useState("");
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
@@ -41,6 +53,39 @@ export default function EndpointSettingsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const accessToken = session?.access_token;
+    if (!slug || !accessToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const nextEndpoint = await fetchDashboardEndpoint(accessToken, slug);
+        if (!cancelled) {
+          setEndpoint(nextEndpoint);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          if (err instanceof Error && err.message === "Endpoint not found") {
+            setEndpoint(null);
+          } else {
+            setError(err instanceof Error ? err.message : "Failed to load endpoint");
+            setEndpoint(null);
+          }
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, slug]);
 
   useEffect(() => {
     if (endpoint) {
@@ -67,16 +112,21 @@ export default function EndpointSettingsPage() {
     setError(null);
 
     try {
-      await updateEndpoint({
-        id: endpoint._id,
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error("Not authenticated");
+      }
+
+      const hasCustomMock = mockBody || mockStatus !== "200";
+      await updateDashboardEndpoint(accessToken, slug, {
         name: name || undefined,
-        mockResponse: mockBody
+        mockResponse: hasCustomMock
           ? {
               status: parseStatusCode(mockStatus, 200),
               body: mockBody,
               headers: endpoint.mockResponse?.headers ?? {},
             }
-          : undefined,
+          : null,
       });
       router.push(`/dashboard?endpoint=${slug}`);
     } catch (err) {
@@ -90,7 +140,12 @@ export default function EndpointSettingsPage() {
 
     setIsDeleting(true);
     try {
-      await deleteEndpoint({ id: endpoint._id });
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error("Not authenticated");
+      }
+
+      await deleteDashboardEndpoint(accessToken, slug);
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete");

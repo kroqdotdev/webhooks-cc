@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
-import { api } from "@convex/_generated/api";
+import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +11,7 @@ import { RequireAuth } from "@/components/auth/require-auth";
 import { parseStatusCode } from "@/lib/http";
 import Link from "next/link";
 import { trackEndpointCreated } from "@/lib/analytics";
+import { createDashboardEndpoint } from "@/lib/dashboard-api";
 
 export default function NewEndpointPage() {
   return (
@@ -23,7 +23,7 @@ export default function NewEndpointPage() {
 
 function NewEndpointForm() {
   const router = useRouter();
-  const createEndpoint = useMutation(api.endpoints.create);
+  const { session } = useAuth();
 
   const [name, setName] = useState("");
   const [mockStatus, setMockStatus] = useState("200");
@@ -37,7 +37,12 @@ function NewEndpointForm() {
     setError(null);
 
     try {
-      const result = await createEndpoint({
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error("Not authenticated");
+      }
+
+      const result = await createDashboardEndpoint(accessToken, {
         name: name || undefined,
         mockResponse: mockBody
           ? {
@@ -119,7 +124,7 @@ function NewEndpointForm() {
           )}
 
           <div className="flex gap-3">
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || !session?.access_token}>
               {isSubmitting ? "Creating..." : "Create Endpoint"}
             </Button>
             <Button type="button" variant="outline" asChild>

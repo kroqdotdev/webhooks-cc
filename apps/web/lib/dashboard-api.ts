@@ -79,6 +79,17 @@ export async function fetchDashboardEndpoints(accessToken: string): Promise<Dash
   return readJson<DashboardEndpoint[]>(response);
 }
 
+export async function fetchDashboardEndpoint(
+  accessToken: string,
+  slug: string
+): Promise<DashboardEndpoint> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson<DashboardEndpoint>(response);
+}
+
 export async function createDashboardEndpoint(
   accessToken: string,
   body: Record<string, unknown>
