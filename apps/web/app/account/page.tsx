@@ -25,12 +25,16 @@ function UsageResetCountdown({ periodEnd }: { periodEnd: string }) {
         setTimeRemaining("Resets on next request");
         return;
       }
+      if (remaining < 60_000) {
+        setTimeRemaining("Resets in <1m");
+        return;
+      }
       const hours = Math.floor(remaining / (1000 * 60 * 60));
       const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
       setTimeRemaining(`Resets in ${hours}h ${minutes}m`);
     };
     update();
-    const interval = setInterval(update, 60000);
+    const interval = setInterval(update, 5000);
     return () => clearInterval(interval);
   }, [periodEnd]);
 
@@ -76,6 +80,7 @@ export default function AccountPage() {
   const { user: authUser, session, isLoading: authLoading } = useAuth();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const router = useRouter();
 
   const refreshProfile = useCallback(async () => {
@@ -122,6 +127,14 @@ export default function AccountPage() {
     });
   }, [authUser]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSignOut = async () => {
     const supabase = createClient();
     resetUser();
@@ -148,9 +161,13 @@ export default function AccountPage() {
   const providers =
     authUser?.identities?.map((identity) => identity.provider).filter(Boolean) ?? [];
 
+  const periodEndMs = profile.period_end ? Date.parse(profile.period_end) : NaN;
+  const freePeriodExpired =
+    profile.plan === "free" && Number.isFinite(periodEndMs) && periodEndMs <= nowMs;
+  const displayedRequestsUsed = freePeriodExpired ? 0 : profile.requests_used;
   const usagePercent =
     profile.request_limit > 0
-      ? Math.min((profile.requests_used / profile.request_limit) * 100, 100)
+      ? Math.min((displayedRequestsUsed / profile.request_limit) * 100, 100)
       : 0;
   const isNearLimit = usagePercent > 80;
   const accessToken = session?.access_token ?? null;
@@ -223,7 +240,8 @@ export default function AccountPage() {
             <div className="flex justify-between text-sm">
               <span>{profile.plan === "free" ? "Requests today" : "Requests this period"}</span>
               <span className={isNearLimit ? "text-destructive font-medium" : "font-medium"}>
-                {profile.requests_used.toLocaleString()} / {profile.request_limit.toLocaleString()}
+                {displayedRequestsUsed.toLocaleString()} /{" "}
+                {profile.request_limit.toLocaleString()}
               </span>
             </div>
 
@@ -233,7 +251,7 @@ export default function AccountPage() {
               aria-valuenow={usagePercent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`Usage: ${profile.requests_used.toLocaleString()} of ${profile.request_limit.toLocaleString()} requests`}
+              aria-label={`Usage: ${displayedRequestsUsed.toLocaleString()} of ${profile.request_limit.toLocaleString()} requests`}
             >
               <div
                 className={`h-full transition-all ${isNearLimit ? "bg-destructive" : "bg-primary"}`}
