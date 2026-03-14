@@ -101,22 +101,17 @@ func (m TunnelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, tui.Keys.Quit):
-			m.cleanup()
-			return m, tea.Quit
-		case key.Matches(msg, tui.Keys.Back):
-			if m.state == tunnelActive || m.state == tunnelConnecting {
+		// In input mode, forward most keys to the text input first
+		// so shortcut keys (j, k, c, d, n) are typed into the field
+		// instead of being consumed as navigation shortcuts.
+		if m.state == tunnelInput {
+			switch {
+			case key.Matches(msg, tui.Keys.Quit):
 				m.cleanup()
-				m.state = tunnelInput
-				m.requests = nil
-				m.err = nil
-				m.portInput.Focus()
-				return m, m.portInput.Cursor.BlinkCmd()
-			}
-			return m, func() tea.Msg { return tui.BackMsg{} }
-		case key.Matches(msg, tui.Keys.Enter):
-			if m.state == tunnelInput {
+				return m, tea.Quit
+			case key.Matches(msg, tui.Keys.Back):
+				return m, func() tea.Msg { return tui.BackMsg{} }
+			case key.Matches(msg, tui.Keys.Enter):
 				input := m.portInput.Value()
 				if input == "" {
 					input = "8080"
@@ -132,7 +127,27 @@ func (m TunnelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = tunnelConnecting
 				m.err = nil
 				return m, tea.Batch(m.spinner.Tick, m.createAndConnect())
+			default:
+				var cmd tea.Cmd
+				m.portInput, cmd = m.portInput.Update(msg)
+				return m, cmd
 			}
+		}
+
+		switch {
+		case key.Matches(msg, tui.Keys.Quit):
+			m.cleanup()
+			return m, tea.Quit
+		case key.Matches(msg, tui.Keys.Back):
+			if m.state == tunnelActive || m.state == tunnelConnecting {
+				m.cleanup()
+				m.state = tunnelInput
+				m.requests = nil
+				m.err = nil
+				m.portInput.Focus()
+				return m, m.portInput.Cursor.BlinkCmd()
+			}
+		case key.Matches(msg, tui.Keys.Enter):
 			if m.state == tunnelActive && len(m.requests) > 0 && m.scrollPos < len(m.requests) {
 				req := m.requests[m.scrollPos].req
 				return m, func() tea.Msg {
@@ -146,12 +161,6 @@ func (m TunnelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, tui.Keys.Down):
 			if m.state == tunnelActive && m.scrollPos < len(m.requests)-1 {
 				m.scrollPos++
-			}
-		default:
-			if m.state == tunnelInput {
-				var cmd tea.Cmd
-				m.portInput, cmd = m.portInput.Update(msg)
-				return m, cmd
 			}
 		}
 
