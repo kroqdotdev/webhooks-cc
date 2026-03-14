@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"webhooks.cc/cli/internal/api"
@@ -57,12 +58,22 @@ func NewTunnel(client *api.Client) TunnelModel {
 	ti := textinput.New()
 	ti.Placeholder = "8080"
 	ti.Focus()
-	ti.CharLimit = 5
+	ti.CharLimit = 256
 	ti.Validate = func(s string) error {
-		for _, r := range s {
-			if r < '0' || r > '9' {
-				return fmt.Errorf("digits only")
+		// Allow port or port/path (e.g. "8080" or "8080/api/webhooks")
+		for i, r := range s {
+			if r >= '0' && r <= '9' {
+				continue
 			}
+			if r == '/' || r == '-' || r == '_' || r == '.' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				// Path characters only allowed after the port
+				port := s[:i]
+				if port == "" || s[i] != '/' {
+					return fmt.Errorf("port required before path")
+				}
+				return nil
+			}
+			return fmt.Errorf("invalid character")
 		}
 		return nil
 	}
@@ -106,11 +117,18 @@ func (m TunnelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return tui.BackMsg{} }
 		case key.Matches(msg, tui.Keys.Enter):
 			if m.state == tunnelInput {
-				port := m.portInput.Value()
-				if port == "" {
-					port = "8080"
+				input := m.portInput.Value()
+				if input == "" {
+					input = "8080"
 				}
-				m.targetURL = fmt.Sprintf("http://localhost:%s", port)
+				// Split port and optional base path
+				port := input
+				basePath := ""
+				if idx := strings.Index(input, "/"); idx != -1 {
+					port = input[:idx]
+					basePath = input[idx:]
+				}
+				m.targetURL = fmt.Sprintf("http://localhost:%s%s", port, basePath)
 				m.state = tunnelConnecting
 				m.err = nil
 				return m, tea.Batch(m.spinner.Tick, m.createAndConnect())
@@ -254,7 +272,7 @@ func (m TunnelModel) View() string {
 	case tunnelInput:
 		body = fmt.Sprintf(
 			"  Forward webhooks to localhost\n\n"+
-				"  Port: %s\n\n"+
+				"  Port[/path]: %s\n\n"+
 				"  %s",
 			m.portInput.View(),
 			tui.Muted.Render("enter to connect · esc back"),
