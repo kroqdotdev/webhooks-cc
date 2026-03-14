@@ -70,6 +70,7 @@ Companion execution plan for the next slice:
 - **Request data migration is mostly complete on the web/API side**. `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/search/requests`, `/api/search/requests/count`, the dashboard request list/detail path, and the dashboard endpoint management UI now use Supabase-backed routes and helpers.
 - **Blog reads and admin writes are now split onto Supabase-backed web routes/helpers**. The blog index/post pages, blog preview, `feed.xml`, `sitemap-index.xml`, `sitemaps/blog.xml`, and the web app's `/api/blog` admin endpoints no longer depend on Convex storage.
 - **Phase 2b is complete in dev on the web/API side**. Polar checkout, cancel, resubscribe, webhook handling, and account deletion now run through Supabase-backed web routes/helpers, and the account page billing UI no longer depends on Convex.
+- **Billing period resets now run on Supabase**. A `pg_cron` job calls `process_billing_period_resets()` every minute in dev, replacing the old Convex billing reset cron behavior.
 - **Receiver bridge work is in place for dev**. The branch includes Supabase-backed internal receiver control-plane routes plus receiver config support so endpoint creation, request capture, and quota enforcement can be exercised against the Supabase path in development before the full receiver rewrite.
 - **Live dev validation completed**:
   - GitHub OAuth login works end-to-end.
@@ -209,22 +210,22 @@ Companion execution plan for the next slice:
 **Goal**: automated cleanup of expired data, billing period resets.
 
 **Deliverables**:
-- [ ] Install/enable `pg_cron` extension in Supabase Postgres
+- [x] Install/enable `pg_cron` extension in Supabase Postgres
 - [ ] Schedule: `cleanup_old_requests()` daily at 01:00 UTC
 - [ ] Schedule: `cleanup_free_user_requests()` daily at 01:30 UTC
 - [ ] Schedule: expired ephemeral endpoint cleanup (+ orphaned requests) every 5 minutes
 - [ ] Schedule: expired device code cleanup every 5 minutes
 - [ ] Schedule: expired API key cleanup daily at 02:00 UTC
-- [ ] Schedule: billing period reset daily at 00:00 UTC
-- [ ] Write billing period reset SQL: downgrade canceled pro users to free, reset usage and advance period for active pro users
+- [x] Schedule: billing period reset every minute
+- [x] Write billing period reset SQL: downgrade canceled pro users to free, reset usage and advance period for active pro users
 
 **Tests**:
 - [ ] Integration: insert expired ephemeral endpoint, run cleanup, verify endpoint + its requests deleted
 - [ ] Integration: insert expired device code, run cleanup, verify deleted
 - [ ] Integration: insert free user requests older than 7 days, run cleanup, verify deleted
 - [ ] Integration: insert requests older than 31 days, run cleanup, verify deleted
-- [ ] Integration: pro user with `cancel_at_period_end` + expired period, run billing reset, verify downgraded to free with usage reset
-- [ ] Integration: active pro user with expired period, run billing reset, verify usage reset and new period started
+- [x] Integration: pro user with `cancel_at_period_end` + expired period, run billing reset, verify downgraded to free with usage reset
+- [x] Integration: active pro user with expired period, run billing reset, verify usage reset and new period started
 
 **Completion**: all tests pass, commit and mark phase complete.
 

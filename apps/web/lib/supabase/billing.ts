@@ -29,6 +29,12 @@ type BillingUser = Pick<
   | "cancel_at_period_end"
 >;
 
+interface BillingPeriodResetRow {
+  processed: number;
+  downgraded: number;
+  renewed: number;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -158,6 +164,19 @@ async function resolveWebhookUserId(data: Record<string, unknown>): Promise<stri
   }
 
   return findUserIdByPolarCustomerId(customerId);
+}
+
+async function callUntypedRpc<T>(
+  fn: string,
+  params?: Record<string, unknown>
+): Promise<{ data: T | null; error: { message: string } | null }> {
+  const admin = createAdminClient();
+  const rpc = admin.rpc.bind(admin) as unknown as (
+    functionName: string,
+    functionParams?: Record<string, unknown>
+  ) => Promise<{ data: T | null; error: { message: string } | null }>;
+
+  return rpc(fn, params);
 }
 
 export async function createCheckoutForUser(userId: string): Promise<string> {
@@ -332,6 +351,18 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
     default:
       return;
   }
+}
+
+export async function processBillingPeriodResets(): Promise<BillingPeriodResetRow> {
+  const { data, error } = await callUntypedRpc<BillingPeriodResetRow[]>(
+    "process_billing_period_resets"
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.[0] ?? { processed: 0, downgraded: 0, renewed: 0 };
 }
 
 export { BillingActionError };
