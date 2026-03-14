@@ -772,6 +772,7 @@ function DashboardSkeleton() {
 }
 
 function WaitingForRequests({ slug }: { slug: string }) {
+  const internalTestHeader = "X-Webhooks-CC-Test-Send";
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -804,7 +805,10 @@ function WaitingForRequests({ slug }: { slug: string }) {
     try {
       await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          [internalTestHeader]: "1",
+        },
         body: JSON.stringify({ test: true, sentAt: new Date().toISOString() }),
       });
       setSent(true);

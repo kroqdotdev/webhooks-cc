@@ -35,6 +35,8 @@ interface TemplateSelectionByProvider {
   twilio: string;
 }
 
+const INTERNAL_TEST_SEND_HEADER = "X-Webhooks-CC-Test-Send";
+
 function defaultTemplateSelection(): TemplateSelectionByProvider {
   return {
     stripe: getDefaultTemplateId("stripe"),
@@ -152,7 +154,10 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
     try {
       const response = await fetch(url, {
         method: requestMethod,
-        headers: requestHeaders,
+        headers: {
+          ...requestHeaders,
+          [INTERNAL_TEST_SEND_HEADER]: "1",
+        },
         body: requestBody,
       });
       setStatus("sent");

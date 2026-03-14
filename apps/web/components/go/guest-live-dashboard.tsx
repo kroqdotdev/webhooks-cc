@@ -25,6 +25,7 @@ import { ArrowRight, Bot, Check, Circle, Copy, Eye, Plus, Send, Terminal } from 
 
 const REQUEST_LIMIT = 25;
 const BACKGROUND_SYNC_INTERVAL_MS = 2000;
+const INTERNAL_TEST_SEND_HEADER = "X-Webhooks-CC-Test-Send";
 // Local fallback so refreshes immediately after create still restore the slug.
 // This is overwritten with the authoritative `endpoint.expiresAt` once the endpoint read completes.
 const EXPIRY_MS = 12 * 60 * 60 * 1000;
@@ -1045,7 +1046,10 @@ function DemoWaitingState({ url }: { url: string }) {
     try {
       await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_TEST_SEND_HEADER]: "1",
+        },
         body: JSON.stringify({
           message: "Hello from the browser!",
           timestamp: new Date().toISOString(),

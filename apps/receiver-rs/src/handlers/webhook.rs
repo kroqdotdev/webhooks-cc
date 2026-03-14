@@ -10,6 +10,7 @@ use crate::redis::quota::QuotaResult;
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
+const INTERNAL_TEST_SEND_HEADER: &str = "x-webhooks-cc-test-send";
 
 /// Proxy/CDN/transport headers added by our infrastructure (Cloudflare + Caddy)
 /// that should not be stored — they are not part of the original sender's request.
@@ -26,6 +27,7 @@ const PROXY_HEADERS: &[&str] = &[
     "x-forwarded-proto",
     "x-real-ip",
     "true-client-ip",
+    INTERNAL_TEST_SEND_HEADER,
 ];
 
 /// Blocked response headers that must not be forwarded from mock responses.
@@ -83,6 +85,13 @@ fn cf_connecting_ip(headers: &HeaderMap) -> String {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| real_ip(headers))
+}
+
+fn should_skip_dedup(headers: &HeaderMap) -> bool {
+    headers
+        .get(INTERNAL_TEST_SEND_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == "1")
 }
 
 /// The main webhook handler: GET/POST/PUT/PATCH/DELETE /w/{slug}/*
@@ -208,12 +217,18 @@ pub async fn handle_webhook(
     // 4. Dedup: skip buffering if an identical request arrived within 2s
     //    (catches Cloudflare multi-path duplicate delivery under burst traffic).
     let client_ip = cf_connecting_ip(&headers);
-    if !state.redis.check_dedup(&slug, method.as_str(), &req_path, &body, &client_ip).await {
-        tracing::debug!(slug, "duplicate request detected, skipping buffer");
-        if let Some(mock) = &endpoint.mock_response {
-            return build_mock_response(mock);
+    if !should_skip_dedup(&headers) {
+        if !state
+            .redis
+            .check_dedup(&slug, method.as_str(), &req_path, &body, &client_ip)
+            .await
+        {
+            tracing::debug!(slug, "duplicate request detected, skipping buffer");
+            if let Some(mock) = &endpoint.mock_response {
+                return build_mock_response(mock);
+            }
+            return (StatusCode::OK, "OK").into_response();
         }
-        return (StatusCode::OK, "OK").into_response();
     }
 
     // 5. Buffer the request
@@ -321,4 +336,25 @@ fn build_mock_response(mock: &crate::convex::types::MockResponse) -> Response {
                 .body(axum::body::Body::from("OK"))
                 .unwrap()
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_skip_dedup;
+    use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn skips_dedup_when_internal_test_header_is_present() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-webhooks-cc-test-send", HeaderValue::from_static("1"));
+
+        assert!(should_skip_dedup(&headers));
+    }
+
+    #[test]
+    fn does_not_skip_dedup_without_internal_test_header() {
+        let headers = HeaderMap::new();
+
+        assert!(!should_skip_dedup(&headers));
+    }
 }
