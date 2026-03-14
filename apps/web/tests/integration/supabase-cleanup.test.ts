@@ -6,14 +6,31 @@ import { cleanupExpiredEphemeralEndpoints } from "@/lib/supabase/cleanup";
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://192.168.0.247:8000";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 if (!SERVICE_ROLE_KEY) {
   throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required for integration tests");
 }
 
+if (!ANON_KEY) {
+  throw new Error("SUPABASE_ANON_KEY env var required for integration tests");
+}
+
 const admin = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+const anon = createClient<Database>(SUPABASE_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+async function callAnonRpc(functionName: string) {
+  const rpc = anon.rpc.bind(anon) as unknown as (
+    name: string
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+
+  return rpc(functionName);
+}
 
 describe("Supabase Cleanup Integration", () => {
   const expiredEndpointId = randomUUID();
@@ -22,7 +39,6 @@ describe("Supabase Cleanup Integration", () => {
   const expiredRequestId = randomUUID();
   const activeRequestId = randomUUID();
   const persistentRequestId = randomUUID();
-  const orphanRequestId = randomUUID();
 
   beforeAll(async () => {
     const expiredAt = new Date(Date.now() - 5 * 60_000).toISOString();
@@ -91,18 +107,6 @@ describe("Supabase Cleanup Integration", () => {
         ip: "127.0.0.1",
         size: 19,
       },
-      {
-        id: orphanRequestId,
-        endpoint_id: randomUUID(),
-        method: "POST",
-        path: "/cleanup-orphan",
-        headers: { "content-type": "application/json" },
-        body: "{\"orphan\":true}",
-        query_params: {},
-        content_type: "application/json",
-        ip: "127.0.0.1",
-        size: 15,
-      },
     ]);
 
     expect(requestInsertError).toBeNull();
@@ -113,19 +117,18 @@ describe("Supabase Cleanup Integration", () => {
       .from("requests")
       .delete()
       .in("endpoint_id", [expiredEndpointId, activeEndpointId, persistentEndpointId]);
-    await admin.from("requests").delete().eq("id", orphanRequestId);
     await admin
       .from("endpoints")
       .delete()
       .in("id", [expiredEndpointId, activeEndpointId, persistentEndpointId]);
   });
 
-  it("deletes expired guest endpoints, their requests, and orphaned request rows", async () => {
+  it("deletes expired guest endpoints and their requests without touching live endpoints", async () => {
     const result = await cleanupExpiredEphemeralEndpoints();
 
     expect(result.deleted_endpoints).toBeGreaterThanOrEqual(1);
     expect(result.deleted_expired_requests).toBeGreaterThanOrEqual(1);
-    expect(result.deleted_orphaned_requests).toBeGreaterThanOrEqual(1);
+    expect(result.deleted_orphaned_requests).toBe(0);
 
     const { data: endpoints, error: endpointsError } = await admin
       .from("endpoints")
@@ -162,14 +165,12 @@ describe("Supabase Cleanup Integration", () => {
       ])
     );
     expect(requestRows?.some((request) => request.endpoint_id === expiredEndpointId)).toBe(false);
+  });
 
-    const { data: orphanRequest, error: orphanRequestError } = await admin
-      .from("requests")
-      .select("id")
-      .eq("id", orphanRequestId)
-      .maybeSingle();
+  it("does not allow anonymous clients to invoke the cleanup rpc", async () => {
+    const { data, error } = await callAnonRpc("cleanup_expired_ephemeral_endpoints");
 
-    expect(orphanRequestError).toBeNull();
-    expect(orphanRequest).toBeNull();
+    expect(data).toBeNull();
+    expect(error).not.toBeNull();
   });
 });

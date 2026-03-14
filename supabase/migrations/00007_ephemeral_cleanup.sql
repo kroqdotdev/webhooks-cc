@@ -15,32 +15,33 @@ as $$
 begin
   return query
   with expired_endpoints as (
-    delete from public.endpoints
+    select id
+    from public.endpoints
     where is_ephemeral = true
       and expires_at is not null
       and expires_at <= now()
-    returning id
   ),
   expired_requests as (
     delete from public.requests
     where endpoint_id in (select id from expired_endpoints)
     returning id
   ),
-  orphaned_requests as (
-    delete from public.requests r
-    where not exists (
-      select 1
-      from public.endpoints e
-      where e.id = r.endpoint_id
-    )
-    returning r.id
+  deleted_endpoints_cte as (
+    delete from public.endpoints
+    where id in (select id from expired_endpoints)
+    returning id
   )
   select
-    (select count(*)::integer from expired_endpoints),
+    (select count(*)::integer from deleted_endpoints_cte),
     (select count(*)::integer from expired_requests),
-    (select count(*)::integer from orphaned_requests);
+    0::integer;
 end;
 $$;
+
+revoke all on function public.cleanup_expired_ephemeral_endpoints() from public;
+revoke all on function public.cleanup_expired_ephemeral_endpoints() from anon;
+revoke all on function public.cleanup_expired_ephemeral_endpoints() from authenticated;
+grant execute on function public.cleanup_expired_ephemeral_endpoints() to service_role;
 
 do $$
 declare
