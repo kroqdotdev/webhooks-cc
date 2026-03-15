@@ -42,15 +42,15 @@ if _env_path.exists():
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-USER_COUNT = 20
+USER_COUNT = 200
 ENDPOINTS_PER_USER = 2
-REQUESTS_PER_ENDPOINT = 60  # 50 limit + 10 over to test quota
-REQUEST_LIMIT_PER_USER = 50
+REQUESTS_PER_ENDPOINT = 150  # 100 limit + 50 over to test quota
+REQUEST_LIMIT_PER_USER = 100
 MAX_ACCEPTABLE_OVERRUN = 5  # direct Postgres should have near-zero overrun
 EPHEMERAL_REQUEST_LIMIT = 25
 
 RECEIVER_URL = "http://localhost:3001"
-HTTP_CONCURRENCY = 50
+HTTP_CONCURRENCY = 200
 
 # Postgres connection (uses env var or default)
 DB_URL = os.environ.get(
