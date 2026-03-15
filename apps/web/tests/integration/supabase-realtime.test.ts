@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
-import { createEndpointForUser, createGuestEndpoint } from "@/lib/supabase/endpoints";
+import { createEndpointForUser } from "@/lib/supabase/endpoints";
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://192.168.0.247:8000";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -60,7 +60,6 @@ describe("Supabase Realtime Integration", () => {
   let testUserId = "";
   let testUserEmail = "";
   let testEndpointId = "";
-  let guestEndpointId = "";
 
   beforeAll(async () => {
     testUserEmail = `test-realtime-${Date.now()}@webhooks-test.local`;
@@ -83,20 +82,12 @@ describe("Supabase Realtime Integration", () => {
     });
 
     testEndpointId = endpoint.id;
-
-    const guestEndpoint = await createGuestEndpoint();
-    guestEndpointId = guestEndpoint.id;
   });
 
   afterAll(async () => {
     if (testEndpointId) {
       await admin.from("requests").delete().eq("endpoint_id", testEndpointId);
       await admin.from("endpoints").delete().eq("id", testEndpointId);
-    }
-
-    if (guestEndpointId) {
-      await admin.from("requests").delete().eq("endpoint_id", guestEndpointId);
-      await admin.from("endpoints").delete().eq("id", guestEndpointId);
     }
 
     if (testUserId) {
@@ -227,14 +218,21 @@ describe("Supabase Realtime Integration", () => {
   );
 
   it(
-    "delivers ephemeral endpoint row updates to anonymous subscribers",
+    "delivers owned endpoint row updates over realtime",
     async () => {
       const anonClient = createAnonClient();
-      const channel = anonClient.channel(`test-guest-endpoint-${guestEndpointId}`);
+      const signIn = await anonClient.auth.signInWithPassword({
+        email: testUserEmail,
+        password: TEST_PASSWORD,
+      });
+
+      expect(signIn.error).toBeNull();
+
+      const channel = anonClient.channel(`test-owned-endpoint-${testEndpointId}`);
       const updatePromise = new Promise<Database["public"]["Tables"]["endpoints"]["Row"]>(
         (resolve, reject) => {
           const timeout = setTimeout(() => {
-            reject(new Error("Timed out waiting for guest endpoint realtime update"));
+            reject(new Error("Timed out waiting for owned endpoint realtime update"));
           }, 10_000);
 
           channel.on(
@@ -243,7 +241,7 @@ describe("Supabase Realtime Integration", () => {
               event: "UPDATE",
               schema: "public",
               table: "endpoints",
-              filter: `id=eq.${guestEndpointId}`,
+              filter: `id=eq.${testEndpointId}`,
             },
             (payload) => {
               clearTimeout(timeout);
@@ -255,49 +253,19 @@ describe("Supabase Realtime Integration", () => {
 
       await waitForSubscribed(channel);
 
-      const { error: insertError } = await admin.from("requests").insert({
-        endpoint_id: guestEndpointId,
-        user_id: null,
-        method: "POST",
-        path: "/guest-realtime",
-        headers: { "content-type": "application/json" },
-        body: "{\"ok\":true}",
-        query_params: { source: "guest-realtime" },
-        content_type: "application/json",
-        ip: "127.0.0.1",
-        size: 11,
-      });
-
-      expect(insertError).toBeNull();
-
       const { error: countError } = await callRpc("increment_endpoint_request_count", {
-        p_endpoint_id: guestEndpointId,
+        p_endpoint_id: testEndpointId,
         p_count: 1,
       });
 
       expect(countError).toBeNull();
 
       await expect(updatePromise).resolves.toMatchObject({
-        id: guestEndpointId,
-        is_ephemeral: true,
-        request_count: 1,
+        id: testEndpointId,
       });
 
-      const { data: requestRows, error: requestError } = await anonClient
-        .from("requests")
-        .select("endpoint_id, path, method")
-        .eq("endpoint_id", guestEndpointId);
-
-      expect(requestError).toBeNull();
-      expect(requestRows).toEqual([
-        {
-          endpoint_id: guestEndpointId,
-          path: "/guest-realtime",
-          method: "POST",
-        },
-      ]);
-
       await anonClient.removeChannel(channel);
+      await anonClient.auth.signOut();
     },
     20_000
   );

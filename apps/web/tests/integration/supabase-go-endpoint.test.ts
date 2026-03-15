@@ -91,7 +91,7 @@ describe("Supabase Guest Endpoint Integration", () => {
     }
   });
 
-  it("creates a guest endpoint and allows anonymous reads of the endpoint and its requests", async () => {
+  it("creates a guest endpoint and blocks anonymous direct reads (RLS hardened)", async () => {
     const response = await createGuestEndpointRoute(guestRequest("198.51.100.10"));
 
     expect(response.status).toBe(200);
@@ -110,8 +110,8 @@ describe("Supabase Guest Endpoint Integration", () => {
     expect(endpoint.expiresAt).toBeGreaterThan(Date.now());
     expect(endpoint.requestCount).toBe(0);
 
-    const anonClient = createAnonClient();
-    const { data: endpointRow, error: endpointError } = await anonClient
+    // Verify the endpoint exists via admin (service role bypasses RLS)
+    const { data: endpointRow, error: endpointError } = await admin
       .from("endpoints")
       .select("id, slug, is_ephemeral")
       .eq("id", endpoint.id)
@@ -124,6 +124,17 @@ describe("Supabase Guest Endpoint Integration", () => {
       is_ephemeral: true,
     });
 
+    // Anonymous direct reads should be blocked by RLS
+    const anonClient = createAnonClient();
+    const { data: anonEndpoint } = await anonClient
+      .from("endpoints")
+      .select("id")
+      .eq("id", endpoint.id)
+      .maybeSingle();
+
+    expect(anonEndpoint).toBeNull();
+
+    // Insert a request via admin (service role)
     const { error: requestInsertError } = await admin.from("requests").insert({
       endpoint_id: endpoint.id,
       user_id: null,
@@ -139,19 +150,13 @@ describe("Supabase Guest Endpoint Integration", () => {
 
     expect(requestInsertError).toBeNull();
 
-    const { data: requestRows, error: requestError } = await anonClient
+    // Anonymous direct request reads should also be blocked
+    const { data: anonRequests } = await anonClient
       .from("requests")
-      .select("endpoint_id, path, method")
+      .select("endpoint_id")
       .eq("endpoint_id", endpoint.id);
 
-    expect(requestError).toBeNull();
-    expect(requestRows).toEqual([
-      {
-        endpoint_id: endpoint.id,
-        path: "/guest-visible",
-        method: "POST",
-      },
-    ]);
+    expect(anonRequests).toEqual([]);
   });
 
   it("rate limits anonymous guest endpoint creation by IP", async () => {
