@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for Claude Code when working in this repository.
+Guidance for Codex when working in this repository.
 
 ## Project Overview
 
@@ -146,20 +146,6 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 - `handlers/webhook.rs` — Hot path: call stored procedure, map result to HTTP response
 - `handlers/health.rs` — Pool connectivity check
 
-**Webhook handler pipeline:**
-
-1. Extract slug, method, path, headers, body, query params, client IP
-2. Validate slug format (`^[A-Za-z0-9_-]{1,50}$`)
-3. Filter proxy headers (Cloudflare, Caddy, X-Forwarded-*)
-4. Call `SELECT capture_webhook(slug, method, path, headers, body, query_params, content_type, ip, received_at)`
-5. Map result status to HTTP response:
-   - `ok` + mock_response → build mock HTTP response (with security header blocking, CRLF validation)
-   - `ok` → 200 "ok"
-   - `not_found` → 404
-   - `expired` → 410
-   - `quota_exceeded` → 429 with Retry-After header
-6. On DB error → 200 "ok" (fail open)
-
 **Receiver env vars:**
 
 | Variable               | Required | Default    | Purpose                       |
@@ -210,31 +196,15 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 | `check_and_decrement_quota()`   | Atomic quota check + decrement for owned endpoints                   |
 | `check_and_increment_ephemeral()` | Atomic request count check + increment for ephemeral endpoints (25 cap) |
 | `start_free_period()`           | Lazy 24h period activation for free users                            |
-| `increment_endpoint_request_count()` | Increment endpoint counter                                     |
-| `increment_user_requests_used()` | Increment user usage counter                                        |
-
-**RLS policies:** All tables have row-level security enabled. Anonymous access is blocked on all tables except `blog_posts` (published only) and `endpoints` INSERT (ephemeral with bounded expiry only). Guest endpoint/request reads are mediated through server API routes using the service role.
-
-**Cron jobs (via pg_cron):**
-
-| Job | Schedule | Purpose |
-|-----|----------|---------|
-| Billing period resets | Every minute | Reset free (24h) and pro (30d) periods, downgrade canceled subscriptions |
-| Ephemeral endpoint cleanup | Every 5 min | Delete expired ephemeral endpoints and orphaned requests |
-| Expired device code cleanup | Every 5 min | Delete expired CLI login codes |
-| Free user request cleanup | Daily 01:30 UTC | Delete requests older than 7 days for free users |
-| Old request cleanup | Daily 01:00 UTC | Delete all requests older than 31 days |
-| Expired API key cleanup | Daily 02:00 UTC | Delete expired API keys |
 
 **Key patterns:**
 
 - The receiver writes directly to Postgres via `capture_webhook()` — no intermediary
-- Usage increments happen atomically inside the stored procedure (no race conditions)
 - Free user periods activate lazily on first request via `start_free_period()`
-- Supabase Auth handles GitHub + Google OAuth with auto-provisioning via `handle_new_user()` trigger
-- API keys use SHA-256 hashed storage with `whcc_` prefix, validated by hash lookup
-- Device auth flow: create → authorize → poll → claim (API key generated at claim time)
-- Sensitive routes (account deletion, billing mutations) require Supabase session tokens — API keys are rejected
+- Supabase Auth handles GitHub + Google OAuth
+- API keys use SHA-256 hashed storage with `whcc_` prefix
+- Sensitive routes (account deletion, billing) require Supabase session tokens — API keys are rejected
+- RLS is hardened: anonymous direct reads are blocked, guest data served via service role API routes
 
 ### Web App Structure
 
@@ -244,14 +214,7 @@ Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono f
 
 **Authenticated routes:** `/dashboard` (split-pane request viewer), `/account` (profile, billing, API keys), `/endpoints/new`, `/endpoints/[slug]/settings`, `/cli/verify` (device auth)
 
-**API routes:** `/api/health`, `/api/auth/device-*` (4 routes), `/api/endpoints` (CRUD + PATCH), `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/stream/[slug]` (SSE), `/api/api-keys` (CRUD), `/api/account` (DELETE), `/api/billing/*` (checkout/cancel/resubscribe), `/api/go/endpoint/*` (guest dashboard reads)
-
-**Key directories:**
-
-- `app/` - Pages and API routes
-- `components/` - UI components organized by feature (dashboard/, landing/, billing/, auth/, nav/, ui/)
-- `lib/` - Utilities: env validation (zod), API auth, rate limiting, formatting, SEO, export (JSON/CSV)
-- `lib/supabase/` - Supabase client utilities: admin (service role), client (browser), server (SSR), api-keys, billing, endpoints, requests, device-auth, cleanup, realtime, search
+**API routes:** `/api/health`, `/api/auth/device-*` (4 routes), `/api/endpoints` (CRUD + PATCH), `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/stream/[slug]` (SSE), `/api/api-keys` (CRUD), `/api/account` (DELETE), `/api/billing/*`, `/api/go/endpoint/*`
 
 ### SDK
 
@@ -276,10 +239,6 @@ const req = await client.requests.waitFor(endpoint.slug, {
 - `requests.subscribe(slug)` — SSE async iterator for real-time streaming
 - `client.describe()` — self-documenting introspection for AI agents
 
-**Exports:** `WebhooksCC`, `ApiError`, error classes (`WebhooksCCError`, `UnauthorizedError`, `NotFoundError`, `TimeoutError`, `RateLimitError`), matchers (`matchMethod`, `matchHeader`, `matchBodyPath`, `matchAll`, `matchAny`), helpers (`parseJsonBody`, `isStripeWebhook`, `isGitHubWebhook`, `isShopifyWebhook`, `isSlackWebhook`, `isTwilioWebhook`, `isPaddleWebhook`, `isLinearWebhook`, `matchJsonField`), utilities (`parseDuration`, `parseSSE`).
-
-**Features:** Human-readable duration strings (`"30s"`, `"5m"`) for `timeout`/`pollInterval`, actionable error messages with recovery hints, lifecycle hooks (`onRequest`, `onResponse`, `onError`).
-
 ### MCP Server
 
 `@webhooks-cc/mcp` v0.1.0 - MCP server for AI coding agents, MIT licensed.
@@ -289,13 +248,6 @@ const req = await client.requests.waitFor(endpoint.slug, {
 - Native install: `claude mcp add` (Claude Code), `codex mcp add` (Codex)
 - Transport: stdio via `@modelcontextprotocol/sdk`
 - Depends on `@webhooks-cc/sdk` (workspace link)
-
-**Key files (`packages/mcp/src/`):**
-
-- `index.ts` — MCP server setup, tool registration, stdio transport
-- `tools.ts` — Tool definitions with Zod schemas and handlers
-- `setup.ts` — CLI setup commands for various AI tools
-- `bin/mcp.js` — Binary entry point (`npx` / `webhooks-cc-mcp`)
 
 ## Environment Variables
 
@@ -312,18 +264,6 @@ const req = await client.requests.waitFor(endpoint.slug, {
 | `NEXT_PUBLIC_WEBHOOK_URL`      | yes      | Webhook receiver base URL                  |
 | `NEXT_PUBLIC_APP_URL`          | yes      | App base URL                               |
 | `CAPTURE_SHARED_SECRET`        | yes      | Shared secret for internal auth            |
-
-### Supabase Environment
-
-| Variable                | Purpose                        |
-| ----------------------- | ------------------------------ |
-| `POLAR_ACCESS_TOKEN`    | Polar.sh API                   |
-| `POLAR_ORGANIZATION_ID` | Polar org                      |
-| `POLAR_WEBHOOK_SECRET`  | Webhook signature verification |
-| `POLAR_PRO_PRODUCT_ID`  | Product ID for checkout        |
-| `POLAR_PRO_PRICE_ID`    | Price ID for checkout          |
-| `POLAR_SANDBOX`         | `true` for sandbox mode        |
-| `BLOG_API_SECRET`       | Blog admin API auth            |
 
 ### Optional
 
@@ -348,9 +288,9 @@ const req = await client.requests.waitFor(endpoint.slug, {
 - Receiver fails open on DB errors: returns 200 OK so webhook senders don't retry
 - Mock response changes take effect immediately (no caching layer)
 - Free user billing periods are lazy: `period_end` is unset until first request triggers `start_free_period()`
-- RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly — all guest reads go through server API routes with service role
+- RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly
 - Sensitive routes (account deletion, billing) require Supabase session tokens — API keys return 403
-- Supabase migrations are in `supabase/migrations/` and must be applied manually to the dev instance via psql
+- Supabase migrations are in `supabase/migrations/` and must be applied manually via psql
 
 ## Licensing
 
