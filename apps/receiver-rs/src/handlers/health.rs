@@ -5,22 +5,20 @@ use axum::response::IntoResponse;
 use crate::AppState;
 
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
-    let degraded = state.convex.circuit().is_degraded().await;
-    let circuit_state = state.convex.circuit().state().await;
-
-    let status = if degraded {
-        StatusCode::SERVICE_UNAVAILABLE
-    } else {
-        StatusCode::OK
-    };
-
-    let label = if degraded { "degraded" } else { "ok" };
-
-    (
-        status,
-        axum::Json(serde_json::json!({
-            "status": label,
-            "circuit": circuit_state.to_string(),
-        })),
-    )
+    match sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"status": "ok"})),
+        ),
+        Err(e) => {
+            tracing::error!(error = %e, "health check failed");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({"status": "unhealthy"})),
+            )
+        }
+    }
 }
