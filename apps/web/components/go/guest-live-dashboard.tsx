@@ -228,9 +228,9 @@ function GuestLiveDashboardInner() {
     }
   }, []);
 
-  const refreshRequests = useCallback(async (endpointId: string) => {
+  const refreshRequests = useCallback(async (slug: string) => {
     try {
-      const nextRequests = await fetchGuestDashboardRequests(endpointId, REQUEST_LIMIT);
+      const nextRequests = await fetchGuestDashboardRequests(slug, REQUEST_LIMIT);
       setRequests(nextRequests);
     } catch (error) {
       console.error("Failed to load guest requests:", error);
@@ -270,13 +270,13 @@ function GuestLiveDashboardInner() {
   }, [endpointSlug, refreshEndpoint]);
 
   useEffect(() => {
-    if (!endpoint?.id) {
+    if (!endpoint?.id || !endpointSlug) {
       setRequests([]);
       return;
     }
 
-    void refreshRequests(endpoint.id);
-  }, [endpoint?.id, refreshRequests]);
+    void refreshRequests(endpointSlug);
+  }, [endpoint?.id, endpointSlug, refreshRequests]);
 
   useEffect(() => {
     if (!expiresAt) {
@@ -323,7 +323,7 @@ function GuestLiveDashboardInner() {
         );
       }
 
-      void refreshRequests(row.id);
+      void refreshRequests(endpointSlug);
     });
 
     return () => {
@@ -332,7 +332,7 @@ function GuestLiveDashboardInner() {
   }, [clearDemoEndpoint, endpoint?.id, endpointSlug, refreshRequests]);
 
   useEffect(() => {
-    if (!endpoint?.id) {
+    if (!endpoint?.id || !endpointSlug) {
       return;
     }
 
@@ -340,23 +340,23 @@ function GuestLiveDashboardInner() {
       return;
     }
 
-    void refreshRequests(endpoint.id);
+    void refreshRequests(endpointSlug);
 
     const interval = window.setInterval(() => {
-      void refreshRequests(endpoint.id);
+      void refreshRequests(endpointSlug);
     }, REQUEST_SYNC_INTERVAL_MS);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [endpoint?.id, endpoint?.requestCount, requests.length, refreshRequests]);
+  }, [endpoint?.id, endpointSlug, endpoint?.requestCount, requests.length, refreshRequests]);
 
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
 
     const onFocus = () => {
       void refreshEndpoint(endpointSlug);
-      void refreshRequests(endpoint.id);
+      void refreshRequests(endpointSlug);
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -385,7 +385,7 @@ function GuestLiveDashboardInner() {
       }
 
       void refreshEndpoint(endpointSlug);
-      void refreshRequests(endpoint.id);
+      void refreshRequests(endpointSlug);
     }, BACKGROUND_SYNC_INTERVAL_MS);
 
     return () => {

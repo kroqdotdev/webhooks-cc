@@ -1,6 +1,5 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/database";
 import type { Request } from "@/types/request";
 
@@ -88,59 +87,39 @@ export async function createGuestDashboardEndpoint(): Promise<GuestEndpointRecor
 export async function fetchGuestDashboardEndpoint(
   slug: string
 ): Promise<GuestEndpointRecord | null> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("endpoints")
-    .select("id, slug, is_ephemeral, expires_at, request_count")
-    .eq("slug", slug)
-    .eq("is_ephemeral", true)
-    .maybeSingle<Pick<
-      EndpointRow,
-      "id" | "slug" | "is_ephemeral" | "expires_at" | "request_count"
-    >>();
-
-  if (error) {
-    throw error;
+  const response = await fetch(`/api/go/endpoint/${encodeURIComponent(slug)}`);
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Failed to fetch endpoint (${response.status})`);
   }
-
-  return data ? normalizeGuestEndpoint(data) : null;
+  return response.json() as Promise<GuestEndpointRecord>;
 }
 
 export async function fetchGuestDashboardRequests(
-  endpointId: string,
+  slug: string,
   limit: number
 ): Promise<Request[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("requests")
-    .select(
-      "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
-    )
-    .eq("endpoint_id", endpointId)
-    .order("received_at", { ascending: false })
-    .limit(limit)
-    .returns<
-      Array<
-        Pick<
-          RequestRow,
-          | "id"
-          | "endpoint_id"
-          | "method"
-          | "path"
-          | "headers"
-          | "body"
-          | "query_params"
-          | "content_type"
-          | "ip"
-          | "size"
-          | "received_at"
-        >
-      >
-    >();
-
-  if (error) {
-    throw error;
+  const response = await fetch(
+    `/api/go/endpoint/${encodeURIComponent(slug)}/requests?limit=${limit}`
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch requests (${response.status})`);
   }
-
-  return (data ?? []).map(normalizeRequest);
+  const rows = (await response.json()) as Array<
+    Pick<
+      RequestRow,
+      | "id"
+      | "endpoint_id"
+      | "method"
+      | "path"
+      | "headers"
+      | "body"
+      | "query_params"
+      | "content_type"
+      | "ip"
+      | "size"
+      | "received_at"
+    >
+  >;
+  return rows.map(normalizeRequest);
 }

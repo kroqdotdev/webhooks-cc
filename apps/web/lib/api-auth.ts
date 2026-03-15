@@ -215,3 +215,44 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
 
   return { success: true, userId };
 }
+
+/**
+ * Authenticate a request using only a Supabase session token.
+ * Rejects API keys — use this for sensitive routes (account deletion, billing mutations)
+ * where long-lived API keys should not have access.
+ */
+export async function authenticateSessionRequest(request: Request): Promise<AuthResult> {
+  const token = extractBearerToken(request);
+  if (!token) {
+    return {
+      success: false,
+      response: new Response(JSON.stringify({ error: "Missing authorization header" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    };
+  }
+
+  if (token.startsWith("whcc_")) {
+    return {
+      success: false,
+      response: new Response(
+        JSON.stringify({ error: "API keys are not allowed for this operation. Use a session token." }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      ),
+    };
+  }
+
+  const result = await validateSupabaseSessionWithPlan(token);
+  if (!result) {
+    return {
+      success: false,
+      response: new Response(JSON.stringify({ error: "Invalid session token" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    };
+  }
+
+  return { success: true, userId: result.userId };
+}

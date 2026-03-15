@@ -1,9 +1,9 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateSessionRequest } from "@/lib/api-auth";
 import { PolarConfigError } from "@/lib/polar";
 import { BillingActionError, createCheckoutForUser } from "@/lib/supabase/billing";
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
 
   try {

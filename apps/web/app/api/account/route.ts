@@ -1,8 +1,8 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateSessionRequest } from "@/lib/api-auth";
 import { deleteAccountForUser } from "@/lib/supabase/account";
 
 export async function DELETE(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
 
   try {
