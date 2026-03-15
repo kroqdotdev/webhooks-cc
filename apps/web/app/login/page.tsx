@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import { useConvexAuth } from "convex/react";
 import { ConvexAuthProvider } from "@/components/providers/convex-auth-provider";
+import { isMaintenanceBannerEnabled } from "@/components/maintenance-banner";
 
 export default function LoginPage() {
   return (
@@ -56,7 +57,9 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <nav className="fixed top-4 left-4 right-4 z-50">
+      <nav
+        className={`fixed ${isMaintenanceBannerEnabled() ? "top-14" : "top-4"} left-4 right-4 z-50`}
+      >
         <div className="max-w-6xl mx-auto border-2 border-foreground bg-background shadow-neo">
           <div className="px-6 h-16 flex items-center justify-between">
             <Link href="/" className="font-bold text-xl tracking-tight">

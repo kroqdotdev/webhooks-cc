@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS } from "@/lib/docs-nav";
+import { isMaintenanceBannerEnabled } from "@/components/maintenance-banner";
 
 const STORAGE_KEY = "docs-sidebar-sections";
 
@@ -123,6 +124,7 @@ function SidebarContent({
 
 export function DocsSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const bannerActive = isMaintenanceBannerEnabled();
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -143,7 +145,10 @@ export function DocsSidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed top-28 left-4 z-40 p-2 border-2 border-foreground bg-background shadow-neo-sm cursor-pointer"
+        className={cn(
+          "md:hidden fixed left-4 z-40 p-2 border-2 border-foreground bg-background shadow-neo-sm cursor-pointer",
+          bannerActive ? "top-[8.5rem]" : "top-28"
+        )}
         aria-label="Toggle docs navigation"
       >
         {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -152,7 +157,10 @@ export function DocsSidebar() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed top-24 left-0 right-0 bottom-0 z-30 bg-background/80"
+          className={cn(
+            "md:hidden fixed left-0 right-0 bottom-0 z-30 bg-background/80",
+            bannerActive ? "top-[8rem]" : "top-24"
+          )}
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -164,7 +172,8 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed top-24 left-4 bottom-4 z-[35] w-64 border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2 transition-transform",
+          "md:hidden fixed left-4 bottom-4 z-[35] w-64 border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2 transition-transform",
+          bannerActive ? "top-[8rem]" : "top-24",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -172,7 +181,12 @@ export function DocsSidebar() {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:block w-64 shrink-0 sticky top-24 self-start max-h-[calc(100vh-7rem)] border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2">
+      <aside
+        className={cn(
+          "hidden md:block w-64 shrink-0 sticky self-start border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2",
+          bannerActive ? "top-[8rem] max-h-[calc(100vh-9.5rem)]" : "top-24 max-h-[calc(100vh-7rem)]"
+        )}
+      >
         <SidebarContent onSearchClick={handleSearchClick} />
       </aside>
     </>
