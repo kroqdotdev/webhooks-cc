@@ -1,5 +1,9 @@
 .PHONY: dev dev-all dev-web dev-receiver dev-cli build build-receiver build-cli test lint clean prod prod-web prod-receiver start
 
+# Ensure user systemd bus is reachable (needed in Proxmox xterm.js / non-login shells)
+export XDG_RUNTIME_DIR ?= /run/user/$(shell id -u)
+export DBUS_SESSION_BUS_ADDRESS ?= unix:path=$(XDG_RUNTIME_DIR)/bus
+
 # Development
 dev:
 	mprocs --config mprocs-dev.yaml
@@ -13,19 +17,21 @@ dev-receiver:
 dev-cli:
 	cd apps/cli && go run ./cmd/whk $(ARGS)
 
-# Production
+# Production (systemd services + mprocs log viewer)
 prod:
-	@echo "Building..."
-	pnpm build
-	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
-	@echo "Starting production servers..."
-	@make -j2 prod-web prod-receiver
+	@echo "Ensuring services are running..."
+	@systemctl --user start webhooks-web webhooks-receiver
+	@echo "Opening log viewer (mprocs)..."
+	mprocs --config mprocs.yaml
 
-prod-web:
-	pnpm --filter web start
+prod-status:
+	@systemctl --user status webhooks-web webhooks-receiver
 
-prod-receiver:
-	@set -a && . ./.env.local && set +a && ./dist/receiver
+prod-stop:
+	@systemctl --user stop webhooks-web webhooks-receiver
+
+prod-restart:
+	@systemctl --user restart webhooks-web webhooks-receiver
 
 # Build
 build:
@@ -35,6 +41,26 @@ build:
 
 build-receiver:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
+
+# Deploy (build + restart)
+deploy-receiver:
+	@echo "Building receiver..."
+	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release
+	@echo "Stopping receiver (draining requests)..."
+	-@systemctl --user stop webhooks-receiver
+	@cp apps/receiver-rs/target/release/webhooks-receiver dist/receiver
+	@echo "Starting receiver..."
+	@systemctl --user start webhooks-receiver
+	@echo "Receiver deployed."
+
+deploy-web:
+	@echo "Building web app..."
+	pnpm build
+	@echo "Restarting web server..."
+	@systemctl --user restart webhooks-web
+	@echo "Web deployed."
+
+deploy-all: deploy-receiver deploy-web
 
 build-cli:
 	cd apps/cli && goreleaser build --snapshot --clean
@@ -50,9 +76,9 @@ lint:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
 	cd apps/cli && golangci-lint run
 
-# Start (production with mprocs)
+# Start (alias for prod — ensures services are running + opens log viewer)
 start:
-	$$HOME/.cargo/bin/mprocs --config mprocs.yaml
+	@make prod
 
 # Clean
 clean:

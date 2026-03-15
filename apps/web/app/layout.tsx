@@ -11,6 +11,7 @@ import {
 import { JsonLd, organizationSchema } from "@/lib/schemas";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { PostHogProvider } from "@/components/providers/posthog-provider";
+import { MaintenanceBanner } from "@/components/maintenance-banner";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -124,6 +125,7 @@ export default function RootLayout({
                 .
               </div>
             </noscript>
+            <MaintenanceBanner />
             {children}
           </ThemeProvider>
         </PostHogProvider>

@@ -366,16 +366,34 @@ func tunnelCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "tunnel <port>",
+		Use:   "tunnel <port>[/path]",
 		Short: "Create an endpoint and forward requests to localhost",
-		Args:  cobra.ExactArgs(1),
+		Long: `Create an endpoint and forward incoming webhook requests to a local server.
+
+The argument can be a port number or a port with a base path:
+  whk tunnel 8080                        # Forward to http://localhost:8080
+  whk tunnel 8080/api/webhooks           # Forward to http://localhost:8080/api/webhooks
+  whk tunnel 3000/api/polar-webhooks     # Forward to http://localhost:3000/api/polar-webhooks
+
+Incoming request paths are appended to the base path. For example, with
+"whk tunnel 8080/api", a request to /hook becomes http://localhost:8080/api/hook.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Validate port
-			portNum, err := strconv.Atoi(args[0])
-			if err != nil || portNum < 1 || portNum > 65535 {
-				return fmt.Errorf("invalid port: %s (must be 1-65535)", args[0])
+			// Parse port and optional base path from argument
+			arg := args[0]
+			portStr := arg
+			basePath := ""
+			if idx := strings.Index(arg, "/"); idx != -1 {
+				portStr = arg[:idx]
+				basePath = arg[idx:] // includes leading /
 			}
-			targetURL := fmt.Sprintf("http://localhost:%d", portNum)
+
+			// Validate port
+			portNum, err := strconv.Atoi(portStr)
+			if err != nil || portNum < 1 || portNum > 65535 {
+				return fmt.Errorf("invalid port: %s (must be 1-65535)", portStr)
+			}
+			targetURL := fmt.Sprintf("http://localhost:%d%s", portNum, basePath)
 
 			// Check auth early before making any API calls
 			token, err := auth.LoadToken()
