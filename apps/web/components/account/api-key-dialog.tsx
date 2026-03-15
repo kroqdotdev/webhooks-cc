@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "@convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +17,12 @@ import { Copy, Check, AlertTriangle } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { trackApiKeyCreated } from "@/lib/analytics";
 
-export function ApiKeyDialog() {
+interface ApiKeyDialogProps {
+  accessToken: string | null;
+  onCreated?: () => void;
+}
+
+export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -27,11 +30,14 @@ export function ApiKeyDialog() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createApiKey = useMutation(api.apiKeys.create);
-
   const handleCreate = async () => {
     if (!name.trim()) {
       setError("Please enter a name for this API key");
+      return;
+    }
+
+    if (!accessToken) {
+      setError("Not authenticated");
       return;
     }
 
@@ -39,9 +45,24 @@ export function ApiKeyDialog() {
     setError(null);
 
     try {
-      const result = await createApiKey({ name: name.trim() });
+      const response = await fetch("/api/api-keys", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+
+      const data = (await response.json()) as { key?: string; error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to create API key");
+      }
+
       trackApiKeyCreated();
-      setCreatedKey(result.key);
+      setCreatedKey(data.key!);
+      onCreated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create API key");
     } finally {
@@ -60,7 +81,6 @@ export function ApiKeyDialog() {
 
   const handleClose = () => {
     setOpen(false);
-    // Reset state after dialog closes
     setTimeout(() => {
       setName("");
       setCreatedKey(null);

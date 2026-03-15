@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ApiKeyDialog } from "@/components/account/api-key-dialog";
 import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
@@ -13,7 +14,16 @@ import { trackUpgradeCompleted, resetUser } from "@/lib/analytics";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToUserRow } from "@/lib/supabase/realtime";
-import { CheckCircle, Github, LogOut } from "lucide-react";
+import { CheckCircle, Github, LogOut, Trash2 } from "lucide-react";
+
+interface ApiKeyEntry {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+}
 
 function UsageResetCountdown({ periodEnd }: { periodEnd: string }) {
   const [timeRemaining, setTimeRemaining] = useState<string>("");
@@ -81,6 +91,8 @@ export default function AccountPage() {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
+  const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
   const router = useRouter();
 
   const refreshProfile = useCallback(async () => {
@@ -126,6 +138,40 @@ export default function AccountPage() {
       setProfileLoading(false);
     });
   }, [authUser]);
+
+  const refreshApiKeys = useCallback(async () => {
+    if (!session?.access_token) return;
+    try {
+      const response = await fetch("/api/api-keys", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (response.ok) {
+        setApiKeys((await response.json()) as ApiKeyEntry[]);
+      }
+    } catch {
+      // silent — non-critical
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    void refreshApiKeys();
+  }, [refreshApiKeys]);
+
+  const handleDeleteKey = async (keyId: string) => {
+    if (!session?.access_token) return;
+    setDeletingKeyId(keyId);
+    try {
+      await fetch(`/api/api-keys?id=${keyId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      setApiKeys((prev) => prev.filter((k) => k.id !== keyId));
+    } catch {
+      // silent
+    } finally {
+      setDeletingKeyId(null);
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -323,11 +369,43 @@ export default function AccountPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">API Keys</h2>
-        <div className="border rounded-lg p-6 bg-card">
-          <p className="text-sm text-muted-foreground">
-            API key management is being migrated. Available soon.
-          </p>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">API Keys</h2>
+          <ApiKeyDialog accessToken={accessToken} onCreated={refreshApiKeys} />
+        </div>
+        <div className="border rounded-lg bg-card divide-y">
+          {apiKeys.length === 0 ? (
+            <div className="p-6">
+              <p className="text-sm text-muted-foreground">
+                No API keys yet. Create one to use the CLI, SDK, or MCP server.
+              </p>
+            </div>
+          ) : (
+            apiKeys.map((key) => (
+              <div key={key.id} className="p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{key.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {key.key_prefix}...
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Created {new Date(key.created_at).toLocaleDateString()}
+                    {key.last_used_at &&
+                      ` \u00b7 Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleDeleteKey(key.id)}
+                  disabled={deletingKeyId === key.id}
+                  title="Delete key"
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
