@@ -3,3 +3,5 @@ procs:
     cmd: ["journalctl", "--user", "-u", "webhooks-web", "-f", "--no-hostname", "-o", "cat"]
   receiver:
     cmd: ["journalctl", "--user", "-u", "webhooks-receiver", "-f", "--no-hostname", "-o", "cat"]
+  collector:
+    cmd: ["journalctl", "--user", "-u", "webhooks-collector", "-f", "--no-hostname", "-o", "cat"]

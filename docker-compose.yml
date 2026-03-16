@@ -15,8 +15,8 @@ services:
       - NEXT_PUBLIC_WEBHOOK_URL=${NEXT_PUBLIC_WEBHOOK_URL}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
       - CAPTURE_SHARED_SECRET=${CAPTURE_SHARED_SECRET}
-      - SENTRY_DSN=${SENTRY_DSN}
-      - NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}
+      - APPSIGNAL_PUSH_API_KEY=${APPSIGNAL_PUSH_API_KEY}
+      - APPSIGNAL_APP_NAME=${APPSIGNAL_APP_NAME}
     healthcheck:
       test:
         ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
@@ -36,6 +36,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - CAPTURE_SHARED_SECRET=${CAPTURE_SHARED_SECRET}
       - PORT=3001
+      - APPSIGNAL_COLLECTOR_URL=${APPSIGNAL_COLLECTOR_URL}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s

@@ -1,0 +1,13 @@
+[Unit]
+Description=AppSignal Collector (webhooks.cc)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/appsignal-collector start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
