@@ -28,6 +28,6 @@ export async function GET() {
 
   return Response.json(
     { status: healthy ? "ok" : "degraded", checks },
-    { status: healthy ? 200 : 503 },
+    { status: healthy ? 200 : 503 }
   );
 }

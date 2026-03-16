@@ -440,7 +440,12 @@ export default async function Home() {
                   </Link>
                 </li>
                 <li>
-                  <a href="https://status.webhooks.cc" className="text-muted-foreground hover:text-foreground" target="_blank" rel="noopener noreferrer">
+                  <a
+                    href="https://status.webhooks.cc"
+                    className="text-muted-foreground hover:text-foreground"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     Status
                   </a>
                 </li>
