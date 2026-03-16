@@ -22,7 +22,7 @@ impl std::fmt::Debug for Config {
             .field("log_dir", &self.log_dir)
             .field("pool_min", &self.pool_min)
             .field("pool_max", &self.pool_max)
-            .field("otel_collector_url", &self.otel_collector_url)
+            .field("otel_collector_url", &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }

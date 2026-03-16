@@ -22,8 +22,8 @@ pub struct AppState {
     pub config: Config,
 }
 
-/// Initialize the OpenTelemetry tracing pipeline.
-/// Returns `Some(provider)` when a collector URL is configured, `None` otherwise.
+/// Build an OpenTelemetry tracer provider exporting spans to the given collector URL.
+/// Returns `None` on failure so the receiver can continue without tracing (fail-open).
 fn init_otel(
     collector_url: &str,
 ) -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
@@ -31,11 +31,17 @@ fn init_otel(
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::trace::SdkTracerProvider;
 
-    let exporter = SpanExporter::builder()
+    let exporter = match SpanExporter::builder()
         .with_http()
         .with_endpoint(format!("{collector_url}/v1/traces"))
         .build()
-        .expect("failed to create OTLP span exporter");
+    {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("failed to create OTLP span exporter: {e:?} — continuing without tracing export");
+            return None;
+        }
+    };
 
     let provider = SdkTracerProvider::builder()
         .with_batch_exporter(exporter)
@@ -55,7 +61,7 @@ async fn main() {
     let config = Config::from_env();
 
     // Initialize OTel pipeline (no-op when collector URL is unset)
-    let _otel_provider = config
+    let otel_provider = config
         .otel_collector_url
         .as_deref()
         .and_then(init_otel);
@@ -84,7 +90,7 @@ async fn main() {
         );
 
     // Add OTel layer only when provider is active
-    if let Some(ref provider) = _otel_provider {
+    if let Some(ref provider) = otel_provider {
         use opentelemetry::trace::TracerProvider;
         let tracer = provider.tracer("webhooks-receiver");
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -156,7 +162,7 @@ async fn main() {
         .expect("server error");
 
     // Flush any remaining OTel spans on shutdown
-    if let Some(provider) = _otel_provider
+    if let Some(provider) = otel_provider
         && let Err(e) = provider.shutdown()
     {
         eprintln!("OTel shutdown error: {e:?}");
