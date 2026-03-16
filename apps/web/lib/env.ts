@@ -9,16 +9,11 @@ import { z } from "zod";
  *
  * Both publicEnv() and serverEnv() are lazy-evaluated on first call
  * to avoid module-level crashes in contexts where some vars are unset.
- *
- * SENTRY_DSN is the server-side DSN. NEXT_PUBLIC_SENTRY_DSN is the
- * client-side DSN (exposed to the browser). They can be the same DSN
- * or different projects; set both for full coverage.
  */
 
 const publicEnvSchema = z.object({
   NEXT_PUBLIC_WEBHOOK_URL: z.string().url(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("https://webhooks.cc"),
-  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
@@ -28,7 +23,8 @@ const publicEnvSchema = z.object({
 const serverEnvSchema = z.object({
   CAPTURE_SHARED_SECRET: z.string().min(1),
   BLOG_API_SECRET: z.string().min(1).optional(),
-  SENTRY_DSN: z.string().optional(),
+  APPSIGNAL_PUSH_API_KEY: z.string().optional(),
+  APPSIGNAL_APP_NAME: z.string().default("webhooks-cc-web"),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   RECEIVER_INTERNAL_URL: z.string().url(),
@@ -41,7 +37,6 @@ export function publicEnv() {
     _publicEnv = publicEnvSchema.parse({
       NEXT_PUBLIC_WEBHOOK_URL: process.env.NEXT_PUBLIC_WEBHOOK_URL,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
-      NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
       NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
       NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -61,7 +56,8 @@ export function serverEnv() {
     _serverEnv = serverEnvSchema.parse({
       CAPTURE_SHARED_SECRET: process.env.CAPTURE_SHARED_SECRET,
       BLOG_API_SECRET: process.env.BLOG_API_SECRET,
-      SENTRY_DSN: process.env.SENTRY_DSN,
+      APPSIGNAL_PUSH_API_KEY: process.env.APPSIGNAL_PUSH_API_KEY,
+      APPSIGNAL_APP_NAME: process.env.APPSIGNAL_APP_NAME,
       SUPABASE_URL: process.env.SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       RECEIVER_INTERNAL_URL: process.env.RECEIVER_INTERNAL_URL,
