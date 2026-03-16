@@ -113,7 +113,13 @@ async fn main() {
         )
         .layer(public_cors)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .on_response(
+                    tower_http::trace::DefaultOnResponse::new()
+                        .level(tracing::Level::INFO),
+                ),
+        )
         .with_state(state);
 
     // Start server

@@ -262,6 +262,7 @@ async fn handle_webhook_inner(
                 )
                     .into_response(),
                 "quota_exceeded" => {
+                    tracing::info!(slug, ip = %ip, "quota exceeded");
                     let mut response = (
                         StatusCode::TOO_MANY_REQUESTS,
                         axum::Json(serde_json::json!({"error": "quota_exceeded"})),
