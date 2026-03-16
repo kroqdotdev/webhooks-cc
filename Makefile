@@ -60,6 +60,11 @@ deploy-web:
 	@systemctl --user restart webhooks-web
 	@echo "Web deployed."
 
+deploy-collector:
+	@echo "Restarting collector..."
+	@systemctl --user restart webhooks-collector
+	@echo "Collector restarted."
+
 deploy-all: deploy-receiver deploy-web
 
 build-cli:
