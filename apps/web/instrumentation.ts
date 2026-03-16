@@ -1,15 +1,11 @@
-import * as Sentry from "@sentry/nextjs";
-
-export function onRequestError(...args: Parameters<typeof Sentry.captureRequestError>) {
-  Sentry.captureRequestError(...args);
-}
-
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    await import("./sentry.server.config");
-  }
+    const { Appsignal } = await import("@appsignal/nodejs");
 
-  if (process.env.NEXT_RUNTIME === "edge") {
-    await import("./sentry.edge.config");
+    new Appsignal({
+      active: process.env.NODE_ENV === "production" && !!process.env.APPSIGNAL_PUSH_API_KEY,
+      name: process.env.APPSIGNAL_APP_NAME || "webhooks-cc-web",
+      pushApiKey: process.env.APPSIGNAL_PUSH_API_KEY || "",
+    });
   }
 }
