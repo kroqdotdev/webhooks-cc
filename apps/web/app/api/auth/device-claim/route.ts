@@ -1,6 +1,7 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 import { claimDeviceCode } from "@/lib/supabase/device-auth";
+import { sendError } from "@appsignal/nodejs";
 
 export async function POST(request: Request) {
   const rateLimited = checkRateLimit(request, 10);
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     ) {
       return Response.json({ error: "Claim failed" }, { status: 400 });
     }
-    console.error(error);
+    sendError(error instanceof Error ? error : new Error(String(error)));
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

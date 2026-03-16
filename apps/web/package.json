@@ -40,6 +40,7 @@
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^4.0.2",
+    "source-map-support": "^0.5.21",
     "tailwind-merge": "^3.5.0",
     "unist-util-visit": "^5.1.0",
     "zod": "^4.3.6"
@@ -54,6 +55,7 @@
     "@types/prismjs": "^1.26.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/source-map-support": "^0.5.10",
     "dotenv": "^17.3.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",

@@ -3,6 +3,7 @@ import { serverEnv } from "@/lib/env";
 import { getEndpointBySlugForUser } from "@/lib/supabase/endpoints";
 import type { Database, Json } from "@/lib/supabase/database";
 import { listNewRequestsForEndpointByUser, type RequestRecord } from "@/lib/supabase/requests";
+import { sendError } from "@appsignal/nodejs";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -216,7 +217,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
           try {
             enqueueRequest(toRequestRecord(payload.new as RequestRow));
           } catch (error) {
-            console.error("Realtime callback error:", error);
+            sendError(error instanceof Error ? error : new Error(String(error)));
           }
         }
       );
@@ -277,6 +278,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
           backlogCursor = Math.max(backlogCursor, backlog[backlog.length - 1]!.receivedAt - 1);
         }
       } catch (error) {
+        sendError(error instanceof Error ? error : new Error(String(error)));
         console.error("Failed to initialize SSE stream:", error);
         closeStream();
       }
