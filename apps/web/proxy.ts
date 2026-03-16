@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Middleware: Supabase session refresh + security headers.
+ * Proxy: Supabase session refresh + security headers.
  *
  * 1. Refreshes the Supabase JWT on every request so server components get fresh cookies.
  * 2. Sets Content-Security-Policy and related headers on every response.
@@ -24,7 +24,7 @@ function shouldNoIndexPath(pathname: string): boolean {
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // --- Supabase session refresh ---
   let supabaseResponse = NextResponse.next({ request });
 
