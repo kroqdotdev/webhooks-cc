@@ -7,7 +7,8 @@ import {
   listPublishedBlogPosts,
 } from "@/lib/supabase/blog-posts";
 
-const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://REDACTED_HOST:8000";
+if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
+const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 

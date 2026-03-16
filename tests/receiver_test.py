@@ -53,14 +53,16 @@ RECEIVER_URL = "http://localhost:3001"
 HTTP_CONCURRENCY = 200
 
 # Postgres connection (uses env var or default)
-DB_URL = os.environ.get(
-    "SUPABASE_DB_URL",
-    "postgresql://postgres:REDACTED@REDACTED_HOST:5433/postgres"
-)
+DB_URL = os.environ.get("SUPABASE_DB_URL", "")
 
 # Supabase admin API for creating auth users
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "http://REDACTED_HOST:8000")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+
+for _name, _val in [("SUPABASE_DB_URL", DB_URL), ("SUPABASE_URL", SUPABASE_URL), ("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)]:
+    if not _val:
+        print(f"ERROR: {_name} is required (set in .env.local or environment)")
+        sys.exit(1)
 
 # ─── DB Helpers ──────────────────────────────────────────────────────────────
 

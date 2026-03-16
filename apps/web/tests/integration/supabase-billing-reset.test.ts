@@ -3,7 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
 import { processBillingPeriodResets } from "@/lib/supabase/billing";
 
-const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://REDACTED_HOST:8000";
+if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
+const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const TEST_PASSWORD = "TestPassword123!";
 
