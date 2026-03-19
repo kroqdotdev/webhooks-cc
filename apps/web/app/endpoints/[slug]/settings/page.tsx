@@ -18,6 +18,11 @@ import {
   updateDashboardEndpoint,
 } from "@/lib/dashboard-api";
 import {
+  trackEndpointDeleted,
+  trackEndpointUpdated,
+  trackMockResponseConfigured,
+} from "@/lib/analytics";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -128,6 +133,12 @@ function EndpointSettingsForm() {
             }
           : null,
       });
+      const changedFields: string[] = [];
+      if (name !== (endpoint.name || "")) changedFields.push("name");
+      if (hasCustomMock) changedFields.push("mock_response");
+      if (changedFields.length > 0) trackEndpointUpdated(changedFields);
+      if (hasCustomMock) trackMockResponseConfigured(parseStatusCode(mockStatus, 200), Boolean(mockBody));
+
       router.push(`/dashboard?endpoint=${slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -146,6 +157,7 @@ function EndpointSettingsForm() {
       }
 
       await deleteDashboardEndpoint(accessToken, slug);
+      trackEndpointDeleted();
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete");

@@ -10,6 +10,7 @@ import type { Request, ClickHouseRequest } from "@/types/request";
 import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
 import { getHighlightLanguage, highlightBody } from "@/lib/highlight";
+import { trackRequestDetailTabChanged } from "@/lib/analytics";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -156,7 +157,10 @@ export function RequestDetail({ request }: RequestDetailProps) {
         {(["body", "headers", "query", "raw"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              trackRequestDetailTabChanged(t);
+            }}
             className={cn(
               "px-4 py-2 text-xs font-bold uppercase tracking-wide border-r-2 border-foreground last:border-r-0 cursor-pointer transition-colors",
               tab === t ? "bg-foreground text-background" : "bg-background hover:bg-muted"

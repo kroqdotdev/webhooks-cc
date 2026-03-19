@@ -10,7 +10,7 @@ import { UpgradeButton } from "@/components/billing/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
-import { trackUpgradeCompleted, resetUser } from "@/lib/analytics";
+import { trackUpgradeCompleted, resetUser, identifyUser } from "@/lib/analytics";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToUserRow } from "@/lib/supabase/realtime";
@@ -115,6 +115,14 @@ export default function AccountPage() {
 
     setProfile(data ?? null);
     setProfileLoading(false);
+
+    if (data) {
+      identifyUser(authUser.id, {
+        email: authUser.email ?? undefined,
+        plan: data.plan,
+        request_limit: data.request_limit,
+      });
+    }
   }, [authUser]);
 
   useEffect(() => {

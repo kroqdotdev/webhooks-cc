@@ -14,6 +14,11 @@ import {
   updateDashboardEndpoint,
 } from "@/lib/dashboard-api";
 import {
+  trackEndpointDeleted,
+  trackEndpointUpdated,
+  trackMockResponseConfigured,
+} from "@/lib/analytics";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -116,6 +121,12 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       });
       emitDashboardEndpointsChanged();
       setOpen(false);
+
+      const changedFields: string[] = [];
+      if (name !== endpointName) changedFields.push("name");
+      if (hasCustomMock) changedFields.push("mock_response");
+      if (changedFields.length > 0) trackEndpointUpdated(changedFields);
+      if (hasCustomMock) trackMockResponseConfigured(parseStatusCode(mockStatus, 200), Boolean(mockBody));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -137,6 +148,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       }
 
       await deleteDashboardEndpoint(accessToken, slug);
+      trackEndpointDeleted();
       emitDashboardEndpointsChanged();
       setOpen(false);
       router.push("/dashboard");

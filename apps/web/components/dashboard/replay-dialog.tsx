@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Play } from "lucide-react";
 import { SKIP_HEADERS_FOR_REPLAY } from "@/lib/constants";
+import { trackRequestReplayed } from "@/lib/analytics";
 
 /** Props for the ReplayDialog component. */
 interface ReplayDialogProps {
@@ -87,6 +88,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
       });
       setResponse({ status: res.status, statusText: res.statusText });
       setStatus("done");
+      trackRequestReplayed(method, res.status);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Request failed");
       setStatus("error");

@@ -14,6 +14,7 @@ import { Copy, Check, Send, Download, ChevronDown } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
+import { trackRequestViewed, trackRequestExported } from "@/lib/analytics";
 import { subscribeToEndpointRequestInserts } from "@/lib/supabase/realtime";
 import {
   fetchDashboardEndpoints,
@@ -480,10 +481,15 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const handleSelect = useCallback((id: string) => {
-    setSelectedId(id);
-    setMobileDetail(true);
-  }, []);
+  const handleSelect = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setMobileDetail(true);
+      const item = displayedItems.find((r) => ("_id" in r ? r._id : r.id) === id);
+      if (item) trackRequestViewed(item.method);
+    },
+    [displayedItems]
+  );
 
   const handleToggleLiveMode = useCallback(() => setLiveMode((prev) => !prev), []);
   const handleToggleSort = useCallback(() => setSortNewest((prev) => !prev), []);
@@ -511,6 +517,7 @@ export default function DashboardPage() {
       return;
     }
     downloadFile(exportToJson(results), "webhooks-export.json", "application/json");
+    trackRequestExported("json", results.length);
     if (results.length >= 200) {
       alert("Exported first 200 requests. Use search filters to narrow the export.");
     }
@@ -532,6 +539,7 @@ export default function DashboardPage() {
       return;
     }
     downloadFile(exportToCsv(results), "webhooks-export.csv", "text/csv");
+    trackRequestExported("csv", results.length);
     if (results.length >= 200) {
       alert("Exported first 200 requests. Use search filters to narrow the export.");
     }
