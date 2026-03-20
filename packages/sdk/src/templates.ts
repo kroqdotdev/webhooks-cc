@@ -6,7 +6,7 @@ import type {
 } from "./types";
 
 type TwilioParamEntry = [string, string];
-type SignedTemplateProvider = Exclude<TemplateProvider, "standard-webhooks">;
+type SignedTemplateProvider = Exclude<TemplateProvider, "standard-webhooks" | "sendgrid" | "discord">;
 
 const DEFAULT_TEMPLATE_BY_PROVIDER = {
   stripe: "payment_intent.succeeded",
@@ -16,6 +16,11 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   slack: "event_callback",
   paddle: "transaction.completed",
   linear: "issue.create",
+  sendgrid: "delivered",
+  clerk: "user.created",
+  discord: "interaction_create",
+  vercel: "deployment.created",
+  gitlab: "push",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -26,6 +31,11 @@ const PROVIDER_TEMPLATES = {
   slack: ["event_callback", "slash_command", "url_verification"] as const,
   paddle: ["transaction.completed", "subscription.created", "subscription.updated"] as const,
   linear: ["issue.create", "issue.update", "comment.create"] as const,
+  sendgrid: ["delivered", "open", "bounce", "spam_report"] as const,
+  clerk: ["user.created", "user.updated", "user.deleted", "session.created"] as const,
+  discord: ["interaction_create", "message_component", "ping"] as const,
+  vercel: ["deployment.created", "deployment.succeeded", "deployment.error"] as const,
+  gitlab: ["push", "merge_request"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -36,6 +46,11 @@ export const TEMPLATE_PROVIDERS = [
   "slack",
   "paddle",
   "linear",
+  "sendgrid",
+  "clerk",
+  "discord",
+  "vercel",
+  "gitlab",
   "standard-webhooks",
 ] as const satisfies readonly TemplateProvider[];
 
@@ -95,6 +110,42 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: true,
     signatureHeader: "linear-signature",
     signatureAlgorithm: "hmac-sha256",
+  }),
+  sendgrid: Object.freeze({
+    provider: "sendgrid",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.sendgrid]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.sendgrid,
+    secretRequired: false,
+  }),
+  clerk: Object.freeze({
+    provider: "clerk",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.clerk]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.clerk,
+    secretRequired: true,
+    signatureHeader: "webhook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  discord: Object.freeze({
+    provider: "discord",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.discord]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.discord,
+    secretRequired: false,
+  }),
+  vercel: Object.freeze({
+    provider: "vercel",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.vercel]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.vercel,
+    secretRequired: true,
+    signatureHeader: "x-vercel-signature",
+    signatureAlgorithm: "hmac-sha1",
+  }),
+  gitlab: Object.freeze({
+    provider: "gitlab",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.gitlab]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.gitlab,
+    secretRequired: true,
+    signatureHeader: "x-gitlab-token",
+    signatureAlgorithm: "token",
   }),
   "standard-webhooks": Object.freeze({
     provider: "standard-webhooks",
@@ -726,6 +777,219 @@ function buildTemplatePayload(
       };
     }
 
+    if (provider === "clerk") {
+      const userId = `user_${randomHex(24)}`;
+      const payloadByTemplate: Record<string, unknown> = {
+        "user.created": {
+          data: {
+            id: userId,
+            object: "user",
+            email_addresses: [
+              {
+                id: `idn_${randomHex(24)}`,
+                email_address: "user@example.com",
+                verification: { status: "verified", strategy: "email_code" },
+              },
+            ],
+            first_name: "Jane",
+            last_name: "Doe",
+            created_at: nowSec * 1000,
+            updated_at: nowSec * 1000,
+          },
+          object: "event",
+          type: "user.created",
+          timestamp: nowSec,
+        },
+        "user.updated": {
+          data: {
+            id: userId,
+            object: "user",
+            email_addresses: [
+              {
+                id: `idn_${randomHex(24)}`,
+                email_address: "user@example.com",
+                verification: { status: "verified", strategy: "email_code" },
+              },
+            ],
+            first_name: "Jane",
+            last_name: "Smith",
+            created_at: nowSec * 1000,
+            updated_at: nowSec * 1000,
+          },
+          object: "event",
+          type: "user.updated",
+          timestamp: nowSec,
+        },
+        "user.deleted": {
+          data: {
+            id: userId,
+            object: "user",
+            deleted: true,
+          },
+          object: "event",
+          type: "user.deleted",
+          timestamp: nowSec,
+        },
+        "session.created": {
+          data: {
+            id: `sess_${randomHex(24)}`,
+            object: "session",
+            user_id: userId,
+            status: "active",
+            created_at: nowSec * 1000,
+            updated_at: nowSec * 1000,
+            expire_at: (nowSec + 86400) * 1000,
+          },
+          object: "event",
+          type: "session.created",
+          timestamp: nowSec,
+        },
+      };
+
+      const payload = bodyOverride ?? payloadByTemplate[template];
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "user-agent": "Svix-Webhooks/1.0",
+        },
+      };
+    }
+
+    if (provider === "vercel") {
+      const deploymentId = `dpl_${randomHex(20)}`;
+      const payloadByTemplate: Record<string, unknown> = {
+        "deployment.created": {
+          id: randomUuid(),
+          type: "deployment.created",
+          createdAt: nowSec * 1000,
+          payload: {
+            deploymentId,
+            name: "my-app",
+            url: `my-app-${randomHex(8)}.vercel.app`,
+            project: { id: `prj_${randomHex(20)}`, name: "my-app" },
+            target: "production",
+          },
+        },
+        "deployment.succeeded": {
+          id: randomUuid(),
+          type: "deployment.succeeded",
+          createdAt: nowSec * 1000,
+          payload: {
+            deploymentId,
+            name: "my-app",
+            url: `my-app-${randomHex(8)}.vercel.app`,
+            project: { id: `prj_${randomHex(20)}`, name: "my-app" },
+            target: "production",
+          },
+        },
+        "deployment.error": {
+          id: randomUuid(),
+          type: "deployment.error",
+          createdAt: nowSec * 1000,
+          payload: {
+            deploymentId,
+            name: "my-app",
+            url: `my-app-${randomHex(8)}.vercel.app`,
+            project: { id: `prj_${randomHex(20)}`, name: "my-app" },
+            target: "production",
+            error: { message: "Build failed: exit code 1", code: "BUILD_FAILED" },
+          },
+        },
+      };
+
+      const payload = bodyOverride ?? payloadByTemplate[template];
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "user-agent": "Vercel/1.0",
+        },
+      };
+    }
+
+    if (provider === "gitlab") {
+      const projectId = Number(randomDigits(7));
+      const payloadByTemplate: Record<string, unknown> = {
+        push: {
+          object_kind: "push",
+          event_name: "push",
+          before: randomHex(40),
+          after: randomHex(40),
+          ref: "refs/heads/main",
+          checkout_sha: randomHex(40),
+          user_id: Number(randomDigits(5)),
+          user_name: "webhooks-cc-bot",
+          user_email: "bot@webhooks.cc",
+          project_id: projectId,
+          project: {
+            id: projectId,
+            name: "demo-repo",
+            web_url: "https://gitlab.com/webhooks-cc/demo-repo",
+            namespace: "webhooks-cc",
+            default_branch: "main",
+          },
+          commits: [
+            {
+              id: randomHex(40),
+              message: "Update webhook integration tests",
+              title: "Update webhook integration tests",
+              timestamp: nowIso,
+              url: `https://gitlab.com/webhooks-cc/demo-repo/-/commit/${randomHex(40)}`,
+              author: { name: "webhooks-cc-bot", email: "bot@webhooks.cc" },
+              added: [],
+              modified: ["src/webhooks.ts"],
+              removed: [],
+            },
+          ],
+          total_commits_count: 1,
+        },
+        merge_request: {
+          object_kind: "merge_request",
+          event_type: "merge_request",
+          user: {
+            id: Number(randomDigits(5)),
+            name: "webhooks-cc-bot",
+            username: "webhooks-cc-bot",
+            email: "bot@webhooks.cc",
+          },
+          project: {
+            id: projectId,
+            name: "demo-repo",
+            web_url: "https://gitlab.com/webhooks-cc/demo-repo",
+            namespace: "webhooks-cc",
+            default_branch: "main",
+          },
+          object_attributes: {
+            id: Number(randomDigits(7)),
+            iid: 42,
+            title: "Add webhook retry logic",
+            description: "This MR improves retry handling for inbound webhooks.",
+            state: "opened",
+            action: "open",
+            source_branch: "feature/webhook-retries",
+            target_branch: "main",
+            created_at: nowIso,
+            updated_at: nowIso,
+            url: `https://gitlab.com/webhooks-cc/demo-repo/-/merge_requests/42`,
+          },
+        },
+      };
+
+      const payload = bodyOverride ?? payloadByTemplate[template];
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "x-gitlab-event": template === "merge_request" ? "Merge Request Hook" : "Push Hook",
+          "user-agent": "GitLab/1.0",
+        },
+      };
+    }
+
     throw new Error(`Unsupported provider: ${provider}`);
   }
 
@@ -953,7 +1217,155 @@ export async function buildTemplateSendOptions(
     };
   }
 
-  // After the standard-webhooks early return, provider is one of the signed template providers
+  // SendGrid — unsigned provider with template payloads
+  if (options.provider === "sendgrid") {
+    const method = (options.method ?? "POST").toUpperCase();
+    const supported = PROVIDER_TEMPLATES.sendgrid;
+    const template = options.template ?? DEFAULT_TEMPLATE_BY_PROVIDER.sendgrid;
+    if (!supported.some((item) => item === template)) {
+      throw new Error(
+        `Unsupported template "${template}" for provider "sendgrid". Supported templates: ${supported.join(", ")}`
+      );
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    const payloadByTemplate: Record<string, unknown> = {
+      delivered: [
+        {
+          sg_event_id: randomHex(22),
+          sg_message_id: `${randomHex(20)}.${randomDigits(4)}`,
+          email: "recipient@example.com",
+          timestamp: nowSec,
+          event: "delivered",
+          smtp_id: `<${randomHex(20)}@example.com>`,
+          ip: "168.1.1.1",
+          response: "250 OK",
+          category: ["webhooks-cc-test"],
+        },
+      ],
+      open: [
+        {
+          sg_event_id: randomHex(22),
+          sg_message_id: `${randomHex(20)}.${randomDigits(4)}`,
+          email: "recipient@example.com",
+          timestamp: nowSec,
+          event: "open",
+          ip: "72.14.199.28",
+          useragent: "Mozilla/5.0",
+          category: ["webhooks-cc-test"],
+        },
+      ],
+      bounce: [
+        {
+          sg_event_id: randomHex(22),
+          sg_message_id: `${randomHex(20)}.${randomDigits(4)}`,
+          email: "bounced@example.com",
+          timestamp: nowSec,
+          event: "bounce",
+          type: "bounce",
+          status: "5.1.1",
+          reason: "550 5.1.1 The email account does not exist.",
+          ip: "168.1.1.1",
+          category: ["webhooks-cc-test"],
+        },
+      ],
+      spam_report: [
+        {
+          sg_event_id: randomHex(22),
+          sg_message_id: `${randomHex(20)}.${randomDigits(4)}`,
+          email: "complainant@example.com",
+          timestamp: nowSec,
+          event: "spamreport",
+          category: ["webhooks-cc-test"],
+        },
+      ],
+    };
+
+    const payload = options.body ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+
+    return {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "SendGrid/1.0",
+        "x-webhooks-cc-template-provider": "sendgrid",
+        "x-webhooks-cc-template-template": template,
+        "x-webhooks-cc-template-event": template,
+        ...(options.headers ?? {}),
+      },
+      body,
+    };
+  }
+
+  // Discord — unsigned provider with template payloads
+  if (options.provider === "discord") {
+    const method = (options.method ?? "POST").toUpperCase();
+    const supported = PROVIDER_TEMPLATES.discord;
+    const template = options.template ?? DEFAULT_TEMPLATE_BY_PROVIDER.discord;
+    if (!supported.some((item) => item === template)) {
+      throw new Error(
+        `Unsupported template "${template}" for provider "discord". Supported templates: ${supported.join(", ")}`
+      );
+    }
+
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+
+    const payloadByTemplate: Record<string, unknown> = {
+      interaction_create: {
+        id: randomHex(18),
+        application_id: randomHex(18),
+        type: 2,
+        data: {
+          id: randomHex(18),
+          name: "webhook-test",
+          type: 1,
+        },
+        guild_id: randomHex(18),
+        channel_id: randomHex(18),
+        token: randomHex(40),
+        version: 1,
+      },
+      message_component: {
+        id: randomHex(18),
+        application_id: randomHex(18),
+        type: 3,
+        data: {
+          custom_id: "click_me",
+          component_type: 2,
+        },
+        guild_id: randomHex(18),
+        channel_id: randomHex(18),
+        token: randomHex(40),
+        version: 1,
+      },
+      ping: {
+        id: randomHex(18),
+        application_id: randomHex(18),
+        type: 1,
+        version: 1,
+      },
+    };
+
+    const payload = options.body ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+
+    return {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "x-signature-timestamp": String(timestamp),
+        "x-webhooks-cc-template-provider": "discord",
+        "x-webhooks-cc-template-template": template,
+        "x-webhooks-cc-template-event": template,
+        ...(options.headers ?? {}),
+      },
+      body,
+    };
+  }
+
+  // After the early returns, provider is one of the signed template providers
   const provider = options.provider as SignedTemplateProvider;
   const method = (options.method ?? "POST").toUpperCase();
   const template = ensureTemplate(provider, options.template);
@@ -1013,6 +1425,33 @@ export async function buildTemplateSendOptions(
   if (provider === "linear") {
     const signature = await hmacSign("SHA-256", options.secret, built.body);
     headers["linear-signature"] = `sha256=${toHex(signature)}`;
+  }
+
+  if (provider === "clerk") {
+    const msgId = `msg_${randomHex(16)}`;
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signingInput = `${msgId}.${timestamp}.${built.body}`;
+    const secretBytes = decodeStandardWebhookSecret(options.secret);
+    const signature = await hmacSignRaw("SHA-256", secretBytes, signingInput);
+    const sig = `v1,${toBase64(signature)}`;
+    headers["webhook-id"] = msgId;
+    headers["webhook-timestamp"] = String(timestamp);
+    headers["webhook-signature"] = sig;
+    headers["svix-id"] = msgId;
+    headers["svix-timestamp"] = String(timestamp);
+    headers["svix-signature"] = sig;
+  }
+
+  if (provider === "vercel") {
+    const signature = await hmacSign("SHA-1", options.secret, built.body);
+    headers["x-vercel-signature"] = toHex(signature);
+  }
+
+  if (provider === "gitlab") {
+    headers["x-gitlab-token"] = options.secret;
+    const gitlabEvent =
+      template === "merge_request" ? "Merge Request Hook" : "Push Hook";
+    headers["x-gitlab-event"] = gitlabEvent;
   }
 
   return {

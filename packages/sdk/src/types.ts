@@ -147,6 +147,11 @@ export type TemplateProvider =
   | "slack"
   | "paddle"
   | "linear"
+  | "sendgrid"
+  | "clerk"
+  | "discord"
+  | "vercel"
+  | "gitlab"
   | "standard-webhooks";
 
 /** Static metadata describing a supported template provider. */
@@ -378,7 +383,7 @@ export interface SignatureVerificationResult {
 }
 
 /** Providers supported by verifySignature(). */
-export type VerifyProvider = TemplateProvider | "discord";
+export type VerifyProvider = TemplateProvider;
 
 /**
  * Options for verifying a captured webhook signature.
