@@ -213,7 +213,7 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
           Send
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo max-w-xl">
+      <DialogContent className="border-2 border-foreground shadow-neo max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-bold uppercase tracking-wide">Send Webhook</DialogTitle>
         </DialogHeader>

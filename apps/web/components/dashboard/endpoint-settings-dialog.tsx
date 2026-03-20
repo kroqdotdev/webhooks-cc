@@ -173,7 +173,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
           <Settings className="h-3.5 w-3.5" />
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo">
+      <DialogContent className="border-2 border-foreground shadow-neo max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-bold uppercase tracking-wide">Endpoint Settings</DialogTitle>
           <DialogDescription>Configure {endpointName || slug}</DialogDescription>
