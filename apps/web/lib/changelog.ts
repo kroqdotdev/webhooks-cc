@@ -15,13 +15,26 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.9.1";
+export const APP_VERSION = "0.9.2";
 export const CLI_VERSION = "0.5.3";
 export const SDK_VERSION = "1.1.0";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.9.2",
+    date: "2026-03-20",
+    title: "Changelog & Version Display",
+    track: "web",
+    items: [
+      "Public changelog page at /changelog with track filtering",
+      "Version display on account page",
+      "Deep health check endpoint for AppSignal uptime monitoring",
+      "Forward user IP on test webhook sends",
+      "Status page link in footer",
+    ],
+  },
   {
     version: "0.9.1",
     date: "2026-03-20",
