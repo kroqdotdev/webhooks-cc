@@ -1,0 +1,470 @@
+---
+title: "REST API"
+description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests, and stream webhooks."
+section: getting-started
+order: 5
+lastUpdated: 2026-03-20
+schema: none
+keywords:
+  ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
+seo:
+  ogTitle: "REST API Reference — webhooks.cc"
+  ogDescription: "Complete REST API reference for webhooks.cc. Manage endpoints, inspect captured requests, and stream webhooks from any language."
+---
+
+## Overview
+
+The [TypeScript SDK](/docs/sdk) wraps this API, but you can call it directly from any language using standard HTTP requests. All request and response bodies use JSON.
+
+**Base URL:** `https://webhooks.cc`
+
+**Webhook receiver URL:** `https://go.webhooks.cc`
+
+## Authentication
+
+Authenticate by passing your API key in the `Authorization` header:
+
+```
+Authorization: Bearer whcc_...
+```
+
+API keys are generated from the [account page](/account). Keys use the `whcc_` prefix and are stored as SHA-256 hashes — the raw key is shown only once at creation time.
+
+<Callout type="warning">
+  Some sensitive operations (account deletion, API key management) require a Supabase session token
+  instead of an API key. These operations return `403` when called with an API key.
+</Callout>
+
+## Endpoints
+
+### Create endpoint
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-endpoint"}'
+```
+
+**Response:**
+
+```json
+{
+  "id": "...",
+  "slug": "abc123",
+  "name": "my-endpoint",
+  "url": "https://go.webhooks.cc/w/abc123",
+  "createdAt": 1234567890000
+}
+```
+
+### List endpoints
+
+```bash
+curl https://webhooks.cc/api/endpoints \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns an array of endpoint objects.
+
+### Get endpoint
+
+```bash
+curl https://webhooks.cc/api/endpoints/abc123 \
+  -H "Authorization: Bearer whcc_..."
+```
+
+### Update endpoint
+
+Update an endpoint's name or mock response configuration.
+
+```bash
+curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "new-name", "mockResponse": {"status": 200, "body": "{\"ok\":true}", "headers": {"Content-Type": "application/json"}}}'
+```
+
+Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`.
+
+### Delete endpoint
+
+Deletes the endpoint and all its captured requests.
+
+```bash
+curl -X DELETE https://webhooks.cc/api/endpoints/abc123 \
+  -H "Authorization: Bearer whcc_..."
+```
+
+## Requests
+
+### List requests
+
+```bash
+curl "https://webhooks.cc/api/endpoints/abc123/requests?limit=50" \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns an array of request objects, newest first.
+
+### List requests (paginated)
+
+```bash
+curl "https://webhooks.cc/api/endpoints/abc123/requests/paginated?limit=20&cursor=..." \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Response:**
+
+```json
+{
+  "items": [{ "id": "...", "method": "POST", "...": "..." }],
+  "cursor": "eyJ...",
+  "hasMore": true
+}
+```
+
+Pass the returned `cursor` to the next request to fetch the next page.
+
+### Get single request
+
+```bash
+curl https://webhooks.cc/api/requests/REQUEST_ID \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Response:**
+
+```json
+{
+  "id": "REQUEST_ID",
+  "endpointId": "...",
+  "method": "POST",
+  "path": "/",
+  "headers": { "content-type": "application/json", "...": "..." },
+  "body": "{\"event\": \"test\"}",
+  "queryParams": {},
+  "contentType": "application/json",
+  "ip": "203.0.113.1",
+  "size": 18,
+  "receivedAt": 1234567890000
+}
+```
+
+### Clear requests
+
+Delete all captured requests for an endpoint without deleting the endpoint itself.
+
+```bash
+curl -X DELETE "https://webhooks.cc/api/endpoints/abc123/requests" \
+  -H "Authorization: Bearer whcc_..."
+```
+
+## Send test webhook
+
+Send a test webhook to one of your endpoints through the API.
+
+```bash
+curl -X POST https://webhooks.cc/api/send-test \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "abc123", "method": "POST", "headers": {"content-type": "application/json"}, "body": "{\"event\": \"test\"}"}'
+```
+
+## Search
+
+Search captured requests across endpoints with optional filters.
+
+```bash
+curl "https://webhooks.cc/api/search/requests?slug=abc123&method=POST&q=stripe&limit=20" \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Query parameters:**
+
+| Param    | Type     | Description                        |
+| -------- | -------- | ---------------------------------- |
+| `slug`   | `string` | Filter by endpoint slug            |
+| `method` | `string` | Filter by HTTP method              |
+| `q`      | `string` | Free-text search                   |
+| `from`   | `string` | Start time (duration or timestamp) |
+| `to`     | `string` | End time (duration or timestamp)   |
+| `limit`  | `number` | Max results (default: 50)          |
+| `offset` | `number` | Pagination offset                  |
+| `order`  | `string` | `"asc"` or `"desc"` (default)      |
+
+### Search count
+
+Count matching requests without returning them.
+
+```bash
+curl "https://webhooks.cc/api/search/requests/count?slug=abc123&method=POST" \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "count": 42 }`. Accepts the same query parameters as search (except `limit`, `offset`, `order`).
+
+## Real-time streaming (SSE)
+
+Stream incoming requests as Server-Sent Events. Useful for building integrations that react to webhooks in real time.
+
+```bash
+curl -N "https://webhooks.cc/api/stream/abc123" \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Accept: text/event-stream"
+```
+
+Each captured request arrives as an SSE message:
+
+```
+event: request
+data: {"id":"...","method":"POST","path":"/","headers":{...},"body":"...","receivedAt":1234567890000}
+
+```
+
+The server sends keepalive pings (`:ping`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes — reconnect when the stream closes.
+
+## Usage
+
+Check your current request quota and usage.
+
+```bash
+curl https://webhooks.cc/api/usage \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Response:**
+
+```json
+{
+  "used": 12,
+  "limit": 50,
+  "remaining": 38,
+  "plan": "free",
+  "periodEnd": 1234567890000
+}
+```
+
+## Session-token-only routes
+
+Some routes require a Supabase session token (from browser login) instead of an API key. These return `403` when called with an API key.
+
+- `GET /api/api-keys` — list your API keys
+- `POST /api/api-keys` — create a new API key
+- `DELETE /api/api-keys?id=...` — delete an API key
+- `DELETE /api/account` — delete your account and all data
+
+These routes are designed for the web dashboard, not programmatic access.
+
+## Error handling
+
+All errors return a JSON body with an `error` field:
+
+```json
+{ "error": "Invalid or missing API key" }
+```
+
+| Status | Meaning                                                 |
+| ------ | ------------------------------------------------------- |
+| `400`  | Validation error — check request body and parameters    |
+| `401`  | Invalid or missing API key                              |
+| `404`  | Resource not found                                      |
+| `429`  | Rate limited — check `Retry-After` header for wait time |
+| `500`  | Server error                                            |
+
+## Language examples
+
+### Python
+
+```python
+import requests
+
+API_KEY = "whcc_..."
+BASE = "https://webhooks.cc"
+HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+# Create endpoint
+endpoint = requests.post(f"{BASE}/api/endpoints", headers=HEADERS, json={"name": "my-endpoint"}).json()
+slug = endpoint["slug"]
+print(f"Webhook URL: {endpoint['url']}")
+
+# Send a test webhook
+requests.post(f"{BASE}/api/send-test", headers=HEADERS, json={
+    "slug": slug,
+    "method": "POST",
+    "headers": {"content-type": "application/json"},
+    "body": '{"event": "test"}'
+})
+
+# List captured requests
+captured = requests.get(f"{BASE}/api/endpoints/{slug}/requests", headers=HEADERS).json()
+for req in captured:
+    print(f"{req['method']} {req['path']} — {req['receivedAt']}")
+```
+
+### Go
+
+```go
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+const (
+	base   = "https://webhooks.cc"
+	apiKey = "whcc_..."
+)
+
+func main() {
+	// Create endpoint
+	body, _ := json.Marshal(map[string]string{"name": "my-endpoint"})
+	req, _ := http.NewRequest("POST", base+"/api/endpoints", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, _ := http.DefaultClient.Do(req)
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+
+	var endpoint map[string]interface{}
+	json.Unmarshal(data, &endpoint)
+	fmt.Printf("Webhook URL: %s\n", endpoint["url"])
+
+	// List requests
+	slug := endpoint["slug"].(string)
+	req, _ = http.NewRequest("GET", base+"/api/endpoints/"+slug+"/requests", nil)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, _ = http.DefaultClient.Do(req)
+	defer resp.Body.Close()
+	data, _ = io.ReadAll(resp.Body)
+
+	var requests []map[string]interface{}
+	json.Unmarshal(data, &requests)
+	for _, r := range requests {
+		fmt.Printf("%s %s\n", r["method"], r["path"])
+	}
+}
+```
+
+### Ruby
+
+```ruby
+require "net/http"
+require "json"
+require "uri"
+
+API_KEY = "whcc_..."
+BASE = "https://webhooks.cc"
+
+def api_request(method, path, body = nil)
+  uri = URI("#{BASE}#{path}")
+  req = case method
+        when :get    then Net::HTTP::Get.new(uri)
+        when :post   then Net::HTTP::Post.new(uri)
+        when :delete then Net::HTTP::Delete.new(uri)
+        end
+  req["Authorization"] = "Bearer #{API_KEY}"
+  req["Content-Type"] = "application/json"
+  req.body = body.to_json if body
+
+  res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
+  JSON.parse(res.body)
+end
+
+# Create endpoint
+endpoint = api_request(:post, "/api/endpoints", { name: "my-endpoint" })
+slug = endpoint["slug"]
+puts "Webhook URL: #{endpoint['url']}"
+
+# Send a test webhook
+api_request(:post, "/api/send-test", {
+  slug: slug,
+  method: "POST",
+  headers: { "content-type" => "application/json" },
+  body: '{"event": "test"}'
+})
+
+# List captured requests
+requests = api_request(:get, "/api/endpoints/#{slug}/requests")
+requests.each do |req|
+  puts "#{req['method']} #{req['path']} — #{req['receivedAt']}"
+end
+```
+
+### Rust
+
+```rust
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use serde_json::{json, Value};
+
+const BASE: &str = "https://webhooks.cc";
+const API_KEY: &str = "whcc_...";
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {API_KEY}"))?);
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    // Create endpoint
+    let endpoint: Value = client
+        .post(format!("{BASE}/api/endpoints"))
+        .headers(headers.clone())
+        .json(&json!({"name": "my-endpoint"}))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let slug = endpoint["slug"].as_str().unwrap();
+    println!("Webhook URL: {}", endpoint["url"]);
+
+    // Send a test webhook
+    client
+        .post(format!("{BASE}/api/send-test"))
+        .headers(headers.clone())
+        .json(&json!({
+            "slug": slug,
+            "method": "POST",
+            "headers": {"content-type": "application/json"},
+            "body": r#"{"event": "test"}"#
+        }))
+        .send()
+        .await?;
+
+    // List captured requests
+    let requests: Vec<Value> = client
+        .get(format!("{BASE}/api/endpoints/{slug}/requests"))
+        .headers(headers)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    for req in &requests {
+        println!("{} {}", req["method"], req["path"]);
+    }
+
+    Ok(())
+}
+```
+
+## Next steps
+
+<LinkCard
+  href="/docs/sdk/api"
+  title="TypeScript SDK reference"
+  description="Full method reference for the @webhooks-cc/sdk package."
+/>
+
+<LinkCard
+  href="/docs/plans-limits"
+  title="Plans & Limits"
+  description="Request quotas, billing periods, and plan details."
+/>

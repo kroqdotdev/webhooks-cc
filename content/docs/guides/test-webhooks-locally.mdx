@@ -225,7 +225,7 @@ whk tunnel 3000 -e
 
 The three methods use different parts of the webhooks.cc infrastructure:
 
-**Capture and replay** -- The Rust receiver captures incoming requests in under 1ms and buffers them in Redis. Requests are flushed to the Convex database, where the dashboard displays them in real-time via reactive queries. Replay re-sends the stored request data to your target URL.
+**Capture and replay** -- The Rust receiver captures incoming requests in under 1ms and writes them directly to Postgres via a single stored procedure. The dashboard displays them in real-time via Supabase Realtime (postgres_changes). Replay re-sends the stored request data to your target URL.
 
 **sendTo** -- The SDK sends the request directly from your machine to your localhost URL. When you specify a provider, the SDK computes the correct cryptographic signature (HMAC-SHA256 for most providers, Ed25519 for Discord) and includes the provider-specific headers. No intermediary server is involved.
 

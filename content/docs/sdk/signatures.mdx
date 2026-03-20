@@ -9,12 +9,12 @@ keywords:
   ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
 seo:
   ogTitle: "Webhook Signature Verification — webhooks.cc SDK"
-  ogDescription: "Verify webhook signatures for 12 providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, and token comparison."
+  ogDescription: "Verify webhook signatures for 13 providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, and token comparison."
 ---
 
 ## Overview
 
-Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 12 providers, plus a generic `verifySignature` that dispatches by provider name.
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 13 providers (12 with cryptographic verification, plus SendGrid which uses IP allowlisting), plus a generic `verifySignature` that dispatches by provider name.
 
 Generic verifier (works with any supported provider):
 

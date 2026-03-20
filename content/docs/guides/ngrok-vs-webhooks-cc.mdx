@@ -23,8 +23,8 @@ This comparison covers where each tool fits, where they overlap, and when you sh
 | Expose localhost to internet   | Yes (CLI tunnel)                                  | Yes (core feature)                    |
 | Webhook capture and inspection | Yes (full request details, split-pane dashboard)  | Limited (ngrok inspect, general HTTP) |
 | Mock responses                 | Yes (configurable per endpoint)                   | No                                    |
-| Provider signature signing     | Yes (11 providers: Stripe, GitHub, Shopify, etc.) | No                                    |
-| Signature verification         | Yes (SDK, 12 providers)                           | No                                    |
+| Provider signature signing     | Yes (13 providers: Stripe, GitHub, Shopify, etc.) | No                                    |
+| Signature verification         | Yes (SDK, 13 providers)                           | No                                    |
 | Request replay                 | Yes (to any URL, from dashboard or SDK)           | Yes (ngrok inspect)                   |
 | Real-time dashboard            | Yes                                               | Yes (ngrok inspect)                   |
 | CI/CD integration              | Yes (SDK + testing utilities, no tunnel needed)   | Limited (requires running tunnel)     |
@@ -85,7 +85,7 @@ ngrok does not offer programmatic testing tools. To test webhooks with ngrok, yo
 
 ## Signing and verification
 
-webhooks.cc signs payloads for 11 providers so your handler's signature verification works during testing without modification. The signing happens locally in the SDK -- no request to external servers.
+webhooks.cc includes 13 provider templates so your handler's signature verification works during testing without modification. The signing happens locally in the SDK -- no request to external servers.
 
 Supported providers and their signing algorithms:
 
@@ -115,7 +115,7 @@ Both tools offer free tiers with different trade-offs.
 
 **webhooks.cc:**
 
-- Free: 50 requests/day, unlimited endpoints, all features including signing and verification
+- Free: 50 requests/day, unlimited endpoints that never expire, all features including signing and verification
 - Pro: $8/month, 100,000 requests/month
 
 **ngrok:**
@@ -156,7 +156,7 @@ For webhook development specifically, webhooks.cc's free tier covers most indivi
 <FAQ>
 <FAQItem question="Is webhooks.cc a drop-in replacement for ngrok?">
 
-Not entirely. ngrok handles all HTTP and TCP traffic -- web pages, APIs, WebSockets, arbitrary TCP connections. webhooks.cc focuses on webhooks: capture, signing, verification, replay, and testing. For webhook development specifically, webhooks.cc offers more than ngrok (signing, SDK, CI integration). For general localhost exposure, ngrok covers more ground. The two tools complement each other well.
+Not entirely. ngrok handles all HTTP and TCP traffic -- web pages, APIs, WebSockets, arbitrary TCP connections. webhooks.cc focuses on webhooks: capture, signing, verification, replay, and testing. For general localhost exposure, ngrok covers more ground. For webhook-specific workflows (signing, SDK, CI integration), webhooks.cc covers more ground. The two tools complement each other.
 
 </FAQItem>
 <FAQItem question="Can I use ngrok with webhooks.cc?">
@@ -166,12 +166,12 @@ Yes. A common pattern: point your webhook provider at a webhooks.cc endpoint for
 </FAQItem>
 <FAQItem question="Which is better for CI/CD?">
 
-webhooks.cc. The SDK sends signed webhooks directly to your handler -- no tunnel needed in CI. Tests are deterministic (you control the payload), fast (no network round-trip to an external provider), and self-contained (no tunnel process to manage). With ngrok, CI tests require starting a tunnel, configuring an external provider, and triggering real events, which adds complexity, latency, and flakiness.
+For webhook testing, webhooks.cc -- the SDK sends signed webhooks directly to your handler without a tunnel. Tests are deterministic (you control the payload), fast (no network round-trip to a provider), and self-contained (no tunnel process to manage). ngrok does not provide CI/CD testing utilities, so webhook tests require starting a tunnel, configuring a provider, and triggering real events.
 
 </FAQItem>
 <FAQItem question="Which has a better free tier?">
 
-Depends on what you need. webhooks.cc's free tier includes 50 requests/day with all features: signing, verification, SDK access, replay, and MCP. ngrok's free tier gives you a tunnel with random URLs and connection limits. For webhook testing, webhooks.cc's free tier is more useful. For general localhost exposure, ngrok's free tier works but has tighter usage restrictions.
+Depends on what you need. webhooks.cc's free tier includes 50 requests/day with all features: signing, verification, SDK access, replay, and MCP. ngrok's free tier provides a tunnel with random URLs and connection limits. If you need webhook-specific features (signing, SDK, replay), webhooks.cc's free tier covers that. If you need general localhost exposure, ngrok's free tier covers that.
 
 </FAQItem>
 </FAQ>

@@ -1,6 +1,6 @@
 ---
 title: "Provider Template Reference"
-description: "Detailed reference for all 12 webhook provider templates. Payload shapes, signature methods, headers, and event types for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, and GitLab."
+description: "Detailed reference for all 13 webhook provider templates. Payload shapes, signature methods, headers, and event types for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, and Standard Webhooks."
 section: dashboard
 order: 3
 lastUpdated: 2026-03-20
@@ -24,7 +24,7 @@ keywords:
   ]
 seo:
   ogTitle: "Webhook Provider Template Reference — webhooks.cc"
-  ogDescription: "Payload shapes, signature methods, and event types for all 12 supported webhook provider templates in webhooks.cc."
+  ogDescription: "Payload shapes, signature methods, and event types for all 13 supported webhook provider templates in webhooks.cc."
 ---
 
 Templates generate realistic payloads with correct headers and signatures. Use them from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
@@ -355,3 +355,33 @@ Templates generate realistic payloads with correct headers and signatures. Use t
 ```
 
 **Headers:** `x-gitlab-token`, `x-gitlab-event` (`Push Hook` or `Merge Request Hook`)
+
+---
+
+## Standard Webhooks
+
+**Signature:** HMAC-SHA256 over `{msgId}.{timestamp}.{body}`, base64-encoded in `webhook-signature` header. Used by Polar.sh, Svix, Resend, Liveblocks, and Novu.
+
+| Event                 | Description            |
+| --------------------- | ---------------------- |
+| `order.created`       | New order placed       |
+| `invoice.paid`        | Invoice paid           |
+| `subscription.active` | Subscription activated |
+
+**Payload shape:**
+
+```json
+{
+  "type": "order.created",
+  "timestamp": "2026-03-20T12:00:00Z",
+  "data": {
+    "id": "ord_...",
+    "customer_id": "cust_...",
+    "amount": "49.00",
+    "currency": "usd",
+    "status": "completed"
+  }
+}
+```
+
+**Headers:** `webhook-id`, `webhook-timestamp`, `webhook-signature`

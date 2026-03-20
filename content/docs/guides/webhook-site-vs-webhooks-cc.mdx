@@ -1,0 +1,166 @@
+---
+title: "Webhook.site vs webhooks.cc"
+description: "Compare Webhook.site and webhooks.cc for webhook testing. Feature comparison, pricing, automation capabilities, and when to use each tool."
+section: guides
+order: 9
+lastUpdated: 2026-03-20
+schema: faq
+keywords:
+  [
+    "Webhook.site vs webhooks.cc",
+    "Webhook.site alternative",
+    "webhook testing tools",
+    "webhook inspection",
+  ]
+seo:
+  ogTitle: "Webhook.site vs webhooks.cc — Webhook Testing Comparison"
+  ogDescription: "Compare Webhook.site and webhooks.cc for webhook development and testing. Feature comparison, pricing, automation, and use cases."
+---
+
+Webhook.site and webhooks.cc both capture and inspect incoming webhooks. Beyond that core overlap, they are different products built for different workflows. Webhook.site has evolved into a low-code automation platform with 40+ Custom Actions, email/DNS testing, scheduled requests, and built-in databases. webhooks.cc focuses on developer tooling: a TypeScript SDK for CI/CD testing, a standalone CLI, provider-specific signing, and an MCP server for AI agents.
+
+This comparison covers where each tool fits, what each does well, and when you should use one over the other.
+
+## Feature comparison
+
+| Feature                         | webhooks.cc                                  | Webhook.site                                |
+| ------------------------------- | -------------------------------------------- | ------------------------------------------- |
+| Webhook capture and inspection  | Yes (real-time dashboard, split-pane viewer) | Yes (real-time, WebSocket updates)          |
+| Mock responses                  | Yes (status, headers, body, delay)           | Yes (status, body, content type, delay)     |
+| Request forwarding to localhost | Yes (CLI tunnel, standalone Go binary)       | Yes (CLI + browser-based XHR redirect)      |
+| Custom Actions / automation     | No                                           | Yes (40+ actions, visual workflow builder)  |
+| Provider templates              | Yes (13 providers with signing)              | No                                          |
+| Signature verification          | Yes (SDK, 13 providers)                      | No                                          |
+| TypeScript SDK                  | Yes (typed client, matchers, test helpers)   | No (REST API only)                          |
+| MCP server for AI agents        | Yes                                          | No                                          |
+| CI/CD testing utilities         | Yes (sendTo, withEndpoint, captureDuring)    | No                                          |
+| Request replay                  | Yes (to any URL, from dashboard or SDK)      | Yes                                         |
+| Email testing                   | No                                           | Yes (DKIM/SPF validation, attachments)      |
+| DNS testing                     | No                                           | Yes (DNSHook, dynamic DNS responses)        |
+| Scheduled requests              | No                                           | Yes (cron-like schedules)                   |
+| Built-in databases              | No                                           | Yes (Pro/Enterprise)                        |
+| OpenAPI mock server             | No                                           | Yes (upload spec, auto-mock)                |
+| Custom scripting                | No                                           | Yes (WebhookScript + JavaScript actions)    |
+| Search and filtering            | Yes (full-text search)                       | Yes (boolean query language, field filters) |
+| Export                          | Yes (JSON, CSV, HAR, cURL)                   | Yes (CSV)                                   |
+| Custom domains                  | No                                           | Yes (Enterprise)                            |
+| Multi-user / SSO                | No                                           | Yes (Enterprise, SAML 2.0)                  |
+| Self-hosted option              | No                                           | Yes (MIT-licensed, limited features)        |
+| Endpoint expiry (logged-in)     | Never (persist until deleted)                | 7 days (free), never (paid)                 |
+| Ephemeral endpoints             | Yes (12hr, no signup)                        | Yes (7 days, no signup)                     |
+| Real-time SSE streaming API     | Yes                                          | No (WebSocket in browser only)              |
+
+## Where Webhook.site is stronger
+
+**Custom Actions.** This is Webhook.site's headline feature and has no equivalent in webhooks.cc. Custom Actions are a visual workflow builder that chains operations on every incoming request: extract JSON fields, forward to other services, query databases, send emails, write to S3, post to Slack/Discord, generate PDFs, resize images, and more. If you need webhook-triggered automation without writing code, Custom Actions are genuinely powerful.
+
+**Email and DNS testing.** Each Webhook.site URL also receives emails (at `@emailhook.site`) and DNS queries (at `dnshook.site`). Email capture includes DKIM/SPF validation and attachment handling. DNS capture supports dynamic responses. webhooks.cc handles HTTP webhooks only.
+
+**Scheduled requests.** Webhook.site can send HTTP requests on a cron schedule -- useful for uptime monitoring, cache warming, or periodic data pulls. webhooks.cc does not have scheduled requests.
+
+**OpenAPI mock server.** Upload an OpenAPI/Swagger spec and Webhook.site auto-generates mock responses matching your schema. webhooks.cc has static mock responses only.
+
+**Enterprise features.** Custom domains with SSL, multi-user access with roles, SAML 2.0 SSO, and larger request history (up to 100K). webhooks.cc does not have team or enterprise features yet.
+
+**Search query language.** Webhook.site supports field-specific boolean queries (`method:POST AND headers.user-agent:"Stripe"`, date ranges, existence checks). webhooks.cc has full-text search but not structured boolean queries.
+
+**Self-hosted option.** Webhook.site has an MIT-licensed open-source version (PHP/Laravel + Redis) you can run on your own infrastructure, though it lacks Custom Actions and premium features.
+
+## Where webhooks.cc is stronger
+
+**Developer tooling for testing.** The TypeScript SDK provides `sendTo` (send signed webhooks directly to localhost), `waitFor` (poll for matching requests), `withEndpoint` (temporary endpoint lifecycle), and `captureDuring` (capture multiple webhooks from a single action). These are purpose-built for CI/CD webhook testing. Webhook.site has no SDK.
+
+**Provider-specific signing.** webhooks.cc generates valid cryptographic signatures for 13 providers (Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Standard Webhooks). Your handler's signature verification works without modification during testing. Webhook.site does not generate provider signatures.
+
+**MCP server for AI agents.** The `@webhooks-cc/mcp` package lets AI coding agents (Claude Code, Cursor, VS Code Copilot) create endpoints, send webhooks, inspect requests, and replay -- all from within the agent's workflow. Webhook.site has no AI agent integration.
+
+**CLI as a standalone binary.** webhooks.cc's CLI (`whk`) is a Go binary with device auth, self-update, and no runtime dependencies. Webhook.site's CLI (`whcli`) requires Node.js.
+
+**Deterministic CI/CD testing.** `sendTo` sends signed webhooks directly to your handler without routing through any external service. Tests are fast, offline-capable, and deterministic. With Webhook.site, CI/CD testing requires the running service and has no built-in assertion or polling utilities.
+
+**Real-time SSE streaming API.** The SDK provides an async iterator over incoming requests via SSE, useful for building custom integrations. Webhook.site uses WebSocket for browser-based real-time updates but does not expose a programmatic streaming API.
+
+## Pricing
+
+**webhooks.cc:**
+
+- Free: 50 requests per 24-hour window, unlimited endpoints that never expire, all features
+- Pro: $8/month, 100,000 requests per 30 days
+
+**Webhook.site:**
+
+- Free: ~50 requests per URL, 7-day URL expiry, no Custom Actions, no forwarding, no API
+- Basic: $9/month, 1,000 requests, 1 URL, Custom Actions, CLI forwarding
+- Pro: $18/month, 10,000 requests, unlimited URLs, databases, schedules
+- Enterprise: $69/month, 100,000 requests, custom domains, SSO, multi-user
+
+webhooks.cc includes all features on every tier -- the only difference between Free and Pro is the request quota. Endpoint URLs never expire on either plan. Webhook.site gates features by tier: Custom Actions, CLI forwarding, CSV export, and API access all require a paid plan, and free URLs expire after 7 days.
+
+## When to use each
+
+**Use webhooks.cc when:**
+
+- You need webhook-specific testing in CI/CD with signed provider payloads
+- You want deterministic tests without external service dependencies
+- You want a TypeScript SDK with matchers, polling, and test lifecycle helpers
+- You want an AI agent to interact with webhooks via MCP
+- You want all features available on the free tier
+
+**Use Webhook.site when:**
+
+- You need visual workflow automation triggered by webhooks (Custom Actions)
+- You need email or DNS testing alongside HTTP webhooks
+- You need scheduled HTTP requests (cron jobs)
+- You want an OpenAPI mock server
+- You need enterprise features: custom domains, SSO, multi-user access
+- You want a self-hosted option
+
+**Use both when:**
+
+- You use Webhook.site's Custom Actions for prototyping webhook workflows, then switch to webhooks.cc's SDK for deterministic CI/CD tests
+- You need email testing (Webhook.site) alongside webhook capture and signing (webhooks.cc)
+
+## FAQ
+
+<FAQ>
+<FAQItem question="Is webhooks.cc a drop-in replacement for Webhook.site?">
+
+For basic webhook inspection, yes. For Custom Actions, email/DNS testing, scheduled requests, or enterprise features, no. webhooks.cc focuses on developer tooling (SDK, CLI, MCP, provider signing) while Webhook.site focuses on low-code automation. They solve overlapping but distinct problems.
+
+</FAQItem>
+<FAQItem question="Which has a better free tier?">
+
+For developers testing webhooks, webhooks.cc's free tier is more useful: all features are available, including signing, forwarding, replay, SDK access, and MCP. Webhook.site's free tier is more restrictive -- no Custom Actions, no CLI forwarding, no API access, and URLs expire after 7 days. However, Webhook.site's free tier captures emails and DNS queries, which webhooks.cc does not support at all.
+
+</FAQItem>
+<FAQItem question="Which is better for CI/CD?">
+
+webhooks.cc. The SDK provides `sendTo` for sending signed webhooks directly to your handler, `waitFor` for polling, and `withEndpoint` for automatic cleanup. Tests run against localhost with deterministic payloads -- no external service dependency, no network round-trip. Webhook.site has no CI/CD testing utilities.
+
+</FAQItem>
+<FAQItem question="Which has better automation capabilities?">
+
+Webhook.site, by a wide margin. Custom Actions provide 40+ built-in operations: HTTP forwarding, database queries, S3 storage, Slack/Discord notifications, PDF generation, spreadsheet integration, and more. webhooks.cc has mock responses and request forwarding but no workflow automation.
+
+</FAQItem>
+</FAQ>
+
+## Next steps
+
+<LinkCard
+  href="/docs/guides/webhook-testing-tools"
+  title="Webhook Testing Tools Compared"
+  description="Compare webhooks.cc, ngrok, RequestBin, Hookdeck, Svix, and more."
+/>
+
+<LinkCard
+  href="/docs/sdk/testing"
+  title="Testing with the SDK"
+  description="CI/CD integration patterns and test utilities for webhook handlers."
+/>
+
+<LinkCard
+  href="/docs/guides/test-webhooks-locally"
+  title="Test Webhooks Locally"
+  description="Three methods for testing webhooks on localhost: capture and replay, signed payloads, and real-time tunneling."
+/>
