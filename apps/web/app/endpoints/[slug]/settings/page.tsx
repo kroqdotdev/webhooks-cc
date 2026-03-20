@@ -17,6 +17,7 @@ import {
   type DashboardEndpoint,
   updateDashboardEndpoint,
 } from "@/lib/dashboard-api";
+import { trackEndpointDeleted, trackEndpointSaved } from "@/lib/analytics";
 import {
   Dialog,
   DialogContent,
@@ -128,6 +129,15 @@ function EndpointSettingsForm() {
             }
           : null,
       });
+      trackEndpointSaved(
+        {
+          name: endpoint.name || "",
+          mockStatus: endpoint.mockResponse?.status?.toString() || "200",
+          mockBody: endpoint.mockResponse?.body || "",
+        },
+        { name, mockStatus, mockBody }
+      );
+
       router.push(`/dashboard?endpoint=${slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -146,6 +156,7 @@ function EndpointSettingsForm() {
       }
 
       await deleteDashboardEndpoint(accessToken, slug);
+      trackEndpointDeleted();
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete");

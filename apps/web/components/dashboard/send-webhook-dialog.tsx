@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Send } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
+import { trackTestWebhookSent } from "@/lib/analytics";
 import {
   buildTemplateRequest,
   getDefaultTemplateId,
@@ -184,6 +185,7 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
 
       setStatus("sent");
       setStatusText(`${result.status} ${result.statusText}`.trim());
+      trackTestWebhookSent(isTemplateMode ? mode : "manual", result.status);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       setStatus("error");
