@@ -23,7 +23,7 @@ This comparison covers where each tool fits, where they overlap, and when you sh
 | Expose localhost to internet   | Yes (CLI tunnel)                                  | Yes (core feature)                    |
 | Webhook capture and inspection | Yes (full request details, split-pane dashboard)  | Limited (ngrok inspect, general HTTP) |
 | Mock responses                 | Yes (configurable per endpoint)                   | No                                    |
-| Provider signature signing     | Yes (13 providers: Stripe, GitHub, Shopify, etc.) | No                                    |
+| Provider signature signing     | Yes (11 providers: Stripe, GitHub, Shopify, etc.) | No                                    |
 | Signature verification         | Yes (SDK, 12 providers)                           | No                                    |
 | Request replay                 | Yes (to any URL, from dashboard or SDK)           | Yes (ngrok inspect)                   |
 | Real-time dashboard            | Yes                                               | Yes (ngrok inspect)                   |
@@ -85,7 +85,7 @@ ngrok does not offer programmatic testing tools. To test webhooks with ngrok, yo
 
 ## Signing and verification
 
-webhooks.cc signs payloads for 13 providers so your handler's signature verification works during testing without modification. The signing happens locally in the SDK -- no request to external servers.
+webhooks.cc signs payloads for 11 providers so your handler's signature verification works during testing without modification. The signing happens locally in the SDK -- no request to external servers.
 
 Supported providers and their signing algorithms:
 

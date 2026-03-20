@@ -539,6 +539,12 @@ export async function verifySignature(
     );
   }
 
+  if (options.provider === "sendgrid") {
+    throw new Error(
+      "SendGrid does not use signature verification. SendGrid webhooks are verified via IP allowlisting."
+    );
+  }
+
   if (options.provider === "discord") {
     valid = await verifyDiscordSignature(request.body, request.headers, options.publicKey);
   }

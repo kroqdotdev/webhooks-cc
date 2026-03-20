@@ -28,7 +28,7 @@ This comparison covers the most popular options, what each does well, and where 
 | **Capture**        | Real-time      | Basic       | ✓          | ✓            | Filtered   | Outgoing     | ✓          |
 | **Mock responses** | ✓ Configurable | ✗           | Limited    | Paid         | Transforms | ✗            | Rules      |
 | **Forwarding**     | ✓ CLI tunnel   | ✓ Any proto | ✗          | Paid         | ✓ CLI      | ✗            | Paid       |
-| **Signing**        | ✓ 13 providers | ✗           | ✗          | ✗            | ✗          | Std Webhooks | ✗          |
+| **Signing**        | ✓ 11 providers | ✗           | ✗          | ✗            | ✗          | Std Webhooks | ✗          |
 | **CI/CD SDK**      | ✓ TypeScript   | ✗           | ✗          | ✗            | REST API   | Multi-lang   | ✗          |
 | **Free tier**      | 50 req/day     | Limited     | Free       | Limited      | 100K/mo    | Self-host    | 50 req/day |
 
@@ -37,7 +37,7 @@ This comparison covers the most popular options, what each does well, and where 
 <Tabs>
 <Tab label="webhooks.cc">
 
-Webhook-specific development and testing platform. Captures incoming webhooks, signs outbound test payloads for 13 providers, verifies signatures, and provides a TypeScript SDK for CI/CD. The Rust receiver captures requests in under 1ms.
+Webhook-specific development and testing platform. Captures incoming webhooks, signs outbound test payloads for 11 providers, verifies signatures, and provides a TypeScript SDK for CI/CD. The Rust receiver captures requests in under 1ms.
 
 The `sendTo` method sends signed webhooks directly to any URL — including localhost — without a tunnel. Tests are fast, deterministic, and independent of external services.
 

@@ -801,7 +801,7 @@ function buildTemplatePayload(
           },
           object: "event",
           type: "user.created",
-          timestamp: nowSec,
+          timestamp: nowSec * 1000,
         },
         "user.updated": {
           data: {
@@ -821,7 +821,7 @@ function buildTemplatePayload(
           },
           object: "event",
           type: "user.updated",
-          timestamp: nowSec,
+          timestamp: nowSec * 1000,
         },
         "user.deleted": {
           data: {
@@ -831,7 +831,7 @@ function buildTemplatePayload(
           },
           object: "event",
           type: "user.deleted",
-          timestamp: nowSec,
+          timestamp: nowSec * 1000,
         },
         "session.created": {
           data: {
@@ -845,7 +845,7 @@ function buildTemplatePayload(
           },
           object: "event",
           type: "session.created",
-          timestamp: nowSec,
+          timestamp: nowSec * 1000,
         },
       };
 
@@ -862,17 +862,26 @@ function buildTemplatePayload(
 
     if (provider === "vercel") {
       const deploymentId = `dpl_${randomHex(20)}`;
+      const projectId = `prj_${randomHex(20)}`;
+      const teamId = `team_${randomHex(20)}`;
       const payloadByTemplate: Record<string, unknown> = {
         "deployment.created": {
           id: randomUuid(),
           type: "deployment.created",
           createdAt: nowSec * 1000,
           payload: {
-            deploymentId,
-            name: "my-app",
-            url: `my-app-${randomHex(8)}.vercel.app`,
-            project: { id: `prj_${randomHex(20)}`, name: "my-app" },
-            target: "production",
+            deployment: {
+              id: deploymentId,
+              name: "webhooks-cc-web",
+              url: `webhooks-cc-web-${randomHex(8)}.vercel.app`,
+              meta: {
+                githubCommitRef: "main",
+                githubCommitSha: randomHex(40),
+                githubCommitMessage: "Update webhook templates",
+              },
+            },
+            project: { id: projectId, name: "webhooks-cc-web" },
+            team: { id: teamId, name: "webhooks-cc" },
           },
         },
         "deployment.succeeded": {
@@ -880,11 +889,14 @@ function buildTemplatePayload(
           type: "deployment.succeeded",
           createdAt: nowSec * 1000,
           payload: {
-            deploymentId,
-            name: "my-app",
-            url: `my-app-${randomHex(8)}.vercel.app`,
-            project: { id: `prj_${randomHex(20)}`, name: "my-app" },
-            target: "production",
+            deployment: {
+              id: deploymentId,
+              name: "webhooks-cc-web",
+              url: `webhooks-cc-web-${randomHex(8)}.vercel.app`,
+              readyState: "READY",
+            },
+            project: { id: projectId, name: "webhooks-cc-web" },
+            team: { id: teamId, name: "webhooks-cc" },
           },
         },
         "deployment.error": {
@@ -892,12 +904,15 @@ function buildTemplatePayload(
           type: "deployment.error",
           createdAt: nowSec * 1000,
           payload: {
-            deploymentId,
-            name: "my-app",
-            url: `my-app-${randomHex(8)}.vercel.app`,
-            project: { id: `prj_${randomHex(20)}`, name: "my-app" },
-            target: "production",
-            error: { message: "Build failed: exit code 1", code: "BUILD_FAILED" },
+            deployment: {
+              id: deploymentId,
+              name: "webhooks-cc-web",
+              url: `webhooks-cc-web-${randomHex(8)}.vercel.app`,
+              readyState: "ERROR",
+              errorMessage: "Build failed: exit code 1",
+            },
+            project: { id: projectId, name: "webhooks-cc-web" },
+            team: { id: teamId, name: "webhooks-cc" },
           },
         },
       };

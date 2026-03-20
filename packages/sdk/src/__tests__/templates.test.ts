@@ -1026,9 +1026,12 @@ describe("Vercel templates", () => {
 
         expect(body).toHaveProperty("payload");
         const payload = body.payload as Record<string, unknown>;
-        expect(payload).toHaveProperty("deploymentId");
-        expect(payload).toHaveProperty("name");
+        expect(payload).toHaveProperty("deployment");
         expect(payload).toHaveProperty("project");
+        expect(payload).toHaveProperty("team");
+        const deployment = payload.deployment as Record<string, unknown>;
+        expect(deployment).toHaveProperty("id");
+        expect(deployment).toHaveProperty("name");
       });
 
       it("has x-vercel-signature header", async () => {
@@ -1063,10 +1066,9 @@ describe("Vercel templates", () => {
     });
     const body = parseBody(result.body!) as Record<string, unknown>;
     const payload = body.payload as Record<string, unknown>;
-    expect(payload).toHaveProperty("error");
-    const error = payload.error as Record<string, unknown>;
-    expect(error).toHaveProperty("message");
-    expect(error).toHaveProperty("code");
+    const deployment = payload.deployment as Record<string, unknown>;
+    expect(deployment).toHaveProperty("readyState", "ERROR");
+    expect(deployment).toHaveProperty("errorMessage");
   });
 });
 

@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Offset anchor scroll targets so they clear the fixed navbar */
+html {
+  scroll-padding-top: 6rem;
+}
+
 @theme {
   /* Font families */
   --font-sans: var(--font-sans), system-ui, sans-serif;

@@ -197,7 +197,7 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
 
       setStatus("sent");
       setStatusText(`${result.status ?? ""} ${result.statusText ?? ""}`.trim());
-      trackTestWebhookSent(isTemplateMode ? mode : "manual", result.status);
+      trackTestWebhookSent(isTemplateMode ? mode : "manual", result.status as number);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       setStatus("error");
