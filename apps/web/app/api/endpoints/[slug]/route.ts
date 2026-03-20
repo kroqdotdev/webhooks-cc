@@ -67,6 +67,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         }
       }
     }
+    if (
+      mr.delay !== undefined &&
+      (typeof mr.delay !== "number" ||
+        !Number.isInteger(mr.delay) ||
+        mr.delay < 0 ||
+        mr.delay > 30000)
+    ) {
+      return Response.json({ error: "Invalid delay: must be 0-30000ms" }, { status: 400 });
+    }
   }
 
   try {

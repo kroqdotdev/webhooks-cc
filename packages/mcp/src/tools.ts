@@ -53,6 +53,13 @@ const mockResponseSchema = z.object({
   status: z.number().int().min(100).max(599).describe("HTTP status code (100-599)"),
   body: z.string().default("").describe("Response body string (default: empty)"),
   headers: z.record(z.string()).default({}).describe("Response headers (default: none)"),
+  delay: z
+    .number()
+    .int()
+    .min(0)
+    .max(30000)
+    .optional()
+    .describe("Response delay in milliseconds (0-30000, default: none)"),
 });
 
 type TextContent = { type: "text"; text: string };

@@ -64,6 +64,7 @@ interface EndpointSettingsDialogProps {
     status: number;
     body: string;
     headers: Record<string, string>;
+    delay?: number;
   };
 }
 
@@ -76,6 +77,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [name, setName] = useState(endpointName);
   const [mockStatus, setMockStatus] = useState(mockResponse?.status?.toString() || "200");
   const [mockBody, setMockBody] = useState(mockResponse?.body || "");
+  const [mockDelay, setMockDelay] = useState(mockResponse?.delay?.toString() || "");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -88,6 +90,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setName(endpointName);
       setMockStatus(mockResponse?.status?.toString() || "200");
       setMockBody(mockResponse?.body || "");
+      setMockDelay(mockResponse?.delay?.toString() || "");
       setError(null);
       setConfirmDelete(false);
     }
@@ -104,7 +107,8 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
         throw new Error("Not authenticated");
       }
 
-      const hasCustomMock = mockBody || mockStatus !== "200";
+      const delayMs = mockDelay ? parseInt(mockDelay, 10) : undefined;
+      const hasCustomMock = mockBody || mockStatus !== "200" || (delayMs && delayMs > 0);
       await updateDashboardEndpoint(accessToken, slug, {
         name: name || undefined,
         mockResponse: hasCustomMock
@@ -112,6 +116,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               status: parseStatusCode(mockStatus, 200),
               body: mockBody,
               headers: mockResponse?.headers || {},
+              ...(delayMs && delayMs > 0 ? { delay: delayMs } : {}),
             }
           : null,
       });
@@ -224,6 +229,26 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               />
               <p className="text-xs text-muted-foreground">
                 Edit freely &mdash; the suggestion above is just a starting point.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="settings-delay" className="font-bold uppercase tracking-wide text-xs">
+                Response Delay (ms)
+              </Label>
+              <input
+                id="settings-delay"
+                type="number"
+                min="0"
+                max="30000"
+                step="100"
+                value={mockDelay}
+                onChange={(e) => setMockDelay(e.target.value)}
+                placeholder="0"
+                className="neo-input w-full text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Delay before sending the response (max 30s). Useful for testing timeouts.
               </p>
             </div>
           </div>

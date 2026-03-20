@@ -104,7 +104,12 @@ struct MockResponse {
     status: i64,
     body: String,
     headers: HashMap<String, String>,
+    #[serde(default)]
+    delay: Option<u64>,
 }
+
+/// Maximum allowed mock response delay (30 seconds).
+const MAX_DELAY_MS: u64 = 30_000;
 
 /// Build an HTTP response from a mock_response configuration.
 fn build_mock_response(mock: &MockResponse) -> Response {
@@ -246,6 +251,12 @@ async fn handle_webhook_inner(
             match capture.status.as_str() {
                 "ok" => {
                     if let Some(mock) = &capture.mock_response {
+                        if let Some(delay) = mock.delay {
+                            let capped = delay.min(MAX_DELAY_MS);
+                            if capped > 0 {
+                                tokio::time::sleep(std::time::Duration::from_millis(capped)).await;
+                            }
+                        }
                         build_mock_response(mock)
                     } else {
                         (StatusCode::OK, "OK").into_response()
@@ -390,6 +401,7 @@ mod tests {
                 ),
                 ("x-custom".to_string(), "allowed".to_string()),
             ]),
+            delay: None,
         };
 
         let response = build_mock_response(&mock);
@@ -414,6 +426,7 @@ mod tests {
                 ),
                 ("bad\r\nkey".to_string(), "value".to_string()),
             ]),
+            delay: None,
         };
 
         let response = build_mock_response(&mock);

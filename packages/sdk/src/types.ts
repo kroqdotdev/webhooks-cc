@@ -27,6 +27,8 @@ export interface MockResponse {
   body: string;
   /** Response headers */
   headers: Record<string, string>;
+  /** Response delay in milliseconds (0-30000). The receiver caps at 30s. */
+  delay?: number;
 }
 
 /**

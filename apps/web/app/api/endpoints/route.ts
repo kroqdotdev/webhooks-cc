@@ -77,6 +77,15 @@ export async function POST(request: Request) {
         return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
       }
     }
+    if (
+      mr.delay !== undefined &&
+      (typeof mr.delay !== "number" ||
+        !Number.isInteger(mr.delay) ||
+        mr.delay < 0 ||
+        mr.delay > 30000)
+    ) {
+      return Response.json({ error: "Invalid delay: must be 0-30000ms" }, { status: 400 });
+    }
   }
 
   const isEphemeral = body.isEphemeral === true || expiresAt !== undefined;

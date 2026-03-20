@@ -31,6 +31,7 @@ export interface EndpointRecord {
     status: number;
     body: string;
     headers: Record<string, string>;
+    delay?: number;
   };
   isEphemeral?: boolean;
   expiresAt?: number;
@@ -91,6 +92,12 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
             status: mockResponse.status,
             body: typeof mockResponse.body === "string" ? mockResponse.body : "",
             headers: normalizeMockHeaders(mockResponse.headers),
+            ...(typeof mockResponse.delay === "number" &&
+            Number.isInteger(mockResponse.delay) &&
+            mockResponse.delay > 0 &&
+            mockResponse.delay <= 30000
+              ? { delay: mockResponse.delay }
+              : {}),
           }
         : undefined,
     isEphemeral: row.is_ephemeral || undefined,

@@ -389,9 +389,12 @@ async function collectMatchingRequests(
 }
 
 function validateMockResponse(mockResponse: MockResponse, fieldName: string): void {
-  const { status } = mockResponse;
+  const { status, delay } = mockResponse;
   if (!Number.isInteger(status) || status < 100 || status > 599) {
     throw new Error(`Invalid ${fieldName} status: ${status}. Must be an integer 100-599.`);
+  }
+  if (delay !== undefined && (!Number.isInteger(delay) || delay < 0 || delay > 30000)) {
+    throw new Error(`Invalid ${fieldName} delay: ${delay}. Must be an integer 0-30000.`);
   }
 }
 
