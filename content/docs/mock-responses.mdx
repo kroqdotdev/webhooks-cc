@@ -1,21 +1,29 @@
 ---
 title: "Mock Responses"
-description: "Control what your endpoint returns to the sender. Set status codes, response headers, and body content to simulate real API behavior."
+description: "Control what your endpoint returns to the sender. Set status codes, response headers, body content, and response delay to simulate real API behavior."
 section: dashboard
 order: 4
 lastUpdated: 2026-03-10
 schema: none
-keywords: ["mock response", "webhook response", "status code", "simulate API"]
+keywords:
+  [
+    "mock response",
+    "webhook response",
+    "status code",
+    "simulate API",
+    "response delay",
+    "timeout testing",
+  ]
 seo:
   ogTitle: "Webhook Mock Responses Guide — webhooks.cc"
-  ogDescription: "Configure status codes, headers, and response bodies for webhook endpoints to simulate downstream APIs and test error handling."
+  ogDescription: "Configure status codes, headers, response bodies, and delays for webhook endpoints to simulate downstream APIs and test error handling."
 ---
 
 ## How it works
 
 By default, endpoints return `200 OK` with an empty body. Configure a mock response to change this behavior.
 
-When a webhook hits your endpoint, the receiver captures the request and returns your configured response. The sender sees your custom status code, headers, and body.
+When a webhook hits your endpoint, the receiver captures the request and returns your configured response. The request is stored in the database immediately — the sender then sees your custom status code, headers, and body after any configured delay.
 
 ## Configuration
 
@@ -24,11 +32,13 @@ Open endpoint settings (gear icon in the URL bar) to configure the mock response
 - **Status code** — any valid HTTP status (100-599). Common choices: 200, 201, 204, 400, 404, 500.
 - **Response headers** — key-value pairs sent back to the caller. Example: `Content-Type: application/json`
 - **Response body** — the content returned. Can be JSON, XML, plain text, or any other format.
+- **Response delay** — wait time in milliseconds before sending the response (0-30000). The request is captured instantly; only the response to the sender is delayed.
 
 ## Use cases
 
 - **Simulate success** — return 200 with a JSON body to satisfy webhook senders that expect confirmation
 - **Test error handling** — return 500 or 503 to verify your sender retries on failure
+- **Test timeout handling** — add a response delay to verify your sender handles slow responses correctly
 - **Validate signatures** — return the expected response format for services like Stripe that check the response
 
 ## Example
@@ -42,3 +52,18 @@ Headers:
 Body:
   {"received": true}
 ```
+
+## Response delay
+
+Set a delay (in milliseconds) to simulate slow API responses. This is useful for testing timeout and retry logic in your webhook sender.
+
+```
+Status: 200
+Delay: 5000
+Body:
+  {"received": true}
+```
+
+The request appears in the dashboard and SSE streams immediately. Only the HTTP response to the sender is delayed. Each request gets its own independent timer, so multiple concurrent requests are all handled in parallel.
+
+The maximum delay is 30 seconds (30000ms). Values above this are capped automatically.

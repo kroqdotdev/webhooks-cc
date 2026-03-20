@@ -78,11 +78,11 @@ update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
 
 <ParamTable>
 
-| Param          | Type             | Required | Description                                                          |
-| -------------- | ---------------- | -------- | -------------------------------------------------------------------- |
-| `slug`         | `string`         | yes      | Endpoint slug                                                        |
-| `name`         | `string`         | no       | New display name                                                     |
-| `mockResponse` | `object \| null` | no       | Mock response config `{ status, body, headers }`, or `null` to clear |
+| Param          | Type             | Required | Description                                                                  |
+| -------------- | ---------------- | -------- | ---------------------------------------------------------------------------- |
+| `slug`         | `string`         | yes      | Endpoint slug                                                                |
+| `name`         | `string`         | no       | New display name                                                             |
+| `mockResponse` | `object \| null` | no       | Mock response config `{ status, body, headers, delay? }`, or `null` to clear |
 
 </ParamTable>
 </ApiMethod>
