@@ -255,12 +255,8 @@ describe("signature verification", () => {
     });
 
     // Clerk uses Svix/Standard Webhooks headers
-    expect(
-      await verifyClerkSignature(built.body, built.headers, secret)
-    ).toBe(true);
-    expect(
-      await verifyClerkSignature(built.body, built.headers, "whsec_wrongsecret")
-    ).toBe(false);
+    expect(await verifyClerkSignature(built.body, built.headers, secret)).toBe(true);
+    expect(await verifyClerkSignature(built.body, built.headers, "whsec_wrongsecret")).toBe(false);
 
     // Also verify via the generic verifySignature dispatcher
     await expect(
@@ -312,7 +308,11 @@ describe("signature verification", () => {
     });
 
     expect(
-      await verifyGitLabSignature(built.body, built.headers["x-gitlab-token"], "gitlab_secret_token")
+      await verifyGitLabSignature(
+        built.body,
+        built.headers["x-gitlab-token"],
+        "gitlab_secret_token"
+      )
     ).toBe(true);
     expect(
       await verifyGitLabSignature(built.body, built.headers["x-gitlab-token"], "wrong_secret")

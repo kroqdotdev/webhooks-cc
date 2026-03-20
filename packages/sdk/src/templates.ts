@@ -6,7 +6,10 @@ import type {
 } from "./types";
 
 type TwilioParamEntry = [string, string];
-type SignedTemplateProvider = Exclude<TemplateProvider, "standard-webhooks" | "sendgrid" | "discord">;
+type SignedTemplateProvider = Exclude<
+  TemplateProvider,
+  "standard-webhooks" | "sendgrid" | "discord"
+>;
 
 const DEFAULT_TEMPLATE_BY_PROVIDER = {
   stripe: "payment_intent.succeeded",
@@ -1449,8 +1452,7 @@ export async function buildTemplateSendOptions(
 
   if (provider === "gitlab") {
     headers["x-gitlab-token"] = options.secret;
-    const gitlabEvent =
-      template === "merge_request" ? "Merge Request Hook" : "Push Hook";
+    const gitlabEvent = template === "merge_request" ? "Merge Request Hook" : "Push Hook";
     headers["x-gitlab-event"] = gitlabEvent;
   }
 

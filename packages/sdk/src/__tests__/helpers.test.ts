@@ -287,9 +287,9 @@ describe("isClerkWebhook", () => {
 
 describe("isVercelWebhook", () => {
   it("returns true when x-vercel-signature header is present", () => {
-    expect(
-      isVercelWebhook(makeRequest({ headers: { "x-vercel-signature": "abc123" } }))
-    ).toBe(true);
+    expect(isVercelWebhook(makeRequest({ headers: { "x-vercel-signature": "abc123" } }))).toBe(
+      true
+    );
   });
 
   it("returns false without x-vercel-signature header", () => {
@@ -299,15 +299,13 @@ describe("isVercelWebhook", () => {
 
 describe("isGitLabWebhook", () => {
   it("returns true when x-gitlab-event header is present", () => {
-    expect(
-      isGitLabWebhook(makeRequest({ headers: { "x-gitlab-event": "Push Hook" } }))
-    ).toBe(true);
+    expect(isGitLabWebhook(makeRequest({ headers: { "x-gitlab-event": "Push Hook" } }))).toBe(true);
   });
 
   it("returns true when x-gitlab-token header is present", () => {
-    expect(
-      isGitLabWebhook(makeRequest({ headers: { "x-gitlab-token": "my-secret-token" } }))
-    ).toBe(true);
+    expect(isGitLabWebhook(makeRequest({ headers: { "x-gitlab-token": "my-secret-token" } }))).toBe(
+      true
+    );
   });
 
   it("returns false without either header", () => {

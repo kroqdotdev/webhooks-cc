@@ -1636,8 +1636,7 @@ export async function buildTemplateRequest({
 
   if (provider === "gitlab") {
     headers["x-gitlab-token"] = secret;
-    const eventHookName =
-      preset.id === "merge_request" ? "Merge Request Hook" : "Push Hook";
+    const eventHookName = preset.id === "merge_request" ? "Merge Request Hook" : "Push Hook";
     headers["x-gitlab-event"] = eventHookName;
   }
 
