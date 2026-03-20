@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.9.2";
+export const APP_VERSION = "0.9.3";
 export const CLI_VERSION = "0.5.3";
 export const SDK_VERSION = "1.1.0";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.9.3",
+    date: "2026-03-21",
+    title: "Docs Expansion",
+    track: "web",
+    items: [
+      "REST API reference documentation page",
+      "Plans & limits documentation page",
+      "Webhook.site vs webhooks.cc comparison page",
+      "Docs navigation restructure and consistency improvements",
+    ],
+  },
   {
     version: "0.9.2",
     date: "2026-03-20",
