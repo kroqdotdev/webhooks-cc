@@ -179,16 +179,24 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      let result: Record<string, unknown> = {};
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch {
+        setStatus("error");
+        setStatusText(`Invalid response from server: ${text.slice(0, 100) || "(empty)"}`);
+        return;
+      }
 
       if (!response.ok) {
         setStatus("error");
-        setStatusText(result.error || `Proxy error: ${response.status}`);
+        setStatusText((result.error as string) || `Proxy error: ${response.status}`);
         return;
       }
 
       setStatus("sent");
-      setStatusText(`${result.status} ${result.statusText}`.trim());
+      setStatusText(`${result.status ?? ""} ${result.statusText ?? ""}`.trim());
       trackTestWebhookSent(isTemplateMode ? mode : "manual", result.status);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
