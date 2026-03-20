@@ -311,14 +311,20 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 The web app version and changelog live in `apps/web/lib/changelog.ts`. The changelog page is at `/changelog`, linked from the footer and account page.
 
-**When merging a PR to main**, update the changelog:
+The changelog has 4 tracks: `web`, `cli`, `sdk`, `mcp`. Each entry has a `track` field. Version constants: `APP_VERSION`, `CLI_VERSION`, `SDK_VERSION`, `MCP_VERSION`.
 
-1. **Bump the version** in `apps/web/lib/changelog.ts` (`APP_VERSION`) and `apps/web/package.json`:
-   - Patch bump (0.9.1 → 0.9.2): bug fixes, small features, doc updates
-   - Minor bump (0.9.x → 0.10.0): significant new features, new integrations
-   - Major bump: reserved for 1.0 launch
-2. **Add a new entry** to the top of the `CHANGELOG` array with version, date, title, and bullet points
-3. Keep entries concise — focus on user-facing changes, not internal refactors
+**When merging a PR to main** (web app changes):
+
+1. Bump `APP_VERSION` in `apps/web/lib/changelog.ts` and `version` in `apps/web/package.json`
+2. Add a new entry with `track: "web"` to the CHANGELOG array
+
+**When publishing a CLI release** (`v*` tag): bump `CLI_VERSION`, add entry with `track: "cli"`
+
+**When publishing an SDK release** (`sdk-v*` tag): bump `SDK_VERSION`, add entry with `track: "sdk"`
+
+**When publishing an MCP release** (`mcp-v*` tag): bump `MCP_VERSION`, add entry with `track: "mcp"`
+
+Keep entries concise — focus on user-facing changes, not internal refactors.
 
 ## Key Gotchas
 
