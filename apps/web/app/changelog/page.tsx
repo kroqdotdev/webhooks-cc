@@ -18,7 +18,9 @@ export default function ChangelogPage() {
   const [activeTrack, setActiveTrack] = useState<ChangelogTrack | "all">("all");
 
   const filtered =
-    activeTrack === "all" ? CHANGELOG : CHANGELOG.filter((e) => e.track === activeTrack);
+    activeTrack === "all"
+      ? [...CHANGELOG].sort((a, b) => b.date.localeCompare(a.date))
+      : CHANGELOG.filter((e) => e.track === activeTrack);
 
   return (
     <main className="min-h-screen bg-background">
