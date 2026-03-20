@@ -375,7 +375,18 @@ export async function verifyClerkSignature(
   headers: Record<string, string>,
   secret: string
 ): Promise<boolean> {
-  return verifyStandardWebhookSignature(body, headers, secret);
+  // Clerk sends both svix-* and webhook-* headers via Svix. Normalize
+  // svix-* to webhook-* so verifyStandardWebhookSignature can find them
+  // even if only the svix-* variants are present.
+  const normalized = { ...headers };
+  const svixId = getHeader(headers, "svix-id");
+  const svixTs = getHeader(headers, "svix-timestamp");
+  const svixSig = getHeader(headers, "svix-signature");
+  if (svixId && !getHeader(headers, "webhook-id")) normalized["webhook-id"] = svixId;
+  if (svixTs && !getHeader(headers, "webhook-timestamp")) normalized["webhook-timestamp"] = svixTs;
+  if (svixSig && !getHeader(headers, "webhook-signature"))
+    normalized["webhook-signature"] = svixSig;
+  return verifyStandardWebhookSignature(body, normalized, secret);
 }
 
 /**

@@ -258,13 +258,13 @@ Extract specific JSON fields from a captured request body using dot-notation pat
 
 Verify the webhook signature on a captured request.
 
-| Parameter   | Type     | Required | Description                                                                                                                                                   |
-| ----------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `requestId` | `string` | yes      | Request ID                                                                                                                                                    |
-| `provider`  | `string` | yes      | Provider name (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `sendgrid`, `clerk`, `discord`, `vercel`, `gitlab`, `standard-webhooks`) |
-| `secret`    | `string` | no       | Signing secret (required for HMAC-based providers)                                                                                                            |
-| `publicKey` | `string` | no       | Public key (required for Discord Ed25519 verification)                                                                                                        |
-| `url`       | `string` | no       | Request URL (required for Twilio signature verification)                                                                                                      |
+| Parameter   | Type     | Required | Description                                                                                                                                       |
+| ----------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requestId` | `string` | yes      | Request ID                                                                                                                                        |
+| `provider`  | `string` | yes      | Provider name (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `clerk`, `discord`, `vercel`, `gitlab`, `standard-webhooks`) |
+| `secret`    | `string` | no       | Signing secret (required for HMAC-based providers)                                                                                                |
+| `publicKey` | `string` | no       | Public key (required for Discord Ed25519 verification)                                                                                            |
+| `url`       | `string` | no       | Request URL (required for Twilio signature verification)                                                                                          |
 
 ## Utilities
 

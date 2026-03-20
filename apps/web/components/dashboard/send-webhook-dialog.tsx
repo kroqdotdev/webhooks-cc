@@ -273,16 +273,18 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
               {isSecretRequired(mode) && (
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide mb-2">
-                    Mock webhook secret
+                    {mode === "gitlab" ? "Mock webhook token" : "Mock webhook secret"}
                   </p>
                   <Input
                     value={mockWebhookSecret}
                     onChange={(e) => setMockWebhookSecret(e.target.value)}
                     className="neo-input text-sm"
-                    placeholder="whsec_..."
+                    placeholder={mode === "gitlab" ? "gl_token_..." : "whsec_..."}
                   />
                   <p className="mt-2 text-xs text-muted-foreground">
-                    The signing secret your app uses to verify webhook signatures.
+                    {mode === "gitlab"
+                      ? "The token your app checks in the x-gitlab-token header."
+                      : "The signing secret your app uses to verify webhook signatures."}
                   </p>
                 </div>
               )}
