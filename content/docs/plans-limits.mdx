@@ -1,0 +1,103 @@
+---
+title: "Plans & Limits"
+description: "Request quotas, data retention, rate limits, and plan details for webhooks.cc."
+section: getting-started
+order: 4
+lastUpdated: 2026-03-20
+schema: faq
+keywords:
+  [
+    "webhook limits",
+    "webhook pricing",
+    "webhook quota",
+    "webhook retention",
+    "free plan",
+    "pro plan",
+  ]
+seo:
+  ogTitle: "Plans & Limits — webhooks.cc"
+  ogDescription: "Request quotas, data retention, rate limits, and plan details for webhooks.cc free and pro plans."
+---
+
+## Plans overview
+
+| Plan    | Requests | Period   | Retention | Endpoints                 | Price            |
+| ------- | -------- | -------- | --------- | ------------------------- | ---------------- |
+| Guest   | 25       | 12 hours | 12 hours  | Ephemeral only (12hr TTL) | Free (no signup) |
+| Free    | 50       | 24 hours | 7 days    | Unlimited, never expire   | Free             |
+| **Pro** | 100,000  | 30 days  | 30 days   | Unlimited, never expire   | $8/month         |
+
+Endpoints created by logged-in users (Free or Pro) **never expire**. They persist until you explicitly delete them from the dashboard, CLI, SDK, or API. Only ephemeral endpoints -- created without an account or explicitly marked ephemeral -- auto-delete after 12 hours.
+
+## How billing periods work
+
+**Guest** — no account required. Ephemeral endpoints auto-delete after 12 hours along with all captured requests. Each ephemeral endpoint has a 25-request cap.
+
+**Free** — billing periods activate lazily. Your 24-hour window starts when your first webhook request is captured, not when you sign up. Once the period expires, the counter resets and the next request starts a new 24-hour window.
+
+**Pro** — 30-day rolling billing periods. The counter resets automatically at the end of each period. Canceled subscriptions remain active until the current period ends, then downgrade to Free.
+
+## Request quotas
+
+Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets.
+
+Quotas are enforced atomically inside a single Postgres stored procedure — no race conditions, even under high concurrency.
+
+<Callout type="tip">
+  `sendTo` calls that send webhooks directly to your handler URL do not count toward your quota.
+  Only requests routed through your webhooks.cc endpoint are counted.
+</Callout>
+
+## Data retention
+
+Captured requests are cleaned up automatically based on your plan:
+
+- **Free** — requests older than 7 days are deleted daily at 01:30 UTC
+- **Pro** — requests older than 31 days are deleted daily at 01:00 UTC
+- **Ephemeral** — requests are deleted when the endpoint expires (12 hours after creation)
+
+Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
+
+## Rate limits
+
+API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header.
+
+| Action                            | Limit | Window     |
+| --------------------------------- | ----- | ---------- |
+| Create endpoint                   | 30    | 10 minutes |
+| Create ephemeral endpoint (guest) | 20    | 10 minutes |
+| Send test webhook                 | 30    | 1 minute   |
+| Search requests                   | 60    | 10 minutes |
+| Search count                      | 120   | 10 minutes |
+| Device auth flows                 | 10    | 1 minute   |
+
+## Other limits
+
+| Resource                        | Limit                 |
+| ------------------------------- | --------------------- |
+| API keys per user               | 10                    |
+| API key default TTL             | 365 days              |
+| Mock response delay             | 30,000ms (30 seconds) |
+| Test webhook body size          | 1 MB                  |
+| Paginated request listing       | 100 per page          |
+| Ephemeral endpoints (per guest) | 25 concurrent         |
+| SSE stream connection           | 30 minutes max        |
+| SSE keepalive interval          | 30 seconds            |
+
+<FAQ>
+<FAQItem question="Do sendTo calls count toward my quota?">
+
+No. `sendTo` sends webhooks directly to your URL without routing through webhooks.cc endpoints. Only requests captured by the receiver at `go.webhooks.cc/w/{slug}` count toward your quota.
+
+</FAQItem>
+<FAQItem question="What happens when I hit the rate limit?">
+
+The API returns a `429 Too Many Requests` response with a `Retry-After` header. If you are using the SDK, a `RateLimitError` is thrown with the retry delay included so you can handle it programmatically.
+
+</FAQItem>
+<FAQItem question="When does my free plan period start?">
+
+On your first captured request, not when you sign up. The 24-hour window activates lazily — if you create an account and do not receive any webhooks, no quota is consumed and no period is started.
+
+</FAQItem>
+</FAQ>

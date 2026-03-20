@@ -19,7 +19,7 @@ A webhook endpoint is a unique URL that captures incoming HTTP requests. Each en
 https://go.webhooks.cc/w/{slug}
 ```
 
-Endpoints can be **permanent** (tied to your user account, persisted until you delete them) or **ephemeral** (auto-deleted after 12 hours). Create endpoints from the dashboard, CLI, SDK, or MCP server.
+Endpoints can be **permanent** or **ephemeral**. Permanent endpoints (the default for logged-in users) never expire -- they persist until you explicitly delete them, whether you are on the Free or Pro plan. Ephemeral endpoints auto-delete after 12 hours. Create endpoints from the dashboard, CLI, SDK, or MCP server.
 
 ```ts
 // SDK
@@ -125,7 +125,7 @@ whk tunnel 3000 -e
 
 Provider templates are pre-built webhook payloads for common services. Each template includes realistic data and proper cryptographic signatures so your handler can verify them.
 
-Supported providers: **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, and **Standard Webhooks** (Polar, Svix, Clerk, Resend).
+Supported providers: **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, **SendGrid**, **Clerk**, **Discord**, **Vercel**, **GitLab**, and **Standard Webhooks** (Polar, Svix, Resend).
 
 ```ts
 await client.endpoints.sendTemplate(endpoint.slug, {
@@ -149,7 +149,7 @@ if (isStripeWebhook(request)) {
 }
 ```
 
-Verification requires the provider's signing secret, which you configure in your application. The SDK supports signature detection for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Standard Webhooks, and Discord (Ed25519).
+Verification requires the provider's signing secret, which you configure in your application. The SDK supports signature verification for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord (Ed25519), Vercel, GitLab, and Standard Webhooks.
 
 ## Quotas
 
@@ -161,11 +161,12 @@ Quotas limit how many webhook requests your endpoints can capture within a billi
 | Free    | 50       | 24 hours |
 | **Pro** | 100,000  | 30 days  |
 
-Quotas are enforced at the receiver level using atomic Redis operations, ensuring accuracy even under high concurrency. When your quota is exhausted, the receiver returns `429 Too Many Requests` to the sender.
+Quotas are enforced at the receiver level atomically, ensuring accuracy even under high concurrency. When your quota is exhausted, the receiver returns `429 Too Many Requests` to the sender.
 
 <Callout type="tip">
   Free plan periods activate lazily — your 24-hour window starts when you receive your first
-  request, not when you sign up.
+  request, not when you sign up. See [Plans & Limits](/docs/plans-limits) for full details on
+  quotas, retention, and rate limits.
 </Callout>
 
 ## API keys

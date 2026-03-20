@@ -21,7 +21,7 @@ Each endpoint gets an auto-generated slug that forms its webhook URL:
 https://go.webhooks.cc/w/<slug>
 ```
 
-Copy the full URL from the dashboard URL bar.
+Copy the full URL from the dashboard URL bar. Endpoints created by logged-in users (Free or Pro) never expire -- they persist until you delete them manually or programmatically. Only ephemeral endpoints (created without an account or explicitly marked ephemeral) auto-delete after 12 hours.
 
 ## Switching endpoints
 
@@ -43,7 +43,9 @@ Click the gear icon next to the endpoint name in the URL bar to open settings. Y
 
 ## Limits
 
-| Plan    | Endpoints | Requests   | Retention |
-| ------- | --------- | ---------- | --------- |
-| Free    | Unlimited | 50/day     | 7 days    |
-| **Pro** | Unlimited | 100K/month | 30 days   |
+| Plan    | Endpoints | Requests              | Retention |
+| ------- | --------- | --------------------- | --------- |
+| Free    | Unlimited | 50 per 24-hour window | 7 days    |
+| **Pro** | Unlimited | 100,000 per 30 days   | 30 days   |
+
+See [Plans & Limits](/docs/plans-limits) for full details on quotas, retention, rate limits, and billing periods.
