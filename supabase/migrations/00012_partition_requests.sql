@@ -61,6 +61,7 @@ CREATE INDEX requests_endpoint_time ON public.requests(endpoint_id, received_at 
 CREATE INDEX requests_user_time ON public.requests(user_id, received_at DESC)
   WHERE user_id IS NOT NULL;
 CREATE INDEX requests_received_at ON public.requests(received_at);
+CREATE INDEX requests_id ON public.requests(id);
 
 -- ============================================================================
 -- 3. CREATE INITIAL PARTITIONS
@@ -69,6 +70,8 @@ CREATE INDEX requests_received_at ON public.requests(received_at);
 -- Daily partitions: 45 days in the past through 7 days in the future.
 
 CREATE TABLE public.requests_default PARTITION OF public.requests DEFAULT;
+GRANT ALL ON public.requests_default TO postgres, service_role;
+GRANT SELECT ON public.requests_default TO authenticated, anon;
 
 DO $$
 DECLARE
@@ -93,6 +96,9 @@ BEGIN
       'CREATE TABLE public.%I PARTITION OF public.requests FOR VALUES FROM (%L) TO (%L)',
       partition_name, start_ts, end_ts
     );
+
+    EXECUTE format('GRANT ALL ON public.%I TO postgres, service_role', partition_name);
+    EXECUTE format('GRANT SELECT ON public.%I TO authenticated, anon', partition_name);
   END LOOP;
 END
 $$;
@@ -179,10 +185,16 @@ DECLARE
   v_created integer := 0;
   v_dropped integer := 0;
   cutoff_date date;
+  partitions_to_create text[] := '{}';
+  starts timestamptz[] := '{}';
+  ends timestamptz[] := '{}';
+  i integer;
 BEGIN
   -- ---------------------------------------------------------------
   -- A. CREATE PARTITIONS FOR THE NEXT 7 DAYS
   -- ---------------------------------------------------------------
+
+  -- Collect all partitions that need to be created
   FOR d IN
     SELECT dd::date
       FROM generate_series(
@@ -192,48 +204,57 @@ BEGIN
       ) AS dd
   LOOP
     partition_name := 'requests_' || to_char(d, 'YYYYMMDD');
-    start_ts := d::timestamptz;
-    end_ts   := (d + INTERVAL '1 day')::timestamptz;
 
     -- Skip if this partition already exists
-    IF EXISTS (
+    IF NOT EXISTS (
       SELECT 1 FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public'
          AND c.relname = partition_name
     ) THEN
-      CONTINUE;
+      partitions_to_create := partitions_to_create || partition_name;
+      starts := starts || d::timestamptz;
+      ends := ends || (d + INTERVAL '1 day')::timestamptz;
     END IF;
+  END LOOP;
 
-    -- Detach default partition to avoid range overlap
+  -- If any partitions need creating, detach default ONCE, create all, reattach ONCE
+  IF array_length(partitions_to_create, 1) > 0 THEN
+    -- Detach default partition once to avoid range overlap
     ALTER TABLE public.requests DETACH PARTITION public.requests_default;
 
-    -- Create the new daily partition
-    EXECUTE format(
-      'CREATE TABLE public.%I PARTITION OF public.requests FOR VALUES FROM (%L) TO (%L)',
-      partition_name, start_ts, end_ts
-    );
+    FOR i IN 1 .. array_length(partitions_to_create, 1)
+    LOOP
+      -- Create the new daily partition
+      EXECUTE format(
+        'CREATE TABLE public.%I PARTITION OF public.requests FOR VALUES FROM (%L) TO (%L)',
+        partitions_to_create[i], starts[i], ends[i]
+      );
 
-    -- Move any rows from default that belong in the new partition
-    EXECUTE format(
-      'WITH moved AS (
-         DELETE FROM public.requests_default
-          WHERE received_at >= %L AND received_at < %L
-         RETURNING *
-       )
-       INSERT INTO public.%I SELECT * FROM moved',
-      start_ts, end_ts, partition_name
-    );
+      -- Move any rows from default that belong in the new partition
+      EXECUTE format(
+        'WITH moved AS (
+           DELETE FROM public.requests_default
+            WHERE received_at >= %L AND received_at < %L
+           RETURNING *
+         )
+         INSERT INTO public.%I SELECT * FROM moved',
+        starts[i], ends[i], partitions_to_create[i]
+      );
+    END LOOP;
 
-    -- Reattach default partition
+    -- Reattach default partition once
     ALTER TABLE public.requests ATTACH PARTITION public.requests_default DEFAULT;
 
-    -- Grant permissions on the new partition
-    EXECUTE format('GRANT ALL ON public.%I TO postgres, service_role', partition_name);
-    EXECUTE format('GRANT SELECT ON public.%I TO authenticated, anon', partition_name);
+    -- Grant permissions on each new partition
+    FOR i IN 1 .. array_length(partitions_to_create, 1)
+    LOOP
+      EXECUTE format('GRANT ALL ON public.%I TO postgres, service_role', partitions_to_create[i]);
+      EXECUTE format('GRANT SELECT ON public.%I TO authenticated, anon', partitions_to_create[i]);
+    END LOOP;
 
-    v_created := v_created + 1;
-  END LOOP;
+    v_created := array_length(partitions_to_create, 1);
+  END IF;
 
   -- ---------------------------------------------------------------
   -- B. DROP PARTITIONS OLDER THAN 32 DAYS
@@ -277,6 +298,11 @@ GRANT EXECUTE ON FUNCTION public.manage_request_partitions() TO service_role;
 -- ============================================================================
 -- Preserves the existing interface (returns integer = number of dropped partitions)
 -- so that any callers (including free-user cleanup) keep working.
+--
+-- Note: cleanup_free_user_requests() is intentionally NOT updated to use
+-- partition drops. Partitions contain mixed free/pro user data, so dropping
+-- an entire partition would delete pro user data too. That function must
+-- continue using row-level DELETEs filtered by user plan.
 
 CREATE OR REPLACE FUNCTION public.cleanup_old_requests()
 RETURNS integer
@@ -297,7 +323,13 @@ $$;
 -- ============================================================================
 -- Remove old job, add new one at 00:30 UTC daily.
 
-SELECT cron.unschedule('cleanup-old-requests-daily');
+DO $$
+BEGIN
+  PERFORM cron.unschedule('cleanup-old-requests-daily');
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END
+$$;
 
 SELECT cron.schedule(
   'manage-request-partitions-daily',
