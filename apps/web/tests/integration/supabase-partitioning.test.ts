@@ -137,10 +137,7 @@ describe("Supabase Partitioning Integration", () => {
   describe("INSERT routing", () => {
     it("routes inserts to the correct daily partition", async () => {
       const todayId = await insertRequest("/today", Date.now());
-      const yesterdayId = await insertRequest(
-        "/yesterday",
-        Date.now() - 24 * 60 * 60 * 1000
-      );
+      const yesterdayId = await insertRequest("/yesterday", Date.now() - 24 * 60 * 60 * 1000);
 
       // Both should be queryable through the parent table
       const { data: todayRow, error: todayError } = await admin
@@ -167,10 +164,7 @@ describe("Supabase Partitioning Integration", () => {
 
     it("handles the default partition for dates outside explicit range", async () => {
       // Insert a request 60 days in the past — no daily partition exists for that date
-      const oldId = await insertRequest(
-        "/old-default",
-        Date.now() - 60 * 24 * 60 * 60 * 1000
-      );
+      const oldId = await insertRequest("/old-default", Date.now() - 60 * 24 * 60 * 60 * 1000);
 
       const { data: oldRow, error: oldError } = await admin
         .from("requests")
@@ -336,10 +330,7 @@ describe("Supabase Partitioning Integration", () => {
 
     it("manage_request_partitions does not drop the default partition", async () => {
       // Insert a row 60 days old — goes to the default partition
-      const oldId = await insertRequest(
-        "/default-survives",
-        Date.now() - 60 * 24 * 60 * 60 * 1000
-      );
+      const oldId = await insertRequest("/default-survives", Date.now() - 60 * 24 * 60 * 60 * 1000);
 
       // Run partition management
       const { error } = await callRpc("manage_request_partitions");
@@ -375,10 +366,7 @@ describe("Supabase Partitioning Integration", () => {
 
     it("cleanup_free_user_requests still works with partitioned table", async () => {
       // Insert a request 8 days old (outside free 7-day retention)
-      const oldId = await insertRequest(
-        "/free-cleanup",
-        Date.now() - 8 * 24 * 60 * 60 * 1000
-      );
+      const oldId = await insertRequest("/free-cleanup", Date.now() - 8 * 24 * 60 * 60 * 1000);
 
       // Verify it exists before cleanup
       const { data: before, error: beforeError } = await admin
@@ -391,9 +379,7 @@ describe("Supabase Partitioning Integration", () => {
       expect(before).not.toBeNull();
 
       // Run cleanup
-      const { data: deleted, error: cleanupError } = await callRpc(
-        "cleanup_free_user_requests"
-      );
+      const { data: deleted, error: cleanupError } = await callRpc("cleanup_free_user_requests");
 
       expect(cleanupError).toBeNull();
       expect(typeof deleted).toBe("number");
@@ -475,21 +461,18 @@ describe("Supabase Partitioning Integration", () => {
   // =========================================================================
 
   describe("Realtime with partitioned table", () => {
-    it(
-      "delivers INSERT events via the parent table name",
-      async () => {
-        const anonClient = createAnonClient();
-        const signIn = await anonClient.auth.signInWithPassword({
-          email: TEST_EMAIL,
-          password: TEST_PASSWORD,
-        });
+    it("delivers INSERT events via the parent table name", async () => {
+      const anonClient = createAnonClient();
+      const signIn = await anonClient.auth.signInWithPassword({
+        email: TEST_EMAIL,
+        password: TEST_PASSWORD,
+      });
 
-        expect(signIn.error).toBeNull();
+      expect(signIn.error).toBeNull();
 
-        const channel = anonClient.channel(`test-partition-rt-${testEndpointId}`);
-        const requestPromise = new Promise<
-          Database["public"]["Tables"]["requests"]["Row"]
-        >((resolve, reject) => {
+      const channel = anonClient.channel(`test-partition-rt-${testEndpointId}`);
+      const requestPromise = new Promise<Database["public"]["Tables"]["requests"]["Row"]>(
+        (resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error("Timed out waiting for realtime INSERT on partitioned table"));
           }, 15_000);
@@ -504,50 +487,47 @@ describe("Supabase Partitioning Integration", () => {
             },
             (payload) => {
               clearTimeout(timeout);
-              resolve(
-                payload.new as Database["public"]["Tables"]["requests"]["Row"]
-              );
+              resolve(payload.new as Database["public"]["Tables"]["requests"]["Row"]);
             }
           );
-        });
+        }
+      );
 
-        await waitForSubscribed(channel);
+      await waitForSubscribed(channel);
 
-        // Insert a request via admin — should trigger realtime on the parent table
-        const { error: insertError } = await admin.from("requests").insert({
-          endpoint_id: testEndpointId,
-          user_id: testUserId,
-          method: "POST",
-          path: "/realtime-partition",
-          headers: { "content-type": "application/json" },
-          body: '{"realtime":true}',
-          query_params: { source: "partition-test" },
-          content_type: "application/json",
-          ip: "127.0.0.1",
-          size: 17,
-        });
+      // Insert a request via admin — should trigger realtime on the parent table
+      const { error: insertError } = await admin.from("requests").insert({
+        endpoint_id: testEndpointId,
+        user_id: testUserId,
+        method: "POST",
+        path: "/realtime-partition",
+        headers: { "content-type": "application/json" },
+        body: '{"realtime":true}',
+        query_params: { source: "partition-test" },
+        content_type: "application/json",
+        ip: "127.0.0.1",
+        size: 17,
+      });
 
-        expect(insertError).toBeNull();
+      expect(insertError).toBeNull();
 
-        await expect(requestPromise).resolves.toMatchObject({
-          endpoint_id: testEndpointId,
-          user_id: testUserId,
-          method: "POST",
-          path: "/realtime-partition",
-        });
+      await expect(requestPromise).resolves.toMatchObject({
+        endpoint_id: testEndpointId,
+        user_id: testUserId,
+        method: "POST",
+        path: "/realtime-partition",
+      });
 
-        await anonClient.removeChannel(channel);
-        await anonClient.auth.signOut();
+      await anonClient.removeChannel(channel);
+      await anonClient.auth.signOut();
 
-        // Cleanup
-        await admin
-          .from("requests")
-          .delete()
-          .eq("endpoint_id", testEndpointId)
-          .eq("path", "/realtime-partition");
-      },
-      20_000
-    );
+      // Cleanup
+      await admin
+        .from("requests")
+        .delete()
+        .eq("endpoint_id", testEndpointId)
+        .eq("path", "/realtime-partition");
+    }, 20_000);
   });
 
   // =========================================================================
@@ -560,14 +540,11 @@ describe("Supabase Partitioning Integration", () => {
       await admin.from("requests").delete().eq("endpoint_id", testEndpointId);
 
       // Send an HTTP POST to the receiver
-      const response = await fetch(
-        `${WEBHOOK_URL}/w/${testEndpointSlug}/e2e-partition-test`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ e2e: "partition-test" }),
-        }
-      );
+      const response = await fetch(`${WEBHOOK_URL}/w/${testEndpointSlug}/e2e-partition-test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ e2e: "partition-test" }),
+      });
 
       expect(response.status).toBe(200);
 
