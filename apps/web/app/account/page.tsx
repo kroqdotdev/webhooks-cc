@@ -14,7 +14,8 @@ import { trackUpgradeCompleted, resetUser, identifyUser } from "@/lib/analytics"
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToUserRow } from "@/lib/supabase/realtime";
-import { CheckCircle, Github, LogOut, Trash2 } from "lucide-react";
+import { CheckCircle, LogOut, Trash2 } from "lucide-react";
+import { GitHubIcon } from "@/components/ui/icons";
 import Link from "next/link";
 import { APP_VERSION } from "@/lib/changelog";
 
@@ -253,7 +254,7 @@ export default function AccountPage() {
                 <Badge key={provider} variant="outline" className="capitalize">
                   {provider === "github" ? (
                     <span className="flex items-center gap-1">
-                      <Github className="h-3 w-3" />
+                      <GitHubIcon className="h-3 w-3" />
                       GitHub
                     </span>
                   ) : provider === "google" ? (
