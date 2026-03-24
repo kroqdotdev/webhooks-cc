@@ -30,7 +30,7 @@
     "gray-matter": "^4.0.3",
     "hast-util-to-string": "^3.0.1",
     "lucide-react": "^0.563.0",
-    "next": "16.2.0",
+    "next": "16.2.1",
     "next-mdx-remote": "^6.0.0",
     "posthog-js": "^1.363.4",
     "prismjs": "^1.30.0",
