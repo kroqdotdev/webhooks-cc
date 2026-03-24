@@ -67,7 +67,7 @@ const durationOrTimestampSchema = z.union([z.string(), z.number()]);
 const mockResponseSchema = z.object({
   status: z.number().int().min(100).max(599).describe("HTTP status code (100-599)"),
   body: z.string().default("").describe("Response body string (default: empty)"),
-  headers: z.record(z.string()).default({}).describe("Response headers (default: none)"),
+  headers: z.record(z.string(), z.string()).default({}).describe("Response headers (default: none)"),
   delay: z
     .number()
     .int()
@@ -499,7 +499,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     {
       slug: z.string().describe("The endpoint slug to send to"),
       method: methodSchema,
-      headers: z.record(z.string()).optional().describe("HTTP headers to include"),
+      headers: z.record(z.string(), z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body"),
       provider: z
         .enum(TEMPLATE_PROVIDER_VALUES)
@@ -766,7 +766,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     {
       url: httpUrlSchema.describe("Target URL"),
       method: methodSchema,
-      headers: z.record(z.string()).optional().describe("HTTP headers to include"),
+      headers: z.record(z.string(), z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body"),
       provider: z
         .enum(TEMPLATE_PROVIDER_VALUES)
@@ -801,7 +801,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     {
       url: httpUrlSchema.describe("Target URL"),
       method: methodSchema,
-      headers: z.record(z.string()).optional().describe("HTTP headers to include"),
+      headers: z.record(z.string(), z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body"),
       provider: z
         .enum(TEMPLATE_PROVIDER_VALUES)
