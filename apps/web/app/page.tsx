@@ -9,7 +9,7 @@ import { PricingCTA } from "@/components/landing/pricing-cta";
 import { LivePreview } from "@/components/landing/live-preview";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@supabase/supabase-js";
 
 export const metadata = createPageMetadata({
   title: "Webhook Testing Platform: CLI, SDK & MCP",
@@ -43,8 +43,15 @@ interface SiteStats {
 
 async function getSiteStats(): Promise<SiteStats | null> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return null;
+
+    // Untyped client — site_stats isn't in the generated Database type yet
+    const supabase = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data, error } = await supabase
       .from("site_stats")
       .select("total_webhooks, total_endpoints, total_users")
       .eq("id", 1)
