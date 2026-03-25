@@ -88,18 +88,16 @@ export default async function Home() {
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
             <div className="max-w-3xl">
               <div className="inline-block neo-btn-secondary text-sm py-1 px-3 mb-6">
-                Webhook Testing Tools
+                Free forever &middot; No credit card
               </div>
               <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
                 Inspect webhooks{" "}
                 <span className="bg-primary text-primary-foreground px-2">instantly</span>
               </h1>
               <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-                Get a URL, send a webhook, inspect it instantly. Send signed Stripe, GitHub,
-                Shopify, and Twilio templates from the dashboard. Forward to localhost with the CLI,
-                test in CI with the SDK, and use MCP with your AI coding agent.
+                Get a URL, send a webhook, see it arrive. Forward to localhost with the CLI, test in
+                CI with the SDK, or let your AI agent handle it with MCP.
               </p>
-              <p className="text-lg font-semibold mb-8">Start free. No credit card required.</p>
               <HeroCTA />
             </div>
 
@@ -158,7 +156,7 @@ export default async function Home() {
       </section>
 
       {/* Features */}
-      <section className="py-20 px-4 bg-muted">
+      <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Webhook tools that fit how you build
@@ -346,12 +344,11 @@ export default async function Home() {
               Your next webhook is one URL away
             </h2>
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
-              Create an endpoint, point your service at it, and see what arrives. Takes 10 seconds.
+              Create an endpoint, point your service at it, and see what arrives.
             </p>
-            <Link href="/go" className="neo-btn bg-background text-foreground">
-              Try it free
-              <ArrowRight className="inline-block ml-2 h-5 w-5" />
-            </Link>
+            <div className="flex justify-center">
+              <PricingCTA />
+            </div>
           </div>
         </div>
       </section>
