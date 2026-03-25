@@ -150,13 +150,17 @@ export default async function Home() {
                   ) : null}
                   {stats.total_endpoints > 0 ? (
                     <span className="font-semibold">
-                      <span className="text-foreground">{stats.total_endpoints.toLocaleString()}</span>{" "}
+                      <span className="text-foreground">
+                        {stats.total_endpoints.toLocaleString()}
+                      </span>{" "}
                       endpoints created
                     </span>
                   ) : null}
                   {stats.total_webhooks > 0 ? (
                     <span className="font-semibold">
-                      <span className="text-foreground">{stats.total_webhooks.toLocaleString()}</span>{" "}
+                      <span className="text-foreground">
+                        {stats.total_webhooks.toLocaleString()}
+                      </span>{" "}
                       webhooks captured
                     </span>
                   ) : null}
@@ -244,7 +248,8 @@ export default async function Home() {
               {
                 step: "3",
                 title: "See what arrives",
-                description: "Headers, body, query params — live. Forward to localhost or assert in tests.",
+                description:
+                  "Headers, body, query params — live. Forward to localhost or assert in tests.",
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
@@ -301,8 +306,8 @@ export default async function Home() {
               <h3 className="font-bold text-xl mb-2">Forward to localhost. Assert in CI.</h3>
               <p className="text-muted-foreground">
                 <code className="font-mono font-bold">whk tunnel</code> forwards webhooks to your
-                local port. The TypeScript SDK waits for events and asserts payload shape in your test
-                suite.
+                local port. The TypeScript SDK waits for events and asserts payload shape in your
+                test suite.
               </p>
             </div>
 
@@ -312,8 +317,8 @@ export default async function Home() {
               </div>
               <h3 className="font-bold text-xl mb-2">Let your AI agent debug webhooks</h3>
               <p className="text-muted-foreground">
-                Connect Claude Code, Cursor, VS Code, or Codex via MCP. Your agent creates endpoints,
-                sends tests, and inspects requests — through natural language.
+                Connect Claude Code, Cursor, VS Code, or Codex via MCP. Your agent creates
+                endpoints, sends tests, and inspects requests — through natural language.
               </p>
             </div>
           </div>
@@ -379,7 +384,9 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground mb-3 text-center">Start free, upgrade later</p>
+              <p className="text-sm text-muted-foreground mb-3 text-center">
+                Start free, upgrade later
+              </p>
               <PricingCTA />
             </div>
           </div>

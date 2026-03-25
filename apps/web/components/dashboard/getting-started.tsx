@@ -81,8 +81,7 @@ export function GettingStarted({ hasReceivedWebhook }: { hasReceivedWebhook: boo
       </div>
       <div className="flex flex-wrap gap-2">
         {ITEMS.map((item) => {
-          const done =
-            (item.id === "webhook" && hasReceivedWebhook) || visited.has(item.id);
+          const done = (item.id === "webhook" && hasReceivedWebhook) || visited.has(item.id);
           const Icon = item.icon;
 
           if (item.href) {
@@ -97,11 +96,7 @@ export function GettingStarted({ hasReceivedWebhook }: { hasReceivedWebhook: boo
                     : "bg-background hover:bg-muted"
                 }`}
               >
-                {done ? (
-                  <Check className="h-3 w-3 text-primary" />
-                ) : (
-                  <Icon className="h-3 w-3" />
-                )}
+                {done ? <Check className="h-3 w-3 text-primary" /> : <Icon className="h-3 w-3" />}
                 {item.label}
               </Link>
             );
@@ -111,16 +106,10 @@ export function GettingStarted({ hasReceivedWebhook }: { hasReceivedWebhook: boo
             <span
               key={item.id}
               className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 border-2 border-foreground ${
-                done
-                  ? "bg-primary/15 text-muted-foreground line-through"
-                  : "bg-background"
+                done ? "bg-primary/15 text-muted-foreground line-through" : "bg-background"
               }`}
             >
-              {done ? (
-                <Check className="h-3 w-3 text-primary" />
-              ) : (
-                <Icon className="h-3 w-3" />
-              )}
+              {done ? <Check className="h-3 w-3 text-primary" /> : <Icon className="h-3 w-3" />}
               {item.label}
             </span>
           );

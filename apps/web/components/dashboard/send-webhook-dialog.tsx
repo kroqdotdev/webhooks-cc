@@ -225,7 +225,9 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
       <DialogContent className="border-2 border-foreground shadow-neo max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-bold uppercase tracking-wide">Send Webhook</DialogTitle>
-          <DialogDescription className="sr-only">Send a test webhook to this endpoint</DialogDescription>
+          <DialogDescription className="sr-only">
+            Send a test webhook to this endpoint
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

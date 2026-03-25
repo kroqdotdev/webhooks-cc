@@ -95,9 +95,7 @@ function AuthNavContent() {
                 {link.label}
               </Link>
             ))}
-            <div className="pt-2 border-t-2 border-foreground/20">
-              {authButton}
-            </div>
+            <div className="pt-2 border-t-2 border-foreground/20">{authButton}</div>
           </div>
         </div>
       )}

@@ -19,10 +19,7 @@ import {
   type GuestEndpointRecord,
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
-import {
-  subscribeToEndpointRow,
-  subscribeToEndpointRequestInserts,
-} from "@/lib/supabase/realtime";
+import { subscribeToEndpointRow, subscribeToEndpointRequestInserts } from "@/lib/supabase/realtime";
 import type { Request, RequestSummary } from "@/types/request";
 import { Check, Circle, Copy, Send } from "lucide-react";
 
@@ -666,10 +663,7 @@ function GuestLiveDashboardInner() {
         />
 
         {!upgradeDismissed && hasRequests && (
-          <UpgradePrompt
-            requestCount={requestCount}
-            onDismiss={handleDismissUpgrade}
-          />
+          <UpgradePrompt requestCount={requestCount} onDismiss={handleDismissUpgrade} />
         )}
 
         {hasRequests ? (
