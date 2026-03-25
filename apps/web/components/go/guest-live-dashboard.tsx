@@ -19,7 +19,10 @@ import {
   type GuestEndpointRecord,
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
-import { subscribeToEndpointRow } from "@/lib/supabase/realtime";
+import {
+  subscribeToEndpointRow,
+  subscribeToEndpointRequestInserts,
+} from "@/lib/supabase/realtime";
 import type { Request, RequestSummary } from "@/types/request";
 import { Check, Circle, Copy, Send } from "lucide-react";
 
@@ -303,10 +306,17 @@ function GuestLiveDashboardInner() {
       void refreshRequests(endpointSlug);
     });
 
+    // Subscribe to request INSERTs directly for faster updates
+    const unsubscribeRequests = subscribeToEndpointRequestInserts(endpoint.id, () => {
+      void refreshRequests(endpointSlug);
+      void refreshEndpoint(endpointSlug);
+    });
+
     return () => {
       unsubscribeEndpoint();
+      unsubscribeRequests();
     };
-  }, [clearDemoEndpoint, endpoint?.id, endpointSlug, refreshRequests]);
+  }, [clearDemoEndpoint, endpoint?.id, endpointSlug, refreshRequests, refreshEndpoint]);
 
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) {
@@ -735,7 +745,12 @@ function GuestLiveDashboardInner() {
             <p className="text-muted-foreground animate-pulse">Loading captured request...</p>
           </div>
         ) : (
-          <DemoWaitingState url={endpointUrl} />
+          <DemoWaitingState
+            url={endpointUrl}
+            onSent={() => {
+              if (endpointSlug) void refreshRequests(endpointSlug);
+            }}
+          />
         )}
       </ErrorBoundary>
     </div>
@@ -933,7 +948,7 @@ function DemoUrlBar({
   );
 }
 
-function DemoWaitingState({ url }: { url: string }) {
+function DemoWaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -972,14 +987,18 @@ function DemoWaitingState({ url }: { url: string }) {
         });
         setSent(true);
       } catch {
+        // CORS may block the response but the request still reaches the receiver
         setSent(true);
       } finally {
         if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
         sentTimeoutRef.current = setTimeout(() => setSent(false), SEND_FEEDBACK_MS);
         setSending(false);
+        // Eagerly poll for the new request — don't wait for realtime
+        setTimeout(() => onSent?.(), 150);
+        setTimeout(() => onSent?.(), 500);
       }
     },
-    [url]
+    [url, onSent]
   );
 
   const handleSendTest = useCallback(
