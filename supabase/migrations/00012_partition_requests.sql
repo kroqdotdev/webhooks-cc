@@ -65,7 +65,7 @@ CREATE INDEX requests_id ON public.requests(id);
 
 -- Explicit grants on parent (child partitions inherit, but being explicit)
 GRANT ALL ON public.requests TO postgres, service_role;
-GRANT SELECT ON public.requests TO authenticated, anon;
+GRANT SELECT ON public.requests TO authenticated;
 
 -- ============================================================================
 -- 3. CREATE INITIAL PARTITIONS
@@ -76,7 +76,7 @@ GRANT SELECT ON public.requests TO authenticated, anon;
 CREATE TABLE public.requests_default PARTITION OF public.requests DEFAULT;
 ALTER TABLE public.requests_default ENABLE ROW LEVEL SECURITY;
 GRANT ALL ON public.requests_default TO postgres, service_role;
-GRANT SELECT ON public.requests_default TO authenticated, anon;
+GRANT SELECT ON public.requests_default TO authenticated;
 
 DO $$
 DECLARE
@@ -104,7 +104,7 @@ BEGIN
 
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', partition_name);
     EXECUTE format('GRANT ALL ON public.%I TO postgres, service_role', partition_name);
-    EXECUTE format('GRANT SELECT ON public.%I TO authenticated, anon', partition_name);
+    EXECUTE format('GRANT SELECT ON public.%I TO authenticated', partition_name);
   END LOOP;
 END
 $$;
@@ -262,7 +262,7 @@ BEGIN
     LOOP
       EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', partitions_to_create[i]);
       EXECUTE format('GRANT ALL ON public.%I TO postgres, service_role', partitions_to_create[i]);
-      EXECUTE format('GRANT SELECT ON public.%I TO authenticated, anon', partitions_to_create[i]);
+      EXECUTE format('GRANT SELECT ON public.%I TO authenticated', partitions_to_create[i]);
     END LOOP;
 
     v_created := array_length(partitions_to_create, 1);
@@ -294,6 +294,10 @@ BEGIN
       v_dropped := v_dropped + 1;
     END IF;
   END LOOP;
+
+  -- Clean up any old rows stuck in the default partition
+  DELETE FROM public.requests_default
+   WHERE received_at < (CURRENT_DATE - INTERVAL '32 days');
 
   RETURN QUERY SELECT v_created, v_dropped;
 END;
