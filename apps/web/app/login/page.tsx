@@ -67,18 +67,18 @@ function LoginContent() {
             <div className="flex items-center gap-6">
               <Link
                 href="/docs"
-                className="text-muted-foreground hover:text-foreground font-medium transition-colors"
+                className="hidden sm:inline text-muted-foreground hover:text-foreground font-medium transition-colors"
               >
                 Docs
               </Link>
               <Link
                 href="/installation"
-                className="text-muted-foreground hover:text-foreground font-medium transition-colors"
+                className="hidden sm:inline text-muted-foreground hover:text-foreground font-medium transition-colors"
               >
                 Install
               </Link>
               <ThemeToggle />
-              <Link href="/" className="neo-btn-outline text-sm py-2 px-4 w-28 text-center">
+              <Link href="/" className="neo-btn-outline text-sm py-2 px-4 text-center">
                 Home
               </Link>
             </div>
