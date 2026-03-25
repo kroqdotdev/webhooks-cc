@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
@@ -25,6 +25,9 @@ function AuthNavContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  // Close mobile menu on route change (e.g. browser back)
+  useEffect(() => setOpen(false), [pathname]);
 
   const filteredLinks = NAV_LINKS.filter((link) => pathname !== link.href);
 

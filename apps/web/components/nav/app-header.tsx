@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -25,7 +25,11 @@ export function AppHeader({
   showBlogLink = true,
 }: AppHeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  // Close mobile menu on route change (e.g. browser back)
+  useEffect(() => setOpen(false), [pathname]);
 
   const handleSignOut = async () => {
     resetUser();
