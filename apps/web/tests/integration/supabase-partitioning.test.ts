@@ -556,7 +556,7 @@ describe("Supabase Partitioning Integration", () => {
           slug: testEndpointSlug,
           limit: 10,
         });
-        captured = results.find((r) => r.path.includes("e2e-partition-test"));
+        captured = results?.find((r) => r.path.includes("e2e-partition-test"));
         if (captured) break;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
