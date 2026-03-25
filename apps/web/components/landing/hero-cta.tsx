@@ -4,19 +4,38 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { trackCTAClick } from "@/lib/analytics";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import { SupabaseAuthProvider } from "@/components/providers/supabase-auth-provider";
+import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 
 export function HeroCTA() {
   return (
     <SupabaseAuthProvider>
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <HeroCTAInner />
+    </SupabaseAuthProvider>
+  );
+}
+
+function HeroCTAInner() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        {isLoading ? (
+          <div className="h-11" />
+        ) : isAuthenticated ? (
+          <Link href="/dashboard" className="neo-btn-primary">
+            Go to Dashboard
+            <ArrowRight className="inline-block ml-2 h-5 w-5" />
+          </Link>
+        ) : (
           <OAuthSignInButtons
             redirectTo="/dashboard"
             layout="horizontal"
             buttonClassName="h-11 text-base px-5 neo-btn-outline cursor-pointer"
           />
-        </div>
+        )}
+      </div>
+      {!isAuthenticated && !isLoading && (
         <p className="text-muted-foreground">
           or{" "}
           <Link
@@ -44,7 +63,7 @@ export function HeroCTA() {
             Docs
           </Link>
         </p>
-      </div>
-    </SupabaseAuthProvider>
+      )}
+    </div>
   );
 }
