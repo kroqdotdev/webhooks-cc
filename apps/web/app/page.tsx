@@ -132,26 +132,29 @@ export default async function Home() {
               <HeroCTA />
 
               {/* Social proof — near the CTA for maximum impact */}
-              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                {stars ? (
-                  <span className="font-semibold">
-                    <span className="text-foreground">{stars.toLocaleString()}</span> GitHub stars
-                  </span>
-                ) : null}
-                {stats && stats.total_webhooks > 0 ? (
-                  <span className="font-semibold">
-                    <span className="text-foreground">{stats.total_webhooks.toLocaleString()}</span>{" "}
-                    webhooks captured
-                  </span>
-                ) : null}
-                {stats && stats.total_users > 0 ? (
-                  <span className="font-semibold">
-                    <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
-                    developers
-                  </span>
-                ) : null}
-                <span className="font-semibold">Open source</span>
-              </div>
+              {stats && (
+                <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+                  {stats.total_users > 0 ? (
+                    <span className="font-semibold">
+                      <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
+                      developers
+                    </span>
+                  ) : null}
+                  {stats.total_endpoints > 0 ? (
+                    <span className="font-semibold">
+                      <span className="text-foreground">{stats.total_endpoints.toLocaleString()}</span>{" "}
+                      endpoints created
+                    </span>
+                  ) : null}
+                  {stats.total_webhooks > 0 ? (
+                    <span className="font-semibold">
+                      <span className="text-foreground">{stats.total_webhooks.toLocaleString()}</span>{" "}
+                      webhooks captured
+                    </span>
+                  ) : null}
+                  <span className="font-semibold">Open source</span>
+                </div>
+              )}
             </div>
 
             {/* GitHub — hidden on mobile to keep CTA above the fold */}
