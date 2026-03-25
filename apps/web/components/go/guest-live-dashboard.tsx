@@ -938,31 +938,69 @@ function DemoWaitingState({ url }: { url: string }) {
     copyTimeoutRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
   };
 
-  const handleSendTest = async () => {
-    setSending(true);
+  const sendPayload = useCallback(
+    async (label: string, body: Record<string, unknown>) => {
+      setSending(true);
+      try {
+        await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            [INTERNAL_TEST_SEND_HEADER]: "1",
+          },
+          body: JSON.stringify(body),
+        });
+        setSent(true);
+      } catch {
+        setSent(true);
+      } finally {
+        if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
+        sentTimeoutRef.current = setTimeout(() => setSent(false), SEND_FEEDBACK_MS);
+        setSending(false);
+      }
+    },
+    [url]
+  );
 
-    try {
-      await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          [INTERNAL_TEST_SEND_HEADER]: "1",
+  const handleSendTest = useCallback(
+    () =>
+      sendPayload("custom", {
+        message: "Hello from the browser!",
+        timestamp: new Date().toISOString(),
+      }),
+    [sendPayload]
+  );
+
+  const handleSendProvider = useCallback(
+    (provider: string) => {
+      const payloads: Record<string, Record<string, unknown>> = {
+        stripe: {
+          id: "evt_1Example",
+          type: "checkout.session.completed",
+          data: {
+            object: { id: "cs_test_123", amount_total: 4999, currency: "usd", status: "complete" },
+          },
         },
-        body: JSON.stringify({
-          message: "Hello from the browser!",
-          timestamp: new Date().toISOString(),
-        }),
-      });
-      setSent(true);
-    } catch {
-      // Request can fail due to CORS while still reaching the webhook receiver.
-      setSent(true);
-    } finally {
-      if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
-      sentTimeoutRef.current = setTimeout(() => setSent(false), SEND_FEEDBACK_MS);
-      setSending(false);
-    }
-  };
+        github: {
+          action: "opened",
+          pull_request: {
+            number: 42,
+            title: "Add webhook handler",
+            user: { login: "octocat" },
+          },
+        },
+        shopify: {
+          topic: "orders/create",
+          id: "820982911946154508",
+          total_price: "59.99",
+          currency: "USD",
+          line_items: [{ title: "Widget", quantity: 2, price: "29.99" }],
+        },
+      };
+      void sendPayload(provider, payloads[provider] ?? { provider, event: "test" });
+    },
+    [sendPayload]
+  );
 
   return (
     <div className="flex-1 flex items-center justify-center p-8">
@@ -975,10 +1013,37 @@ function DemoWaitingState({ url }: { url: string }) {
           <p className="font-bold uppercase tracking-wide">Waiting for first request...</p>
         </div>
 
+        <button
+          onClick={handleSendTest}
+          disabled={sending}
+          className="neo-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
+        >
+          <Send className="h-5 w-5" />
+          {sending ? "Sending..." : sent ? "Sent!" : "Send your first webhook"}
+        </button>
+
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            Or try a provider payload
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            {["Stripe", "GitHub", "Shopify"].map((provider) => (
+              <button
+                key={provider}
+                onClick={() => handleSendProvider(provider.toLowerCase())}
+                disabled={sending}
+                className="neo-btn-outline text-sm py-2 px-4 cursor-pointer"
+              >
+                {provider}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="text-left">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Send a test webhook
+              Or use curl
             </span>
             <button
               onClick={handleCopy}
@@ -997,15 +1062,6 @@ function DemoWaitingState({ url }: { url: string }) {
           </div>
           <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
         </div>
-
-        <button
-          onClick={handleSendTest}
-          disabled={sending}
-          className="neo-btn-primary w-full flex items-center justify-center gap-2"
-        >
-          <Send className="h-4 w-4" />
-          {sending ? "Sending..." : sent ? "Sent!" : "Send test request"}
-        </button>
       </div>
     </div>
   );
