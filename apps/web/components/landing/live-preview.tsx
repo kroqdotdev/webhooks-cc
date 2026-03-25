@@ -78,9 +78,12 @@ function LivePreviewInner() {
   const [sending, setSending] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const nextIndex = useRef(0);
+  const sendingRef = useRef(false);
+  const handleDismissOverlay = useCallback(() => setShowOverlay(false), []);
 
   const handleSend = useCallback(() => {
-    if (sending) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
 
     setTimeout(() => {
@@ -89,13 +92,14 @@ function LivePreviewInner() {
       setRequests((prev) => [newReq, ...prev].slice(0, 5));
       setSelected(newReq);
       nextIndex.current++;
+      sendingRef.current = false;
       setSending(false);
 
       if (nextIndex.current >= 2 && !isAuthenticated) {
         setShowOverlay(true);
       }
     }, 300);
-  }, [sending, isAuthenticated]);
+  }, [isAuthenticated]);
 
   return (
     <div className="mt-10 space-y-4">
@@ -213,7 +217,7 @@ function LivePreviewInner() {
                 </Link>
               </p>
               <button
-                onClick={() => setShowOverlay(false)}
+                onClick={handleDismissOverlay}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               >
                 Dismiss
