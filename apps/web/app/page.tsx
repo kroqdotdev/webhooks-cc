@@ -459,7 +459,7 @@ export default async function Home() {
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
               Create an endpoint, point your service at it, and see what arrives.
             </p>
-            <div className="flex justify-center">
+            <div className="flex justify-center text-foreground">
               <PricingCTA />
             </div>
           </div>
