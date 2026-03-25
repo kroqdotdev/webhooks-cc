@@ -5,6 +5,7 @@ import { Zap, Eye, Terminal, ArrowRight, Check, Bot } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
+import { PricingCTA } from "@/components/landing/pricing-cta";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 
@@ -246,9 +247,7 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login" className="neo-btn-outline w-full text-center block">
-                Get started
-              </Link>
+              <PricingCTA />
             </div>
 
             {/* Pro Plan */}
@@ -276,9 +275,8 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login" className="neo-btn-primary w-full text-center block">
-                Upgrade to Pro
-              </Link>
+              <p className="text-sm text-muted-foreground mb-3 text-center">Start free, upgrade later</p>
+              <PricingCTA />
             </div>
           </div>
         </div>

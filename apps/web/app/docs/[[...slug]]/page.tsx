@@ -7,6 +7,7 @@ import { getAllDocSlugs, getDocBySlug } from "@/lib/docs";
 import { createPageMetadata } from "@/lib/seo";
 import { mdxComponents } from "@/components/docs/mdx-components";
 import { PrevNextNav } from "@/components/docs/prev-next";
+import { DocsCTA } from "@/components/docs/docs-cta";
 import { getPrevNext } from "@/lib/docs-nav";
 import { rehypeExtractHeadings } from "@/lib/rehype-extract-headings";
 import { TableOfContents, type TocItem } from "@/components/docs/toc";
@@ -105,6 +106,7 @@ export default async function DocsCatchAllPage({ params }: PageProps) {
         <p className="text-lg text-muted-foreground mb-10">{fm.description}</p>
         <div className="docs-content">{mdxContent}</div>
         <PrevNextNav prev={prev} next={next} />
+        <DocsCTA />
       </article>
       <TableOfContents headings={headings} />
     </div>
