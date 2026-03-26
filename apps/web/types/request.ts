@@ -17,6 +17,9 @@ export interface RequestSummary {
   _id: string;
   _creationTime: number;
   method: HttpMethod | string;
+  path: string;
+  contentType?: string;
+  size: number;
   receivedAt: number;
 }
 
@@ -39,6 +42,9 @@ export interface ClickHouseRequest {
 export interface ClickHouseSummary {
   id: string;
   method: string;
+  path: string;
+  contentType?: string;
+  size: number;
   receivedAt: number;
 }
 
@@ -104,4 +110,38 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * Formats a timestamp as relative time (e.g. "2m ago", "1h ago").
+ */
+export function formatRelativeTimestamp(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  if (diff < 0) return "just now";
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatTimestamp(timestamp);
+}
+
+/**
+ * Short label for a content type (e.g. "JSON", "XML", "Form").
+ */
+export function getContentTypeLabel(contentType?: string): string | null {
+  if (!contentType) return null;
+  const ct = contentType.toLowerCase();
+  if (ct.includes("json")) return "JSON";
+  if (ct.includes("xml")) return "XML";
+  if (ct.includes("form-urlencoded")) return "Form";
+  if (ct.includes("multipart")) return "Multi";
+  if (ct.includes("text/plain")) return "Text";
+  if (ct.includes("text/html")) return "HTML";
+  if (ct.includes("octet-stream")) return "Bin";
+  return null;
 }

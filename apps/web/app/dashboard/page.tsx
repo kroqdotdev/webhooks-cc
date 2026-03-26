@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { UrlBar } from "@/components/dashboard/url-bar";
 import { RequestList } from "@/components/dashboard/request-list";
-import { RequestDetail, RequestDetailEmpty } from "@/components/dashboard/request-detail";
+import { RequestDetail, RequestDetailEmpty, TABS, type Tab } from "@/components/dashboard/request-detail";
 import { GettingStarted } from "@/components/dashboard/getting-started";
+import { KeyboardShortcutsDialog } from "@/components/dashboard/keyboard-shortcuts-dialog";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,6 +61,29 @@ export default function DashboardPage() {
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Keyboard shortcuts dialog
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Tab state from URL
+  const router = useRouter();
+  const pathname = usePathname();
+  const tabParam = searchParams.get("tab") as Tab | null;
+  const activeTab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "body";
+  const setActiveTab = useCallback(
+    (tab: Tab) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (tab === "body") {
+        params.delete("tab");
+      } else {
+        params.set("tab", tab);
+      }
+      const qs = params.toString();
+      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [searchParams, router, pathname]
+  );
 
   // Retained request history state
   const [olderRequests, setOlderRequests] = useState<ClickHouseRequest[]>([]);
@@ -414,6 +438,9 @@ export default function DashboardPage() {
         (r): ClickHouseSummary => ({
           id: r.id,
           method: r.method,
+          path: r.path,
+          contentType: r.contentType,
+          size: r.size,
           receivedAt: r.receivedAt,
         })
       );
@@ -425,6 +452,9 @@ export default function DashboardPage() {
         _id: request._id,
         _creationTime: request._creationTime,
         method: request.method,
+        path: request.path,
+        contentType: request.contentType,
+        size: request.size,
         receivedAt: request.receivedAt,
       }));
 
@@ -435,6 +465,9 @@ export default function DashboardPage() {
       .map((r) => ({
         id: r.id,
         method: r.method,
+        path: r.path,
+        contentType: r.contentType,
+        size: r.size,
         receivedAt: r.receivedAt,
       }));
 
@@ -562,6 +595,90 @@ export default function DashboardPage() {
     }
   }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+      // Esc always works
+      if (e.key === "Escape") {
+        setShortcutsOpen(false);
+        if (isInput) {
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+
+      // Don't intercept when typing in inputs
+      if (isInput) return;
+      // Don't intercept when modifiers are held (allow browser shortcuts)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      switch (e.key) {
+        case "?":
+          e.preventDefault();
+          setShortcutsOpen(true);
+          break;
+        case "/":
+          e.preventDefault();
+          searchInputRef.current?.focus();
+          break;
+        case "j":
+        case "k": {
+          e.preventDefault();
+          if (displayedItems.length === 0) break;
+          const ids = displayedItems.map((item) => ("_id" in item ? item._id : item.id));
+          const currentIndex = selectedId ? ids.indexOf(selectedId) : -1;
+          const nextIndex =
+            e.key === "j"
+              ? Math.min(currentIndex + 1, ids.length - 1)
+              : Math.max(currentIndex - 1, 0);
+          handleSelect(ids[nextIndex]);
+          break;
+        }
+        case "1":
+        case "2":
+        case "3":
+        case "4": {
+          e.preventDefault();
+          const tabIndex = parseInt(e.key) - 1;
+          setActiveTab(TABS[tabIndex]);
+          break;
+        }
+        case "c":
+          if (displayRequest) {
+            e.preventDefault();
+            document.querySelectorAll("button").forEach((btn) => {
+              if (btn.textContent?.includes("cURL")) btn.click();
+            });
+          }
+          break;
+        case "r":
+          if (displayRequest) {
+            e.preventDefault();
+            document.querySelectorAll("button").forEach((btn) => {
+              if (btn.textContent?.trim() === "Replay") btn.click();
+            });
+          }
+          break;
+        case "n":
+          e.preventDefault();
+          document.querySelectorAll("button").forEach((btn) => {
+            if (btn.textContent?.trim() === "New" || btn.getAttribute("aria-label")?.includes("new endpoint")) btn.click();
+          });
+          break;
+        case "l":
+          e.preventDefault();
+          handleToggleLiveMode();
+          break;
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [displayedItems, selectedId, handleSelect, handleToggleLiveMode, setActiveTab, displayRequest]);
+
   if (authLoading || endpoints === undefined) {
     return <DashboardSkeleton />;
   }
@@ -586,6 +703,8 @@ export default function DashboardPage() {
 
   return (
     <ErrorBoundary resetKey={currentEndpoint.id}>
+      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+
       {/* URL Bar */}
       <UrlBar
         endpointId={currentEndpoint.id}
@@ -626,14 +745,22 @@ export default function DashboardPage() {
                 loadingMore={loadingMore}
                 searchLoading={searchLoading}
                 searchError={searchError}
+                searchInputRef={searchInputRef}
               />
             </div>
             <div className="flex-1 overflow-hidden">
               <ErrorBoundary resetKey={selectedId ?? undefined}>
                 {displayRequest ? (
-                  <RequestDetail request={displayRequest} />
+                  <RequestDetail
+                    request={displayRequest}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                  />
                 ) : (
-                  <RequestDetailEmpty />
+                  <RequestDetailEmpty
+                    slug={currentEndpoint.slug}
+                    endpointName={currentEndpoint.name || currentEndpoint.slug}
+                  />
                 )}
               </ErrorBoundary>
             </div>
@@ -651,7 +778,11 @@ export default function DashboardPage() {
                 </button>
                 <div className="flex-1 overflow-hidden">
                   <ErrorBoundary resetKey={selectedId ?? undefined}>
-                    <RequestDetail request={displayRequest} />
+                    <RequestDetail
+                      request={displayRequest}
+                      activeTab={activeTab}
+                      onTabChange={setActiveTab}
+                    />
                   </ErrorBoundary>
                 </div>
               </div>
@@ -676,6 +807,7 @@ export default function DashboardPage() {
                 loadingMore={loadingMore}
                 searchLoading={searchLoading}
                 searchError={searchError}
+                searchInputRef={searchInputRef}
               />
             )}
           </div>

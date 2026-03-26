@@ -393,6 +393,9 @@ function GuestLiveDashboardInner() {
             _id: r._id,
             _creationTime: r._creationTime,
             method: r.method,
+            path: r.path,
+            contentType: r.contentType,
+            size: r.size,
             receivedAt: r.receivedAt,
           })
         );
@@ -406,6 +409,9 @@ function GuestLiveDashboardInner() {
         _id: request._id,
         _creationTime: request._creationTime,
         method: request.method,
+        path: request.path,
+        contentType: request.contentType,
+        size: request.size,
         receivedAt: request.receivedAt,
       })
     );

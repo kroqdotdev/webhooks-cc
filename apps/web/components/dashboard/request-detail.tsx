@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Code, Send, Settings, Link as LinkIcon } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes } from "@/types/request";
@@ -11,6 +11,7 @@ import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
 import { getHighlightLanguage, highlightBody } from "@/lib/highlight";
 import { trackRequestViewed, trackRequestDetailTabChanged } from "@/lib/analytics";
+import { jsonToTypeScript } from "@/lib/json-to-typescript";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -19,6 +20,10 @@ export type DisplayableRequest = Request | ClickHouseRequest;
 interface RequestDetailProps {
   /** The captured webhook request to display. */
   request: DisplayableRequest;
+  /** Current active tab (controlled). */
+  activeTab?: Tab;
+  /** Callback when tab changes. */
+  onTabChange?: (tab: Tab) => void;
 }
 
 /**
@@ -81,10 +86,14 @@ function generateCurlCommand(request: DisplayableRequest): string {
   return parts.join(" \\\n  ");
 }
 
-type Tab = "body" | "headers" | "query" | "raw";
+export type Tab = "body" | "headers" | "query" | "raw";
+export const TABS: Tab[] = ["body", "headers", "query", "raw"];
 
-export function RequestDetail({ request }: RequestDetailProps) {
-  const [tab, setTab] = useState<Tab>("body");
+export function RequestDetail({ request, activeTab, onTabChange }: RequestDetailProps) {
+  const [internalTab, setInternalTab] = useState<Tab>("body");
+  const tab = activeTab ?? internalTab;
+  const setTab = onTabChange ?? setInternalTab;
+
   const [copied, setCopied] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestId = "id" in request ? request.id : request._id;
@@ -102,7 +111,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
     };
   }, []);
 
-  const handleCopy = async (text: string, key: string) => {
+  const handleCopy = useCallback(async (text: string, key: string) => {
     const success = await copyToClipboard(text);
     if (success) {
       setCopied(key);
@@ -111,7 +120,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
       }
       timeoutRef.current = setTimeout(() => setCopied(null), 2000);
     }
-  };
+  }, []);
 
   const curlCommand = generateCurlCommand(request);
   const fullTime = new Date(request.receivedAt).toLocaleString();
@@ -119,6 +128,8 @@ export function RequestDetail({ request }: RequestDetailProps) {
   const formattedBody = request.body ? formatBody(request.body, bodyFormat) : "(empty body)";
   const highlightedBody = highlightBody(formattedBody, bodyFormat);
   const highlightLanguage = getHighlightLanguage(bodyFormat);
+  const isJsonBody = bodyFormat === "json" && !!request.body;
+  const tsInterface = isJsonBody ? jsonToTypeScript(request.body!) : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -159,7 +170,7 @@ export function RequestDetail({ request }: RequestDetailProps) {
 
       {/* Tabs */}
       <div className="border-b-2 border-foreground flex shrink-0">
-        {(["body", "headers", "query", "raw"] as const).map((t) => (
+        {TABS.map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -186,15 +197,42 @@ export function RequestDetail({ request }: RequestDetailProps) {
                 {getFormatLabel(bodyFormat)}
               </span>
             </div>
-            {request.body && (
-              <button
-                onClick={() => request.body && handleCopy(request.body, "body")}
-                className="absolute top-0 right-0 neo-btn-outline py-1! px-2! text-xs flex items-center gap-1"
-                aria-label={copied === "body" ? "Copied to clipboard" : "Copy body to clipboard"}
-              >
-                {copied === "body" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </button>
-            )}
+            <div className="absolute top-0 right-0 flex items-center gap-1">
+              {tsInterface && (
+                <button
+                  onClick={() => handleCopy(tsInterface, "ts")}
+                  className="neo-btn-outline py-1! px-2! text-xs flex items-center gap-1"
+                  title="Copy as TypeScript interface"
+                  aria-label={
+                    copied === "ts"
+                      ? "TypeScript copied to clipboard"
+                      : "Copy as TypeScript interface"
+                  }
+                >
+                  {copied === "ts" ? (
+                    <Check className="h-3 w-3" />
+                  ) : (
+                    <Code className="h-3 w-3" />
+                  )}
+                  <span className="hidden sm:inline">{copied === "ts" ? "Copied!" : "TS"}</span>
+                </button>
+              )}
+              {request.body && (
+                <button
+                  onClick={() => request.body && handleCopy(request.body, "body")}
+                  className="neo-btn-outline py-1! px-2! text-xs flex items-center gap-1"
+                  aria-label={
+                    copied === "body" ? "Copied to clipboard" : "Copy body to clipboard"
+                  }
+                >
+                  {copied === "body" ? (
+                    <Check className="h-3 w-3" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </button>
+              )}
+            </div>
             <pre className="neo-code syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words">
               {/* Safe: highlightBody escapes plain/form/text/binary output and Prism.highlight encodes token text for json/xml. */}
               <code
@@ -253,10 +291,71 @@ export function RequestDetail({ request }: RequestDetailProps) {
   );
 }
 
-export function RequestDetailEmpty() {
+interface RequestDetailEmptyProps {
+  slug?: string;
+  endpointName?: string;
+  onSendTest?: () => void;
+  onOpenSettings?: () => void;
+}
+
+export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: RequestDetailEmptyProps) {
+  const [copied, setCopied] = useState(false);
+  const url = slug ? `${WEBHOOK_BASE_URL}/w/${slug}` : null;
+
+  const handleCopy = async () => {
+    if (!url) return;
+    const success = await copyToClipboard(url);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // Minimal fallback when no slug is passed (shouldn't happen in practice)
+  if (!slug) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        <p className="font-bold uppercase tracking-wide text-sm">
+          Select a request to view details
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-center justify-center h-full text-muted-foreground">
-      <p className="font-bold uppercase tracking-wide text-sm">Select a request to view details</p>
+    <div className="flex items-center justify-center h-full p-6">
+      <div className="max-w-sm w-full space-y-5 text-center">
+        <p className="font-bold uppercase tracking-wide text-sm text-muted-foreground">
+          Select a request to view details
+        </p>
+
+        {/* Quick actions */}
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          {onSendTest && (
+            <button onClick={onSendTest} className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+              <Send className="h-3 w-3" />
+              Send Test
+            </button>
+          )}
+          {url && (
+            <button onClick={handleCopy} className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+              {copied ? <Check className="h-3 w-3" /> : <LinkIcon className="h-3 w-3" />}
+              {copied ? "Copied!" : "Copy URL"}
+            </button>
+          )}
+          {onOpenSettings && (
+            <button onClick={onOpenSettings} className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+              <Settings className="h-3 w-3" />
+              Settings
+            </button>
+          )}
+        </div>
+
+        {/* Keyboard hint */}
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+          Press <kbd className="px-1 py-0.5 border border-foreground/30 bg-muted font-mono text-[10px]">?</kbd> for keyboard shortcuts
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,9 +1,18 @@
 "use client";
 
+import { useRef, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Circle, ArrowUpDown, Search, X, Loader2 } from "lucide-react";
-import { getMethodColor, formatTimestamp } from "@/types/request";
+import {
+  getMethodColor,
+  formatTimestamp,
+  formatRelativeTimestamp,
+  formatBytes,
+  getContentTypeLabel,
+} from "@/types/request";
 import type { AnyRequestSummary } from "@/types/request";
+
+const TS_PREF_KEY = "request_list_relative_time";
 
 /** Extract a string ID from a RequestSummary or ClickHouseSummary. */
 function getItemId(item: AnyRequestSummary): string {
@@ -30,6 +39,7 @@ interface RequestListProps {
   loadingMore?: boolean;
   searchLoading?: boolean;
   searchError?: boolean;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -54,9 +64,45 @@ export function RequestList({
   loadingMore,
   searchLoading,
   searchError,
+  searchInputRef,
 }: RequestListProps) {
   const sorted = sortNewest ? requests : [...requests].reverse();
   const displayCount = totalCount ?? requests.length;
+  const internalSearchRef = useRef<HTMLInputElement>(null);
+  const inputRef = searchInputRef ?? internalSearchRef;
+
+  // Timestamp mode: relative vs absolute
+  const [relativeTime, setRelativeTime] = useState(false);
+  useEffect(() => {
+    try {
+      setRelativeTime(localStorage.getItem(TS_PREF_KEY) === "true");
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
+
+  // Force re-render every 10s when in relative mode so timestamps stay fresh
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!relativeTime) return;
+    const interval = setInterval(() => setTick((t) => t + 1), 10_000);
+    return () => clearInterval(interval);
+  }, [relativeTime]);
+
+  const toggleTimestampMode = () => {
+    setRelativeTime((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(TS_PREF_KEY, String(next));
+      } catch {
+        // localStorage unavailable
+      }
+      return next;
+    });
+  };
+
+  const renderTimestamp = (ts: number) =>
+    relativeTime ? formatRelativeTimestamp(ts) : formatTimestamp(ts);
 
   return (
     <div className="flex flex-col h-full">
@@ -112,6 +158,7 @@ export function RequestList({
         <div className="flex-1 flex items-center gap-1 border-2 border-foreground px-2 py-1 bg-background">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
+            ref={inputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
@@ -154,31 +201,62 @@ export function RequestList({
           <>
             {sorted.map((request) => {
               const id = getItemId(request);
+              const ctLabel = getContentTypeLabel(request.contentType);
               return (
                 <button
                   key={id}
                   onClick={() => onSelect(id)}
                   className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer transition-colors border-b border-foreground/10",
+                    "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
                     selectedId === id
                       ? "bg-muted border-l-4 border-l-primary"
                       : "hover:bg-muted/50 border-l-4 border-l-transparent"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
-                      getMethodColor(request.method)
+                  {/* Top line: method + path + timestamp */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
+                        getMethodColor(request.method)
+                      )}
+                    >
+                      {request.method}
+                    </span>
+                    <span className="text-xs font-mono truncate flex-1">{request.path}</span>
+                    <span
+                      className="text-[10px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleTimestampMode();
+                      }}
+                      title="Click to toggle time format"
+                    >
+                      {renderTimestamp(request.receivedAt)}
+                    </span>
+                  </div>
+                  {/* Bottom line: ID + content type + size */}
+                  <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)]">
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      #{id.slice(-6)}
+                    </span>
+                    {ctLabel && (
+                      <>
+                        <span className="text-[10px] text-muted-foreground">&middot;</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {ctLabel}
+                        </span>
+                      </>
                     )}
-                  >
-                    {request.method}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono truncate flex-1">
-                    #{id.slice(-6)}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono shrink-0">
-                    {formatTimestamp(request.receivedAt)}
-                  </span>
+                    {request.size > 0 && (
+                      <>
+                        <span className="text-[10px] text-muted-foreground">&middot;</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {formatBytes(request.size)}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </button>
               );
             })}
