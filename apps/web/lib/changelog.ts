@@ -25,7 +25,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.11.0",
     date: "2026-03-26",
-    title: "Dashboard Quick Wins",
+    title: "Dashboard Improvements",
     track: "web",
     items: [
       "Keyboard shortcuts for dashboard navigation",
