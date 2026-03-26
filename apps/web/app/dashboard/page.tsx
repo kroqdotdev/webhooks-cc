@@ -42,6 +42,8 @@ import type {
 } from "@/types/request";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
+const PANE_MIN = 240;
+const PANE_DEFAULT = 320;
 
 export default function DashboardPage() {
   const { session, isLoading: authLoading } = useAuth();
@@ -68,8 +70,6 @@ export default function DashboardPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Resizable split pane
-  const PANE_MIN = 240;
-  const PANE_DEFAULT = 320;
   const [paneWidth, setPaneWidth] = useState(() => {
     if (typeof window === "undefined") return PANE_DEFAULT;
     try {
@@ -83,46 +83,45 @@ export default function DashboardPage() {
   });
   const isDragging = useRef(false);
   const paneCollapsed = paneWidth === 0;
+  const paneWidthRef = useRef(paneWidth);
+  paneWidthRef.current = paneWidth;
 
-  const handleDragStart = useCallback(
-    (e: React.MouseEvent) => {
-      if (paneCollapsed) return;
-      e.preventDefault();
-      isDragging.current = true;
-      const startX = e.clientX;
-      const startWidth = paneWidth;
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    if (paneWidthRef.current === 0) return;
+    e.preventDefault();
+    isDragging.current = true;
+    const startX = e.clientX;
+    const startWidth = paneWidthRef.current;
 
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!isDragging.current) return;
-        const maxWidth = Math.floor(window.innerWidth * 0.5);
-        const newWidth = Math.max(PANE_MIN, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
-        setPaneWidth(newWidth);
-      };
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const maxWidth = Math.floor(window.innerWidth * 0.5);
+      const newWidth = Math.max(PANE_MIN, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
+      setPaneWidth(newWidth);
+    };
 
-      const onMouseUp = () => {
-        isDragging.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        // Persist after drag ends
-        setPaneWidth((w) => {
-          try {
-            localStorage.setItem("dashboard_pane_width", String(w));
-          } catch {
-            /* noop */
-          }
-          return w;
-        });
-      };
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      // Persist after drag ends
+      setPaneWidth((w) => {
+        try {
+          localStorage.setItem("dashboard_pane_width", String(w));
+        } catch {
+          /* noop */
+        }
+        return w;
+      });
+    };
 
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    },
-    [paneWidth, paneCollapsed]
-  );
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
 
   const toggleCollapse = useCallback(() => {
     setPaneWidth((prev) => {

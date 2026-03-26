@@ -1,3 +1,5 @@
+const JS_IDENT = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
 /**
  * Converts a JSON value to a TypeScript interface string.
  * Returns null if the input is not valid JSON or not an object.
@@ -33,7 +35,7 @@ export function jsonToTypeScript(json: string, name = "WebhookPayload"): string 
       const subLines: string[] = [];
       subLines.push(`interface ${subName} {`);
       for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-        const safeName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? key : `"${key}"`;
+        const safeName = JS_IDENT.test(key) ? key : `"${key}"`;
         subLines.push(`  ${safeName}: ${inferType(val, key, depth + 1)};`);
       }
       subLines.push("}");

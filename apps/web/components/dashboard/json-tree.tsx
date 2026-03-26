@@ -4,6 +4,9 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { ChevronRight, ChevronDown, Check, ChevronsUpDown } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 
+/** Valid JS identifier — hoisted to avoid recreation in render loops (js-hoist-regexp) */
+const JS_IDENT = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
 interface JsonTreeProps {
   data: unknown;
   defaultExpandDepth?: number;
@@ -96,9 +99,7 @@ function JsonNode({
   const currentPath = useMemo(() => {
     if (!keyName) return path;
     if (!path) return keyName;
-    return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(keyName)
-      ? `${path}.${keyName}`
-      : `${path}["${keyName}"]`;
+    return JS_IDENT.test(keyName) ? `${path}.${keyName}` : `${path}["${keyName}"]`;
   }, [path, keyName]);
 
   if (!isExpandable) {
