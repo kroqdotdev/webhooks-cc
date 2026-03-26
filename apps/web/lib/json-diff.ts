@@ -102,7 +102,7 @@ function lastKey(path: string): string {
   const bracketIndex = path.lastIndexOf("[");
   const lastSep = Math.max(dotIndex, bracketIndex);
   if (lastSep === -1) return path;
-  return path.slice(lastSep + 1).replace("]", "");
+  return path.slice(lastSep + 1).replaceAll("]", "");
 }
 
 /**
