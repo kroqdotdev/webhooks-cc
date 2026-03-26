@@ -14,7 +14,7 @@ const SHORTCUT_GROUPS: { title: string; shortcuts: ShortcutDef[] }[] = [
       { key: "j", label: "Next request" },
       { key: "k", label: "Previous request" },
       { key: "/", label: "Focus search" },
-      { key: "Esc", label: "Close dialog / deselect" },
+      { key: "Esc", label: "Close dialog / blur input" },
     ],
   },
   {

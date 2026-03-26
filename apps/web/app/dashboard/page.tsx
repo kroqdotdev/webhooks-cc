@@ -76,7 +76,9 @@ export default function DashboardPage() {
       const stored = localStorage.getItem("dashboard_pane_width");
       if (stored === "collapsed") return 0;
       const val = stored ? parseInt(stored, 10) : PANE_DEFAULT;
-      return val >= PANE_MIN ? val : PANE_DEFAULT;
+      if (!Number.isFinite(val)) return PANE_DEFAULT;
+      const maxWidth = Math.floor(window.innerWidth * 0.5);
+      return maxWidth >= PANE_MIN ? Math.max(PANE_MIN, Math.min(maxWidth, val)) : PANE_DEFAULT;
     } catch {
       return PANE_DEFAULT;
     }
@@ -137,7 +139,8 @@ export default function DashboardPage() {
 
   // Keyboard shortcuts dialog
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const desktopSearchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   // Tab state from URL — read searchParams for deriving current tab,
   // but write via window.location.search to avoid subscribing to the object (rerender-defer-reads).
@@ -707,7 +710,10 @@ export default function DashboardPage() {
           break;
         case "/":
           e.preventDefault();
-          searchInputRef.current?.focus();
+          (window.matchMedia("(min-width: 768px)").matches
+            ? desktopSearchInputRef.current
+            : mobileSearchInputRef.current
+          )?.focus();
           break;
         case "j":
         case "k": {
@@ -830,7 +836,7 @@ export default function DashboardPage() {
                   loadingMore={loadingMore}
                   searchLoading={searchLoading}
                   searchError={searchError}
-                  searchInputRef={searchInputRef}
+                  searchInputRef={desktopSearchInputRef}
                 />
               </div>
             )}
@@ -900,7 +906,7 @@ export default function DashboardPage() {
                 loadingMore={loadingMore}
                 searchLoading={searchLoading}
                 searchError={searchError}
-                searchInputRef={searchInputRef}
+                searchInputRef={mobileSearchInputRef}
               />
             )}
           </div>

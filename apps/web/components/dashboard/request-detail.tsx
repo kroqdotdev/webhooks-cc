@@ -336,6 +336,7 @@ function jsonToCsvValue(json: string): string | null {
     }
   }
   const keys = [...allKeys];
+  if (keys.length === 0) return null;
 
   const escape = (val: unknown): string => {
     const str =

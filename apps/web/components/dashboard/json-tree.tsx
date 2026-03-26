@@ -18,12 +18,20 @@ export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
   const [expandTarget, setExpandTarget] = useState(true);
   const [expandVersion, setExpandVersion] = useState(0);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const handleCopyPath = useCallback(async (path: string) => {
     const success = await copyToClipboard(path);
     if (success) {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
       setCopiedPath(path);
-      setTimeout(() => setCopiedPath(null), 1500);
+      copyTimeoutRef.current = setTimeout(() => setCopiedPath(null), 1500);
     }
   }, []);
 
@@ -98,8 +106,11 @@ function JsonNode({
 
   const currentPath = useMemo(() => {
     if (!keyName) return path;
-    if (!path) return keyName;
-    return JS_IDENT.test(keyName) ? `${path}.${keyName}` : `${path}["${keyName}"]`;
+    if (JS_IDENT.test(keyName)) {
+      return path ? `${path}.${keyName}` : keyName;
+    }
+    const quotedKey = JSON.stringify(keyName);
+    return path ? `${path}[${quotedKey}]` : `[${quotedKey}]`;
   }, [path, keyName]);
 
   if (!isExpandable) {

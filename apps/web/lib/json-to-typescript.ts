@@ -16,7 +16,35 @@ export function jsonToTypeScript(json: string, name = "WebhookPayload"): string 
 
   const lines: string[] = [];
   const subInterfaces: string[] = [];
-  let subCount = 0;
+  const usedNames = new Set<string>();
+
+  function uniqueName(base: string): string {
+    let candidate = base;
+    let i = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base}${i++}`;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  function capitalize(s: string): string {
+    const clean = s.replace(/[^a-zA-Z0-9_]/g, "");
+    if (!clean) return uniqueName("Sub");
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+
+  function mergeObjectKeys(items: unknown[]): Record<string, unknown> {
+    const merged: Record<string, unknown> = {};
+    for (const item of items) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        for (const [key, val] of Object.entries(item as Record<string, unknown>)) {
+          if (!(key in merged)) merged[key] = val;
+        }
+      }
+    }
+    return merged;
+  }
 
   function inferType(value: unknown, fieldName: string, depth: number): string {
     if (value === null) return "unknown";
@@ -26,12 +54,18 @@ export function jsonToTypeScript(json: string, name = "WebhookPayload"): string 
 
     if (Array.isArray(value)) {
       if (value.length === 0) return "unknown[]";
+      const allObjects = value.every((v) => v !== null && typeof v === "object" && !Array.isArray(v));
+      if (allObjects) {
+        const merged = mergeObjectKeys(value);
+        const elementType = inferType(merged, fieldName, depth);
+        return `${elementType}[]`;
+      }
       const elementType = inferType(value[0], fieldName, depth);
       return `${elementType}[]`;
     }
 
     if (typeof value === "object") {
-      const subName = capitalize(fieldName);
+      const subName = uniqueName(capitalize(fieldName));
       const subLines: string[] = [];
       subLines.push(`interface ${subName} {`);
       for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
@@ -40,29 +74,32 @@ export function jsonToTypeScript(json: string, name = "WebhookPayload"): string 
       }
       subLines.push("}");
       subInterfaces.push(subLines.join("\n"));
-      subCount++;
       return subName;
     }
 
     return "unknown";
   }
 
-  function capitalize(s: string): string {
-    const clean = s.replace(/[^a-zA-Z0-9_]/g, "");
-    if (!clean) return `Sub${++subCount}`;
-    return clean.charAt(0).toUpperCase() + clean.slice(1);
-  }
-
   if (Array.isArray(parsed)) {
     if (parsed.length === 0) return `type ${name} = unknown[];`;
+    const allObjects = parsed.every(
+      (v) => v !== null && typeof v === "object" && !Array.isArray(v)
+    );
+    if (allObjects) {
+      const merged = mergeObjectKeys(parsed);
+      const elementType = inferType(merged, name + "Item", 0);
+      const result = [...subInterfaces, `type ${name} = ${elementType}[];`];
+      return result.join("\n\n");
+    }
     const elementType = inferType(parsed[0], name + "Item", 0);
     const result = [...subInterfaces, `type ${name} = ${elementType}[];`];
     return result.join("\n\n");
   }
 
+  usedNames.add(name);
   lines.push(`interface ${name} {`);
   for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
-    const safeName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? key : `"${key}"`;
+    const safeName = JS_IDENT.test(key) ? key : `"${key}"`;
     lines.push(`  ${safeName}: ${inferType(val, key, 0)};`);
   }
   lines.push("}");
