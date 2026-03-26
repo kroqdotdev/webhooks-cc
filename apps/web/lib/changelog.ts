@@ -15,13 +15,27 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.11.0";
+export const APP_VERSION = "0.12.0";
 export const CLI_VERSION = "0.5.3";
 export const SDK_VERSION = "1.1.0";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.12.0",
+    date: "2026-03-26",
+    title: "Request Debugging Tools",
+    track: "web",
+    items: [
+      "Pin requests to keep them visible across endpoint switches",
+      "Add notes to captured requests (stored locally)",
+      "Side-by-side request diff comparison",
+      "Visual request timeline view",
+      "Interactive dashboard guide",
+      "Dashboard features documentation page",
+    ],
+  },
   {
     version: "0.11.0",
     date: "2026-03-26",
