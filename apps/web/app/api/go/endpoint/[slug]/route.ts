@@ -7,7 +7,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
   const { data, error } = await admin
     .from("endpoints")
     .select("id, slug, is_ephemeral, expires_at, request_count")
-    .eq("slug", slug)
+    .eq("slug", slug.toLowerCase())
     .eq("is_ephemeral", true)
     .maybeSingle();
 

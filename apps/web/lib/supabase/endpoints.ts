@@ -1,10 +1,11 @@
-import { nanoid } from "nanoid";
+import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 
 const DEFAULT_EPHEMERAL_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_EPHEMERAL_ENDPOINTS = 500;
 const MAX_SLUG_ATTEMPTS = 5;
+const nanoidSlug = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
 
 type EndpointRow = Database["public"]["Tables"]["endpoints"]["Row"];
 type EndpointInsert = Database["public"]["Tables"]["endpoints"]["Insert"];
@@ -110,7 +111,7 @@ async function generateUniqueSlug(): Promise<string> {
   const admin = createAdminClient();
 
   for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
-    const slug = nanoid(8);
+    const slug = nanoidSlug();
     const { data, error } = await admin
       .from("endpoints")
       .select("id")
@@ -135,7 +136,7 @@ async function findOwnedEndpoint(userId: string, slug: string): Promise<OwnedEnd
     .from("endpoints")
     .select("id, slug, user_id")
     .eq("user_id", userId)
-    .eq("slug", slug)
+    .eq("slug", slug.toLowerCase())
     .returns<OwnedEndpointRow>()
     .maybeSingle();
 
@@ -190,7 +191,7 @@ export async function getEndpointBySlugForUser(
     .from("endpoints")
     .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
     .eq("user_id", userId)
-    .eq("slug", slug)
+    .eq("slug", slug.toLowerCase())
     .returns<SelectedEndpointRow>()
     .maybeSingle();
 
@@ -272,7 +273,7 @@ export async function claimGuestEndpoint(
       is_ephemeral: false,
       expires_at: null,
     })
-    .eq("slug", slug)
+    .eq("slug", slug.toLowerCase())
     .is("user_id", null)
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
@@ -304,7 +305,7 @@ export async function updateEndpointBySlugForUser({
     .from("endpoints")
     .update(updates)
     .eq("user_id", userId)
-    .eq("slug", slug)
+    .eq("slug", slug.toLowerCase())
     .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
     .returns<SelectedEndpointRow>()
     .maybeSingle();
