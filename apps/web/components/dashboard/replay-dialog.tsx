@@ -107,7 +107,10 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <button data-shortcut="replay" className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+        <button
+          data-shortcut="replay"
+          className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+        >
           <Play className="h-3 w-3" />
           Replay
         </button>

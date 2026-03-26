@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export interface ShortcutDef {
   key: string;
@@ -64,10 +59,7 @@ export function KeyboardShortcutsDialog({
               </h3>
               <div className="space-y-1">
                 {group.shortcuts.map((s) => (
-                  <div
-                    key={s.key}
-                    className="flex items-center justify-between py-1"
-                  >
+                  <div key={s.key} className="flex items-center justify-between py-1">
                     <span className="text-sm">{s.label}</span>
                     <kbd className="px-2 py-0.5 text-xs font-mono font-bold border-2 border-foreground bg-muted">
                       {s.key}

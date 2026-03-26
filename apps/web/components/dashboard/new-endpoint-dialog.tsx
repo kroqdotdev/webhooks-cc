@@ -81,7 +81,10 @@ export function NewEndpointDialog() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <button data-shortcut="new-endpoint" className="neo-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5">
+        <button
+          data-shortcut="new-endpoint"
+          className="neo-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
+        >
           <Plus className="h-3.5 w-3.5" />
           New Endpoint
         </button>

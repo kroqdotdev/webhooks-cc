@@ -298,7 +298,12 @@ function jsonToCsvValue(json: string): string | null {
   const keys = [...allKeys];
 
   const escape = (val: unknown): string => {
-    const str = val === null || val === undefined ? "" : typeof val === "object" ? JSON.stringify(val) : String(val);
+    const str =
+      val === null || val === undefined
+        ? ""
+        : typeof val === "object"
+          ? JSON.stringify(val)
+          : String(val);
     return str.includes(",") || str.includes('"') || str.includes("\n")
       ? `"${str.replace(/"/g, '""')}"`
       : str;
@@ -348,7 +353,8 @@ function BodyCopyDropdown({
   }, [open]);
 
   const csvBody = useMemo(() => jsonToCsvValue(body), [body]);
-  const isCopied = copied === "body" || copied === "body-formatted" || copied === "ts" || copied === "csv";
+  const isCopied =
+    copied === "body" || copied === "body-formatted" || copied === "ts" || copied === "csv";
 
   const options = useMemo(() => {
     const opts: { key: string; label: string; value: string }[] = [
@@ -437,19 +443,28 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
         {/* Quick actions */}
         <div className="flex items-center justify-center gap-2 flex-wrap">
           {onSendTest && (
-            <button onClick={onSendTest} className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+            <button
+              onClick={onSendTest}
+              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            >
               <Send className="h-3 w-3" />
               Send Test
             </button>
           )}
           {url && (
-            <button onClick={handleCopy} className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+            <button
+              onClick={handleCopy}
+              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            >
               {copied ? <Check className="h-3 w-3" /> : <LinkIcon className="h-3 w-3" />}
               {copied ? "Copied!" : "Copy URL"}
             </button>
           )}
           {onOpenSettings && (
-            <button onClick={onOpenSettings} className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+            <button
+              onClick={onOpenSettings}
+              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            >
               <Settings className="h-3 w-3" />
               Settings
             </button>
@@ -458,7 +473,11 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
 
         {/* Keyboard hint */}
         <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-          Press <kbd className="px-1 py-0.5 border border-foreground/30 bg-muted font-mono text-[10px]">?</kbd> for keyboard shortcuts
+          Press{" "}
+          <kbd className="px-1 py-0.5 border border-foreground/30 bg-muted font-mono text-[10px]">
+            ?
+          </kbd>{" "}
+          for keyboard shortcuts
         </p>
       </div>
     </div>

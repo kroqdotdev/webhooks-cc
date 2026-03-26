@@ -6,7 +6,12 @@ import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { UrlBar } from "@/components/dashboard/url-bar";
 import { RequestList } from "@/components/dashboard/request-list";
-import { RequestDetail, RequestDetailEmpty, TABS, type Tab } from "@/components/dashboard/request-detail";
+import {
+  RequestDetail,
+  RequestDetailEmpty,
+  TABS,
+  type Tab,
+} from "@/components/dashboard/request-detail";
 import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KeyboardShortcutsDialog } from "@/components/dashboard/keyboard-shortcuts-dialog";
 
