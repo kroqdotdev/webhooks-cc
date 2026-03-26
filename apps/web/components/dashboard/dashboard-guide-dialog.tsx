@@ -162,8 +162,8 @@ const SECTIONS: Section[] = [
           </li>
           <li>JSON bodies are compared structurally (key by key)</li>
           <li>
-            Exit by pressing <Kbd>Esc</Kbd>, clicking any request in the list, or
-            the Exit button in the diff header
+            Exit by pressing <Kbd>Esc</Kbd>, shift-clicking the compared request
+            again, or the Exit button in the diff header
           </li>
         </ul>
       </div>
