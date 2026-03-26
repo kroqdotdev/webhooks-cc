@@ -105,7 +105,7 @@ describe("Supabase Guest Endpoint Integration", () => {
 
     guestEndpointIds.add(endpoint.id);
 
-    expect(endpoint.slug).toHaveLength(8);
+    expect(endpoint.slug).toHaveLength(10);
     expect(endpoint.isEphemeral).toBe(true);
     expect(endpoint.expiresAt).toBeGreaterThan(Date.now());
     expect(endpoint.requestCount).toBe(0);

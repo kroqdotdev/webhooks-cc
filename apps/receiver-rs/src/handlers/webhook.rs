@@ -184,7 +184,8 @@ async fn handle_webhook_inner(
     query: axum::extract::Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Response {
-    // 1. Validate slug
+    // 1. Validate and normalize slug to lowercase (case-insensitive matching)
+    let slug = slug.to_ascii_lowercase();
     if !is_valid_slug(&slug) {
         return (
             StatusCode::BAD_REQUEST,

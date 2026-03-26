@@ -121,7 +121,7 @@ async function getOwnedEndpoint(userId: string, slug: string): Promise<OwnedEndp
     .from("endpoints")
     .select("id, slug")
     .eq("user_id", userId)
-    .eq("slug", slug)
+    .eq("slug", slug.toLowerCase())
     .returns<OwnedEndpointRow>()
     .maybeSingle();
 
