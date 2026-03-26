@@ -2,7 +2,16 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { Copy, Check, ChevronDown, Send, Settings, Link as LinkIcon } from "lucide-react";
+import {
+  Copy,
+  Check,
+  ChevronDown,
+  Send,
+  Settings,
+  Link as LinkIcon,
+  StickyNote,
+  X,
+} from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes } from "@/types/request";
@@ -27,6 +36,10 @@ interface RequestDetailProps {
   onTabChange?: (tab: Tab) => void;
   /** Ref forwarded to the cURL copy button (for keyboard shortcuts). */
   curlBtnRef?: React.RefObject<HTMLButtonElement | null>;
+  /** Persisted note for this request. */
+  note?: string | null;
+  /** Callback when note changes. */
+  onNoteChange?: (note: string) => void;
 }
 
 /**
@@ -92,7 +105,14 @@ function generateCurlCommand(request: DisplayableRequest): string {
 export type Tab = "body" | "headers" | "query" | "raw";
 export const TABS: Tab[] = ["body", "headers", "query", "raw"];
 
-export function RequestDetail({ request, activeTab, onTabChange, curlBtnRef }: RequestDetailProps) {
+export function RequestDetail({
+  request,
+  activeTab,
+  onTabChange,
+  curlBtnRef,
+  note,
+  onNoteChange,
+}: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
   const tab = activeTab ?? internalTab;
   const setTab = onTabChange ?? setInternalTab;
@@ -190,6 +210,9 @@ export function RequestDetail({ request, activeTab, onTabChange, curlBtnRef }: R
           </div>
         </div>
       </div>
+
+      {/* Note bar */}
+      {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs */}
       <div className="border-b-2 border-foreground flex shrink-0">
@@ -440,6 +463,90 @@ function BodyCopyDropdown({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function NoteBar({ note, onChange }: { note: string | null; onChange: (note: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    setDraft(note ?? "");
+  }, [note]);
+
+  useEffect(() => {
+    if (editing) {
+      cancelledRef.current = false;
+      inputRef.current?.focus();
+    }
+  }, [editing]);
+
+  const save = useCallback(() => {
+    if (cancelledRef.current) return;
+    onChange(draft);
+    setEditing(false);
+  }, [draft, onChange]);
+
+  if (!editing && !note) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className="border-b-2 border-foreground px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
+      >
+        <StickyNote className="h-3 w-3" />
+        Add note...
+      </button>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="border-b-2 border-foreground px-4 py-1.5 flex items-center gap-2 shrink-0">
+        <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          maxLength={280}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              cancelledRef.current = true;
+              setDraft(note ?? "");
+              setEditing(false);
+            }
+          }}
+          onBlur={save}
+          className="flex-1 text-xs bg-transparent outline-none font-mono placeholder:text-muted-foreground min-w-0"
+          placeholder="Type a note..."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-b-2 border-foreground px-4 py-1.5 flex items-center gap-2 shrink-0 group">
+      <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
+      <button
+        type="button"
+        className="flex-1 text-xs font-mono truncate cursor-pointer text-left bg-transparent border-0 p-0"
+        onClick={() => setEditing(true)}
+        aria-label="Edit request note"
+      >
+        {note}
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("")}
+        aria-label="Delete request note"
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { EndpointSettingsDialog } from "./endpoint-settings-dialog";
 import { SendWebhookDialog } from "./send-webhook-dialog";
+import { DashboardGuideDialog } from "./dashboard-guide-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 
@@ -61,6 +62,7 @@ export function UrlBar({ endpointId, endpointName, slug, mockResponse, extra }: 
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
         </div>
+        <DashboardGuideDialog />
         <SendWebhookDialog slug={slug} />
         {extra}
       </div>
