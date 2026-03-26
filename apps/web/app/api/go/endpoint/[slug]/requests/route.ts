@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getGuestEndpointBySlug } from "@/lib/supabase/endpoints";
 
 const MAX_LIMIT = 100;
 
@@ -10,18 +11,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     MAX_LIMIT
   );
 
-  const admin = createAdminClient();
-
-  // Verify the endpoint exists and is ephemeral before returning requests
-  const { data: endpoint, error: epError } = await admin
-    .from("endpoints")
-    .select("id")
-    .eq("slug", slug.toLowerCase())
-    .eq("is_ephemeral", true)
-    .maybeSingle();
-
-  if (epError) {
-    console.error("Failed to verify guest endpoint:", epError);
+  let endpoint;
+  try {
+    endpoint = await getGuestEndpointBySlug(slug);
+  } catch (error) {
+    console.error("Failed to verify guest endpoint:", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 
@@ -29,6 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     return Response.json({ error: "Endpoint not found" }, { status: 404 });
   }
 
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from("requests")
     .select(

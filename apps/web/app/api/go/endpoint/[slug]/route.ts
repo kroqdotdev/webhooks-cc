@@ -1,17 +1,12 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getGuestEndpointBySlug } from "@/lib/supabase/endpoints";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("endpoints")
-    .select("id, slug, is_ephemeral, expires_at, request_count")
-    .eq("slug", slug.toLowerCase())
-    .eq("is_ephemeral", true)
-    .maybeSingle();
-
-  if (error) {
+  let data;
+  try {
+    data = await getGuestEndpointBySlug(slug);
+  } catch (error) {
     console.error("Failed to fetch guest endpoint:", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }

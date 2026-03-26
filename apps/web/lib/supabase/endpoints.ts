@@ -247,6 +247,22 @@ export async function createEndpointForUser({
   return normalizeEndpoint(data);
 }
 
+export async function getGuestEndpointBySlug(slug: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("endpoints")
+    .select("id, slug, is_ephemeral, expires_at, request_count")
+    .eq("slug", slug.toLowerCase())
+    .eq("is_ephemeral", true)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
 export async function createGuestEndpoint(): Promise<EndpointRecord> {
   return createEndpointForUser({
     isEphemeral: true,

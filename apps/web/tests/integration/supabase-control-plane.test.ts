@@ -93,7 +93,7 @@ describe("Supabase Control Plane Integration", () => {
     });
 
     expect(created.id).toBeTruthy();
-    expect(created.slug).toHaveLength(10);
+    expect(created.slug).toMatch(/^[a-z0-9]{10}$/);
     expect(created.name).toBe("Control Plane Endpoint");
     expect(created.isEphemeral).toBe(true);
     expect(created.expiresAt).toBeGreaterThan(Date.now());

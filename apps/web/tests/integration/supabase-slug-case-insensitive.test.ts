@@ -157,9 +157,9 @@ describe("Case-Insensitive Slug Handling", () => {
 
     expect(error).toBeNull();
     expect(requests).toHaveLength(3);
-    expect(requests![0]!.body).toContain("lowercase");
-    expect(requests![1]!.body).toContain("uppercase");
-    expect(requests![2]!.body).toContain("mixed");
+    expect(JSON.parse(requests![0]!.body!)).toEqual({ test: "lowercase" });
+    expect(JSON.parse(requests![1]!.body!)).toEqual({ test: "uppercase" });
+    expect(JSON.parse(requests![2]!.body!)).toEqual({ test: "mixed" });
   });
 
   it("receiver returns 404 for nonexistent slugs regardless of case", async () => {
