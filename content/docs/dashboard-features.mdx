@@ -1,0 +1,148 @@
+---
+title: "Dashboard Features"
+description: "Complete guide to every feature in the webhooks.cc dashboard — keyboard shortcuts, pinning, notes, request comparison, timeline view, and more."
+section: dashboard
+order: 5
+lastUpdated: 2026-03-26
+schema: none
+keywords: ["dashboard", "keyboard shortcuts", "pin requests", "compare requests", "timeline", "webhook inspector"]
+seo:
+  ogTitle: "Dashboard Features Guide — webhooks.cc"
+  ogDescription: "Master every dashboard feature: keyboard shortcuts, request pinning, notes, side-by-side comparison, timeline visualization, and resizable split pane."
+---
+
+The dashboard packs a lot of power into a simple split-pane layout. This page covers every feature beyond the basics covered in [Requests](/docs/requests) and [Endpoints](/docs/endpoints).
+
+<Callout type="tip">
+  Click the **Guide** button in the dashboard URL bar for an interactive reference you can use without leaving the dashboard.
+</Callout>
+
+## Keyboard shortcuts
+
+Navigate the entire dashboard without touching the mouse. Press **?** to see the full list at any time.
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move down / up in the request list |
+| `1` `2` `3` `4` | Switch to Body / Headers / Query / Raw tab |
+| `c` | Copy cURL command for the selected request |
+| `r` | Open the replay dialog |
+| `n` | Create a new endpoint |
+| `/` | Focus the search input |
+| `l` | Toggle live / paused mode |
+| `[` | Collapse or expand the sidebar |
+| `Esc` | Close any dialog, exit compare mode, or blur the search input |
+
+Shortcuts are disabled when you're typing in an input field, and modifier keys (Ctrl, Cmd, Alt) are never intercepted so browser shortcuts work normally.
+
+## Context menu
+
+**Right-click** any request in the list to open a context menu with quick actions:
+
+- **Pin / Unpin** — pin the request to the top of the list
+- **Compare with selected** — open a side-by-side diff against the currently selected request
+- **Copy request ID** — copy the full request ID to your clipboard
+
+## Pinning requests
+
+Pin important requests so they float to the top of the list regardless of sort order or filtering.
+
+- Right-click a request and choose **Pin**
+- Pinned requests appear in a dedicated **Pinned** section at the top of the list, separated by a divider
+- Right-click again to **Unpin**
+- Pins are saved per endpoint in your browser's local storage
+
+**Use cases:** reference payloads you keep going back to, known-good requests for comparison, requests you want to find quickly during debugging.
+
+## Request notes
+
+Attach a short note (up to 280 characters) to any request.
+
+<Steps>
+  <Step title="Select a request">Click a request in the list to view its details.</Step>
+  <Step title="Add a note">Click **Add note...** below the request detail header. Type your note and press Enter.</Step>
+  <Step title="Find annotated requests">Requests with notes show a sticky note icon in the list.</Step>
+</Steps>
+
+- Click an existing note to edit it
+- Hover and click the **X** to remove it
+- Notes are stored in your browser's local storage
+
+**Use cases:** "This is the failing payload from prod", "Stripe sends this on subscription renewal", debugging breadcrumbs during development.
+
+## Comparing requests
+
+Compare two requests side by side to spot differences in headers, body, and query parameters.
+
+**To start a comparison:**
+1. Select a request normally (click it)
+2. **Shift-click** a second request, or right-click and choose **Compare with selected**
+
+**The diff view shows:**
+- **Method & path** differences (if any)
+- **Headers** — added (green), removed (red), changed (yellow), unchanged (gray)
+- **Body** — structural JSON diff when both bodies are valid JSON, or a plain text diff otherwise
+- **Query parameters** — same color coding as headers
+- **Metadata** — IP, size, and timestamps side by side
+
+**To exit comparison:** press `Esc`, click any request in the list, or click the **Exit** button in the diff header.
+
+## Timeline view
+
+Switch from the standard list to a visual timeline showing when requests arrived.
+
+Click the bar chart icon in the request list toolbar to toggle between **List** and **Timeline** views.
+
+- Each request appears as a colored dot on a horizontal time axis
+- Dots are color-coded by HTTP method (green = GET, yellow = POST, purple = PUT/PATCH, red = DELETE)
+- Overlapping requests stack vertically so bursts are visually apparent
+- Hover a dot to see method and timestamp; click to select it in the detail pane
+- The timeline respects your current method filter
+
+**Use cases:** spotting retry storms, identifying timing patterns, debugging rate limiting issues.
+
+## Resizable split pane
+
+Customize the width of the request list sidebar.
+
+- **Drag** the divider between the list and detail panes to resize
+- **Double-click** the divider to collapse the sidebar entirely (or expand it back)
+- Press `[` to toggle the sidebar
+- Your preferred width is saved across sessions
+
+Minimum width is 240px, maximum is 50% of the viewport. On mobile, the list and detail are full-screen views that you toggle between.
+
+## Copy & export
+
+Multiple ways to get request data out of the dashboard.
+
+### cURL command
+Click the **cURL** button (or press `c`) to copy a shell command that reproduces the selected request. Headers, method, body, and query parameters are included.
+
+### Copy dropdown
+In the **Body** tab, the **Copy** dropdown offers:
+- **Raw body** — the original body text
+- **Formatted** — prettified JSON, XML, etc.
+- **TypeScript interface** — a generated TypeScript type from the JSON structure (JSON bodies only)
+- **CSV** — the body as CSV (JSON objects/arrays only)
+
+### Export
+The **Export** dropdown in the URL bar lets you download all visible requests as JSON or CSV.
+
+## Replay & send
+
+### Replay
+Click **Replay** (or press `r`) to send the captured request to any URL. The request is sent from your browser with the original method, headers, and body. Supports localhost URLs for local development.
+
+### Send test webhook
+Click **Send** in the URL bar to fire a test webhook at your endpoint. Choose from provider templates (Stripe, GitHub, Shopify, Twilio, Slack, and more) with realistic payloads and mock signatures.
+
+## Endpoint settings
+
+Click the gear icon in the URL bar to open endpoint settings:
+
+- **Rename** your endpoint for easier identification
+- **Mock response** — configure a custom status code, response body, and headers returned to the webhook sender
+- **Delete** the endpoint
+
+Mock response changes take effect immediately — there is no caching layer.
