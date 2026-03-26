@@ -320,8 +320,8 @@ export function DashboardGuideDialog() {
           Guide
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl max-h-[80vh] p-0 overflow-hidden">
-        <div className="flex h-full max-h-[80vh]">
+      <DialogContent className="max-w-3xl h-[520px] max-h-[80vh] p-0 overflow-hidden">
+        <div className="flex h-full">
           {/* Sidebar */}
           <nav className="w-48 shrink-0 border-r-2 border-foreground overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
