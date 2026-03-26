@@ -1,8 +1,21 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Circle, ArrowUpDown, Search, X, Loader2 } from "lucide-react";
+import {
+  Circle,
+  ArrowUpDown,
+  Search,
+  X,
+  Loader2,
+  Star,
+  StickyNote,
+  BarChart3,
+  List,
+  GitCompareArrows,
+  Clipboard,
+} from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   getMethodColor,
   formatTimestamp,
@@ -40,6 +53,14 @@ interface RequestListProps {
   searchLoading?: boolean;
   searchError?: boolean;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
+  pinnedIds?: Set<string>;
+  onTogglePin?: (id: string) => void;
+  noteIds?: Set<string>;
+  compareId?: string | null;
+  onCompareSelect?: (id: string) => void;
+  viewMode?: "list" | "timeline";
+  onViewModeChange?: (mode: "list" | "timeline") => void;
+  timelineSlot?: React.ReactNode;
 }
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -65,11 +86,72 @@ export function RequestList({
   searchLoading,
   searchError,
   searchInputRef,
+  pinnedIds,
+  onTogglePin,
+  noteIds,
+  compareId,
+  onCompareSelect,
+  viewMode,
+  onViewModeChange,
+  timelineSlot,
 }: RequestListProps) {
-  const sorted = sortNewest ? requests : [...requests].reverse();
   const displayCount = totalCount ?? requests.length;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
+
+  // Context menu
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function close(e: MouseEvent) {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
+    }
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") setCtxMenu(null);
+    }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [ctxMenu]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, id });
+  }, []);
+
+  // Pin/unpin split
+  const { pinned, unpinned } = (() => {
+    if (!pinnedIds || pinnedIds.size === 0) {
+      const sorted = sortNewest ? requests : [...requests].reverse();
+      return { pinned: [] as AnyRequestSummary[], unpinned: sorted };
+    }
+    const sorted = sortNewest ? requests : [...requests].reverse();
+    const p: AnyRequestSummary[] = [];
+    const u: AnyRequestSummary[] = [];
+    for (const r of sorted) {
+      const id = getItemId(r);
+      if (pinnedIds.has(id)) p.push(r);
+      else u.push(r);
+    }
+    return { pinned: p, unpinned: u };
+  })();
+
+  // Shift-click compare
+  const handleRowClick = useCallback(
+    (e: React.MouseEvent, id: string) => {
+      if (e.shiftKey && onCompareSelect) {
+        e.preventDefault();
+        onCompareSelect(id);
+      } else {
+        onSelect(id);
+      }
+    },
+    [onSelect, onCompareSelect]
+  );
 
   // Timestamp mode: relative vs absolute
   const [relativeTime, setRelativeTime] = useState(false);
@@ -112,6 +194,19 @@ export function RequestList({
           {displayCount} request{displayCount !== 1 ? "s" : ""}
         </span>
         <div className="flex items-center gap-2">
+          {onViewModeChange && (
+            <button
+              onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
+              className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground"
+              title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
+            >
+              {viewMode === "list" ? (
+                <BarChart3 className="h-3.5 w-3.5" />
+              ) : (
+                <List className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
           <button
             onClick={onToggleSort}
             className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground"
@@ -186,80 +281,45 @@ export function RequestList({
         </button>
       )}
 
+      {/* Compare hint */}
+      {compareId && (
+        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b-2 border-foreground">
+          Shift-click another request to compare
+        </div>
+      )}
+
       {/* Request rows */}
       <div className="flex-1 overflow-y-auto">
-        {searchLoading ? (
+        {viewMode === "timeline" && timelineSlot ? (
+          timelineSlot
+        ) : searchLoading ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold uppercase tracking-wide flex items-center justify-center gap-2">
             <Loader2 className="h-3 w-3 animate-spin" />
             Searching...
           </div>
-        ) : sorted.length === 0 ? (
+        ) : pinned.length === 0 && unpinned.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold uppercase tracking-wide">
             {searchError ? "Search unavailable" : "No matching requests"}
           </div>
         ) : (
           <>
-            {sorted.map((request) => {
-              const id = getItemId(request);
-              const ctLabel = getContentTypeLabel(request.contentType);
-              return (
-                <button
-                  key={id}
-                  onClick={() => onSelect(id)}
-                  className={cn(
-                    "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
-                    selectedId === id
-                      ? "bg-muted border-l-4 border-l-primary"
-                      : "hover:bg-muted/50 border-l-4 border-l-transparent"
-                  )}
-                >
-                  {/* Top line: method + path + timestamp */}
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
-                        getMethodColor(request.method)
-                      )}
-                    >
-                      {request.method}
-                    </span>
-                    <span className="text-xs font-mono truncate flex-1">{request.path}</span>
-                    <span
-                      className="text-[10px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTimestampMode();
-                      }}
-                      title="Click to toggle time format"
-                    >
-                      {renderTimestamp(request.receivedAt)}
-                    </span>
+            {/* Pinned section */}
+            {pinned.length > 0 && (
+              <>
+                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1">
+                  <Star className="h-2.5 w-2.5 fill-current" />
+                  Pinned
+                </div>
+                {pinned.map((request) => renderRow(request))}
+                {unpinned.length > 0 && (
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10">
+                    All requests
                   </div>
-                  {/* Bottom line: ID + content type + size */}
-                  <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)]">
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      #{id.slice(-6)}
-                    </span>
-                    {ctLabel && (
-                      <>
-                        <span className="text-[10px] text-muted-foreground">&middot;</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {ctLabel}
-                        </span>
-                      </>
-                    )}
-                    {request.size > 0 && (
-                      <>
-                        <span className="text-[10px] text-muted-foreground">&middot;</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {formatBytes(request.size)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+                )}
+              </>
+            )}
+
+            {unpinned.map((request) => renderRow(request))}
 
             {/* Load More button */}
             {hasMore && (
@@ -286,6 +346,116 @@ export function RequestList({
           </>
         )}
       </div>
+
+      {/* Context menu */}
+      {ctxMenu && (
+        <div
+          ref={ctxRef}
+          className="fixed z-50 border-2 border-foreground bg-background shadow-neo min-w-[160px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {onTogglePin && (
+            <button
+              onClick={() => {
+                onTogglePin(ctxMenu.id);
+                setCtxMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors border-b-2 border-foreground flex items-center gap-2"
+            >
+              <Star className={cn("h-3 w-3", pinnedIds?.has(ctxMenu.id) && "fill-current")} />
+              {pinnedIds?.has(ctxMenu.id) ? "Unpin" : "Pin"}
+            </button>
+          )}
+          {onCompareSelect && (
+            <button
+              onClick={() => {
+                onCompareSelect(ctxMenu.id);
+                setCtxMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors border-b-2 border-foreground flex items-center gap-2"
+            >
+              <GitCompareArrows className="h-3 w-3" />
+              Compare
+            </button>
+          )}
+          <button
+            onClick={() => {
+              void copyToClipboard(ctxMenu.id);
+              setCtxMenu(null);
+            }}
+            className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
+          >
+            <Clipboard className="h-3 w-3" />
+            Copy ID
+          </button>
+        </div>
+      )}
     </div>
   );
+
+  function renderRow(request: AnyRequestSummary) {
+    const id = getItemId(request);
+    const ctLabel = getContentTypeLabel(request.contentType);
+    const isPinned = pinnedIds?.has(id);
+    const hasNote = noteIds?.has(id);
+    const isComparing = compareId === id;
+    return (
+      <button
+        key={id}
+        onClick={(e) => handleRowClick(e, id)}
+        onContextMenu={(e) => handleContextMenu(e, id)}
+        className={cn(
+          "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
+          isComparing
+            ? "bg-amber-100 dark:bg-amber-900/30 border-l-4 border-l-amber-500"
+            : selectedId === id
+              ? "bg-muted border-l-4 border-l-primary"
+              : "hover:bg-muted/50 border-l-4 border-l-transparent"
+        )}
+      >
+        {/* Top line: method + path + icons + timestamp */}
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
+              getMethodColor(request.method)
+            )}
+          >
+            {request.method}
+          </span>
+          <span className="text-xs font-mono truncate flex-1">{request.path}</span>
+          {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
+          {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
+          <span
+            className="text-[10px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTimestampMode();
+            }}
+            title="Click to toggle time format"
+          >
+            {renderTimestamp(request.receivedAt)}
+          </span>
+        </div>
+        {/* Bottom line: ID + content type + size */}
+        <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)]">
+          <span className="text-[10px] text-muted-foreground font-mono">#{id.slice(-6)}</span>
+          {ctLabel && (
+            <>
+              <span className="text-[10px] text-muted-foreground">&middot;</span>
+              <span className="text-[10px] text-muted-foreground font-mono">{ctLabel}</span>
+            </>
+          )}
+          {request.size > 0 && (
+            <>
+              <span className="text-[10px] text-muted-foreground">&middot;</span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {formatBytes(request.size)}
+              </span>
+            </>
+          )}
+        </div>
+      </button>
+    );
+  }
 }

@@ -14,6 +14,10 @@ import {
 } from "@/components/dashboard/request-detail";
 import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KeyboardShortcutsDialog } from "@/components/dashboard/keyboard-shortcuts-dialog";
+import { RequestDiff } from "@/components/dashboard/request-diff";
+import { RequestTimeline } from "@/components/dashboard/request-timeline";
+import { getPinnedIds, togglePin } from "@/lib/pinned-requests";
+import { getNote, setNote, getAllNotes } from "@/lib/request-notes";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +72,100 @@ export default function DashboardPage() {
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Pinning
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (currentSlug) setPinnedIds(getPinnedIds(currentSlug));
+  }, [currentSlug]);
+  const handleTogglePin = useCallback(
+    (id: string) => {
+      if (!currentSlug) return;
+      setPinnedIds(togglePin(currentSlug, id));
+    },
+    [currentSlug]
+  );
+
+  // Notes
+  const [noteIds, setNoteIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set<string>();
+    return new Set(Object.keys(getAllNotes()));
+  });
+  const currentNote = selectedId ? getNote(selectedId) : null;
+  const handleNoteChange = useCallback(
+    (note: string) => {
+      if (!selectedId) return;
+      setNote(selectedId, note);
+      setNoteIds((prev) => {
+        const next = new Set(prev);
+        if (note.trim()) {
+          next.add(selectedId);
+        } else {
+          next.delete(selectedId);
+        }
+        return next;
+      });
+    },
+    [selectedId]
+  );
+
+  // Compare mode
+  const [compareId, setCompareId] = useState<string | null>(null);
+  const [compareRequest, setCompareRequest] = useState<ClickHouseRequest | null>(null);
+  const compareIdRef = useRef(compareId);
+  compareIdRef.current = compareId;
+  const recentRequestsRef = useRef(recentRequests);
+  recentRequestsRef.current = recentRequests;
+
+  const handleCompareSelect = useCallback(
+    (id: string) => {
+      if (compareIdRef.current === id) {
+        setCompareId(null);
+        setCompareRequest(null);
+      } else {
+        setCompareId(id);
+        const fromRecent = recentRequestsRef.current.find((r) => r._id === id);
+        if (fromRecent) {
+          setCompareRequest({
+            id: fromRecent._id,
+            slug: currentSlug ?? "",
+            method: fromRecent.method,
+            path: fromRecent.path,
+            headers: fromRecent.headers,
+            body: fromRecent.body,
+            queryParams: fromRecent.queryParams,
+            contentType: fromRecent.contentType,
+            ip: fromRecent.ip,
+            size: fromRecent.size,
+            receivedAt: fromRecent.receivedAt,
+          });
+        } else {
+          setCompareRequest(clickHouseDetailMap.current.get(id) ?? null);
+        }
+      }
+    },
+    [currentSlug]
+  );
+
+  const exitCompare = useCallback(() => {
+    setCompareId(null);
+    setCompareRequest(null);
+  }, []);
+
+  useEffect(() => {
+    if (!compareId) return;
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setCompareId(null);
+        setCompareRequest(null);
+      }
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [compareId]);
+
+  // View mode (list vs timeline)
+  const [viewMode, setViewMode] = useState<"list" | "timeline">("list");
 
   // Resizable split pane
   const [paneWidth, setPaneWidth] = useState(() => {
@@ -837,6 +935,20 @@ export default function DashboardPage() {
                   searchLoading={searchLoading}
                   searchError={searchError}
                   searchInputRef={desktopSearchInputRef}
+                  pinnedIds={pinnedIds}
+                  onTogglePin={handleTogglePin}
+                  noteIds={noteIds}
+                  compareId={compareId}
+                  onCompareSelect={handleCompareSelect}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                  timelineSlot={
+                    <RequestTimeline
+                      requests={displayedItems}
+                      selectedId={selectedId}
+                      onSelect={handleSelect}
+                    />
+                  }
                 />
               </div>
             )}
@@ -851,12 +963,16 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1 overflow-hidden">
               <ErrorBoundary resetKey={selectedId ?? undefined}>
-                {displayRequest ? (
+                {compareId && compareRequest && displayRequest ? (
+                  <RequestDiff left={displayRequest} right={compareRequest} onExit={exitCompare} />
+                ) : displayRequest ? (
                   <RequestDetail
                     request={displayRequest}
                     activeTab={activeTab}
                     onTabChange={setActiveTab}
                     curlBtnRef={curlBtnRef}
+                    note={currentNote}
+                    onNoteChange={handleNoteChange}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -881,6 +997,8 @@ export default function DashboardPage() {
                       request={displayRequest}
                       activeTab={activeTab}
                       onTabChange={setActiveTab}
+                      note={currentNote}
+                      onNoteChange={handleNoteChange}
                     />
                   </ErrorBoundary>
                 </div>
@@ -907,6 +1025,9 @@ export default function DashboardPage() {
                 searchLoading={searchLoading}
                 searchError={searchError}
                 searchInputRef={mobileSearchInputRef}
+                pinnedIds={pinnedIds}
+                onTogglePin={handleTogglePin}
+                noteIds={noteIds}
               />
             )}
           </div>
