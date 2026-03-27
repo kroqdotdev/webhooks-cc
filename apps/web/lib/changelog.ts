@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.12.0";
+export const APP_VERSION = "0.12.1";
 export const CLI_VERSION = "0.5.3";
 export const SDK_VERSION = "1.1.0";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.12.1",
+    date: "2026-03-27",
+    title: "Comparison Pages Expansion",
+    track: "web",
+    items: [
+      "New comparison pages: Hookdeck, localtunnel, RequestBin, Smee",
+      "Redesigned Beeceptor, ngrok, and Webhook.site comparison pages",
+      "Shared comparison CTA component",
+    ],
+  },
   {
     version: "0.12.0",
     date: "2026-03-26",
