@@ -409,18 +409,33 @@ export default async function Home() {
                 href: "/compare/webhook-site",
                 title: "vs Webhook.site",
                 summary:
-                  "Compare core webhook inspection features, pricing, and developer workflows.",
+                  "SDK, MCP, and no feature gating vs established browser-based inspection.",
               },
               {
                 href: "/compare/ngrok",
                 title: "vs ngrok",
-                summary: "Tradeoffs between a webhook-focused platform and a general tunnel tool.",
+                summary: "Webhook testing platform vs general-purpose tunnel.",
+              },
+              {
+                href: "/compare/requestbin",
+                title: "vs RequestBin",
+                summary: "Focused webhook testing vs Pipedream workflow automation.",
+              },
+              {
+                href: "/compare/hookdeck",
+                title: "vs Hookdeck",
+                summary: "Development testing tool vs production webhook infrastructure.",
               },
               {
                 href: "/compare/beeceptor",
                 title: "vs Beeceptor",
                 summary:
-                  "How webhook inspection + SDK + MCP compare against API mocking-first workflows.",
+                  "Webhook inspection + SDK + MCP vs API mocking-first workflows.",
+              },
+              {
+                href: "/compare/smee",
+                title: "vs Smee.io",
+                summary: "Full testing platform vs GitHub's lightweight webhook proxy.",
               },
             ].map((item) => (
               <Link
