@@ -36,6 +36,7 @@ interface PendingInvite {
 function MemberAvatar({ member }: { member: Member }) {
   if (member.image) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={member.image}
         alt=""

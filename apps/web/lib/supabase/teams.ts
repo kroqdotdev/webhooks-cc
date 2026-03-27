@@ -570,15 +570,6 @@ export async function listPendingInvitesForUser(userId: string): Promise<TeamInv
     ((invitersData ?? []) as { id: string; email: string }[]).map((u) => [u.id, u.email])
   );
 
-  // Fetch invited user email (self)
-  const { data: selfData, error: selfError } = await admin
-    .from("users")
-    .select("email")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (selfError) throw selfError;
-
   return invites.map((invite) => ({
     id: invite.id,
     teamId: invite.team_id,

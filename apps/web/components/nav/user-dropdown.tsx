@@ -23,6 +23,7 @@ interface UserProfile {
 function UserAvatar({ profile }: { profile: UserProfile }) {
   if (profile.image) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={profile.image}
         alt=""
