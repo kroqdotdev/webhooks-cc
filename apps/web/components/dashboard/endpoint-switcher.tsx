@@ -6,19 +6,37 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   fetchDashboardEndpoints,
   subscribeDashboardEndpointsChanged,
-  type DashboardEndpoint,
+  type DashboardEndpointsResponse,
+  type DashboardEndpointWithSharing,
 } from "@/lib/dashboard-api";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 
+function endpointLabel(ep: DashboardEndpointWithSharing): string {
+  const base = ep.name || ep.slug;
+
+  if (ep.fromTeam) {
+    return `${ep.slug} (${ep.fromTeam.teamName})`;
+  }
+
+  if (ep.sharedWith && ep.sharedWith.length > 0) {
+    const teamNames = ep.sharedWith.map((s) => s.teamName).join(", ");
+    return `${base} (Shared with ${teamNames})`;
+  }
+
+  return base;
+}
+
 export function EndpointSwitcher() {
   const { session } = useAuth();
-  const [endpoints, setEndpoints] = useState<DashboardEndpoint[] | null>(null);
+  const [data, setData] = useState<DashboardEndpointsResponse | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentSlug = searchParams.get("endpoint");
@@ -26,7 +44,7 @@ export function EndpointSwitcher() {
   useEffect(() => {
     const accessToken = session?.access_token;
     if (!accessToken) {
-      setEndpoints(null);
+      setData(null);
       return;
     }
 
@@ -34,14 +52,14 @@ export function EndpointSwitcher() {
 
     const load = async () => {
       try {
-        const nextEndpoints = await fetchDashboardEndpoints(accessToken);
+        const nextData = await fetchDashboardEndpoints(accessToken);
         if (!cancelled) {
-          setEndpoints(nextEndpoints);
+          setData(nextData);
         }
       } catch (error) {
         console.error("Failed to load endpoints for switcher:", error);
         if (!cancelled) {
-          setEndpoints([]);
+          setData({ owned: [], shared: [] });
         }
       }
     };
@@ -57,7 +75,9 @@ export function EndpointSwitcher() {
     };
   }, [session?.access_token]);
 
-  if (!endpoints || endpoints.length === 0) {
+  const allEndpoints = [...(data?.owned ?? []), ...(data?.shared ?? [])];
+
+  if (!data || allEndpoints.length === 0) {
     return null;
   }
 
@@ -65,17 +85,41 @@ export function EndpointSwitcher() {
     router.push(`/dashboard?endpoint=${slug}`);
   };
 
+  const defaultSlug = currentSlug || allEndpoints[0]?.slug;
+  const hasShared = (data.shared?.length ?? 0) > 0;
+
   return (
-    <Select value={currentSlug || endpoints[0]?.slug} onValueChange={handleChange}>
-      <SelectTrigger className="w-[200px]">
+    <Select value={defaultSlug} onValueChange={handleChange}>
+      <SelectTrigger className="w-[260px]">
         <SelectValue placeholder="Select endpoint" />
       </SelectTrigger>
       <SelectContent>
-        {endpoints.map((endpoint) => (
-          <SelectItem key={endpoint.id} value={endpoint.slug}>
-            {endpoint.name || endpoint.slug}
-          </SelectItem>
-        ))}
+        {hasShared ? (
+          <>
+            <SelectGroup>
+              <SelectLabel>My Endpoints</SelectLabel>
+              {data.owned.map((endpoint) => (
+                <SelectItem key={endpoint.id} value={endpoint.slug}>
+                  {endpointLabel(endpoint)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Shared with me</SelectLabel>
+              {data.shared.map((endpoint) => (
+                <SelectItem key={endpoint.id} value={endpoint.slug}>
+                  {endpointLabel(endpoint)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </>
+        ) : (
+          data.owned.map((endpoint) => (
+            <SelectItem key={endpoint.id} value={endpoint.slug}>
+              {endpointLabel(endpoint)}
+            </SelectItem>
+          ))
+        )}
       </SelectContent>
     </Select>
   );
