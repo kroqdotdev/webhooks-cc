@@ -43,6 +43,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Requests", href: "/docs/requests" },
       { title: "Mock Responses", href: "/docs/mock-responses" },
       { title: "Dashboard Features", href: "/docs/dashboard-features", isNew: true },
+      { title: "Teams", href: "/docs/teams", isNew: true },
     ],
   },
   {

@@ -1,0 +1,55 @@
+---
+title: Teams
+description: Collaborate on webhook endpoints with your team.
+---
+
+# Teams
+
+Share webhook endpoints with teammates so everyone can see incoming requests and edit settings together.
+
+## Creating a Team
+
+1. Open the **Teams** page from the avatar dropdown in the header
+2. Click **New Team** and enter a name
+3. You are the team owner — you can invite members, manage the team, and delete it
+
+## Inviting Members
+
+1. Go to your team's manage page
+2. Enter a teammate's email in the **Invite Member** field
+3. They must have a registered webhooks.cc account
+4. They'll see the invite on their Teams page and can accept or decline
+
+## Sharing Endpoints
+
+You can share any endpoint you own with one or more teams:
+
+**From endpoint settings:**
+1. Open an endpoint's settings page (gear icon in the dashboard)
+2. In the **Team Sharing** section, click **Share** next to a team
+3. Click again to unshare
+
+**In the dashboard:**
+- Your shared endpoints show as `slug (Shared with TeamName)` in the endpoint switcher
+- Endpoints shared with you appear in a **Shared with me** section as `slug (TeamName)`
+
+## Permissions
+
+| Action | Owner | Member |
+|--------|-------|--------|
+| View requests | Yes | Yes |
+| Edit mock response | Yes | Yes |
+| Rename endpoint | Yes | Yes |
+| Delete endpoint | Yes | No |
+| Share/unshare | Yes | No |
+| Invite members | Yes | No |
+| Remove members | Yes | No |
+| Delete team | Yes | No |
+
+## How It Works
+
+- Sharing is **view and edit only** — team members can see requests and change settings, but cannot delete endpoints
+- **Quota is unchanged** — webhooks are always counted against the endpoint owner's plan, not the viewer's
+- **Data retention** follows the owner's plan (7 days for free, 30 days for pro)
+- **Real-time updates** work for shared endpoints — team members see new requests instantly via SSE
+- Shared endpoints work with the CLI (`whk listen`) and SDK (`requests.subscribe`) using the endpoint owner's access
