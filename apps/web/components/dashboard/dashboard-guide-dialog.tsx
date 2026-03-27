@@ -22,6 +22,7 @@ import {
   GripVertical,
   Eye,
   Settings,
+  Users,
 } from "lucide-react";
 
 interface Section {
@@ -278,6 +279,38 @@ const SECTIONS: Section[] = [
             <strong>Rename</strong> your endpoint for easier identification
           </li>
           <li>Changes take effect immediately (no caching layer)</li>
+        </ul>
+      </div>
+    ),
+  },
+  {
+    id: "teams",
+    title: "Teams",
+    icon: <Users className="h-3.5 w-3.5" />,
+    content: (
+      <div className="space-y-3">
+        <p>Share endpoints with your team so everyone can view incoming requests together.</p>
+        <ul className="space-y-1.5 text-sm">
+          <li>
+            Shared endpoints appear in the endpoint switcher under{" "}
+            <strong>&quot;Shared with me&quot;</strong> with the team name
+          </li>
+          <li>
+            Your own shared endpoints show as{" "}
+            <strong>&quot;slug (Shared with TeamName)&quot;</strong>
+          </li>
+          <li>
+            Team members can view requests, edit mock responses, and rename endpoints
+          </li>
+          <li>
+            Real-time updates work — new requests appear instantly for all team members
+          </li>
+          <li>
+            Manage teams from the <strong>Teams</strong> page (avatar dropdown → Teams)
+          </li>
+          <li>
+            Share endpoints from <strong>Endpoint Settings</strong> → Team Sharing section
+          </li>
         </ul>
       </div>
     ),
