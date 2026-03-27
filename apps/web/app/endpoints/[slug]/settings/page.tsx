@@ -28,7 +28,118 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import Link from "next/link";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, HelpCircle } from "lucide-react";
+
+function TeamSharingSection({
+  accessToken,
+  endpointId,
+}: {
+  accessToken: string | null;
+  endpointId: string;
+}) {
+  const [teams, setTeams] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [sharedTeamIds, setSharedTeamIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const load = async () => {
+      try {
+        const [teamsRes, endpointsRes] = await Promise.all([
+          fetch("/api/teams", { headers: { Authorization: `Bearer ${accessToken}` } }),
+          fetch("/api/endpoints", { headers: { Authorization: `Bearer ${accessToken}` } }),
+        ]);
+
+        if (teamsRes.ok) {
+          const data = (await teamsRes.json()) as Array<{ id: string; name: string; role: string }>;
+          setTeams(data);
+        }
+
+        if (endpointsRes.ok) {
+          const data = (await endpointsRes.json()) as {
+            owned: Array<{ id: string; sharedWith?: Array<{ teamId: string }> }>;
+          };
+          const ep = data.owned.find((e) => e.id === endpointId);
+          if (ep?.sharedWith) {
+            setSharedTeamIds(new Set(ep.sharedWith.map((s) => s.teamId)));
+          }
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
+  }, [accessToken, endpointId]);
+
+  const handleToggle = async (teamId: string, shared: boolean) => {
+    if (!accessToken) return;
+    setToggling(teamId);
+    try {
+      if (shared) {
+        await fetch(`/api/teams/${teamId}/endpoints/${endpointId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        setSharedTeamIds((prev) => {
+          const next = new Set(prev);
+          next.delete(teamId);
+          return next;
+        });
+      } else {
+        await fetch(`/api/teams/${teamId}/endpoints`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ endpointId }),
+        });
+        setSharedTeamIds((prev) => new Set(prev).add(teamId));
+      }
+    } catch {
+      // silent
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  if (loading || teams.length === 0) return null;
+
+  return (
+    <div className="border rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="font-semibold">Team Sharing</h2>
+        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Share this endpoint with your teams. Members can view requests and edit settings.
+      </p>
+      <div className="space-y-2">
+        {teams.map((team) => {
+          const isShared = sharedTeamIds.has(team.id);
+          return (
+            <div key={team.id} className="flex items-center justify-between py-1">
+              <span className="text-sm">{team.name}</span>
+              <Button
+                variant={isShared ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleToggle(team.id, isShared)}
+                disabled={toggling === team.id}
+              >
+                {toggling === team.id ? "..." : isShared ? "Shared" : "Share"}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function EndpointSettingsPage() {
   return (
@@ -268,6 +379,9 @@ function EndpointSettingsForm() {
               />
             </div>
           </div>
+
+          {/* Team Sharing */}
+          <TeamSharingSection accessToken={session?.access_token ?? null} endpointId={endpoint.id} />
 
           {error && (
             <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded">
