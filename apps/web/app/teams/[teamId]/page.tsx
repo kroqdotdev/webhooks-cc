@@ -16,6 +16,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ArrowLeft, HelpCircle, Trash2, UserPlus } from "lucide-react";
 import Link from "next/link";
 
@@ -484,30 +491,24 @@ export default function TeamDetailPage() {
                   )}
                   {unshared.length > 0 && (
                     <div className={shared.length > 0 ? "pt-4 border-t" : ""}>
-                      <div className="flex gap-2">
-                        <select
-                          id="add-endpoint-select"
-                          className="flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                          defaultValue=""
-                          onChange={(e) => {
-                            const endpointId = e.target.value;
-                            if (endpointId) {
-                              void handleToggleEndpoint(endpointId, false);
-                              e.target.value = "";
-                            }
-                          }}
-                          disabled={togglingEndpoint !== null}
-                        >
-                          <option value="" disabled>
-                            Add an endpoint...
-                          </option>
+                      <Select
+                        value=""
+                        onValueChange={(endpointId) => {
+                          void handleToggleEndpoint(endpointId, false);
+                        }}
+                        disabled={togglingEndpoint !== null}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Add an endpoint..." />
+                        </SelectTrigger>
+                        <SelectContent>
                           {unshared.map((ep) => (
-                            <option key={ep.id} value={ep.id}>
+                            <SelectItem key={ep.id} value={ep.id}>
                               {ep.name || ep.slug}
-                            </option>
+                            </SelectItem>
                           ))}
-                        </select>
-                      </div>
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
                 </>
