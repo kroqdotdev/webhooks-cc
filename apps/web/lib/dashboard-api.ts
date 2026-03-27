@@ -17,6 +17,21 @@ export interface DashboardEndpoint {
   createdAt: number;
 }
 
+export interface TeamEndpointShare {
+  teamId: string;
+  teamName: string;
+}
+
+export interface DashboardEndpointWithSharing extends DashboardEndpoint {
+  sharedWith?: TeamEndpointShare[];
+  fromTeam?: { teamId: string; teamName: string };
+}
+
+export interface DashboardEndpointsResponse {
+  owned: DashboardEndpointWithSharing[];
+  shared: DashboardEndpointWithSharing[];
+}
+
 const ENDPOINTS_CHANGED_EVENT = "dashboard:endpoints-changed";
 
 function withAuthHeaders(accessToken: string, init?: RequestInit): RequestInit {
@@ -74,9 +89,11 @@ function toDashboardRequest(record: {
   };
 }
 
-export async function fetchDashboardEndpoints(accessToken: string): Promise<DashboardEndpoint[]> {
+export async function fetchDashboardEndpoints(
+  accessToken: string
+): Promise<DashboardEndpointsResponse> {
   const response = await fetch("/api/endpoints", withAuthHeaders(accessToken));
-  return readJson<DashboardEndpoint[]>(response);
+  return readJson<DashboardEndpointsResponse>(response);
 }
 
 export async function fetchDashboardEndpoint(
