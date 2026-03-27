@@ -40,21 +40,35 @@ interface PendingInvite {
   createdAt: string;
 }
 
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
+  return (email[0] ?? "?").toUpperCase();
+}
+
 function MemberAvatar({ member }: { member: Member }) {
-  if (member.image) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const initials = getInitials(member.name, member.email);
+
+  if (member.image && !imgFailed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={member.image}
         alt=""
         className="h-8 w-8 rounded-full border-2 border-foreground"
+        onError={() => setImgFailed(true)}
       />
     );
   }
-  const initial = (member.name?.[0] ?? member.email[0] ?? "?").toUpperCase();
   return (
-    <div className="h-8 w-8 rounded-full border-2 border-foreground bg-muted flex items-center justify-center text-xs font-bold">
-      {initial}
+    <div className="h-8 w-8 rounded-full border-2 border-foreground bg-muted flex items-center justify-center text-[10px] font-bold leading-none">
+      {initials}
     </div>
   );
 }
