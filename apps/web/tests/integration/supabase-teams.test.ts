@@ -174,7 +174,8 @@ describe("Teams Integration", () => {
       expect(team!.name).toBe("Renamed Team");
     });
 
-    it("rejects rename from non-owner", async () => {
+    it("rejects rename from non-member", async () => {
+      // memberId is not yet a team member at this point in the test flow
       const updated = await updateTeam(memberId, teamId, "Hacked Name");
       expect(updated).toBe(false);
     });
@@ -205,7 +206,8 @@ describe("Teams Integration", () => {
       expect(result.error).toBe("No account found with that email address");
     });
 
-    it("rejects invite from non-owner", async () => {
+    it("rejects invite from non-member", async () => {
+      // memberId is not yet a team member at this point
       const result = await createInvite(memberId, teamId, THIRD_EMAIL);
       expect(result.error).toBe("Not authorized");
     });
@@ -337,6 +339,22 @@ describe("Teams Integration", () => {
       const invites = await listPendingInvitesForUser(memberId);
       const found = invites.find((i) => i.teamId === teamId);
       expect(found).toBeUndefined();
+    });
+
+    it("member (not owner) cannot invite others", async () => {
+      // memberId is now a confirmed member — test the member-but-not-owner path
+      const result = await createInvite(memberId, teamId, THIRD_EMAIL);
+      expect(result.error).toBe("Not authorized");
+    });
+
+    it("member (not owner) cannot rename team", async () => {
+      const updated = await updateTeam(memberId, teamId, "Member Rename");
+      expect(updated).toBe(false);
+    });
+
+    it("member (not owner) cannot delete team", async () => {
+      const deleted = await deleteTeam(memberId, teamId);
+      expect(deleted).toBe(false);
     });
   });
 
@@ -586,8 +604,8 @@ describe("Teams Integration", () => {
       expect(tempTeamId).toBeTruthy();
     });
 
-    it("non-owner cannot delete", async () => {
-      // memberId is no longer a member, but test that non-owners can't delete
+    it("non-member cannot delete", async () => {
+      // memberId may or may not be a member of this temp team — tests non-owner path
       const result = await deleteTeam(memberId, tempTeamId);
       expect(result).toBe(false);
     });
@@ -1179,9 +1197,10 @@ describe("Teams Integration", () => {
   describe("Member limit at accept time", () => {
     let limitTeamId: string;
     let limitOwnerId: string;
+    const fillerUserIds: string[] = [];
+    let overflowUserId: string;
 
-    it("setup: create team with many members near limit", async () => {
-      // Create owner
+    it("setup: create team with 24 members (23 fillers + owner)", async () => {
       const { data: ownerData } = await admin.auth.admin.createUser({
         email: `test-limit-owner-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
@@ -1189,14 +1208,15 @@ describe("Teams Integration", () => {
         user_metadata: { full_name: "Limit Owner" },
       });
       limitOwnerId = ownerData!.user!.id;
+      fillerUserIds.push(limitOwnerId);
       await admin.from("users").update({ plan: "pro" }).eq("id", limitOwnerId);
 
       const teamResult = await createTeam(limitOwnerId, "Limit Team");
       expect("error" in teamResult).toBe(false);
       limitTeamId = (teamResult as { id: string }).id;
 
-      // Add 24 more members (total 25 with owner) to hit the limit
-      for (let i = 0; i < 24; i++) {
+      // Add 23 fillers (total = 24 with owner)
+      for (let i = 0; i < 23; i++) {
         const { data } = await admin.auth.admin.createUser({
           email: `test-limit-filler-${ts}-${i}@webhooks-test.local`,
           password: TEST_PASSWORD,
@@ -1204,6 +1224,7 @@ describe("Teams Integration", () => {
           user_metadata: { full_name: `Filler ${i}` },
         });
         await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+        fillerUserIds.push(data!.user!.id);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (admin as any)
           .from("team_members")
@@ -1211,31 +1232,68 @@ describe("Teams Integration", () => {
       }
     });
 
-    it("invite is created successfully even at 25 members", async () => {
-      // Create the 26th user who will try to join
+    it("invite succeeds when team has 24 members", async () => {
+      // Create the overflow user (will be the 25th)
       const { data } = await admin.auth.admin.createUser({
         email: `test-limit-overflow-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
         user_metadata: { full_name: "Overflow User" },
       });
-      await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+      overflowUserId = data!.user!.id;
+      fillerUserIds.push(overflowUserId);
+      await admin.from("users").update({ plan: "pro" }).eq("id", overflowUserId);
 
+      // Invite should succeed (team has 24, below 25 limit)
       const inviteResult = await createInvite(
         limitOwnerId,
         limitTeamId,
         `test-limit-overflow-${ts}@webhooks-test.local`
       );
-      // Invite creation should fail because team already has 25 members
-      expect(inviteResult.error).toContain("25");
+      expect(inviteResult.error).toBeUndefined();
+      expect(inviteResult.invite).toBeDefined();
+    });
+
+    it("add one more member to bring team to 25 before accept", async () => {
+      const { data } = await admin.auth.admin.createUser({
+        email: `test-limit-filler-${ts}-extra@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Extra Filler" },
+      });
+      fillerUserIds.push(data!.user!.id);
+      await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: limitTeamId, user_id: data!.user!.id, role: "member" });
+    });
+
+    it("acceptInvite fails and rolls back when team is at 25", async () => {
+      // Get the pending invite
+      const invites = await listPendingInvitesForUser(overflowUserId);
+      const invite = invites.find((i) => i.teamId === limitTeamId);
+      expect(invite).toBeDefined();
+
+      // Try to accept — should fail because team now has 25 members
+      const result = await acceptInvite(overflowUserId, invite!.id);
+      expect(result.accepted).toBe(false);
+      expect(result.error).toContain("25");
+
+      // Invite should be rolled back to pending
+      const afterInvites = await listPendingInvitesForUser(overflowUserId);
+      const afterInvite = afterInvites.find((i) => i.teamId === limitTeamId);
+      expect(afterInvite).toBeDefined();
+      expect(afterInvite!.id).toBe(invite!.id);
     });
 
     it("cleanup limit test", async () => {
-      // Delete the team (cascades members)
+      // Delete the team (cascades team_members, team_invites, team_endpoints)
       await admin.from("teams").delete().eq("id", limitTeamId);
-      // Delete owner
-      await admin.auth.admin.deleteUser(limitOwnerId);
-      // Note: filler users are orphaned but don't affect other tests
+      // Delete all created auth users
+      for (const userId of fillerUserIds) {
+        await admin.auth.admin.deleteUser(userId);
+      }
     });
   });
 
