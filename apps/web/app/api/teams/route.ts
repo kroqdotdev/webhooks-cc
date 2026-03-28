@@ -42,8 +42,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const team = await createTeam(auth.userId, name);
-    return Response.json(team);
+    const result = await createTeam(auth.userId, name);
+    if ("error" in result) {
+      return Response.json({ error: result.error }, { status: 400 });
+    }
+    return Response.json(result);
   } catch (error) {
     console.error("Failed to create team:", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });

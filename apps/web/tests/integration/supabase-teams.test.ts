@@ -8,6 +8,7 @@ import {
   deleteTeam,
   listTeamMembers,
   removeTeamMember,
+  leaveTeam,
   createInvite,
   listPendingInvitesForUser,
   listPendingInvitesForTeam,
@@ -822,6 +823,75 @@ describe("Teams Integration", () => {
 
     it("cleanup second team", async () => {
       await deleteTeam(ownerId, secondTeamId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Leave team
+  // ---------------------------------------------------------------------------
+
+  describe("Leave team", () => {
+    it("owner cannot leave their own team", async () => {
+      const result = await leaveTeam(ownerId, teamId);
+      expect(result).toBe(false);
+    });
+
+    it("member can leave a team", async () => {
+      // Ensure member is in the team
+      const teams = await listTeamsForUser(memberId);
+      const inTeam = teams.some((t) => t.id === teamId);
+      if (!inTeam) {
+        // Re-add for this test
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any)
+          .from("team_members")
+          .upsert({ team_id: teamId, user_id: memberId, role: "member" }, { onConflict: "team_id,user_id" });
+      }
+
+      const result = await leaveTeam(memberId, teamId);
+      expect(result).toBe(true);
+    });
+
+    it("member no longer in team after leaving", async () => {
+      const teams = await listTeamsForUser(memberId);
+      const found = teams.find((t) => t.id === teamId);
+      expect(found).toBeUndefined();
+    });
+
+    it("non-member cannot leave a team they are not in", async () => {
+      const result = await leaveTeam(thirdId, teamId);
+      expect(result).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Team creation limit (max 10 owned teams)
+  // ---------------------------------------------------------------------------
+
+  describe("Team creation limit", () => {
+    const tempTeamIds: string[] = [];
+
+    it("respects the 10-team ownership limit", async () => {
+      // Owner already has 1 team (teamId). Create 9 more to hit the limit.
+      for (let i = 0; i < 9; i++) {
+        const result = await createTeam(ownerId, `Limit Test ${i}`);
+        if (!("error" in result)) {
+          tempTeamIds.push(result.id);
+        }
+      }
+
+      // The 11th team should fail
+      const result = await createTeam(ownerId, "One Too Many");
+      expect("error" in result).toBe(true);
+      if ("error" in result) {
+        expect(result.error).toContain("10");
+      }
+    });
+
+    it("cleanup temp teams", async () => {
+      for (const id of tempTeamIds) {
+        await deleteTeam(ownerId, id);
+      }
     });
   });
 

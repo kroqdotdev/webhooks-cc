@@ -142,33 +142,32 @@ function normalizeMockResponse(
 // 1. createTeam
 // ---------------------------------------------------------------------------
 
-export async function createTeam(userId: string, name: string): Promise<Team> {
+export async function createTeam(
+  userId: string,
+  name: string
+): Promise<Team | { error: string }> {
   const admin = createAdminClient();
 
-  // Insert the team
+  // Atomic: insert team + owner member in one transaction via stored procedure
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: teamData, error: teamError } = await (admin as any)
-    .from("teams")
-    .insert({ name, created_by: userId })
-    .select("id, name, created_by, created_at")
-    .single();
+  const { data, error } = await (admin as any).rpc("create_team_with_owner", {
+    p_user_id: userId,
+    p_name: name,
+  });
 
-  if (teamError) throw teamError;
-  const team = teamData as TeamRow;
+  if (error) throw error;
 
-  // Add creator as owner member
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: memberError } = await (admin as any)
-    .from("team_members")
-    .insert({ team_id: team.id, user_id: userId, role: "owner" });
+  const result = data as { id?: string; name?: string; created_by?: string; created_at?: string; error?: string };
 
-  if (memberError) throw memberError;
+  if (result.error) {
+    return { error: result.error };
+  }
 
   return {
-    id: team.id,
-    name: team.name,
-    createdBy: team.created_by,
-    createdAt: parseMillis(team.created_at),
+    id: result.id!,
+    name: result.name!,
+    createdBy: result.created_by!,
+    createdAt: parseMillis(result.created_at ?? null),
     memberCount: 1,
     role: "owner",
   };
@@ -404,6 +403,39 @@ export async function removeTeamMember(
 }
 
 // ---------------------------------------------------------------------------
+// 6b. leaveTeam — non-owner members can leave voluntarily
+// ---------------------------------------------------------------------------
+
+export async function leaveTeam(userId: string, teamId: string): Promise<boolean> {
+  const admin = createAdminClient();
+
+  // Verify user is a member but NOT an owner (owners must transfer or delete)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: membership, error: memberError } = await (admin as any)
+    .from("team_members")
+    .select("role")
+    .eq("team_id", teamId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (memberError) throw memberError;
+  if (!membership) return false;
+  if ((membership as { role: string }).role === "owner") return false;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any)
+    .from("team_members")
+    .delete()
+    .eq("team_id", teamId)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  return !!data;
+}
+
+// ---------------------------------------------------------------------------
 // 7. createInvite
 // ---------------------------------------------------------------------------
 
@@ -426,6 +458,18 @@ export async function createInvite(
 
   if (callerError) throw callerError;
   if (!callerMembership) return { error: "Not authorized" };
+
+  // Check team member limit (max 25)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count: memberCount, error: countError } = await (admin as any)
+    .from("team_members")
+    .select("id", { count: "exact", head: true })
+    .eq("team_id", teamId);
+
+  if (countError) throw countError;
+  if ((memberCount ?? 0) >= 25) {
+    return { error: "Team has reached the maximum of 25 members" };
+  }
 
   // Look up invited user by email
   const { data: invitedUser, error: invitedUserError } = await admin

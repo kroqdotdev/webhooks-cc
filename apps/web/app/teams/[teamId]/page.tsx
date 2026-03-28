@@ -321,6 +321,23 @@ export default function TeamDetailPage() {
     }
   };
 
+  const [leaving, setLeaving] = useState(false);
+
+  const handleLeaveTeam = async () => {
+    setLeaving(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/leave`, {
+        method: "POST",
+        headers: authHeader,
+      });
+      if (res.ok) {
+        router.push("/teams");
+      }
+    } finally {
+      setLeaving(false);
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <main className="container mx-auto px-4 py-8 max-w-2xl">
@@ -613,6 +630,25 @@ export default function TeamDetailPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          </div>
+        </section>
+      )}
+
+      {/* Leave Team (member only) */}
+      {!isOwner && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-destructive">Leave Team</h2>
+          <div className="border rounded-lg p-6 bg-card space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Leave this team. You will lose access to all shared endpoints.
+            </p>
+            <Button
+              variant="destructive"
+              onClick={() => void handleLeaveTeam()}
+              disabled={leaving}
+            >
+              {leaving ? "Leaving..." : "Leave Team"}
+            </Button>
           </div>
         </section>
       )}
