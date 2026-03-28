@@ -162,8 +162,8 @@ export default function TeamsPage() {
               <div>
                 <p className="font-medium">Teams is a Pro feature</p>
                 <p className="text-sm text-muted-foreground">
-                  Collaborate on webhook endpoints with your team. Create teams, invite
-                  members, and share endpoints — all in real time.
+                  Collaborate on webhook endpoints with your team. Create teams, invite members, and
+                  share endpoints — all in real time.
                 </p>
               </div>
             </div>
@@ -188,40 +188,36 @@ export default function TeamsPage() {
                 New Team
               </Button>
             </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create a new team</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
-              <Label htmlFor="team-name">Team name</Label>
-              <Input
-                id="team-name"
-                placeholder="e.g. Acme Corp"
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleCreateTeam();
-                }}
-                autoFocus
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setCreateOpen(false)}
-                disabled={creating}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void handleCreateTeam()}
-                disabled={creating || !newTeamName.trim()}
-              >
-                {creating ? "Creating..." : "Create team"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create a new team</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Label htmlFor="team-name">Team name</Label>
+                <Input
+                  id="team-name"
+                  placeholder="e.g. Acme Corp"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleCreateTeam();
+                  }}
+                  autoFocus
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => void handleCreateTeam()}
+                  disabled={creating || !newTeamName.trim()}
+                >
+                  {creating ? "Creating..." : "Create team"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : (
           <Button size="sm" variant="outline" asChild>
             <Link href="/account">Upgrade to Pro</Link>
@@ -292,103 +288,106 @@ export default function TeamsPage() {
 
       {/* My Teams — only show if user owns teams */}
       {ownedTeams.length > 0 && (
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">My Teams</h2>
-        <div className="border rounded-lg p-6 bg-card">
-          {(
-            <div className="space-y-4">
-              {ownedTeams.some((t) => t.suspended) && (
-                <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-3 text-sm">
-                  <p className="font-medium text-yellow-700 dark:text-yellow-400">
-                    Your teams are suspended
-                  </p>
-                  <p className="text-muted-foreground">
-                    Your plan has been downgraded. Shared endpoints are inaccessible to team
-                    members until you{" "}
-                    <Link href="/account" className="underline font-medium text-foreground">
-                      upgrade to Pro
-                    </Link>
-                    .
-                  </p>
-                </div>
-              )}
-              {ownedTeams.map((team, i) => (
-                <div key={team.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div>
-                        <p className="font-medium">{team.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
-                        </p>
-                      </div>
-                      {team.suspended && (
-                        <Badge variant="outline" className="text-yellow-600 border-yellow-500/50">
-                          Suspended
-                        </Badge>
-                      )}
-                    </div>
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href={`/teams/${team.id}`}>Manage</Link>
-                    </Button>
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">My Teams</h2>
+          <div className="border rounded-lg p-6 bg-card">
+            {
+              <div className="space-y-4">
+                {ownedTeams.some((t) => t.suspended) && (
+                  <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-3 text-sm">
+                    <p className="font-medium text-yellow-700 dark:text-yellow-400">
+                      Your teams are suspended
+                    </p>
+                    <p className="text-muted-foreground">
+                      Your plan has been downgraded. Shared endpoints are inaccessible to team
+                      members until you{" "}
+                      <Link href="/account" className="underline font-medium text-foreground">
+                        upgrade to Pro
+                      </Link>
+                      .
+                    </p>
                   </div>
-                  {i < ownedTeams.length - 1 && <div className="border-t mt-4" />}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+                )}
+                {ownedTeams.map((team, i) => (
+                  <div key={team.id}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="font-medium">{team.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
+                          </p>
+                        </div>
+                        {team.suspended && (
+                          <Badge variant="outline" className="text-yellow-600 border-yellow-500/50">
+                            Suspended
+                          </Badge>
+                        )}
+                      </div>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/teams/${team.id}`}>Manage</Link>
+                      </Button>
+                    </div>
+                    {i < ownedTeams.length - 1 && <div className="border-t mt-4" />}
+                  </div>
+                ))}
+              </div>
+            }
+          </div>
+        </section>
       )}
 
       {/* Teams I'm In — only show if user is a member of teams */}
       {memberTeams.length > 0 && (
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Teams I&apos;m In</h2>
-        <div className="border rounded-lg p-6 bg-card">
-          {(
-            <div className="space-y-4">
-              {memberTeams.map((team, i) => (
-                <div key={team.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div>
-                        <p className="font-medium">{team.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
-                        </p>
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">Teams I&apos;m In</h2>
+          <div className="border rounded-lg p-6 bg-card">
+            {
+              <div className="space-y-4">
+                {memberTeams.map((team, i) => (
+                  <div key={team.id}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="font-medium">{team.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
+                          </p>
+                        </div>
+                        {team.suspended ? (
+                          <Badge variant="outline" className="text-yellow-600 border-yellow-500/50">
+                            Suspended
+                          </Badge>
+                        ) : !isPro ? (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Pro required
+                          </Badge>
+                        ) : null}
                       </div>
-                      {team.suspended ? (
-                        <Badge variant="outline" className="text-yellow-600 border-yellow-500/50">
-                          Suspended
-                        </Badge>
-                      ) : !isPro ? (
-                        <Badge variant="outline" className="text-muted-foreground">
-                          Pro required
-                        </Badge>
-                      ) : null}
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/teams/${team.id}`}>View</Link>
+                      </Button>
                     </div>
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href={`/teams/${team.id}`}>View</Link>
-                    </Button>
+                    {team.suspended ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        The team owner has downgraded their plan. Shared endpoints are inaccessible
+                        until they upgrade.
+                      </p>
+                    ) : !isPro ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <Link href="/account" className="underline">
+                          Upgrade to Pro
+                        </Link>{" "}
+                        to access shared endpoints from this team.
+                      </p>
+                    ) : null}
+                    {i < memberTeams.length - 1 && <div className="border-t mt-4" />}
                   </div>
-                  {team.suspended ? (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      The team owner has downgraded their plan. Shared endpoints are inaccessible until they upgrade.
-                    </p>
-                  ) : !isPro ? (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      <Link href="/account" className="underline">Upgrade to Pro</Link>{" "}
-                      to access shared endpoints from this team.
-                    </p>
-                  ) : null}
-                  {i < memberTeams.length - 1 && <div className="border-t mt-4" />}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+                ))}
+              </div>
+            }
+          </div>
+        </section>
       )}
     </main>
   );

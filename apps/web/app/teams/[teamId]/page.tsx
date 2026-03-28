@@ -197,13 +197,17 @@ export default function TeamDetailPage() {
 
       if (endpointsRes.ok) {
         const data = (await endpointsRes.json()) as {
-          owned: Array<{ id: string; slug: string; name?: string; sharedWith?: Array<{ teamId: string }> }>;
+          owned: Array<{
+            id: string;
+            slug: string;
+            name?: string;
+            sharedWith?: Array<{ teamId: string }>;
+          }>;
         };
         setOwnedEndpoints(data.owned ?? []);
       }
 
       // Identify current user from session
-
     } finally {
       setLoading(false);
     }
@@ -307,7 +311,12 @@ export default function TeamDetailPage() {
       const res = await fetch("/api/endpoints", { headers: authHeader });
       if (res.ok) {
         const data = (await res.json()) as {
-          owned: Array<{ id: string; slug: string; name?: string; sharedWith?: Array<{ teamId: string }> }>;
+          owned: Array<{
+            id: string;
+            slug: string;
+            name?: string;
+            sharedWith?: Array<{ teamId: string }>;
+          }>;
         };
         setOwnedEndpoints(data.owned ?? []);
       }
@@ -380,8 +389,7 @@ export default function TeamDetailPage() {
                 This team is suspended
               </p>
               <p className="text-sm text-muted-foreground">
-                Your plan has been downgraded. Team members can no longer access shared
-                endpoints.{" "}
+                Your plan has been downgraded. Team members can no longer access shared endpoints.{" "}
                 <Link href="/account" className="underline font-medium text-foreground">
                   Upgrade to Pro
                 </Link>{" "}
@@ -394,8 +402,8 @@ export default function TeamDetailPage() {
                 This team is suspended
               </p>
               <p className="text-sm text-muted-foreground">
-                The team owner has downgraded their plan. Shared endpoints are inaccessible
-                until the owner upgrades to Pro again.
+                The team owner has downgraded their plan. Shared endpoints are inaccessible until
+                the owner upgrades to Pro again.
               </p>
             </div>
           )}
@@ -405,13 +413,10 @@ export default function TeamDetailPage() {
       {/* Free member of active team */}
       {!suspended && !isOwner && !isPro && (
         <div className="rounded-md border border-blue-500/20 bg-blue-500/10 p-4 space-y-2">
-          <p className="font-medium text-blue-700 dark:text-blue-400">
-            Pro plan required
-          </p>
+          <p className="font-medium text-blue-700 dark:text-blue-400">Pro plan required</p>
           <p className="text-sm text-muted-foreground">
-            You need a Pro plan to access shared endpoints from this team.
-            You can still view the team and its members, but shared endpoints
-            won&apos;t appear in your dashboard.{" "}
+            You need a Pro plan to access shared endpoints from this team. You can still view the
+            team and its members, but shared endpoints won&apos;t appear in your dashboard.{" "}
             <Link href="/account" className="underline font-medium text-foreground">
               Upgrade to Pro
             </Link>
@@ -436,12 +441,8 @@ export default function TeamDetailPage() {
                     <div className="flex items-center gap-3 min-w-0">
                       <MemberAvatar member={member} />
                       <div className="min-w-0">
-                        {member.name ? (
-                          <p className="font-medium truncate">{member.name}</p>
-                        ) : null}
-                        <p className="text-sm text-muted-foreground truncate">
-                          {member.email}
-                        </p>
+                        {member.name ? <p className="font-medium truncate">{member.name}</p> : null}
+                        <p className="text-sm text-muted-foreground truncate">{member.email}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -449,7 +450,10 @@ export default function TeamDetailPage() {
                         {member.role}
                       </Badge>
                       {isOwner && member.plan !== "pro" && (
-                        <Badge variant="outline" className="text-yellow-600 border-yellow-500/50 text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="text-yellow-600 border-yellow-500/50 text-[10px]"
+                        >
                           Free — no access
                         </Badge>
                       )}
@@ -477,13 +481,12 @@ export default function TeamDetailPage() {
           {pendingInvites.length > 0 && (
             <>
               <div className="border-t mt-4 pt-4">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Pending Invites</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                  Pending Invites
+                </p>
                 <div className="space-y-3">
                   {pendingInvites.map((invite) => (
-                    <div
-                      key={invite.id}
-                      className="flex items-center justify-between gap-3"
-                    >
+                    <div key={invite.id} className="flex items-center justify-between gap-3">
                       <p className="text-sm">{invite.invitedEmail}</p>
                       <Badge variant="outline">pending</Badge>
                     </div>
@@ -527,9 +530,7 @@ export default function TeamDetailPage() {
             {inviteMessage && (
               <p
                 className={`text-sm ${
-                  inviteMessage.type === "success"
-                    ? "text-green-600"
-                    : "text-destructive"
+                  inviteMessage.type === "success" ? "text-green-600" : "text-destructive"
                 }`}
               >
                 {inviteMessage.text}
@@ -548,8 +549,8 @@ export default function TeamDetailPage() {
           </div>
           <div className="border rounded-lg p-6 bg-card space-y-4">
             {(() => {
-              const shared = ownedEndpoints.filter(
-                (ep) => ep.sharedWith?.some((s) => s.teamId === teamId)
+              const shared = ownedEndpoints.filter((ep) =>
+                ep.sharedWith?.some((s) => s.teamId === teamId)
               );
               const unshared = ownedEndpoints.filter(
                 (ep) => !ep.sharedWith?.some((s) => s.teamId === teamId)
@@ -567,7 +568,9 @@ export default function TeamDetailPage() {
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{ep.name || ep.slug}</p>
                             {ep.name ? (
-                              <p className="text-xs text-muted-foreground font-mono truncate">{ep.slug}</p>
+                              <p className="text-xs text-muted-foreground font-mono truncate">
+                                {ep.slug}
+                              </p>
                             ) : null}
                           </div>
                           <Button
@@ -630,11 +633,7 @@ export default function TeamDetailPage() {
               />
               <Button
                 onClick={() => void handleRename()}
-                disabled={
-                  renaming ||
-                  !renameValue.trim() ||
-                  renameValue.trim() === teamName
-                }
+                disabled={renaming || !renameValue.trim() || renameValue.trim() === teamName}
               >
                 {renaming ? "Saving..." : "Save"}
               </Button>
@@ -642,9 +641,7 @@ export default function TeamDetailPage() {
             {renameMessage && (
               <p
                 className={`text-sm ${
-                  renameMessage.type === "success"
-                    ? "text-green-600"
-                    : "text-destructive"
+                  renameMessage.type === "success" ? "text-green-600" : "text-destructive"
                 }`}
               >
                 {renameMessage.text}
@@ -670,8 +667,8 @@ export default function TeamDetailPage() {
                 <DialogHeader>
                   <DialogTitle>Delete team</DialogTitle>
                   <DialogDescription>
-                    Are you sure you want to delete <strong>{teamName}</strong>?
-                    This will remove all members and cannot be undone.
+                    Are you sure you want to delete <strong>{teamName}</strong>? This will remove
+                    all members and cannot be undone.
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -704,11 +701,7 @@ export default function TeamDetailPage() {
             <p className="text-sm text-muted-foreground">
               Leave this team. You will lose access to all shared endpoints.
             </p>
-            <Button
-              variant="destructive"
-              onClick={() => void handleLeaveTeam()}
-              disabled={leaving}
-            >
+            <Button variant="destructive" onClick={() => void handleLeaveTeam()} disabled={leaving}>
               {leaving ? "Leaving..." : "Leave Team"}
             </Button>
           </div>

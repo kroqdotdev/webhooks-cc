@@ -73,12 +73,8 @@ export function EndpointSwitcher() {
   const defaultSlug = currentSlug || allEndpoints[0]?.slug;
 
   // Split owned endpoints into personal (not shared) and shared-by-me
-  const personalEndpoints = data.owned.filter(
-    (ep) => !ep.sharedWith || ep.sharedWith.length === 0
-  );
-  const sharedByMe = data.owned.filter(
-    (ep) => ep.sharedWith && ep.sharedWith.length > 0
-  );
+  const personalEndpoints = data.owned.filter((ep) => !ep.sharedWith || ep.sharedWith.length === 0);
+  const sharedByMe = data.owned.filter((ep) => ep.sharedWith && ep.sharedWith.length > 0);
   const sharedWithMe = data.shared ?? [];
 
   const hasSections = sharedByMe.length > 0 || sharedWithMe.length > 0;
@@ -122,16 +118,14 @@ export function EndpointSwitcher() {
             )}
             {sharedWithMe.length > 0 && (
               <>
-                {(personalEndpoints.length > 0 || sharedByMe.length > 0) && (
-                  <SelectSeparator />
-                )}
+                {(personalEndpoints.length > 0 || sharedByMe.length > 0) && <SelectSeparator />}
                 <SelectGroup>
                   <SelectLabel className={labelClass}>Shared with me</SelectLabel>
                   {sharedWithMe.map((ep) => (
                     <SelectItem key={ep.id} value={ep.slug}>
                       {ep.name || ep.slug}{" "}
                       <span className="text-muted-foreground">
-                        ({ep.fromTeam?.teamName})
+                        ({ep.fromTeam?.teamName ?? "team"})
                       </span>
                     </SelectItem>
                   ))}

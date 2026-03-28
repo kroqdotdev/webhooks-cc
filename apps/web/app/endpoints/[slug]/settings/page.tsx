@@ -385,7 +385,10 @@ function EndpointSettingsForm() {
           </div>
 
           {/* Team Sharing */}
-          <TeamSharingSection accessToken={session?.access_token ?? null} endpointId={endpoint.id} />
+          <TeamSharingSection
+            accessToken={session?.access_token ?? null}
+            endpointId={endpoint.id}
+          />
 
           {error && (
             <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded">

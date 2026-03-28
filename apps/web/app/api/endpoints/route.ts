@@ -1,11 +1,12 @@
-import { authenticateRequest, extractBearerToken, validateBearerTokenWithPlan } from "@/lib/api-auth";
+import {
+  authenticateRequest,
+  extractBearerToken,
+  validateBearerTokenWithPlan,
+} from "@/lib/api-auth";
 import { parseJsonBody } from "@/lib/request-validation";
 import { checkRateLimitByKey } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
-import {
-  getShareMetadataForOwnedEndpoints,
-  getSharedEndpointsForUser,
-} from "@/lib/supabase/teams";
+import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/lib/supabase/teams";
 
 const USER_ENDPOINT_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 const USER_ENDPOINT_RATE_LIMIT_MAX = 30;

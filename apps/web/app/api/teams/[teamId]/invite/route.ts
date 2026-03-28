@@ -5,10 +5,7 @@ import { createInvite } from "@/lib/supabase/teams";
 const INVITE_RATE_LIMIT_MAX = 20;
 const INVITE_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ teamId: string }> }
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 

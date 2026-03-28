@@ -119,9 +119,7 @@ function normalizeMockHeaders(value: unknown): Record<string, string> {
   ) as Record<string, string>;
 }
 
-function normalizeMockResponse(
-  mock_response: Json | null
-): SharedEndpoint["mockResponse"] {
+function normalizeMockResponse(mock_response: Json | null): SharedEndpoint["mockResponse"] {
   if (!mock_response || typeof mock_response !== "object" || Array.isArray(mock_response)) {
     return null;
   }
@@ -146,11 +144,7 @@ function normalizeMockResponse(
 
 async function requirePro(userId: string): Promise<string | null> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("users")
-    .select("plan")
-    .eq("id", userId)
-    .maybeSingle();
+  const { data, error } = await admin.from("users").select("plan").eq("id", userId).maybeSingle();
 
   if (error) throw error;
   if (!data || data.plan !== "pro") return "Teams require a Pro plan";
@@ -161,10 +155,7 @@ async function requirePro(userId: string): Promise<string | null> {
 // 1. createTeam
 // ---------------------------------------------------------------------------
 
-export async function createTeam(
-  userId: string,
-  name: string
-): Promise<Team | { error: string }> {
+export async function createTeam(userId: string, name: string): Promise<Team | { error: string }> {
   const proError = await requirePro(userId);
   if (proError) return { error: proError };
 
@@ -179,7 +170,13 @@ export async function createTeam(
 
   if (error) throw error;
 
-  const result = data as { id?: string; name?: string; created_by?: string; created_at?: string; error?: string };
+  const result = data as {
+    id?: string;
+    name?: string;
+    created_by?: string;
+    created_at?: string;
+    error?: string;
+  };
 
   if (result.error) {
     return { error: result.error };
@@ -253,9 +250,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
 
   if (ownerError) throw ownerError;
 
-  const ownerPlanMap = new Map(
-    (ownerRows ?? []).map((u) => [u.id, u.plan])
-  );
+  const ownerPlanMap = new Map((ownerRows ?? []).map((u) => [u.id, u.plan]));
 
   return teams.map((team) => ({
     id: team.id,
@@ -272,11 +267,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
 // 3. updateTeam
 // ---------------------------------------------------------------------------
 
-export async function updateTeam(
-  userId: string,
-  teamId: string,
-  name: string
-): Promise<boolean> {
+export async function updateTeam(userId: string, teamId: string, name: string): Promise<boolean> {
   const admin = createAdminClient();
 
   // Verify caller is owner
@@ -381,9 +372,15 @@ export async function listTeamMembers(
   if (usersError) throw usersError;
 
   const userMap = new Map(
-    ((usersData ?? []) as { id: string; email: string; name: string | null; image: string | null; plan: string }[]).map(
-      (u) => [u.id, u]
-    )
+    (
+      (usersData ?? []) as {
+        id: string;
+        email: string;
+        name: string | null;
+        image: string | null;
+        plan: string;
+      }[]
+    ).map((u) => [u.id, u])
   );
 
   return members.map((m) => {
@@ -790,10 +787,7 @@ export async function acceptInvite(
   if ((memberCount ?? 0) >= 25) {
     // Roll back: set invite back to pending so user can retry later
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any)
-      .from("team_invites")
-      .update({ status: "pending" })
-      .eq("id", inviteId);
+    await (admin as any).from("team_invites").update({ status: "pending" }).eq("id", inviteId);
     return { accepted: false, error: "Team has reached the maximum of 25 members" };
   }
 
@@ -999,17 +993,18 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
   if (teamsError) throw teamsError;
 
   // Filter out suspended teams (owner not on pro)
-  const sharedOwnerIds = [...new Set(
-    ((teamsData ?? []) as { created_by: string }[]).map((t) => t.created_by)
-  )];
+  const sharedOwnerIds = [
+    ...new Set(((teamsData ?? []) as { created_by: string }[]).map((t) => t.created_by)),
+  ];
   const { data: sharedOwnerRows } = await admin
     .from("users")
     .select("id, plan")
     .in("id", sharedOwnerIds.length > 0 ? sharedOwnerIds : ["__none__"]);
 
   const sharedOwnerPlanMap = new Map((sharedOwnerRows ?? []).map((u) => [u.id, u.plan]));
-  const activeTeams = ((teamsData ?? []) as { id: string; name: string; created_by: string }[])
-    .filter((t) => sharedOwnerPlanMap.get(t.created_by) === "pro");
+  const activeTeams = (
+    (teamsData ?? []) as { id: string; name: string; created_by: string }[]
+  ).filter((t) => sharedOwnerPlanMap.get(t.created_by) === "pro");
 
   if (activeTeams.length === 0) return [];
 
@@ -1050,9 +1045,7 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
     created_at: string;
   };
 
-  const endpointMap = new Map(
-    (endpointsData as EndpointMinRow[]).map((e) => [e.id, e])
-  );
+  const endpointMap = new Map((endpointsData as EndpointMinRow[]).map((e) => [e.id, e]));
 
   // Build result — one entry per (endpoint, team) share, deduplicated to first team per endpoint
   const seen = new Set<string>();

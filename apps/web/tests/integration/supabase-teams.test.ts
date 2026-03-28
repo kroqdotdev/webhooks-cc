@@ -614,11 +614,16 @@ describe("Teams Integration", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any)
         .from("team_members")
-        .upsert({ team_id: teamId, user_id: memberId, role: "member" }, { onConflict: "team_id,user_id" });
+        .upsert(
+          { team_id: teamId, user_id: memberId, role: "member" },
+          { onConflict: "team_id,user_id" }
+        );
 
       // Ensure endpoint is shared (may already be from earlier re-share test)
       const result = await shareEndpointWithTeam(ownerId, teamId, endpointId);
-      expect(result.success === true || result.error === "Endpoint is already shared with this team").toBe(true);
+      expect(
+        result.success === true || result.error === "Endpoint is already shared with this team"
+      ).toBe(true);
     });
 
     it("team member can paginate requests on shared endpoint", async () => {
@@ -853,7 +858,10 @@ describe("Teams Integration", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (admin as any)
           .from("team_members")
-          .upsert({ team_id: teamId, user_id: memberId, role: "member" }, { onConflict: "team_id,user_id" });
+          .upsert(
+            { team_id: teamId, user_id: memberId, role: "member" },
+            { onConflict: "team_id,user_id" }
+          );
       }
 
       const result = await leaveTeam(memberId, teamId);
@@ -1114,10 +1122,15 @@ describe("Teams Integration", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any)
         .from("team_members")
-        .upsert({ team_id: teamId, user_id: memberId, role: "member" }, { onConflict: "team_id,user_id" });
+        .upsert(
+          { team_id: teamId, user_id: memberId, role: "member" },
+          { onConflict: "team_id,user_id" }
+        );
 
       const result = await shareEndpointWithTeam(ownerId, teamId, endpointId);
-      expect(result.success === true || result.error === "Endpoint is already shared with this team").toBe(true);
+      expect(
+        result.success === true || result.error === "Endpoint is already shared with this team"
+      ).toBe(true);
     });
 
     it("getShareMetadataForOwnedEndpoints returns share info for owner", async () => {

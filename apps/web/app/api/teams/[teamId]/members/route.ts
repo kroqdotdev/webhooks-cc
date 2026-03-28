@@ -1,10 +1,7 @@
 import { authenticateRequest } from "@/lib/api-auth";
 import { listTeamMembers, listPendingInvitesForTeam } from "@/lib/supabase/teams";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ teamId: string }> }
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
