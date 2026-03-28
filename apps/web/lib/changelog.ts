@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.13.0";
-export const CLI_VERSION = "0.5.3";
-export const SDK_VERSION = "1.1.0";
+export const APP_VERSION = "0.13.1";
+export const CLI_VERSION = "0.6.0";
+export const SDK_VERSION = "1.2.0";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.13.1",
+    date: "2026-03-28",
+    title: "Pricing Copy Updates",
+    track: "web",
+    items: [
+      "Updated pricing copy across comparison pages and docs",
+      "Teams highlighted as Pro-exclusive feature",
+    ],
+  },
   {
     version: "0.13.0",
     date: "2026-03-28",
@@ -269,6 +279,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "0.6.0",
+    date: "2026-03-28",
+    title: "Teams Support",
+    track: "cli",
+    items: [
+      "Endpoint list shows owned and team-shared endpoints",
+      "TeamShare metadata in endpoint responses",
+    ],
+  },
+  {
     version: "0.5.3",
     date: "2026-03-14",
     title: "Tunnel Base Path & TUI Fixes",
@@ -335,6 +355,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.2.0",
+    date: "2026-03-28",
+    title: "Teams Support",
+    track: "sdk",
+    items: [
+      "TeamShare type for endpoint team metadata",
+      "Endpoint type includes sharedWith and fromTeam fields",
+    ],
+  },
   {
     version: "1.1.0",
     date: "2026-03-20",
