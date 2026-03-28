@@ -7,7 +7,7 @@ const FAQ_ITEMS = [
   {
     question: "What are the best Webhook.site alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong Webhook.site alternative for developers who need automated webhook testing. It adds a TypeScript SDK with test assertions, a native CLI tunnel, an MCP server for AI coding agents, and a free tier with no feature gating. Other alternatives include Beeceptor (API mocking focus), RequestBin/Pipedream (workflow automation), and Hookdeck (production webhook infrastructure).",
+      "webhooks.cc is a strong Webhook.site alternative for developers who need automated webhook testing. It adds a TypeScript SDK with test assertions, a native CLI tunnel, an MCP server for AI coding agents, and a free tier where every feature is included — only Teams (invite members, share endpoints) requires Pro. Other alternatives include Beeceptor (API mocking focus), RequestBin/Pipedream (workflow automation), and Hookdeck (production webhook infrastructure).",
   },
   {
     question: "What is the main difference between webhooks.cc and Webhook.site?",
@@ -17,7 +17,7 @@ const FAQ_ITEMS = [
   {
     question: "Does webhooks.cc have a free plan like Webhook.site?",
     answer:
-      "Yes. webhooks.cc offers a free tier with all core features — inspection, replay, mock responses, CLI tunnel, SDK, and MCP. The paid plan raises rate limits and extends request retention. No features are locked behind a paywall.",
+      "Yes. Every feature is included on both tiers — inspection, replay, mock responses, CLI tunnel, SDK, and MCP. Only Teams (invite members, share endpoints) requires Pro. The paid plan also raises rate limits and extends request retention.",
   },
   {
     question: "Can I use webhooks.cc for CI/CD webhook testing?",
@@ -44,13 +44,13 @@ const ROWS = [
   ["Request body matchers", "Yes (method, header, body path)", "No"],
   ["SSE real-time streaming", "Yes", "No"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
-  ["Free tier feature gating", "None — all features included", "Some features paid-only"],
+  ["Free tier feature gating", "Every feature except Teams", "Some features paid-only"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Webhook.site Alternative — Full Comparison (2026)",
   description:
-    "Looking for a Webhook.site alternative? webhooks.cc adds a TypeScript SDK for CI testing, a CLI tunnel, and an MCP server for AI agents. Free tier with all features — no credit card required.",
+    "Looking for a Webhook.site alternative? webhooks.cc adds a TypeScript SDK for CI testing, a CLI tunnel, and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/webhook-site",
   keywords: [
     "webhook.site alternative",
@@ -86,7 +86,8 @@ export default function CompareWebhookSitePage() {
           If you&apos;re evaluating Webhook.site alternatives, here&apos;s the short version: both
           tools capture and inspect webhooks. webhooks.cc goes further with a TypeScript SDK for CI
           test assertions, a CLI tunnel for local development, and an MCP server for AI-assisted
-          workflows — all on a free tier with no feature gating.
+          workflows — every feature included on both tiers, with only Teams (invite members, share
+          endpoints) requiring Pro.
         </p>
 
         {/* Feature table */}
@@ -148,9 +149,10 @@ export default function CompareWebhookSitePage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Pricing model</h3>
             <p className="text-muted-foreground">
-              webhooks.cc includes every feature on both free and paid tiers. The paid plan raises
-              request limits and extends retention — it does not unlock features. Webhook.site gates
-              some features (custom responses, API access) behind paid tiers.
+              Every feature is included on both free and paid tiers — only Teams (invite members,
+              share endpoints) requires Pro. The paid plan raises request limits and extends
+              retention. Webhook.site gates some features (custom responses, API access) behind paid
+              tiers.
             </p>
           </div>
         </div>
@@ -163,7 +165,7 @@ export default function CompareWebhookSitePage() {
               <li>Webhook assertions in CI pipelines (SDK waitFor)</li>
               <li>AI agents that create, inspect, and replay webhooks (MCP)</li>
               <li>A CLI tunnel purpose-built for webhook forwarding</li>
-              <li>All features available on the free tier</li>
+              <li>Every feature on both tiers — only Teams requires Pro</li>
               <li>Open-source codebase you can inspect and self-host</li>
             </ul>
           </div>

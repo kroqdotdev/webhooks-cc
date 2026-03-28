@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. webhooks.cc has a free tier that includes all features — webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. The paid plan increases rate limits and retention. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. Every feature is included on both tiers — webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Only Teams (invite members, share endpoints) requires Pro. The paid plan also increases rate limits and retention. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",
@@ -45,13 +45,13 @@ const ROWS = [
   ["Custom domains", "No", "Yes (paid)"],
   ["Edge computing / traffic policy", "No", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
-  ["Free tier", "All features, rate-limited", "Limited connections + features"],
+  ["Free tier", "Every feature except Teams", "Limited connections + features"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "ngrok Alternative for Webhook Testing (2026)",
   description:
-    "Need an ngrok alternative for webhook testing? webhooks.cc captures, inspects, and replays webhooks with SDK assertions and an MCP server for AI agents. Free tier, all features included.",
+    "Need an ngrok alternative for webhook testing? webhooks.cc captures, inspects, and replays webhooks with SDK assertions and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/ngrok",
   keywords: [
     "ngrok alternative",

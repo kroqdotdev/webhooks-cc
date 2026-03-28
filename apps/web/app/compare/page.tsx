@@ -26,7 +26,7 @@ const COMPARISONS = [
     href: "/compare/webhook-site",
     title: "webhooks.cc vs Webhook.site",
     summary:
-      "Both capture webhooks. webhooks.cc adds an SDK for CI assertions, MCP for AI agents, and no feature gating on the free tier.",
+      "Both capture webhooks. webhooks.cc adds an SDK for CI assertions, MCP for AI agents, and every feature on both tiers — only Teams requires Pro.",
   },
   {
     href: "/compare/ngrok",

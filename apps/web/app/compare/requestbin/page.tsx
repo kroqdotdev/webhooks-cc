@@ -44,7 +44,7 @@ const ROWS = [
   ["Workflow automation", "No", "Yes — core feature"],
   ["Third-party integrations", "No", "Yes — 1000+ apps"],
   ["Self-hostable", "Yes (open source)", "No"],
-  ["Free tier", "All features, rate-limited", "Limited invocations/day"],
+  ["Free tier", "Every feature except Teams", "Limited invocations/day"],
 ] as const;
 
 export const metadata = createPageMetadata({

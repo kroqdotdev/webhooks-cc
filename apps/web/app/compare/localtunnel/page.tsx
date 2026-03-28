@@ -46,13 +46,13 @@ const ROWS = [
   ["Custom subdomains", "No", "Yes (often unavailable)"],
   ["Non-HTTP protocols", "No (HTTP webhooks only)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
-  ["Free tier", "All features, rate-limited", "Fully free"],
+  ["Free tier", "Every feature except Teams", "Fully free"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "LocalTunnel Alternative with Webhook Testing (2026)",
   description:
-    "Need a LocalTunnel alternative with webhook inspection? webhooks.cc captures, stores, and replays requests with SDK assertions and MCP for AI agents. Free, all features included, open source.",
+    "Need a LocalTunnel alternative with webhook inspection? webhooks.cc captures, stores, and replays requests with SDK assertions and MCP for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/localtunnel",
   keywords: [
     "localtunnel alternative",

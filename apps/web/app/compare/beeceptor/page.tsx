@@ -44,13 +44,13 @@ const ROWS = [
   ["Real-time SSE streaming", "Yes", "No"],
   ["CORS proxy", "No", "Yes"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
-  ["Free tier", "All features, rate-limited", "Limited endpoints + requests"],
+  ["Free tier", "Every feature except Teams", "Limited endpoints + requests"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Beeceptor Alternative for Webhook Testing (2026)",
   description:
-    "Comparing Beeceptor alternatives? webhooks.cc focuses on webhook testing with inspection, replay, a TypeScript SDK for CI, and an MCP server for AI agents. All features free, no credit card.",
+    "Comparing Beeceptor alternatives? webhooks.cc focuses on webhook testing with inspection, replay, a TypeScript SDK for CI, and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/beeceptor",
   keywords: [
     "beeceptor alternative",

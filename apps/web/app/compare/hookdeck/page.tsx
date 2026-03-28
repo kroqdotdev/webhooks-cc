@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Does Hookdeck have a free tier?",
     answer:
-      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with all features included — the paid plan raises rate limits and retention, not feature access.",
+      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every feature included on both tiers — only Teams (invite members, share endpoints) requires Pro. The paid plan raises rate limits and retention.",
   },
   {
     question: "Does webhooks.cc handle webhook retries and delivery guarantees?",
@@ -45,13 +45,13 @@ const ROWS = [
   ["CI test assertions (waitFor)", "Yes", "No"],
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
-  ["Free tier", "All features, rate-limited", "Limited events/month"],
+  ["Free tier", "Every feature except Teams", "Limited events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Hookdeck Alternative for Dev & Testing (2026)",
   description:
-    "Evaluating Hookdeck alternatives for webhook development? webhooks.cc handles testing with inspection, replay, SDK assertions, and MCP for AI agents. Free tier, all features included.",
+    "Evaluating Hookdeck alternatives for webhook development? webhooks.cc handles testing with inspection, replay, SDK assertions, and MCP for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/hookdeck",
   keywords: [
     "hookdeck alternative",
