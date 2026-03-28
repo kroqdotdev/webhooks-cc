@@ -28,6 +28,7 @@ import Link from "next/link";
 
 interface Member {
   id: string;
+  userId: string;
   name: string | null;
   email: string;
   image: string | null;
@@ -36,7 +37,7 @@ interface Member {
 
 interface PendingInvite {
   id: string;
-  email: string;
+  invitedEmail: string;
   createdAt: string;
 }
 
@@ -215,7 +216,7 @@ export default function TeamDetailPage() {
         headers: authHeader,
       });
       if (res.ok) {
-        setMembers((prev) => prev.filter((m) => m.id !== userId));
+        setMembers((prev) => prev.filter((m) => m.userId !== userId));
       }
     } finally {
       setRemovingId(null);
@@ -373,13 +374,13 @@ export default function TeamDetailPage() {
                       <Badge variant={member.role === "owner" ? "default" : "secondary"}>
                         {member.role}
                       </Badge>
-                      {isOwner && member.role !== "owner" && member.id !== currentUserId && (
+                      {isOwner && member.role !== "owner" && member.userId !== currentUserId && (
                         <Button
                           size="sm"
                           variant="ghost"
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => void handleRemoveMember(member.id)}
-                          disabled={removingId === member.id}
+                          onClick={() => void handleRemoveMember(member.userId)}
+                          disabled={removingId === member.userId}
                           aria-label={`Remove ${member.name ?? member.email}`}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -404,7 +405,7 @@ export default function TeamDetailPage() {
                       key={invite.id}
                       className="flex items-center justify-between gap-3"
                     >
-                      <p className="text-sm">{invite.email}</p>
+                      <p className="text-sm">{invite.invitedEmail}</p>
                       <Badge variant="outline">pending</Badge>
                     </div>
                   ))}
