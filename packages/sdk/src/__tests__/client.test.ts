@@ -1445,8 +1445,8 @@ describe("WebhooksCC", () => {
           ok: true,
           status: 200,
           headers: new Headers({ "content-type": "application/json" }),
-          json: () => Promise.resolve([]),
-          text: () => Promise.resolve("[]"),
+          json: () => Promise.resolve({ owned: [], shared: [] }),
+          text: () => Promise.resolve('{"owned":[],"shared":[]}'),
         });
 
       const promise = createClient({
