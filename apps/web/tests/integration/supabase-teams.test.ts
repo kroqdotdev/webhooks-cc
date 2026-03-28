@@ -23,6 +23,9 @@ import {
 import {
   listRequestsForEndpointByUser,
   listNewRequestsForEndpointByUser,
+  listPaginatedRequestsForEndpointByUser,
+  getRequestByIdForUser,
+  clearRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
@@ -589,6 +592,236 @@ describe("Teams Integration", () => {
       const teams = await listTeamsForUser(ownerId);
       const found = teams.find((t) => t.id === tempTeamId);
       expect(found).toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Paginated request access for team members
+  // ---------------------------------------------------------------------------
+
+  describe("Paginated request access", () => {
+    it("re-share endpoint for pagination tests", async () => {
+      // Re-add member to the team (ignore if already exists)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .upsert({ team_id: teamId, user_id: memberId, role: "member" }, { onConflict: "team_id,user_id" });
+
+      // Ensure endpoint is shared (may already be from earlier re-share test)
+      const result = await shareEndpointWithTeam(ownerId, teamId, endpointId);
+      expect(result.success === true || result.error === "Endpoint is already shared with this team").toBe(true);
+    });
+
+    it("team member can paginate requests on shared endpoint", async () => {
+      const page = await listPaginatedRequestsForEndpointByUser({
+        userId: memberId,
+        slug: endpointSlug,
+        limit: 10,
+      });
+
+      expect(page).not.toBeNull();
+      expect(page!.items.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("non-member cannot paginate requests", async () => {
+      const page = await listPaginatedRequestsForEndpointByUser({
+        userId: thirdId,
+        slug: endpointSlug,
+        limit: 10,
+      });
+
+      expect(page).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Get request by ID for team members
+  // ---------------------------------------------------------------------------
+
+  describe("Get request by ID", () => {
+    let requestId: string;
+
+    it("insert a request for getById tests", async () => {
+      requestId = await insertRequest(endpointId, ownerId, "/get-by-id-test");
+      expect(requestId).toBeTruthy();
+    });
+
+    it("owner can get request by ID", async () => {
+      const req = await getRequestByIdForUser(ownerId, requestId);
+      expect(req).not.toBeNull();
+      expect(req!.id).toBe(requestId);
+      expect(req!.path).toBe("/get-by-id-test");
+    });
+
+    it("team member can get request by ID on shared endpoint", async () => {
+      const req = await getRequestByIdForUser(memberId, requestId);
+      expect(req).not.toBeNull();
+      expect(req!.id).toBe(requestId);
+    });
+
+    it("non-member cannot get request by ID", async () => {
+      const req = await getRequestByIdForUser(thirdId, requestId);
+      expect(req).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Clear requests — owner only
+  // ---------------------------------------------------------------------------
+
+  describe("Clear requests access control", () => {
+    it("team member cannot clear requests on shared endpoint", async () => {
+      const result = await clearRequestsForEndpointByUser({
+        userId: memberId,
+        slug: endpointSlug,
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it("owner can clear requests on their endpoint", async () => {
+      // Insert a fresh request to clear
+      await insertRequest(endpointId, ownerId, "/to-clear");
+
+      const result = await clearRequestsForEndpointByUser({
+        userId: ownerId,
+        slug: endpointSlug,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.deleted).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Re-invite after decline
+  // ---------------------------------------------------------------------------
+
+  describe("Re-invite after decline", () => {
+    it("owner can re-invite a user who previously declined", async () => {
+      // thirdId previously declined an invite in earlier tests
+      const result = await createInvite(ownerId, teamId, THIRD_EMAIL);
+      expect(result.error).toBeUndefined();
+      expect(result.invite).toBeDefined();
+      expect(result.invite!.invitedEmail).toBe(THIRD_EMAIL);
+      expect(result.invite!.status).toBe("pending");
+
+      // Clean up: decline it again so it doesn't interfere
+      await declineInvite(thirdId, result.invite!.id);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Share/unshare edge cases
+  // ---------------------------------------------------------------------------
+
+  describe("Share/unshare edge cases", () => {
+    it("endpoint owner who is not a team member cannot share", async () => {
+      // Create a new team owned by thirdId — ownerId is NOT a member
+      const otherTeam = await createTeam(thirdId, "Other Team");
+
+      const result = await shareEndpointWithTeam(ownerId, otherTeam.id, endpointId);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not a member");
+
+      // Clean up
+      await deleteTeam(thirdId, otherTeam.id);
+    });
+
+    it("team member who does not own endpoint cannot unshare", async () => {
+      const result = await unshareEndpointFromTeam(memberId, teamId, endpointId);
+      expect(result).toBe(false);
+    });
+
+    it("unsharing a non-shared endpoint succeeds silently", async () => {
+      // Create a new endpoint that is NOT shared
+      const ep2 = await createEndpointForUser({ userId: ownerId, name: "Unshared EP" });
+      // The delete runs but affects 0 rows — function returns true or false depending on implementation
+      const result = await unshareEndpointFromTeam(ownerId, teamId, ep2.id);
+      // Either true (delete ran) or false (no row found) — just check it doesn't throw
+      expect(typeof result).toBe("boolean");
+    });
+
+    it("getTeamSharesForEndpoint returns empty for non-owner", async () => {
+      const shares = await getTeamSharesForEndpoint(memberId, endpointId);
+      expect(shares).toEqual([]);
+    });
+
+    it("getShareMetadataForOwnedEndpoints returns empty for user with no endpoints", async () => {
+      const map = await getShareMetadataForOwnedEndpoints(thirdId);
+      expect(map.size).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Accept/decline by wrong user
+  // ---------------------------------------------------------------------------
+
+  describe("Accept/decline authorization", () => {
+    let inviteForMember: string;
+
+    it("create a fresh invite for auth tests", async () => {
+      // Remove member first so we can re-invite
+      await removeTeamMember(ownerId, teamId, memberId);
+      const result = await createInvite(ownerId, teamId, MEMBER_EMAIL);
+      expect(result.invite).toBeDefined();
+      inviteForMember = result.invite!.id;
+    });
+
+    it("wrong user cannot accept someone else's invite", async () => {
+      const result = await acceptInvite(thirdId, inviteForMember);
+      expect(result).toBe(false);
+    });
+
+    it("wrong user cannot decline someone else's invite", async () => {
+      const result = await declineInvite(thirdId, inviteForMember);
+      expect(result).toBe(false);
+    });
+
+    it("accepting an already-accepted invite returns false", async () => {
+      const accepted = await acceptInvite(memberId, inviteForMember);
+      expect(accepted).toBe(true);
+
+      const again = await acceptInvite(memberId, inviteForMember);
+      expect(again).toBe(false);
+    });
+
+    it("non-team-member cannot invite", async () => {
+      const result = await createInvite(thirdId, teamId, "anyone@test.local");
+      expect(result.error).toBe("Not authorized");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Multi-team deduplication in getSharedEndpointsForUser
+  // ---------------------------------------------------------------------------
+
+  describe("Multi-team deduplication", () => {
+    let secondTeamId: string;
+
+    it("share same endpoint with a second team", async () => {
+      const team2 = await createTeam(ownerId, "Second Team");
+      secondTeamId = team2.id;
+
+      // Add member to second team
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: secondTeamId, user_id: memberId, role: "member" });
+
+      // Share same endpoint with second team
+      const result = await shareEndpointWithTeam(ownerId, secondTeamId, endpointId);
+      expect(result.success).toBe(true);
+    });
+
+    it("getSharedEndpointsForUser returns endpoint only once", async () => {
+      const shared = await getSharedEndpointsForUser(memberId);
+      const matching = shared.filter((e) => e.id === endpointId);
+      expect(matching.length).toBe(1);
+    });
+
+    it("cleanup second team", async () => {
+      await deleteTeam(ownerId, secondTeamId);
     });
   });
 
