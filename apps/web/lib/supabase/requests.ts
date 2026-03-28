@@ -168,15 +168,14 @@ export async function getRequestByIdForUser(
   requestId: string
 ): Promise<RequestRecord | null> {
   const admin = createAdminClient();
-  const cutoff = await getUserCutoff(userId);
 
+  // Fetch request without user_id filter — we check access via endpoint ownership or team membership
   const { data, error } = await admin
     .from("requests")
     .select(
       "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
     )
     .eq("id", requestId)
-    .eq("user_id", userId)
     .returns<SelectedRequestRow>()
     .maybeSingle();
 
@@ -185,8 +184,22 @@ export async function getRequestByIdForUser(
   }
 
   const row = data as SelectedRequestRow | null;
+  if (!row) return null;
 
-  if (!row || parseMillis(row.received_at) < cutoff) {
+  // Verify user has access to this endpoint (owner or team member)
+  const endpointData = await admin
+    .from("endpoints")
+    .select("slug, user_id")
+    .eq("id", row.endpoint_id)
+    .maybeSingle();
+
+  if (!endpointData.data || !endpointData.data.user_id) return null;
+
+  const access = await resolveEndpointAccess(userId, endpointData.data.slug);
+  if (!access) return null;
+
+  const cutoff = await getUserCutoff(access.ownerId);
+  if (parseMillis(row.received_at) < cutoff) {
     return null;
   }
 
@@ -266,7 +279,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   cursor?: string;
 }): Promise<PaginatedRequestPage | null> {
   const admin = createAdminClient();
-  const endpoint = await getOwnedEndpoint(input.userId, input.slug);
+  const endpoint = await getAccessibleEndpoint(input.userId, input.slug);
   if (!endpoint) {
     return null;
   }
@@ -277,7 +290,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   }
 
   const limit = clampLimit(input.limit, 50);
-  const cutoff = decoded?.cutoff ?? (await getUserCutoff(input.userId));
+  const cutoff = decoded?.cutoff ?? (await getUserCutoff(endpoint.ownerId));
   const offset = decoded?.offset ?? 0;
 
   const { data, error } = await admin

@@ -465,6 +465,15 @@ export async function createInvite(
   if (existingInviteError) throw existingInviteError;
   if (existingInvite) return { error: "A pending invite already exists for this user" };
 
+  // Delete any old declined/accepted invites so the unique constraint doesn't block re-invites
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin as any)
+    .from("team_invites")
+    .delete()
+    .eq("team_id", teamId)
+    .eq("invited_email", email.toLowerCase().trim())
+    .in("status", ["declined", "accepted"]);
+
   // Look up inviter email and team name for response
   const { data: inviterUser, error: inviterError } = await admin
     .from("users")
@@ -664,20 +673,22 @@ export async function listPendingInvitesForTeam(
 export async function acceptInvite(userId: string, inviteId: string): Promise<boolean> {
   const admin = createAdminClient();
 
-  // Fetch invite and verify it belongs to the user and is pending
+  // Atomically claim the invite by updating status from pending → accepted
+  // Only the invited user can claim it, and only if still pending (prevents race conditions)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: invite, error: inviteError } = await (admin as any)
+  const { data: claimed, error: claimError } = await (admin as any)
     .from("team_invites")
-    .select("id, team_id, invited_user_id, status")
+    .update({ status: "accepted" })
     .eq("id", inviteId)
     .eq("invited_user_id", userId)
     .eq("status", "pending")
+    .select("id, team_id")
     .maybeSingle();
 
-  if (inviteError) throw inviteError;
-  if (!invite) return false;
+  if (claimError) throw claimError;
+  if (!claimed) return false;
 
-  const inviteRow = invite as Pick<TeamInviteRow, "id" | "team_id" | "invited_user_id" | "status">;
+  const inviteRow = claimed as { id: string; team_id: string };
 
   // Add as team member
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -690,17 +701,7 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<bo
     if (memberError.code !== "23505") throw memberError;
   }
 
-  // Update invite status
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: updated, error: updateError } = await (admin as any)
-    .from("team_invites")
-    .update({ status: "accepted" })
-    .eq("id", inviteId)
-    .select("id")
-    .maybeSingle();
-
-  if (updateError) throw updateError;
-  return !!updated;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,10 +1007,10 @@ export async function resolveEndpointAccess(
     .select("team_id")
     .eq("endpoint_id", endpoint.id)
     .in("team_id", userTeamIds)
-    .maybeSingle();
+    .limit(1);
 
   if (shareAccessError) throw shareAccessError;
-  if (!shareAccess) return null;
+  if (!shareAccess || (shareAccess as unknown[]).length === 0) return null;
 
   return { endpointId: endpoint.id, ownerId, isOwner: false };
 }

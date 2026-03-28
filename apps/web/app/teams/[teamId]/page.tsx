@@ -115,7 +115,7 @@ export default function TeamDetailPage() {
 
   const [teamName, setTeamName] = useState("");
   const [role, setRole] = useState<"owner" | "member">("member");
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const currentUserId = session?.user?.id ?? null;
   const [members, setMembers] = useState<Member[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,7 +192,7 @@ export default function TeamDetailPage() {
       }
 
       // Identify current user from session
-      setCurrentUserId(session.user?.id ?? null);
+
     } finally {
       setLoading(false);
     }
@@ -361,9 +361,9 @@ export default function TeamDetailPage() {
                     <div className="flex items-center gap-3 min-w-0">
                       <MemberAvatar member={member} />
                       <div className="min-w-0">
-                        {member.name && (
+                        {member.name ? (
                           <p className="font-medium truncate">{member.name}</p>
-                        )}
+                        ) : null}
                         <p className="text-sm text-muted-foreground truncate">
                           {member.email}
                         </p>
@@ -486,9 +486,9 @@ export default function TeamDetailPage() {
                         <div key={ep.id} className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{ep.name || ep.slug}</p>
-                            {ep.name && (
+                            {ep.name ? (
                               <p className="text-xs text-muted-foreground font-mono truncate">{ep.slug}</p>
-                            )}
+                            ) : null}
                           </div>
                           <Button
                             variant="ghost"

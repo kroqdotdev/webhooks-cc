@@ -38,7 +38,7 @@ function TeamSharingSection({
   endpointId: string;
 }) {
   const [teams, setTeams] = useState<Array<{ id: string; name: string; role: string }>>([]);
-  const [sharedTeamIds, setSharedTeamIds] = useState<Set<string>>(new Set());
+  const [sharedTeamIds, setSharedTeamIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
 

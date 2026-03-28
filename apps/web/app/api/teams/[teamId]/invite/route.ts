@@ -1,5 +1,9 @@
 import { authenticateRequest } from "@/lib/api-auth";
+import { checkRateLimitByKey } from "@/lib/rate-limit";
 import { createInvite } from "@/lib/supabase/teams";
+
+const INVITE_RATE_LIMIT_MAX = 20;
+const INVITE_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 
 export async function POST(
   request: Request,
@@ -7,6 +11,13 @@ export async function POST(
 ) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
+
+  const rateLimited = checkRateLimitByKey(
+    `team-invite:${auth.userId}`,
+    INVITE_RATE_LIMIT_MAX,
+    INVITE_RATE_LIMIT_WINDOW_MS
+  );
+  if (rateLimited) return rateLimited;
 
   const { teamId } = await params;
 
