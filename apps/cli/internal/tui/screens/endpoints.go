@@ -218,9 +218,16 @@ func (m EndpointsModel) View() string {
 			if ep.Name != "" {
 				name = ep.Name + " (" + ep.Slug + ")"
 			}
-			body += fmt.Sprintf("%s%s  %s\n",
+			teamTag := ""
+			if ep.IsShared && ep.TeamName != "" {
+				teamTag = tui.Muted.Render(fmt.Sprintf(" [%s]", ep.TeamName))
+			} else if ep.TeamName != "" {
+				teamTag = tui.Muted.Render(fmt.Sprintf(" [shared → %s]", ep.TeamName))
+			}
+			body += fmt.Sprintf("%s%s%s  %s\n",
 				cursor,
 				style.Render(name),
+				teamTag,
 				tui.Muted.Render(ep.URL),
 			)
 		}

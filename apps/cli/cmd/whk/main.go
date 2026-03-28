@@ -285,14 +285,20 @@ func listEndpointsCmd() *cobra.Command {
 
 			webhookURL := client.WebhookURL()
 
-			fmt.Printf("%-10s %-20s %s\n", "SLUG", "NAME", "URL")
-			fmt.Printf("%-10s %-20s %s\n", "----", "----", "---")
+			fmt.Printf("%-10s %-20s %-20s %s\n", "SLUG", "NAME", "TEAM", "URL")
+			fmt.Printf("%-10s %-20s %-20s %s\n", "----", "----", "----", "---")
 			for _, ep := range endpoints {
 				name := ep.Name
 				if name == "" {
 					name = "-"
 				}
-				fmt.Printf("%-10s %-20s %s/w/%s\n", ep.Slug, name, webhookURL, ep.Slug)
+				team := "-"
+				if ep.FromTeam != nil {
+					team = ep.FromTeam.TeamName
+				} else if len(ep.SharedWith) > 0 {
+					team = "→ " + ep.SharedWith[0].TeamName
+				}
+				fmt.Printf("%-10s %-20s %-20s %s/w/%s\n", ep.Slug, name, team, webhookURL, ep.Slug)
 			}
 			return nil
 		},

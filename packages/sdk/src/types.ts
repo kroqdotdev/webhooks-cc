@@ -2,6 +2,14 @@
  * A webhook endpoint that captures incoming HTTP requests.
  * Create endpoints via the dashboard or SDK to receive webhooks.
  */
+/** Team sharing metadata for an endpoint. */
+export interface TeamShare {
+  /** Team identifier */
+  teamId: string;
+  /** Team display name */
+  teamName: string;
+}
+
 export interface Endpoint {
   /** Unique identifier for this endpoint */
   id: string;
@@ -17,6 +25,10 @@ export interface Endpoint {
   expiresAt?: number;
   /** Unix timestamp (ms) when the endpoint was created */
   createdAt: number;
+  /** Teams this endpoint is shared with (present when you own it) */
+  sharedWith?: TeamShare[];
+  /** Team this endpoint was shared from (present when shared with you) */
+  fromTeam?: TeamShare;
 }
 
 /** Mock response returned by the receiver instead of the default 200 OK. */

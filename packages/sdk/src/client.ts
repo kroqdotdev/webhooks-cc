@@ -752,7 +752,11 @@ export class WebhooksCC {
     },
 
     list: async (): Promise<Endpoint[]> => {
-      return this.request<Endpoint[]>("GET", "/endpoints");
+      const response = await this.request<{ owned: Endpoint[]; shared: Endpoint[] }>(
+        "GET",
+        "/endpoints"
+      );
+      return [...response.owned, ...response.shared];
     },
 
     get: async (slug: string): Promise<Endpoint> => {

@@ -244,7 +244,7 @@ func TestAuthenticatedRequest_UsesToken(t *testing.T) {
 	var receivedAuth string
 	c := setupTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedAuth = r.Header.Get("Authorization")
-		_ = json.NewEncoder(w).Encode([]map[string]string{})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"owned": []interface{}{}, "shared": []interface{}{}})
 	}))
 
 	_, err := c.ListEndpointsWithContext(context.Background())

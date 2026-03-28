@@ -213,12 +213,26 @@ func (c *Client) ClaimDeviceCode(ctx context.Context, deviceCode string) (*Claim
 
 // --- Endpoint CRUD ---
 
+// TeamShare represents a team an endpoint is shared with.
+type TeamShare struct {
+	TeamID   string `json:"teamId"`
+	TeamName string `json:"teamName"`
+}
+
 // Endpoint represents a webhook endpoint in the webhooks.cc system.
 type Endpoint struct {
-	ID   string `json:"id"`
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	ID         string      `json:"id"`
+	Slug       string      `json:"slug"`
+	Name       string      `json:"name"`
+	URL        string      `json:"url"`
+	SharedWith []TeamShare `json:"sharedWith,omitempty"`
+	FromTeam   *TeamShare  `json:"fromTeam,omitempty"`
+}
+
+// endpointsResponse is the new response shape from GET /api/endpoints.
+type endpointsResponse struct {
+	Owned  []Endpoint `json:"owned"`
+	Shared []Endpoint `json:"shared"`
 }
 
 // CreateEndpoint creates a new endpoint
@@ -250,14 +264,18 @@ func (c *Client) ListEndpoints() ([]Endpoint, error) {
 	return c.ListEndpointsWithContext(context.Background())
 }
 
-// ListEndpointsWithContext returns all endpoints for the user with context for cancellation
+// ListEndpointsWithContext returns all endpoints for the user with context for cancellation.
+// Returns owned endpoints followed by shared endpoints (from teams).
 func (c *Client) ListEndpointsWithContext(ctx context.Context) ([]Endpoint, error) {
-	var result []Endpoint
-	err := c.request(ctx, "GET", "/api/endpoints", nil, &result)
+	var response endpointsResponse
+	err := c.request(ctx, "GET", "/api/endpoints", nil, &response)
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	all := make([]Endpoint, 0, len(response.Owned)+len(response.Shared))
+	all = append(all, response.Owned...)
+	all = append(all, response.Shared...)
+	return all, nil
 }
 
 // DeleteEndpoint deletes an endpoint

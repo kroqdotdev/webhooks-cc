@@ -69,10 +69,12 @@ type EndpointDeletedMsg struct {
 
 // Endpoint is a local type matching api.Endpoint
 type Endpoint struct {
-	ID   string
-	Slug string
-	Name string
-	URL  string
+	ID       string
+	Slug     string
+	Name     string
+	URL      string
+	TeamName string // non-empty if shared by/with a team
+	IsShared bool   // true if this endpoint is shared with you via a team
 }
 
 // Auth messages

@@ -75,6 +75,7 @@ export type {
   ResponseHookInfo,
   ErrorHookInfo,
   Endpoint,
+  TeamShare,
   MockResponse,
   Request,
   SearchResult,
