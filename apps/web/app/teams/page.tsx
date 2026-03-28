@@ -290,15 +290,12 @@ export default function TeamsPage() {
         </section>
       )}
 
-      {/* My Teams */}
+      {/* My Teams — only show if user owns teams */}
+      {ownedTeams.length > 0 && (
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">My Teams</h2>
         <div className="border rounded-lg p-6 bg-card">
-          {ownedTeams.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              You haven&apos;t created any teams yet.
-            </p>
-          ) : (
+          {(
             <div className="space-y-4">
               {ownedTeams.some((t) => t.suspended) && (
                 <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-3 text-sm">
@@ -342,16 +339,14 @@ export default function TeamsPage() {
           )}
         </div>
       </section>
+      )}
 
-      {/* Teams I'm In */}
+      {/* Teams I'm In — only show if user is a member of teams */}
+      {memberTeams.length > 0 && (
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Teams I&apos;m In</h2>
         <div className="border rounded-lg p-6 bg-card">
-          {memberTeams.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              You&apos;re not a member of any other teams.
-            </p>
-          ) : (
+          {(
             <div className="space-y-4">
               {memberTeams.map((team, i) => (
                 <div key={team.id}>
@@ -394,6 +389,7 @@ export default function TeamsPage() {
           )}
         </div>
       </section>
+      )}
     </main>
   );
 }
