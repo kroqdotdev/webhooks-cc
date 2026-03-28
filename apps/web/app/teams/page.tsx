@@ -229,15 +229,14 @@ export default function TeamsPage() {
         )}
       </div>
 
-      {/* Free user with existing teams — show upgrade notice */}
-      {!isPro && (
+      {/* Free user who owns teams — show suspension notice */}
+      {!isPro && ownedTeams.length > 0 && (
         <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
           <p className="font-medium text-yellow-700 dark:text-yellow-400">
-            Teams require a Pro plan
+            Your teams are suspended
           </p>
           <p className="text-sm text-muted-foreground">
-            Your teams are suspended because your plan is no longer Pro. Shared endpoints
-            are inaccessible to team members.{" "}
+            Your plan is no longer Pro. Shared endpoints are inaccessible to team members.{" "}
             <Link href="/account" className="underline font-medium text-foreground">
               Upgrade to Pro
             </Link>{" "}
