@@ -44,7 +44,8 @@ const ROWS = [
   ["Workflow automation", "No", "Yes — core feature"],
   ["Third-party integrations", "No", "Yes — 1000+ apps"],
   ["Self-hostable", "Yes (open source)", "No"],
-  ["Free tier", "All features, rate-limited", "Limited invocations/day"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "All plans, free unlimited members"],
+  ["Free tier features", "Everything except Teams", "Limited invocations/day"],
 ] as const;
 
 export const metadata = createPageMetadata({
@@ -85,9 +86,9 @@ export default function CompareRequestBinPage() {
           webhooks.cc vs RequestBin (Pipedream)
         </h1>
         <p className="text-lg text-muted-foreground mb-10">
-          If you&apos;re looking for a RequestBin alternative, webhooks.cc picks up where the original
-          RequestBin left off: a focused tool for capturing, inspecting, replaying, and testing
-          webhooks. RequestBin now lives inside Pipedream as a workflow automation platform.
+          If you&apos;re looking for a RequestBin alternative, webhooks.cc picks up where the
+          original RequestBin left off: a focused tool for capturing, inspecting, replaying, and
+          testing webhooks. RequestBin now lives inside Pipedream as a workflow automation platform.
           webhooks.cc stays developer-first with a CLI, TypeScript SDK, and MCP server.
         </p>
 
@@ -128,29 +129,32 @@ export default function CompareRequestBinPage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Testing tool vs automation platform</h3>
             <p className="text-muted-foreground">
-              webhooks.cc is built for development and testing: capture a webhook from Stripe, inspect
-              the payload, replay it against your handler, write SDK assertions in CI. RequestBin
-              (Pipedream) is built for production automation: receive a webhook, transform the data,
-              call downstream APIs, store results. They solve adjacent but different problems.
+              webhooks.cc is built for development and testing: capture a webhook from Stripe,
+              inspect the payload, replay it against your handler, write SDK assertions in CI.
+              RequestBin (Pipedream) is built for production automation: receive a webhook,
+              transform the data, call downstream APIs, store results. They solve adjacent but
+              different problems.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
-              webhooks.cc includes a native CLI for tunneling webhooks to localhost, a TypeScript SDK
-              with <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> for test
-              assertions, and an MCP server for AI agent integration. RequestBin focuses on the
-              Pipedream workflow editor and API — it does not offer webhook-specific dev tooling.
+              webhooks.cc includes a native CLI for tunneling webhooks to localhost, a TypeScript
+              SDK with <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> for test
+              assertions, and an MCP server for AI agent integration. Team collaboration on
+              webhooks.cc is available on Pro at $8/month with up to 25 members; Pipedream includes
+              team features on all plans with unlimited members. RequestBin focuses on the Pipedream
+              workflow editor and API — it does not offer webhook-specific dev tooling.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Open source and self-hosting</h3>
             <p className="text-muted-foreground">
-              webhooks.cc is fully open source. You can self-host the web app, receiver, CLI, SDK, and
-              MCP server. The original RequestBin was also open source, but the Pipedream version is a
-              hosted platform without a self-host option.
+              webhooks.cc is fully open source. You can self-host the web app, receiver, CLI, SDK,
+              and MCP server. The original RequestBin was also open source, but the Pipedream
+              version is a hosted platform without a self-host option.
             </p>
           </div>
         </div>

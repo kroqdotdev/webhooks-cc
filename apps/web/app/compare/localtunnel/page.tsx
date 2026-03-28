@@ -46,13 +46,14 @@ const ROWS = [
   ["Custom subdomains", "No", "Yes (often unavailable)"],
   ["Non-HTTP protocols", "No (HTTP webhooks only)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
-  ["Free tier", "All features, rate-limited", "Fully free"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
+  ["Free tier features", "Everything except Teams", "Fully free"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "LocalTunnel Alternative with Webhook Testing (2026)",
   description:
-    "Need a LocalTunnel alternative with webhook inspection? webhooks.cc captures, stores, and replays requests with SDK assertions and MCP for AI agents. Free, all features included, open source.",
+    "Need a LocalTunnel alternative with webhook inspection? webhooks.cc captures, stores, and replays requests with SDK assertions and MCP for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/localtunnel",
   keywords: [
     "localtunnel alternative",
@@ -86,9 +87,9 @@ export default function CompareLocalTunnelPage() {
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs LocalTunnel</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you need a LocalTunnel alternative with webhook inspection built in, webhooks.cc gives
-          you a free public URL that forwards traffic to localhost — and also captures every request,
-          stores it for inspection, and lets you replay, search, and assert on payloads. Same
-          starting point, different depth.
+          you a free public URL that forwards traffic to localhost — and also captures every
+          request, stores it for inspection, and lets you replay, search, and assert on payloads.
+          Same starting point, different depth.
         </p>
 
         {/* Feature table */}
@@ -138,10 +139,10 @@ export default function CompareLocalTunnelPage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Reliability</h3>
             <p className="text-muted-foreground">
-              LocalTunnel&apos;s public server is community-run and can be unreliable. URLs change every
-              session, and connections sometimes drop. webhooks.cc endpoints use stable slug-based
-              URLs and run on managed infrastructure, so you can configure a webhook sender once and
-              keep receiving.
+              LocalTunnel&apos;s public server is community-run and can be unreliable. URLs change
+              every session, and connections sometimes drop. webhooks.cc endpoints use stable
+              slug-based URLs and run on managed infrastructure, so you can configure a webhook
+              sender once and keep receiving.
             </p>
           </div>
 
@@ -149,9 +150,10 @@ export default function CompareLocalTunnelPage() {
             <h3 className="text-lg font-bold mb-2">Beyond the tunnel</h3>
             <p className="text-muted-foreground">
               webhooks.cc adds a TypeScript SDK for CI test assertions, an MCP server for AI coding
-              agents, configurable mock responses, and a real-time dashboard. LocalTunnel is a
-              single-purpose tool — and that simplicity is its strength for quick, throwaway
-              tunneling.
+              agents, configurable mock responses, and a real-time dashboard. For teams, webhooks.cc
+              Pro ($8/month) supports up to 25 members with shared endpoints; LocalTunnel has no
+              team or collaboration features. LocalTunnel is a single-purpose tool — and that
+              simplicity is its strength for quick, throwaway tunneling.
             </p>
           </div>
         </div>
@@ -194,7 +196,10 @@ export default function CompareLocalTunnelPage() {
         {/* More comparisons */}
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}

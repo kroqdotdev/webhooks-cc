@@ -76,8 +76,8 @@ importers:
         specifier: ^3.8.0
         version: 3.8.0
       '@polar-sh/sdk':
-        specifier: ^0.46.6
-        version: 0.46.6
+        specifier: ^0.46.7
+        version: 0.46.7
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -1403,6 +1403,9 @@ packages:
 
   '@polar-sh/sdk@0.46.6':
     resolution: {integrity: sha512-+ULxRCkGo74IbuVcVbnWEOY1Hu0EHRSJO9QNLKylllaQmhpGf/GeBnbb7l95lrKcjH1pJNdYVU/oA02+pGTluw==}
+
+  '@polar-sh/sdk@0.46.7':
+    resolution: {integrity: sha512-g8/goRQFfnik9Ood2Ej5AsbEXv2rohzhVlmW7wjkCuwdc8i59FWhdBjolX2tUwcXXjugziXrhCZJLivY3W6ytQ==}
 
   '@posthog/core@1.24.1':
     resolution: {integrity: sha512-e8AciAnc6MRFws89ux8lJKFAaI03yEon0ASDoUO7yS91FVqbUGXYekObUUR3LHplcg+pmyiJBI0jolY0SFbGRA==}
@@ -6343,6 +6346,11 @@ snapshots:
       playwright: 1.58.2
 
   '@polar-sh/sdk@0.46.6':
+    dependencies:
+      standardwebhooks: 1.0.0
+      zod: 4.3.6
+
+  '@polar-sh/sdk@0.46.7':
     dependencies:
       standardwebhooks: 1.0.0
       zod: 4.3.6

@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Does Hookdeck have a free tier?",
     answer:
-      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with all features included — the paid plan raises rate limits and retention, not feature access.",
+      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every feature included on both tiers — only Teams (invite members, share endpoints) requires Pro. The paid plan raises rate limits and retention.",
   },
   {
     question: "Does webhooks.cc handle webhook retries and delivery guarantees?",
@@ -45,13 +45,14 @@ const ROWS = [
   ["CI test assertions (waitFor)", "Yes", "No"],
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
-  ["Free tier", "All features, rate-limited", "Limited events/month"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($39/mo), unlimited seats"],
+  ["Free tier features", "Everything except Teams", "Limited events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Hookdeck Alternative for Dev & Testing (2026)",
   description:
-    "Evaluating Hookdeck alternatives for webhook development? webhooks.cc handles testing with inspection, replay, SDK assertions, and MCP for AI agents. Free tier, all features included.",
+    "Evaluating Hookdeck alternatives for webhook development? webhooks.cc handles testing with inspection, replay, SDK assertions, and MCP for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/hookdeck",
   keywords: [
     "hookdeck alternative",
@@ -124,13 +125,15 @@ export default function CompareHookdeckPage() {
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
           <div className="neo-card neo-card-static">
-            <h3 className="text-lg font-bold mb-2">Development testing vs production reliability</h3>
+            <h3 className="text-lg font-bold mb-2">
+              Development testing vs production reliability
+            </h3>
             <p className="text-muted-foreground">
               webhooks.cc captures every incoming webhook and makes it available for inspection,
               search, export, and replay. Its SDK lets you assert on payloads in CI test suites.
               Hookdeck sits in your production webhook delivery path — it receives webhooks, applies
-              retries, rate limiting, and routing rules, then delivers them to your server. One is for
-              building; the other is for running.
+              retries, rate limiting, and routing rules, then delivers them to your server. One is
+              for building; the other is for running.
             </p>
           </div>
 
@@ -138,8 +141,8 @@ export default function CompareHookdeckPage() {
             <h3 className="text-lg font-bold mb-2">AI agent integration</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides an MCP server with 11 tools for AI coding agents — create
-              endpoints, send test payloads, inspect responses, replay requests. This lets agents like
-              Cursor, Claude Code, and Windsurf handle webhook testing without manual dashboard
+              endpoints, send test payloads, inspect responses, replay requests. This lets agents
+              like Cursor, Claude Code, and Windsurf handle webhook testing without manual dashboard
               interaction. Hookdeck does not offer MCP integration.
             </p>
           </div>
@@ -149,8 +152,9 @@ export default function CompareHookdeckPage() {
             <p className="text-muted-foreground">
               These tools are not mutually exclusive. A common pattern: use webhooks.cc during
               development to capture and debug webhook payloads, write SDK assertions in your test
-              suite, then use Hookdeck in production for reliable delivery with retries and
-              rate limiting.
+              suite, then use Hookdeck in production for reliable delivery with retries and rate
+              limiting. For teams, webhooks.cc Pro costs $8/month with up to 25 members, while
+              Hookdeck&apos;s Team plan starts at $39/month with unlimited seats.
             </p>
           </div>
         </div>
@@ -207,7 +211,10 @@ export default function CompareHookdeckPage() {
             vs Webhook.site
           </Link>
           {" · "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}

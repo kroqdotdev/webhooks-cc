@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is Smee.io free?",
     answer:
-      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with all features included. The webhooks.cc paid plan raises rate limits and retention.",
+      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every feature included on both tiers — only Teams (invite members, share endpoints) requires Pro. The paid plan raises rate limits and retention.",
   },
   {
     question: "Should I use Smee.io or webhooks.cc for GitHub App development?",
@@ -45,7 +45,8 @@ const ROWS = [
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Auth / user accounts", "Yes (optional)", "No — anonymous channels"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (ISC)"],
-  ["Free tier", "All features, rate-limited", "Free (fully open)"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
+  ["Free tier features", "Everything except Teams", "Free (fully open)"],
 ] as const;
 
 export const metadata = createPageMetadata({
@@ -127,30 +128,34 @@ export default function CompareSmeePage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Proxy vs platform</h3>
             <p className="text-muted-foreground">
-              Smee.io does one thing: forward incoming webhooks to your local machine via SSE. It does
-              not store request history, offer search, or provide replay. When you close the browser
-              tab, the data is gone. webhooks.cc stores every request with full headers, body, and
-              metadata — searchable, exportable, and replayable from the dashboard, CLI, or SDK.
+              Smee.io does one thing: forward incoming webhooks to your local machine via SSE. It
+              does not store request history, offer search, or provide replay. When you close the
+              browser tab, the data is gone. webhooks.cc stores every request with full headers,
+              body, and metadata — searchable, exportable, and replayable from the dashboard, CLI,
+              or SDK.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
-              webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions, a
-              native CLI with built-in tunneling, and an MCP server for AI coding agents. Smee.io
-              provides a small npm client (<code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>)
-              for forwarding — no SDK, no test helpers, no MCP.
+              webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions,
+              a native CLI with built-in tunneling, and an MCP server for AI coding agents. For
+              teams, webhooks.cc Pro ($8/month) supports up to 25 members with shared endpoints;
+              Smee.io has no team or collaboration features. Smee.io provides a small npm client (
+              <code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>) for forwarding —
+              no SDK, no test helpers, no MCP.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">GitHub App development</h3>
             <p className="text-muted-foreground">
-              Smee.io was built specifically for GitHub App webhook development and is recommended in
-              GitHub&apos;s docs. It works well for that narrow use case. If you need to go beyond
-              forwarding — inspect payloads across multiple webhook sources, replay failed deliveries,
-              or assert on GitHub event payloads in tests — webhooks.cc covers the broader workflow.
+              Smee.io was built specifically for GitHub App webhook development and is recommended
+              in GitHub&apos;s docs. It works well for that narrow use case. If you need to go
+              beyond forwarding — inspect payloads across multiple webhook sources, replay failed
+              deliveries, or assert on GitHub event payloads in tests — webhooks.cc covers the
+              broader workflow.
             </p>
           </div>
         </div>
@@ -200,7 +205,10 @@ export default function CompareSmeePage() {
             vs LocalTunnel
           </Link>
           {" · "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}

@@ -54,7 +54,9 @@ export function jsonToTypeScript(json: string, name = "WebhookPayload"): string 
 
     if (Array.isArray(value)) {
       if (value.length === 0) return "unknown[]";
-      const allObjects = value.every((v) => v !== null && typeof v === "object" && !Array.isArray(v));
+      const allObjects = value.every(
+        (v) => v !== null && typeof v === "object" && !Array.isArray(v)
+      );
       if (allObjects) {
         const merged = mergeObjectKeys(value);
         const elementType = inferType(merged, fieldName, depth);

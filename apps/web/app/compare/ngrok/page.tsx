@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. webhooks.cc has a free tier that includes all features — webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. The paid plan increases rate limits and retention. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. Every feature is included on both tiers — webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Only Teams (invite members, share endpoints) requires Pro. The paid plan also increases rate limits and retention. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",
@@ -45,13 +45,14 @@ const ROWS = [
   ["Custom domains", "No", "Yes (paid)"],
   ["Edge computing / traffic policy", "No", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
-  ["Free tier", "All features, rate-limited", "Limited connections + features"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Pro+ ($20/mo + $25/seat)"],
+  ["Free tier features", "Everything except Teams", "Limited connections + features"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "ngrok Alternative for Webhook Testing (2026)",
   description:
-    "Need an ngrok alternative for webhook testing? webhooks.cc captures, inspects, and replays webhooks with SDK assertions and an MCP server for AI agents. Free tier, all features included.",
+    "Need an ngrok alternative for webhook testing? webhooks.cc captures, inspects, and replays webhooks with SDK assertions and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/ngrok",
   keywords: [
     "ngrok alternative",
@@ -84,10 +85,10 @@ export default function CompareNgrokPage() {
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs ngrok</h1>
         <p className="text-lg text-muted-foreground mb-10">
-          If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built alternative
-          that captures, inspects, replays, and forwards webhooks to localhost — with a TypeScript SDK,
-          CLI tunnel, and MCP server included. ngrok is a general-purpose tunnel for exposing any
-          local service to the internet. Different tools, different focus.
+          If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built
+          alternative that captures, inspects, replays, and forwards webhooks to localhost — with a
+          TypeScript SDK, CLI tunnel, and MCP server included. ngrok is a general-purpose tunnel for
+          exposing any local service to the internet. Different tools, different focus.
         </p>
 
         {/* Feature table */}
@@ -128,10 +129,10 @@ export default function CompareNgrokPage() {
             <h3 className="text-lg font-bold mb-2">Webhook history and inspection</h3>
             <p className="text-muted-foreground">
               ngrok tunnels traffic to your local server, but does not store or index incoming
-              requests. To inspect a webhook payload, you need to add logging to your own code or use
-              ngrok&apos;s paid inspection dashboard. webhooks.cc captures every request automatically —
-              headers, body, query params, IP, timing — and makes it searchable, exportable, and
-              replayable from the dashboard, CLI, or SDK.
+              requests. To inspect a webhook payload, you need to add logging to your own code or
+              use ngrok&apos;s paid inspection dashboard. webhooks.cc captures every request
+              automatically — headers, body, query params, IP, timing — and makes it searchable,
+              exportable, and replayable from the dashboard, CLI, or SDK.
             </p>
           </div>
 
@@ -139,20 +140,22 @@ export default function CompareNgrokPage() {
             <h3 className="text-lg font-bold mb-2">Testing and CI integration</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides a TypeScript SDK with{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> — create an endpoint,
-              trigger your integration, and assert on the captured webhook in your test suite. This
-              works in CI without opening any tunnels. ngrok is designed for runtime tunneling, not
-              test-time assertions.
+              <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> — create an
+              endpoint, trigger your integration, and assert on the captured webhook in your test
+              suite. This works in CI without opening any tunnels. ngrok is designed for runtime
+              tunneling, not test-time assertions.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Scope and complexity</h3>
             <p className="text-muted-foreground">
-              ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and edge
-              computing — features that go well beyond webhooks. If you need those, ngrok is the right
-              tool. If your goal is to test and debug webhook integrations, webhooks.cc does that with
-              less setup and more webhook-specific tooling.
+              ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and
+              edge computing — features that go well beyond webhooks. If you need those, ngrok is
+              the right tool. If your goal is to test and debug webhook integrations, webhooks.cc
+              does that with less setup and more webhook-specific tooling. Team collaboration on
+              webhooks.cc starts at $8/month with up to 25 members, while ngrok charges $20/month
+              plus $25 per additional seat.
             </p>
           </div>
         </div>

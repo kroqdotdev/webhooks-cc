@@ -335,7 +335,8 @@ export default function AccountPage() {
                 <UpgradeButton accessToken={accessToken} />
               </div>
               <p className="text-sm text-muted-foreground">
-                Upgrade to Pro for 100,000 requests/month and 30-day data retention ($8/month).
+                Upgrade to Pro for 100,000 requests/month, 30-day data retention, and Teams
+                ($8/month).
               </p>
             </div>
           ) : (

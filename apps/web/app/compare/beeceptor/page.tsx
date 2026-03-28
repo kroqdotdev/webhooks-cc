@@ -44,13 +44,14 @@ const ROWS = [
   ["Real-time SSE streaming", "Yes", "No"],
   ["CORS proxy", "No", "Yes"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
-  ["Free tier", "All features, rate-limited", "Limited endpoints + requests"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($25/mo), unlimited members"],
+  ["Free tier features", "Everything except Teams", "Limited endpoints + requests"],
 ] as const;
 
 export const metadata = createPageMetadata({
   title: "Beeceptor Alternative for Webhook Testing (2026)",
   description:
-    "Comparing Beeceptor alternatives? webhooks.cc focuses on webhook testing with inspection, replay, a TypeScript SDK for CI, and an MCP server for AI agents. All features free, no credit card.",
+    "Comparing Beeceptor alternatives? webhooks.cc focuses on webhook testing with inspection, replay, a TypeScript SDK for CI, and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
   path: "/compare/beeceptor",
   keywords: [
     "beeceptor alternative",
@@ -126,19 +127,20 @@ export default function CompareBeeceptorPage() {
             <h3 className="text-lg font-bold mb-2">API mocking vs webhook inspection</h3>
             <p className="text-muted-foreground">
               Beeceptor&apos;s strength is simulating APIs you depend on — define URL patterns, set
-              response rules, proxy traffic to real backends. webhooks.cc does the opposite: it receives
-              real webhooks from services you integrate with (Stripe, GitHub, Twilio) and gives you
-              tools to inspect, search, replay, and assert on those payloads.
+              response rules, proxy traffic to real backends. webhooks.cc does the opposite: it
+              receives real webhooks from services you integrate with (Stripe, GitHub, Twilio) and
+              gives you tools to inspect, search, replay, and assert on those payloads.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling depth</h3>
             <p className="text-muted-foreground">
-              webhooks.cc provides three integration layers beyond the dashboard: a CLI for tunneling
-              webhooks to localhost, a TypeScript SDK for programmatic access and CI assertions, and an
-              MCP server for AI coding agents. Beeceptor is browser-first with API access on paid
-              plans.
+              webhooks.cc provides three integration layers beyond the dashboard: a CLI for
+              tunneling webhooks to localhost, a TypeScript SDK for programmatic access and CI
+              assertions, and an MCP server for AI coding agents. Team collaboration on webhooks.cc
+              starts at $8/month with up to 25 members, while Beeceptor&apos;s Team+ plan costs
+              $25/month. Beeceptor is browser-first with API access on paid plans.
             </p>
           </div>
 
@@ -203,7 +205,10 @@ export default function CompareBeeceptorPage() {
             vs RequestBin
           </Link>
           {" · "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}
