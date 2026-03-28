@@ -60,6 +60,12 @@ Captured requests are cleaned up automatically based on your plan:
 
 Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
 
+## Teams and shared endpoints
+
+When you share an endpoint with a team, incoming webhooks count against **your** quota — not the team member viewing them. Data retention also follows the endpoint owner's plan.
+
+Every team member must be on the Pro plan to access shared endpoints. If a member downgrades, they lose access to shared endpoints but remain in the team.
+
 ## Rate limits
 
 API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header.

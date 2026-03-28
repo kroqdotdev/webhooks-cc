@@ -106,6 +106,11 @@ const LANDING_FAQ: FAQItem[] = [
       "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access. Every feature works on both tiers — the only exception is Teams (invite members, share endpoints), which requires Pro. Pro ($8/month) also raises the limit to 100,000 requests per month with 30-day retention.",
   },
   {
+    question: "Whose quota is used for shared team endpoints?",
+    answer:
+      "The endpoint owner's. When you share an endpoint with your team, incoming webhooks count against your request limit. Every team member needs their own Pro plan to access shared endpoints, but usage is always tracked on the owner's account.",
+  },
+  {
     question: "How do I connect an AI coding agent?",
     answer:
       "Install the MCP server with npx @webhooks-cc/mcp and add it to Claude Code, Cursor, VS Code, Codex, or Windsurf. Your agent creates endpoints, sends test webhooks, inspects requests, and replays them — through natural language.",

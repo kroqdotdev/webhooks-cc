@@ -545,7 +545,7 @@ export default function TeamDetailPage() {
         <section className="space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Shared Endpoints</h2>
-            <HelpTooltip text="Endpoints shared with this team. All members can view requests and edit settings. Only the endpoint owner can delete or manage sharing." />
+            <HelpTooltip text="Endpoints shared with this team. All members can view requests and edit settings. Only the endpoint owner can delete or manage sharing. Requests to shared endpoints count toward the endpoint owner's quota." />
           </div>
           <div className="border rounded-lg p-6 bg-card space-y-4">
             {(() => {
