@@ -56,24 +56,17 @@ export default function TeamsPage() {
     if (!session?.access_token || !authUser) return;
     setLoading(true);
     try {
-      // Fetch plan
+      // Fetch plan and teams in parallel — always fetch teams even for free users
+      // (they may be members of suspended teams and need to see them)
       const supabase = createClient();
-      const { data: userRow } = await supabase
-        .from("users")
-        .select("plan")
-        .eq("id", authUser.id)
-        .single<{ plan: string }>();
-      setPlan(userRow?.plan ?? "free");
-
-      if (userRow?.plan !== "pro") {
-        setLoading(false);
-        return;
-      }
-
-      const [teamsRes, invitesRes] = await Promise.all([
+      const [planRes, teamsRes, invitesRes] = await Promise.all([
+        supabase.from("users").select("plan").eq("id", authUser.id).single<{ plan: string }>(),
         fetch("/api/teams", { headers: authHeader }),
         fetch("/api/invites", { headers: authHeader }),
       ]);
+
+      setPlan(planRes.data?.plan ?? "free");
+
       if (teamsRes.ok) {
         const data: Team[] = await teamsRes.json();
         setTeams(data);
@@ -153,7 +146,12 @@ export default function TeamsPage() {
     );
   }
 
-  if (plan !== "pro") {
+  const isPro = plan === "pro";
+  const ownedTeams = teams.filter((t) => t.role === "owner");
+  const memberTeams = teams.filter((t) => t.role === "member");
+
+  // Free user with no team memberships at all → full upgrade wall
+  if (!isPro && teams.length === 0 && invites.length === 0) {
     return (
       <main className="container mx-auto px-4 py-8 max-w-2xl">
         <section className="space-y-4">
@@ -178,20 +176,18 @@ export default function TeamsPage() {
     );
   }
 
-  const ownedTeams = teams.filter((t) => t.role === "owner");
-  const memberTeams = teams.filter((t) => t.role === "member");
-
   return (
     <main className="container mx-auto px-4 py-8 max-w-2xl space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Teams</h1>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="h-4 w-4 mr-1" />
-              New Team
-            </Button>
-          </DialogTrigger>
+        {isPro ? (
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-1" />
+                New Team
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create a new team</DialogTitle>
@@ -226,7 +222,29 @@ export default function TeamsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        ) : (
+          <Button size="sm" variant="outline" asChild>
+            <Link href="/account">Upgrade to Pro</Link>
+          </Button>
+        )}
       </div>
+
+      {/* Free user with existing teams — show upgrade notice */}
+      {!isPro && (
+        <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
+          <p className="font-medium text-yellow-700 dark:text-yellow-400">
+            Teams require a Pro plan
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Your teams are suspended because your plan is no longer Pro. Shared endpoints
+            are inaccessible to team members.{" "}
+            <Link href="/account" className="underline font-medium text-foreground">
+              Upgrade to Pro
+            </Link>{" "}
+            to reactivate.
+          </p>
+        </div>
+      )}
 
       {/* Pending Invites */}
       {invites.length > 0 && (
