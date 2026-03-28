@@ -34,6 +34,7 @@ interface Member {
   email: string;
   image: string | null;
   role: "owner" | "member";
+  plan: "free" | "pro";
 }
 
 interface PendingInvite {
@@ -447,6 +448,11 @@ export default function TeamDetailPage() {
                       <Badge variant={member.role === "owner" ? "default" : "secondary"}>
                         {member.role}
                       </Badge>
+                      {isOwner && member.plan !== "pro" && (
+                        <Badge variant="outline" className="text-yellow-600 border-yellow-500/50 text-[10px]">
+                          Free — no access
+                        </Badge>
+                      )}
                       {isOwner && member.role !== "owner" && member.userId !== currentUserId && (
                         <Button
                           size="sm"

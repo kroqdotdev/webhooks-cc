@@ -22,6 +22,7 @@ export interface TeamMember {
   name: string | null;
   image: string | null;
   role: "owner" | "member";
+  plan: "free" | "pro";
   joinedAt: number;
 }
 
@@ -371,16 +372,16 @@ export async function listTeamMembers(
   const members = membersData as TeamMemberRow[];
   const userIds = members.map((m) => m.user_id);
 
-  // Fetch user profiles
+  // Fetch user profiles (including plan)
   const { data: usersData, error: usersError } = await admin
     .from("users")
-    .select("id, email, name, image")
+    .select("id, email, name, image, plan")
     .in("id", userIds);
 
   if (usersError) throw usersError;
 
   const userMap = new Map(
-    ((usersData ?? []) as { id: string; email: string; name: string | null; image: string | null }[]).map(
+    ((usersData ?? []) as { id: string; email: string; name: string | null; image: string | null; plan: string }[]).map(
       (u) => [u.id, u]
     )
   );
@@ -394,6 +395,7 @@ export async function listTeamMembers(
       name: user?.name ?? null,
       image: user?.image ?? null,
       role: m.role,
+      plan: (user?.plan === "pro" ? "pro" : "free") as "free" | "pro",
       joinedAt: parseMillis(m.joined_at),
     };
   });
