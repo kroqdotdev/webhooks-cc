@@ -45,7 +45,7 @@ const ROWS = [
   ["CORS proxy", "No", "Yes"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($25/mo), unlimited members"],
-  ["Free tier", "Every feature except Teams", "Limited endpoints + requests"],
+  ["Free tier features", "Everything except Teams", "Limited endpoints + requests"],
 ] as const;
 
 export const metadata = createPageMetadata({

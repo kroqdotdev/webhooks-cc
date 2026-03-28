@@ -46,7 +46,7 @@ const ROWS = [
   ["Auth / user accounts", "Yes (optional)", "No — anonymous channels"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (ISC)"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
-  ["Free tier", "Every feature except Teams", "Free (fully open)"],
+  ["Free tier features", "Everything except Teams", "Free (fully open)"],
 ] as const;
 
 export const metadata = createPageMetadata({

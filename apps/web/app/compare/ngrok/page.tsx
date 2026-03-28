@@ -46,7 +46,7 @@ const ROWS = [
   ["Edge computing / traffic policy", "No", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "Pro+ ($20/mo + $25/seat)"],
-  ["Free tier", "Every feature except Teams", "Limited connections + features"],
+  ["Free tier features", "Everything except Teams", "Limited connections + features"],
 ] as const;
 
 export const metadata = createPageMetadata({

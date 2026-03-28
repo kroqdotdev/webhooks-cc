@@ -45,7 +45,7 @@ const ROWS = [
   ["SSE real-time streaming", "Yes", "No"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "Enterprise only, from $69/mo"],
-  ["Free tier feature gating", "Every feature except Teams", "Some features paid-only"],
+  ["Free tier features", "Everything except Teams", "Some features paid-only"],
 ] as const;
 
 export const metadata = createPageMetadata({

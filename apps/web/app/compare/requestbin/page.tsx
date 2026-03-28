@@ -45,7 +45,7 @@ const ROWS = [
   ["Third-party integrations", "No", "Yes — 1000+ apps"],
   ["Self-hostable", "Yes (open source)", "No"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "All plans, free unlimited members"],
-  ["Free tier", "Every feature except Teams", "Limited invocations/day"],
+  ["Free tier features", "Everything except Teams", "Limited invocations/day"],
 ] as const;
 
 export const metadata = createPageMetadata({

@@ -46,7 +46,7 @@ const ROWS = [
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($39/mo), unlimited seats"],
-  ["Free tier", "Every feature except Teams", "Limited events/month"],
+  ["Free tier features", "Everything except Teams", "Limited events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({

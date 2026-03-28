@@ -47,7 +47,7 @@ const ROWS = [
   ["Non-HTTP protocols", "No (HTTP webhooks only)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
   ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
-  ["Free tier", "Every feature except Teams", "Fully free"],
+  ["Free tier features", "Everything except Teams", "Fully free"],
 ] as const;
 
 export const metadata = createPageMetadata({
