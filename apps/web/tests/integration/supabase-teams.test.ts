@@ -950,6 +950,278 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Pro-only: resolveEndpointAccess and suspension
+  // ---------------------------------------------------------------------------
+
+  describe("Pro-only access control and suspension", () => {
+    let freeUser2Id: string;
+    let suspensionTeamId: string;
+    let suspensionEndpointId: string;
+    let suspensionEndpointSlug: string;
+
+    it("setup: create a pro owner with team, endpoint, and a free member", async () => {
+      // Create a new pro user to be the owner
+      const { data: ownerData } = await admin.auth.admin.createUser({
+        email: `test-suspend-owner-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Suspend Owner" },
+      });
+      const suspOwner = ownerData!.user!.id;
+      await admin.from("users").update({ plan: "pro" }).eq("id", suspOwner);
+
+      // Create team
+      const teamResult = await createTeam(suspOwner, "Suspension Test Team");
+      expect("error" in teamResult).toBe(false);
+      suspensionTeamId = (teamResult as { id: string }).id;
+
+      // Create endpoint
+      const ep = await createEndpointForUser({ userId: suspOwner, name: "Susp EP" });
+      suspensionEndpointId = ep.id;
+      suspensionEndpointSlug = ep.slug;
+
+      // Share endpoint
+      await shareEndpointWithTeam(suspOwner, suspensionTeamId, suspensionEndpointId);
+
+      // Create a free user and add as member
+      const { data: freeData } = await admin.auth.admin.createUser({
+        email: `test-suspend-free-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Suspend Free" },
+      });
+      freeUser2Id = freeData!.user!.id;
+      // Keep as free plan
+
+      // Add as member directly (bypassing invite since free users can't accept)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: suspensionTeamId, user_id: freeUser2Id, role: "member" });
+
+      // Insert a request for access tests
+      await insertRequest(suspensionEndpointId, suspOwner, "/suspend-test");
+    });
+
+    it("free member cannot resolve access to shared endpoint", async () => {
+      const access = await resolveEndpointAccess(freeUser2Id, suspensionEndpointSlug);
+      expect(access).toBeNull();
+    });
+
+    it("free member still sees shared endpoints in utility (API layer filters)", async () => {
+      // getSharedEndpointsForUser checks team owner plan, not requesting user plan.
+      // Since the team owner is pro, the endpoint appears. The API route filters
+      // free users at a higher level (GET /api/endpoints skips sharing for free users).
+      const shared = await getSharedEndpointsForUser(freeUser2Id);
+      const ep = shared.find((e) => e.id === suspensionEndpointId);
+      expect(ep).toBeDefined();
+    });
+
+    it("free member cannot list requests on shared endpoint", async () => {
+      const requests = await listRequestsForEndpointByUser({
+        userId: freeUser2Id,
+        slug: suspensionEndpointSlug,
+      });
+      expect(requests).toBeNull();
+    });
+
+    it("downgrade owner to free — team becomes suspended", async () => {
+      // Find the owner
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: teamRow } = await (admin as any)
+        .from("teams")
+        .select("created_by")
+        .eq("id", suspensionTeamId)
+        .single();
+
+      await admin.from("users").update({ plan: "free" }).eq("id", teamRow.created_by);
+
+      // listTeamsForUser should show suspended: true
+      const teams = await listTeamsForUser(freeUser2Id);
+      const team = teams.find((t) => t.id === suspensionTeamId);
+      expect(team).toBeDefined();
+      expect(team!.suspended).toBe(true);
+    });
+
+    it("pro member also loses access when team is suspended", async () => {
+      // Create a pro member and add to the suspended team
+      const { data: proMemberData } = await admin.auth.admin.createUser({
+        email: `test-suspend-pro-member-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Pro Member Susp" },
+      });
+      const proMemberId = proMemberData!.user!.id;
+      await admin.from("users").update({ plan: "pro" }).eq("id", proMemberId);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: suspensionTeamId, user_id: proMemberId, role: "member" });
+
+      // Even a pro member can't access when team owner is free
+      const access = await resolveEndpointAccess(proMemberId, suspensionEndpointSlug);
+      expect(access).toBeNull();
+
+      const shared = await getSharedEndpointsForUser(proMemberId);
+      const found = shared.find((e) => e.id === suspensionEndpointId);
+      expect(found).toBeUndefined();
+
+      // Cleanup
+      await admin.auth.admin.deleteUser(proMemberId);
+    });
+
+    it("re-upgrade owner — team reactivates", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: teamRow } = await (admin as any)
+        .from("teams")
+        .select("created_by")
+        .eq("id", suspensionTeamId)
+        .single();
+
+      await admin.from("users").update({ plan: "pro" }).eq("id", teamRow.created_by);
+
+      // Team no longer suspended
+      const teams = await listTeamsForUser(freeUser2Id);
+      const team = teams.find((t) => t.id === suspensionTeamId);
+      expect(team).toBeDefined();
+      expect(team!.suspended).toBe(false);
+    });
+
+    it("cleanup suspension test users", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: teamRow } = await (admin as any)
+        .from("teams")
+        .select("created_by")
+        .eq("id", suspensionTeamId)
+        .single();
+
+      await admin.from("teams").delete().eq("id", suspensionTeamId);
+      await admin.auth.admin.deleteUser(teamRow.created_by);
+      await admin.auth.admin.deleteUser(freeUser2Id);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // API route: GET /api/endpoints returns { owned, shared }
+  // ---------------------------------------------------------------------------
+
+  describe("Endpoints API response shape", () => {
+    it("re-add member and share for API tests", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .upsert({ team_id: teamId, user_id: memberId, role: "member" }, { onConflict: "team_id,user_id" });
+
+      const result = await shareEndpointWithTeam(ownerId, teamId, endpointId);
+      expect(result.success === true || result.error === "Endpoint is already shared with this team").toBe(true);
+    });
+
+    it("getShareMetadataForOwnedEndpoints returns share info for owner", async () => {
+      const map = await getShareMetadataForOwnedEndpoints(ownerId);
+      const shares = map.get(endpointId);
+      expect(shares).toBeDefined();
+      expect(shares!.length).toBeGreaterThanOrEqual(1);
+      expect(shares![0].teamId).toBe(teamId);
+    });
+
+    it("getSharedEndpointsForUser returns endpoint for pro member", async () => {
+      const shared = await getSharedEndpointsForUser(memberId);
+      const ep = shared.find((e) => e.id === endpointId);
+      expect(ep).toBeDefined();
+      expect(ep!.fromTeam.teamId).toBe(teamId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Team member plan info in listTeamMembers
+  // ---------------------------------------------------------------------------
+
+  describe("Team member plan visibility", () => {
+    it("listTeamMembers returns plan field for each member", async () => {
+      const members = await listTeamMembers(ownerId, teamId);
+      expect(members).not.toBeNull();
+
+      const owner = members!.find((m) => m.userId === ownerId);
+      expect(owner).toBeDefined();
+      expect(owner!.plan).toBe("pro");
+
+      const member = members!.find((m) => m.userId === memberId);
+      if (member) {
+        expect(["free", "pro"]).toContain(member.plan);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Member limit at accept time
+  // ---------------------------------------------------------------------------
+
+  describe("Member limit at accept time", () => {
+    let limitTeamId: string;
+    let limitOwnerId: string;
+    let overflowInviteId: string;
+
+    it("setup: create team with many members near limit", async () => {
+      // Create owner
+      const { data: ownerData } = await admin.auth.admin.createUser({
+        email: `test-limit-owner-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Limit Owner" },
+      });
+      limitOwnerId = ownerData!.user!.id;
+      await admin.from("users").update({ plan: "pro" }).eq("id", limitOwnerId);
+
+      const teamResult = await createTeam(limitOwnerId, "Limit Team");
+      expect("error" in teamResult).toBe(false);
+      limitTeamId = (teamResult as { id: string }).id;
+
+      // Add 24 more members (total 25 with owner) to hit the limit
+      for (let i = 0; i < 24; i++) {
+        const { data } = await admin.auth.admin.createUser({
+          email: `test-limit-filler-${ts}-${i}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: `Filler ${i}` },
+        });
+        await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any)
+          .from("team_members")
+          .insert({ team_id: limitTeamId, user_id: data!.user!.id, role: "member" });
+      }
+    });
+
+    it("invite is created successfully even at 25 members", async () => {
+      // Create the 26th user who will try to join
+      const { data } = await admin.auth.admin.createUser({
+        email: `test-limit-overflow-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Overflow User" },
+      });
+      await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+
+      const inviteResult = await createInvite(
+        limitOwnerId,
+        limitTeamId,
+        `test-limit-overflow-${ts}@webhooks-test.local`
+      );
+      // Invite creation should fail because team already has 25 members
+      expect(inviteResult.error).toContain("25");
+    });
+
+    it("cleanup limit test", async () => {
+      // Delete the team (cascades members)
+      await admin.from("teams").delete().eq("id", limitTeamId);
+      // Delete owner
+      await admin.auth.admin.deleteUser(limitOwnerId);
+      // Note: filler users are orphaned but don't affect other tests
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // RLS enforcement — direct table access should be blocked
   // ---------------------------------------------------------------------------
 

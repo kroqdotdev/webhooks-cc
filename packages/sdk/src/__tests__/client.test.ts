@@ -168,20 +168,42 @@ describe("WebhooksCC", () => {
   });
 
   describe("endpoints.list", () => {
-    it("sends GET /api/endpoints", async () => {
-      const endpoints = [
+    it("sends GET /api/endpoints and flattens owned + shared", async () => {
+      const owned = [
         { id: "ep1", slug: "abc", url: "https://r.webhooks.cc/w/abc", createdAt: Date.now() },
       ];
-      const fetchMock = mockFetch({ body: endpoints });
+      const shared = [
+        {
+          id: "ep2",
+          slug: "def",
+          url: "https://r.webhooks.cc/w/def",
+          createdAt: Date.now(),
+          fromTeam: { teamId: "t1", teamName: "Team A" },
+        },
+      ];
+      const fetchMock = mockFetch({ body: { owned, shared } });
       globalThis.fetch = fetchMock;
 
       const client = createClient();
       const result = await client.endpoints.list();
 
-      expect(result).toEqual(endpoints);
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe("ep1");
+      expect(result[1].id).toBe("ep2");
+      expect(result[1].fromTeam).toEqual({ teamId: "t1", teamName: "Team A" });
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe(`${BASE_URL}/api/endpoints`);
       expect(opts.method).toBe("GET");
+    });
+
+    it("returns empty array when no endpoints", async () => {
+      const fetchMock = mockFetch({ body: { owned: [], shared: [] } });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.endpoints.list();
+
+      expect(result).toEqual([]);
     });
   });
 
