@@ -81,17 +81,19 @@ function TeamSharingSection({
     setToggling(teamId);
     try {
       if (shared) {
-        await fetch(`/api/teams/${teamId}/endpoints/${endpointId}`, {
+        const res = await fetch(`/api/teams/${teamId}/endpoints/${endpointId}`, {
           method: "DELETE",
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        setSharedTeamIds((prev) => {
-          const next = new Set(prev);
-          next.delete(teamId);
-          return next;
-        });
+        if (res.ok) {
+          setSharedTeamIds((prev) => {
+            const next = new Set(prev);
+            next.delete(teamId);
+            return next;
+          });
+        }
       } else {
-        await fetch(`/api/teams/${teamId}/endpoints`, {
+        const res = await fetch(`/api/teams/${teamId}/endpoints`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -99,7 +101,9 @@ function TeamSharingSection({
           },
           body: JSON.stringify({ endpointId }),
         });
-        setSharedTeamIds((prev) => new Set(prev).add(teamId));
+        if (res.ok) {
+          setSharedTeamIds((prev) => new Set(prev).add(teamId));
+        }
       }
     } catch {
       // silent

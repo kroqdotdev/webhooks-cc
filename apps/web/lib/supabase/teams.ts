@@ -734,6 +734,24 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<bo
 
   const inviteRow = claimed as { id: string; team_id: string };
 
+  // Check member limit before adding
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count: memberCount, error: countError } = await (admin as any)
+    .from("team_members")
+    .select("id", { count: "exact", head: true })
+    .eq("team_id", inviteRow.team_id);
+
+  if (countError) throw countError;
+  if ((memberCount ?? 0) >= 25) {
+    // Roll back: set invite back to pending so user can retry later
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (admin as any)
+      .from("team_invites")
+      .update({ status: "pending" })
+      .eq("id", inviteId);
+    return false;
+  }
+
   // Add as team member
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: memberError } = await (admin as any)
