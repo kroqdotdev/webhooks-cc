@@ -127,30 +127,33 @@ export default function CompareSmeePage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Proxy vs platform</h3>
             <p className="text-muted-foreground">
-              Smee.io does one thing: forward incoming webhooks to your local machine via SSE. It does
-              not store request history, offer search, or provide replay. When you close the browser
-              tab, the data is gone. webhooks.cc stores every request with full headers, body, and
-              metadata — searchable, exportable, and replayable from the dashboard, CLI, or SDK.
+              Smee.io does one thing: forward incoming webhooks to your local machine via SSE. It
+              does not store request history, offer search, or provide replay. When you close the
+              browser tab, the data is gone. webhooks.cc stores every request with full headers,
+              body, and metadata — searchable, exportable, and replayable from the dashboard, CLI,
+              or SDK.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
-              webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions, a
-              native CLI with built-in tunneling, and an MCP server for AI coding agents. Smee.io
-              provides a small npm client (<code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>)
-              for forwarding — no SDK, no test helpers, no MCP.
+              webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions,
+              a native CLI with built-in tunneling, and an MCP server for AI coding agents. Smee.io
+              provides a small npm client (
+              <code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>) for forwarding —
+              no SDK, no test helpers, no MCP.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">GitHub App development</h3>
             <p className="text-muted-foreground">
-              Smee.io was built specifically for GitHub App webhook development and is recommended in
-              GitHub&apos;s docs. It works well for that narrow use case. If you need to go beyond
-              forwarding — inspect payloads across multiple webhook sources, replay failed deliveries,
-              or assert on GitHub event payloads in tests — webhooks.cc covers the broader workflow.
+              Smee.io was built specifically for GitHub App webhook development and is recommended
+              in GitHub&apos;s docs. It works well for that narrow use case. If you need to go
+              beyond forwarding — inspect payloads across multiple webhook sources, replay failed
+              deliveries, or assert on GitHub event payloads in tests — webhooks.cc covers the
+              broader workflow.
             </p>
           </div>
         </div>
@@ -200,7 +203,10 @@ export default function CompareSmeePage() {
             vs LocalTunnel
           </Link>
           {" · "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}

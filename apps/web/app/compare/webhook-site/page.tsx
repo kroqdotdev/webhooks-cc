@@ -193,7 +193,10 @@ export default function CompareWebhookSitePage() {
         {/* More comparisons */}
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}

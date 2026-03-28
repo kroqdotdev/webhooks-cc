@@ -86,9 +86,9 @@ export default function CompareLocalTunnelPage() {
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs LocalTunnel</h1>
         <p className="text-lg text-muted-foreground mb-10">
           If you need a LocalTunnel alternative with webhook inspection built in, webhooks.cc gives
-          you a free public URL that forwards traffic to localhost — and also captures every request,
-          stores it for inspection, and lets you replay, search, and assert on payloads. Same
-          starting point, different depth.
+          you a free public URL that forwards traffic to localhost — and also captures every
+          request, stores it for inspection, and lets you replay, search, and assert on payloads.
+          Same starting point, different depth.
         </p>
 
         {/* Feature table */}
@@ -138,10 +138,10 @@ export default function CompareLocalTunnelPage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Reliability</h3>
             <p className="text-muted-foreground">
-              LocalTunnel&apos;s public server is community-run and can be unreliable. URLs change every
-              session, and connections sometimes drop. webhooks.cc endpoints use stable slug-based
-              URLs and run on managed infrastructure, so you can configure a webhook sender once and
-              keep receiving.
+              LocalTunnel&apos;s public server is community-run and can be unreliable. URLs change
+              every session, and connections sometimes drop. webhooks.cc endpoints use stable
+              slug-based URLs and run on managed infrastructure, so you can configure a webhook
+              sender once and keep receiving.
             </p>
           </div>
 
@@ -194,7 +194,10 @@ export default function CompareLocalTunnelPage() {
         {/* More comparisons */}
         <p className="text-sm text-muted-foreground mb-0">
           See also:{" "}
-          <Link href="/compare/ngrok" className="font-semibold hover:text-primary transition-colors">
+          <Link
+            href="/compare/ngrok"
+            className="font-semibold hover:text-primary transition-colors"
+          >
             vs ngrok
           </Link>
           {" · "}

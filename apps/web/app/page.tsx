@@ -102,7 +102,7 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access. Pro ($8/month) raises the limit to 100,000 requests per month with 30-day retention.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access. Every feature works on both tiers — the only exception is Teams (invite members, share endpoints), which requires Pro. Pro ($8/month) also raises the limit to 100,000 requests per month with 30-day retention.",
   },
   {
     question: "How do I connect an AI coding agent?",
@@ -331,8 +331,10 @@ export default async function Home() {
       <section className="py-20 px-4 bg-muted">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple pricing</h2>
-            <p className="text-xl text-muted-foreground">All features. Every tier. No gotchas.</p>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
+            <p className="text-xl text-muted-foreground">
+              Every feature on both tiers. Only Teams is Pro-exclusive.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -351,12 +353,17 @@ export default async function Home() {
                   "7-day data retention",
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",
+                  "Mock responses & replay",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
+                <li className="flex items-center gap-3 text-muted-foreground">
+                  <span className="h-5 w-5 flex-shrink-0 text-center">—</span>
+                  <span>Teams (Pro only)</span>
+                </li>
               </ul>
               <PricingCTA />
             </div>
@@ -379,6 +386,8 @@ export default async function Home() {
                   "30-day data retention",
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",
+                  "Mock responses & replay",
+                  "Teams — invite members, share endpoints",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -409,7 +418,7 @@ export default async function Home() {
                 href: "/compare/webhook-site",
                 title: "vs Webhook.site",
                 summary:
-                  "SDK, MCP, and no feature gating vs established browser-based inspection.",
+                  "SDK, MCP, and minimal feature gating vs established browser-based inspection.",
               },
               {
                 href: "/compare/ngrok",
@@ -429,8 +438,7 @@ export default async function Home() {
               {
                 href: "/compare/beeceptor",
                 title: "vs Beeceptor",
-                summary:
-                  "Webhook inspection + SDK + MCP vs API mocking-first workflows.",
+                summary: "Webhook inspection + SDK + MCP vs API mocking-first workflows.",
               },
               {
                 href: "/compare/smee",

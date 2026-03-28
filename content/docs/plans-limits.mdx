@@ -21,11 +21,13 @@ seo:
 
 ## Plans overview
 
-| Plan    | Requests | Period   | Retention | Endpoints                 | Price            |
-| ------- | -------- | -------- | --------- | ------------------------- | ---------------- |
-| Guest   | 25       | 12 hours | 12 hours  | Ephemeral only (12hr TTL) | Free (no signup) |
-| Free    | 50       | 24 hours | 7 days    | Unlimited, never expire   | Free             |
-| **Pro** | 100,000  | 30 days  | 30 days   | Unlimited, never expire   | $8/month         |
+| Plan    | Requests | Period   | Retention | Endpoints                 | Teams | Price            |
+| ------- | -------- | -------- | --------- | ------------------------- | ----- | ---------------- |
+| Guest   | 25       | 12 hours | 12 hours  | Ephemeral only (12hr TTL) | —     | Free (no signup) |
+| Free    | 50       | 24 hours | 7 days    | Unlimited, never expire   | —     | Free             |
+| **Pro** | 100,000  | 30 days  | 30 days   | Unlimited, never expire   | Yes   | $8/month         |
+
+Every feature — webhook capture, inspection, replay, mock responses, CLI tunneling, SDK, and MCP server — works on both Free and Pro. The only feature exclusive to Pro is **Teams** (create teams, invite members, share endpoints).
 
 Endpoints created by logged-in users (Free or Pro) **never expire**. They persist until you explicitly delete them from the dashboard, CLI, SDK, or API. Only ephemeral endpoints -- created without an account or explicitly marked ephemeral -- auto-delete after 12 hours.
 
@@ -70,6 +72,9 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Search requests                   | 60    | 10 minutes |
 | Search count                      | 120   | 10 minutes |
 | Device auth flows                 | 10    | 1 minute   |
+| Create team                       | 10    | 10 minutes |
+| Send team invite                  | 20    | 10 minutes |
+| Share endpoint with team          | 30    | 10 minutes |
 
 ## Other limits
 
@@ -83,6 +88,8 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Ephemeral endpoints (per guest) | 25 concurrent         |
 | SSE stream connection           | 30 minutes max        |
 | SSE keepalive interval          | 30 seconds            |
+| Teams per user (Pro only)       | 10                    |
+| Members per team                | 25                    |
 
 <FAQ>
 <FAQItem question="Do sendTo calls count toward my quota?">

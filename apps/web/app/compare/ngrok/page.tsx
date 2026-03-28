@@ -84,10 +84,10 @@ export default function CompareNgrokPage() {
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs ngrok</h1>
         <p className="text-lg text-muted-foreground mb-10">
-          If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built alternative
-          that captures, inspects, replays, and forwards webhooks to localhost — with a TypeScript SDK,
-          CLI tunnel, and MCP server included. ngrok is a general-purpose tunnel for exposing any
-          local service to the internet. Different tools, different focus.
+          If you use ngrok mainly for webhook development, webhooks.cc is a purpose-built
+          alternative that captures, inspects, replays, and forwards webhooks to localhost — with a
+          TypeScript SDK, CLI tunnel, and MCP server included. ngrok is a general-purpose tunnel for
+          exposing any local service to the internet. Different tools, different focus.
         </p>
 
         {/* Feature table */}
@@ -128,10 +128,10 @@ export default function CompareNgrokPage() {
             <h3 className="text-lg font-bold mb-2">Webhook history and inspection</h3>
             <p className="text-muted-foreground">
               ngrok tunnels traffic to your local server, but does not store or index incoming
-              requests. To inspect a webhook payload, you need to add logging to your own code or use
-              ngrok&apos;s paid inspection dashboard. webhooks.cc captures every request automatically —
-              headers, body, query params, IP, timing — and makes it searchable, exportable, and
-              replayable from the dashboard, CLI, or SDK.
+              requests. To inspect a webhook payload, you need to add logging to your own code or
+              use ngrok&apos;s paid inspection dashboard. webhooks.cc captures every request
+              automatically — headers, body, query params, IP, timing — and makes it searchable,
+              exportable, and replayable from the dashboard, CLI, or SDK.
             </p>
           </div>
 
@@ -139,20 +139,20 @@ export default function CompareNgrokPage() {
             <h3 className="text-lg font-bold mb-2">Testing and CI integration</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides a TypeScript SDK with{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> — create an endpoint,
-              trigger your integration, and assert on the captured webhook in your test suite. This
-              works in CI without opening any tunnels. ngrok is designed for runtime tunneling, not
-              test-time assertions.
+              <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> — create an
+              endpoint, trigger your integration, and assert on the captured webhook in your test
+              suite. This works in CI without opening any tunnels. ngrok is designed for runtime
+              tunneling, not test-time assertions.
             </p>
           </div>
 
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Scope and complexity</h3>
             <p className="text-muted-foreground">
-              ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and edge
-              computing — features that go well beyond webhooks. If you need those, ngrok is the right
-              tool. If your goal is to test and debug webhook integrations, webhooks.cc does that with
-              less setup and more webhook-specific tooling.
+              ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and
+              edge computing — features that go well beyond webhooks. If you need those, ngrok is
+              the right tool. If your goal is to test and debug webhook integrations, webhooks.cc
+              does that with less setup and more webhook-specific tooling.
             </p>
           </div>
         </div>
