@@ -42,9 +42,11 @@ export default function TeamsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [decliningId, setDecliningId] = useState<string | null>(null);
 
@@ -55,9 +57,8 @@ export default function TeamsPage() {
   const fetchData = async () => {
     if (!session?.access_token || !authUser) return;
     setLoading(true);
+    setLoadError(null);
     try {
-      // Fetch plan and teams in parallel — always fetch teams even for free users
-      // (they may be members of suspended teams and need to see them)
       const supabase = createClient();
       const [planRes, teamsRes, invitesRes] = await Promise.all([
         supabase.from("users").select("plan").eq("id", authUser.id).single<{ plan: string }>(),
@@ -65,16 +66,21 @@ export default function TeamsPage() {
         fetch("/api/invites", { headers: authHeader }),
       ]);
 
-      setPlan(planRes.data?.plan ?? "free");
+      if (planRes.error) {
+        setLoadError("Failed to load account data. Please try refreshing.");
+        return;
+      }
+      setPlan(planRes.data.plan);
 
-      if (teamsRes.ok) {
-        const data: Team[] = await teamsRes.json();
-        setTeams(data);
+      if (!teamsRes.ok || !invitesRes.ok) {
+        setLoadError("Failed to load teams. Please try refreshing.");
+        return;
       }
-      if (invitesRes.ok) {
-        const data: Invite[] = await invitesRes.json();
-        setInvites(data);
-      }
+
+      setTeams((await teamsRes.json()) as Team[]);
+      setInvites((await invitesRes.json()) as Invite[]);
+    } catch {
+      setLoadError("Failed to load teams. Please try refreshing.");
     } finally {
       setLoading(false);
     }
@@ -92,6 +98,7 @@ export default function TeamsPage() {
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const res = await fetch("/api/teams", {
         method: "POST",
@@ -102,6 +109,9 @@ export default function TeamsPage() {
         setNewTeamName("");
         setCreateOpen(false);
         await fetchData();
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setCreateError(data.error ?? "Failed to create team.");
       }
     } finally {
       setCreating(false);
@@ -142,6 +152,22 @@ export default function TeamsPage() {
     return (
       <main className="container mx-auto px-4 py-8 max-w-2xl">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="container mx-auto px-4 py-8 max-w-2xl">
+        <section className="space-y-4">
+          <h1 className="text-2xl font-bold">Teams</h1>
+          <div className="border rounded-lg p-6 bg-card space-y-3">
+            <p className="text-sm text-destructive">{loadError}</p>
+            <Button variant="outline" size="sm" onClick={() => void fetchData()}>
+              Retry
+            </Button>
+          </div>
+        </section>
       </main>
     );
   }
@@ -198,12 +224,16 @@ export default function TeamsPage() {
                   id="team-name"
                   placeholder="e.g. Acme Corp"
                   value={newTeamName}
-                  onChange={(e) => setNewTeamName(e.target.value)}
+                  onChange={(e) => {
+                    setNewTeamName(e.target.value);
+                    setCreateError(null);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void handleCreateTeam();
                   }}
                   autoFocus
                 />
+                {createError && <p className="text-sm text-destructive">{createError}</p>}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
