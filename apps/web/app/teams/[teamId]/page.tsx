@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -117,6 +118,7 @@ export default function TeamDetailPage() {
   const [teamName, setTeamName] = useState("");
   const [role, setRole] = useState<"owner" | "member">("member");
   const [suspended, setSuspended] = useState(false);
+  const [isPro, setIsPro] = useState(true);
   const currentUserId = session?.user?.id ?? null;
   const [members, setMembers] = useState<Member[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
@@ -156,14 +158,18 @@ export default function TeamDetailPage() {
     : {};
 
   const fetchData = async () => {
-    if (!session?.access_token) return;
+    if (!session?.access_token || !session?.user) return;
     setLoading(true);
     try {
-      const [teamsRes, membersRes, endpointsRes] = await Promise.all([
+      const supabase = createClient();
+      const [planRes, teamsRes, membersRes, endpointsRes] = await Promise.all([
+        supabase.from("users").select("plan").eq("id", session.user.id).single<{ plan: string }>(),
         fetch("/api/teams", { headers: authHeader }),
         fetch(`/api/teams/${teamId}/members`, { headers: authHeader }),
         fetch("/api/endpoints", { headers: authHeader }),
       ]);
+
+      setIsPro(planRes.data?.plan === "pro");
 
       if (teamsRes.ok) {
         const teams: Array<{
@@ -392,6 +398,23 @@ export default function TeamDetailPage() {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Free member of active team */}
+      {!suspended && !isOwner && !isPro && (
+        <div className="rounded-md border border-blue-500/20 bg-blue-500/10 p-4 space-y-2">
+          <p className="font-medium text-blue-700 dark:text-blue-400">
+            Pro plan required
+          </p>
+          <p className="text-sm text-muted-foreground">
+            You need a Pro plan to access shared endpoints from this team.
+            You can still view the team and its members, but shared endpoints
+            won&apos;t appear in your dashboard.{" "}
+            <Link href="/account" className="underline font-medium text-foreground">
+              Upgrade to Pro
+            </Link>
+          </p>
         </div>
       )}
 
