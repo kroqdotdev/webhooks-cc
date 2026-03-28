@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AppHeader } from "@/components/nav/app-header";
+import { DashboardAnnouncement } from "@/components/dashboard/teams-callout";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = createPageMetadata({
@@ -15,6 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <RequireAuth>
       <div className="h-screen flex flex-col overflow-hidden">
         <AppHeader showEndpointSwitcher showNewEndpoint showBlogLink={false} />
+        <DashboardAnnouncement />
         {children}
       </div>
     </RequireAuth>

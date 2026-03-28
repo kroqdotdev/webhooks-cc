@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X, ChevronDown, Search } from "lucide-react";
 import { NAV_SECTIONS } from "@/lib/docs-nav";
-import { isMaintenanceBannerEnabled } from "@/components/maintenance-banner";
+import { getNavbarTopClass } from "@/lib/announcements";
 
 const STORAGE_KEY = "docs-sidebar-sections";
 
@@ -122,9 +122,29 @@ function SidebarContent({
   );
 }
 
+// Each active banner shifts the sidebar down by ~2.5rem.
+// Base offset (no banners): top-24 (6rem) for panels, top-28 (7rem) for mobile toggle.
+function useBannerOffset() {
+  const top = getNavbarTopClass();
+  // top-4 = no banner, top-14 = one, top-24 = two
+  if (top === "top-24")
+    return {
+      toggle: "top-[11rem]",
+      panel: "top-[10.5rem]",
+      desktop: "top-[10.5rem] max-h-[calc(100vh-12rem)]",
+    };
+  if (top === "top-14")
+    return {
+      toggle: "top-[8.5rem]",
+      panel: "top-[8rem]",
+      desktop: "top-[8rem] max-h-[calc(100vh-9.5rem)]",
+    };
+  return { toggle: "top-28", panel: "top-24", desktop: "top-24 max-h-[calc(100vh-7rem)]" };
+}
+
 export function DocsSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const bannerActive = isMaintenanceBannerEnabled();
+  const offset = useBannerOffset();
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -147,7 +167,7 @@ export function DocsSidebar() {
         onClick={() => setMobileOpen(!mobileOpen)}
         className={cn(
           "md:hidden fixed left-4 z-40 p-2 border-2 border-foreground bg-background shadow-neo-sm cursor-pointer",
-          bannerActive ? "top-[8.5rem]" : "top-28"
+          offset.toggle
         )}
         aria-label="Toggle docs navigation"
       >
@@ -159,7 +179,7 @@ export function DocsSidebar() {
         <div
           className={cn(
             "md:hidden fixed left-0 right-0 bottom-0 z-30 bg-background/80",
-            bannerActive ? "top-[8rem]" : "top-24"
+            offset.panel
           )}
           onClick={() => setMobileOpen(false)}
         />
@@ -173,7 +193,7 @@ export function DocsSidebar() {
         aria-hidden={!mobileOpen}
         className={cn(
           "md:hidden fixed left-4 bottom-4 z-[35] w-64 border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2 transition-transform",
-          bannerActive ? "top-[8rem]" : "top-24",
+          offset.panel,
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -184,7 +204,7 @@ export function DocsSidebar() {
       <aside
         className={cn(
           "hidden md:block w-64 shrink-0 sticky self-start border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2",
-          bannerActive ? "top-[8rem] max-h-[calc(100vh-9.5rem)]" : "top-24 max-h-[calc(100vh-7rem)]"
+          offset.desktop
         )}
       >
         <SidebarContent onSearchClick={handleSearchClick} />

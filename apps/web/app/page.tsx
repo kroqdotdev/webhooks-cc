@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { HeroCTA } from "@/components/landing/hero-cta";
-import { Zap, Eye, Terminal, ArrowRight, Check, Bot } from "lucide-react";
+import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
 import { LivePreview } from "@/components/landing/live-preview";
+import { TeamsVideo } from "@/components/landing/teams-video";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
 import { createClient } from "@supabase/supabase-js";
@@ -278,7 +279,7 @@ export default async function Home() {
             Use the dashboard, the CLI, the SDK, or your AI agent. Same webhooks, your workflow.
           </p>
 
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-3 gap-6">
             <div className="neo-card">
               <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
                 <Eye className="h-6 w-6 text-primary-foreground" />
@@ -298,6 +299,17 @@ export default async function Home() {
               <p className="text-muted-foreground">
                 Send signed provider templates from the dashboard. Realistic payloads with correct
                 signature headers — test your verification code end-to-end.
+              </p>
+            </div>
+
+            <div className="neo-card">
+              <div className="w-12 h-12 border-2 border-foreground bg-muted flex items-center justify-center mb-4 shadow-neo-sm">
+                <Reply className="h-6 w-6" />
+              </div>
+              <h3 className="font-bold text-xl mb-2">Return custom mock responses</h3>
+              <p className="text-muted-foreground">
+                Set status codes, headers, and body per endpoint. Changes take effect instantly — no
+                deploy, no restart.
               </p>
             </div>
 
@@ -323,12 +335,53 @@ export default async function Home() {
                 endpoints, sends tests, and inspects requests — through natural language.
               </p>
             </div>
+
+            <div className="neo-card">
+              <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
+                <Users className="h-6 w-6 text-primary-foreground" />
+              </div>
+              <h3 className="font-bold text-xl mb-2">
+                Collaborate with your team{" "}
+                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border-2 border-foreground align-middle shadow-neo-sm">
+                  Pro
+                </span>
+              </h3>
+              <p className="text-muted-foreground">
+                Invite members, share endpoints, and debug webhooks together. Create teams with
+                scoped roles and a shared endpoint view.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Teams — dedicated video section */}
+      <section className="py-20 px-4 bg-muted">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-4">
+                Pro feature
+              </p>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for teams</h2>
+              <p className="text-xl text-muted-foreground mb-8">
+                Create a team, invite your colleagues, and share endpoints. Everyone sees the same
+                incoming webhooks in real time — no more pasting URLs in Slack.
+              </p>
+              <Link href="/teams" className="neo-btn-primary inline-block">
+                Try Teams
+              </Link>
+              <p className="text-sm text-muted-foreground mt-3">Requires Pro plan</p>
+            </div>
+            <div className="neo-card neo-card-static p-0! overflow-hidden">
+              <TeamsVideo />
+            </div>
           </div>
         </div>
       </section>
 
       {/* Pricing */}
-      <section className="py-20 px-4 bg-muted">
+      <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
