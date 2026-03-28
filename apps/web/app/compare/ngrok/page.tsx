@@ -45,6 +45,7 @@ const ROWS = [
   ["Custom domains", "No", "Yes (paid)"],
   ["Edge computing / traffic policy", "No", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Pro+ ($20/mo + $25/seat)"],
   ["Free tier", "Every feature except Teams", "Limited connections + features"],
 ] as const;
 
@@ -152,7 +153,9 @@ export default function CompareNgrokPage() {
               ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and
               edge computing — features that go well beyond webhooks. If you need those, ngrok is
               the right tool. If your goal is to test and debug webhook integrations, webhooks.cc
-              does that with less setup and more webhook-specific tooling.
+              does that with less setup and more webhook-specific tooling. Team collaboration on
+              webhooks.cc starts at $8/month with up to 25 members, while ngrok charges $20/month
+              plus $25 per additional seat.
             </p>
           </div>
         </div>

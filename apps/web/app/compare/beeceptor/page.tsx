@@ -44,6 +44,7 @@ const ROWS = [
   ["Real-time SSE streaming", "Yes", "No"],
   ["CORS proxy", "No", "Yes"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($25/mo), unlimited members"],
   ["Free tier", "Every feature except Teams", "Limited endpoints + requests"],
 ] as const;
 
@@ -137,8 +138,9 @@ export default function CompareBeeceptorPage() {
             <p className="text-muted-foreground">
               webhooks.cc provides three integration layers beyond the dashboard: a CLI for
               tunneling webhooks to localhost, a TypeScript SDK for programmatic access and CI
-              assertions, and an MCP server for AI coding agents. Beeceptor is browser-first with
-              API access on paid plans.
+              assertions, and an MCP server for AI coding agents. Team collaboration on webhooks.cc
+              starts at $8/month with up to 25 members, while Beeceptor&apos;s Team plan costs
+              $25/month. Beeceptor is browser-first with API access on paid plans.
             </p>
           </div>
 

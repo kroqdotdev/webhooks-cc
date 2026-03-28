@@ -46,6 +46,7 @@ const ROWS = [
   ["Custom subdomains", "No", "Yes (often unavailable)"],
   ["Non-HTTP protocols", "No (HTTP webhooks only)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
   ["Free tier", "Every feature except Teams", "Fully free"],
 ] as const;
 
@@ -149,9 +150,10 @@ export default function CompareLocalTunnelPage() {
             <h3 className="text-lg font-bold mb-2">Beyond the tunnel</h3>
             <p className="text-muted-foreground">
               webhooks.cc adds a TypeScript SDK for CI test assertions, an MCP server for AI coding
-              agents, configurable mock responses, and a real-time dashboard. LocalTunnel is a
-              single-purpose tool — and that simplicity is its strength for quick, throwaway
-              tunneling.
+              agents, configurable mock responses, and a real-time dashboard. For teams, webhooks.cc
+              Pro ($8/month) supports up to 25 members with shared endpoints; LocalTunnel has no
+              team or collaboration features. LocalTunnel is a single-purpose tool — and that
+              simplicity is its strength for quick, throwaway tunneling.
             </p>
           </div>
         </div>

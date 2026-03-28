@@ -44,6 +44,7 @@ const ROWS = [
   ["Workflow automation", "No", "Yes — core feature"],
   ["Third-party integrations", "No", "Yes — 1000+ apps"],
   ["Self-hostable", "Yes (open source)", "No"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "All plans, free unlimited members"],
   ["Free tier", "Every feature except Teams", "Limited invocations/day"],
 ] as const;
 
@@ -141,8 +142,10 @@ export default function CompareRequestBinPage() {
             <p className="text-muted-foreground">
               webhooks.cc includes a native CLI for tunneling webhooks to localhost, a TypeScript
               SDK with <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> for test
-              assertions, and an MCP server for AI agent integration. RequestBin focuses on the
-              Pipedream workflow editor and API — it does not offer webhook-specific dev tooling.
+              assertions, and an MCP server for AI agent integration. Team collaboration on
+              webhooks.cc is available on Pro at $8/month with up to 25 members; Pipedream includes
+              team features on all plans with unlimited members. RequestBin focuses on the Pipedream
+              workflow editor and API — it does not offer webhook-specific dev tooling.
             </p>
           </div>
 

@@ -44,6 +44,7 @@ const ROWS = [
   ["Request body matchers", "Yes (method, header, body path)", "No"],
   ["SSE real-time streaming", "Yes", "No"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Enterprise only, from $69/mo"],
   ["Free tier feature gating", "Every feature except Teams", "Some features paid-only"],
 ] as const;
 
@@ -150,9 +151,10 @@ export default function CompareWebhookSitePage() {
             <h3 className="text-lg font-bold mb-2">Pricing model</h3>
             <p className="text-muted-foreground">
               Every feature is included on both free and paid tiers — only Teams (invite members,
-              share endpoints) requires Pro. The paid plan raises request limits and extends
-              retention. Webhook.site gates some features (custom responses, API access) behind paid
-              tiers.
+              share endpoints) requires Pro at $8/month with up to 25 members. Webhook.site reserves
+              team collaboration for its Enterprise tier, starting at $69/month. The paid plan
+              raises request limits and extends retention. Webhook.site gates some features (custom
+              responses, API access) behind paid tiers.
             </p>
           </div>
         </div>

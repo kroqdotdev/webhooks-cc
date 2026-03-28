@@ -45,6 +45,7 @@ const ROWS = [
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Auth / user accounts", "Yes (optional)", "No — anonymous channels"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (ISC)"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
   ["Free tier", "Every feature except Teams", "Free (fully open)"],
 ] as const;
 
@@ -139,8 +140,9 @@ export default function CompareSmeePage() {
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions,
-              a native CLI with built-in tunneling, and an MCP server for AI coding agents. Smee.io
-              provides a small npm client (
+              a native CLI with built-in tunneling, and an MCP server for AI coding agents. For
+              teams, webhooks.cc Pro ($8/month) supports up to 25 members with shared endpoints;
+              Smee.io has no team or collaboration features. Smee.io provides a small npm client (
               <code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>) for forwarding —
               no SDK, no test helpers, no MCP.
             </p>

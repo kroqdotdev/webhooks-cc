@@ -45,6 +45,7 @@ const ROWS = [
   ["CI test assertions (waitFor)", "Yes", "No"],
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
+  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($39/mo), unlimited seats"],
   ["Free tier", "Every feature except Teams", "Limited events/month"],
 ] as const;
 
@@ -152,7 +153,8 @@ export default function CompareHookdeckPage() {
               These tools are not mutually exclusive. A common pattern: use webhooks.cc during
               development to capture and debug webhook payloads, write SDK assertions in your test
               suite, then use Hookdeck in production for reliable delivery with retries and rate
-              limiting.
+              limiting. For teams, webhooks.cc Pro costs $8/month with up to 25 members, while
+              Hookdeck&apos;s Team plan starts at $39/month with unlimited seats.
             </p>
           </div>
         </div>
