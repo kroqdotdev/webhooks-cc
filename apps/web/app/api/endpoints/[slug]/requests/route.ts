@@ -69,7 +69,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    return Response.json(data);
+    return new Response(null, { status: 204 });
   } catch (error) {
     console.error("Failed to clear requests:", error);
     return Response.json({ error: "Failed to clear requests" }, { status: 500 });
