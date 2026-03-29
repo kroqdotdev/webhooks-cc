@@ -1,5 +1,5 @@
 import { extractBearerToken, validateBearerTokenWithPlan } from "@/lib/api-auth";
-import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
+import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders, type RateLimitInfo } from "@/lib/rate-limit";
 import { countSearchRequestsForUser } from "@/lib/supabase/search";
 import { sendError } from "@appsignal/nodejs";
 
@@ -21,6 +21,7 @@ function parseOptionalInteger(
 }
 
 export async function GET(request: Request) {
+  let rateLimit: RateLimitInfo | undefined;
   try {
     const token = extractBearerToken(request);
     if (!token) {
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
     const userId = validated.userId;
     const plan = validated.plan;
 
-    const rateLimit = checkRateLimitByKeyWithInfo(`search-count:${userId}`, 120, 10 * 60_000);
+    rateLimit = checkRateLimitByKeyWithInfo(`search-count:${userId}`, 120, 10 * 60_000);
     if (rateLimit.response) {
       return rateLimit.response;
     }
@@ -43,11 +44,11 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const parsedFrom = parseOptionalInteger(url.searchParams, "from");
     if (parsedFrom.error) {
-      return parsedFrom.error;
+      return applyRateLimitHeaders(parsedFrom.error, rateLimit);
     }
     const parsedTo = parseOptionalInteger(url.searchParams, "to");
     if (parsedTo.error) {
-      return parsedTo.error;
+      return applyRateLimitHeaders(parsedTo.error, rateLimit);
     }
     const count = await countSearchRequestsForUser({
       userId,
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
   } catch (err) {
     sendError(err instanceof Error ? err : new Error(String(err)));
     console.error("Search count API route error:", err);
-    return Response.json({ error: "Internal server error" }, { status: 500 });
+    const response = Response.json({ error: "Internal server error" }, { status: 500 });
+    return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
   }
 }

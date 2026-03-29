@@ -5,8 +5,9 @@ info:
   description: |
     REST API for webhooks.cc — capture, inspect, and test webhooks.
 
-    **Authentication:** All endpoints require a Bearer token in the `Authorization` header.
+    **Authentication:** Most endpoints require a Bearer token in the `Authorization` header.
     Use your API key (prefix `whcc_`) generated from the [account page](https://webhooks.cc/account).
+    Public endpoints (`/api/stats`, `/api/health`) do not require authentication.
 
     **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}` — they are captured
     and available via the API and dashboard in real time.
