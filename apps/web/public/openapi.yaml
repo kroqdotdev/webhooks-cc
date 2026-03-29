@@ -106,13 +106,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Endpoint"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   /api/endpoints/{slug}:
     parameters:
@@ -454,9 +454,16 @@ paths:
                 items:
                   $ref: "#/components/schemas/SearchResult"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
           description: Pro plan required
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -464,7 +471,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   /api/search/requests/count:
     get:
@@ -516,9 +523,16 @@ paths:
                   count:
                     type: integer
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
           description: Pro plan required
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -526,7 +540,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   # -- Send --------------------------------------------------------------------
 
@@ -590,15 +604,22 @@ paths:
                     type: string
                     description: Response body from the receiver
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
         "502":
           description: Upstream receiver unreachable
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
           content:
             application/json:
               schema:
@@ -680,13 +701,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Team"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   /api/teams/{teamId}:
     parameters:
@@ -832,13 +853,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   /api/teams/{teamId}/endpoints/{endpointId}:
     parameters:
@@ -903,15 +924,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/TeamInvite"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/responses/UnauthorizedRateLimited"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
         "500":
-          $ref: "#/components/responses/InternalError"
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   /api/teams/{teamId}/leave:
     parameters:
@@ -1423,6 +1444,49 @@ components:
 
     InternalError:
       description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    # Rate-limit-aware error responses (for rate-limited operations)
+    BadRequestRateLimited:
+      description: Validation error
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    UnauthorizedRateLimited:
+      description: Invalid or missing API key
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    InternalErrorRateLimited:
+      description: Server error
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
       content:
         application/json:
           schema:
