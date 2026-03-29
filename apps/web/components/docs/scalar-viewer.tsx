@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { useTheme } from "@/components/providers/theme-provider";
-import "@scalar/api-reference-react/style.css";
 
 /**
  * Scalar CSS variable overrides mapped to our neubrutalism design tokens.
@@ -94,7 +93,7 @@ const scalarStyles = `
 
 const ApiReferenceReact = dynamic(
   () =>
-    import("@scalar/api-reference-react").then((m) => ({
+    import("./scalar-viewer-inner").then((m) => ({
       default: m.ApiReferenceReact as React.ComponentType<{ configuration: Record<string, unknown> }>,
     })),
   {
