@@ -3,7 +3,7 @@ title: "REST API"
 description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-03-20
+lastUpdated: 2026-03-28
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -245,6 +245,164 @@ curl https://webhooks.cc/api/usage \
 }
 ```
 
+## Teams
+
+Manage teams, share endpoints, and invite members. Requires a Pro plan.
+
+### List teams
+
+```bash
+curl https://webhooks.cc/api/teams \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns an array of team objects that you own or belong to.
+
+### Create team
+
+```bash
+curl -X POST https://webhooks.cc/api/teams \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Team"}'
+```
+
+**Response:**
+
+```json
+{
+  "id": "TEAM_ID",
+  "name": "My Team",
+  "ownerId": "...",
+  "createdAt": "2026-03-28T00:00:00.000Z"
+}
+```
+
+### Update team
+
+Rename a team. Only the team owner can update.
+
+```bash
+curl -X PATCH https://webhooks.cc/api/teams/TEAM_ID \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Renamed Team"}'
+```
+
+### Delete team
+
+Delete a team and remove all memberships. Only the team owner can delete.
+
+```bash
+curl -X DELETE https://webhooks.cc/api/teams/TEAM_ID \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `204 No Content` on success.
+
+### Share endpoint with team
+
+Share one of your endpoints so all team members can view its captured requests.
+
+```bash
+curl -X POST https://webhooks.cc/api/teams/TEAM_ID/endpoints \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"endpointId": "ENDPOINT_ID"}'
+```
+
+### Unshare endpoint
+
+Remove an endpoint from a team.
+
+```bash
+curl -X DELETE https://webhooks.cc/api/teams/TEAM_ID/endpoints/ENDPOINT_ID \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `204 No Content` on success.
+
+### Invite member
+
+Invite a user to your team by email. Only the team owner can invite.
+
+```bash
+curl -X POST https://webhooks.cc/api/teams/TEAM_ID/invite \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"email": "teammate@example.com"}'
+```
+
+### List members
+
+List all members and pending invites for a team.
+
+```bash
+curl https://webhooks.cc/api/teams/TEAM_ID/members \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Response:**
+
+```json
+{
+  "members": [
+    { "userId": "...", "email": "owner@example.com", "role": "owner" },
+    { "userId": "...", "email": "member@example.com", "role": "member" }
+  ],
+  "pendingInvites": [
+    { "id": "...", "email": "invited@example.com", "createdAt": "..." }
+  ]
+}
+```
+
+### Remove member
+
+Remove a member from a team. Only the team owner can remove members.
+
+```bash
+curl -X DELETE https://webhooks.cc/api/teams/TEAM_ID/members/USER_ID \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `204 No Content` on success.
+
+### Leave team
+
+Leave a team you are a member of. Owners cannot leave their own team — delete it instead.
+
+```bash
+curl -X POST https://webhooks.cc/api/teams/TEAM_ID/leave \
+  -H "Authorization: Bearer whcc_..."
+```
+
+## Invites
+
+Manage team invitations sent to you.
+
+### List pending invites
+
+```bash
+curl https://webhooks.cc/api/invites \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns an array of pending invite objects addressed to your account.
+
+### Accept invite
+
+```bash
+curl -X POST https://webhooks.cc/api/invites/INVITE_ID/accept \
+  -H "Authorization: Bearer whcc_..."
+```
+
+### Decline invite
+
+```bash
+curl -X POST https://webhooks.cc/api/invites/INVITE_ID/decline \
+  -H "Authorization: Bearer whcc_..."
+```
+
 ## Session-token-only routes
 
 Some routes require a Supabase session token (from browser login) instead of an API key. These return `403` when called with an API key.
@@ -271,6 +429,17 @@ All errors return a JSON body with an `error` field:
 | `404`  | Resource not found                                      |
 | `429`  | Rate limited — check `Retry-After` header for wait time |
 | `500`  | Server error                                            |
+
+### Rate limit headers
+
+Rate-limited endpoints return these headers on **every** response (not just 429s):
+
+| Header                  | Description                                    |
+| ----------------------- | ---------------------------------------------- |
+| `X-RateLimit-Limit`     | Maximum requests allowed in the current window |
+| `X-RateLimit-Remaining` | Remaining requests in the current window       |
+| `X-RateLimit-Reset`     | Unix timestamp (seconds) when the window resets |
+| `Retry-After`           | Seconds to wait (only on 429 responses)        |
 
 ## Language examples
 
@@ -467,4 +636,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   href="/docs/plans-limits"
   title="Plans & Limits"
   description="Request quotas, billing periods, and plan details."
+/>
+
+<LinkCard
+  href="/docs/api/interactive"
+  title="Interactive API Explorer"
+  description="Try the API directly from your browser with the interactive reference."
 />
