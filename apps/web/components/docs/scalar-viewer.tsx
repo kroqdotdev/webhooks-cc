@@ -4,23 +4,40 @@ import { useEffect, useState } from "react";
 import { useTheme } from "@/components/providers/theme-provider";
 
 /**
- * Scalar CSS variable overrides that map to our site's design tokens.
- * Uses `theme: "none"` so only our overrides apply.
+ * Scalar CSS variable overrides mapped to our neubrutalism design tokens.
+ *
+ * Scalar doesn't reliably apply .light-mode/.dark-mode classes on its own
+ * elements, so we scope overrides using the site's .dark class on <html>
+ * and target .scalar-app directly.
  */
 const scalarStyles = `
-  .scalar-wrapper .light-mode,
-  .scalar-wrapper .dark-mode,
-  .scalar-wrapper.light-mode,
-  .scalar-wrapper.dark-mode {
+  .scalar-app {
     --scalar-font: var(--font-sans), system-ui, sans-serif;
     --scalar-font-code: var(--font-mono), monospace;
     --scalar-radius: 0;
     --scalar-radius-lg: 0;
     --scalar-radius-xl: 0;
+    --scalar-custom-header-height: 58px;
   }
 
-  .scalar-wrapper .light-mode,
-  .scalar-wrapper.light-mode {
+  /* Offset Scalar's sticky sidebar and mobile header for our navbar */
+  .scalar-app .t-doc__sidebar {
+    top: 58px;
+    height: calc(100vh - 58px);
+  }
+  .scalar-app .t-doc__header {
+    top: 58px;
+  }
+
+  /* Hide Scalar's own chrome — we use our navbar for theme toggle + nav */
+  .scalar-app .darklight-reference-prefs,
+  .scalar-app .darklight,
+  .scalar-app .darklight-reference,
+  .scalar-app .references-developer-tools {
+    display: none !important;
+  }
+
+  .scalar-app {
     --scalar-background-1: #fafaf9;
     --scalar-background-2: #f0f0ed;
     --scalar-background-3: #e7e7e4;
@@ -46,8 +63,7 @@ const scalarStyles = `
     --scalar-button-1-color: #000000;
   }
 
-  .scalar-wrapper .dark-mode,
-  .scalar-wrapper.dark-mode {
+  .dark .scalar-app {
     --scalar-background-1: #18181b;
     --scalar-background-2: #222226;
     --scalar-background-3: #303036;
@@ -90,18 +106,6 @@ export function ScalarViewer() {
     import("@scalar/api-reference-react/style.css");
   }, []);
 
-  // Force Scalar's body class to match our theme
-  useEffect(() => {
-    if (!themeReady) return;
-    const addClass = resolvedTheme === "dark" ? "dark-mode" : "light-mode";
-    const removeClass = resolvedTheme === "dark" ? "light-mode" : "dark-mode";
-    document.body.classList.add(addClass);
-    document.body.classList.remove(removeClass);
-    return () => {
-      document.body.classList.remove(addClass);
-    };
-  }, [resolvedTheme, themeReady]);
-
   if (!Component || !themeReady) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
@@ -111,7 +115,7 @@ export function ScalarViewer() {
   }
 
   return (
-    <div className="scalar-wrapper">
+    <>
       <style>{scalarStyles}</style>
       <Component
         key={resolvedTheme}
@@ -130,6 +134,6 @@ export function ScalarViewer() {
           },
         }}
       />
-    </div>
+    </>
   );
 }
