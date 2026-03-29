@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTheme } from "@/components/providers/theme-provider";
 
 export function ScalarViewer() {
+  const { resolvedTheme } = useTheme();
   const [Component, setComponent] = useState<React.ComponentType<{
     configuration: Record<string, unknown>;
   }> | null>(null);
@@ -11,7 +13,6 @@ export function ScalarViewer() {
     import("@scalar/api-reference-react").then((mod) => {
       setComponent(() => mod.ApiReferenceReact);
     });
-    // Load styles
     import("@scalar/api-reference-react/style.css");
   }, []);
 
@@ -32,7 +33,7 @@ export function ScalarViewer() {
           },
           hideModels: false,
           hideDownloadButton: false,
-          darkMode: true,
+          darkMode: resolvedTheme === "dark",
           theme: "kepler",
           defaultHttpClient: {
             targetKey: "node",

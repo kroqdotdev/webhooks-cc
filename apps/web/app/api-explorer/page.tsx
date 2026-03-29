@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { ScalarViewer } from "@/components/docs/scalar-viewer";
 
@@ -15,9 +16,10 @@ export default function ApiExplorerPage() {
       <FloatingNavbar>
         <Link
           href="/docs/api"
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          REST API Docs
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to Docs
         </Link>
       </FloatingNavbar>
       <div className="pt-28">
