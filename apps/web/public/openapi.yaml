@@ -1,0 +1,1416 @@
+openapi: "3.1.0"
+info:
+  title: webhooks.cc API
+  version: "1.0.0"
+  description: |
+    REST API for webhooks.cc — capture, inspect, and test webhooks.
+
+    **Authentication:** All endpoints require a Bearer token in the `Authorization` header.
+    Use your API key (prefix `whcc_`) generated from the [account page](https://webhooks.cc/account).
+
+    **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}` — they are captured
+    and available via the API and dashboard in real time.
+
+    **Rate limits:** Rate-limited endpoints return `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+    and `X-RateLimit-Reset` headers on every response. When the limit is exceeded, the API
+    returns `429` with a `Retry-After` header.
+  contact:
+    name: webhooks.cc
+    url: https://webhooks.cc/support
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+
+servers:
+  - url: https://webhooks.cc
+    description: Production
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Endpoints
+    description: Create, read, update, and delete webhook endpoints.
+  - name: Requests
+    description: List, inspect, and clear captured webhook requests.
+  - name: Streaming
+    description: Real-time Server-Sent Events stream of incoming webhooks.
+  - name: Search
+    description: Search retained requests (pro plan required).
+  - name: Send
+    description: Send test webhooks to your endpoints.
+  - name: Usage
+    description: Request quota and billing information.
+  - name: Teams
+    description: Team management and endpoint sharing (pro plan required).
+  - name: Invites
+    description: Team invitation management.
+
+paths:
+  # -- Endpoints ---------------------------------------------------------------
+
+  /api/endpoints:
+    get:
+      operationId: listEndpoints
+      tags: [Endpoints]
+      summary: List endpoints
+      description: |
+        Returns all endpoints owned by the authenticated user, plus any endpoints
+        shared with them via teams (pro plan only).
+      responses:
+        "200":
+          description: Endpoint listing
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [owned, shared]
+                properties:
+                  owned:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Endpoint"
+                  shared:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Endpoint"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: createEndpoint
+      tags: [Endpoints]
+      summary: Create endpoint
+      description: |
+        Create a new webhook endpoint. Rate limited to 30 requests per 10 minutes.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEndpointRequest"
+      responses:
+        "200":
+          description: Created endpoint
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Endpoint"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/endpoints/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: getEndpoint
+      tags: [Endpoints]
+      summary: Get endpoint
+      description: Returns a single endpoint by slug. Team members can access shared endpoints.
+      responses:
+        "200":
+          description: Endpoint details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Endpoint"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateEndpoint
+      tags: [Endpoints]
+      summary: Update endpoint
+      description: |
+        Update an endpoint's name or mock response. Team members can also update shared endpoints.
+        Set `mockResponse` to `null` to clear the mock response.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEndpointRequest"
+      responses:
+        "200":
+          description: Updated endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Endpoint"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteEndpoint
+      tags: [Endpoints]
+      summary: Delete endpoint
+      description: Deletes the endpoint and all its captured requests. Only the owner can delete.
+      responses:
+        "204":
+          description: Endpoint deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/endpoints/claim:
+    post:
+      operationId: claimEndpoint
+      tags: [Endpoints]
+      summary: Claim guest endpoint
+      description: Claim an ephemeral guest endpoint, associating it with your account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug]
+              properties:
+                slug:
+                  type: string
+                  description: Slug of the guest endpoint to claim
+      responses:
+        "200":
+          description: Claimed endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Endpoint"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Requests ----------------------------------------------------------------
+
+  /api/endpoints/{slug}/requests:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: listRequests
+      tags: [Requests]
+      summary: List requests
+      description: List captured requests for an endpoint, newest first.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: Maximum number of requests to return
+        - name: since
+          in: query
+          schema:
+            type: integer
+          description: Only return requests received after this Unix timestamp (ms)
+      responses:
+        "200":
+          description: Array of captured requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Request"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: clearRequests
+      tags: [Requests]
+      summary: Clear requests
+      description: |
+        Delete captured requests for an endpoint without deleting the endpoint itself.
+        Optionally pass `before` to only delete requests older than a timestamp.
+      parameters:
+        - name: before
+          in: query
+          schema:
+            type: integer
+          description: Only delete requests received before this Unix timestamp (ms)
+      responses:
+        "204":
+          description: Requests cleared
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/endpoints/{slug}/requests/paginated:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: listRequestsPaginated
+      tags: [Requests]
+      summary: List requests (paginated)
+      description: |
+        Cursor-based paginated listing of captured requests. Pass the returned `cursor`
+        to fetch the next page.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: Maximum number of requests per page
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Opaque cursor from a previous page
+      responses:
+        "200":
+          description: Paginated request listing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedRequests"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/requests/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Request ID
+
+    get:
+      operationId: getRequest
+      tags: [Requests]
+      summary: Get request
+      description: Get a single captured request by ID.
+      responses:
+        "200":
+          description: Request details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Streaming ---------------------------------------------------------------
+
+  /api/stream/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: streamRequests
+      tags: [Streaming]
+      summary: Stream requests (SSE)
+      description: |
+        Server-Sent Events stream of incoming webhook requests. Each captured request
+        arrives as an `event: request` message with JSON data.
+
+        The server sends keepalive pings (`:ping`) every 30 seconds. Maximum connection
+        duration is 30 minutes — reconnect when the stream closes.
+
+        **Event types:**
+        - `connected` — stream established
+        - `request` — captured webhook (JSON data matching the Request schema)
+        - `keepalive` — connection keepalive
+        - `timeout` — max duration reached, reconnect
+        - `endpoint_deleted` — endpoint was deleted, stream closed
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: integer
+          description: Resume from this Unix timestamp (ms) — returns requests received after this time
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # -- Search ------------------------------------------------------------------
+
+  /api/search/requests:
+    get:
+      operationId: searchRequests
+      tags: [Search]
+      summary: Search requests
+      description: |
+        Search retained requests across endpoints. Requires a pro plan.
+        Rate limited to 60 requests per 10 minutes.
+      parameters:
+        - name: slug
+          in: query
+          schema:
+            type: string
+          description: Filter by endpoint slug
+        - name: method
+          in: query
+          schema:
+            type: string
+            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+          description: Filter by HTTP method
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Free-text search across path, body, and headers
+        - name: from
+          in: query
+          schema:
+            type: integer
+          description: Start time as Unix timestamp (ms)
+        - name: to
+          in: query
+          schema:
+            type: integer
+          description: End time as Unix timestamp (ms)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Maximum number of results
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order by receivedAt
+      responses:
+        "200":
+          description: Search results
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Pro plan required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/search/requests/count:
+    get:
+      operationId: searchRequestsCount
+      tags: [Search]
+      summary: Count search results
+      description: |
+        Count retained requests matching search filters without returning them.
+        Requires a pro plan. Rate limited to 120 requests per 10 minutes.
+        Accepts the same query parameters as search (except `limit`, `offset`, `order`).
+      parameters:
+        - name: slug
+          in: query
+          schema:
+            type: string
+        - name: method
+          in: query
+          schema:
+            type: string
+            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: integer
+        - name: to
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Match count
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Pro plan required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Send --------------------------------------------------------------------
+
+  /api/send-test:
+    post:
+      operationId: sendTestWebhook
+      tags: [Send]
+      summary: Send test webhook
+      description: |
+        Send a test webhook to one of your endpoints. The webhook is sent to the receiver
+        and captured like any external webhook. Rate limited to 30 requests per minute.
+        Maximum body size: 1MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug]
+              properties:
+                slug:
+                  type: string
+                  description: Target endpoint slug
+                method:
+                  type: string
+                  default: POST
+                  description: HTTP method
+                path:
+                  type: string
+                  description: Optional sub-path appended to the endpoint URL
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: HTTP headers to include
+                body:
+                  type: string
+                  description: Request body
+      responses:
+        "200":
+          description: Webhook sent
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    description: Status code returned by the receiver
+                  statusText:
+                    type: string
+                    description: Status text returned by the receiver
+                  body:
+                    type: string
+                    description: Response body from the receiver
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Usage -------------------------------------------------------------------
+
+  /api/usage:
+    get:
+      operationId: getUsage
+      tags: [Usage]
+      summary: Get usage
+      description: Returns current request quota and usage for the authenticated user.
+      responses:
+        "200":
+          description: Usage information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Teams -------------------------------------------------------------------
+
+  /api/teams:
+    get:
+      operationId: listTeams
+      tags: [Teams]
+      summary: List teams
+      description: List all teams the authenticated user owns or is a member of.
+      responses:
+        "200":
+          description: Array of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: createTeam
+      tags: [Teams]
+      summary: Create team
+      description: |
+        Create a new team. Requires a pro plan.
+        Rate limited to 10 requests per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  description: Team display name
+      responses:
+        "200":
+          description: Created team
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+
+    patch:
+      operationId: updateTeam
+      tags: [Teams]
+      summary: Update team
+      description: Update the team name. Only the owner can update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+      responses:
+        "200":
+          description: Updated team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteTeam
+      tags: [Teams]
+      summary: Delete team
+      description: Delete a team. Only the owner can delete. All shares are removed.
+      responses:
+        "204":
+          description: Team deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}/members:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+
+    get:
+      operationId: listTeamMembers
+      tags: [Teams]
+      summary: List team members
+      description: List all members and pending invites for a team.
+      responses:
+        "200":
+          description: Members and pending invites
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TeamMember"
+                  pendingInvites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TeamInvite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: User ID to remove
+
+    delete:
+      operationId: removeTeamMember
+      tags: [Teams]
+      summary: Remove team member
+      description: Remove a member from the team. Only the team owner can remove members.
+      responses:
+        "204":
+          description: Member removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}/endpoints:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+
+    post:
+      operationId: shareEndpointWithTeam
+      tags: [Teams]
+      summary: Share endpoint with team
+      description: |
+        Share one of your endpoints with a team. Rate limited to 30 requests per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpointId]
+              properties:
+                endpointId:
+                  type: string
+                  description: ID of the endpoint to share
+      responses:
+        "200":
+          description: Endpoint shared
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}/endpoints/{endpointId}:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+      - name: endpointId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Endpoint ID to unshare
+
+    delete:
+      operationId: unshareEndpointFromTeam
+      tags: [Teams]
+      summary: Unshare endpoint from team
+      description: Remove an endpoint from a team. The endpoint itself is not deleted.
+      responses:
+        "204":
+          description: Endpoint unshared
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}/invite:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+
+    post:
+      operationId: createTeamInvite
+      tags: [Teams]
+      summary: Invite to team
+      description: |
+        Send an invitation to join a team by email.
+        Rate limited to 20 requests per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Email address to invite
+      responses:
+        "200":
+          description: Invite sent
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInvite"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/teams/{teamId}/leave:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+
+    post:
+      operationId: leaveTeam
+      tags: [Teams]
+      summary: Leave team
+      description: Leave a team. Only non-owner members can leave. Owners must delete the team.
+      responses:
+        "200":
+          description: Left team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Invites -----------------------------------------------------------------
+
+  /api/invites:
+    get:
+      operationId: listInvites
+      tags: [Invites]
+      summary: List pending invites
+      description: List all pending team invitations for the authenticated user.
+      responses:
+        "200":
+          description: Array of pending invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamInvite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/invites/{inviteId}/accept:
+    parameters:
+      - name: inviteId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Invite ID to accept
+
+    post:
+      operationId: acceptInvite
+      tags: [Invites]
+      summary: Accept invite
+      description: Accept a pending team invitation.
+      responses:
+        "200":
+          description: Invite accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/invites/{inviteId}/decline:
+    parameters:
+      - name: inviteId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Invite ID to decline
+
+    post:
+      operationId: declineInvite
+      tags: [Invites]
+      summary: Decline invite
+      description: Decline a pending team invitation.
+      responses:
+        "200":
+          description: Invite declined
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # -- Public ------------------------------------------------------------------
+
+  /api/stats:
+    get:
+      operationId: getStats
+      tags: [Usage]
+      summary: Get public stats
+      description: Public aggregate statistics. No authentication required. Cached for 1 hour.
+      security: []
+      responses:
+        "200":
+          description: Aggregate stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_webhooks:
+                    type: integer
+                  total_endpoints:
+                    type: integer
+                  total_users:
+                    type: integer
+
+  /api/health:
+    get:
+      operationId: getHealth
+      tags: [Usage]
+      summary: Health check
+      description: Check API and database health. No authentication required.
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [ok, error]
+        "503":
+          description: Service degraded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [degraded]
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [ok, error]
+
+# -- Components ----------------------------------------------------------------
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        API key with `whcc_` prefix. Generate from https://webhooks.cc/account.
+
+  parameters:
+    slug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{1,50}$"
+      description: Endpoint slug (URL-safe identifier)
+
+    teamId:
+      name: teamId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Team ID
+
+  headers:
+    X-RateLimit-Limit:
+      description: Maximum requests allowed in the current window
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Remaining requests in the current window
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Unix timestamp (seconds) when the window resets
+      schema:
+        type: integer
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+
+    Endpoint:
+      type: object
+      required: [id, slug, createdAt]
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+          description: Full webhook URL (e.g. https://go.webhooks.cc/w/{slug})
+        mockResponse:
+          $ref: "#/components/schemas/MockResponse"
+        isEphemeral:
+          type: boolean
+        expiresAt:
+          type: integer
+          description: Unix timestamp (ms) when the endpoint expires
+        createdAt:
+          type: integer
+          description: Unix timestamp (ms)
+        sharedWith:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamShare"
+          description: Teams this endpoint is shared with (present when you own it)
+        fromTeam:
+          $ref: "#/components/schemas/TeamShare"
+          description: Team this endpoint was shared from (present when shared with you)
+
+    MockResponse:
+      type: object
+      required: [status, body, headers]
+      properties:
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: HTTP status code
+        body:
+          type: string
+          description: Response body
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Response headers
+        delay:
+          type: integer
+          minimum: 0
+          maximum: 30000
+          description: Response delay in milliseconds
+
+    CreateEndpointRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          description: Display name
+        isEphemeral:
+          type: boolean
+          description: Whether the endpoint should auto-expire
+        expiresAt:
+          type: integer
+          description: Unix timestamp (ms) for expiry (implies ephemeral)
+        mockResponse:
+          $ref: "#/components/schemas/MockResponse"
+
+    UpdateEndpointRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          description: New display name
+        mockResponse:
+          oneOf:
+            - $ref: "#/components/schemas/MockResponse"
+            - type: "null"
+          description: Mock response config, or null to clear
+
+    Request:
+      type: object
+      required: [id, endpointId, method, path, headers, queryParams, ip, size, receivedAt]
+      properties:
+        id:
+          type: string
+        endpointId:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        queryParams:
+          type: object
+          additionalProperties:
+            type: string
+        contentType:
+          type: string
+        ip:
+          type: string
+        size:
+          type: integer
+        receivedAt:
+          type: integer
+          description: Unix timestamp (ms)
+
+    SearchResult:
+      type: object
+      required: [id, slug, method, path, headers, queryParams, ip, size, receivedAt]
+      properties:
+        id:
+          type: string
+          description: Synthetic ID (not compatible with requests.get/replay)
+        slug:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        queryParams:
+          type: object
+          additionalProperties:
+            type: string
+        contentType:
+          type: string
+        ip:
+          type: string
+        size:
+          type: integer
+        receivedAt:
+          type: integer
+
+    PaginatedRequests:
+      type: object
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Request"
+        cursor:
+          type: string
+          description: Opaque cursor for the next page
+        hasMore:
+          type: boolean
+          description: Whether another page is available
+
+    UsageInfo:
+      type: object
+      required: [used, limit, remaining, plan, periodEnd]
+      properties:
+        used:
+          type: integer
+        limit:
+          type: integer
+        remaining:
+          type: integer
+        plan:
+          type: string
+          enum: [free, pro]
+        periodEnd:
+          type: integer
+          nullable: true
+          description: Unix timestamp (ms) for billing period end, null if period not started
+
+    TeamShare:
+      type: object
+      required: [teamId, teamName]
+      properties:
+        teamId:
+          type: string
+        teamName:
+          type: string
+
+    Team:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [owner, member]
+        memberCount:
+          type: integer
+        createdAt:
+          type: integer
+
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [owner, member]
+        joinedAt:
+          type: integer
+
+    TeamInvite:
+      type: object
+      properties:
+        id:
+          type: string
+        teamId:
+          type: string
+        teamName:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, declined]
+        createdAt:
+          type: integer
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    Unauthorized:
+      description: Invalid or missing API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds until the rate limit window resets
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    InternalError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
