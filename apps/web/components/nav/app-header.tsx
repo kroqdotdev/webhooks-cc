@@ -16,6 +16,7 @@ interface AppHeaderProps {
   showEndpointSwitcher?: boolean;
   showNewEndpoint?: boolean;
   showBackToDashboard?: boolean;
+  showBackButton?: boolean;
   showBlogLink?: boolean;
 }
 
@@ -23,6 +24,7 @@ export function AppHeader({
   showEndpointSwitcher = false,
   showNewEndpoint = false,
   showBackToDashboard = false,
+  showBackButton = false,
   showBlogLink = true,
 }: AppHeaderProps) {
   const router = useRouter();
@@ -55,6 +57,16 @@ export function AppHeader({
               <ArrowLeft className="h-3.5 w-3.5" />
               Dashboard
             </Link>
+          )}
+
+          {showBackButton && (
+            <button
+              onClick={() => router.back()}
+              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back
+            </button>
           )}
 
           {showEndpointSwitcher && <EndpointSwitcher />}

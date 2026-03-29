@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function ApiExplorerPage() {
   return (
     <div className="min-h-screen flex flex-col">
-      <AppHeader showBackToDashboard={false} />
+      <AppHeader showBackButton />
       <div className="flex-1">
         <ScalarViewer />
       </div>
