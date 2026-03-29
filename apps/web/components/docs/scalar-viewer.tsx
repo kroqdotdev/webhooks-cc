@@ -24,7 +24,7 @@ export function ScalarViewer() {
   }
 
   return (
-    <div className="-mx-6 md:-mx-10">
+    <div>
       <Component
         configuration={{
           spec: {

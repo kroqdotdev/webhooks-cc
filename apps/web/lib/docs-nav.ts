@@ -26,7 +26,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Core Concepts", href: "/docs/core-concepts" },
       { title: "Plans & Limits", href: "/docs/plans-limits", isNew: true },
       { title: "REST API", href: "/docs/api", isNew: true },
-      { title: "API Explorer", href: "/docs/api/interactive", depth: 1, isNew: true },
+      { title: "API Explorer", href: "/api-explorer", depth: 1, isNew: true },
     ],
   },
   {
