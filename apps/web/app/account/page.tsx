@@ -376,11 +376,20 @@ export default function AccountPage() {
           <h2 className="text-lg font-semibold">API Keys</h2>
           <ApiKeyDialog accessToken={accessToken} onCreated={refreshApiKeys} />
         </div>
+
+        <p className="text-sm text-muted-foreground">
+          Use API keys with the{" "}
+          <Link href="/docs/cli" className="text-primary hover:underline font-bold">CLI</Link>,{" "}
+          <Link href="/docs/sdk" className="text-primary hover:underline font-bold">SDK</Link>,{" "}
+          <Link href="/docs/mcp" className="text-primary hover:underline font-bold">MCP server</Link>, or the{" "}
+          <Link href="/api-explorer" className="text-primary hover:underline font-bold">API explorer</Link>.
+        </p>
+
         <div className="border rounded-lg bg-card divide-y">
           {apiKeys.length === 0 ? (
             <div className="p-6">
               <p className="text-sm text-muted-foreground">
-                No API keys yet. Create one to use the CLI, SDK, or MCP server.
+                No API keys yet. Create one to get started.
               </p>
             </div>
           ) : (

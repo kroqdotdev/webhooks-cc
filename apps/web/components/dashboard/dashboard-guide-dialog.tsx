@@ -23,7 +23,9 @@ import {
   Eye,
   Settings,
   Users,
+  Code2,
 } from "lucide-react";
+import Link from "next/link";
 
 interface Section {
   id: string;
@@ -306,6 +308,34 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             Share endpoints from <strong>Endpoint Settings</strong> → Team Sharing section
+          </li>
+        </ul>
+      </div>
+    ),
+  },
+  {
+    id: "api-explorer",
+    title: "API Explorer",
+    icon: <Code2 className="h-3.5 w-3.5" />,
+    content: (
+      <div className="space-y-3">
+        <p>
+          The{" "}
+          <Link href="/api-explorer" className="text-primary hover:underline font-bold">
+            API Explorer
+          </Link>{" "}
+          is an interactive reference for the webhooks.cc REST API. Try endpoints directly from your
+          browser, inspect request/response schemas, and generate code snippets in 20+ languages.
+        </p>
+        <ul className="space-y-1.5 text-sm">
+          <li>Authenticate with your API key to test endpoints live</li>
+          <li>Generate code snippets in Shell, Node.js, Python, Go, Rust, and more</li>
+          <li>Browse all available endpoints, request parameters, and response schemas</li>
+          <li>
+            API keys can be created from{" "}
+            <Link href="/account" className="text-primary hover:underline font-bold">
+              Account Settings
+            </Link>
           </li>
         </ul>
       </div>
