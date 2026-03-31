@@ -158,7 +158,7 @@ pub struct DeviceCodeResponse {
     #[serde(rename = "userCode")]
     pub user_code: String,
     #[serde(rename = "expiresAt")]
-    pub expires_at: String,
+    pub expires_at: i64,
     #[serde(rename = "verificationUrl")]
     pub verification_url: String,
 }
