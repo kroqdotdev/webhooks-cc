@@ -187,7 +187,7 @@ pub fn print_usage(usage: &UsageInfo) {
         usage.limit,
         usage.remaining
     );
-    if let Some(ref pe) = usage.period_end {
-        println!("  {} {}", dim("Period ends:"), pe);
+    if let Some(pe) = usage.period_end {
+        println!("  {} {}", dim("Period ends:"), format_timestamp(pe));
     }
 }

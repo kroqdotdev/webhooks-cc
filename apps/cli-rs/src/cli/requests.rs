@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::io::{self, Write};
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line, red};
+use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line};
 use crate::cli::ExportFormat;
 
 pub async fn list(

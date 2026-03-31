@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph, StatefulWidget},
+    widgets::{Block, Borders, Padding, Paragraph},
     Frame,
 };
 use tokio::sync::mpsc;
@@ -141,7 +141,7 @@ impl Screen for EndpointDetailScreen {
                 ]),
                 Line::from(vec![
                     Span::styled("  Requests:  ", theme::style_muted()),
-                    Span::styled(ep.request_count.to_string(), theme::style()),
+                    Span::styled(ep.request_count.unwrap_or(0).to_string(), theme::style()),
                 ]),
             ];
 

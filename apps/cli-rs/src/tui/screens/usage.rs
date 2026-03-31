@@ -171,10 +171,10 @@ impl Screen for UsageScreen {
             );
 
             // Period end
-            if let Some(ref pe) = usage.period_end {
+            if let Some(pe) = usage.period_end {
                 let period_line = Line::from(vec![
                     Span::styled("Period ends: ", theme::style_muted()),
-                    Span::styled(pe, theme::style()),
+                    Span::styled(crate::util::format::format_timestamp(pe), theme::style()),
                 ]);
                 frame.render_widget(
                     Paragraph::new(period_line),

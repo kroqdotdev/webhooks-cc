@@ -1,6 +1,6 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph},
@@ -89,8 +89,11 @@ impl Screen for AuthScreen {
                     }
                 }
             }
-            State::LoggingIn { .. } | State::Polling { .. } => {
-                // Can cancel with Esc (handled above)
+            State::LoggingIn { .. } => {}
+            State::Polling { user_code, .. } => {
+                if keys::is_char(key, 'c') {
+                    copy_to_clipboard(user_code);
+                }
             }
             State::Success(_) | State::Error(_) => {
                 // Any key goes back to idle
@@ -331,6 +334,7 @@ impl Screen for AuthScreen {
         } else {
             match &self.state {
                 State::Idle => vec![("l", "login"), ("esc", "back")],
+                State::Polling { .. } => vec![("c", "copy code"), ("esc", "cancel")],
                 _ => vec![("esc", "cancel")],
             }
         }
@@ -366,4 +370,37 @@ const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦
 
 fn spinner_frame(tick: usize) -> &'static str {
     SPINNER_FRAMES[tick % SPINNER_FRAMES.len()]
+}
+
+fn copy_to_clipboard(text: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::{Command, Stdio};
+        if let Ok(mut child) = Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::{Command, Stdio};
+        // Try xclip first, then xsel
+        let result = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(Stdio::piped())
+            .spawn();
+        if let Ok(mut child) = result {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+        }
+    }
 }

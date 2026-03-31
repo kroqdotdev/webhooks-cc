@@ -83,7 +83,7 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     if let Some(ref name) = endpoint.name {
         println!("  {} {}", dim("Name:"), name);
     }
-    println!("  {} {}", dim("Requests:"), endpoint.request_count);
+    println!("  {} {}", dim("Requests:"), endpoint.request_count.unwrap_or(0));
     if endpoint.is_ephemeral {
         println!("  {} true", dim("Ephemeral:"));
     }

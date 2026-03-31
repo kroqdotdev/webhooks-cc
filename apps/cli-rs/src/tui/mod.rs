@@ -12,7 +12,7 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout},
     widgets::Widget,
     DefaultTerminal, Frame,
 };

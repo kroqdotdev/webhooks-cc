@@ -26,7 +26,13 @@ impl ApiClient {
         let resp = self
             .get(&format!("/api/endpoints/{slug}/requests{qs}"))
             .await?;
-        serde_json::from_str(&resp.body).context("failed to parse request list")
+        // API returns a bare array
+        let requests: Vec<CapturedRequest> =
+            serde_json::from_str(&resp.body).context("failed to parse request list")?;
+        Ok(RequestList {
+            count: Some(requests.len() as u64),
+            requests,
+        })
     }
 
     pub async fn list_requests_paginated(

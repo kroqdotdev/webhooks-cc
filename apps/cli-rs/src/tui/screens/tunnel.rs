@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph, StatefulWidget},
+    widgets::{Block, Borders, Padding, Paragraph},
     Frame,
 };
 use std::collections::HashMap;

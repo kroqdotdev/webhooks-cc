@@ -19,9 +19,9 @@ pub struct Endpoint {
     #[serde(rename = "expiresAt", default)]
     pub expires_at: Option<i64>,
     #[serde(rename = "createdAt", default)]
-    pub created_at: Option<String>,
+    pub created_at: Option<i64>,
     #[serde(rename = "requestCount", default)]
-    pub request_count: u64,
+    pub request_count: Option<u64>,
     #[serde(rename = "mockResponse", default)]
     pub mock_response: Option<MockResponse>,
     #[serde(rename = "sharedWith", default)]
@@ -45,7 +45,7 @@ pub struct MockResponse {
     pub body: String,
     #[serde(default)]
     pub headers: HashMap<String, String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delay: Option<u32>,
 }
 
@@ -144,7 +144,7 @@ pub struct UsageInfo {
     pub remaining: u64,
     pub plan: String,
     #[serde(rename = "periodEnd", default)]
-    pub period_end: Option<String>,
+    pub period_end: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------

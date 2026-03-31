@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, StatefulWidget, Table, TableState},
+    widgets::{Block, Borders, Paragraph, Row, Table, TableState},
     Frame,
 };
 use tokio::sync::mpsc;

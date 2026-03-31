@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState},
     Frame,
@@ -362,7 +362,6 @@ fn render_results(
         .iter()
         .map(|r| {
             let time = format_timestamp(r.received_at);
-            let method_style = Style::default().fg(theme::method_color(&r.method));
             Row::new(vec![
                 format!("  {}", &time[11..19]), // HH:MM:SS
                 r.method.clone(),

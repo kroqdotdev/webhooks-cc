@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
@@ -262,7 +262,7 @@ impl Screen for EndpointsScreen {
             .map(|ep| {
                 let name = ep.name.as_deref().unwrap_or("—");
                 let url = format!("{}/w/{}", self.webhook_url, ep.slug);
-                let count = ep.request_count.to_string();
+                let count = ep.request_count.unwrap_or(0).to_string();
                 Row::new(vec![
                     format!("  {}", ep.slug),
                     name.to_string(),
