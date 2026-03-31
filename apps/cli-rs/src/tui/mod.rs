@@ -150,6 +150,9 @@ impl App {
             ScreenId::RequestDetail(id) => {
                 Box::new(screens::request_detail::RequestDetailScreen::new(id))
             }
+            ScreenId::Search => Box::new(screens::search::SearchScreen::new()),
+            ScreenId::Send => Box::new(screens::send::SendScreen::new()),
+            ScreenId::Usage => Box::new(screens::usage::UsageScreen::new()),
             ScreenId::Update => Box::new(screens::update::UpdateScreen::new()),
         };
 

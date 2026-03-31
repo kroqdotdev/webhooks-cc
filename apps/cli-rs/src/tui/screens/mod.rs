@@ -5,6 +5,9 @@ pub mod endpoint_detail;
 pub mod tunnel;
 pub mod listen;
 pub mod request_detail;
+pub mod search;
+pub mod send;
+pub mod usage;
 pub mod update;
 
 use crossterm::event::KeyEvent;
@@ -68,6 +71,9 @@ pub enum ScreenId {
     Listen,
     ListenSlug(String), // slug
     RequestDetail(String), // request ID
+    Search,
+    Send,
+    Usage,
     Update,
 }
 

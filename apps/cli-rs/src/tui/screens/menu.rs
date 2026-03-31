@@ -44,6 +44,27 @@ const ITEMS: &[MenuItem] = &[
         screen: ScreenId::Endpoints,
     },
     MenuItem {
+        key: "s",
+        label: "Send",
+        desc: "Send a test webhook",
+        icon: "➤",
+        screen: ScreenId::Send,
+    },
+    MenuItem {
+        key: "/",
+        label: "Search",
+        desc: "Search captured requests",
+        icon: "⌕",
+        screen: ScreenId::Search,
+    },
+    MenuItem {
+        key: "i",
+        label: "Usage",
+        desc: "Plan, quota, and billing",
+        icon: "◧",
+        screen: ScreenId::Usage,
+    },
+    MenuItem {
         key: "a",
         label: "Auth",
         desc: "Login / logout",
