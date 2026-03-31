@@ -1,0 +1,54 @@
+[package]
+name = "whk"
+version = "0.1.0"
+edition = "2024"
+description = "CLI and TUI for webhooks.cc — inspect, forward, and replay webhooks"
+license = "MIT"
+repository = "https://github.com/kroqdotdev/webhooks-cc"
+
+[[bin]]
+name = "whk"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "env", "string"] }
+clap_complete = "4"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+tokio-stream = "0.1"
+
+# HTTP
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Utilities
+dirs = "6"
+open = "5"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.9"
+chrono = { version = "0.4", features = ["serde"] }
+semver = "1"
+flate2 = "1"
+tar = "0.4"
+unicode-width = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+strip = true
+codegen-units = 1
