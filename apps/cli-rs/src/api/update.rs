@@ -190,7 +190,7 @@ fn extract_from_tar_gz(data: &[u8]) -> Result<Vec<u8>> {
     anyhow::bail!("whk binary not found in archive")
 }
 
-fn extract_from_zip(data: &[u8]) -> Result<Vec<u8>> {
+fn extract_from_zip(_data: &[u8]) -> Result<Vec<u8>> {
     // Simple zip extraction — find the whk binary
     // We don't have the zip crate, so fall back to tar.gz only platforms
     // Windows users would need the zip crate added

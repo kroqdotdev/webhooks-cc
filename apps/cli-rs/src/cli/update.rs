@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::api::update;
-use crate::cli::output::{bold, dim, green, red};
+use crate::cli::output::{bold, dim, green};
 
 pub async fn run(json: bool) -> Result<()> {
     let version = env!("WHK_VERSION");
