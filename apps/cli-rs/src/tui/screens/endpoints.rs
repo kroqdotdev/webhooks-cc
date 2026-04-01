@@ -29,6 +29,8 @@ pub struct EndpointsScreen {
     table_state: TableState,
     webhook_url: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -40,6 +42,8 @@ impl EndpointsScreen {
             table_state: TableState::default(),
             webhook_url,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -56,21 +60,20 @@ impl Screen for EndpointsScreen {
                     } else {
                         Some(input.clone())
                     };
-                    if let Some(ref tx) = self.tx {
+                    if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                         let tx = tx.clone();
-                        let client = ApiClient::new(None, None).ok();
-                        if let Some(client) = client {
-                            tokio::spawn(async move {
-                                let req = CreateEndpointRequest {
-                                    name,
-                                    is_ephemeral: None,
-                                    expires_at: None,
-                                    mock_response: None,
-                                };
-                                let result = client.create_endpoint(&req).await;
-                                let _ = tx.send(Message::EndpointCreated(result));
-                            });
-                        }
+                        let client = client.clone();
+                        let handle = tokio::spawn(async move {
+                            let req = CreateEndpointRequest {
+                                name,
+                                is_ephemeral: None,
+                                expires_at: None,
+                                mock_response: None,
+                            };
+                            let result = client.create_endpoint(&req).await;
+                            let _ = tx.send(Message::EndpointCreated(result));
+                        });
+                        self.tasks.push(handle);
                     }
                     self.state = State::Loading;
                     return None;
@@ -96,15 +99,14 @@ impl Screen for EndpointsScreen {
             if keys::is_char(key, 'y') {
                 if let Some(ep) = self.endpoints.get(idx) {
                     let slug = ep.slug.clone();
-                    if let Some(ref tx) = self.tx {
+                    if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                         let tx = tx.clone();
-                        let client = ApiClient::new(None, None).ok();
-                        if let Some(client) = client {
-                            tokio::spawn(async move {
-                                let result = client.delete_endpoint(&slug).await.map(|_| slug);
-                                let _ = tx.send(Message::EndpointDeleted(result));
-                            });
-                        }
+                        let client = client.clone();
+                        let handle = tokio::spawn(async move {
+                            let result = client.delete_endpoint(&slug).await.map(|_| slug);
+                            let _ = tx.send(Message::EndpointDeleted(result));
+                        });
+                        self.tasks.push(handle);
                     }
                 }
                 self.state = State::Loading;
@@ -159,16 +161,15 @@ impl Screen for EndpointsScreen {
 
         // 'r' to refresh
         if keys::is_char(key, 'r') {
-            if let Some(ref tx) = self.tx {
+            if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                 self.state = State::Loading;
                 let tx = tx.clone();
-                let client = ApiClient::new(None, None).ok();
-                if let Some(client) = client {
-                    tokio::spawn(async move {
-                        let result = client.list_endpoints().await;
-                        let _ = tx.send(Message::EndpointsLoaded(result));
-                    });
-                }
+                let client = client.clone();
+                let handle = tokio::spawn(async move {
+                    let result = client.list_endpoints().await;
+                    let _ = tx.send(Message::EndpointsLoaded(result));
+                });
+                self.tasks.push(handle);
             }
             return None;
         }
@@ -192,15 +193,14 @@ impl Screen for EndpointsScreen {
             }
             Message::EndpointCreated(Ok(_ep)) => {
                 // Refresh the list
-                if let Some(ref tx) = self.tx {
+                if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                     let tx = tx.clone();
-                    let client = ApiClient::new(None, None).ok();
-                    if let Some(client) = client {
-                        tokio::spawn(async move {
-                            let result = client.list_endpoints().await;
-                            let _ = tx.send(Message::EndpointsLoaded(result));
-                        });
-                    }
+                    let client = client.clone();
+                    let handle = tokio::spawn(async move {
+                        let result = client.list_endpoints().await;
+                        let _ = tx.send(Message::EndpointsLoaded(result));
+                    });
+                    self.tasks.push(handle);
                 }
             }
             Message::EndpointCreated(Err(e)) => {
@@ -208,15 +208,14 @@ impl Screen for EndpointsScreen {
             }
             Message::EndpointDeleted(Ok(_slug)) => {
                 // Refresh
-                if let Some(ref tx) = self.tx {
+                if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                     let tx = tx.clone();
-                    let client = ApiClient::new(None, None).ok();
-                    if let Some(client) = client {
-                        tokio::spawn(async move {
-                            let result = client.list_endpoints().await;
-                            let _ = tx.send(Message::EndpointsLoaded(result));
-                        });
-                    }
+                    let client = client.clone();
+                    let handle = tokio::spawn(async move {
+                        let result = client.list_endpoints().await;
+                        let _ = tx.send(Message::EndpointsLoaded(result));
+                    });
+                    self.tasks.push(handle);
                 }
             }
             Message::EndpointDeleted(Err(e)) => {
@@ -323,20 +322,23 @@ impl Screen for EndpointsScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx.clone());
+        self.client = Some(client.clone());
         self.state = State::Loading;
 
-        let client = ApiClient::new(None, None).ok();
-        if let Some(client) = client {
-            tokio::spawn(async move {
-                let result = client.list_endpoints().await;
-                let _ = tx.send(Message::EndpointsLoaded(result));
-            });
-        }
+        let client = client.clone();
+        let handle = tokio::spawn(async move {
+            let result = client.list_endpoints().await;
+            let _ = tx.send(Message::EndpointsLoaded(result));
+        });
+        self.tasks.push(handle);
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 

@@ -42,6 +42,8 @@ pub struct SearchScreen {
     total: u64,
     table_state: TableState,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -57,6 +59,8 @@ impl SearchScreen {
             total: 0,
             table_state: TableState::default(),
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -70,42 +74,42 @@ impl SearchScreen {
     }
 
     fn run_search(&mut self) {
-        if let Some(ref tx) = self.tx {
+        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
             self.state = State::Loading;
             let tx = tx.clone();
+            let client = client.clone();
             let q = if self.query.is_empty() { None } else { Some(self.query.clone()) };
             let method = if self.method.is_empty() { None } else { Some(self.method.clone()) };
             let slug = if self.slug.is_empty() { None } else { Some(self.slug.clone()) };
 
-            if let Ok(client) = ApiClient::new(None, None) {
-                tokio::spawn(async move {
-                    let result = client
-                        .search_requests(
-                            slug.as_deref(),
-                            method.as_deref(),
-                            q.as_deref(),
-                            None,
-                            None,
-                            Some(50),
-                            None,
-                            Some("desc"),
-                        )
-                        .await;
+            let handle = tokio::spawn(async move {
+                let result = client
+                    .search_requests(
+                        slug.as_deref(),
+                        method.as_deref(),
+                        q.as_deref(),
+                        None,
+                        None,
+                        Some(50),
+                        None,
+                        Some("desc"),
+                    )
+                    .await;
 
-                    match result {
-                        Ok(sr) => {
-                            // Reuse RequestsLoaded for simplicity
-                            let _ = tx.send(Message::RequestsLoaded(Ok(crate::types::RequestList {
-                                requests: sr.requests,
-                                count: Some(sr.total),
-                            })));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Message::RequestsLoaded(Err(e)));
-                        }
+                match result {
+                    Ok(sr) => {
+                        // Reuse RequestsLoaded for simplicity
+                        let _ = tx.send(Message::RequestsLoaded(Ok(crate::types::RequestList {
+                            requests: sr.requests,
+                            count: Some(sr.total),
+                        })));
                     }
-                });
-            }
+                    Err(e) => {
+                        let _ = tx.send(Message::RequestsLoaded(Err(e)));
+                    }
+                }
+            });
+            self.tasks.push(handle);
         }
     }
 }
@@ -260,11 +264,15 @@ impl Screen for SearchScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx);
+        self.client = Some(client.clone());
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 

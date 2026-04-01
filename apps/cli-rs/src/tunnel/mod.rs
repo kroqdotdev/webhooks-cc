@@ -145,7 +145,7 @@ fn build_target_url(
     if !query_params.is_empty() {
         let qs: Vec<String> = query_params
             .iter()
-            .map(|(k, v)| format!("{k}={v}"))
+            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
             .collect();
         url.push('?');
         url.push_str(&qs.join("&"));

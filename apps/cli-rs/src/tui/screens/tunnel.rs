@@ -35,6 +35,8 @@ pub struct TunnelScreen {
     forward_results: HashMap<String, ForwardResult>,
     webhook_url: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -50,6 +52,8 @@ impl TunnelScreen {
             forward_results: HashMap::new(),
             webhook_url,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -91,13 +95,12 @@ impl Screen for TunnelScreen {
             State::Active => {
                 if keys::is_back(key) || keys::is_quit(key) {
                     // Cleanup: delete ephemeral endpoint
-                    if let Some(ref slug) = self.slug {
+                    if let (Some(slug), Some(client)) = (&self.slug, &self.client) {
                         let slug = slug.clone();
-                        if let Ok(client) = ApiClient::new(None, None) {
-                            tokio::spawn(async move {
-                                let _ = client.delete_endpoint(&slug).await;
-                            });
-                        }
+                        let client = client.clone();
+                        tokio::spawn(async move {
+                            let _ = client.delete_endpoint(&slug).await;
+                        });
                     }
                     return Some(Action::NavigateBack);
                 }
@@ -141,24 +144,24 @@ impl Screen for TunnelScreen {
                 self.state = State::Active;
 
                 // Start SSE stream
-                if let Some(ref tx) = self.tx {
+                if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                     let tx = tx.clone();
-                    if let Ok(client) = ApiClient::new(None, None) {
-                        let stream_slug = slug.clone();
-                        tokio::spawn(async move {
-                            let (sse_tx, mut sse_rx) = mpsc::channel(64);
-                            let stream_handle = tokio::spawn(async move {
-                                let _ = client.stream_requests(&stream_slug, sse_tx).await;
-                            });
-
-                            while let Some(event) = sse_rx.recv().await {
-                                if tx.send(Message::SseEvent(event)).is_err() {
-                                    break;
-                                }
-                            }
-                            stream_handle.abort();
+                    let client = client.clone();
+                    let stream_slug = slug.clone();
+                    let handle = tokio::spawn(async move {
+                        let (sse_tx, mut sse_rx) = mpsc::channel(64);
+                        let stream_handle = tokio::spawn(async move {
+                            let _ = client.stream_requests(&stream_slug, sse_tx).await;
                         });
-                    }
+
+                        while let Some(event) = sse_rx.recv().await {
+                            if tx.send(Message::SseEvent(event)).is_err() {
+                                break;
+                            }
+                        }
+                        stream_handle.abort();
+                    });
+                    self.tasks.push(handle);
                 }
             }
             Message::EndpointCreated(Err(e)) => {
@@ -175,13 +178,14 @@ impl Screen for TunnelScreen {
                     if let Some(ref tx) = self.tx {
                         let tx = tx.clone();
                         let rid = req_id.clone();
-                        tokio::spawn(async move {
+                        let handle = tokio::spawn(async move {
                             let result = tunnel.forward(&req_for_fwd).await;
                             let _ = tx.send(Message::ForwardResult {
                                 request_id: rid,
                                 result,
                             });
                         });
+                        self.tasks.push(handle);
                     }
                 }
             }
@@ -278,11 +282,15 @@ impl Screen for TunnelScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx);
+        self.client = Some(client.clone());
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 
@@ -308,21 +316,21 @@ impl Screen for TunnelScreen {
 }
 
 impl TunnelScreen {
-    fn start_tunnel(&self) {
-        if let Some(ref tx) = self.tx {
+    fn start_tunnel(&mut self) {
+        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
             let tx = tx.clone();
-            if let Ok(client) = ApiClient::new(None, None) {
-                tokio::spawn(async move {
-                    let req = CreateEndpointRequest {
-                        name: None,
-                        is_ephemeral: Some(true),
-                        expires_at: None,
-                        mock_response: None,
-                    };
-                    let result = client.create_endpoint(&req).await;
-                    let _ = tx.send(Message::EndpointCreated(result));
-                });
-            }
+            let client = client.clone();
+            let handle = tokio::spawn(async move {
+                let req = CreateEndpointRequest {
+                    name: None,
+                    is_ephemeral: Some(true),
+                    expires_at: None,
+                    mock_response: None,
+                };
+                let result = client.create_endpoint(&req).await;
+                let _ = tx.send(Message::EndpointCreated(result));
+            });
+            self.tasks.push(handle);
         }
     }
 }

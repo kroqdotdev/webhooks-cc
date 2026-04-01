@@ -112,7 +112,7 @@ pub async fn update_endpoint(
         Some(serde_json::Value::Null)
     } else {
         build_mock_response(mock_status, mock_body, mock_headers)?
-            .map(|m| serde_json::to_value(m).unwrap())
+            .map(|m| serde_json::to_value(m).expect("MockResponse is always serializable"))
     };
 
     let req = UpdateEndpointRequest {

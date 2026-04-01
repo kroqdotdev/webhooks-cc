@@ -74,7 +74,7 @@ pub async fn run(
     // Handle Ctrl+C
     let cleanup_slug = slug.clone();
     let cleanup_client = client.clone();
-    let cleanup_created = created || ephemeral;
+    let cleanup_created = created; // only delete endpoints we created
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
@@ -139,8 +139,8 @@ pub async fn run(
 
     stream_handle.abort();
 
-    // Cleanup
-    if created || ephemeral {
+    // Cleanup — only delete endpoints we created
+    if created {
         let _ = client.delete_endpoint(&slug).await;
     }
 

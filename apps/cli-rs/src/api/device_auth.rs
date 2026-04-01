@@ -13,7 +13,7 @@ impl ApiClient {
     /// Poll the status of a device code. Returns "pending", "authorized", or "expired".
     pub async fn poll_device_code(&self, device_code: &str) -> Result<PollResponse> {
         let resp = self
-            .get(&format!("/api/auth/device-poll?code={device_code}"))
+            .get(&format!("/api/auth/device-poll?code={}", urlencoding::encode(device_code)))
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse poll response")
     }

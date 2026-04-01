@@ -37,6 +37,8 @@ pub struct RequestDetailScreen {
     loading: bool,
     error: Option<String>,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -50,6 +52,8 @@ impl RequestDetailScreen {
             loading: true,
             error: None,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -163,20 +167,24 @@ impl Screen for RequestDetailScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx.clone());
+        self.client = Some(client.clone());
         self.loading = true;
 
         let id = self.request_id.clone();
-        if let Ok(client) = ApiClient::new(None, None) {
-            tokio::spawn(async move {
-                let result = client.get_request(&id).await;
-                let _ = tx.send(Message::RequestLoaded(result));
-            });
-        }
+        let client = client.clone();
+        let handle = tokio::spawn(async move {
+            let result = client.get_request(&id).await;
+            let _ = tx.send(Message::RequestLoaded(result));
+        });
+        self.tasks.push(handle);
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 

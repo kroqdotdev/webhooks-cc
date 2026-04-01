@@ -27,6 +27,7 @@ pub struct UpdateScreen {
     state: State,
     version: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -40,6 +41,7 @@ impl UpdateScreen {
             state: State::Checking,
             version: env!("WHK_VERSION").to_string(),
             tx: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -61,7 +63,7 @@ impl Screen for UpdateScreen {
                     self.state = State::Applying;
                     if let Some(ref tx) = self.tx {
                         let tx = tx.clone();
-                        tokio::spawn(async move {
+                        let handle = tokio::spawn(async move {
                             match update::apply(&release).await {
                                 Ok(()) => {
                                     let _ = tx.send(Message::UpdateResult(Ok(release.version)));
@@ -71,6 +73,7 @@ impl Screen for UpdateScreen {
                                 }
                             }
                         });
+                        self.tasks.push(handle);
                     }
                 }
             }
@@ -217,13 +220,17 @@ impl Screen for UpdateScreen {
         }
 
         let version = self.version.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let result = update::check(&version).await;
             let _ = tx.send(Message::UpdateCheck(result));
         });
+        self.tasks.push(handle);
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 

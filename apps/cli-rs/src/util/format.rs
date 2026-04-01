@@ -55,6 +55,10 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
         .parse()
         .map_err(|_| anyhow::anyhow!("invalid duration: {input}"))?;
 
+    if !num.is_finite() || num < 0.0 {
+        anyhow::bail!("duration must be a positive finite number");
+    }
+
     let ms = match unit {
         "ms" => num,
         "s" => num * 1000.0,

@@ -236,7 +236,7 @@ fn build_har_export(base_url: &str, requests: &[crate::types::CapturedRequest]) 
         }
     });
 
-    serde_json::to_string_pretty(&har).unwrap()
+    serde_json::to_string_pretty(&har).unwrap_or_else(|_| "{}".to_string())
 }
 
 fn build_curl_export(base_url: &str, requests: &[crate::types::CapturedRequest]) -> String {
@@ -246,24 +246,26 @@ fn build_curl_export(base_url: &str, requests: &[crate::types::CapturedRequest])
         .iter()
         .map(|r| {
             let url = format!("{}{}", base_url, r.path);
-            let mut parts = vec![format!("curl -X {}", r.method)];
+            let mut parts = vec![format!("curl -X {}", shell_escape(&r.method))];
 
             for (k, v) in &r.headers {
                 if sensitive.contains(&k.to_lowercase().as_str()) {
                     continue;
                 }
-                let escaped = v.replace('\'', "'\\''");
-                parts.push(format!("-H '{}: {}'", k, escaped));
+                parts.push(format!("-H '{}: {}'", shell_escape(k), shell_escape(v)));
             }
 
             if let Some(ref body) = r.body {
-                let escaped = body.replace('\'', "'\\''");
-                parts.push(format!("-d '{}'", escaped));
+                parts.push(format!("-d '{}'", shell_escape(body)));
             }
 
-            parts.push(format!("'{url}'"));
+            parts.push(format!("'{}'", shell_escape(&url)));
             parts.join(" \\\n  ")
         })
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+fn shell_escape(s: &str) -> String {
+    s.replace('\'', "'\\''")
 }

@@ -32,6 +32,8 @@ pub struct ListenScreen {
     requests: RequestListState,
     webhook_url: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -45,6 +47,8 @@ impl ListenScreen {
             requests: RequestListState::new(),
             webhook_url,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -223,24 +227,28 @@ impl Screen for ListenScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx.clone());
+        self.client = Some(client.clone());
 
         if self.slug.is_some() {
             // Direct slug — start streaming
             self.start_stream();
         } else {
             // Load endpoints for picker
-            if let Ok(client) = ApiClient::new(None, None) {
-                tokio::spawn(async move {
-                    let result = client.list_endpoints().await;
-                    let _ = tx.send(Message::EndpointsLoaded(result));
-                });
-            }
+            let client = client.clone();
+            let handle = tokio::spawn(async move {
+                let result = client.list_endpoints().await;
+                let _ = tx.send(Message::EndpointsLoaded(result));
+            });
+            self.tasks.push(handle);
         }
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 
@@ -269,29 +277,29 @@ impl Screen for ListenScreen {
 }
 
 impl ListenScreen {
-    fn start_stream(&self) {
-        if let (Some(slug), Some(tx)) = (&self.slug, &self.tx) {
+    fn start_stream(&mut self) {
+        if let (Some(slug), Some(tx), Some(client)) = (&self.slug, &self.tx, &self.client) {
             let slug = slug.clone();
             let tx = tx.clone();
+            let client = client.clone();
 
-            if let Ok(client) = ApiClient::new(None, None) {
-                tokio::spawn(async move {
-                    let (sse_tx, mut sse_rx) = mpsc::channel(64);
-                    let stream_handle = tokio::spawn({
-                        let slug = slug.clone();
-                        async move {
-                            let _ = client.stream_requests(&slug, sse_tx).await;
-                        }
-                    });
-
-                    while let Some(event) = sse_rx.recv().await {
-                        if tx.send(Message::SseEvent(event)).is_err() {
-                            break;
-                        }
+            let handle = tokio::spawn(async move {
+                let (sse_tx, mut sse_rx) = mpsc::channel(64);
+                let stream_handle = tokio::spawn({
+                    let slug = slug.clone();
+                    async move {
+                        let _ = client.stream_requests(&slug, sse_tx).await;
                     }
-                    stream_handle.abort();
                 });
-            }
+
+                while let Some(event) = sse_rx.recv().await {
+                    if tx.send(Message::SseEvent(event)).is_err() {
+                        break;
+                    }
+                }
+                stream_handle.abort();
+            });
+            self.tasks.push(handle);
         }
     }
 }

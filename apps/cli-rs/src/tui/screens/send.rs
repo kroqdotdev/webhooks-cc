@@ -38,6 +38,8 @@ pub struct SendScreen {
     method: String,
     body: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -50,6 +52,8 @@ impl SendScreen {
             method: "POST".into(),
             body: String::new(),
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -68,9 +72,10 @@ impl SendScreen {
             return;
         }
 
-        if let Some(ref tx) = self.tx {
+        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
             self.state = State::Sending;
             let tx = tx.clone();
+            let client = client.clone();
             let req = SendWebhookRequest {
                 method: self.method.clone(),
                 slug: self.slug.clone(),
@@ -83,12 +88,11 @@ impl SendScreen {
                 },
             };
 
-            if let Ok(client) = ApiClient::new(None, None) {
-                tokio::spawn(async move {
-                    let result = client.send_webhook(&req).await;
-                    let _ = tx.send(Message::SendResult(result));
-                });
-            }
+            let handle = tokio::spawn(async move {
+                let result = client.send_webhook(&req).await;
+                let _ = tx.send(Message::SendResult(result));
+            });
+            self.tasks.push(handle);
         }
     }
 }
@@ -270,11 +274,15 @@ impl Screen for SendScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx);
+        self.client = Some(client.clone());
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 

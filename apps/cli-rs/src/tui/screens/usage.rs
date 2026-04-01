@@ -25,6 +25,8 @@ pub struct UsageScreen {
     state: State,
     usage: Option<UsageInfo>,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -34,6 +36,8 @@ impl UsageScreen {
             state: State::Loading,
             usage: None,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -184,12 +188,16 @@ impl Screen for UsageScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx);
+        self.client = Some(client.clone());
         self.load_usage();
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 
@@ -213,14 +221,14 @@ impl Screen for UsageScreen {
 impl UsageScreen {
     fn load_usage(&mut self) {
         self.state = State::Loading;
-        if let Some(ref tx) = self.tx {
+        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
             let tx = tx.clone();
-            if let Ok(client) = ApiClient::new(None, None) {
-                tokio::spawn(async move {
-                    let result = client.get_usage().await;
-                    let _ = tx.send(Message::UsageLoaded(result));
-                });
-            }
+            let client = client.clone();
+            let handle = tokio::spawn(async move {
+                let result = client.get_usage().await;
+                let _ = tx.send(Message::UsageLoaded(result));
+            });
+            self.tasks.push(handle);
         }
     }
 }

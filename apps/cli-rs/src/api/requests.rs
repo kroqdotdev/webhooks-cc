@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use urlencoding::encode;
 
 use super::ApiClient;
 use crate::types::{CapturedRequest, CountResult, PaginatedRequestList, RequestList, SearchResult};
@@ -47,7 +48,7 @@ impl ApiClient {
             params.push(format!("limit={l}"));
         }
         if let Some(c) = cursor {
-            params.push(format!("cursor={c}"));
+            params.push(format!("cursor={}", encode(c)));
         }
         let qs = if params.is_empty() {
             String::new()
@@ -80,19 +81,19 @@ impl ApiClient {
         self.require_auth()?;
         let mut params = vec![];
         if let Some(s) = slug {
-            params.push(format!("slug={s}"));
+            params.push(format!("slug={}", encode(s)));
         }
         if let Some(m) = method {
-            params.push(format!("method={m}"));
+            params.push(format!("method={}", encode(m)));
         }
         if let Some(q) = query {
-            params.push(format!("q={}", urlencoding(q)));
+            params.push(format!("q={}", encode(q)));
         }
         if let Some(f) = from {
-            params.push(format!("from={f}"));
+            params.push(format!("from={}", encode(f)));
         }
         if let Some(t) = to {
-            params.push(format!("to={t}"));
+            params.push(format!("to={}", encode(t)));
         }
         if let Some(l) = limit {
             params.push(format!("limit={l}"));
@@ -101,7 +102,7 @@ impl ApiClient {
             params.push(format!("offset={o}"));
         }
         if let Some(ord) = order {
-            params.push(format!("order={ord}"));
+            params.push(format!("order={}", encode(ord)));
         }
         let qs = if params.is_empty() {
             String::new()
@@ -123,19 +124,19 @@ impl ApiClient {
         self.require_auth()?;
         let mut params = vec![];
         if let Some(s) = slug {
-            params.push(format!("slug={s}"));
+            params.push(format!("slug={}", encode(s)));
         }
         if let Some(m) = method {
-            params.push(format!("method={m}"));
+            params.push(format!("method={}", encode(m)));
         }
         if let Some(q) = query {
-            params.push(format!("q={}", urlencoding(q)));
+            params.push(format!("q={}", encode(q)));
         }
         if let Some(f) = from {
-            params.push(format!("from={f}"));
+            params.push(format!("from={}", encode(f)));
         }
         if let Some(t) = to {
-            params.push(format!("to={t}"));
+            params.push(format!("to={}", encode(t)));
         }
         let qs = if params.is_empty() {
             String::new()
@@ -151,7 +152,7 @@ impl ApiClient {
     pub async fn clear_requests(&self, slug: &str, before: Option<&str>) -> Result<()> {
         self.require_auth()?;
         let qs = match before {
-            Some(b) => format!("?before={b}"),
+            Some(b) => format!("?before={}", encode(b)),
             None => String::new(),
         };
         self.delete(&format!("/api/endpoints/{slug}/requests{qs}"))
@@ -160,15 +161,3 @@ impl ApiClient {
     }
 }
 
-fn urlencoding(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            ' ' => "%20".to_string(),
-            '&' => "%26".to_string(),
-            '=' => "%3D".to_string(),
-            '#' => "%23".to_string(),
-            '+' => "%2B".to_string(),
-            _ => c.to_string(),
-        })
-        .collect()
-}

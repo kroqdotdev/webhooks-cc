@@ -31,6 +31,8 @@ pub struct AuthScreen {
     auth_email: Option<String>,
     tick: usize,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl AuthScreen {
@@ -40,6 +42,8 @@ impl AuthScreen {
             auth_email,
             tick: 0,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
         }
     }
 
@@ -67,15 +71,14 @@ impl Screen for AuthScreen {
                 } else {
                     // Not logged in — press 'l' to login
                     if keys::is_char(key, 'l') {
-                        if let Some(ref tx) = self.tx {
+                        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                             let tx = tx.clone();
-                            let client = self.get_client_for_login();
-                            if let Some(client) = client {
-                                tokio::spawn(async move {
-                                    let result = client.create_device_code().await;
-                                    let _ = tx.send(Message::DeviceCode(result));
-                                });
-                            }
+                            let client = client.clone();
+                            let handle = tokio::spawn(async move {
+                                let result = client.create_device_code().await;
+                                let _ = tx.send(Message::DeviceCode(result));
+                            });
+                            self.tasks.push(handle);
                         }
                     }
                 }
@@ -111,22 +114,21 @@ impl Screen for AuthScreen {
                 };
 
                 // Start polling
-                if let Some(ref tx) = self.tx {
+                if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                     let tx = tx.clone();
-                    let client = self.get_client_for_login();
-                    if let Some(client) = client {
-                        tokio::spawn(async move {
-                            loop {
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                let result = client.poll_device_code(&dc).await;
-                                let done = matches!(&result, Ok(r) if r.status != "pending");
-                                let _ = tx.send(Message::AuthPoll(result));
-                                if done {
-                                    break;
-                                }
+                    let client = client.clone();
+                    let handle = tokio::spawn(async move {
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            let result = client.poll_device_code(&dc).await;
+                            let done = matches!(&result, Ok(r) if r.status != "pending");
+                            let _ = tx.send(Message::AuthPoll(result));
+                            if done {
+                                break;
                             }
-                        });
-                    }
+                        }
+                    });
+                    self.tasks.push(handle);
                 }
             }
             Message::DeviceCode(Err(e)) => {
@@ -137,15 +139,14 @@ impl Screen for AuthScreen {
                     // Claim the code
                     if let State::Polling { ref device_code, .. } = self.state {
                         let dc = device_code.clone();
-                        if let Some(ref tx) = self.tx {
+                        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
                             let tx = tx.clone();
-                            let client = self.get_client_for_login();
-                            if let Some(client) = client {
-                                tokio::spawn(async move {
-                                    let result = client.claim_device_code(&dc).await;
-                                    let _ = tx.send(Message::AuthClaimed(result));
-                                });
-                            }
+                            let client = client.clone();
+                            let handle = tokio::spawn(async move {
+                                let result = client.claim_device_code(&dc).await;
+                                let _ = tx.send(Message::AuthClaimed(result));
+                            });
+                            self.tasks.push(handle);
                         }
                     }
                 } else if poll.status == "expired" {
@@ -305,11 +306,15 @@ impl Screen for AuthScreen {
         }
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx);
+        self.client = Some(client.clone());
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 
@@ -338,11 +343,6 @@ impl Screen for AuthScreen {
     }
 }
 
-impl AuthScreen {
-    fn get_client_for_login(&self) -> Option<ApiClient> {
-        ApiClient::new(None, None).ok()
-    }
-}
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + area.width.saturating_sub(width) / 2;

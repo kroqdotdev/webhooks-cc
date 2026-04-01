@@ -46,6 +46,7 @@ semver = "1"
 flate2 = "1"
 tar = "0.4"
 unicode-width = "0.2"
+urlencoding = "2"
 
 [profile.release]
 opt-level = "z"

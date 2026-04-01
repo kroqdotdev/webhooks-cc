@@ -29,6 +29,8 @@ pub struct EndpointDetailScreen {
     requests: RequestListState,
     webhook_url: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
+    client: Option<ApiClient>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
     tick: usize,
 }
 
@@ -41,6 +43,8 @@ impl EndpointDetailScreen {
             requests: RequestListState::new(),
             webhook_url,
             tx: None,
+            client: None,
+            tasks: Vec::new(),
             tick: 0,
         }
     }
@@ -172,12 +176,16 @@ impl Screen for EndpointDetailScreen {
         frame.render_stateful_widget(list, chunks[1], &mut self.requests);
     }
 
-    fn on_enter(&mut self, _client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
+    fn on_enter(&mut self, client: &ApiClient, tx: mpsc::UnboundedSender<Message>) {
         self.tx = Some(tx);
+        self.client = Some(client.clone());
         self.load_data();
     }
 
     fn on_leave(&mut self) {
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.tx = None;
     }
 
@@ -206,23 +214,24 @@ impl Screen for EndpointDetailScreen {
 impl EndpointDetailScreen {
     fn load_data(&mut self) {
         self.state = State::Loading;
-        if let Some(ref tx) = self.tx {
+        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
             let tx1 = tx.clone();
             let tx2 = tx.clone();
             let slug = self.slug.clone();
             let slug2 = self.slug.clone();
+            let client = client.clone();
+            let c2 = client.clone();
 
-            if let Ok(client) = ApiClient::new(None, None) {
-                let c2 = client.clone();
-                tokio::spawn(async move {
-                    let result = client.get_endpoint(&slug).await;
-                    let _ = tx1.send(Message::EndpointLoaded(result));
-                });
-                tokio::spawn(async move {
-                    let result = c2.list_requests(&slug2, Some(50), None).await;
-                    let _ = tx2.send(Message::RequestsLoaded(result));
-                });
-            }
+            let h1 = tokio::spawn(async move {
+                let result = client.get_endpoint(&slug).await;
+                let _ = tx1.send(Message::EndpointLoaded(result));
+            });
+            let h2 = tokio::spawn(async move {
+                let result = c2.list_requests(&slug2, Some(50), None).await;
+                let _ = tx2.send(Message::RequestsLoaded(result));
+            });
+            self.tasks.push(h1);
+            self.tasks.push(h2);
         }
     }
 }
