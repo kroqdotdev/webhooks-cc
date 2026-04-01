@@ -74,7 +74,7 @@ impl Screen for TunnelScreen {
                         return None;
                     }
                     KeyCode::Esc => return Some(Action::NavigateBack),
-                    KeyCode::Char(c) if c.is_ascii_digit() || c == '/' || c == '-' || c == '_' || c == '.' => {
+                    KeyCode::Char(c) if c.is_ascii_alphanumeric() || c == '/' || c == '-' || c == '_' || c == '.' || c == ':' => {
                         self.input.push(c);
                         return None;
                     }
