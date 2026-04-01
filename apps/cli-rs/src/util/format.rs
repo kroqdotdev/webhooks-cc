@@ -34,7 +34,13 @@ pub fn format_iso(ts_ms: i64) -> String {
 /// Parse a duration string like "30s", "5m", "1h", "7d" into milliseconds.
 pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
     let input = input.trim();
+    if input.is_empty() {
+        anyhow::bail!("empty duration");
+    }
     if let Ok(ms) = input.parse::<i64>() {
+        if ms < 0 {
+            anyhow::bail!("duration must be positive");
+        }
         return Ok(ms);
     }
 
@@ -58,6 +64,9 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
         _ => anyhow::bail!("unknown duration unit: {unit} (use ms, s, m, h, or d)"),
     };
 
+    if ms < 0.0 {
+        anyhow::bail!("duration must be positive");
+    }
     Ok(ms as i64)
 }
 

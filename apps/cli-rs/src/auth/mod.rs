@@ -10,12 +10,11 @@ pub fn config_dir() -> Result<PathBuf> {
     Ok(base.join("whk"))
 }
 
-/// Returns `~/.config/whk/token.json`
 fn token_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("token.json"))
 }
 
-/// Save token to disk with restrictive permissions.
+/// Save token to disk with restrictive permissions set atomically.
 pub fn save_token(token: &Token) -> Result<()> {
     let dir = config_dir()?;
     fs::create_dir_all(&dir).context("failed to create config directory")?;
@@ -23,19 +22,31 @@ pub fn save_token(token: &Token) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let perms = fs::Permissions::from_mode(0o700);
-        fs::set_permissions(&dir, perms).ok();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).ok();
     }
 
     let path = token_path()?;
     let json = serde_json::to_string_pretty(token)?;
-    fs::write(&path, json).context("failed to write token file")?;
 
+    // Write with restrictive permissions from the start (no TOCTOU window)
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = fs::Permissions::from_mode(0o600);
-        fs::set_permissions(&path, perms).ok();
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .context("failed to create token file")?;
+        file.write_all(json.as_bytes())
+            .context("failed to write token file")?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::write(&path, json).context("failed to write token file")?;
     }
 
     Ok(())
@@ -79,7 +90,6 @@ mod tests {
 
     #[test]
     fn test_roundtrip_token() {
-        // Use a temp dir to avoid touching the real config
         let tmp = env::temp_dir().join("whk-test-auth");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();

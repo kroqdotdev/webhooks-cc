@@ -99,7 +99,9 @@ impl Screen for AuthScreen {
     fn handle_message(&mut self, msg: Message) {
         match msg {
             Message::DeviceCode(Ok(device)) => {
-                let _ = open::that(&device.verification_url);
+                if device.verification_url.starts_with("https://") {
+                    let _ = open::that(&device.verification_url);
+                }
 
                 let dc = device.device_code.clone();
                 self.state = State::Polling {

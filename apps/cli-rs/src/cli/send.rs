@@ -19,6 +19,11 @@ pub async fn send_to_endpoint(
     let body = match data {
         Some(d) if d.starts_with('@') => {
             let path = &d[1..];
+            let meta = std::fs::metadata(path)
+                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+            if meta.len() > 10 * 1024 * 1024 {
+                anyhow::bail!("file too large ({} bytes, max 10MB)", meta.len());
+            }
             Some(std::fs::read_to_string(path)
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?)
         }
@@ -68,6 +73,11 @@ pub async fn send_to_url(
     let body = match data {
         Some(d) if d.starts_with('@') => {
             let path = &d[1..];
+            let meta = std::fs::metadata(path)
+                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+            if meta.len() > 10 * 1024 * 1024 {
+                anyhow::bail!("file too large ({} bytes, max 10MB)", meta.len());
+            }
             Some(std::fs::read_to_string(path)
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?)
         }

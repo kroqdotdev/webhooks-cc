@@ -363,7 +363,7 @@ fn render_results(
         .map(|r| {
             let time = format_timestamp(r.received_at);
             Row::new(vec![
-                format!("  {}", &time[11..19]), // HH:MM:SS
+                format!("  {}", time.get(11..19).unwrap_or("??:??:??")),
                 r.method.clone(),
                 r.path.clone(),
                 format_bytes(r.size),

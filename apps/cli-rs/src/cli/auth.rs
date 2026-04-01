@@ -34,8 +34,10 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
         );
     }
 
-    // Try to open browser
-    let _ = open::that(&device.verification_url);
+    // Try to open browser (only if URL looks safe)
+    if device.verification_url.starts_with("https://") {
+        let _ = open::that(&device.verification_url);
+    }
 
     if !json {
         println!("\n  Waiting for authorization...");

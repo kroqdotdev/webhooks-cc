@@ -1,10 +1,14 @@
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use std::io::Read;
+use std::time::Duration;
 
 const GITHUB_RELEASES_URL: &str =
     "https://api.github.com/repos/kroqdotdev/webhooks-cc/releases/latest";
 const MAX_BINARY_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
+const ALLOWED_DOWNLOAD_HOST: &str = "github.com";
+const ALLOWED_DOWNLOAD_CDN: &str = ".githubusercontent.com";
 
 #[derive(Debug, Clone)]
 pub struct Release {
@@ -20,7 +24,10 @@ pub async fn check(current_version: &str) -> Result<Option<Release>> {
         return Ok(None);
     }
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
+
     let resp: serde_json::Value = client
         .get(GITHUB_RELEASES_URL)
         .header("User-Agent", format!("whk-cli/{current_version}"))
@@ -63,6 +70,10 @@ pub async fn check(current_version: &str) -> Result<Option<Release>> {
         .map(String::from)
         .context("no checksums.txt in release")?;
 
+    // Validate download URLs point to GitHub only
+    validate_github_url(&archive_url)?;
+    validate_github_url(&checksums_url)?;
+
     Ok(Some(Release {
         version: tag.to_string(),
         archive_url,
@@ -73,9 +84,11 @@ pub async fn check(current_version: &str) -> Result<Option<Release>> {
 
 /// Download, verify, and install the update.
 pub async fn apply(release: &Release) -> Result<()> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()?;
 
-    // Download checksums
+    // Download checksums (small file, OK to buffer)
     let checksums_text = client
         .get(&release.checksums_url)
         .send()
@@ -90,16 +103,24 @@ pub async fn apply(release: &Release) -> Result<()> {
         .context("checksum not found for archive")?
         .to_string();
 
-    // Download archive
-    let archive_bytes = client
-        .get(&release.archive_url)
-        .send()
-        .await?
-        .bytes()
-        .await?;
+    // Download archive with streaming + size limit
+    let resp = client.get(&release.archive_url).send().await?;
 
-    if archive_bytes.len() as u64 > MAX_BINARY_SIZE {
-        anyhow::bail!("archive too large ({} bytes)", archive_bytes.len());
+    // Check Content-Length before downloading
+    if let Some(content_length) = resp.content_length() {
+        if content_length > MAX_BINARY_SIZE {
+            anyhow::bail!("archive too large ({content_length} bytes, max {MAX_BINARY_SIZE})");
+        }
+    }
+
+    let mut archive_bytes = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("download error")?;
+        archive_bytes.extend_from_slice(&chunk);
+        if archive_bytes.len() as u64 > MAX_BINARY_SIZE {
+            anyhow::bail!("archive exceeds maximum size ({MAX_BINARY_SIZE} bytes)");
+        }
     }
 
     // Verify checksum
@@ -119,7 +140,6 @@ pub async fn apply(release: &Release) -> Result<()> {
     // Replace current binary
     let current_exe = std::env::current_exe().context("failed to find current executable")?;
 
-    // Write to temp file next to current binary, then rename
     let tmp_path = current_exe.with_extension("update-tmp");
     std::fs::write(&tmp_path, &binary_bytes).context("failed to write update binary")?;
 
@@ -129,7 +149,6 @@ pub async fn apply(release: &Release) -> Result<()> {
         std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    // Rename: current -> .old, tmp -> current
     let old_path = current_exe.with_extension("old");
     let _ = std::fs::remove_file(&old_path);
     std::fs::rename(&current_exe, &old_path)
@@ -141,28 +160,41 @@ pub async fn apply(release: &Release) -> Result<()> {
     Ok(())
 }
 
+fn validate_github_url(url: &str) -> Result<()> {
+    let parsed = reqwest::Url::parse(url).context("invalid download URL")?;
+    let host = parsed.host_str().unwrap_or("");
+    if parsed.scheme() != "https" {
+        anyhow::bail!("download URL must use HTTPS: {url}");
+    }
+    if host != ALLOWED_DOWNLOAD_HOST
+        && !host.ends_with(ALLOWED_DOWNLOAD_CDN)
+    {
+        anyhow::bail!("download URL must be from github.com: {url}");
+    }
+    Ok(())
+}
+
 fn archive_name_for_platform(tag: &str) -> String {
-    let os = std::env::consts::OS;
     let arch = match std::env::consts::ARCH {
         "x86_64" => "x86_64",
         "aarch64" => "aarch64",
         a => a,
     };
 
-    let target = match os {
+    let target = match std::env::consts::OS {
         "macos" => format!("{arch}-apple-darwin"),
         "linux" => format!("{arch}-unknown-linux-gnu"),
         "windows" => format!("{arch}-pc-windows-msvc"),
-        _ => format!("{arch}-unknown-{os}"),
+        os => format!("{arch}-unknown-{os}"),
     };
 
-    let ext = if os == "windows" { "zip" } else { "tar.gz" };
+    let ext = if std::env::consts::OS == "windows" { "zip" } else { "tar.gz" };
     format!("whk-{tag}-{target}.{ext}")
 }
 
 fn extract_binary(archive_bytes: &[u8], archive_name: &str) -> Result<Vec<u8>> {
     if archive_name.ends_with(".zip") {
-        extract_from_zip(archive_bytes)
+        anyhow::bail!("zip extraction not supported — use tar.gz archives")
     } else {
         extract_from_tar_gz(archive_bytes)
     }
@@ -174,25 +206,25 @@ fn extract_from_tar_gz(data: &[u8]) -> Result<Vec<u8>> {
 
     for entry in archive.entries()? {
         let mut entry = entry?;
+
+        // Only extract regular files
+        if entry.header().entry_type() != tar::EntryType::Regular {
+            continue;
+        }
+
         let path = entry.path()?;
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         if name == "whk" || name == "whk.exe" {
-            let mut buf = Vec::new();
+            let size = entry.header().size()?;
+            if size > MAX_BINARY_SIZE {
+                anyhow::bail!("binary in archive too large ({size} bytes)");
+            }
+            let mut buf = Vec::with_capacity(size as usize);
             entry.read_to_end(&mut buf)?;
             return Ok(buf);
         }
     }
 
     anyhow::bail!("whk binary not found in archive")
-}
-
-fn extract_from_zip(_data: &[u8]) -> Result<Vec<u8>> {
-    // Simple zip extraction — find the whk binary
-    // We don't have the zip crate, so fall back to tar.gz only platforms
-    // Windows users would need the zip crate added
-    anyhow::bail!("zip extraction not supported — use tar.gz archives")
 }

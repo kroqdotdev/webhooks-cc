@@ -169,13 +169,23 @@ pub struct PollResponse {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ClaimResponse {
     #[serde(rename = "apiKey")]
     pub api_key: String,
     #[serde(rename = "userId")]
     pub user_id: String,
     pub email: String,
+}
+
+impl std::fmt::Debug for ClaimResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClaimResponse")
+            .field("api_key", &"[REDACTED]")
+            .field("user_id", &self.user_id)
+            .field("email", &self.email)
+            .finish()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -207,11 +217,21 @@ pub struct SendResponse {
 // Auth token (stored on disk)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Token {
     pub access_token: String,
     pub user_id: String,
     pub email: String,
+}
+
+impl std::fmt::Debug for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Token")
+            .field("access_token", &"[REDACTED]")
+            .field("user_id", &self.user_id)
+            .field("email", &self.email)
+            .finish()
+    }
 }
 
 // ---------------------------------------------------------------------------

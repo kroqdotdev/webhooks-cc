@@ -43,7 +43,7 @@ pub async fn list(
             print_request_line(req);
         }
         if let Some(count) = result.count {
-            println!("\n  {} {count} total", dim("Showing up to {limit} of"));
+            println!("\n  {} {count} total", dim(&format!("Showing up to {limit} of")));
         }
     }
     Ok(())

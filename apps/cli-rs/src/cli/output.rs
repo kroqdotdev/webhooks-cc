@@ -1,116 +1,48 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::types::{CapturedRequest, Endpoint, UsageInfo};
 use crate::util::format::{format_bytes, format_timestamp};
 
-/// ANSI color helpers — these are no-ops when NO_COLOR is set.
-static mut NO_COLOR: bool = false;
+static NO_COLOR: AtomicBool = AtomicBool::new(false);
 
 pub fn set_no_color(val: bool) {
-    unsafe {
-        NO_COLOR = val;
-    }
+    NO_COLOR.store(val, Ordering::Relaxed);
 }
 
 fn no_color() -> bool {
-    unsafe { NO_COLOR }
+    NO_COLOR.load(Ordering::Relaxed)
 }
 
 pub fn bold(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[1m{s}\x1b[0m")
-    }
+    if no_color() { s.to_string() } else { format!("\x1b[1m{s}\x1b[0m") }
 }
 
 pub fn dim(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[2m{s}\x1b[0m")
-    }
+    if no_color() { s.to_string() } else { format!("\x1b[2m{s}\x1b[0m") }
 }
 
 pub fn green(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[32m{s}\x1b[0m")
-    }
-}
-
-pub fn blue(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[34m{s}\x1b[0m")
-    }
-}
-
-pub fn yellow(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[33m{s}\x1b[0m")
-    }
+    if no_color() { s.to_string() } else { format!("\x1b[32m{s}\x1b[0m") }
 }
 
 pub fn red(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[31m{s}\x1b[0m")
-    }
-}
-
-pub fn cyan(s: &str) -> String {
-    if no_color() {
-        s.to_string()
-    } else {
-        format!("\x1b[36m{s}\x1b[0m")
-    }
+    if no_color() { s.to_string() } else { format!("\x1b[31m{s}\x1b[0m") }
 }
 
 pub fn method_color(method: &str) -> String {
+    if no_color() {
+        return method.to_string();
+    }
     match method.to_uppercase().as_str() {
-        "GET" => green(method),
-        "POST" => blue(method),
-        "PUT" => yellow(method),
-        "DELETE" => red(method),
-        "PATCH" => cyan(method),
+        "GET" => format!("\x1b[32m{method}\x1b[0m"),
+        "POST" => format!("\x1b[34m{method}\x1b[0m"),
+        "PUT" => format!("\x1b[33m{method}\x1b[0m"),
+        "DELETE" => format!("\x1b[31m{method}\x1b[0m"),
+        "PATCH" => format!("\x1b[36m{method}\x1b[0m"),
         _ => method.to_string(),
     }
 }
 
-/// Print an endpoint table row.
-pub fn print_endpoint(ep: &Endpoint, webhook_url: &str) {
-    let name = ep.name.as_deref().unwrap_or("-");
-    let url = format!("{}/w/{}", webhook_url, ep.slug);
-
-    let team = if let Some(ref from) = ep.from_team {
-        format!("[-> {}]", from.team_name)
-    } else if !ep.shared_with.is_empty() {
-        format!(
-            "[{}]",
-            ep.shared_with
-                .iter()
-                .map(|t| t.team_name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    } else {
-        String::new()
-    };
-
-    println!(
-        "  {:<20} {:<20} {:<16} {}",
-        bold(&ep.slug),
-        dim(name),
-        dim(&team),
-        dim(&url),
-    );
-}
-
-/// Print endpoints as a table.
 pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
     if endpoints.is_empty() {
         println!("  No endpoints found.");
@@ -118,17 +50,22 @@ pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
     }
     println!(
         "  {:<20} {:<20} {:<16} {}",
-        dim("SLUG"),
-        dim("NAME"),
-        dim("TEAM"),
-        dim("URL"),
+        dim("SLUG"), dim("NAME"), dim("TEAM"), dim("URL"),
     );
     for ep in endpoints {
-        print_endpoint(ep, webhook_url);
+        let name = ep.name.as_deref().unwrap_or("-");
+        let url = format!("{}/w/{}", webhook_url, ep.slug);
+        let team = if let Some(ref from) = ep.from_team {
+            format!("[-> {}]", from.team_name)
+        } else if !ep.shared_with.is_empty() {
+            format!("[{}]", ep.shared_with.iter().map(|t| t.team_name.as_str()).collect::<Vec<_>>().join(", "))
+        } else {
+            String::new()
+        };
+        println!("  {:<20} {:<20} {:<16} {}", bold(&ep.slug), dim(name), dim(&team), dim(&url));
     }
 }
 
-/// Print a single request summary line.
 pub fn print_request_line(req: &CapturedRequest) {
     let time = format_timestamp(req.received_at);
     let method = method_color(&req.method);
@@ -136,7 +73,6 @@ pub fn print_request_line(req: &CapturedRequest) {
     println!("  {} {} {} {}", dim(&time), method, req.path, dim(&size));
 }
 
-/// Print full request details.
 pub fn print_request_detail(req: &CapturedRequest) {
     println!("{}", bold("Request Details"));
     println!("  {} {}", dim("ID:"), req.id);
@@ -167,7 +103,6 @@ pub fn print_request_detail(req: &CapturedRequest) {
 
     if let Some(ref body) = req.body {
         println!("\n{}", bold("Body"));
-        // Try pretty-print JSON
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
             println!("{}", serde_json::to_string_pretty(&val).unwrap_or_else(|_| body.clone()));
         } else {
@@ -176,16 +111,12 @@ pub fn print_request_detail(req: &CapturedRequest) {
     }
 }
 
-/// Print usage info.
 pub fn print_usage(usage: &UsageInfo) {
     println!("{}", bold("Usage"));
     println!("  {} {}", dim("Plan:"), usage.plan);
     println!(
         "  {} {}/{} ({} remaining)",
-        dim("Requests:"),
-        usage.used,
-        usage.limit,
-        usage.remaining
+        dim("Requests:"), usage.used, usage.limit, usage.remaining
     );
     if let Some(pe) = usage.period_end {
         println!("  {} {}", dim("Period ends:"), format_timestamp(pe));

@@ -41,17 +41,16 @@ pub struct Tunnel {
 }
 
 impl Tunnel {
-    pub fn new(target_base: String, extra_headers: HashMap<String, String>) -> Self {
+    pub fn new(target_base: String, extra_headers: HashMap<String, String>) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .expect("failed to create HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             http,
             target_base,
             extra_headers,
-        }
+        })
     }
 
     /// Forward a captured request to the local target. Returns the result.

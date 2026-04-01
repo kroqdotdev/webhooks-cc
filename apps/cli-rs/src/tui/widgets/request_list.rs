@@ -85,7 +85,7 @@ impl StatefulWidget for RequestList<'_> {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        if inner.height == 0 || state.items.is_empty() {
+        if inner.height == 0 || inner.width == 0 || state.items.is_empty() {
             if state.items.is_empty() {
                 let msg = Span::styled("  Waiting for requests...", theme::style_muted());
                 if inner.height > 0 {
@@ -153,8 +153,9 @@ impl StatefulWidget for RequestList<'_> {
 
             // Fill remaining width with bg
             let rendered_width: u16 = line.width() as u16;
-            if rendered_width < inner.width {
-                for x in (inner.x + rendered_width)..=(inner.x + inner.width - 1) {
+            if rendered_width < inner.width && inner.width > 0 {
+                let end = inner.x + inner.width.saturating_sub(1);
+                for x in (inner.x + rendered_width)..=end {
                     buf[(x, y)].set_bg(bg);
                 }
             }

@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use futures::StreamExt;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::ApiClient;
 use crate::types::{CapturedRequest, SseEvent};
+
+const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MB
 
 impl ApiClient {
     /// Connect to the SSE stream for an endpoint and send events to the channel.
@@ -16,8 +19,8 @@ impl ApiClient {
         self.require_auth()?;
         let headers = self.auth_headers()?;
 
-        // SSE needs a client with no timeout — the connection stays open indefinitely
         let sse_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
             .build()
             .context("failed to create SSE client")?;
 
@@ -45,18 +48,25 @@ impl ApiClient {
             let chunk = chunk.context("stream read error")?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
+            // Guard against unbounded buffer growth
+            if buffer.len() > MAX_BUFFER_SIZE {
+                buffer.clear();
+                event_type.clear();
+                data_lines.clear();
+                continue;
+            }
+
             while let Some(newline_pos) = buffer.find('\n') {
                 let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-                buffer = buffer[newline_pos + 1..].to_string();
+                buffer.drain(..newline_pos + 1);
 
                 if line.is_empty() {
-                    // Dispatch event
                     if !data_lines.is_empty() {
                         let data = data_lines.join("\n");
                         let event = parse_sse_event(&event_type, &data);
                         if let Some(ev) = event {
                             if tx.send(ev).await.is_err() {
-                                return Ok(()); // receiver dropped
+                                return Ok(());
                             }
                         }
                     }
@@ -66,9 +76,8 @@ impl ApiClient {
                     event_type = rest.trim().to_string();
                 } else if let Some(rest) = line.strip_prefix("data:") {
                     data_lines.push(rest.trim_start().to_string());
-                } else if line.starts_with(':') {
-                    // Comment / keepalive — ignore
                 }
+                // Comments (lines starting with ':') are silently ignored
             }
         }
 
@@ -79,7 +88,6 @@ impl ApiClient {
 fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
     match event_type {
         "connected" => {
-            // Data is JSON: {"slug":"...","endpointId":"..."} — just validate it parses
             let _: serde_json::Value = serde_json::from_str(data).ok()?;
             Some(SseEvent::Connected)
         }
@@ -90,7 +98,6 @@ fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
         "endpoint_deleted" => Some(SseEvent::EndpointDeleted),
         "timeout" => Some(SseEvent::Timeout),
         _ => {
-            // Try parsing as a request if no explicit event type
             if !data.is_empty() {
                 if let Ok(req) = serde_json::from_str::<CapturedRequest>(data) {
                     return Some(SseEvent::Request(req));

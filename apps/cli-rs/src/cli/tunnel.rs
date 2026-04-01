@@ -60,7 +60,7 @@ pub async fn run(
         println!("  {}\n", dim("Press Ctrl+C to stop."));
     }
 
-    let tunnel = Tunnel::new(target_url, extra_headers);
+    let tunnel = Tunnel::new(target_url, extra_headers)?;
 
     // SSE stream
     let (tx, mut rx) = mpsc::channel(64);

@@ -171,7 +171,7 @@ impl Screen for TunnelScreen {
 
                 // Forward the request
                 if let Some(ref target) = self.target_url {
-                    let tunnel = Tunnel::new(target.clone(), HashMap::new());
+                    let Ok(tunnel) = Tunnel::new(target.clone(), HashMap::new()) else { return };
                     if let Some(ref tx) = self.tx {
                         let tx = tx.clone();
                         let rid = req_id.clone();

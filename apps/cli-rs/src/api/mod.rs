@@ -19,12 +19,22 @@ const DEFAULT_WEBHOOK_URL: &str = "https://go.webhooks.cc";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Central API client. Holds the HTTP client, base URLs, and auth token.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ApiClient {
     pub http: reqwest::Client,
     pub base_url: String,
     pub webhook_url: String,
     token: Option<String>,
+}
+
+impl std::fmt::Debug for ApiClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiClient")
+            .field("base_url", &self.base_url)
+            .field("webhook_url", &self.webhook_url)
+            .field("token", &self.token.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 impl ApiClient {
