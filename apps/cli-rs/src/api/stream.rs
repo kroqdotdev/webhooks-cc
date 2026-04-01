@@ -16,8 +16,12 @@ impl ApiClient {
         self.require_auth()?;
         let headers = self.auth_headers()?;
 
-        let resp = self
-            .http
+        // SSE needs a client with no timeout — the connection stays open indefinitely
+        let sse_client = reqwest::Client::builder()
+            .build()
+            .context("failed to create SSE client")?;
+
+        let resp = sse_client
             .get(self.url(&format!("/api/stream/{slug}")))
             .headers(headers)
             .header("Accept", "text/event-stream")
