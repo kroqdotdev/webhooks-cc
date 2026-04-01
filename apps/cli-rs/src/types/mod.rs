@@ -272,7 +272,7 @@ impl fmt::Display for ForwardResult {
 #[derive(Debug, Clone)]
 pub enum SseEvent {
     Connected,
-    Request(CapturedRequest),
+    Request(Box<CapturedRequest>),
     EndpointDeleted,
     Timeout,
 }

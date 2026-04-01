@@ -17,6 +17,12 @@ pub struct RequestListState {
     pub items: Vec<CapturedRequest>,
 }
 
+impl Default for RequestListState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RequestListState {
     pub fn new() -> Self {
         Self {

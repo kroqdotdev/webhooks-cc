@@ -78,12 +78,10 @@ impl Screen for ListenScreen {
                     return None;
                 }
                 if keys::is_enter(key) {
-                    if let Some(i) = self.table_state.selected() {
-                        if let Some(ep) = self.endpoints.get(i) {
-                            self.slug = Some(ep.slug.clone());
-                            self.state = State::Connecting;
-                            self.start_stream();
-                        }
+                    if let Some(i) = self.table_state.selected() && let Some(ep) = self.endpoints.get(i) {
+                        self.slug = Some(ep.slug.clone());
+                        self.state = State::Connecting;
+                        self.start_stream();
                     }
                     return None;
                 }
@@ -100,10 +98,8 @@ impl Screen for ListenScreen {
                     self.requests.select_next();
                     return None;
                 }
-                if keys::is_enter(key) {
-                    if let Some(req) = self.requests.selected_item() {
-                        return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
-                    }
+                if keys::is_enter(key) && let Some(req) = self.requests.selected_item() {
+                    return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
                 }
             }
             State::Error(_) => {
@@ -139,7 +135,7 @@ impl Screen for ListenScreen {
             }
             Message::SseEvent(SseEvent::Request(req)) => {
                 self.state = State::Streaming;
-                self.requests.push(req);
+                self.requests.push(*req);
             }
             Message::SseEvent(SseEvent::EndpointDeleted) => {
                 self.state = State::Error("Endpoint was deleted.".into());

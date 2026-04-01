@@ -176,10 +176,8 @@ impl App {
             screen.on_leave();
 
             // Refresh the menu auth email when returning
-            if let Some(menu) = self.screen_stack.last_mut() {
-                if let Some(menu_screen) = menu.as_any_mut().downcast_mut::<screens::menu::MenuScreen>() {
-                    menu_screen.set_auth_email(self.auth_email.clone());
-                }
+            if let Some(menu) = self.screen_stack.last_mut() && let Some(menu_screen) = menu.as_any_mut().downcast_mut::<screens::menu::MenuScreen>() {
+                menu_screen.set_auth_email(self.auth_email.clone());
             }
         }
     }

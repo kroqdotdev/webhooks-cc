@@ -70,16 +70,14 @@ impl Screen for AuthScreen {
                     }
                 } else {
                     // Not logged in — press 'l' to login
-                    if keys::is_char(key, 'l') {
-                        if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
-                            let tx = tx.clone();
-                            let client = client.clone();
-                            let handle = tokio::spawn(async move {
-                                let result = client.create_device_code().await;
-                                let _ = tx.send(Message::DeviceCode(result));
-                            });
-                            self.tasks.push(handle);
-                        }
+                    if keys::is_char(key, 'l') && let (Some(tx), Some(client)) = (&self.tx, &self.client) {
+                        let tx = tx.clone();
+                        let client = client.clone();
+                        let handle = tokio::spawn(async move {
+                            let result = client.create_device_code().await;
+                            let _ = tx.send(Message::DeviceCode(result));
+                        });
+                        self.tasks.push(handle);
                     }
                 }
             }

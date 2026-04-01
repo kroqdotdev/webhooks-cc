@@ -113,10 +113,8 @@ impl Screen for TunnelScreen {
                     self.requests.select_next();
                     return None;
                 }
-                if keys::is_enter(key) {
-                    if let Some(req) = self.requests.selected_item() {
-                        return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
-                    }
+                if keys::is_enter(key) && let Some(req) = self.requests.selected_item() {
+                    return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
                 }
             }
             State::Connecting => {
@@ -169,8 +167,8 @@ impl Screen for TunnelScreen {
             }
             Message::SseEvent(SseEvent::Request(req)) => {
                 let req_id = req.id.clone();
-                let req_for_fwd = req.clone();
-                self.requests.push(req);
+                let req_for_fwd = (*req).clone();
+                self.requests.push(*req);
 
                 // Forward the request
                 if let Some(ref target) = self.target_url {

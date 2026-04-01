@@ -115,10 +115,8 @@ impl ApiClient {
 
 /// Extract an error message from an API error response body.
 pub fn extract_error(status: reqwest::StatusCode, body: &str) -> String {
-    if let Ok(err) = serde_json::from_str::<ApiErrorBody>(body) {
-        if !err.error.is_empty() {
-            return format!("{} ({})", err.error, status);
-        }
+    if let Ok(err) = serde_json::from_str::<ApiErrorBody>(body) && !err.error.is_empty() {
+        return format!("{} ({})", err.error, status);
     }
     let preview: String = body.chars().take(200).collect();
     format!("HTTP {status}: {preview}")

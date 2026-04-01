@@ -30,6 +30,12 @@ pub struct UsageScreen {
     tick: usize,
 }
 
+impl Default for UsageScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UsageScreen {
     pub fn new() -> Self {
         Self {

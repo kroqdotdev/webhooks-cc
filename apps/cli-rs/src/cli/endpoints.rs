@@ -7,6 +7,7 @@ use crate::cli::output::{bold, dim, green, print_endpoint_table, red};
 use crate::types::{CreateEndpointRequest, MockResponse, UpdateEndpointRequest};
 use crate::util::format::parse_duration;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create(
     client: &ApiClient,
     name: Option<String>,
@@ -98,6 +99,7 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_endpoint(
     client: &ApiClient,
     slug: &str,

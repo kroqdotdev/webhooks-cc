@@ -44,8 +44,8 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
         return Ok(ms);
     }
 
-    let (num_str, unit) = if input.ends_with("ms") {
-        (&input[..input.len() - 2], "ms")
+    let (num_str, unit) = if let Some(prefix) = input.strip_suffix("ms") {
+        (prefix, "ms")
     } else {
         let last = &input[input.len() - 1..];
         (&input[..input.len() - 1], last)

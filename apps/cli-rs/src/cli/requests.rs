@@ -59,6 +59,7 @@ pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn search(
     client: &ApiClient,
     slug: Option<&str>,

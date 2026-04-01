@@ -47,6 +47,12 @@ pub struct SearchScreen {
     tick: usize,
 }
 
+impl Default for SearchScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchScreen {
     pub fn new() -> Self {
         Self {
@@ -170,10 +176,8 @@ impl Screen for SearchScreen {
                     return None;
                 }
                 if keys::is_enter(key) {
-                    if let Some(i) = self.table_state.selected() {
-                        if let Some(req) = self.results.get(i) {
-                            return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
-                        }
+                    if let Some(i) = self.table_state.selected() && let Some(req) = self.results.get(i) {
+                        return Some(Action::Navigate(ScreenId::RequestDetail(req.id.clone())));
                     }
                     return None;
                 }

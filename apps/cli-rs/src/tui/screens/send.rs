@@ -43,6 +43,12 @@ pub struct SendScreen {
     tick: usize,
 }
 
+impl Default for SendScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SendScreen {
     pub fn new() -> Self {
         Self {
@@ -222,23 +228,21 @@ impl Screen for SendScreen {
                     ]),
                 ];
 
-                if let Some(ref body) = resp.body {
-                    if !body.is_empty() {
-                        lines.push(Line::from(""));
-                        lines.push(Line::from(Span::styled("  Response:", theme::style_muted())));
+                if let Some(ref body) = resp.body && !body.is_empty() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(Span::styled("  Response:", theme::style_muted())));
 
-                        // Pretty-print JSON if possible
-                        let formatted = if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-                            serde_json::to_string_pretty(&val).unwrap_or_else(|_| body.clone())
-                        } else {
-                            body.clone()
-                        };
-                        for line in formatted.lines().take(20) {
-                            lines.push(Line::from(Span::styled(
-                                format!("  {line}"),
-                                theme::style_dim(),
-                            )));
-                        }
+                    // Pretty-print JSON if possible
+                    let formatted = if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
+                        serde_json::to_string_pretty(&val).unwrap_or_else(|_| body.clone())
+                    } else {
+                        body.clone()
+                    };
+                    for line in formatted.lines().take(20) {
+                        lines.push(Line::from(Span::styled(
+                            format!("  {line}"),
+                            theme::style_dim(),
+                        )));
                     }
                 }
 

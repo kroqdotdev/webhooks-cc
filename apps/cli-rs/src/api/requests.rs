@@ -67,6 +67,7 @@ impl ApiClient {
         serde_json::from_str(&resp.body).context("failed to parse request")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn search_requests(
         &self,
         slug: Option<&str>,

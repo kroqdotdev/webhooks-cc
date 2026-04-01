@@ -50,10 +50,8 @@ pub async fn send_to_endpoint(
             red(&format!("{} {}", resp.status, resp.status_text))
         };
         println!("  {} Sent {} to {} -> {}", green("✓"), bold(method), bold(slug), status_str);
-        if let Some(ref body) = resp.body {
-            if !body.is_empty() {
-                println!("\n{}", dim(&body.chars().take(500).collect::<String>()));
-            }
+        if let Some(ref body) = resp.body && !body.is_empty() {
+            println!("\n{}", dim(&body.chars().take(500).collect::<String>()));
         }
     }
 

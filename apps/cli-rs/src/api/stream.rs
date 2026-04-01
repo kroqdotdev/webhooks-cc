@@ -64,10 +64,8 @@ impl ApiClient {
                     if !data_lines.is_empty() {
                         let data = data_lines.join("\n");
                         let event = parse_sse_event(&event_type, &data);
-                        if let Some(ev) = event {
-                            if tx.send(ev).await.is_err() {
-                                return Ok(());
-                            }
+                        if let Some(ev) = event && tx.send(ev).await.is_err() {
+                            return Ok(());
                         }
                     }
                     event_type.clear();
@@ -93,15 +91,13 @@ fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
         }
         "request" => {
             let req: CapturedRequest = serde_json::from_str(data).ok()?;
-            Some(SseEvent::Request(req))
+            Some(SseEvent::Request(Box::new(req)))
         }
         "endpoint_deleted" => Some(SseEvent::EndpointDeleted),
         "timeout" => Some(SseEvent::Timeout),
         _ => {
-            if !data.is_empty() {
-                if let Ok(req) = serde_json::from_str::<CapturedRequest>(data) {
-                    return Some(SseEvent::Request(req));
-                }
+            if !data.is_empty() && let Ok(req) = serde_json::from_str::<CapturedRequest>(data) {
+                return Some(SseEvent::Request(Box::new(req)));
             }
             None
         }

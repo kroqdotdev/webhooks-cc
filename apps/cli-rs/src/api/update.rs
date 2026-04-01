@@ -107,10 +107,8 @@ pub async fn apply(release: &Release) -> Result<()> {
     let resp = client.get(&release.archive_url).send().await?;
 
     // Check Content-Length before downloading
-    if let Some(content_length) = resp.content_length() {
-        if content_length > MAX_BINARY_SIZE {
-            anyhow::bail!("archive too large ({content_length} bytes, max {MAX_BINARY_SIZE})");
-        }
+    if let Some(content_length) = resp.content_length() && content_length > MAX_BINARY_SIZE {
+        anyhow::bail!("archive too large ({content_length} bytes, max {MAX_BINARY_SIZE})");
     }
 
     let mut archive_bytes = Vec::new();
@@ -175,11 +173,7 @@ fn validate_github_url(url: &str) -> Result<()> {
 }
 
 fn archive_name_for_platform(tag: &str) -> String {
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x86_64",
-        "aarch64" => "aarch64",
-        a => a,
-    };
+    let arch = std::env::consts::ARCH;
 
     let target = match std::env::consts::OS {
         "macos" => format!("{arch}-apple-darwin"),

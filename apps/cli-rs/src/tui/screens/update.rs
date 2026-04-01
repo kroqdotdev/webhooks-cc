@@ -35,6 +35,12 @@ pub struct UpdateScreen {
 // want to add more message variants. Use a simple channel instead.
 // Actually, let's just use tokio::spawn with a flag.
 
+impl Default for UpdateScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpdateScreen {
     pub fn new() -> Self {
         Self {

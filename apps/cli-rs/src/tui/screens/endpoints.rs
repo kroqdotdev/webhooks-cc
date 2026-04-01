@@ -137,10 +137,8 @@ impl Screen for EndpointsScreen {
         }
 
         if keys::is_enter(key) {
-            if let Some(i) = self.table_state.selected() {
-                if let Some(ep) = self.endpoints.get(i) {
-                    return Some(Action::Navigate(ScreenId::EndpointDetail(ep.slug.clone())));
-                }
+            if let Some(i) = self.table_state.selected() && let Some(ep) = self.endpoints.get(i) {
+                return Some(Action::Navigate(ScreenId::EndpointDetail(ep.slug.clone())));
             }
             return None;
         }
