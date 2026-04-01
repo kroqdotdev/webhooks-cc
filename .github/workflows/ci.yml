@@ -82,37 +82,51 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
 
-  build-go:
-    name: Build Go CLI
+  build-cli:
+    name: Build Rust CLI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v5
         with:
-          go-version-file: apps/cli/go.mod
-          cache-dependency-path: apps/cli/go.sum
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/cli-rs/target
+          key: ${{ runner.os }}-cargo-cli-${{ hashFiles('apps/cli-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-
 
-      - name: Build CLI
-        run: go build ./...
-        working-directory: apps/cli
+      - name: Build
+        run: cargo build
+        working-directory: apps/cli-rs
 
-  test-go:
-    name: Test Go CLI
+  test-cli:
+    name: Test Rust CLI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v5
         with:
-          go-version-file: apps/cli/go.mod
-          cache-dependency-path: apps/cli/go.sum
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/cli-rs/target
+          key: ${{ runner.os }}-cargo-cli-${{ hashFiles('apps/cli-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-
 
       - name: Run tests
-        run: go test -v -race ./...
-        working-directory: apps/cli
+        run: cargo test --verbose
+        working-directory: apps/cli-rs
 
   build-rust:
     name: Build Rust Receiver
@@ -185,20 +199,27 @@ jobs:
         run: cargo clippy -- -D warnings
         working-directory: apps/receiver-rs
 
-  lint-go:
-    name: Lint Go CLI
+  lint-cli:
+    name: Lint Rust CLI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: apps/cli/go.mod
-          cache-dependency-path: apps/cli/go.sum
+          components: clippy
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
+      - name: Cache cargo
+        uses: actions/cache@v5
         with:
-          version: latest
-          working-directory: apps/cli
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/cli-rs/target
+          key: ${{ runner.os }}-cargo-cli-${{ hashFiles('apps/cli-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+        working-directory: apps/cli-rs

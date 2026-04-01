@@ -15,7 +15,7 @@ dev-receiver:
 	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
 
 dev-cli:
-	cd apps/cli && go run ./cmd/whk $(ARGS)
+	cd apps/cli-rs && cargo run -- $(ARGS)
 
 # Production (systemd services + mprocs log viewer)
 prod:
@@ -41,7 +41,7 @@ prod-restart:
 build:
 	pnpm build
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
-	cd apps/cli && go build -o ../../dist/whk ./cmd/whk
+	cd apps/cli-rs && cargo build --release && cp target/release/whk ../../dist/whk
 
 build-receiver:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
@@ -72,18 +72,18 @@ deploy-collector:
 deploy-all: deploy-receiver deploy-web
 
 build-cli:
-	cd apps/cli && goreleaser build --snapshot --clean
+	cd apps/cli-rs && cargo build --release
 
 # Test
 test:
 	pnpm test
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo test
-	cd apps/cli && go test ./...
+	cd apps/cli-rs && cargo test
 
 # Lint
 lint:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
-	cd apps/cli && golangci-lint run
+	cd apps/cli-rs && cargo clippy -- -D warnings
 
 # Start (alias for prod — ensures services are running + opens log viewer)
 start:
