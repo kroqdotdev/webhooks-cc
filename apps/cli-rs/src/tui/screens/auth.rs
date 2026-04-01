@@ -46,7 +46,6 @@ impl AuthScreen {
             tasks: Vec::new(),
         }
     }
-
 }
 
 impl Screen for AuthScreen {
@@ -63,7 +62,10 @@ impl Screen for AuthScreen {
                 if self.auth_email.is_some() {
                     // Logged in — press 'o' to logout
                     if keys::is_char(key, 'o') {
-                        let _ = auth::clear_token();
+                        if let Err(e) = auth::clear_token() {
+                            self.state = State::Error(format!("Failed to clear token: {e}"));
+                            return None;
+                        }
                         self.auth_email = None;
                         self.state = State::Idle;
                         return Some(Action::SetAuthEmail(None));
@@ -86,8 +88,14 @@ impl Screen for AuthScreen {
                     copy_to_clipboard(user_code);
                 }
             }
-            State::Success(_) | State::Error(_) => {
-                // Any key goes back to idle
+            State::Success(email) => {
+                if keys::is_enter(key) {
+                    let email = email.clone();
+                    self.state = State::Idle;
+                    return Some(Action::SetAuthEmail(Some(email)));
+                }
+            }
+            State::Error(_) => {
                 if keys::is_enter(key) {
                     self.state = State::Idle;
                 }
@@ -160,9 +168,12 @@ impl Screen for AuthScreen {
                     user_id: claim.user_id,
                     email: claim.email.clone(),
                 };
-                let _ = auth::save_token(&token);
+                if let Err(e) = auth::save_token(&token) {
+                    self.state = State::Error(format!("Failed to save token: {e}"));
+                    return;
+                }
                 self.auth_email = Some(claim.email.clone());
-                self.state = State::Success(claim.email.clone());
+                self.state = State::Success(claim.email);
             }
             Message::AuthClaimed(Err(e)) => {
                 self.state = State::Error(e.to_string());

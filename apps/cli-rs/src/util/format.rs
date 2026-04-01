@@ -47,8 +47,15 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
     let (num_str, unit) = if let Some(prefix) = input.strip_suffix("ms") {
         (prefix, "ms")
     } else {
-        let last = &input[input.len() - 1..];
-        (&input[..input.len() - 1], last)
+        // Split at the last char boundary safely
+        let mut chars = input.char_indices();
+        let (last_idx, last_char) = chars
+            .next_back()
+            .ok_or_else(|| anyhow::anyhow!("invalid duration: {input}"))?;
+        if !last_char.is_ascii_alphabetic() {
+            anyhow::bail!("invalid duration unit in: {input}");
+        }
+        (&input[..last_idx], &input[last_idx..])
     };
 
     let num: f64 = num_str
@@ -100,6 +107,8 @@ mod tests {
     fn test_parse_duration_rejects_invalid() {
         assert!(parse_duration("").is_err());
         assert!(parse_duration("-5s").is_err());
+        assert!(parse_duration("5秒").is_err());
+        assert!(parse_duration("1🙂").is_err());
         assert!(parse_duration("abc").is_err());
         assert!(parse_duration("NaNs").is_err());
         assert!(parse_duration("Infinitys").is_err());
