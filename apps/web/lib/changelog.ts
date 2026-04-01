@@ -16,7 +16,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.14.0";
-export const CLI_VERSION = "0.6.0";
+export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
@@ -290,6 +290,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.0.0",
+    date: "2026-04-01",
+    title: "Rust Rewrite",
+    track: "cli",
+    items: [
+      "Complete rewrite from Go to Rust for faster startup and smaller binaries",
+      "Full feature parity: tunnel, listen, auth, endpoints, requests, replay, send, update",
+      "Interactive TUI with ratatui (search, endpoint detail, request viewer)",
+      "Request search and filtering in TUI",
+      "Send webhooks with provider template signing from TUI",
+    ],
+  },
   {
     version: "0.6.0",
     date: "2026-03-28",

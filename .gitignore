@@ -64,3 +64,4 @@ dump.rdb
 
 # Load test env
 .env.loadtest
+.claude/worktrees/

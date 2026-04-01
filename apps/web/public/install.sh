@@ -56,10 +56,19 @@ esac
 # Detect architecture
 ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64)  ARCH="amd64" ;;
-  aarch64) ARCH="arm64" ;;
-  arm64)   ARCH="arm64" ;;
+  x86_64)  ARCH="x86_64" ;;
+  aarch64) ARCH="aarch64" ;;
+  arm64)   ARCH="aarch64" ;;
   *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+# Map OS/arch to Rust target triple
+case "${OS}_${ARCH}" in
+  linux_x86_64)   TARGET="x86_64-unknown-linux-gnu" ;;
+  linux_aarch64)  TARGET="aarch64-unknown-linux-gnu" ;;
+  darwin_x86_64)  TARGET="x86_64-apple-darwin" ;;
+  darwin_aarch64) TARGET="aarch64-apple-darwin" ;;
+  *)              echo "Unsupported platform: ${OS}/${ARCH}"; exit 1 ;;
 esac
 
 # Build auth header for GitHub API if token is available
@@ -85,13 +94,13 @@ case "$VERSION" in
   *) echo "Error: unexpected version format: $VERSION" >&2; exit 1 ;;
 esac
 
-FILENAME="${BINARY}_${OS}_${ARCH}.tar.gz"
+FILENAME="${BINARY}-${VERSION}-${TARGET}.tar.gz"
 RELEASE_BASE="https://github.com/$REPO/releases/download/${VERSION}"
 URL="${RELEASE_BASE}/${FILENAME}"
 CHECKSUMS_URL="${RELEASE_BASE}/checksums.txt"
 SIGSTORE_BUNDLE_URL="${RELEASE_BASE}/checksums.txt.sigstore.json"
 
-echo "Preparing install for $BINARY $VERSION ($OS/$ARCH)..."
+echo "Preparing install for $BINARY $VERSION ($TARGET)..."
 
 WHK_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$WHK_TMPDIR"' EXIT
