@@ -11,13 +11,12 @@ pub async fn run(
     client: &ApiClient,
     target: &str,
     endpoint_slug: Option<&str>,
-    ephemeral: bool,
+    _ephemeral: bool,
     headers: Vec<String>,
     json: bool,
 ) -> Result<()> {
     let target_url = parse_target(target)?;
 
-    // Parse extra headers
     let mut extra_headers = HashMap::new();
     for h in &headers {
         let (k, v) = h
@@ -71,69 +70,64 @@ pub async fn run(
         stream_client.stream_requests(&stream_slug, tx).await
     });
 
-    // Handle Ctrl+C
-    let cleanup_slug = slug.clone();
-    let cleanup_client = client.clone();
-    let cleanup_created = created; // only delete endpoints we created
+    // Process events until Ctrl+C or stream ends
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                let Some(event) = event else { break };
+                match event {
+                    SseEvent::Request(req) => {
+                        let method = req.method.clone();
+                        let path = req.path.clone();
+                        let result = tunnel.forward(&req).await;
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        if cleanup_created {
-            let _ = cleanup_client.delete_endpoint(&cleanup_slug).await;
-        }
-        std::process::exit(0);
-    });
-
-    // Process events
-    while let Some(event) = rx.recv().await {
-        match event {
-            SseEvent::Request(req) => {
-                let method = req.method.clone();
-                let path = req.path.clone();
-                let result = tunnel.forward(&req).await;
-
-                if json {
-                    println!(
-                        "{}",
-                        serde_json::json!({
-                            "event": "forwarded",
-                            "method": method,
-                            "path": path,
-                            "status": result.status_code,
-                            "duration_ms": result.duration.as_millis(),
-                            "success": result.success,
-                        })
-                    );
-                } else {
-                    let time = chrono::Local::now().format("%H:%M:%S");
-                    let status = if result.success {
-                        green(&result.to_string())
-                    } else {
-                        red(&result.to_string())
-                    };
-                    println!(
-                        "  {} {} {} -> {}",
-                        dim(&time.to_string()),
-                        method_color(&method),
-                        path,
-                        status,
-                    );
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "event": "forwarded",
+                                    "method": method,
+                                    "path": path,
+                                    "status": result.status_code,
+                                    "duration_ms": result.duration.as_millis(),
+                                    "success": result.success,
+                                })
+                            );
+                        } else {
+                            let time = chrono::Local::now().format("%H:%M:%S");
+                            let status = if result.success {
+                                green(&result.to_string())
+                            } else {
+                                red(&result.to_string())
+                            };
+                            println!(
+                                "  {} {} {} -> {}",
+                                dim(&time.to_string()),
+                                method_color(&method),
+                                path,
+                                status,
+                            );
+                        }
+                    }
+                    SseEvent::EndpointDeleted => {
+                        if json {
+                            println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
+                        } else {
+                            println!("\n  {} Endpoint was deleted.", red("●"));
+                        }
+                        break;
+                    }
+                    SseEvent::Timeout => {
+                        if !json {
+                            println!("\n  {} Stream timed out.", dim("●"));
+                        }
+                    }
+                    SseEvent::Connected => {}
                 }
             }
-            SseEvent::EndpointDeleted => {
-                if json {
-                    println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
-                } else {
-                    println!("\n  {} Endpoint was deleted.", red("●"));
-                }
+            _ = tokio::signal::ctrl_c() => {
                 break;
             }
-            SseEvent::Timeout => {
-                if !json {
-                    println!("\n  {} Stream timed out, reconnecting...", dim("●"));
-                }
-            }
-            SseEvent::Connected => {}
         }
     }
 

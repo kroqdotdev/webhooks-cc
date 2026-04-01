@@ -201,7 +201,7 @@ fn render_menu_items(frame: &mut Frame, area: Rect, selected: usize) {
         }
 
         let is_selected = i == selected;
-        let y = inner.y + (i as u16 * 2).min(inner.height - 1);
+        let y = inner.y + (i as u16 * 2).min(inner.height.saturating_sub(1));
 
         if y >= inner.y + inner.height {
             break;

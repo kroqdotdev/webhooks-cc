@@ -22,42 +22,45 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
         stream_client.stream_requests(&stream_slug, tx).await
     });
 
-    // Ctrl+C handler
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        std::process::exit(0);
-    });
-
-    while let Some(event) = rx.recv().await {
-        match event {
-            SseEvent::Request(req) => {
-                if json {
-                    println!("{}", serde_json::to_string(&req)?);
-                } else {
-                    let time = chrono::Local::now().format("%H:%M:%S");
-                    println!(
-                        "  {} {} {} {}",
-                        dim(&time.to_string()),
-                        method_color(&req.method),
-                        req.path,
-                        dim(&format_bytes(req.size)),
-                    );
+    // Process events until Ctrl+C or stream ends
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                let Some(event) = event else { break };
+                match event {
+                    SseEvent::Request(req) => {
+                        if json {
+                            println!("{}", serde_json::to_string(&req).unwrap_or_default());
+                        } else {
+                            let time = chrono::Local::now().format("%H:%M:%S");
+                            println!(
+                                "  {} {} {} {}",
+                                dim(&time.to_string()),
+                                method_color(&req.method),
+                                req.path,
+                                dim(&format_bytes(req.size)),
+                            );
+                        }
+                    }
+                    SseEvent::EndpointDeleted => {
+                        if json {
+                            println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
+                        } else {
+                            println!("\n  {} Endpoint was deleted.", red("●"));
+                        }
+                        break;
+                    }
+                    SseEvent::Timeout => {
+                        if !json {
+                            println!("  {} Stream timed out.", dim("●"));
+                        }
+                    }
+                    SseEvent::Connected => {}
                 }
             }
-            SseEvent::EndpointDeleted => {
-                if json {
-                    println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
-                } else {
-                    println!("\n  {} Endpoint was deleted.", red("●"));
-                }
+            _ = tokio::signal::ctrl_c() => {
                 break;
             }
-            SseEvent::Timeout => {
-                if !json {
-                    println!("  {} Stream timed out, reconnecting...", dim("●"));
-                }
-            }
-            SseEvent::Connected => {}
         }
     }
 

@@ -228,3 +228,32 @@ fn extract_from_tar_gz(data: &[u8]) -> Result<Vec<u8>> {
 
     anyhow::bail!("whk binary not found in archive")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_github_url_accepts_valid() {
+        assert!(validate_github_url("https://github.com/kroqdotdev/webhooks-cc/releases/download/v1.0.0/whk.tar.gz").is_ok());
+        assert!(validate_github_url("https://objects.githubusercontent.com/some-asset").is_ok());
+    }
+
+    #[test]
+    fn test_validate_github_url_rejects_http() {
+        assert!(validate_github_url("http://github.com/foo").is_err());
+    }
+
+    #[test]
+    fn test_validate_github_url_rejects_other_hosts() {
+        assert!(validate_github_url("https://evil.com/whk.tar.gz").is_err());
+        assert!(validate_github_url("https://github.com.evil.com/whk.tar.gz").is_err());
+    }
+
+    #[test]
+    fn test_archive_name_for_platform() {
+        let name = archive_name_for_platform("v1.0.0");
+        assert!(name.starts_with("whk-v1.0.0-"));
+        assert!(name.ends_with(".tar.gz") || name.ends_with(".zip"));
+    }
+}

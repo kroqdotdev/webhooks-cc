@@ -25,7 +25,7 @@ impl ApiClient {
             format!("?{}", params.join("&"))
         };
         let resp = self
-            .get(&format!("/api/endpoints/{slug}/requests{qs}"))
+            .get(&format!("/api/endpoints/{}/requests{qs}", encode(slug)))
             .await?;
         // API returns a bare array
         let requests: Vec<CapturedRequest> =
@@ -56,14 +56,14 @@ impl ApiClient {
             format!("?{}", params.join("&"))
         };
         let resp = self
-            .get(&format!("/api/endpoints/{slug}/requests/paginated{qs}"))
+            .get(&format!("/api/endpoints/{}/requests/paginated{qs}", encode(slug)))
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse paginated request list")
     }
 
     pub async fn get_request(&self, request_id: &str) -> Result<CapturedRequest> {
         self.require_auth()?;
-        let resp = self.get(&format!("/api/requests/{request_id}")).await?;
+        let resp = self.get(&format!("/api/requests/{}", encode(request_id))).await?;
         serde_json::from_str(&resp.body).context("failed to parse request")
     }
 
@@ -155,7 +155,7 @@ impl ApiClient {
             Some(b) => format!("?before={}", encode(b)),
             None => String::new(),
         };
-        self.delete(&format!("/api/endpoints/{slug}/requests{qs}"))
+        self.delete(&format!("/api/endpoints/{}/requests{qs}", encode(slug)))
             .await?;
         Ok(())
     }

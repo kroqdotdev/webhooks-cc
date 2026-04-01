@@ -25,7 +25,7 @@ impl ApiClient {
             .context("failed to create SSE client")?;
 
         let resp = sse_client
-            .get(self.url(&format!("/api/stream/{slug}")))
+            .get(self.url(&format!("/api/stream/{}", urlencoding::encode(slug))))
             .headers(headers)
             .header("Accept", "text/event-stream")
             .header("Cache-Control", "no-cache")
@@ -105,5 +105,72 @@ fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
             }
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_connected_event() {
+        let event = parse_sse_event("connected", r#"{"slug":"test","endpointId":"ep-1"}"#);
+        assert!(matches!(event, Some(SseEvent::Connected)));
+    }
+
+    #[test]
+    fn test_parse_connected_invalid_json() {
+        let event = parse_sse_event("connected", "not json");
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_request_event() {
+        let data = r#"{"_id":"r1","endpointId":"ep","method":"POST","path":"/","headers":{},"queryParams":{},"ip":"1.2.3.4","size":0,"receivedAt":123}"#;
+        let event = parse_sse_event("request", data);
+        match event {
+            Some(SseEvent::Request(req)) => {
+                assert_eq!(req.id, "r1");
+                assert_eq!(req.method, "POST");
+            }
+            _ => panic!("expected Request event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_request_invalid_json() {
+        let event = parse_sse_event("request", "not json");
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_endpoint_deleted() {
+        let event = parse_sse_event("endpoint_deleted", "");
+        assert!(matches!(event, Some(SseEvent::EndpointDeleted)));
+    }
+
+    #[test]
+    fn test_parse_timeout() {
+        let event = parse_sse_event("timeout", "");
+        assert!(matches!(event, Some(SseEvent::Timeout)));
+    }
+
+    #[test]
+    fn test_parse_unknown_event_with_request_data() {
+        let data = r#"{"id":"r1","endpointId":"ep","method":"GET","path":"/","headers":{},"queryParams":{},"ip":"1.2.3.4","size":0,"receivedAt":123}"#;
+        let event = parse_sse_event("", data);
+        assert!(matches!(event, Some(SseEvent::Request(_))));
+    }
+
+    #[test]
+    fn test_parse_unknown_event_empty_data() {
+        let event = parse_sse_event("", "");
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_unknown_event_garbage_data() {
+        let event = parse_sse_event("custom_event", "some random data");
+        assert!(event.is_none());
     }
 }
