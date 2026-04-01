@@ -79,9 +79,8 @@ impl ApiClient {
 fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
     match event_type {
         "connected" => {
-            // Data is JSON: {"slug":"...","endpointId":"..."}
-            let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
-            let slug = parsed["slug"].as_str().unwrap_or("").to_string();
+            // Data is JSON: {"slug":"...","endpointId":"..."} — just validate it parses
+            let _: serde_json::Value = serde_json::from_str(data).ok()?;
             Some(SseEvent::Connected)
         }
         "request" => {

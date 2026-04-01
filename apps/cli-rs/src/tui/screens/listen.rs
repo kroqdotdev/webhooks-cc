@@ -49,19 +49,6 @@ impl ListenScreen {
         }
     }
 
-    /// Create directly with a slug (skip picker).
-    pub fn with_slug(slug: String, webhook_url: String) -> Self {
-        Self {
-            state: State::Connecting,
-            endpoints: Vec::new(),
-            table_state: TableState::default(),
-            slug: Some(slug),
-            requests: RequestListState::new(),
-            webhook_url,
-            tx: None,
-            tick: 0,
-        }
-    }
 }
 
 impl Screen for ListenScreen {
