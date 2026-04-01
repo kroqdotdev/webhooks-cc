@@ -74,9 +74,12 @@ impl ApiClient {
 
 fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
     match event_type {
-        "connected" => Some(SseEvent::Connected {
-            slug: data.to_string(),
-        }),
+        "connected" => {
+            // Data is JSON: {"slug":"...","endpointId":"..."}
+            let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
+            let slug = parsed["slug"].as_str().unwrap_or("").to_string();
+            Some(SseEvent::Connected { slug })
+        }
         "request" => {
             let req: CapturedRequest = serde_json::from_str(data).ok()?;
             Some(SseEvent::Request(req))

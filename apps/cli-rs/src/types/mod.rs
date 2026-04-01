@@ -86,6 +86,7 @@ pub struct EndpointList {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapturedRequest {
+    #[serde(alias = "_id")]
     pub id: String,
     #[serde(rename = "endpointId")]
     pub endpoint_id: String,
