@@ -20,7 +20,7 @@ use clap::{Parser, Subcommand};
 )]
 pub struct Cli {
     /// Disable TUI and show help
-    #[arg(long, env = "WHK_NOGUI")]
+    #[arg(long)]
     pub nogui: bool,
 
     /// Output as JSON where supported
@@ -36,7 +36,7 @@ pub struct Cli {
     pub webhook_url: Option<String>,
 
     /// Disable colored output
-    #[arg(long, env = "NO_COLOR", global = true)]
+    #[arg(long, global = true)]
     pub no_color: bool,
 
     #[command(subcommand)]

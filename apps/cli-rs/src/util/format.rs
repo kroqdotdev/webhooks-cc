@@ -93,5 +93,29 @@ mod tests {
         assert_eq!(parse_duration("1h").unwrap(), 3_600_000);
         assert_eq!(parse_duration("7d").unwrap(), 604_800_000);
         assert_eq!(parse_duration("500ms").unwrap(), 500);
+        assert_eq!(parse_duration("1.5s").unwrap(), 1500);
+    }
+
+    #[test]
+    fn test_parse_duration_rejects_invalid() {
+        assert!(parse_duration("").is_err());
+        assert!(parse_duration("-5s").is_err());
+        assert!(parse_duration("abc").is_err());
+        assert!(parse_duration("NaNs").is_err());
+        assert!(parse_duration("Infinitys").is_err());
+    }
+
+    #[test]
+    fn test_format_timestamp() {
+        let ts = format_timestamp(1700000000000);
+        assert!(ts.contains("2023"), "expected 2023 in timestamp, got: {ts}");
+    }
+
+    #[test]
+    fn test_format_iso() {
+        let iso = format_iso(1700000000000);
+        assert!(iso.starts_with("2023-"), "expected ISO date, got: {iso}");
+        // -1ms is valid (just before epoch), verify it doesn't crash
+        assert!(!format_iso(-1).is_empty());
     }
 }

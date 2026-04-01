@@ -286,3 +286,183 @@ pub struct ApiErrorBody {
     #[serde(default)]
     pub error: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_endpoint_from_api() {
+        let json = r#"{
+            "id": "abc-123",
+            "slug": "test-slug",
+            "url": "https://go.webhooks.cc/w/test-slug",
+            "isEphemeral": true,
+            "expiresAt": 1775030647212,
+            "createdAt": 1774987447212,
+            "sharedWith": []
+        }"#;
+        let ep: Endpoint = serde_json::from_str(json).unwrap();
+        assert_eq!(ep.slug, "test-slug");
+        assert!(ep.is_ephemeral);
+        assert_eq!(ep.expires_at, Some(1775030647212));
+        assert_eq!(ep.created_at, Some(1774987447212));
+        assert!(ep.name.is_none());
+        assert!(ep.mock_response.is_none());
+        assert!(ep.request_count.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_endpoint_with_mock() {
+        let json = r#"{
+            "id": "abc-123",
+            "slug": "test",
+            "mockResponse": {"status": 201, "body": "{\"ok\":true}", "headers": {}},
+            "createdAt": 1774987447212,
+            "sharedWith": []
+        }"#;
+        let ep: Endpoint = serde_json::from_str(json).unwrap();
+        let mock = ep.mock_response.unwrap();
+        assert_eq!(mock.status, 201);
+        assert_eq!(mock.body, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn test_deserialize_endpoint_list() {
+        let json = r#"{"owned": [{"id":"1","slug":"a","createdAt":123,"sharedWith":[]}], "shared": []}"#;
+        let list: EndpointList = serde_json::from_str(json).unwrap();
+        assert_eq!(list.owned.len(), 1);
+        assert_eq!(list.owned[0].slug, "a");
+    }
+
+    #[test]
+    fn test_deserialize_request_with_id() {
+        let json = r#"{
+            "id": "req-123",
+            "endpointId": "ep-456",
+            "method": "POST",
+            "path": "/hook",
+            "headers": {"content-type": "application/json"},
+            "body": "{\"test\":true}",
+            "queryParams": {},
+            "contentType": "application/json",
+            "ip": "1.2.3.4",
+            "size": 14,
+            "receivedAt": 1774866106592
+        }"#;
+        let req: CapturedRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, "req-123");
+        assert_eq!(req.method, "POST");
+        assert_eq!(req.size, 14);
+    }
+
+    #[test]
+    fn test_deserialize_request_with_underscore_id() {
+        // SSE stream uses _id instead of id
+        let json = r#"{
+            "_id": "sse-req-789",
+            "endpointId": "ep-456",
+            "method": "GET",
+            "path": "/",
+            "headers": {},
+            "queryParams": {},
+            "ip": "1.2.3.4",
+            "size": 0,
+            "receivedAt": 1774866106592
+        }"#;
+        let req: CapturedRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, "sse-req-789");
+    }
+
+    #[test]
+    fn test_deserialize_request_bare_array() {
+        let json = r#"[
+            {"id":"1","endpointId":"ep","method":"POST","path":"/","headers":{},"queryParams":{},"ip":"1.2.3.4","size":0,"receivedAt":123},
+            {"id":"2","endpointId":"ep","method":"GET","path":"/health","headers":{},"queryParams":{},"ip":"1.2.3.4","size":0,"receivedAt":124}
+        ]"#;
+        let reqs: Vec<CapturedRequest> = serde_json::from_str(json).unwrap();
+        assert_eq!(reqs.len(), 2);
+        assert_eq!(reqs[0].method, "POST");
+        assert_eq!(reqs[1].path, "/health");
+    }
+
+    #[test]
+    fn test_deserialize_device_code() {
+        let json = r#"{
+            "deviceCode": "dc-123",
+            "userCode": "ABCD-1234",
+            "expiresAt": 1774988132951,
+            "verificationUrl": "https://webhooks.cc/cli/verify"
+        }"#;
+        let dc: DeviceCodeResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(dc.user_code, "ABCD-1234");
+        assert_eq!(dc.expires_at, 1774988132951);
+    }
+
+    #[test]
+    fn test_deserialize_usage() {
+        let json = r#"{"used":1,"limit":100000,"remaining":99999,"plan":"free","periodEnd":1774987719639}"#;
+        let u: UsageInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(u.plan, "free");
+        assert_eq!(u.remaining, 99999);
+        assert_eq!(u.period_end, Some(1774987719639));
+    }
+
+    #[test]
+    fn test_deserialize_usage_null_period() {
+        let json = r#"{"used":0,"limit":100000,"remaining":100000,"plan":"free","periodEnd":null}"#;
+        let u: UsageInfo = serde_json::from_str(json).unwrap();
+        assert!(u.period_end.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_send_response() {
+        let json = r#"{"status":200,"statusText":"OK","body":"OK"}"#;
+        let r: SendResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.status, 200);
+    }
+
+    #[test]
+    fn test_mock_response_serialization_no_delay() {
+        let mock = MockResponse {
+            status: 200,
+            body: "ok".into(),
+            headers: HashMap::new(),
+            delay: None,
+        };
+        let json = serde_json::to_string(&mock).unwrap();
+        assert!(!json.contains("delay"), "delay should be skipped when None: {json}");
+    }
+
+    #[test]
+    fn test_token_debug_redacts() {
+        let token = Token {
+            access_token: "secret-key-123".into(),
+            user_id: "user-1".into(),
+            email: "test@example.com".into(),
+        };
+        let debug = format!("{:?}", token);
+        assert!(!debug.contains("secret-key-123"), "token should be redacted in Debug: {debug}");
+        assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn test_forward_result_display() {
+        let r = ForwardResult {
+            success: true,
+            status_code: Some(200),
+            duration: std::time::Duration::from_millis(150),
+            error: None,
+        };
+        assert!(r.to_string().contains("200"));
+
+        let r = ForwardResult {
+            success: false,
+            status_code: None,
+            duration: std::time::Duration::from_millis(0),
+            error: Some("connection refused".into()),
+        };
+        assert!(r.to_string().contains("FAILED"));
+        assert!(r.to_string().contains("connection refused"));
+    }
+}

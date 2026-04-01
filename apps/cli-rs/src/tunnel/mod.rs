@@ -224,4 +224,39 @@ mod tests {
         let url = build_target_url("http://localhost:8080", "/hook", &params);
         assert!(url.contains("key=val"));
     }
+
+    #[test]
+    fn test_build_target_url_encodes_special_chars() {
+        let mut params = HashMap::new();
+        params.insert("q".into(), "hello world&more".into());
+        let url = build_target_url("http://localhost:8080", "/hook", &params);
+        assert!(url.contains("hello%20world%26more"), "URL should encode special chars: {url}");
+    }
+
+    #[test]
+    fn test_parse_target_large_port() {
+        assert_eq!(parse_target("65535").unwrap(), "http://localhost:65535");
+        assert!(parse_target("65536").is_err());
+    }
+
+    #[test]
+    fn test_filter_all_sensitive_headers() {
+        for h in &["authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization", "x-auth-token", "x-access-token"] {
+            assert!(should_filter_header(h), "should filter: {h}");
+        }
+    }
+
+    #[test]
+    fn test_filter_all_proxy_headers() {
+        for h in &["cdn-loop", "cf-connecting-ip", "cf-ray", "x-forwarded-for", "x-forwarded-proto", "x-real-ip", "via", "true-client-ip"] {
+            assert!(should_filter_header(h), "should filter: {h}");
+        }
+    }
+
+    #[test]
+    fn test_passthrough_normal_headers() {
+        for h in &["content-type", "accept", "x-custom-header", "user-agent", "x-request-id"] {
+            assert!(!should_filter_header(h), "should pass through: {h}");
+        }
+    }
 }
