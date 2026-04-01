@@ -48,6 +48,10 @@ pub enum Message {
 
     // Send
     SendResult(anyhow::Result<crate::types::SendResponse>),
+
+    // Update
+    UpdateCheck(anyhow::Result<Option<crate::api::update::Release>>),
+    UpdateResult(anyhow::Result<String>),
 }
 
 /// Actions that screens emit to the app.

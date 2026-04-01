@@ -1,17 +1,61 @@
 use anyhow::Result;
 
-use crate::cli::output::dim;
+use crate::api::update;
+use crate::cli::output::{bold, dim, green, red};
 
-pub async fn run(_json: bool) -> Result<()> {
+pub async fn run(json: bool) -> Result<()> {
     let version = env!("WHK_VERSION");
     if version == "dev" {
-        println!("  {} Cannot update a dev build.", dim("●"));
+        if json {
+            println!("{}", serde_json::json!({ "error": "dev_build" }));
+        } else {
+            println!("  {} Cannot update a dev build.", dim("●"));
+        }
         return Ok(());
     }
 
-    // TODO: Phase 4 — full self-update implementation
-    println!("  Self-update not yet implemented in Rust CLI.");
-    println!("  Current version: {version}");
+    if !json {
+        println!("  Checking for updates...");
+    }
+
+    match update::check(version).await? {
+        None => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({ "current": version, "latest": version, "update_available": false })
+                );
+            } else {
+                println!("  {} Already on latest version (v{version})", green("✓"));
+            }
+        }
+        Some(release) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "current": version,
+                        "latest": release.version,
+                        "update_available": true,
+                    })
+                );
+            } else {
+                println!(
+                    "  Update available: {} → {}",
+                    dim(&format!("v{version}")),
+                    bold(&release.version)
+                );
+                println!("  Downloading and installing...");
+            }
+
+            update::apply(&release).await?;
+
+            if !json {
+                println!("  {} Updated to {}", green("✓"), bold(&release.version));
+                println!("  Restart whk to use the new version.");
+            }
+        }
+    }
 
     Ok(())
 }

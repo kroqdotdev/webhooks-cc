@@ -95,6 +95,7 @@ struct App {
     screen_stack: Vec<Box<dyn Screen>>,
     auth_email: Option<String>,
     msg_tx: mpsc::UnboundedSender<Message>,
+    show_help: bool,
 }
 
 impl App {
@@ -109,6 +110,7 @@ impl App {
             screen_stack: vec![menu],
             auth_email,
             msg_tx,
+            show_help: false,
         }
     }
 
@@ -121,6 +123,18 @@ impl App {
     }
 
     fn handle_key(&mut self, key: &crossterm::event::KeyEvent) -> Option<Action> {
+        // Toggle help overlay with '?'
+        if key.code == crossterm::event::KeyCode::Char('?') {
+            self.show_help = !self.show_help;
+            return None;
+        }
+        // Close help with Esc if open
+        if self.show_help {
+            if key.code == crossterm::event::KeyCode::Esc {
+                self.show_help = false;
+            }
+            return None;
+        }
         self.current_screen_mut().handle_key(key)
     }
 
@@ -199,10 +213,84 @@ impl App {
         // Content
         self.current_screen_mut().render(frame, chunks[1]);
 
+        // Help overlay
+        if self.show_help {
+            render_help_overlay(frame, chunks[1]);
+        }
+
         // Status bar
-        let keys = self.current_screen().status_keys();
+        let mut keys = self.current_screen().status_keys();
+        keys.push(("?", "help"));
         let version = format!("v{}", env!("WHK_VERSION"));
         let bar = StatusBar::new(keys).right(&version);
         bar.render(chunks[2], frame.buffer_mut());
     }
+}
+
+fn render_help_overlay(frame: &mut Frame, area: ratatui::layout::Rect) {
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
+
+    let help_items: &[(&str, &str)] = &[
+        ("↑ / k",       "Move up"),
+        ("↓ / j",       "Move down"),
+        ("Enter",       "Select / confirm"),
+        ("Esc",         "Go back / cancel"),
+        ("Tab",         "Next field / tab"),
+        ("Shift+Tab",   "Previous field / tab"),
+        ("1-3",         "Jump to tab (detail view)"),
+        ("n",           "New endpoint"),
+        ("d",           "Delete endpoint"),
+        ("r",           "Refresh"),
+        ("c",           "Copy to clipboard"),
+        ("q / Ctrl+C",  "Quit"),
+        ("?",           "Toggle this help"),
+    ];
+
+    // Center the overlay
+    let width: u16 = 44;
+    let height = (help_items.len() as u16) + 4;
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    let overlay = ratatui::layout::Rect::new(
+        x.max(area.x),
+        y.max(area.y),
+        width.min(area.width),
+        height.min(area.height),
+    );
+
+    // Clear background
+    frame.render_widget(Clear, overlay);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme::PRIMARY))
+        .title(Span::styled(
+            " Keyboard Shortcuts ",
+            Style::default()
+                .fg(theme::PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .padding(Padding::new(2, 2, 1, 0));
+
+    let inner = block.inner(overlay);
+    frame.render_widget(block, overlay);
+
+    let lines: Vec<Line> = help_items
+        .iter()
+        .map(|(key, desc)| {
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<14}", key),
+                    Style::default()
+                        .fg(theme::ACCENT)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(*desc, theme::style_dim()),
+            ])
+        })
+        .collect();
+
+    frame.render_widget(Paragraph::new(lines), inner);
 }
