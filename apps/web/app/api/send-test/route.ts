@@ -73,16 +73,16 @@ export async function POST(request: Request) {
 
     const responseBody = await upstream.text();
 
-    return applyRateLimitHeaders(Response.json({
-      status: upstream.status,
-      statusText: upstream.statusText,
-      body: responseBody,
-    }), rateLimit);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Upstream fetch failed";
     return applyRateLimitHeaders(
-      Response.json({ error: message }, { status: 502 }),
+      Response.json({
+        status: upstream.status,
+        statusText: upstream.statusText,
+        body: responseBody,
+      }),
       rateLimit
     );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Upstream fetch failed";
+    return applyRateLimitHeaders(Response.json({ error: message }, { status: 502 }), rateLimit);
   }
 }

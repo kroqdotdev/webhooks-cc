@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type {
-  RateLimitInfo,
-} from "@/lib/rate-limit";
+import type { RateLimitInfo } from "@/lib/rate-limit";
 
 // Helper to dynamically import a fresh module (resets the in-memory store)
 async function freshImport() {

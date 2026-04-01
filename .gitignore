@@ -8,14 +8,13 @@ dist/
 .turbo/
 *.tsbuildinfo
 next-env.d.ts
+apps/cli-rs/target/
+apps/receiver-rs/target/
 
 # Environment
 .env
 .env.local
 .env*.local
-
-# Go
-apps/cli/whk
 
 # IDE
 .idea/
@@ -47,6 +46,7 @@ apps/web/public/_pagefind/
 
 # Temporary files
 tmp/
+supabase/.temp/
 
 # Playwright artifacts
 apps/web/playwright-report/

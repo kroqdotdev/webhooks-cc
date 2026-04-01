@@ -25,7 +25,13 @@ describe("GET /api/search/requests", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({ allowed: true, response: null, limit: 60, remaining: 59, reset: 0 });
+    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({
+      allowed: true,
+      response: null,
+      limit: 60,
+      remaining: 59,
+      reset: 0,
+    });
   });
 
   test("returns search results for a validated bearer token", async () => {

@@ -25,7 +25,13 @@ describe("GET /api/search/requests/count", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({ allowed: true, response: null, limit: 120, remaining: 119, reset: 0 });
+    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({
+      allowed: true,
+      response: null,
+      limit: 120,
+      remaining: 119,
+      reset: 0,
+    });
   });
 
   test("returns a retained search count for a validated bearer token", async () => {

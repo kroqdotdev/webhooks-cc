@@ -43,7 +43,7 @@
   },
   "homepage": "https://webhooks.cc",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@webhooks-cc/sdk": "workspace:*",
     "zod": "^3.25.76"
   },
