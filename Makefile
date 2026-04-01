@@ -39,15 +39,18 @@ prod-restart:
 
 # Build
 build:
+	mkdir -p dist
 	pnpm build
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 	cd apps/cli-rs && cargo build --release && cp target/release/whk ../../dist/whk
 
 build-receiver:
+	mkdir -p dist
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
 
 # Deploy (build + restart)
 deploy-receiver:
+	@mkdir -p dist
 	@echo "Building receiver..."
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release
 	@echo "Stopping receiver (draining requests)..."

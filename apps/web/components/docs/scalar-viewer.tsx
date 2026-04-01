@@ -94,7 +94,9 @@ const scalarStyles = `
 const ApiReferenceReact = dynamic(
   () =>
     import("./scalar-viewer-inner").then((m) => ({
-      default: m.ApiReferenceReact as React.ComponentType<{ configuration: Record<string, unknown> }>,
+      default: m.ApiReferenceReact as React.ComponentType<{
+        configuration: Record<string, unknown>;
+      }>,
     })),
   {
     ssr: false,

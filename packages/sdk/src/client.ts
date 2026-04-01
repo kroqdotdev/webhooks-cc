@@ -140,7 +140,14 @@ function mapStatusToError(status: number, message: string, response: Response): 
         const limit = parseInt(limitHeader, 10);
         const remaining = parseInt(remainingHeader, 10);
         const reset = parseInt(resetHeader, 10);
-        if (!Number.isNaN(limit) && !Number.isNaN(remaining) && !Number.isNaN(reset) && limit >= 0 && remaining >= 0 && reset >= 0) {
+        if (
+          !Number.isNaN(limit) &&
+          !Number.isNaN(remaining) &&
+          !Number.isNaN(reset) &&
+          limit >= 0 &&
+          remaining >= 0 &&
+          reset >= 0
+        ) {
           meta = { limit, remaining, reset };
         }
       }

@@ -350,9 +350,7 @@ curl https://webhooks.cc/api/teams/TEAM_ID/members \
     { "userId": "...", "email": "owner@example.com", "role": "owner" },
     { "userId": "...", "email": "member@example.com", "role": "member" }
   ],
-  "pendingInvites": [
-    { "id": "...", "email": "invited@example.com", "createdAt": "..." }
-  ]
+  "pendingInvites": [{ "id": "...", "email": "invited@example.com", "createdAt": "..." }]
 }
 ```
 
@@ -434,12 +432,12 @@ All errors return a JSON body with an `error` field:
 
 Rate-limited endpoints return these headers on **every** response (not just 429s):
 
-| Header                  | Description                                    |
-| ----------------------- | ---------------------------------------------- |
-| `X-RateLimit-Limit`     | Maximum requests allowed in the current window |
-| `X-RateLimit-Remaining` | Remaining requests in the current window       |
+| Header                  | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `X-RateLimit-Limit`     | Maximum requests allowed in the current window  |
+| `X-RateLimit-Remaining` | Remaining requests in the current window        |
 | `X-RateLimit-Reset`     | Unix timestamp (seconds) when the window resets |
-| `Retry-After`           | Seconds to wait (only on 429 responses)        |
+| `Retry-After`           | Seconds to wait (only on 429 responses)         |
 
 ## Language examples
 

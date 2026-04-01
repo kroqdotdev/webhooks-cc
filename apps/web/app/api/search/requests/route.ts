@@ -1,5 +1,9 @@
 import { extractBearerToken, validateBearerTokenWithPlan } from "@/lib/api-auth";
-import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders, type RateLimitInfo } from "@/lib/rate-limit";
+import {
+  checkRateLimitByKeyWithInfo,
+  applyRateLimitHeaders,
+  type RateLimitInfo,
+} from "@/lib/rate-limit";
 import { searchRequestsForUser } from "@/lib/supabase/search";
 import { sendError } from "@appsignal/nodejs";
 

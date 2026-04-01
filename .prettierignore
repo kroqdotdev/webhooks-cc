@@ -7,7 +7,9 @@ dist/
 .next/
 .turbo/
 *.tsbuildinfo
+apps/cli-rs/target/
 apps/receiver-rs/target/
+.claude/worktrees/
 
 # Generated files
 pnpm-lock.yaml

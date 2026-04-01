@@ -12,7 +12,7 @@
     "format:check": "prettier --check .",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
-    "cli": "cd apps/cli && go run ./cmd/whk",
+    "cli": "cd apps/cli-rs && cargo run --",
     "start": "mprocs --config mprocs.yaml"
   },
   "devDependencies": {
@@ -56,6 +56,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@polar-sh/sdk": "^0.46.6"
+    "@polar-sh/sdk": "^0.46.7"
   }
 }
