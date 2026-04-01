@@ -31,7 +31,7 @@ impl ApiClient {
         let requests: Vec<CapturedRequest> =
             serde_json::from_str(&resp.body).context("failed to parse request list")?;
         Ok(RequestList {
-            count: Some(requests.len() as u64),
+            count: None,
             requests,
         })
     }

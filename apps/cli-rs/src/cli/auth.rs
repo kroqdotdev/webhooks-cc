@@ -24,9 +24,7 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
     // Step 1: Create device code
     let device = client.create_device_code().await?;
 
-    if json {
-        println!("{}", serde_json::to_string(&device)?);
-    } else {
+    if !json {
         println!("\n  {} {}\n", bold("Your code:"), green(&device.user_code));
         println!(
             "  Open {} and enter the code above.",
@@ -34,8 +32,8 @@ pub async fn login(client: &mut ApiClient, json: bool) -> Result<()> {
         );
     }
 
-    // Try to open browser (only if URL looks safe)
-    if device.verification_url.starts_with("https://") {
+    // Try to open browser (only if URL looks safe and not in JSON mode)
+    if !json && device.verification_url.starts_with("https://") {
         let _ = open::that(&device.verification_url);
     }
 

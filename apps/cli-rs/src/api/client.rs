@@ -69,7 +69,7 @@ async fn read_response(resp: Response) -> Result<ApiResponse> {
     let body = resp
         .text()
         .await
-        .unwrap_or_default();
+        .context("failed to read response body")?;
 
     if status.is_client_error() || status.is_server_error() {
         anyhow::bail!("{}", extract_error(status, &body));

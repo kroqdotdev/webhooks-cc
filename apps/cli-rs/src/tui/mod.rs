@@ -38,7 +38,10 @@ pub async fn run(client: ApiClient) -> Result<()> {
     }));
 
     enable_raw_mode()?;
-    std::io::stdout().execute(EnterAlternateScreen)?;
+    if let Err(e) = std::io::stdout().execute(EnterAlternateScreen) {
+        let _ = disable_raw_mode();
+        return Err(e.into());
+    }
     let mut terminal = ratatui::init();
 
     let result = run_app(&mut terminal, client).await;

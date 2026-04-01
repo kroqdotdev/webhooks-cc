@@ -213,6 +213,10 @@ impl Screen for EndpointDetailScreen {
 
 impl EndpointDetailScreen {
     fn load_data(&mut self) {
+        // Abort any in-flight tasks before spawning new ones
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.state = State::Loading;
         if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
             let tx1 = tx.clone();

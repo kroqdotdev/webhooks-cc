@@ -48,8 +48,9 @@ impl RequestListState {
 
     pub fn push(&mut self, req: CapturedRequest) {
         self.items.insert(0, req);
-        // Keep selection stable
-        if self.selected > 0 {
+        // Keep selection stable — after insert at front, the previously selected
+        // item has shifted down by 1, so increment to keep pointing at it
+        if !self.items.is_empty() && self.items.len() > 1 {
             self.selected += 1;
         }
     }

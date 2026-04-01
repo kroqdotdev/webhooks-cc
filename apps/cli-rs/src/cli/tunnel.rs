@@ -11,7 +11,7 @@ pub async fn run(
     client: &ApiClient,
     target: &str,
     endpoint_slug: Option<&str>,
-    _ephemeral: bool,
+    ephemeral: bool,
     headers: Vec<String>,
     json: bool,
 ) -> Result<()> {
@@ -31,7 +31,7 @@ pub async fn run(
         None => {
             let req = CreateEndpointRequest {
                 name: None,
-                is_ephemeral: Some(true),
+                is_ephemeral: if ephemeral { Some(true) } else { None },
                 expires_at: None,
                 mock_response: None,
             };

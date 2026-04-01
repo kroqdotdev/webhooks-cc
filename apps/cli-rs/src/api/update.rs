@@ -151,8 +151,11 @@ pub async fn apply(release: &Release) -> Result<()> {
     let _ = std::fs::remove_file(&old_path);
     std::fs::rename(&current_exe, &old_path)
         .context("failed to move current binary aside")?;
-    std::fs::rename(&tmp_path, &current_exe)
-        .context("failed to install new binary")?;
+    if let Err(e) = std::fs::rename(&tmp_path, &current_exe) {
+        // Rollback: restore the old binary
+        let _ = std::fs::rename(&old_path, &current_exe);
+        return Err(e).context("failed to install new binary");
+    }
     let _ = std::fs::remove_file(&old_path);
 
     Ok(())

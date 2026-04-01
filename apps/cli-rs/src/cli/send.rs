@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::collections::HashMap;
+use std::io::Read;
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, red};
@@ -19,13 +20,16 @@ pub async fn send_to_endpoint(
     let body = match data {
         Some(d) if d.starts_with('@') => {
             let path = &d[1..];
-            let meta = std::fs::metadata(path)
+            let file = std::fs::File::open(path)
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
-            if meta.len() > 10 * 1024 * 1024 {
-                anyhow::bail!("file too large ({} bytes, max 10MB)", meta.len());
+            let mut limited = file.take(10 * 1024 * 1024 + 1);
+            let mut contents = String::new();
+            limited.read_to_string(&mut contents)
+                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+            if contents.len() > 10 * 1024 * 1024 {
+                bail!("file too large (max 10MB)");
             }
-            Some(std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?)
+            Some(contents)
         }
         Some(d) => Some(d.to_string()),
         None => None,
@@ -71,13 +75,16 @@ pub async fn send_to_url(
     let body = match data {
         Some(d) if d.starts_with('@') => {
             let path = &d[1..];
-            let meta = std::fs::metadata(path)
+            let file = std::fs::File::open(path)
                 .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
-            if meta.len() > 10 * 1024 * 1024 {
-                anyhow::bail!("file too large ({} bytes, max 10MB)", meta.len());
+            let mut limited = file.take(10 * 1024 * 1024 + 1);
+            let mut contents = String::new();
+            limited.read_to_string(&mut contents)
+                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+            if contents.len() > 10 * 1024 * 1024 {
+                bail!("file too large (max 10MB)");
             }
-            Some(std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?)
+            Some(contents)
         }
         Some(d) => Some(d.to_string()),
         None => None,

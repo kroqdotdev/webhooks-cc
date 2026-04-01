@@ -130,9 +130,15 @@ fn test_usage_json() {
 
 #[test]
 fn test_full_lifecycle() {
+    // Use a unique slug to prevent test pollution
+    let slug_name = format!("smoke-test-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis());
+
     // Create
     let output = whk()
-        .args(["create", "smoke-test", "--json", "-e"])
+        .args(["create", &slug_name, "--json", "-e"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -153,18 +159,24 @@ fn test_full_lifecycle() {
     let send: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(send["status"], 200);
 
-    // Wait for capture
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    // List requests
-    let output = whk()
-        .args(["requests", "list", slug, "--json", "--limit", "5"])
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "requests list failed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let reqs: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let requests = reqs["requests"].as_array().unwrap();
+    // Poll for capture instead of sleeping
+    let mut reqs_value: serde_json::Value = serde_json::Value::Null;
+    for _ in 0..10 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let output = whk()
+            .args(["requests", "list", slug, "--json", "--limit", "5"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "requests list failed");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        reqs_value = serde_json::from_str(&stdout).unwrap();
+        if let Some(arr) = reqs_value["requests"].as_array() {
+            if !arr.is_empty() {
+                break;
+            }
+        }
+    }
+    let requests = reqs_value["requests"].as_array().unwrap();
     assert!(!requests.is_empty(), "should have captured requests");
 
     // Get single request

@@ -139,11 +139,15 @@ async fn test_send_webhook_and_list_requests() {
     let send_resp = client.send_webhook(&send_req).await.expect("send failed");
     assert_eq!(send_resp.status, 200);
 
-    // Wait a moment for the request to be captured
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    // List requests
-    let requests = client.list_requests(&ep.slug, Some(10), None).await.expect("list requests failed");
+    // Poll for the request to be captured
+    let mut requests = client.list_requests(&ep.slug, Some(10), None).await.expect("list requests failed");
+    for _ in 0..10 {
+        if !requests.requests.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        requests = client.list_requests(&ep.slug, Some(10), None).await.expect("list requests failed");
+    }
     assert!(!requests.requests.is_empty(), "should have at least 1 captured request");
 
     let captured = &requests.requests[0];
@@ -273,7 +277,15 @@ async fn test_clear_requests() {
         body: Some("{}".into()),
     };
     client.send_webhook(&send_req).await.ok();
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // Poll until the request is captured before clearing
+    for _ in 0..10 {
+        let list = client.list_requests(&ep.slug, Some(10), None).await.expect("list failed");
+        if !list.requests.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
 
     // Clear
     client.clear_requests(&ep.slug, None).await.expect("clear failed");
