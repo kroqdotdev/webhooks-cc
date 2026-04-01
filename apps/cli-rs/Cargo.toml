@@ -17,7 +17,7 @@ clap_complete = "4"
 
 # TUI
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = "0.29"
 
 # Async
 tokio = { version = "1", features = ["full"] }
