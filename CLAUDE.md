@@ -29,7 +29,7 @@ pnpm build                # Build all TypeScript packages (turbo)
 pnpm typecheck            # Type check all packages (turbo)
 make build                # Build everything including binaries
 make build-receiver       # Build Rust receiver (release) to dist/receiver
-make build-cli            # Build CLI with goreleaser
+make build-cli            # Build Rust CLI (release)
 ```
 
 **CRITICAL**: After building, you MUST restart the service. Use the deploy targets which build + restart atomically:
@@ -45,10 +45,10 @@ Without restarting, the old binary/build continues running and code changes have
 ### Test
 
 ```bash
-make test                           # Run all tests (TS + Go + Rust)
+make test                           # Run all tests (TS + Rust)
 cd apps/web && npx vitest run tests/integration/  # Supabase integration tests (42 cases)
 cd apps/receiver-rs && cargo test   # Rust receiver tests
-cd apps/cli && go test ./...        # CLI tests only
+cd apps/cli-rs && cargo test        # CLI tests only
 ```
 
 ### Supabase
@@ -108,7 +108,7 @@ cd apps/receiver-rs && cargo clippy     # Rust receiver lint
 | Receiver  | 3001 | Rust (Axum, Tokio, sqlx/Postgres)    | Captures webhooks at `/w/{slug}`                     |
 | Collector | 8099 | AppSignal Collector (Rust binary)    | Receives OTel traces from receiver, host metrics     |
 | Supabase  | —    | Self-hosted Postgres, Auth, Realtime | Database, auth, real-time subscriptions              |
-| CLI       | n/a  | Go 1.25, Cobra                       | `whk tunnel`, `whk listen`, device auth              |
+| CLI       | n/a  | Rust (Clap, Ratatui, Reqwest)        | `whk tunnel`, `whk listen`, device auth              |
 | SDK       | n/a  | TypeScript, tsup                     | `@webhooks-cc/sdk` on npm                            |
 | MCP       | n/a  | TypeScript, tsup                     | `@webhooks-cc/mcp` on npm — MCP server for AI agents |
 
@@ -119,8 +119,7 @@ webhooks-cc/
 ├── apps/
 │   ├── web/              # Next.js 16 App Router (Tailwind v4, shadcn/ui, AppSignal)
 │   ├── receiver-rs/      # Rust Axum webhook receiver (direct Postgres via sqlx)
-│   ├── cli/              # Go Cobra CLI (cmd/whk + internal packages)
-│   └── go-shared/        # Shared Go types (types/types.go)
+│   └── cli-rs/           # Rust CLI + TUI (`whk`)
 ├── packages/
 │   ├── sdk/              # @webhooks-cc/sdk (TypeScript, tsup, vitest)
 │   └── mcp/              # @webhooks-cc/mcp (MCP server for AI agents)
@@ -361,11 +360,11 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 ## CI/CD & Releases
 
-- **CI** (`.github/workflows/ci.yml`): lint, typecheck, build-web, build-go, test-go, lint-go, build-rust, test-rust, lint-rust
-- **CLI release** (`cli-release.yml`): triggered by `v*` tags, GoReleaser builds for linux/darwin/windows (amd64/arm64), cosign keyless signing, Homebrew tap publish
+- **CI** (`.github/workflows/ci.yml`): lint, typecheck, build-web, build-cli, test-cli, lint-cli, build-rust, test-rust, lint-rust
+- **CLI release** (`cli-release.yml`): triggered by `v*` tags, cross-compiles the Rust CLI for linux/darwin/windows, signs checksums with cosign, and publishes GitHub release assets
 - **SDK publish** (`sdk-publish.yml`): triggered by `sdk-v*` tags, publishes `@webhooks-cc/sdk` to npm
 - **MCP publish**: triggered by `mcp-v*` tags, publishes `@webhooks-cc/mcp` to npm
-- **Security**: Dependabot, CodeQL analysis
+- **Security**: Dependabot, CodeQL analysis for JavaScript/TypeScript and Rust
 
 ## Changelog & Versioning
 
@@ -412,4 +411,4 @@ The changelog has 4 tracks: `web`, `cli`, `sdk`, `mcp`. Each entry has a `track`
 Split license model:
 
 - **AGPL-3.0**: `apps/web`, `apps/receiver-rs`, `supabase/`
-- **MIT**: `apps/cli`, `packages/sdk`, `packages/mcp`, `apps/go-shared`
+- **MIT**: `apps/cli-rs`, `packages/sdk`, `packages/mcp`

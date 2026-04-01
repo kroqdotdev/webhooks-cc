@@ -8,14 +8,8 @@ Before you begin, install the following:
 
 - **Node.js** 20+ (with npm)
 - **pnpm** 8+ (`npm install -g pnpm`)
-- **Go** 1.25+
 - **Rust** 1.85+ (edition 2024) — install via [rustup](https://rustup.rs)
-- **Redis** 7+ — the Rust receiver stores all state in Redis
 - **Make**
-
-You'll also need:
-
-- A [Convex](https://convex.dev) account (free tier available)
 
 ## Development Setup
 
@@ -38,23 +32,17 @@ You'll also need:
    cp .env.example .env.local
    ```
 
-   Fill in your Convex credentials and Redis connection details (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`).
+   Fill in the shared Supabase and app settings in `.env.local`, including `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`, `SUPABASE_DB_URL`, `DATABASE_URL`, `NEXT_PUBLIC_WEBHOOK_URL`, `NEXT_PUBLIC_APP_URL`, and `CAPTURE_SHARED_SECRET`.
 
-4. **Start the Convex backend** (in a separate terminal)
-
-   ```bash
-   pnpm dev:convex
-   ```
-
-5. **Start the Next.js web app**
+4. **Start the Next.js web app**
 
    ```bash
    pnpm dev:web
    ```
 
-6. **Start the Rust receiver** (in a separate terminal)
+5. **Start the Rust receiver** (in a separate terminal)
 
-   The receiver reads Redis connection details from `.env.local`. Make sure Redis is running and reachable.
+   The receiver reads `DATABASE_URL` and `CAPTURE_SHARED_SECRET` from `.env.local`.
 
    ```bash
    make dev-receiver
@@ -67,12 +55,6 @@ You'll also need:
 - Run type checking before submitting: `pnpm typecheck`
 - Format code with Prettier if configured
 - Follow existing patterns in the codebase
-
-### Go
-
-- Run `go fmt` on all Go files
-- Run `go vet` to catch common issues
-- Follow standard Go conventions
 
 ### Rust
 
@@ -97,9 +79,10 @@ You'll also need:
 
    ```bash
    pnpm typecheck                        # TypeScript type checking
-   make test                             # Run all tests (TS + Go + Rust)
+   make test                             # Run all tests (TS + Rust)
    make build                            # Build everything including binaries
    cd apps/receiver-rs && cargo clippy   # Lint Rust code
+   cd apps/cli-rs && cargo clippy        # Lint Rust CLI
    ```
 
 4. **Submit a pull request**
@@ -151,13 +134,12 @@ docs(readme): update installation instructions
 webhooks-cc/
 ├── apps/
 │   ├── web/          # Next.js dashboard
-│   ├── receiver-rs/  # Rust webhook receiver (Axum + Tokio + Redis)
-│   ├── cli/          # Go CLI with interactive TUI (Bubble Tea)
-│   └── go-shared/    # Shared Go types
+│   ├── receiver-rs/  # Rust webhook receiver (Axum + Tokio + Postgres)
+│   ├── cli-rs/       # Rust CLI with interactive TUI
 ├── packages/
 │   ├── sdk/          # TypeScript SDK (@webhooks-cc/sdk)
 │   └── mcp/          # MCP server for AI agents (@webhooks-cc/mcp)
-├── convex/           # Convex backend functions
+├── supabase/         # Postgres schema, functions, and policies
 └── .github/          # CI/CD workflows
 ```
 
@@ -171,7 +153,7 @@ webhooks-cc/
 
 This project uses a split license. By contributing, you agree that your contributions will be licensed under the license that applies to the component you modify:
 
-- **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, and `convex/`
-- **MIT** for `apps/cli/`, `packages/sdk/`, `packages/mcp/`, and `apps/go-shared/`
+- **AGPL-3.0** for `apps/web/`, `apps/receiver-rs/`, and `supabase/`
+- **MIT** for `apps/cli-rs/`, `packages/sdk/`, and `packages/mcp/`
 
 See the root [LICENSE](LICENSE) and each component's `LICENSE` file for details.

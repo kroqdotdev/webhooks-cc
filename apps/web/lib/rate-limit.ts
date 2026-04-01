@@ -27,10 +27,7 @@ export interface RateLimitInfo {
  * Set standard rate limit headers on a response.
  * Returns the same response object for chaining convenience.
  */
-export function applyRateLimitHeaders(
-  response: Response,
-  info: RateLimitInfo
-): Response {
+export function applyRateLimitHeaders(response: Response, info: RateLimitInfo): Response {
   response.headers.set("X-RateLimit-Limit", String(info.limit));
   response.headers.set("X-RateLimit-Remaining", String(info.remaining));
   response.headers.set("X-RateLimit-Reset", String(info.reset));
@@ -105,19 +102,16 @@ export function checkRateLimitByKeyWithInfo(
       reset,
     };
 
-    const response = new Response(
-      JSON.stringify({ error: "Too many requests" }),
-      {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "Retry-After": String(Math.ceil(windowMs / 1000)),
-          "X-RateLimit-Limit": String(maxRequests),
-          "X-RateLimit-Remaining": String(remaining),
-          "X-RateLimit-Reset": String(reset),
-        },
-      }
-    );
+    const response = new Response(JSON.stringify({ error: "Too many requests" }), {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(Math.ceil(windowMs / 1000)),
+        "X-RateLimit-Limit": String(maxRequests),
+        "X-RateLimit-Remaining": String(remaining),
+        "X-RateLimit-Reset": String(reset),
+      },
+    });
 
     info.response = response;
     return info;

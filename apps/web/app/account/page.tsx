@@ -379,10 +379,22 @@ export default function AccountPage() {
 
         <p className="text-sm text-muted-foreground">
           Use API keys with the{" "}
-          <Link href="/docs/cli" className="text-primary hover:underline font-bold">CLI</Link>,{" "}
-          <Link href="/docs/sdk" className="text-primary hover:underline font-bold">SDK</Link>,{" "}
-          <Link href="/docs/mcp" className="text-primary hover:underline font-bold">MCP server</Link>, or the{" "}
-          <Link href="/api-explorer" className="text-primary hover:underline font-bold">API explorer</Link>.
+          <Link href="/docs/cli" className="text-primary hover:underline font-bold">
+            CLI
+          </Link>
+          ,{" "}
+          <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
+            SDK
+          </Link>
+          ,{" "}
+          <Link href="/docs/mcp" className="text-primary hover:underline font-bold">
+            MCP server
+          </Link>
+          , or the{" "}
+          <Link href="/api-explorer" className="text-primary hover:underline font-bold">
+            API explorer
+          </Link>
+          .
         </p>
 
         <div className="border rounded-lg bg-card divide-y">

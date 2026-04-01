@@ -13,6 +13,8 @@ export default tseslint.config(
       "**/dist/**",
       "**/.next/**",
       "**/.turbo/**",
+      "**/target/**",
+      ".claude/worktrees/**",
       "**/*.config.js",
       "**/*.config.mjs",
       "**/public/_pagefind/**",
