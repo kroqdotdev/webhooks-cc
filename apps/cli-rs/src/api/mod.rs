@@ -64,11 +64,6 @@ impl ApiClient {
         self.token = Some(token);
     }
 
-    /// Whether the client has an auth token.
-    pub fn has_token(&self) -> bool {
-        self.token.is_some()
-    }
-
     /// Build default headers with auth.
     pub fn auth_headers(&self) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();

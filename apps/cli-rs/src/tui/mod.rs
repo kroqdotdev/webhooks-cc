@@ -73,7 +73,7 @@ async fn run_app(terminal: &mut DefaultTerminal, client: ApiClient) -> Result<()
                             }
                         }
                     }
-                    AppEvent::Resize(_, _) => {
+                    AppEvent::Resize => {
                         // ratatui handles resize automatically
                     }
                     AppEvent::Tick => {
@@ -136,7 +136,6 @@ impl App {
         let webhook_url = self.client.webhook_url.clone();
 
         let mut screen: Box<dyn Screen> = match screen_id {
-            ScreenId::Menu => Box::new(screens::menu::MenuScreen::new(self.auth_email.clone())),
             ScreenId::Auth => Box::new(screens::auth::AuthScreen::new(self.auth_email.clone())),
             ScreenId::Endpoints => Box::new(screens::endpoints::EndpointsScreen::new(webhook_url)),
             ScreenId::EndpointDetail(slug) => {
@@ -144,9 +143,6 @@ impl App {
             }
             ScreenId::Tunnel => Box::new(screens::tunnel::TunnelScreen::new(webhook_url)),
             ScreenId::Listen => Box::new(screens::listen::ListenScreen::new(webhook_url)),
-            ScreenId::ListenSlug(slug) => {
-                Box::new(screens::listen::ListenScreen::with_slug(slug, webhook_url))
-            }
             ScreenId::RequestDetail(id) => {
                 Box::new(screens::request_detail::RequestDetailScreen::new(id))
             }

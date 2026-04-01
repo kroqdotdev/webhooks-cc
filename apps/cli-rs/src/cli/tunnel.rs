@@ -133,7 +133,7 @@ pub async fn run(
                     println!("\n  {} Stream timed out, reconnecting...", dim("●"));
                 }
             }
-            SseEvent::Connected { .. } => {}
+            SseEvent::Connected => {}
         }
     }
 

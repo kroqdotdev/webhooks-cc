@@ -83,16 +83,6 @@ pub fn is_backtab(key: &KeyEvent) -> bool {
     )
 }
 
-pub fn is_help(key: &KeyEvent) -> bool {
-    matches!(
-        key,
-        KeyEvent {
-            code: KeyCode::Char('?'),
-            ..
-        }
-    )
-}
-
 pub fn is_char(key: &KeyEvent, c: char) -> bool {
     matches!(
         key,

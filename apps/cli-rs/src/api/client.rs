@@ -3,9 +3,8 @@ use reqwest::Response;
 
 use super::{extract_error, ApiClient};
 
-/// HTTP response with status and body pre-read.
+/// HTTP response with body pre-read.
 pub struct ApiResponse {
-    pub status: reqwest::StatusCode,
     pub body: String,
 }
 
@@ -76,5 +75,5 @@ async fn read_response(resp: Response) -> Result<ApiResponse> {
         anyhow::bail!("{}", extract_error(status, &body));
     }
 
-    Ok(ApiResponse { status, body })
+    Ok(ApiResponse { body })
 }

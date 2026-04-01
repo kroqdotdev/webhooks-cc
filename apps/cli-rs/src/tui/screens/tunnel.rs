@@ -191,9 +191,6 @@ impl Screen for TunnelScreen {
             Message::ForwardResult { request_id, result } => {
                 self.forward_results.insert(request_id, result);
             }
-            Message::SseError(e) => {
-                self.state = State::Error(e);
-            }
             _ => {}
         }
     }

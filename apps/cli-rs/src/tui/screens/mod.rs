@@ -31,7 +31,6 @@ pub enum Message {
 
     // SSE
     SseEvent(crate::types::SseEvent),
-    SseError(String),
 
     // Tunnel
     ForwardResult {
@@ -63,13 +62,11 @@ pub enum Action {
 /// Screen identifiers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScreenId {
-    Menu,
     Auth,
     Endpoints,
     EndpointDetail(String), // slug
     Tunnel,
     Listen,
-    ListenSlug(String), // slug
     RequestDetail(String), // request ID
     Search,
     Send,

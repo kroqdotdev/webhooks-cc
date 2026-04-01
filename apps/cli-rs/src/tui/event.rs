@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     Key(KeyEvent),
-    Resize(u16, u16),
+    Resize,
     Tick,
 }
 
@@ -24,8 +24,8 @@ pub fn spawn_event_reader(tick_rate: Duration) -> mpsc::UnboundedReceiver<AppEve
                             break;
                         }
                     }
-                    Ok(Event::Resize(w, h)) => {
-                        if tx.send(AppEvent::Resize(w, h)).is_err() {
+                    Ok(Event::Resize(_, _)) => {
+                        if tx.send(AppEvent::Resize).is_err() {
                             break;
                         }
                     }

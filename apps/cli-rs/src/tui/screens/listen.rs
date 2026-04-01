@@ -143,7 +143,7 @@ impl Screen for ListenScreen {
             Message::EndpointsLoaded(Err(e)) => {
                 self.state = State::Error(e.to_string());
             }
-            Message::SseEvent(SseEvent::Connected { .. }) => {
+            Message::SseEvent(SseEvent::Connected) => {
                 self.state = State::Streaming;
             }
             Message::SseEvent(SseEvent::Request(req)) => {
@@ -152,9 +152,6 @@ impl Screen for ListenScreen {
             }
             Message::SseEvent(SseEvent::EndpointDeleted) => {
                 self.state = State::Error("Endpoint was deleted.".into());
-            }
-            Message::SseError(e) => {
-                self.state = State::Error(e);
             }
             _ => {}
         }

@@ -11,18 +11,12 @@ use tokio::sync::mpsc;
 use crate::api::ApiClient;
 use crate::auth;
 use crate::tui::{keys, theme};
-use crate::tui::widgets::spinner::Spinner;
 use crate::types::Token;
 
 use super::{Action, Message, Screen};
 
 enum State {
     Idle,
-    LoggingIn {
-        device_code: String,
-        user_code: String,
-        verification_url: String,
-    },
     Polling {
         device_code: String,
         user_code: String,
@@ -49,9 +43,6 @@ impl AuthScreen {
         }
     }
 
-    pub fn set_auth_email(&mut self, email: Option<String>) {
-        self.auth_email = email;
-    }
 }
 
 impl Screen for AuthScreen {
@@ -89,7 +80,6 @@ impl Screen for AuthScreen {
                     }
                 }
             }
-            State::LoggingIn { .. } => {}
             State::Polling { user_code, .. } => {
                 if keys::is_char(key, 'c') {
                     copy_to_clipboard(user_code);
@@ -230,9 +220,6 @@ impl Screen for AuthScreen {
                         .padding(Padding::vertical(1));
                     frame.render_widget(Paragraph::new(lines).block(block), content_area);
                 }
-            }
-            State::LoggingIn { .. } => {
-                frame.render_widget(Spinner::new(self.tick, "Creating login code..."), content_area);
             }
             State::Polling {
                 user_code,

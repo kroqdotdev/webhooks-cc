@@ -57,7 +57,7 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
                     println!("  {} Stream timed out, reconnecting...", dim("●"));
                 }
             }
-            SseEvent::Connected { .. } => {}
+            SseEvent::Connected => {}
         }
     }
 

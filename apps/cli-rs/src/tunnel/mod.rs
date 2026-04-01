@@ -98,14 +98,13 @@ impl Tunnel {
         match builder.send().await {
             Ok(resp) => {
                 let status_code = resp.status().as_u16();
-                let body = resp.bytes().await.unwrap_or_default();
+                let _ = resp.bytes().await; // consume body
                 let duration = start.elapsed();
 
                 ForwardResult {
                     success: true,
                     status_code: Some(status_code),
                     duration,
-                    body_size: body.len(),
                     error: None,
                 }
             }
@@ -115,7 +114,6 @@ impl Tunnel {
                     success: false,
                     status_code: None,
                     duration,
-                    body_size: 0,
                     error: Some(e.to_string()),
                 }
             }

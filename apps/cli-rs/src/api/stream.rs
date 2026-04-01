@@ -82,7 +82,7 @@ fn parse_sse_event(event_type: &str, data: &str) -> Option<SseEvent> {
             // Data is JSON: {"slug":"...","endpointId":"..."}
             let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
             let slug = parsed["slug"].as_str().unwrap_or("").to_string();
-            Some(SseEvent::Connected { slug })
+            Some(SseEvent::Connected)
         }
         "request" => {
             let req: CapturedRequest = serde_json::from_str(data).ok()?;

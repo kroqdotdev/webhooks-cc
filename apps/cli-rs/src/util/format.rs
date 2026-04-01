@@ -12,28 +12,6 @@ pub fn format_timestamp(ts_ms: i64) -> String {
     }
 }
 
-/// Format a timestamp as relative time ("2s ago", "5m ago", etc.).
-pub fn format_relative(ts_ms: i64) -> String {
-    let now = Utc::now().timestamp_millis();
-    let diff_secs = (now - ts_ms) / 1000;
-    if diff_secs < 0 {
-        return "just now".to_string();
-    }
-    if diff_secs < 60 {
-        return format!("{diff_secs}s ago");
-    }
-    let mins = diff_secs / 60;
-    if mins < 60 {
-        return format!("{mins}m ago");
-    }
-    let hours = mins / 60;
-    if hours < 24 {
-        return format!("{hours}h ago");
-    }
-    let days = hours / 24;
-    format!("{days}d ago")
-}
-
 /// Format bytes into human-readable string.
 pub fn format_bytes(bytes: usize) -> String {
     if bytes < 1024 {

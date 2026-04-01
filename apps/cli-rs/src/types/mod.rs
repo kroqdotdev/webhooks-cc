@@ -215,22 +215,6 @@ pub struct Token {
 }
 
 // ---------------------------------------------------------------------------
-// GitHub release (self-update)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubRelease {
-    pub tag_name: String,
-    pub assets: Vec<GithubAsset>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubAsset {
-    pub name: String,
-    pub browser_download_url: String,
-}
-
-// ---------------------------------------------------------------------------
 // Tunnel / forwarding
 // ---------------------------------------------------------------------------
 
@@ -239,7 +223,6 @@ pub struct ForwardResult {
     pub success: bool,
     pub status_code: Option<u16>,
     pub duration: std::time::Duration,
-    pub body_size: usize,
     pub error: Option<String>,
 }
 
@@ -268,7 +251,7 @@ impl fmt::Display for ForwardResult {
 
 #[derive(Debug, Clone)]
 pub enum SseEvent {
-    Connected { slug: String },
+    Connected,
     Request(CapturedRequest),
     EndpointDeleted,
     Timeout,
