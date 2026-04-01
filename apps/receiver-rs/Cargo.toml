@@ -15,7 +15,7 @@ tower-http = { version = "0.6", features = ["cors", "limit", "trace"] }
 tower = "0.5"
 opentelemetry = "0.28"
 opentelemetry_sdk = { version = "0.28", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.28", features = ["http-proto", "reqwest-rustls"] }
+opentelemetry-otlp = { version = "0.31", features = ["http-proto", "reqwest-rustls"] }
 tracing-opentelemetry = "0.29"
 bytes = "1"
 http = "1"
