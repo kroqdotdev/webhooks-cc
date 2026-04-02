@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.14.0";
+export const APP_VERSION = "0.14.1";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.14.1",
+    date: "2026-04-02",
+    title: "API Key Deletion Confirmation",
+    track: "web",
+    items: [
+      "Added confirmation dialog before deleting API keys to prevent accidental revocation",
+    ],
+  },
   {
     version: "0.14.0",
     date: "2026-03-29",
