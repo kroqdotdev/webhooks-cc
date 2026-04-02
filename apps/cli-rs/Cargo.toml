@@ -16,8 +16,8 @@ clap = { version = "4", features = ["derive", "env", "string"] }
 clap_complete = "4"
 
 # TUI
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 
 # Async
 tokio = { version = "1", features = ["full"] }
