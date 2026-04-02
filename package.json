@@ -48,7 +48,8 @@
       "path-to-regexp": ">=8.4.0",
       "brace-expansion@^1.1.7": "1.1.13",
       "brace-expansion@^2.0.1": "2.0.3",
-      "brace-expansion@^5.0.0": "5.0.5"
+      "brace-expansion@^5.0.0": "5.0.5",
+      "dompurify": ">=3.3.2"
     }
   },
   "packageManager": "pnpm@10.28.2",
