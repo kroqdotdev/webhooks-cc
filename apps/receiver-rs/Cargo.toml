@@ -13,10 +13,10 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "trace"] }
 tower = "0.5"
-opentelemetry = "0.28"
-opentelemetry_sdk = { version = "0.28", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.28", features = ["http-proto", "reqwest-rustls"] }
-tracing-opentelemetry = "0.29"
+opentelemetry = "0.31"
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", features = ["http-proto", "reqwest-rustls"] }
+tracing-opentelemetry = "0.32"
 bytes = "1"
 http = "1"
 http-body-util = "0.1"
