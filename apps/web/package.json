@@ -48,7 +48,7 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
     "@types/hast": "^3.0.4",
@@ -58,7 +58,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/source-map-support": "^0.5.10",
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.4.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3"
