@@ -8,6 +8,17 @@ import { ManageSubscriptionDialog } from "@/components/billing/manage-subscripti
 import { PastDueBanner } from "@/components/billing/past-due-banner";
 import { UpgradeButton } from "@/components/billing/upgrade-button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
 import { trackUpgradeCompleted, identifyUser } from "@/lib/analytics";
@@ -416,15 +427,35 @@ export default function AccountPage() {
                       ` \u00b7 Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDeleteKey(key.id)}
-                  disabled={deletingKeyId === key.id}
-                  title="Delete key"
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={deletingKeyId === key.id}
+                      title="Delete key"
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete API key?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently revoke <span className="font-mono font-medium">{key.key_prefix}...</span> ({key.name}). Any integrations using this key will stop working immediately.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleDeleteKey(key.id)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete key
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ))
           )}
