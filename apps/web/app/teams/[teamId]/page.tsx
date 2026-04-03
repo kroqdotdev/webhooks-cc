@@ -26,6 +26,13 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, HelpCircle, Trash2, UserPlus } from "lucide-react";
 import Link from "next/link";
+import {
+  trackTeamMemberInvited,
+  trackTeamMemberRemoved,
+  trackTeamDeleted,
+  trackTeamLeft,
+  trackEndpointTeamToggled,
+} from "@/lib/analytics";
 
 interface Member {
   id: string;
@@ -230,6 +237,7 @@ export default function TeamDetailPage() {
         headers: authHeader,
       });
       if (res.ok) {
+        trackTeamMemberRemoved();
         setMembers((prev) => prev.filter((m) => m.userId !== userId));
       }
     } finally {
@@ -248,6 +256,7 @@ export default function TeamDetailPage() {
         body: JSON.stringify({ email: inviteEmail.trim() }),
       });
       if (res.ok) {
+        trackTeamMemberInvited("success");
         setInviteEmail("");
         setInviteMessage({ type: "success", text: "Invite sent successfully." });
         await fetchData();
@@ -255,6 +264,7 @@ export default function TeamDetailPage() {
         const data = (await res.json().catch(() => ({}))) as {
           error?: string;
         };
+        trackTeamMemberInvited("error");
         setInviteMessage({
           type: "error",
           text: data.error ?? "Failed to send invite.",
@@ -300,12 +310,14 @@ export default function TeamDetailPage() {
           method: "DELETE",
           headers: authHeader,
         });
+        trackEndpointTeamToggled("unshared");
       } else {
         await fetch(`/api/teams/${teamId}/endpoints`, {
           method: "POST",
           headers: { ...authHeader, "Content-Type": "application/json" },
           body: JSON.stringify({ endpointId }),
         });
+        trackEndpointTeamToggled("shared");
       }
       // Refresh endpoint data
       const res = await fetch("/api/endpoints", { headers: authHeader });
@@ -333,6 +345,7 @@ export default function TeamDetailPage() {
         headers: authHeader,
       });
       if (res.ok) {
+        trackTeamDeleted();
         router.push("/teams");
       }
     } finally {
@@ -350,6 +363,7 @@ export default function TeamDetailPage() {
         headers: authHeader,
       });
       if (res.ok) {
+        trackTeamLeft();
         router.push("/teams");
       }
     } finally {

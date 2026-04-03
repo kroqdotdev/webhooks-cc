@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { EndpointSwitcher } from "./endpoint-switcher";
-import { resetUser } from "@/lib/analytics";
+import { resetUser, trackSignOut } from "@/lib/analytics";
 
 export function DashboardHeader() {
   const router = useRouter();
 
   const handleSignOut = async () => {
+    trackSignOut();
     resetUser();
     const supabase = createClient();
     await supabase.auth.signOut();

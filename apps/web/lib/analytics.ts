@@ -123,6 +123,59 @@ export function trackTestWebhookSent(mode: string, responseStatus: number) {
   capture("test_webhook_sent", { mode, response_status: responseStatus });
 }
 
+// ── Teams ───────────────────────────────────────────────────────
+export function trackTeamCreated() {
+  capture("team_created");
+}
+
+export function trackTeamMemberInvited(status: "success" | "error") {
+  capture("team_member_invited", { status });
+}
+
+export function trackTeamInviteAccepted() {
+  capture("team_invite_accepted");
+}
+
+export function trackTeamInviteDeclined() {
+  capture("team_invite_declined");
+}
+
+export function trackTeamMemberRemoved() {
+  capture("team_member_removed");
+}
+
+export function trackTeamLeft() {
+  capture("team_left");
+}
+
+export function trackTeamDeleted() {
+  capture("team_deleted");
+}
+
+export function trackEndpointTeamToggled(action: "shared" | "unshared") {
+  capture("endpoint_team_toggled", { action });
+}
+
+// ── Guest / Ephemeral ───────────────────────────────────────────
+export function trackGuestEndpointCreated() {
+  capture("guest_endpoint_created");
+}
+
+// ── CLI Auth ────────────────────────────────────────────────────
+export function trackCliDeviceAuthorized() {
+  capture("cli_device_authorized");
+}
+
+// ── Dashboard interactions ──────────────────────────────────────
+export function trackEndpointSwitched() {
+  capture("endpoint_switched");
+}
+
+// ── Sign out ────────────────────────────────────────────────────
+export function trackSignOut() {
+  capture("sign_out");
+}
+
 // ── Identify (after login) ──────────────────────────────────────
 export function identifyUser(userId: string, properties?: Record<string, unknown>) {
   if (typeof window === "undefined") return;

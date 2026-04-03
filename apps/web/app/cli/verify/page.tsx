@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { getMaintenanceTopOffset } from "@/lib/announcements";
+import { trackCliDeviceAuthorized } from "@/lib/analytics";
 
 export default function CliVerifyPage() {
   return (
@@ -55,6 +56,7 @@ function CliVerifyContent() {
         throw new Error(result.error || "Authorization failed");
       }
 
+      trackCliDeviceAuthorized();
       setStatus("success");
       setEmail(result.email ?? null);
     } catch (err) {

@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { trackEndpointSwitched } from "@/lib/analytics";
 
 export function EndpointSwitcher() {
   const { session } = useAuth();
@@ -67,6 +68,7 @@ export function EndpointSwitcher() {
   }
 
   const handleChange = (slug: string) => {
+    trackEndpointSwitched();
     router.push(`/dashboard?endpoint=${slug}`);
   };
 

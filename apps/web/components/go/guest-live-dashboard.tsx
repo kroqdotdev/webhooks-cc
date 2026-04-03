@@ -22,6 +22,7 @@ import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
 import { subscribeToEndpointRow, subscribeToEndpointRequestInserts } from "@/lib/supabase/realtime";
 import type { Request, RequestSummary } from "@/types/request";
 import { Check, Circle, Copy, Send } from "lucide-react";
+import { trackGuestEndpointCreated } from "@/lib/analytics";
 
 const REQUEST_LIMIT = 25;
 const BACKGROUND_SYNC_INTERVAL_MS = 2000;
@@ -476,6 +477,7 @@ function GuestLiveDashboardInner() {
       const result = await createGuestDashboardEndpoint();
       const expiry = result.expiresAt ?? Date.now() + EXPIRY_MS;
 
+      trackGuestEndpointCreated();
       setEndpointSlug(result.slug);
       setEndpoint(result);
       setRequests([]);

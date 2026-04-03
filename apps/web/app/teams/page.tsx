@@ -17,6 +17,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Lock } from "lucide-react";
 import Link from "next/link";
+import {
+  trackTeamCreated,
+  trackTeamInviteAccepted,
+  trackTeamInviteDeclined,
+} from "@/lib/analytics";
 
 interface Team {
   id: string;
@@ -106,6 +111,7 @@ export default function TeamsPage() {
         body: JSON.stringify({ name: newTeamName.trim() }),
       });
       if (res.ok) {
+        trackTeamCreated();
         setNewTeamName("");
         setCreateOpen(false);
         await fetchData();
@@ -126,6 +132,7 @@ export default function TeamsPage() {
         headers: authHeader,
       });
       if (res.ok) {
+        trackTeamInviteAccepted();
         await fetchData();
       }
     } finally {
@@ -141,6 +148,7 @@ export default function TeamsPage() {
         headers: authHeader,
       });
       if (res.ok) {
+        trackTeamInviteDeclined();
         setInvites((prev) => prev.filter((i) => i.id !== inviteId));
       }
     } finally {
