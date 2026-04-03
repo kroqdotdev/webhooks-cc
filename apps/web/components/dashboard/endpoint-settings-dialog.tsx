@@ -66,10 +66,12 @@ interface EndpointSettingsDialogProps {
     headers: Record<string, string>;
     delay?: number;
   };
+  /** Current notification webhook URL, if set. */
+  notificationUrl?: string;
 }
 
 export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
-  const { endpointName, slug, mockResponse } = props;
+  const { endpointName, slug, mockResponse, notificationUrl: initialNotificationUrl } = props;
   const { session } = useAuth();
   const router = useRouter();
 
@@ -79,6 +81,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [mockBody, setMockBody] = useState(mockResponse?.body || "");
   const [mockDelay, setMockDelay] = useState(mockResponse?.delay?.toString() || "");
   const [delayEnabled, setDelayEnabled] = useState(!!mockResponse?.delay);
+  const [notificationUrl, setNotificationUrl] = useState(initialNotificationUrl || "");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -93,6 +96,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setMockBody(mockResponse?.body || "");
       setMockDelay(mockResponse?.delay?.toString() || "");
       setDelayEnabled(!!mockResponse?.delay);
+      setNotificationUrl(initialNotificationUrl || "");
       setError(null);
       setConfirmDelete(false);
     }
@@ -121,6 +125,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               ...(delayMs && delayMs > 0 ? { delay: delayMs } : {}),
             }
           : null,
+        notificationUrl: notificationUrl || null,
       });
       emitDashboardEndpointsChanged();
       setOpen(false);
@@ -272,6 +277,24 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
                 </>
               )}
             </div>
+          </div>
+
+          {/* Notification Webhook */}
+          <div className="border-2 border-foreground p-4 space-y-2">
+            <div>
+              <p className="font-bold uppercase tracking-wide text-xs mb-1">Notification Webhook</p>
+              <p className="text-xs text-muted-foreground">
+                POST a JSON summary to Slack, Discord, or any URL when a request arrives.
+              </p>
+            </div>
+            <input
+              id="settings-notification-url"
+              type="url"
+              value={notificationUrl}
+              onChange={(e) => setNotificationUrl(e.target.value)}
+              placeholder="https://hooks.slack.com/services/..."
+              className="neo-input w-full text-sm"
+            />
           </div>
 
           {error && (

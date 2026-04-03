@@ -910,6 +910,7 @@ export default function DashboardPage() {
         endpointName={currentEndpoint.name || currentEndpoint.slug}
         slug={currentEndpoint.slug}
         mockResponse={currentEndpoint.mockResponse}
+        notificationUrl={currentEndpoint.notificationUrl}
         extra={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
