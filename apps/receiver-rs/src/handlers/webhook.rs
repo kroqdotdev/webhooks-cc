@@ -260,48 +260,49 @@ fn spawn_notification(info: NotificationInfo) {
             }
         }
 
-        // SSRF protection: resolve DNS, validate all IPs
-        let target = match resolve_notification_target(&info.url).await {
-            Ok(t) => t,
-            Err(reason) => {
-                // Redact URL — notification URLs are bearer secrets (Slack/Discord)
-                tracing::warn!(slug = info.slug, reason, "notification URL blocked");
-                return;
+        // Wrap DNS resolution + POST in a single 5s timeout so slow DNS
+        // can't keep fire-and-forget tasks alive past the budget.
+        let slug_ref = info.slug.clone();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            // SSRF protection: resolve DNS, validate all IPs
+            let target = resolve_notification_target(&info.url).await?;
+
+            // Build a per-request client with DNS pinned to validated addresses.
+            // Preserves original hostname for TLS cert verification (no TOCTOU).
+            let pinned_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(4))
+                .redirect(reqwest::redirect::Policy::none())
+                .resolve_to_addrs(&target.host, &target.addrs)
+                .build()
+                .map_err(|_| "failed to build client")?;
+
+            let payload = serde_json::json!({
+                "slug": info.slug,
+                "method": info.method,
+                "path": info.path,
+                "receivedAt": info.received_at,
+                "preview": info.preview,
+            });
+
+            pinned_client
+                .post(&target.url)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|_| "POST failed")?;
+
+            Ok::<(), &'static str>(())
+        })
+        .await;
+
+        match result {
+            Ok(Err(reason)) => {
+                tracing::debug!(slug = slug_ref, reason, "notification delivery failed");
             }
-        };
-
-        // Build a per-request client with DNS pinned to validated addresses.
-        // This preserves the original hostname for TLS cert verification while
-        // ensuring reqwest connects only to our validated IPs (no TOCTOU).
-        let pinned_client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(&target.host, &target.addrs)
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::debug!(slug = info.slug, error = %e, "failed to build pinned client");
-                return;
+            Err(_) => {
+                tracing::debug!(slug = slug_ref, "notification timed out");
             }
-        };
-
-        let payload = serde_json::json!({
-            "slug": info.slug,
-            "method": info.method,
-            "path": info.path,
-            "receivedAt": info.received_at,
-            "preview": info.preview,
-        });
-
-        let result = pinned_client
-            .post(&target.url)
-            .json(&payload)
-            .send()
-            .await;
-
-        if let Err(e) = result {
-            tracing::debug!(slug = info.slug, error = %e, "notification POST failed");
+            Ok(Ok(())) => {}
         }
     });
 }
