@@ -17,7 +17,7 @@ interface UrlBarProps {
     body: string;
     headers: Record<string, string>;
   };
-  notificationUrl?: string;
+  notificationUrl?: string | null;
   extra?: React.ReactNode;
 }
 

@@ -166,33 +166,56 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-/// Resolve the notification URL's host and check it doesn't point to a private/internal IP.
-/// Returns Err if the URL is invalid, DNS fails, or resolves to a blocked IP.
-async fn validate_notification_target(url: &str) -> Result<(), &'static str> {
+/// Resolve the notification URL's host, validate all IPs are safe, and return a
+/// rewritten URL that connects directly to the resolved IP (with Host header).
+/// This eliminates the TOCTOU window where DNS could return a different IP on
+/// the second resolution by reqwest.
+///
+/// Returns `Ok((safe_url, host_header))` or `Err(reason)`.
+async fn resolve_notification_target(url: &str) -> Result<(String, String), &'static str> {
     let parsed = url::Url::parse(url).map_err(|_| "invalid URL")?;
-    let host = parsed.host_str().ok_or("no host in URL")?;
+    let host = parsed.host_str().ok_or("no host in URL")?.to_string();
+    let port = parsed
+        .port()
+        .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
 
-    // Direct IP literal
+    // Direct IP literal — no DNS needed
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
         if is_blocked_ip(ip) {
             return Err("blocked IP");
         }
-        return Ok(());
+        return Ok((url.to_string(), host));
     }
 
-    // DNS resolution
-    let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
-    let addrs = tokio::net::lookup_host(format!("{host}:{port}"))
+    // DNS resolution — check ALL addresses before picking one
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(format!("{host}:{port}"))
         .await
-        .map_err(|_| "DNS resolution failed")?;
+        .map_err(|_| "DNS resolution failed")?
+        .collect();
 
-    for addr in addrs {
+    if addrs.is_empty() {
+        return Err("DNS returned no addresses");
+    }
+
+    for addr in &addrs {
         if is_blocked_ip(addr.ip()) {
             return Err("blocked IP");
         }
     }
 
-    Ok(())
+    // Rewrite URL to use the resolved IP directly, preventing re-resolution
+    let resolved_ip = addrs[0].ip();
+    let ip_host = match resolved_ip {
+        std::net::IpAddr::V4(v4) => format!("{v4}"),
+        std::net::IpAddr::V6(v6) => format!("[{v6}]"),
+    };
+    let mut safe_url = parsed.clone();
+    safe_url
+        .set_host(Some(&ip_host))
+        .map_err(|_| "failed to rewrite URL")?;
+    safe_url.set_port(Some(port)).ok();
+
+    Ok((safe_url.to_string(), host))
 }
 
 /// Notification payload for the fire-and-forget POST.
@@ -227,11 +250,15 @@ fn spawn_notification(info: NotificationInfo) {
             }
         }
 
-        // SSRF protection: resolve the URL and block private/internal IPs
-        if let Err(reason) = validate_notification_target(&info.url).await {
-            tracing::warn!(slug = info.slug, url = info.url, reason, "notification URL blocked");
-            return;
-        }
+        // SSRF protection: resolve DNS, validate all IPs, rewrite URL to resolved IP
+        let (safe_url, host) = match resolve_notification_target(&info.url).await {
+            Ok(resolved) => resolved,
+            Err(reason) => {
+                // Redact URL — notification URLs are bearer secrets (Slack/Discord)
+                tracing::warn!(slug = info.slug, reason, "notification URL blocked");
+                return;
+            }
+        };
 
         let payload = serde_json::json!({
             "slug": info.slug,
@@ -243,7 +270,8 @@ fn spawn_notification(info: NotificationInfo) {
 
         let result = info
             .http_client
-            .post(&info.url)
+            .post(&safe_url)
+            .header("Host", &host)
             .json(&payload)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -671,11 +699,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_blocks_private_ip_literals() {
-        assert!(validate_notification_target("http://127.0.0.1:9876/hook").await.is_err());
-        assert!(validate_notification_target("http://10.0.0.1/hook").await.is_err());
-        assert!(validate_notification_target("http://169.254.169.254/meta").await.is_err());
-        assert!(validate_notification_target("http://[::1]/hook").await.is_err());
-        assert!(validate_notification_target("not-a-url").await.is_err());
+    async fn resolve_blocks_private_ip_literals() {
+        assert!(resolve_notification_target("http://127.0.0.1:9876/hook").await.is_err());
+        assert!(resolve_notification_target("http://10.0.0.1/hook").await.is_err());
+        assert!(resolve_notification_target("http://169.254.169.254/meta").await.is_err());
+        assert!(resolve_notification_target("http://[::1]/hook").await.is_err());
+        assert!(resolve_notification_target("not-a-url").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn resolve_rewrites_url_to_ip() {
+        // Public IP literal should pass through unchanged
+        let result = resolve_notification_target("http://8.8.8.8:9876/hook").await;
+        assert!(result.is_ok());
+        let (url, host) = result.unwrap();
+        assert!(url.contains("8.8.8.8"));
+        assert_eq!(host, "8.8.8.8");
     }
 }

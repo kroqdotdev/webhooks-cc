@@ -35,7 +35,7 @@ export interface EndpointRecord {
     headers: Record<string, string>;
     delay?: number;
   };
-  notificationUrl?: string;
+  notificationUrl: string | null;
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
@@ -105,7 +105,7 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
               : {}),
           }
         : undefined,
-    notificationUrl: row.notification_url ?? undefined,
+    notificationUrl: row.notification_url ?? null,
     isEphemeral: row.is_ephemeral || undefined,
     expiresAt: parseMillis(row.expires_at),
     createdAt: parseMillis(row.created_at) ?? Date.now(),

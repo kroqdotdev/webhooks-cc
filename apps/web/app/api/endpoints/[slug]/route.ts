@@ -23,6 +23,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
 
+    // Strip notification URL for non-owners — it's a bearer secret (Slack/Discord)
+    if (access.ownerId !== auth.userId) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { notificationUrl, ...safe } = endpoint;
+      return Response.json(safe);
+    }
+
     return Response.json(endpoint);
   } catch (error) {
     console.error("Failed to fetch endpoint:", error);

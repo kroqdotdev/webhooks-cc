@@ -66,8 +66,8 @@ interface EndpointSettingsDialogProps {
     headers: Record<string, string>;
     delay?: number;
   };
-  /** Current notification webhook URL, if set. */
-  notificationUrl?: string;
+  /** Current notification webhook URL. null = owned, not set. undefined = shared endpoint (hidden). */
+  notificationUrl?: string | null;
 }
 
 function TeamSharingSection({
@@ -412,25 +412,27 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
             <p className="font-bold uppercase tracking-wide text-xs">Advanced Settings</p>
 
             <div className="space-y-4">
-              {/* Notification Webhook */}
-              <div className="border-2 border-foreground p-4 space-y-2">
-                <div>
-                  <p className="font-bold uppercase tracking-wide text-xs mb-1">
-                    Notification Webhook
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    POST a JSON summary to Slack, Discord, or any URL when a request arrives.
-                  </p>
+              {/* Notification Webhook — only shown for owned endpoints */}
+              {initialNotificationUrl !== undefined && (
+                <div className="border-2 border-foreground p-4 space-y-2">
+                  <div>
+                    <p className="font-bold uppercase tracking-wide text-xs mb-1">
+                      Notification Webhook
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      POST a JSON summary to Slack, Discord, or any URL when a request arrives.
+                    </p>
+                  </div>
+                  <input
+                    id="settings-notification-url"
+                    type="url"
+                    value={notificationUrl}
+                    onChange={(e) => setNotificationUrl(e.target.value)}
+                    placeholder="https://hooks.slack.com/services/..."
+                    className="neo-input w-full text-sm"
+                  />
                 </div>
-                <input
-                  id="settings-notification-url"
-                  type="url"
-                  value={notificationUrl}
-                  onChange={(e) => setNotificationUrl(e.target.value)}
-                  placeholder="https://hooks.slack.com/services/..."
-                  className="neo-input w-full text-sm"
-                />
-              </div>
+              )}
 
               {/* Team Sharing */}
               <TeamSharingSection
