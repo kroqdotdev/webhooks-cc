@@ -32,7 +32,7 @@ declare
   v_mock        jsonb;
 begin
   -- 1. Look up endpoint by slug
-  select id, user_id, is_ephemeral, expires_at, mock_response, request_count
+  select id, user_id, is_ephemeral, expires_at, mock_response, request_count, notification_url
     into v_endpoint
     from public.endpoints
    where slug = p_slug;
@@ -134,7 +134,8 @@ begin
   return jsonb_build_object(
     'status', 'ok',
     'mock_response', v_mock,
-    'retry_after', null::bigint
+    'retry_after', null::bigint,
+    'notification_url', v_endpoint.notification_url
   );
 end;
 $$;

@@ -48,6 +48,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     return Response.json({ error: "Invalid name" }, { status: 400 });
   }
 
+  // Validate notificationUrl if provided
+  if (body.notificationUrl !== undefined && body.notificationUrl !== null) {
+    if (typeof body.notificationUrl !== "string" || body.notificationUrl.length > 2048) {
+      return Response.json({ error: "Invalid notificationUrl" }, { status: 400 });
+    }
+    if (body.notificationUrl.length > 0) {
+      try {
+        const parsed = new URL(body.notificationUrl);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return Response.json({ error: "notificationUrl must use http or https" }, { status: 400 });
+        }
+      } catch {
+        return Response.json({ error: "Invalid notificationUrl format" }, { status: 400 });
+      }
+    }
+  }
+
   // Validate mockResponse structure if provided
   if (body.mockResponse !== undefined && body.mockResponse !== null) {
     if (typeof body.mockResponse !== "object" || Array.isArray(body.mockResponse)) {
@@ -99,6 +116,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.mockResponse === undefined
           ? undefined
           : (body.mockResponse as Record<string, unknown> | null),
+      notificationUrl:
+        body.notificationUrl === undefined
+          ? undefined
+          : body.notificationUrl === null || body.notificationUrl === ""
+            ? null
+            : (body.notificationUrl as string),
     });
 
     if (!endpoint) {

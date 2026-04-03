@@ -579,6 +579,7 @@ export class WebhooksCC {
             ephemeral: "boolean?",
             expiresIn: "number|string?",
             mockResponse: "object?",
+            notificationUrl: "string?",
           },
         },
         list: {
@@ -591,7 +592,7 @@ export class WebhooksCC {
         },
         update: {
           description: "Update endpoint settings",
-          params: { slug: "string", name: "string?", mockResponse: "object?" },
+          params: { slug: "string", name: "string?", mockResponse: "object?", notificationUrl: "string?" },
         },
         delete: {
           description: "Delete endpoint and its requests",
@@ -755,6 +756,9 @@ export class WebhooksCC {
       }
       if (options.mockResponse !== undefined) {
         body.mockResponse = options.mockResponse;
+      }
+      if (options.notificationUrl !== undefined) {
+        body.notificationUrl = options.notificationUrl;
       }
 
       const isEphemeral = options.ephemeral === true || options.expiresIn !== undefined;

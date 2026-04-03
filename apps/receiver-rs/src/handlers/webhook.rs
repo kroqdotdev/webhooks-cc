@@ -5,6 +5,8 @@ use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::AppState;
 
@@ -97,6 +99,7 @@ struct CaptureResult {
     status: String,
     mock_response: Option<MockResponse>,
     retry_after: Option<i64>,
+    notification_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +113,65 @@ struct MockResponse {
 
 /// Maximum allowed mock response delay (30 seconds).
 const MAX_DELAY_MS: u64 = 30_000;
+
+/// Maximum body preview length in notification payloads.
+const NOTIFICATION_PREVIEW_LEN: usize = 200;
+
+/// Minimum interval between notifications for a single endpoint (rate limit).
+const NOTIFICATION_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Per-endpoint rate limiter: tracks last notification time per slug.
+/// Wrapped in Arc<Mutex<>> and stored in AppState so it's shared across requests.
+pub type NotificationLimiter = Arc<Mutex<HashMap<String, std::time::Instant>>>;
+
+pub fn new_notification_limiter() -> NotificationLimiter {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Fire-and-forget POST to the notification URL with a JSON summary.
+fn spawn_notification(
+    http_client: reqwest::Client,
+    limiter: NotificationLimiter,
+    notification_url: String,
+    slug: String,
+    method: String,
+    path: String,
+    body_preview: String,
+    received_at: String,
+) {
+    tokio::spawn(async move {
+        // Rate limit: skip if we notified this endpoint within the cooldown period
+        {
+            let mut map = limiter.lock().await;
+            let now = std::time::Instant::now();
+            if let Some(last) = map.get(&slug) {
+                if now.duration_since(*last) < NOTIFICATION_COOLDOWN {
+                    return;
+                }
+            }
+            map.insert(slug.clone(), now);
+        }
+
+        let payload = serde_json::json!({
+            "slug": slug,
+            "method": method,
+            "path": path,
+            "receivedAt": received_at,
+            "preview": body_preview,
+        });
+
+        let result = http_client
+            .post(&notification_url)
+            .json(&payload)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await;
+
+        if let Err(e) = result {
+            tracing::debug!(slug, error = %e, "notification POST failed");
+        }
+    });
+}
 
 /// Build an HTTP response from a mock_response configuration.
 fn build_mock_response(mock: &MockResponse) -> Response {
@@ -251,6 +313,27 @@ async fn handle_webhook_inner(
 
             match capture.status.as_str() {
                 "ok" => {
+                    // Fire notification webhook if configured
+                    if let Some(ref url) = capture.notification_url {
+                        if !url.is_empty() {
+                            let preview = if body_str.len() > NOTIFICATION_PREVIEW_LEN {
+                                format!("{}...", &body_str[..NOTIFICATION_PREVIEW_LEN])
+                            } else {
+                                body_str.clone()
+                            };
+                            spawn_notification(
+                                state.http_client.clone(),
+                                state.notification_limiter.clone(),
+                                url.clone(),
+                                slug.clone(),
+                                method.as_str().to_string(),
+                                req_path.clone(),
+                                preview,
+                                received_at.to_rfc3339(),
+                            );
+                        }
+                    }
+
                     if let Some(mock) = &capture.mock_response {
                         if let Some(delay) = mock.delay {
                             let capped = delay.min(MAX_DELAY_MS);

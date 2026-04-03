@@ -378,9 +378,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       mockResponse: mockResponseSchema
         .optional()
         .describe("Optional mock response to return when the endpoint receives a request"),
+      notificationUrl: z.string().url().optional()
+        .describe("URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"),
     },
-    withErrorHandling(async ({ name, ephemeral, expiresIn, mockResponse }) => {
-      const endpoint = await client.endpoints.create({ name, ephemeral, expiresIn, mockResponse });
+    withErrorHandling(async ({ name, ephemeral, expiresIn, mockResponse, notificationUrl }) => {
+      const endpoint = await client.endpoints.create({ name, ephemeral, expiresIn, mockResponse, notificationUrl });
       return jsonContent(endpoint);
     })
   );
@@ -415,9 +417,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .nullable()
         .optional()
         .describe("Mock response config, or null to clear it"),
+      notificationUrl: z.string().url().nullable().optional()
+        .describe("Notification webhook URL, or null to clear it"),
     },
-    withErrorHandling(async ({ slug, name, mockResponse }) => {
-      const endpoint = await client.endpoints.update(slug, { name, mockResponse });
+    withErrorHandling(async ({ slug, name, mockResponse, notificationUrl }) => {
+      const endpoint = await client.endpoints.update(slug, { name, mockResponse, notificationUrl });
       return jsonContent(endpoint);
     })
   );

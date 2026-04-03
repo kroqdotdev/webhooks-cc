@@ -17,6 +17,7 @@ type SelectedEndpointRow = Pick<
   | "slug"
   | "name"
   | "mock_response"
+  | "notification_url"
   | "is_ephemeral"
   | "expires_at"
   | "created_at"
@@ -34,6 +35,7 @@ export interface EndpointRecord {
     headers: Record<string, string>;
     delay?: number;
   };
+  notificationUrl?: string;
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
@@ -52,6 +54,7 @@ interface UpdateEndpointInput {
   slug: string;
   name?: string;
   mockResponse?: Record<string, unknown> | null;
+  notificationUrl?: string | null;
 }
 
 function webhookUrl(slug: string): string | undefined {
@@ -101,6 +104,7 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
               : {}),
           }
         : undefined,
+    notificationUrl: row.notification_url ?? undefined,
     isEphemeral: row.is_ephemeral || undefined,
     expiresAt: parseMillis(row.expires_at),
     createdAt: parseMillis(row.created_at) ?? Date.now(),
@@ -170,7 +174,7 @@ export async function listEndpointsForUser(userId: string): Promise<EndpointReco
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("endpoints")
-    .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
+    .select("id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .returns<SelectedEndpointRow[]>();
@@ -189,7 +193,7 @@ export async function getEndpointBySlugForUser(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("endpoints")
-    .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
+    .select("id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at")
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
     .returns<SelectedEndpointRow>()
@@ -236,7 +240,7 @@ export async function createEndpointForUser({
   const { data, error } = await admin
     .from("endpoints")
     .insert(insert)
-    .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
+    .select("id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at")
     .returns<SelectedEndpointRow>()
     .single();
 
@@ -293,7 +297,7 @@ export async function claimGuestEndpoint(
     .is("user_id", null)
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
-    .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
+    .select("id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at")
     .returns<SelectedEndpointRow>()
     .maybeSingle();
 
@@ -306,6 +310,7 @@ export async function updateEndpointBySlugForUser({
   slug,
   name,
   mockResponse,
+  notificationUrl,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
@@ -316,13 +321,16 @@ export async function updateEndpointBySlugForUser({
   if (mockResponse !== undefined) {
     updates.mock_response = mockResponse as Json | null;
   }
+  if (notificationUrl !== undefined) {
+    updates.notification_url = notificationUrl;
+  }
 
   const { data, error } = await admin
     .from("endpoints")
     .update(updates)
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
-    .select("id, user_id, slug, name, mock_response, is_ephemeral, expires_at, created_at")
+    .select("id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at")
     .returns<SelectedEndpointRow>()
     .maybeSingle();
 
