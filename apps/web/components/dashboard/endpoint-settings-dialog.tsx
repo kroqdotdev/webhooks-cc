@@ -157,9 +157,7 @@ function TeamSharingSection({
   return (
     <div className="border-2 border-foreground p-4 space-y-2">
       <p className="font-bold uppercase tracking-wide text-xs">Team Sharing</p>
-      <p className="text-xs text-muted-foreground">
-        Share this endpoint with your teams.
-      </p>
+      <p className="text-xs text-muted-foreground">Share this endpoint with your teams.</p>
       <div className="space-y-1.5">
         {teams.map((team) => {
           const isShared = sharedTeamIds.has(team.id);
@@ -170,9 +168,7 @@ function TeamSharingSection({
                 onClick={() => handleToggle(team.id, isShared)}
                 disabled={toggling === team.id}
                 className={`text-xs px-2.5 py-1 border-2 border-foreground transition-colors ${
-                  isShared
-                    ? "bg-foreground text-background"
-                    : "hover:bg-muted"
+                  isShared ? "bg-foreground text-background" : "hover:bg-muted"
                 }`}
               >
                 {toggling === team.id ? "..." : isShared ? "Shared" : "Share"}
@@ -186,7 +182,13 @@ function TeamSharingSection({
 }
 
 export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
-  const { endpointId, endpointName, slug, mockResponse, notificationUrl: initialNotificationUrl } = props;
+  const {
+    endpointId,
+    endpointName,
+    slug,
+    mockResponse,
+    notificationUrl: initialNotificationUrl,
+  } = props;
   const { session } = useAuth();
   const router = useRouter();
 
@@ -340,7 +342,10 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               />
 
               <div className="space-y-2">
-                <Label htmlFor="settings-body" className="font-bold uppercase tracking-wide text-xs">
+                <Label
+                  htmlFor="settings-body"
+                  className="font-bold uppercase tracking-wide text-xs"
+                >
                   Response Body
                 </Label>
                 <Textarea
@@ -405,7 +410,9 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               {/* Notification Webhook */}
               <div className="border-2 border-foreground p-4 space-y-2">
                 <div>
-                  <p className="font-bold uppercase tracking-wide text-xs mb-1">Notification Webhook</p>
+                  <p className="font-bold uppercase tracking-wide text-xs mb-1">
+                    Notification Webhook
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     POST a JSON summary to Slack, Discord, or any URL when a request arrives.
                   </p>

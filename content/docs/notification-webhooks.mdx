@@ -6,13 +6,7 @@ order: 7
 lastUpdated: 2026-04-03
 schema: none
 keywords:
-  [
-    "webhook notification",
-    "slack webhook",
-    "discord webhook",
-    "webhook alerts",
-    "notification URL",
-  ]
+  ["webhook notification", "slack webhook", "discord webhook", "webhook alerts", "notification URL"]
 seo:
   ogTitle: "Webhook Notifications Guide — webhooks.cc"
   ogDescription: "Configure notification webhooks to get real-time alerts in Slack, Discord, or any HTTP endpoint when a webhook arrives at your endpoint."
@@ -44,13 +38,13 @@ The receiver sends a POST request with a JSON body:
 }
 ```
 
-| Field        | Type   | Description                                                        |
-| ------------ | ------ | ------------------------------------------------------------------ |
-| `slug`       | string | Endpoint slug that received the webhook                            |
-| `method`     | string | HTTP method of the incoming request                                |
-| `path`       | string | Request path after the slug                                        |
-| `receivedAt` | string | ISO 8601 timestamp                                                 |
-| `preview`    | string | First 200 characters of the request body (truncated with `...`)    |
+| Field        | Type   | Description                                                     |
+| ------------ | ------ | --------------------------------------------------------------- |
+| `slug`       | string | Endpoint slug that received the webhook                         |
+| `method`     | string | HTTP method of the incoming request                             |
+| `path`       | string | Request path after the slug                                     |
+| `receivedAt` | string | ISO 8601 timestamp                                              |
+| `preview`    | string | First 200 characters of the request body (truncated with `...`) |
 
 ## Rate limiting
 

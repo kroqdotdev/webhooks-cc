@@ -17,13 +17,13 @@ seo:
 
 Create a new webhook endpoint. Returns the endpoint slug and full URL.
 
-| Parameter      | Type      | Required | Description                                   |
-| -------------- | --------- | -------- | --------------------------------------------- |
-| `name`              | `string`  | no       | Display name for the endpoint                 |
-| `ephemeral`         | `boolean` | no       | Auto-delete after 12 hours                    |
-| `expiresIn`         | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`) |
-| `mockResponse`      | `object`  | no       | Mock response config (see fields below)       |
-| `notificationUrl`   | `string`  | no       | URL to POST a JSON summary on each request    |
+| Parameter         | Type      | Required | Description                                   |
+| ----------------- | --------- | -------- | --------------------------------------------- |
+| `name`            | `string`  | no       | Display name for the endpoint                 |
+| `ephemeral`       | `boolean` | no       | Auto-delete after 12 hours                    |
+| `expiresIn`       | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`) |
+| `mockResponse`    | `object`  | no       | Mock response config (see fields below)       |
+| `notificationUrl` | `string`  | no       | URL to POST a JSON summary on each request    |
 
 **mockResponse fields:**
 
@@ -61,12 +61,12 @@ Get details for an endpoint by slug.
 
 Update an endpoint's name, mock response, or notification webhook.
 
-| Parameter            | Type     | Required | Description                                                 |
-| -------------------- | -------- | -------- | ----------------------------------------------------------- |
-| `slug`               | `string` | yes      | Endpoint slug                                               |
-| `name`               | `string` | no       | New display name                                            |
-| `mockResponse`       | `object` | no       | Mock response config (see fields above), or `null` to clear |
-| `notificationUrl`    | `string` | no       | Notification webhook URL, or `null` to clear                |
+| Parameter         | Type     | Required | Description                                                 |
+| ----------------- | -------- | -------- | ----------------------------------------------------------- |
+| `slug`            | `string` | yes      | Endpoint slug                                               |
+| `name`            | `string` | no       | New display name                                            |
+| `mockResponse`    | `object` | no       | Mock response config (see fields above), or `null` to clear |
+| `notificationUrl` | `string` | no       | Notification webhook URL, or `null` to clear                |
 
 ### delete_endpoint
 

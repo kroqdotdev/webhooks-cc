@@ -592,7 +592,12 @@ export class WebhooksCC {
         },
         update: {
           description: "Update endpoint settings",
-          params: { slug: "string", name: "string?", mockResponse: "object?", notificationUrl: "string?" },
+          params: {
+            slug: "string",
+            name: "string?",
+            mockResponse: "object?",
+            notificationUrl: "string?",
+          },
         },
         delete: {
           description: "Delete endpoint and its requests",

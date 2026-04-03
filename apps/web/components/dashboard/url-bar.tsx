@@ -21,7 +21,14 @@ interface UrlBarProps {
   extra?: React.ReactNode;
 }
 
-export function UrlBar({ endpointId, endpointName, slug, mockResponse, notificationUrl, extra }: UrlBarProps) {
+export function UrlBar({
+  endpointId,
+  endpointName,
+  slug,
+  mockResponse,
+  notificationUrl,
+  extra,
+}: UrlBarProps) {
   const [copied, setCopied] = useState(false);
   const url = `${WEBHOOK_BASE_URL}/w/${slug}`;
 

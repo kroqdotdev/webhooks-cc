@@ -57,7 +57,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       try {
         const parsed = new URL(body.notificationUrl);
         if (!["http:", "https:"].includes(parsed.protocol)) {
-          return Response.json({ error: "notificationUrl must use http or https" }, { status: 400 });
+          return Response.json(
+            { error: "notificationUrl must use http or https" },
+            { status: 400 }
+          );
         }
       } catch {
         return Response.json({ error: "Invalid notificationUrl format" }, { status: 400 });

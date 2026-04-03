@@ -128,47 +128,51 @@ pub fn new_notification_limiter() -> NotificationLimiter {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-/// Fire-and-forget POST to the notification URL with a JSON summary.
-fn spawn_notification(
+/// Notification payload for the fire-and-forget POST.
+struct NotificationInfo {
     http_client: reqwest::Client,
     limiter: NotificationLimiter,
-    notification_url: String,
+    url: String,
     slug: String,
     method: String,
     path: String,
-    body_preview: String,
+    preview: String,
     received_at: String,
-) {
+}
+
+/// Fire-and-forget POST to the notification URL with a JSON summary.
+fn spawn_notification(info: NotificationInfo) {
     tokio::spawn(async move {
         // Rate limit: skip if we notified this endpoint within the cooldown period
         {
-            let mut map = limiter.lock().await;
+            let mut map = info.limiter.lock().await;
             let now = std::time::Instant::now();
-            if let Some(last) = map.get(&slug) {
-                if now.duration_since(*last) < NOTIFICATION_COOLDOWN {
-                    return;
-                }
+            if let Some(last) = map.get(&info.slug)
+                && now.duration_since(*last) < NOTIFICATION_COOLDOWN
+            {
+                return;
             }
-            map.insert(slug.clone(), now);
+            map.insert(info.slug.clone(), now);
         }
 
         let payload = serde_json::json!({
-            "slug": slug,
-            "method": method,
-            "path": path,
-            "receivedAt": received_at,
-            "preview": body_preview,
+            "slug": info.slug,
+            "method": info.method,
+            "path": info.path,
+            "receivedAt": info.received_at,
+            "preview": info.preview,
         });
 
-        let result = http_client
-            .post(&notification_url)
+        let result = info
+            .http_client
+            .post(&info.url)
             .json(&payload)
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await;
 
         if let Err(e) = result {
-            tracing::debug!(slug, error = %e, "notification POST failed");
+            tracing::debug!(info.slug, error = %e, "notification POST failed");
         }
     });
 }
@@ -314,24 +318,24 @@ async fn handle_webhook_inner(
             match capture.status.as_str() {
                 "ok" => {
                     // Fire notification webhook if configured
-                    if let Some(ref url) = capture.notification_url {
-                        if !url.is_empty() {
-                            let preview = if body_str.len() > NOTIFICATION_PREVIEW_LEN {
-                                format!("{}...", &body_str[..NOTIFICATION_PREVIEW_LEN])
-                            } else {
-                                body_str.clone()
-                            };
-                            spawn_notification(
-                                state.http_client.clone(),
-                                state.notification_limiter.clone(),
-                                url.clone(),
-                                slug.clone(),
-                                method.as_str().to_string(),
-                                req_path.clone(),
-                                preview,
-                                received_at.to_rfc3339(),
-                            );
-                        }
+                    if let Some(ref url) = capture.notification_url
+                        && !url.is_empty()
+                    {
+                        let preview = if body_str.len() > NOTIFICATION_PREVIEW_LEN {
+                            format!("{}...", &body_str[..NOTIFICATION_PREVIEW_LEN])
+                        } else {
+                            body_str.clone()
+                        };
+                        spawn_notification(NotificationInfo {
+                            http_client: state.http_client.clone(),
+                            limiter: state.notification_limiter.clone(),
+                            url: url.clone(),
+                            slug: slug.clone(),
+                            method: method.as_str().to_string(),
+                            path: req_path.clone(),
+                            preview,
+                            received_at: received_at.to_rfc3339(),
+                        });
                     }
 
                     if let Some(mock) = &capture.mock_response {
