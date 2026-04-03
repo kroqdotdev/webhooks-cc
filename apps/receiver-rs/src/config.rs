@@ -11,6 +11,8 @@ pub struct Config {
     pub pool_max: u32,
     pub otel_collector_url: Option<String>,
     pub appsignal_push_api_key: Option<String>,
+    pub notify_proxy_url: Option<String>,
+    pub notify_secret: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -25,6 +27,8 @@ impl std::fmt::Debug for Config {
             .field("pool_max", &self.pool_max)
             .field("otel_collector_url", &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"))
             .field("appsignal_push_api_key", &self.appsignal_push_api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("notify_proxy_url", &self.notify_proxy_url)
+            .field("notify_secret", &self.notify_secret.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }
@@ -59,6 +63,12 @@ impl Config {
         let appsignal_push_api_key = env::var("APPSIGNAL_PUSH_API_KEY")
             .ok()
             .filter(|v| !v.is_empty());
+        let notify_proxy_url = env::var("NOTIFY_PROXY_URL")
+            .ok()
+            .filter(|v| !v.is_empty());
+        let notify_secret = env::var("NOTIFY_SECRET")
+            .ok()
+            .filter(|v| !v.is_empty());
 
         Self {
             database_url,
@@ -70,6 +80,8 @@ impl Config {
             pool_max,
             otel_collector_url,
             appsignal_push_api_key,
+            notify_proxy_url,
+            notify_secret,
         }
     }
 }

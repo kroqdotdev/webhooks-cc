@@ -239,6 +239,11 @@ struct NotificationInfo {
     ip: String,
     preview: String,
     received_at: String,
+    /// When set, notifications route through this Cloudflare Worker proxy
+    /// so the destination sees a Cloudflare IP instead of the origin server.
+    proxy_url: Option<String>,
+    /// Shared secret for authenticating with the proxy.
+    proxy_secret: Option<String>,
 }
 
 /// Fire-and-forget POST to the notification URL with a JSON summary.
@@ -265,18 +270,6 @@ fn spawn_notification(info: NotificationInfo) {
         // can't keep fire-and-forget tasks alive past the budget.
         let slug_ref = info.slug.clone();
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            // SSRF protection: resolve DNS, validate all IPs
-            let target = resolve_notification_target(&info.url).await?;
-
-            // Build a per-request client with DNS pinned to validated addresses.
-            // Preserves original hostname for TLS cert verification (no TOCTOU).
-            let pinned_client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(4))
-                .redirect(reqwest::redirect::Policy::none())
-                .resolve_to_addrs(&target.host, &target.addrs)
-                .build()
-                .map_err(|_| "failed to build client")?;
-
             let payload = serde_json::json!({
                 "slug": info.slug,
                 "method": info.method,
@@ -286,12 +279,49 @@ fn spawn_notification(info: NotificationInfo) {
                 "preview": info.preview,
             });
 
-            pinned_client
-                .post(&target.url)
-                .json(&payload)
-                .send()
-                .await
-                .map_err(|_| "POST failed")?;
+            // Route through Cloudflare Worker proxy when configured,
+            // otherwise deliver directly with SSRF-safe DNS pinning.
+            if let Some(ref proxy_url) = info.proxy_url {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(4))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .map_err(|_| "failed to build client")?;
+
+                let mut req = client
+                    .post(proxy_url)
+                    .header("X-Target-URL", &info.url)
+                    .json(&payload);
+
+                if let Some(ref secret) = info.proxy_secret {
+                    req = req.header("X-Auth", secret.as_str());
+                }
+                if !info.ip.is_empty() {
+                    req = req.header("X-Sender-IP", &info.ip);
+                }
+
+                req.send().await.map_err(|_| "proxy POST failed")?;
+            } else {
+                // Direct delivery with SSRF protection
+                let target = resolve_notification_target(&info.url).await?;
+
+                let pinned_client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(4))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .resolve_to_addrs(&target.host, &target.addrs)
+                    .build()
+                    .map_err(|_| "failed to build client")?;
+
+                let mut req = pinned_client
+                    .post(&target.url)
+                    .json(&payload);
+
+                if !info.ip.is_empty() {
+                    req = req.header("X-Sender-IP", &info.ip);
+                }
+
+                req.send().await.map_err(|_| "POST failed")?;
+            }
 
             Ok::<(), &'static str>(())
         })
@@ -463,6 +493,8 @@ async fn handle_webhook_inner(
                             ip: ip.clone(),
                             preview,
                             received_at: received_at.to_rfc3339(),
+                            proxy_url: state.config.notify_proxy_url.clone(),
+                            proxy_secret: state.config.notify_secret.clone(),
                         });
                     }
 

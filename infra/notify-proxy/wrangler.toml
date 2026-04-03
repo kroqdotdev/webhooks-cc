@@ -1,0 +1,12 @@
+name = "notify-proxy"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+
+# Set after deploy: wrangler secret put NOTIFY_SECRET
+# Use the same CAPTURE_SHARED_SECRET value from your .env.local
+
+[vars]
+# No plain-text secrets here — use `wrangler secret put`
+
+# Optional: custom domain (add DNS record in Cloudflare dashboard)
+# routes = [{ pattern = "notify.webhooks.cc", custom_domain = true }]
