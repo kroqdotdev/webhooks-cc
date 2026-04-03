@@ -66,10 +66,129 @@ interface EndpointSettingsDialogProps {
     headers: Record<string, string>;
     delay?: number;
   };
+  /** Current notification webhook URL. null = owned, not set. undefined = shared endpoint (hidden). */
+  notificationUrl?: string | null;
+}
+
+function TeamSharingSection({
+  accessToken,
+  endpointId,
+}: {
+  accessToken: string | null;
+  endpointId: string;
+}) {
+  const [teams, setTeams] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [sharedTeamIds, setSharedTeamIds] = useState<Set<string>>(() => new Set());
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const load = async () => {
+      try {
+        const [teamsRes, endpointsRes] = await Promise.all([
+          fetch("/api/teams", { headers: { Authorization: `Bearer ${accessToken}` } }),
+          fetch("/api/endpoints", { headers: { Authorization: `Bearer ${accessToken}` } }),
+        ]);
+
+        if (teamsRes.ok) {
+          const data = (await teamsRes.json()) as Array<{ id: string; name: string; role: string }>;
+          setTeams(data);
+        }
+
+        if (endpointsRes.ok) {
+          const data = (await endpointsRes.json()) as {
+            owned: Array<{ id: string; sharedWith?: Array<{ teamId: string }> }>;
+          };
+          const ep = data.owned.find((e) => e.id === endpointId);
+          if (ep?.sharedWith) {
+            setSharedTeamIds(new Set(ep.sharedWith.map((s) => s.teamId)));
+          }
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
+  }, [accessToken, endpointId]);
+
+  const handleToggle = async (teamId: string, shared: boolean) => {
+    if (!accessToken) return;
+    setToggling(teamId);
+    try {
+      if (shared) {
+        const res = await fetch(`/api/teams/${teamId}/endpoints/${endpointId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.ok) {
+          setSharedTeamIds((prev) => {
+            const next = new Set(prev);
+            next.delete(teamId);
+            return next;
+          });
+        }
+      } else {
+        const res = await fetch(`/api/teams/${teamId}/endpoints`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ endpointId }),
+        });
+        if (res.ok) {
+          setSharedTeamIds((prev) => new Set(prev).add(teamId));
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  if (loading || teams.length === 0) return null;
+
+  return (
+    <div className="border-2 border-foreground p-4 space-y-2">
+      <p className="font-bold uppercase tracking-wide text-xs">Team Sharing</p>
+      <p className="text-xs text-muted-foreground">Share this endpoint with your teams.</p>
+      <div className="space-y-1.5">
+        {teams.map((team) => {
+          const isShared = sharedTeamIds.has(team.id);
+          return (
+            <div key={team.id} className="flex items-center justify-between">
+              <span className="text-sm">{team.name}</span>
+              <button
+                onClick={() => handleToggle(team.id, isShared)}
+                disabled={toggling === team.id}
+                className={`text-xs px-2.5 py-1 border-2 border-foreground transition-colors ${
+                  isShared ? "bg-foreground text-background" : "hover:bg-muted"
+                }`}
+              >
+                {toggling === team.id ? "..." : isShared ? "Shared" : "Share"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
-  const { endpointName, slug, mockResponse } = props;
+  const {
+    endpointId,
+    endpointName,
+    slug,
+    mockResponse,
+    notificationUrl: initialNotificationUrl,
+  } = props;
   const { session } = useAuth();
   const router = useRouter();
 
@@ -79,6 +198,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [mockBody, setMockBody] = useState(mockResponse?.body || "");
   const [mockDelay, setMockDelay] = useState(mockResponse?.delay?.toString() || "");
   const [delayEnabled, setDelayEnabled] = useState(!!mockResponse?.delay);
+  const [notificationUrl, setNotificationUrl] = useState(initialNotificationUrl || "");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -93,11 +213,12 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setMockBody(mockResponse?.body || "");
       setMockDelay(mockResponse?.delay?.toString() || "");
       setDelayEnabled(!!mockResponse?.delay);
+      setNotificationUrl(initialNotificationUrl || "");
       setError(null);
       setConfirmDelete(false);
     }
     prevOpen.current = open;
-  }, [open, endpointName, mockResponse]);
+  }, [open, endpointName, mockResponse, initialNotificationUrl]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -111,7 +232,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
 
       const delayMs = delayEnabled && mockDelay ? parseInt(mockDelay, 10) : undefined;
       const hasCustomMock = mockBody || mockStatus !== "200" || (delayMs && delayMs > 0);
-      await updateDashboardEndpoint(accessToken, slug, {
+      const updates: Record<string, unknown> = {
         name: name || undefined,
         mockResponse: hasCustomMock
           ? {
@@ -121,7 +242,13 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               ...(delayMs && delayMs > 0 ? { delay: delayMs } : {}),
             }
           : null,
-      });
+      };
+      // Only send notificationUrl if the user owns the endpoint (prop was defined).
+      // Shared endpoints don't include notificationUrl — sending null would wipe it.
+      if (initialNotificationUrl !== undefined) {
+        updates.notificationUrl = notificationUrl || null;
+      }
+      await updateDashboardEndpoint(accessToken, slug, updates);
       emitDashboardEndpointsChanged();
       setOpen(false);
 
@@ -175,111 +302,154 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
           <Settings className="h-3.5 w-3.5" />
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo max-h-[90vh] overflow-y-auto">
+      <DialogContent className="border-2 border-foreground shadow-neo max-h-[90vh] overflow-y-auto max-w-lg sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-bold uppercase tracking-wide">Endpoint Settings</DialogTitle>
           <DialogDescription>Configure {endpointName || slug}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Name */}
-          <div className="space-y-2">
-            <Label htmlFor="settings-name" className="font-bold uppercase tracking-wide text-xs">
-              Name
-            </Label>
-            <input
-              id="settings-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Webhook"
-              className="neo-input w-full text-sm"
-            />
+        {/* Two-column layout on desktop, single column on mobile */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {/* Left column: Mock Response */}
+          <div className="space-y-4">
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="settings-name" className="font-bold uppercase tracking-wide text-xs">
+                Name
+              </Label>
+              <input
+                id="settings-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My Webhook"
+                className="neo-input w-full text-sm"
+              />
+            </div>
+
+            {/* Mock Response */}
+            <div className="border-2 border-foreground p-4 space-y-4">
+              <div>
+                <p className="font-bold uppercase tracking-wide text-xs mb-1">Mock Response</p>
+                <p className="text-xs text-muted-foreground">
+                  What this endpoint returns when it receives a request.
+                </p>
+              </div>
+
+              <StatusCodePicker
+                id="settings-status"
+                value={mockStatus}
+                onChange={(code) => {
+                  setMockStatus(code);
+                  if (!mockBody || DEFAULT_BODY_VALUES.has(mockBody)) {
+                    setMockBody(DEFAULT_BODIES[code] ?? "");
+                  }
+                }}
+              />
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="settings-body"
+                  className="font-bold uppercase tracking-wide text-xs"
+                >
+                  Response Body
+                </Label>
+                <Textarea
+                  id="settings-body"
+                  value={mockBody}
+                  onChange={(e) => setMockBody(e.target.value)}
+                  placeholder='{"status": "ok"}'
+                  rows={3}
+                  className="border-2 border-foreground rounded-none text-sm font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Edit freely &mdash; the suggestion above is just a starting point.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={delayEnabled}
+                    onChange={(e) => {
+                      setDelayEnabled(e.target.checked);
+                      if (!e.target.checked) setMockDelay("");
+                    }}
+                    className="accent-foreground"
+                  />
+                  <span className="font-bold uppercase tracking-wide text-xs">Response Delay</span>
+                </label>
+                {delayEnabled && (
+                  <>
+                    <input
+                      id="settings-delay"
+                      type="number"
+                      min="0"
+                      max="30000"
+                      step="100"
+                      value={mockDelay}
+                      onChange={(e) => setMockDelay(e.target.value)}
+                      onBlur={() => {
+                        if (!mockDelay) return;
+                        const n = parseInt(mockDelay, 10);
+                        if (isNaN(n) || n < 0) setMockDelay("");
+                        else if (n > 30000) setMockDelay("30000");
+                      }}
+                      placeholder="0-30000ms"
+                      className="neo-input w-full text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Delay before sending the response (max 30s). Useful for testing timeouts.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Mock Response */}
-          <div className="border-2 border-foreground p-4 space-y-4">
-            <div>
-              <p className="font-bold uppercase tracking-wide text-xs mb-1">Mock Response</p>
-              <p className="text-xs text-muted-foreground">
-                What this endpoint returns when it receives a request.
-              </p>
-            </div>
+          {/* Right column: Advanced settings */}
+          <div className="space-y-4">
+            <p className="font-bold uppercase tracking-wide text-xs">Advanced Settings</p>
 
-            <StatusCodePicker
-              id="settings-status"
-              value={mockStatus}
-              onChange={(code) => {
-                setMockStatus(code);
-                // Pre-fill body with a sensible default if empty or still a default template
-                if (!mockBody || DEFAULT_BODY_VALUES.has(mockBody)) {
-                  setMockBody(DEFAULT_BODIES[code] ?? "");
-                }
-              }}
-            />
-
-            <div className="space-y-2">
-              <Label htmlFor="settings-body" className="font-bold uppercase tracking-wide text-xs">
-                Response Body
-              </Label>
-              <Textarea
-                id="settings-body"
-                value={mockBody}
-                onChange={(e) => setMockBody(e.target.value)}
-                placeholder='{"status": "ok"}'
-                rows={3}
-                className="border-2 border-foreground rounded-none text-sm font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Edit freely &mdash; the suggestion above is just a starting point.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={delayEnabled}
-                  onChange={(e) => {
-                    setDelayEnabled(e.target.checked);
-                    if (!e.target.checked) setMockDelay("");
-                  }}
-                  className="accent-foreground"
-                />
-                <span className="font-bold uppercase tracking-wide text-xs">Response Delay</span>
-              </label>
-              {delayEnabled && (
-                <>
+            <div className="space-y-4">
+              {/* Notification Webhook — only shown for owned endpoints */}
+              {initialNotificationUrl !== undefined && (
+                <div className="border-2 border-foreground p-4 space-y-2">
+                  <div>
+                    <p className="font-bold uppercase tracking-wide text-xs mb-1">
+                      Notification Webhook
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      POST a JSON summary to Slack, Discord, or any URL when a request arrives.
+                    </p>
+                  </div>
                   <input
-                    id="settings-delay"
-                    type="number"
-                    min="0"
-                    max="30000"
-                    step="100"
-                    value={mockDelay}
-                    onChange={(e) => setMockDelay(e.target.value)}
-                    onBlur={() => {
-                      if (!mockDelay) return;
-                      const n = parseInt(mockDelay, 10);
-                      if (isNaN(n) || n < 0) setMockDelay("");
-                      else if (n > 30000) setMockDelay("30000");
-                    }}
-                    placeholder="0-30000ms"
+                    id="settings-notification-url"
+                    type="url"
+                    value={notificationUrl}
+                    onChange={(e) => setNotificationUrl(e.target.value)}
+                    placeholder="https://hooks.slack.com/services/..."
                     className="neo-input w-full text-sm"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Delay before sending the response (max 30s). Useful for testing timeouts.
-                  </p>
-                </>
+                </div>
+              )}
+
+              {/* Team Sharing — only for owned endpoints */}
+              {initialNotificationUrl !== undefined && (
+                <TeamSharingSection
+                  accessToken={session?.access_token ?? null}
+                  endpointId={endpointId}
+                />
               )}
             </div>
           </div>
-
-          {error && (
-            <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
-            </div>
-          )}
         </div>
+
+        {error && (
+          <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
 
         <DialogFooter className="flex-row justify-between sm:justify-between gap-3 pt-2">
           <button

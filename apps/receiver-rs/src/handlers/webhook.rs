@@ -5,6 +5,8 @@ use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::AppState;
 
@@ -97,6 +99,7 @@ struct CaptureResult {
     status: String,
     mock_response: Option<MockResponse>,
     retry_after: Option<i64>,
+    notification_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +113,199 @@ struct MockResponse {
 
 /// Maximum allowed mock response delay (30 seconds).
 const MAX_DELAY_MS: u64 = 30_000;
+
+/// Maximum body preview length in notification payloads (characters, not bytes).
+const NOTIFICATION_PREVIEW_LEN: usize = 200;
+
+/// Minimum interval between notifications for a single endpoint (rate limit).
+const NOTIFICATION_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Maximum entries in the rate limiter before a full prune is triggered.
+const NOTIFICATION_LIMITER_MAX: usize = 10_000;
+
+/// Per-endpoint rate limiter: tracks last notification time per slug.
+/// Wrapped in Arc<Mutex<>> and stored in AppState so it's shared across requests.
+pub type NotificationLimiter = Arc<Mutex<HashMap<String, std::time::Instant>>>;
+
+pub fn new_notification_limiter() -> NotificationLimiter {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Truncate a string to at most `max_chars` characters (including "..." suffix).
+/// Safe for multi-byte UTF-8 — never splits a character.
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        return s.to_string();
+    }
+    // Reserve 3 chars for "..." so total never exceeds max_chars
+    let content_chars = max_chars.saturating_sub(3);
+    let byte_pos = s
+        .char_indices()
+        .nth(content_chars)
+        .map(|(pos, _)| pos)
+        .unwrap_or(s.len());
+    format!("{}...", &s[..byte_pos])
+}
+
+/// Returns true if the IP address is private, loopback, link-local, or a cloud metadata address.
+/// Used to prevent SSRF via user-controlled notification URLs.
+fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()                           // 127.0.0.0/8
+            || v4.is_private()                         // 10/8, 172.16/12, 192.168/16
+            || v4.is_link_local()                      // 169.254.0.0/16 (includes metadata 169.254.169.254)
+            || v4.is_broadcast()                       // 255.255.255.255
+            || v4.is_unspecified()                     // 0.0.0.0
+            || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64  // 100.64.0.0/10 (CGNAT)
+        }
+        std::net::IpAddr::V6(v6) => {
+            let segs = v6.segments();
+            v6.is_loopback()                           // ::1
+            || v6.is_unspecified()                     // ::
+            || (segs[0] & 0xfe00) == 0xfc00           // fc00::/7 — Unique Local Address (ULA)
+            || (segs[0] & 0xffc0) == 0xfe80           // fe80::/10 — link-local
+            // IPv4-mapped IPv6 (::ffff:x.x.x.x) — check the embedded v4
+            || v6.to_ipv4_mapped().is_some_and(|v4| is_blocked_ip(std::net::IpAddr::V4(v4)))
+        }
+    }
+}
+
+/// Resolved notification target: original URL + resolved addresses for DNS pinning.
+struct ResolvedTarget {
+    /// Original URL (unchanged — preserves hostname for TLS verification).
+    url: String,
+    /// Hostname from the URL (used for `resolve()` pinning).
+    host: String,
+    /// Validated socket addresses to pin DNS resolution to.
+    addrs: Vec<std::net::SocketAddr>,
+}
+
+/// Resolve the notification URL's host, validate all IPs are safe, and return
+/// the original URL with resolved addresses for DNS pinning.
+///
+/// The URL is NOT rewritten — reqwest uses `ClientBuilder::resolve_to_addrs()`
+/// to connect to the validated IPs while keeping the original hostname for TLS.
+async fn resolve_notification_target(url: &str) -> Result<ResolvedTarget, &'static str> {
+    let parsed = url::Url::parse(url).map_err(|_| "invalid URL")?;
+    let host = parsed.host_str().ok_or("no host in URL")?.to_string();
+    let port = parsed
+        .port()
+        .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+
+    // Direct IP literal — no DNS needed, but still validate
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if is_blocked_ip(ip) {
+            return Err("blocked IP");
+        }
+        return Ok(ResolvedTarget {
+            url: url.to_string(),
+            host,
+            addrs: vec![std::net::SocketAddr::new(ip, port)],
+        });
+    }
+
+    // DNS resolution — check ALL addresses before accepting any
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(format!("{host}:{port}"))
+        .await
+        .map_err(|_| "DNS resolution failed")?
+        .collect();
+
+    if addrs.is_empty() {
+        return Err("DNS returned no addresses");
+    }
+
+    for addr in &addrs {
+        if is_blocked_ip(addr.ip()) {
+            return Err("blocked IP");
+        }
+    }
+
+    Ok(ResolvedTarget {
+        url: url.to_string(),
+        host,
+        addrs,
+    })
+}
+
+/// Notification payload for the fire-and-forget POST.
+struct NotificationInfo {
+    limiter: NotificationLimiter,
+    url: String,
+    slug: String,
+    method: String,
+    path: String,
+    preview: String,
+    received_at: String,
+}
+
+/// Fire-and-forget POST to the notification URL with a JSON summary.
+fn spawn_notification(info: NotificationInfo) {
+    tokio::spawn(async move {
+        // Rate limit: skip if we notified this endpoint within the cooldown period
+        {
+            let mut map = info.limiter.lock().await;
+            let now = std::time::Instant::now();
+            if let Some(last) = map.get(&info.slug)
+                && now.duration_since(*last) < NOTIFICATION_COOLDOWN
+            {
+                return;
+            }
+            map.insert(info.slug.clone(), now);
+
+            // Prune stale entries to prevent unbounded memory growth
+            if map.len() > NOTIFICATION_LIMITER_MAX {
+                map.retain(|_, last_time| now.duration_since(*last_time) < NOTIFICATION_COOLDOWN);
+            }
+        }
+
+        // Wrap DNS resolution + POST in a single 5s timeout so slow DNS
+        // can't keep fire-and-forget tasks alive past the budget.
+        let slug_ref = info.slug.clone();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            // SSRF protection: resolve DNS, validate all IPs
+            let target = resolve_notification_target(&info.url).await?;
+
+            // Build a per-request client with DNS pinned to validated addresses.
+            // Preserves original hostname for TLS cert verification (no TOCTOU).
+            let pinned_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(4))
+                .redirect(reqwest::redirect::Policy::none())
+                .resolve_to_addrs(&target.host, &target.addrs)
+                .build()
+                .map_err(|_| "failed to build client")?;
+
+            let payload = serde_json::json!({
+                "slug": info.slug,
+                "method": info.method,
+                "path": info.path,
+                "receivedAt": info.received_at,
+                "preview": info.preview,
+            });
+
+            pinned_client
+                .post(&target.url)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|_| "POST failed")?;
+
+            Ok::<(), &'static str>(())
+        })
+        .await;
+
+        match result {
+            Ok(Err(reason)) => {
+                tracing::debug!(slug = slug_ref, reason, "notification delivery failed");
+            }
+            Err(_) => {
+                tracing::debug!(slug = slug_ref, "notification timed out");
+            }
+            Ok(Ok(())) => {}
+        }
+    });
+}
 
 /// Build an HTTP response from a mock_response configuration.
 fn build_mock_response(mock: &MockResponse) -> Response {
@@ -251,6 +447,22 @@ async fn handle_webhook_inner(
 
             match capture.status.as_str() {
                 "ok" => {
+                    // Fire notification webhook if configured
+                    if let Some(ref url) = capture.notification_url
+                        && !url.is_empty()
+                    {
+                        let preview = truncate_preview(&body_str, NOTIFICATION_PREVIEW_LEN);
+                        spawn_notification(NotificationInfo {
+                            limiter: state.notification_limiter.clone(),
+                            url: url.clone(),
+                            slug: slug.clone(),
+                            method: method.as_str().to_string(),
+                            path: req_path.clone(),
+                            preview,
+                            received_at: received_at.to_rfc3339(),
+                        });
+                    }
+
                     if let Some(mock) = &capture.mock_response {
                         if let Some(delay) = mock.delay {
                             let capped = delay.min(MAX_DELAY_MS);
@@ -434,5 +646,102 @@ mod tests {
         let headers = response.headers();
         assert!(headers.get("good-header").is_some());
         assert!(headers.get("bad-header").is_none());
+    }
+
+    #[test]
+    fn truncate_preview_ascii() {
+        let short = "hello";
+        assert_eq!(truncate_preview(short, 200), "hello");
+
+        let exact = "a".repeat(200);
+        assert_eq!(truncate_preview(&exact, 200), exact);
+
+        // 250 chars truncated to 200: 197 content + "..." = 200 total
+        let long = "a".repeat(250);
+        let result = truncate_preview(&long, 200);
+        assert_eq!(result.chars().count(), 200);
+        assert!(result.ends_with("..."));
+        assert_eq!(result, format!("{}...", "a".repeat(197)));
+    }
+
+    #[test]
+    fn truncate_preview_multibyte() {
+        // Each emoji is 4 bytes — slicing at byte 200 would panic without char-safe truncation
+        let emojis = "🎉".repeat(60); // 60 chars, 240 bytes
+        let result = truncate_preview(&emojis, 50);
+        assert!(result.ends_with("..."));
+        // 47 emojis + "..." = 50 chars total
+        assert_eq!(result.chars().count(), 50);
+    }
+
+    #[test]
+    fn truncate_preview_empty() {
+        assert_eq!(truncate_preview("", 200), "");
+    }
+
+    #[test]
+    fn blocked_ips() {
+        use std::net::IpAddr;
+
+        // Loopback
+        assert!(is_blocked_ip("127.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("127.0.0.2".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::1".parse::<IpAddr>().unwrap()));
+
+        // Private ranges
+        assert!(is_blocked_ip("10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("172.16.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("192.168.1.1".parse::<IpAddr>().unwrap()));
+
+        // Link-local / cloud metadata
+        assert!(is_blocked_ip("169.254.169.254".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("169.254.0.1".parse::<IpAddr>().unwrap()));
+
+        // CGNAT
+        assert!(is_blocked_ip("100.64.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("100.127.255.254".parse::<IpAddr>().unwrap()));
+
+        // Unspecified
+        assert!(is_blocked_ip("0.0.0.0".parse::<IpAddr>().unwrap()));
+
+        // IPv6 ULA (fc00::/7)
+        assert!(is_blocked_ip("fd00::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fc00::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fdab:cdef:1234::1".parse::<IpAddr>().unwrap()));
+
+        // IPv6 link-local (fe80::/10)
+        assert!(is_blocked_ip("fe80::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fe80::abcd:1234".parse::<IpAddr>().unwrap()));
+
+        // IPv4-mapped IPv6
+        assert!(is_blocked_ip("::ffff:127.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::ffff:169.254.169.254".parse::<IpAddr>().unwrap()));
+
+        // Public IPs — should NOT be blocked
+        assert!(!is_blocked_ip("8.8.8.8".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("1.1.1.1".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("142.250.80.46".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("2606:4700::1".parse::<IpAddr>().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn resolve_blocks_private_ip_literals() {
+        assert!(resolve_notification_target("http://127.0.0.1:9876/hook").await.is_err());
+        assert!(resolve_notification_target("http://10.0.0.1/hook").await.is_err());
+        assert!(resolve_notification_target("http://169.254.169.254/meta").await.is_err());
+        assert!(resolve_notification_target("http://[::1]/hook").await.is_err());
+        assert!(resolve_notification_target("not-a-url").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn resolve_preserves_original_url() {
+        // Public IP literal should pass through with original URL preserved
+        let result = resolve_notification_target("http://8.8.8.8:9876/hook").await;
+        assert!(result.is_ok());
+        let target = result.unwrap();
+        assert_eq!(target.url, "http://8.8.8.8:9876/hook");
+        assert_eq!(target.host, "8.8.8.8");
+        assert!(!target.addrs.is_empty());
     }
 }

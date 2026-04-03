@@ -12,6 +12,7 @@ export interface DashboardEndpoint {
     body: string;
     headers: Record<string, string>;
   };
+  notificationUrl?: string | null;
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;

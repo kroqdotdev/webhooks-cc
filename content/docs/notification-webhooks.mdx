@@ -1,0 +1,103 @@
+---
+title: "Notification Webhooks"
+description: "Get notified instantly when a webhook arrives. POST a JSON summary to Slack, Discord, Teams, or any webhook-compatible service."
+section: dashboard
+order: 7
+lastUpdated: 2026-04-03
+schema: none
+keywords:
+  ["webhook notification", "slack webhook", "discord webhook", "webhook alerts", "notification URL"]
+seo:
+  ogTitle: "Webhook Notifications Guide — webhooks.cc"
+  ogDescription: "Configure notification webhooks to get real-time alerts in Slack, Discord, or any HTTP endpoint when a webhook arrives at your endpoint."
+---
+
+Get alerted the instant a webhook arrives — no need to watch the dashboard.
+
+Add a notification URL to any endpoint and the receiver will POST a JSON summary after each captured request. Works with Slack incoming webhooks, Discord webhooks, Microsoft Teams connectors, or any service that accepts HTTP POST with a JSON body.
+
+## Setup
+
+1. Open endpoint settings (gear icon in the dashboard URL bar)
+2. In the **Notification Webhook** section, paste your notification URL
+3. Click **Save Changes**
+
+That's it. The next webhook that hits your endpoint will trigger a notification.
+
+## Payload format
+
+The receiver sends a POST request with a JSON body:
+
+```json
+{
+  "slug": "my-endpoint",
+  "method": "POST",
+  "path": "/webhooks/stripe",
+  "receivedAt": "2026-04-03T12:34:56.789Z",
+  "preview": "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_test..."
+}
+```
+
+| Field        | Type   | Description                                                     |
+| ------------ | ------ | --------------------------------------------------------------- |
+| `slug`       | string | Endpoint slug that received the webhook                         |
+| `method`     | string | HTTP method of the incoming request                             |
+| `path`       | string | Request path after the slug                                     |
+| `receivedAt` | string | ISO 8601 timestamp                                              |
+| `preview`    | string | First 200 characters of the request body (truncated with `...`) |
+
+## Rate limiting
+
+Notifications are rate-limited to **one per second per endpoint**. If your endpoint receives a burst of webhooks, only the first notification fires — subsequent ones within the cooldown window are silently skipped. This prevents flooding your Slack channel during high-traffic periods.
+
+## Delivery behavior
+
+- **Fire-and-forget** — notifications don't block the webhook response. The sender gets their response immediately regardless of notification delivery.
+- **No retries** — if the notification URL is unreachable or returns an error, it's silently dropped. The captured request is unaffected.
+- **5-second timeout** — the receiver gives up after 5 seconds to avoid resource exhaustion.
+
+## Slack setup
+
+1. In Slack, go to **[Your Apps](https://api.slack.com/apps)** and create an app (or use an existing one)
+2. Enable **Incoming Webhooks** and click **Add New Webhook to Workspace**
+3. Choose a channel and copy the webhook URL
+4. Paste into your endpoint's notification URL field
+
+Slack will display the JSON payload as a code block. For richer formatting, route through a small serverless function that transforms the payload into [Slack Block Kit](https://api.slack.com/block-kit) format.
+
+## Discord setup
+
+1. In Discord, go to **Server Settings > Integrations > Webhooks**
+2. Click **New Webhook**, choose a channel, and copy the webhook URL
+3. Append `/slack` to the URL (Discord's Slack-compatible endpoint): `https://discord.com/api/webhooks/.../slack`
+4. Paste into your endpoint's notification URL field
+
+## SDK and MCP
+
+Set `notificationUrl` when creating or updating endpoints programmatically:
+
+```ts
+const client = new WebhooksCC({ apiKey: "whcc_..." });
+
+// Set on creation
+const endpoint = await client.endpoints.create({
+  name: "my-endpoint",
+  notificationUrl: "https://hooks.slack.com/services/T.../B.../xxx",
+});
+
+// Update later
+await client.endpoints.update("my-endpoint", {
+  notificationUrl: "https://discord.com/api/webhooks/.../slack",
+});
+
+// Clear it
+await client.endpoints.update("my-endpoint", {
+  notificationUrl: null,
+});
+```
+
+The MCP server exposes `notificationUrl` on both `create_endpoint` and `update_endpoint` tools.
+
+## Clearing the notification URL
+
+Set the field to empty in endpoint settings and save, or pass `null` via the SDK/API. The endpoint will stop sending notifications immediately.

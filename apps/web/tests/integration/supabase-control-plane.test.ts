@@ -174,6 +174,93 @@ describe("Supabase Control Plane Integration", () => {
     expect(orphanedRequests).toEqual([]);
   });
 
+  it("creates endpoints with notificationUrl and round-trips it", async () => {
+    const created = await createEndpointForUser({
+      userId: testUserId,
+      name: "Notification Test",
+      notificationUrl: "https://hooks.slack.com/services/T00/B00/xxx",
+    });
+
+    expect(created.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+
+    // Verify it's persisted in the database
+    const { data: row, error } = await admin
+      .from("endpoints")
+      .select("notification_url")
+      .eq("id", created.id)
+      .single();
+
+    expect(error).toBeNull();
+    expect(row?.notification_url).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+
+    // Fetch via helper — should round-trip
+    const fetched = await getEndpointBySlugForUser(testUserId, created.slug);
+    expect(fetched?.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+
+    // Update notification URL
+    const updated = await updateEndpointBySlugForUser({
+      userId: testUserId,
+      slug: created.slug,
+      notificationUrl: "https://discord.com/api/webhooks/123/abc",
+    });
+
+    expect(updated?.notificationUrl).toBe("https://discord.com/api/webhooks/123/abc");
+
+    // Clear notification URL by setting to null
+    const cleared = await updateEndpointBySlugForUser({
+      userId: testUserId,
+      slug: created.slug,
+      notificationUrl: null,
+    });
+
+    expect(cleared?.notificationUrl).toBeNull();
+
+    // Verify DB is null
+    const { data: clearedRow } = await admin
+      .from("endpoints")
+      .select("notification_url")
+      .eq("id", created.id)
+      .single();
+
+    expect(clearedRow?.notification_url).toBeNull();
+
+    // Cleanup
+    await deleteEndpointBySlugForUser(testUserId, created.slug);
+  });
+
+  it("creates endpoint without notificationUrl — defaults to null", async () => {
+    const created = await createEndpointForUser({
+      userId: testUserId,
+      name: "No Notification",
+    });
+
+    expect(created.notificationUrl).toBeNull();
+
+    // Cleanup
+    await deleteEndpointBySlugForUser(testUserId, created.slug);
+  });
+
+  it("preserves notificationUrl when updating only name", async () => {
+    const created = await createEndpointForUser({
+      userId: testUserId,
+      name: "Preserve Test",
+      notificationUrl: "https://hooks.slack.com/services/T00/B00/keep",
+    });
+
+    // Update only name, don't send notificationUrl
+    const updated = await updateEndpointBySlugForUser({
+      userId: testUserId,
+      slug: created.slug,
+      name: "Renamed",
+    });
+
+    expect(updated?.name).toBe("Renamed");
+    expect(updated?.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/keep");
+
+    // Cleanup
+    await deleteEndpointBySlugForUser(testUserId, created.slug);
+  });
+
   it("returns usage in the SDK/CLI response shape", async () => {
     const { error: updateError } = await admin
       .from("users")

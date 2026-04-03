@@ -1175,6 +1175,10 @@ components:
           description: Full webhook URL (e.g. https://go.webhooks.cc/w/{slug})
         mockResponse:
           $ref: "#/components/schemas/MockResponse"
+        notificationUrl:
+          type: string
+          format: uri
+          description: URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)
         isEphemeral:
           type: boolean
         expiresAt:
@@ -1230,6 +1234,11 @@ components:
           description: Unix timestamp (ms) for expiry (implies ephemeral)
         mockResponse:
           $ref: "#/components/schemas/MockResponse"
+        notificationUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: URL to POST a JSON summary to after each captured request
 
     UpdateEndpointRequest:
       type: object
@@ -1243,6 +1252,13 @@ components:
             - $ref: "#/components/schemas/MockResponse"
             - type: "null"
           description: Mock response config, or null to clear
+        notificationUrl:
+          oneOf:
+            - type: string
+              format: uri
+              maxLength: 2048
+            - type: "null"
+          description: Notification webhook URL, or null to clear
 
     Request:
       type: object

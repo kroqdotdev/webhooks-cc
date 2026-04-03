@@ -142,6 +142,7 @@ export interface Database {
           slug: string;
           name: string | null;
           mock_response: Json | null;
+          notification_url: string | null;
           is_ephemeral: boolean;
           expires_at: string | null;
           request_count: number;
@@ -153,6 +154,7 @@ export interface Database {
           slug: string;
           name?: string | null;
           mock_response?: Json | null;
+          notification_url?: string | null;
           is_ephemeral?: boolean;
           expires_at?: string | null;
           request_count?: number;
@@ -164,6 +166,7 @@ export interface Database {
           slug?: string;
           name?: string | null;
           mock_response?: Json | null;
+          notification_url?: string | null;
           is_ephemeral?: boolean;
           expires_at?: string | null;
           request_count?: number;

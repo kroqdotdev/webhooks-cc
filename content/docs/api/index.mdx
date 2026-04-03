@@ -76,16 +76,16 @@ curl https://webhooks.cc/api/endpoints/abc123 \
 
 ### Update endpoint
 
-Update an endpoint's name or mock response configuration.
+Update an endpoint's name, mock response, or notification webhook.
 
 ```bash
 curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
   -H "Authorization: Bearer whcc_..." \
   -H "Content-Type: application/json" \
-  -d '{"name": "new-name", "mockResponse": {"status": 200, "body": "{\"ok\":true}", "headers": {"Content-Type": "application/json"}}}'
+  -d '{"name": "new-name", "mockResponse": {"status": 200, "body": "{\"ok\":true}", "headers": {"Content-Type": "application/json"}}, "notificationUrl": "https://hooks.slack.com/services/..."}'
 ```
 
-Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`.
+Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications. The `notificationUrl` must be a valid `http` or `https` URL, max 2048 characters.
 
 ### Delete endpoint
 

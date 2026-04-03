@@ -164,6 +164,7 @@ function EndpointSettingsForm() {
   const [name, setName] = useState("");
   const [mockStatus, setMockStatus] = useState("200");
   const [mockBody, setMockBody] = useState("");
+  const [notificationUrl, setNotificationUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -208,6 +209,7 @@ function EndpointSettingsForm() {
       setName(endpoint.name || "");
       setMockStatus(endpoint.mockResponse?.status?.toString() || "200");
       setMockBody(endpoint.mockResponse?.body || "");
+      setNotificationUrl(endpoint.notificationUrl || "");
     }
   }, [endpoint]);
 
@@ -243,6 +245,7 @@ function EndpointSettingsForm() {
               headers: endpoint.mockResponse?.headers ?? {},
             }
           : null,
+        notificationUrl: notificationUrl || null,
       });
       trackEndpointSaved(
         {
@@ -382,6 +385,22 @@ function EndpointSettingsForm() {
                 rows={4}
               />
             </div>
+          </div>
+
+          {/* Notification URL */}
+          <div className="border rounded-lg p-4 space-y-3">
+            <h2 className="font-semibold">Notification Webhook</h2>
+            <p className="text-sm text-muted-foreground">
+              Get notified when a webhook arrives. POST a JSON summary to a Slack, Discord, or any
+              webhook URL.
+            </p>
+            <Input
+              id="notificationUrl"
+              value={notificationUrl}
+              onChange={(e) => setNotificationUrl(e.target.value)}
+              placeholder="https://hooks.slack.com/services/..."
+              type="url"
+            />
           </div>
 
           {/* Team Sharing */}

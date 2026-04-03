@@ -23,6 +23,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
 
+    // Strip notification URL for non-owners — it's a bearer secret (Slack/Discord)
+    if (access.ownerId !== auth.userId) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { notificationUrl, ...safe } = endpoint;
+      return Response.json(safe);
+    }
+
     return Response.json(endpoint);
   } catch (error) {
     console.error("Failed to fetch endpoint:", error);
@@ -46,6 +53,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   // Validate name type and length if provided
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length > 100)) {
     return Response.json({ error: "Invalid name" }, { status: 400 });
+  }
+
+  // Validate notificationUrl if provided
+  if (body.notificationUrl !== undefined && body.notificationUrl !== null) {
+    if (typeof body.notificationUrl !== "string" || body.notificationUrl.length > 2048) {
+      return Response.json({ error: "Invalid notificationUrl" }, { status: 400 });
+    }
+    if (body.notificationUrl.length > 0) {
+      try {
+        const parsed = new URL(body.notificationUrl);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return Response.json(
+            { error: "notificationUrl must use http or https" },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return Response.json({ error: "Invalid notificationUrl format" }, { status: 400 });
+      }
+    }
   }
 
   // Validate mockResponse structure if provided
@@ -99,6 +126,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.mockResponse === undefined
           ? undefined
           : (body.mockResponse as Record<string, unknown> | null),
+      notificationUrl:
+        body.notificationUrl === undefined
+          ? undefined
+          : body.notificationUrl === null || body.notificationUrl === ""
+            ? null
+            : (body.notificationUrl as string),
     });
 
     if (!endpoint) {

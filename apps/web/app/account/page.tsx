@@ -442,7 +442,9 @@ export default function AccountPage() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete API key?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently revoke <span className="font-mono font-medium">{key.key_prefix}...</span> ({key.name}). Any integrations using this key will stop working immediately.
+                        This will permanently revoke{" "}
+                        <span className="font-mono font-medium">{key.key_prefix}...</span> (
+                        {key.name}). Any integrations using this key will stop working immediately.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

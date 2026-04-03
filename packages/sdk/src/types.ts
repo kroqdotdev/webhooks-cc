@@ -19,6 +19,8 @@ export interface Endpoint {
   name?: string;
   /** Full URL where webhooks should be sent (undefined if server is misconfigured) */
   url?: string;
+  /** URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook) */
+  notificationUrl?: string;
   /** Whether the endpoint auto-expires and may be cleaned up automatically */
   isEphemeral?: boolean;
   /** Unix timestamp (ms) when the endpoint expires, if ephemeral */
@@ -127,6 +129,8 @@ export interface CreateEndpointOptions {
   expiresIn?: number | string;
   /** Optional mock response to configure at creation time */
   mockResponse?: MockResponse;
+  /** URL to POST a JSON summary to after each captured request */
+  notificationUrl?: string;
 }
 
 /**
@@ -137,6 +141,8 @@ export interface UpdateEndpointOptions {
   name?: string;
   /** Mock response config, or null to clear */
   mockResponse?: MockResponse | null;
+  /** Notification webhook URL, or null to clear */
+  notificationUrl?: string | null;
 }
 
 /**

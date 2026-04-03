@@ -167,6 +167,103 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("endpoints.create with notificationUrl", () => {
+    it("includes notificationUrl in POST body when provided", async () => {
+      const endpoint = {
+        id: "ep1",
+        slug: "abc123",
+        url: "https://r.webhooks.cc/w/abc123",
+        notificationUrl: "https://hooks.slack.com/services/T00/B00/xxx",
+        createdAt: Date.now(),
+      };
+      const fetchMock = mockFetch({ body: endpoint });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.endpoints.create({
+        name: "With Notification",
+        notificationUrl: "https://hooks.slack.com/services/T00/B00/xxx",
+      });
+
+      expect(result.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+
+      const [, opts] = fetchMock.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+      expect(body.name).toBe("With Notification");
+    });
+
+    it("omits notificationUrl from body when not provided", async () => {
+      const endpoint = { id: "ep1", slug: "abc", createdAt: Date.now() };
+      const fetchMock = mockFetch({ body: endpoint });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.endpoints.create({ name: "No Notification" });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body).not.toHaveProperty("notificationUrl");
+    });
+  });
+
+  describe("endpoints.update", () => {
+    it("sends PATCH /api/endpoints/:slug with notificationUrl", async () => {
+      const endpoint = {
+        id: "ep1",
+        slug: "abc123",
+        notificationUrl: "https://hooks.slack.com/services/T00/B00/new",
+        createdAt: Date.now(),
+      };
+      const fetchMock = mockFetch({ body: endpoint });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.endpoints.update("abc123", {
+        notificationUrl: "https://hooks.slack.com/services/T00/B00/new",
+      });
+
+      expect(result.notificationUrl).toBe("https://hooks.slack.com/services/T00/B00/new");
+
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/endpoints/abc123`);
+      expect(opts.method).toBe("PATCH");
+      expect(JSON.parse(opts.body)).toEqual({
+        notificationUrl: "https://hooks.slack.com/services/T00/B00/new",
+      });
+    });
+
+    it("sends null to clear notificationUrl", async () => {
+      const endpoint = { id: "ep1", slug: "abc123", notificationUrl: null, createdAt: Date.now() };
+      const fetchMock = mockFetch({ body: endpoint });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.endpoints.update("abc123", { notificationUrl: null });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(JSON.parse(opts.body)).toEqual({ notificationUrl: null });
+    });
+
+    it("sends name and mockResponse without notificationUrl", async () => {
+      const endpoint = { id: "ep1", slug: "abc123", createdAt: Date.now() };
+      const fetchMock = mockFetch({ body: endpoint });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.endpoints.update("abc123", {
+        name: "Renamed",
+        mockResponse: { status: 200, body: "ok", headers: {} },
+      });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.name).toBe("Renamed");
+      expect(body.mockResponse).toBeDefined();
+      expect(body).not.toHaveProperty("notificationUrl");
+    });
+  });
+
   describe("endpoints.list", () => {
     it("sends GET /api/endpoints and flattens owned + shared", async () => {
       const owned = [

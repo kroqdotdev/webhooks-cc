@@ -27,9 +27,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-04-02",
     title: "API Key Deletion Confirmation",
     track: "web",
-    items: [
-      "Added confirmation dialog before deleting API keys to prevent accidental revocation",
-    ],
+    items: ["Added confirmation dialog before deleting API keys to prevent accidental revocation"],
   },
   {
     version: "0.14.0",
