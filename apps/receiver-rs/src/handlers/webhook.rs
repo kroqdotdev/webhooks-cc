@@ -114,11 +114,14 @@ struct MockResponse {
 /// Maximum allowed mock response delay (30 seconds).
 const MAX_DELAY_MS: u64 = 30_000;
 
-/// Maximum body preview length in notification payloads.
+/// Maximum body preview length in notification payloads (characters, not bytes).
 const NOTIFICATION_PREVIEW_LEN: usize = 200;
 
 /// Minimum interval between notifications for a single endpoint (rate limit).
 const NOTIFICATION_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Maximum entries in the rate limiter before a full prune is triggered.
+const NOTIFICATION_LIMITER_MAX: usize = 10_000;
 
 /// Per-endpoint rate limiter: tracks last notification time per slug.
 /// Wrapped in Arc<Mutex<>> and stored in AppState so it's shared across requests.
@@ -126,6 +129,67 @@ pub type NotificationLimiter = Arc<Mutex<HashMap<String, std::time::Instant>>>;
 
 pub fn new_notification_limiter() -> NotificationLimiter {
     Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Truncate a string to at most `max_chars` characters, appending "..." if truncated.
+/// Safe for multi-byte UTF-8 — never splits a character.
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    let mut chars = s.char_indices();
+    if let Some((byte_pos, _)) = chars.nth(max_chars) {
+        format!("{}...", &s[..byte_pos])
+    } else {
+        s.to_string()
+    }
+}
+
+/// Returns true if the IP address is private, loopback, link-local, or a cloud metadata address.
+/// Used to prevent SSRF via user-controlled notification URLs.
+fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()                           // 127.0.0.0/8
+            || v4.is_private()                         // 10/8, 172.16/12, 192.168/16
+            || v4.is_link_local()                      // 169.254.0.0/16 (includes metadata 169.254.169.254)
+            || v4.is_broadcast()                       // 255.255.255.255
+            || v4.is_unspecified()                     // 0.0.0.0
+            || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64  // 100.64.0.0/10 (CGNAT)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()                           // ::1
+            || v6.is_unspecified()                     // ::
+            // IPv4-mapped IPv6 (::ffff:x.x.x.x) — check the embedded v4
+            || v6.to_ipv4_mapped().is_some_and(|v4| is_blocked_ip(std::net::IpAddr::V4(v4)))
+        }
+    }
+}
+
+/// Resolve the notification URL's host and check it doesn't point to a private/internal IP.
+/// Returns Err if the URL is invalid, DNS fails, or resolves to a blocked IP.
+async fn validate_notification_target(url: &str) -> Result<(), &'static str> {
+    let parsed = url::Url::parse(url).map_err(|_| "invalid URL")?;
+    let host = parsed.host_str().ok_or("no host in URL")?;
+
+    // Direct IP literal
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if is_blocked_ip(ip) {
+            return Err("blocked IP");
+        }
+        return Ok(());
+    }
+
+    // DNS resolution
+    let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+    let addrs = tokio::net::lookup_host(format!("{host}:{port}"))
+        .await
+        .map_err(|_| "DNS resolution failed")?;
+
+    for addr in addrs {
+        if is_blocked_ip(addr.ip()) {
+            return Err("blocked IP");
+        }
+    }
+
+    Ok(())
 }
 
 /// Notification payload for the fire-and-forget POST.
@@ -153,6 +217,17 @@ fn spawn_notification(info: NotificationInfo) {
                 return;
             }
             map.insert(info.slug.clone(), now);
+
+            // Prune stale entries to prevent unbounded memory growth
+            if map.len() > NOTIFICATION_LIMITER_MAX {
+                map.retain(|_, last_time| now.duration_since(*last_time) < NOTIFICATION_COOLDOWN);
+            }
+        }
+
+        // SSRF protection: resolve the URL and block private/internal IPs
+        if let Err(reason) = validate_notification_target(&info.url).await {
+            tracing::warn!(slug = info.slug, url = info.url, reason, "notification URL blocked");
+            return;
         }
 
         let payload = serde_json::json!({
@@ -172,7 +247,7 @@ fn spawn_notification(info: NotificationInfo) {
             .await;
 
         if let Err(e) = result {
-            tracing::debug!(info.slug, error = %e, "notification POST failed");
+            tracing::debug!(slug = info.slug, error = %e, "notification POST failed");
         }
     });
 }
@@ -321,11 +396,7 @@ async fn handle_webhook_inner(
                     if let Some(ref url) = capture.notification_url
                         && !url.is_empty()
                     {
-                        let preview = if body_str.len() > NOTIFICATION_PREVIEW_LEN {
-                            format!("{}...", &body_str[..NOTIFICATION_PREVIEW_LEN])
-                        } else {
-                            body_str.clone()
-                        };
+                        let preview = truncate_preview(&body_str, NOTIFICATION_PREVIEW_LEN);
                         spawn_notification(NotificationInfo {
                             http_client: state.http_client.clone(),
                             limiter: state.notification_limiter.clone(),
@@ -521,5 +592,78 @@ mod tests {
         let headers = response.headers();
         assert!(headers.get("good-header").is_some());
         assert!(headers.get("bad-header").is_none());
+    }
+
+    #[test]
+    fn truncate_preview_ascii() {
+        let short = "hello";
+        assert_eq!(truncate_preview(short, 200), "hello");
+
+        let exact = "a".repeat(200);
+        assert_eq!(truncate_preview(&exact, 200), exact);
+
+        let long = "a".repeat(250);
+        assert_eq!(truncate_preview(&long, 200), format!("{}...", "a".repeat(200)));
+    }
+
+    #[test]
+    fn truncate_preview_multibyte() {
+        // Each emoji is 4 bytes — slicing at byte 200 would panic without char-safe truncation
+        let emojis = "🎉".repeat(60); // 60 chars, 240 bytes
+        let result = truncate_preview(&emojis, 50);
+        assert!(result.ends_with("..."));
+        // 50 emoji chars + "..." = 203 bytes
+        assert_eq!(result.chars().count(), 53); // 50 emojis + 3 dots
+    }
+
+    #[test]
+    fn truncate_preview_empty() {
+        assert_eq!(truncate_preview("", 200), "");
+    }
+
+    #[test]
+    fn blocked_ips() {
+        use std::net::IpAddr;
+
+        // Loopback
+        assert!(is_blocked_ip("127.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("127.0.0.2".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::1".parse::<IpAddr>().unwrap()));
+
+        // Private ranges
+        assert!(is_blocked_ip("10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("172.16.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("192.168.1.1".parse::<IpAddr>().unwrap()));
+
+        // Link-local / cloud metadata
+        assert!(is_blocked_ip("169.254.169.254".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("169.254.0.1".parse::<IpAddr>().unwrap()));
+
+        // CGNAT
+        assert!(is_blocked_ip("100.64.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("100.127.255.254".parse::<IpAddr>().unwrap()));
+
+        // Unspecified
+        assert!(is_blocked_ip("0.0.0.0".parse::<IpAddr>().unwrap()));
+
+        // IPv4-mapped IPv6
+        assert!(is_blocked_ip("::ffff:127.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::ffff:169.254.169.254".parse::<IpAddr>().unwrap()));
+
+        // Public IPs — should NOT be blocked
+        assert!(!is_blocked_ip("8.8.8.8".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("1.1.1.1".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("142.250.80.46".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("2606:4700::1".parse::<IpAddr>().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn validate_blocks_private_ip_literals() {
+        assert!(validate_notification_target("http://127.0.0.1:9876/hook").await.is_err());
+        assert!(validate_notification_target("http://10.0.0.1/hook").await.is_err());
+        assert!(validate_notification_target("http://169.254.169.254/meta").await.is_err());
+        assert!(validate_notification_target("http://[::1]/hook").await.is_err());
+        assert!(validate_notification_target("not-a-url").await.is_err());
     }
 }
