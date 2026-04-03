@@ -81,6 +81,12 @@ await client.endpoints.update(endpoint.slug, {
 
 You can also set mock responses from the dashboard (gear icon), CLI (`whk update`), or MCP server.
 
+## Notification webhooks
+
+Add a notification URL to any endpoint and the receiver will POST a JSON summary (slug, method, path, timestamp, body preview) after each captured request. Works with Slack, Discord, Microsoft Teams, or any service that accepts HTTP POST.
+
+Configure from the dashboard settings dialog, the SDK, or the MCP server. See the [notification webhooks guide](/docs/notification-webhooks) for setup details.
+
 ## Ephemeral endpoints
 
 Ephemeral endpoints are temporary — they auto-delete after 12 hours along with all their captured requests. They are created when you use webhooks.cc without logging in, or explicitly via the SDK:
