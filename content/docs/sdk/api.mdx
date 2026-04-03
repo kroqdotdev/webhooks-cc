@@ -40,10 +40,11 @@ create(options?: CreateEndpointOptions): Promise<Endpoint>
 
 | Param          | Type           | Required | Description            |
 | -------------- | -------------- | -------- | ---------------------- |
-| `name`         | `string`       | no       | Display name           |
-| `ephemeral`    | `boolean`      | no       | Auto-delete after TTL  |
-| `expiresIn`    | `string`       | no       | Custom expiry duration |
-| `mockResponse` | `MockResponse` | no       | Mock response config   |
+| `name`              | `string`       | no       | Display name                                  |
+| `ephemeral`         | `boolean`      | no       | Auto-delete after TTL                         |
+| `expiresIn`         | `string`       | no       | Custom expiry duration                        |
+| `mockResponse`      | `MockResponse` | no       | Mock response config                          |
+| `notificationUrl`   | `string`       | no       | URL to POST a JSON summary on each request    |
 
 **MockResponse fields:**
 
@@ -89,9 +90,10 @@ update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
 
 | Param          | Type                   | Required | Description                                                 |
 | -------------- | ---------------------- | -------- | ----------------------------------------------------------- |
-| `slug`         | `string`               | yes      | Endpoint slug                                               |
-| `name`         | `string`               | no       | New display name                                            |
-| `mockResponse` | `MockResponse \| null` | no       | Mock response config (see fields above), or `null` to clear |
+| `slug`              | `string`               | yes      | Endpoint slug                                               |
+| `name`              | `string`               | no       | New display name                                            |
+| `mockResponse`      | `MockResponse \| null` | no       | Mock response config (see fields above), or `null` to clear |
+| `notificationUrl`   | `string \| null`       | no       | Notification webhook URL, or `null` to clear                |
 
 </ParamTable>
 </ApiMethod>
