@@ -108,6 +108,7 @@ cd apps/receiver-rs && cargo clippy     # Rust receiver lint
 | Receiver  | 3001 | Rust (Axum, Tokio, sqlx/Postgres)    | Captures webhooks at `/w/{slug}`                     |
 | Collector | 8099 | AppSignal Collector (Rust binary)    | Receives OTel traces from receiver, host metrics     |
 | Supabase  | —    | Self-hosted Postgres, Auth, Realtime | Database, auth, real-time subscriptions              |
+| Notify    | —    | Cloudflare Worker (TypeScript)       | Outbound proxy for notification webhooks (hides origin IP) |
 | CLI       | n/a  | Rust (Clap, Ratatui, Reqwest)        | `whk tunnel`, `whk listen`, device auth              |
 | SDK       | n/a  | TypeScript, tsup                     | `@webhooks-cc/sdk` on npm                            |
 | MCP       | n/a  | TypeScript, tsup                     | `@webhooks-cc/mcp` on npm — MCP server for AI agents |
@@ -125,6 +126,8 @@ webhooks-cc/
 │   └── mcp/              # @webhooks-cc/mcp (MCP server for AI agents)
 ├── supabase/
 │   └── migrations/       # Postgres schema, functions, RLS policies, cron jobs
+├── infra/
+│   └── notify-proxy/     # Cloudflare Worker: outbound notification proxy
 ├── docs/                 # Internal planning docs (gitignored)
 ├── .github/workflows/    # CI, CLI release, SDK publish
 ├── Makefile              # Build/dev/test orchestration
@@ -193,6 +196,17 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 | `PG_POOL_MIN`             | no       | 5       | Min Postgres pool connections                                        |
 | `PG_POOL_MAX`             | no       | 20      | Max Postgres pool connections                                        |
 | `APPSIGNAL_COLLECTOR_URL` | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`) |
+| `NOTIFY_PROXY_URL`        | no       |         | Cloudflare Worker URL for outbound notification proxy                |
+| `NOTIFY_SECRET`           | no       |         | Shared secret for authenticating with the notify proxy               |
+
+### Notification Proxy (Cloudflare Worker)
+
+Outbound notification webhooks (Slack, Discord, etc.) are routed through a Cloudflare Worker (`infra/notify-proxy/`) so destinations see a Cloudflare edge IP instead of the origin server's real IP. The Worker URL is configured via `NOTIFY_PROXY_URL`.
+
+- **Auth**: `NOTIFY_SECRET` shared between receiver and Worker (set via `wrangler secret put NOTIFY_SECRET`)
+- **SSRF protection**: HTTPS-only, blocks IP literals, localhost aliases, and dangerous ports
+- **Fallback**: When `NOTIFY_PROXY_URL` is unset, the receiver delivers notifications directly with SSRF-safe DNS pinning
+- **Deploy**: `cd infra/notify-proxy && npx wrangler deploy`
 
 ### CLI Commands
 
@@ -357,6 +371,8 @@ const req = await client.requests.waitFor(endpoint.slug, {
 | `RECEIVER_DEBUG`              | Enable receiver debug logging                   |
 | `WHK_DEBUG`                   | Enable CLI debug logging                        |
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Receiver connection pool sizing                 |
+| `NOTIFY_PROXY_URL`            | Cloudflare Worker URL for notification proxy    |
+| `NOTIFY_SECRET`               | Shared secret for notify proxy authentication   |
 
 ## CI/CD & Releases
 
