@@ -6,7 +6,8 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
-import { Settings } from "lucide-react";
+import { Settings, ExternalLink } from "lucide-react";
+import Link from "next/link";
 import { parseStatusCode } from "@/lib/http";
 import {
   deleteDashboardEndpoint,
@@ -296,6 +297,16 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               className="neo-input w-full text-sm"
             />
           </div>
+
+          {/* Full settings link */}
+          <Link
+            href={`/endpoints/${slug}/settings`}
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            All settings (team sharing, etc.)
+            <ExternalLink className="h-3 w-3" />
+          </Link>
 
           {error && (
             <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive">
