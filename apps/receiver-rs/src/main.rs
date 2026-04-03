@@ -132,9 +132,11 @@ async fn main() {
         "connected to Postgres"
     );
 
-    // Build HTTP client for notification webhooks
+    // Build HTTP client for notification webhooks.
+    // Redirects disabled to prevent SSRF bypass via 30x to internal IPs.
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("failed to build HTTP client");
 

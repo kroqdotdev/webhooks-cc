@@ -1,9 +1,9 @@
 -- ============================================================================
--- Migration 00010: capture_webhook stored procedure
+-- Migration 00018: Update capture_webhook to return notification_url
 --
--- Single-call hot path for the Rust receiver. Looks up the endpoint, checks
--- quota, inserts the request row, and increments counters — all in one
--- transaction, one database round-trip.
+-- Migration 00014 recreated capture_webhook() without the notification_url
+-- field added in 00010. This migration replaces the function with the
+-- version that includes notification_url in the return value.
 -- ============================================================================
 
 create or replace function public.capture_webhook(
@@ -26,16 +26,19 @@ declare
   v_user        record;
   v_quota       record;
   v_period      record;
-  v_remaining   integer;
   v_retry_after bigint;
   v_size        integer;
   v_mock        jsonb;
+  v_slug        text;
 begin
+  -- Normalize slug to lowercase for case-insensitive lookup
+  v_slug := lower(p_slug);
+
   -- 1. Look up endpoint by slug
-  select id, user_id, is_ephemeral, expires_at, mock_response, request_count
+  select id, user_id, is_ephemeral, expires_at, mock_response, request_count, notification_url
     into v_endpoint
     from public.endpoints
-   where slug = p_slug;
+   where slug = v_slug;
 
   if not found then
     return jsonb_build_object('status', 'not_found');
@@ -134,7 +137,8 @@ begin
   return jsonb_build_object(
     'status', 'ok',
     'mock_response', v_mock,
-    'retry_after', null::bigint
+    'retry_after', null::bigint,
+    'notification_url', v_endpoint.notification_url
   );
 end;
 $$;

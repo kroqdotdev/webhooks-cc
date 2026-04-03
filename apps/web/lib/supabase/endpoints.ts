@@ -47,6 +47,7 @@ interface CreateEndpointInput {
   isEphemeral?: boolean;
   expiresAt?: number;
   mockResponse?: Record<string, unknown>;
+  notificationUrl?: string;
 }
 
 interface UpdateEndpointInput {
@@ -216,6 +217,7 @@ export async function createEndpointForUser({
   isEphemeral = false,
   expiresAt,
   mockResponse,
+  notificationUrl,
 }: CreateEndpointInput): Promise<EndpointRecord> {
   const admin = createAdminClient();
   const slug = await generateUniqueSlug();
@@ -237,6 +239,7 @@ export async function createEndpointForUser({
     slug,
     name: name ?? null,
     mock_response: (mockResponse as Json | undefined) ?? null,
+    notification_url: notificationUrl ?? null,
     is_ephemeral: ephemeral,
     expires_at: expiresAtIso,
   };

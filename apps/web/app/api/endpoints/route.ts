@@ -119,6 +119,26 @@ export async function POST(request: Request) {
     }
   }
 
+  // Validate notificationUrl if provided
+  if (body.notificationUrl !== undefined && body.notificationUrl !== null) {
+    if (typeof body.notificationUrl !== "string" || body.notificationUrl.length > 2048) {
+      return Response.json({ error: "Invalid notificationUrl" }, { status: 400 });
+    }
+    if (body.notificationUrl.length > 0) {
+      try {
+        const parsed = new URL(body.notificationUrl as string);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return Response.json(
+            { error: "notificationUrl must use http or https" },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return Response.json({ error: "Invalid notificationUrl format" }, { status: 400 });
+      }
+    }
+  }
+
   const isEphemeral = body.isEphemeral === true || expiresAt !== undefined;
 
   try {
@@ -131,6 +151,10 @@ export async function POST(request: Request) {
         body.mockResponse === undefined
           ? undefined
           : (body.mockResponse as Record<string, unknown>),
+      notificationUrl:
+        typeof body.notificationUrl === "string" && body.notificationUrl.length > 0
+          ? body.notificationUrl
+          : undefined,
     });
 
     return applyRateLimitHeaders(Response.json(created), rateLimit);

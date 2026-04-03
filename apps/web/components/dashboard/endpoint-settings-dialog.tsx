@@ -232,7 +232,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
 
       const delayMs = delayEnabled && mockDelay ? parseInt(mockDelay, 10) : undefined;
       const hasCustomMock = mockBody || mockStatus !== "200" || (delayMs && delayMs > 0);
-      await updateDashboardEndpoint(accessToken, slug, {
+      const updates: Record<string, unknown> = {
         name: name || undefined,
         mockResponse: hasCustomMock
           ? {
@@ -242,8 +242,13 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               ...(delayMs && delayMs > 0 ? { delay: delayMs } : {}),
             }
           : null,
-        notificationUrl: notificationUrl || null,
-      });
+      };
+      // Only send notificationUrl if the user owns the endpoint (prop was defined).
+      // Shared endpoints don't include notificationUrl — sending null would wipe it.
+      if (initialNotificationUrl !== undefined) {
+        updates.notificationUrl = notificationUrl || null;
+      }
+      await updateDashboardEndpoint(accessToken, slug, updates);
       emitDashboardEndpointsChanged();
       setOpen(false);
 

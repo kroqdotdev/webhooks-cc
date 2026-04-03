@@ -155,8 +155,11 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
             || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64  // 100.64.0.0/10 (CGNAT)
         }
         std::net::IpAddr::V6(v6) => {
+            let segs = v6.segments();
             v6.is_loopback()                           // ::1
             || v6.is_unspecified()                     // ::
+            || (segs[0] & 0xfe00) == 0xfc00           // fc00::/7 — Unique Local Address (ULA)
+            || (segs[0] & 0xffc0) == 0xfe80           // fe80::/10 — link-local
             // IPv4-mapped IPv6 (::ffff:x.x.x.x) — check the embedded v4
             || v6.to_ipv4_mapped().is_some_and(|v4| is_blocked_ip(std::net::IpAddr::V4(v4)))
         }
@@ -645,6 +648,15 @@ mod tests {
 
         // Unspecified
         assert!(is_blocked_ip("0.0.0.0".parse::<IpAddr>().unwrap()));
+
+        // IPv6 ULA (fc00::/7)
+        assert!(is_blocked_ip("fd00::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fc00::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fdab:cdef:1234::1".parse::<IpAddr>().unwrap()));
+
+        // IPv6 link-local (fe80::/10)
+        assert!(is_blocked_ip("fe80::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fe80::abcd:1234".parse::<IpAddr>().unwrap()));
 
         // IPv4-mapped IPv6
         assert!(is_blocked_ip("::ffff:127.0.0.1".parse::<IpAddr>().unwrap()));
