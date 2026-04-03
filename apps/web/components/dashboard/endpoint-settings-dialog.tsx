@@ -81,6 +81,7 @@ function TeamSharingSection({
   const [sharedTeamIds, setSharedTeamIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [teamError, setTeamError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -107,7 +108,7 @@ function TeamSharingSection({
           }
         }
       } catch {
-        // silent
+        setTeamError("Failed to load teams");
       } finally {
         setLoading(false);
       }
@@ -146,18 +147,19 @@ function TeamSharingSection({
         }
       }
     } catch {
-      // silent
+      setTeamError("Failed to update sharing");
     } finally {
       setToggling(null);
     }
   };
 
-  if (loading || teams.length === 0) return null;
+  if (loading || (teams.length === 0 && !teamError)) return null;
 
   return (
     <div className="border-2 border-foreground p-4 space-y-2">
       <p className="font-bold uppercase tracking-wide text-xs">Team Sharing</p>
       <p className="text-xs text-muted-foreground">Share this endpoint with your teams.</p>
+      {teamError && <p className="text-xs text-destructive">{teamError}</p>}
       <div className="space-y-1.5">
         {teams.map((team) => {
           const isShared = sharedTeamIds.has(team.id);

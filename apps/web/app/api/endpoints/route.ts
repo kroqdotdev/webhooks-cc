@@ -3,7 +3,7 @@ import {
   extractBearerToken,
   validateBearerTokenWithPlan,
 } from "@/lib/api-auth";
-import { parseJsonBody } from "@/lib/request-validation";
+import { parseJsonBody, validateNotificationUrl } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
 import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/lib/supabase/teams";
@@ -119,25 +119,8 @@ export async function POST(request: Request) {
     }
   }
 
-  // Validate notificationUrl if provided
-  if (body.notificationUrl !== undefined && body.notificationUrl !== null) {
-    if (typeof body.notificationUrl !== "string" || body.notificationUrl.length > 2048) {
-      return Response.json({ error: "Invalid notificationUrl" }, { status: 400 });
-    }
-    if (body.notificationUrl.length > 0) {
-      try {
-        const parsed = new URL(body.notificationUrl as string);
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          return Response.json(
-            { error: "notificationUrl must use http or https" },
-            { status: 400 }
-          );
-        }
-      } catch {
-        return Response.json({ error: "Invalid notificationUrl format" }, { status: 400 });
-      }
-    }
-  }
+  const notifCheck = validateNotificationUrl(body.notificationUrl);
+  if (!notifCheck.valid) return notifCheck.response;
 
   const isEphemeral = body.isEphemeral === true || expiresAt !== undefined;
 
