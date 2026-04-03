@@ -6,7 +6,7 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
-import { Settings, ChevronDown } from "lucide-react";
+import { Settings } from "lucide-react";
 import { parseStatusCode } from "@/lib/http";
 import {
   deleteDashboardEndpoint,
@@ -197,7 +197,6 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [mockDelay, setMockDelay] = useState(mockResponse?.delay?.toString() || "");
   const [delayEnabled, setDelayEnabled] = useState(!!mockResponse?.delay);
   const [notificationUrl, setNotificationUrl] = useState(initialNotificationUrl || "");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -213,7 +212,6 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setMockDelay(mockResponse?.delay?.toString() || "");
       setDelayEnabled(!!mockResponse?.delay);
       setNotificationUrl(initialNotificationUrl || "");
-      setAdvancedOpen(!!(initialNotificationUrl));
       setError(null);
       setConfirmDelete(false);
     }
@@ -401,21 +399,9 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
 
           {/* Right column: Advanced settings */}
           <div className="space-y-4">
-            <button
-              type="button"
-              onClick={() => setAdvancedOpen(!advancedOpen)}
-              className="flex items-center gap-1.5 font-bold uppercase tracking-wide text-xs hover:text-muted-foreground transition-colors w-full sm:hidden"
-            >
-              <ChevronDown
-                className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
-              />
-              Advanced Settings
-            </button>
-            <p className="font-bold uppercase tracking-wide text-xs hidden sm:block">
-              Advanced Settings
-            </p>
+            <p className="font-bold uppercase tracking-wide text-xs">Advanced Settings</p>
 
-            <div className={`space-y-4 ${advancedOpen ? "" : "hidden sm:block"}`}>
+            <div className="space-y-4">
               {/* Notification Webhook */}
               <div className="border-2 border-foreground p-4 space-y-2">
                 <div>
