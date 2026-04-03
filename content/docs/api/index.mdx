@@ -85,7 +85,7 @@ curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
   -d '{"name": "new-name", "mockResponse": {"status": 200, "body": "{\"ok\":true}", "headers": {"Content-Type": "application/json"}}, "notificationUrl": "https://hooks.slack.com/services/..."}'
 ```
 
-Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications.
+Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications. The `notificationUrl` must be a valid `http` or `https` URL, max 2048 characters.
 
 ### Delete endpoint
 

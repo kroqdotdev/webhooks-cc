@@ -131,15 +131,21 @@ pub fn new_notification_limiter() -> NotificationLimiter {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-/// Truncate a string to at most `max_chars` characters, appending "..." if truncated.
+/// Truncate a string to at most `max_chars` characters (including "..." suffix).
 /// Safe for multi-byte UTF-8 — never splits a character.
 fn truncate_preview(s: &str, max_chars: usize) -> String {
-    let mut chars = s.char_indices();
-    if let Some((byte_pos, _)) = chars.nth(max_chars) {
-        format!("{}...", &s[..byte_pos])
-    } else {
-        s.to_string()
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        return s.to_string();
     }
+    // Reserve 3 chars for "..." so total never exceeds max_chars
+    let content_chars = max_chars.saturating_sub(3);
+    let byte_pos = s
+        .char_indices()
+        .nth(content_chars)
+        .map(|(pos, _)| pos)
+        .unwrap_or(s.len());
+    format!("{}...", &s[..byte_pos])
 }
 
 /// Returns true if the IP address is private, loopback, link-local, or a cloud metadata address.
@@ -166,28 +172,41 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-/// Resolve the notification URL's host, validate all IPs are safe, and return a
-/// rewritten URL that connects directly to the resolved IP (with Host header).
-/// This eliminates the TOCTOU window where DNS could return a different IP on
-/// the second resolution by reqwest.
+/// Resolved notification target: original URL + resolved addresses for DNS pinning.
+struct ResolvedTarget {
+    /// Original URL (unchanged — preserves hostname for TLS verification).
+    url: String,
+    /// Hostname from the URL (used for `resolve()` pinning).
+    host: String,
+    /// Validated socket addresses to pin DNS resolution to.
+    addrs: Vec<std::net::SocketAddr>,
+}
+
+/// Resolve the notification URL's host, validate all IPs are safe, and return
+/// the original URL with resolved addresses for DNS pinning.
 ///
-/// Returns `Ok((safe_url, host_header))` or `Err(reason)`.
-async fn resolve_notification_target(url: &str) -> Result<(String, String), &'static str> {
+/// The URL is NOT rewritten — reqwest uses `ClientBuilder::resolve_to_addrs()`
+/// to connect to the validated IPs while keeping the original hostname for TLS.
+async fn resolve_notification_target(url: &str) -> Result<ResolvedTarget, &'static str> {
     let parsed = url::Url::parse(url).map_err(|_| "invalid URL")?;
     let host = parsed.host_str().ok_or("no host in URL")?.to_string();
     let port = parsed
         .port()
         .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
 
-    // Direct IP literal — no DNS needed
+    // Direct IP literal — no DNS needed, but still validate
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
         if is_blocked_ip(ip) {
             return Err("blocked IP");
         }
-        return Ok((url.to_string(), host));
+        return Ok(ResolvedTarget {
+            url: url.to_string(),
+            host,
+            addrs: vec![std::net::SocketAddr::new(ip, port)],
+        });
     }
 
-    // DNS resolution — check ALL addresses before picking one
+    // DNS resolution — check ALL addresses before accepting any
     let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(format!("{host}:{port}"))
         .await
         .map_err(|_| "DNS resolution failed")?
@@ -203,24 +222,15 @@ async fn resolve_notification_target(url: &str) -> Result<(String, String), &'st
         }
     }
 
-    // Rewrite URL to use the resolved IP directly, preventing re-resolution
-    let resolved_ip = addrs[0].ip();
-    let ip_host = match resolved_ip {
-        std::net::IpAddr::V4(v4) => format!("{v4}"),
-        std::net::IpAddr::V6(v6) => format!("[{v6}]"),
-    };
-    let mut safe_url = parsed.clone();
-    safe_url
-        .set_host(Some(&ip_host))
-        .map_err(|_| "failed to rewrite URL")?;
-    safe_url.set_port(Some(port)).ok();
-
-    Ok((safe_url.to_string(), host))
+    Ok(ResolvedTarget {
+        url: url.to_string(),
+        host,
+        addrs,
+    })
 }
 
 /// Notification payload for the fire-and-forget POST.
 struct NotificationInfo {
-    http_client: reqwest::Client,
     limiter: NotificationLimiter,
     url: String,
     slug: String,
@@ -250,12 +260,28 @@ fn spawn_notification(info: NotificationInfo) {
             }
         }
 
-        // SSRF protection: resolve DNS, validate all IPs, rewrite URL to resolved IP
-        let (safe_url, host) = match resolve_notification_target(&info.url).await {
-            Ok(resolved) => resolved,
+        // SSRF protection: resolve DNS, validate all IPs
+        let target = match resolve_notification_target(&info.url).await {
+            Ok(t) => t,
             Err(reason) => {
                 // Redact URL — notification URLs are bearer secrets (Slack/Discord)
                 tracing::warn!(slug = info.slug, reason, "notification URL blocked");
+                return;
+            }
+        };
+
+        // Build a per-request client with DNS pinned to validated addresses.
+        // This preserves the original hostname for TLS cert verification while
+        // ensuring reqwest connects only to our validated IPs (no TOCTOU).
+        let pinned_client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(&target.host, &target.addrs)
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(slug = info.slug, error = %e, "failed to build pinned client");
                 return;
             }
         };
@@ -268,12 +294,9 @@ fn spawn_notification(info: NotificationInfo) {
             "preview": info.preview,
         });
 
-        let result = info
-            .http_client
-            .post(&safe_url)
-            .header("Host", &host)
+        let result = pinned_client
+            .post(&target.url)
             .json(&payload)
-            .timeout(std::time::Duration::from_secs(5))
             .send()
             .await;
 
@@ -429,7 +452,6 @@ async fn handle_webhook_inner(
                     {
                         let preview = truncate_preview(&body_str, NOTIFICATION_PREVIEW_LEN);
                         spawn_notification(NotificationInfo {
-                            http_client: state.http_client.clone(),
                             limiter: state.notification_limiter.clone(),
                             url: url.clone(),
                             slug: slug.clone(),
@@ -633,8 +655,12 @@ mod tests {
         let exact = "a".repeat(200);
         assert_eq!(truncate_preview(&exact, 200), exact);
 
+        // 250 chars truncated to 200: 197 content + "..." = 200 total
         let long = "a".repeat(250);
-        assert_eq!(truncate_preview(&long, 200), format!("{}...", "a".repeat(200)));
+        let result = truncate_preview(&long, 200);
+        assert_eq!(result.chars().count(), 200);
+        assert!(result.ends_with("..."));
+        assert_eq!(result, format!("{}...", "a".repeat(197)));
     }
 
     #[test]
@@ -643,8 +669,8 @@ mod tests {
         let emojis = "🎉".repeat(60); // 60 chars, 240 bytes
         let result = truncate_preview(&emojis, 50);
         assert!(result.ends_with("..."));
-        // 50 emoji chars + "..." = 203 bytes
-        assert_eq!(result.chars().count(), 53); // 50 emojis + 3 dots
+        // 47 emojis + "..." = 50 chars total
+        assert_eq!(result.chars().count(), 50);
     }
 
     #[test]
@@ -708,12 +734,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_rewrites_url_to_ip() {
-        // Public IP literal should pass through unchanged
+    async fn resolve_preserves_original_url() {
+        // Public IP literal should pass through with original URL preserved
         let result = resolve_notification_target("http://8.8.8.8:9876/hook").await;
         assert!(result.is_ok());
-        let (url, host) = result.unwrap();
-        assert!(url.contains("8.8.8.8"));
-        assert_eq!(host, "8.8.8.8");
+        let target = result.unwrap();
+        assert_eq!(target.url, "http://8.8.8.8:9876/hook");
+        assert_eq!(target.host, "8.8.8.8");
+        assert!(!target.addrs.is_empty());
     }
 }

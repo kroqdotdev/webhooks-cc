@@ -20,7 +20,6 @@ const MAX_BODY_SIZE: usize = 1_024 * 1_024; // 1MB
 pub struct AppState {
     pub pool: PgPool,
     pub config: Config,
-    pub http_client: reqwest::Client,
     pub notification_limiter: handlers::webhook::NotificationLimiter,
 }
 
@@ -132,19 +131,10 @@ async fn main() {
         "connected to Postgres"
     );
 
-    // Build HTTP client for notification webhooks.
-    // Redirects disabled to prevent SSRF bypass via 30x to internal IPs.
-    let http_client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .expect("failed to build HTTP client");
-
     // Build app state
     let state = AppState {
         pool,
         config: config.clone(),
-        http_client,
         notification_limiter: handlers::webhook::new_notification_limiter(),
     };
 

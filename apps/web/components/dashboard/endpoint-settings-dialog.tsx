@@ -434,11 +434,13 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
                 </div>
               )}
 
-              {/* Team Sharing */}
-              <TeamSharingSection
-                accessToken={session?.access_token ?? null}
-                endpointId={endpointId}
-              />
+              {/* Team Sharing — only for owned endpoints */}
+              {initialNotificationUrl !== undefined && (
+                <TeamSharingSection
+                  accessToken={session?.access_token ?? null}
+                  endpointId={endpointId}
+                />
+              )}
             </div>
           </div>
         </div>
