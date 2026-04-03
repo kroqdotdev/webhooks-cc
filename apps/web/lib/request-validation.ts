@@ -1,6 +1,44 @@
 /**
- * Request body parsing with size limits.
+ * Request body parsing and field validation helpers.
  */
+
+/**
+ * Validate a notificationUrl field from a request body.
+ * Accepts undefined/null (skip), empty string (allowed), or a valid http/https URL (max 2048).
+ */
+export function validateNotificationUrl(
+  value: unknown
+): { valid: true } | { valid: false; response: Response } {
+  if (value === undefined || value === null) {
+    return { valid: true };
+  }
+  if (typeof value !== "string" || value.length > 2048) {
+    return {
+      valid: false,
+      response: Response.json({ error: "Invalid notificationUrl" }, { status: 400 }),
+    };
+  }
+  if (value.length > 0) {
+    try {
+      const parsed = new URL(value);
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: "notificationUrl must use http or https" },
+            { status: 400 }
+          ),
+        };
+      }
+    } catch {
+      return {
+        valid: false,
+        response: Response.json({ error: "Invalid notificationUrl format" }, { status: 400 }),
+      };
+    }
+  }
+  return { valid: true };
+}
 
 const DEFAULT_MAX_SIZE = 64 * 1024; // 64KB
 
