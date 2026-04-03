@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.14.1";
+export const APP_VERSION = "0.15.0";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.15.0",
+    date: "2026-04-03",
+    title: "Notification Webhooks",
+    track: "web",
+    items: [
+      "Configure a notification URL on any endpoint to receive POST alerts when webhooks are captured",
+      "Supports Slack, Discord, Microsoft Teams, and any webhook-compatible service",
+      "Notification URL management in endpoint settings and via API/SDK/MCP",
+      "New docs page for notification webhooks",
+    ],
+  },
   {
     version: "0.14.1",
     date: "2026-04-02",
