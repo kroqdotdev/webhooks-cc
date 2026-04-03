@@ -236,6 +236,7 @@ struct NotificationInfo {
     slug: String,
     method: String,
     path: String,
+    ip: String,
     preview: String,
     received_at: String,
 }
@@ -280,6 +281,7 @@ fn spawn_notification(info: NotificationInfo) {
                 "slug": info.slug,
                 "method": info.method,
                 "path": info.path,
+                "ip": info.ip,
                 "receivedAt": info.received_at,
                 "preview": info.preview,
             });
@@ -458,6 +460,7 @@ async fn handle_webhook_inner(
                             slug: slug.clone(),
                             method: method.as_str().to_string(),
                             path: req_path.clone(),
+                            ip: ip.clone(),
                             preview,
                             received_at: received_at.to_rfc3339(),
                         });

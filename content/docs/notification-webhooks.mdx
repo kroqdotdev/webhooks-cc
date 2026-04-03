@@ -33,6 +33,7 @@ The receiver sends a POST request with a JSON body:
   "slug": "my-endpoint",
   "method": "POST",
   "path": "/webhooks/stripe",
+  "ip": "203.0.113.42",
   "receivedAt": "2026-04-03T12:34:56.789Z",
   "preview": "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_test..."
 }
@@ -43,6 +44,7 @@ The receiver sends a POST request with a JSON body:
 | `slug`       | string | Endpoint slug that received the webhook                         |
 | `method`     | string | HTTP method of the incoming request                             |
 | `path`       | string | Request path after the slug                                     |
+| `ip`         | string | Client IP address of the webhook sender                         |
 | `receivedAt` | string | ISO 8601 timestamp                                              |
 | `preview`    | string | First 200 characters of the request body (truncated with `...`) |
 
