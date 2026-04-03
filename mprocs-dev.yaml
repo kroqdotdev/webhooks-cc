@@ -1,4 +1,7 @@
 procs:
+  redis:
+    shell: "trap '$HOME/redis/stop.sh' EXIT; $HOME/redis/start.sh && echo 'Redis running — will stop on exit.' && while true; do sleep 86400; done"
+    autostart: true
   web:
     shell: "pnpm --filter web dev"
   receiver:

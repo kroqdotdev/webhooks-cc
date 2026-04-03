@@ -87,6 +87,7 @@ function TeamSharingSection({
     if (!accessToken) return;
 
     const load = async () => {
+      setTeamError(null);
       try {
         const [teamsRes, endpointsRes] = await Promise.all([
           fetch("/api/teams", { headers: { Authorization: `Bearer ${accessToken}` } }),
@@ -120,6 +121,7 @@ function TeamSharingSection({
   const handleToggle = async (teamId: string, shared: boolean) => {
     if (!accessToken) return;
     setToggling(teamId);
+    setTeamError(null);
     try {
       if (shared) {
         const res = await fetch(`/api/teams/${teamId}/endpoints/${endpointId}`, {
