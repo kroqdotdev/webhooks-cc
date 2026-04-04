@@ -102,11 +102,12 @@ export function checkRateLimitByKeyWithInfo(
       reset,
     };
 
+    const retryAfter = Math.max(1, reset - Math.floor(now / 1000));
     const response = new Response(JSON.stringify({ error: "Too many requests" }), {
       status: 429,
       headers: {
         "Content-Type": "application/json",
-        "Retry-After": String(Math.ceil(windowMs / 1000)),
+        "Retry-After": String(retryAfter),
         "X-RateLimit-Limit": String(maxRequests),
         "X-RateLimit-Remaining": String(remaining),
         "X-RateLimit-Reset": String(reset),
