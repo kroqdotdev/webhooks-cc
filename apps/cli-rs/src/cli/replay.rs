@@ -3,6 +3,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, red};
+use crate::util::body::resolve_body;
 
 /// Headers to strip when replaying (hop-by-hop + sensitive + proxy).
 const STRIP_HEADERS: &[&str] = &[
@@ -57,8 +58,8 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
         .build()?;
 
     let mut builder = http.request(method.clone(), &url).headers(headers);
-    if let Some(ref body) = req.body {
-        builder = builder.body(body.clone());
+    if let Some(bytes) = resolve_body(req.body_raw.as_deref(), req.body.as_deref()) {
+        builder = builder.body(bytes);
     }
 
     let start = std::time::Instant::now();

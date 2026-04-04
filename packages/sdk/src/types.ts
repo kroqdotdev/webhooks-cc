@@ -62,6 +62,8 @@ export interface Request {
   headers: Record<string, string>;
   /** Request body, if present */
   body?: string;
+  /** Base64-encoded raw bytes, present only for non-UTF-8 payloads */
+  bodyRaw?: string;
   /** URL query parameters */
   queryParams: Record<string, string>;
   /** Content-Type header value, if present */

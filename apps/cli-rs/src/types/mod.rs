@@ -96,6 +96,9 @@ pub struct CapturedRequest {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub body: Option<String>,
+    /// Base64-encoded raw bytes, present only for non-UTF-8 payloads
+    #[serde(rename = "bodyRaw", default)]
+    pub body_raw: Option<String>,
     #[serde(rename = "queryParams", default)]
     pub query_params: HashMap<String, String>,
     #[serde(rename = "contentType", default)]

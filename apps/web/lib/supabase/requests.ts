@@ -15,6 +15,7 @@ type SelectedRequestRow = Pick<
   | "path"
   | "headers"
   | "body"
+  | "body_raw"
   | "query_params"
   | "content_type"
   | "ip"
@@ -31,6 +32,8 @@ export interface RequestRecord {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  /** Base64-encoded raw bytes, present only for non-UTF-8 payloads */
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -63,6 +66,19 @@ function asStringRecord(value: Json): Record<string, string> {
   ) as Record<string, string>;
 }
 
+/**
+ * Convert Postgres bytea to base64.
+ *
+ * PostgREST returns hex with prefix: "\\x808182"
+ * Supabase Realtime (via wal2json) returns hex without prefix: "808182"
+ *
+ * Both are normalized to base64.
+ */
+export function byteaToBase64(value: string): string {
+  const hex = value.startsWith("\\x") ? value.slice(2) : value;
+  return Buffer.from(hex, "hex").toString("base64");
+}
+
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {
   return {
     id: row.id,
@@ -71,6 +87,7 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     path: row.path,
     headers: asStringRecord(row.headers),
     body: row.body ?? undefined,
+    bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
@@ -173,7 +190,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -224,7 +241,7 @@ export async function listRequestsForEndpointByUser(input: {
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
     )
     .eq("endpoint_id", endpoint.id)
     .gte("received_at", new Date(floor).toISOString())
@@ -257,7 +274,7 @@ export async function listNewRequestsForEndpointByUser(input: {
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
     )
     .eq("endpoint_id", endpoint.id)
     .gt("received_at", new Date(floor).toISOString())
@@ -296,7 +313,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
     )
     .eq("endpoint_id", endpoint.id)
     .gte("received_at", new Date(cutoff).toISOString())

@@ -183,6 +183,7 @@ export interface Database {
           path: string;
           headers: Json;
           body: string | null;
+          body_raw: string | null;
           query_params: Json;
           content_type: string | null;
           ip: string;
@@ -197,6 +198,7 @@ export interface Database {
           path: string;
           headers?: Json;
           body?: string | null;
+          body_raw?: string | null;
           query_params?: Json;
           content_type?: string | null;
           ip: string;
@@ -211,6 +213,7 @@ export interface Database {
           path?: string;
           headers?: Json;
           body?: string | null;
+          body_raw?: string | null;
           query_params?: Json;
           content_type?: string | null;
           ip?: string;

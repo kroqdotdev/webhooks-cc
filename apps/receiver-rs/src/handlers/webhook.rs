@@ -434,7 +434,14 @@ async fn handle_webhook_inner(
     // 3. Extract request data
     let ip = real_ip(&headers);
     let filtered_headers = filter_headers(&headers);
-    let body_str = String::from_utf8_lossy(&body).into_owned();
+    // Try exact UTF-8 first; only store raw bytes when the payload isn't valid UTF-8
+    let (body_str, body_raw): (String, Option<Vec<u8>>) = match String::from_utf8(body.to_vec()) {
+        Ok(s) => (s, None),
+        Err(e) => {
+            let lossy = String::from_utf8_lossy(e.as_bytes()).into_owned();
+            (lossy, Some(e.into_bytes()))
+        }
+    };
     let content_type = headers
         .get("content-type")
         .and_then(|v| v.to_str().ok())
@@ -452,7 +459,7 @@ async fn handle_webhook_inner(
 
     // 4. Call the stored procedure
     let result: Result<serde_json::Value, sqlx::Error> = sqlx::query_scalar(
-        "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(&slug)
     .bind(method.as_str())
@@ -463,6 +470,7 @@ async fn handle_webhook_inner(
     .bind(&content_type)
     .bind(&ip)
     .bind(received_at)
+    .bind(&body_raw)
     .fetch_one(&state.pool)
     .await;
 

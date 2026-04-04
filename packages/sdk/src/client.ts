@@ -1189,9 +1189,20 @@ export class WebhooksCC {
       }
 
       // Don't send body on GET/HEAD requests
+      // Prefer raw bytes (base64-decoded) over text body for byte-exact replay
       const upperMethod = captured.method.toUpperCase();
-      const body =
-        upperMethod === "GET" || upperMethod === "HEAD" ? undefined : (captured.body ?? undefined);
+      let body: string | Uint8Array | undefined;
+      if (upperMethod === "GET" || upperMethod === "HEAD") {
+        body = undefined;
+      } else if (captured.bodyRaw) {
+        try {
+          body = Uint8Array.from(atob(captured.bodyRaw), (c) => c.charCodeAt(0));
+        } catch {
+          body = captured.body ?? undefined;
+        }
+      } else {
+        body = captured.body ?? undefined;
+      }
 
       return fetch(targetUrl, {
         method: captured.method,

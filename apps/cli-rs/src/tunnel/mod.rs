@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::types::{CapturedRequest, ForwardResult};
+use crate::util::body::resolve_body;
 
-/// Headers that are always stripped from forwarded requests (security).
+/// Headers that are always stripped from forwarded requests (security + hop-by-hop).
 const SENSITIVE_HEADERS: &[&str] = &[
     "authorization",
+    "content-length",
     "cookie",
     "set-cookie",
     "x-api-key",
@@ -90,8 +92,8 @@ impl Tunnel {
 
         let mut builder = self.http.request(method, &target_url).headers(headers);
 
-        if let Some(ref body) = req.body {
-            builder = builder.body(body.clone());
+        if let Some(bytes) = resolve_body(req.body_raw.as_deref(), req.body.as_deref()) {
+            builder = builder.body(bytes);
         }
 
         match builder.send().await {

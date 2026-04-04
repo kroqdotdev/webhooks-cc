@@ -2,7 +2,11 @@ import { authenticateRequest } from "@/lib/api-auth";
 import { serverEnv } from "@/lib/env";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import type { Database, Json } from "@/lib/supabase/database";
-import { listNewRequestsForEndpointByUser, type RequestRecord } from "@/lib/supabase/requests";
+import {
+  byteaToBase64,
+  listNewRequestsForEndpointByUser,
+  type RequestRecord,
+} from "@/lib/supabase/requests";
 import { sendError } from "@appsignal/nodejs";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 
@@ -45,6 +49,7 @@ function toRequestRecord(row: RequestRow): RequestRecord {
     path: row.path,
     headers: asStringRecord(row.headers),
     body: row.body ?? undefined,
+    bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
@@ -62,6 +67,7 @@ function toStreamRequest(record: RequestRecord) {
     path: record.path,
     headers: record.headers,
     body: record.body,
+    bodyRaw: record.bodyRaw,
     queryParams: record.queryParams,
     contentType: record.contentType,
     ip: record.ip,
