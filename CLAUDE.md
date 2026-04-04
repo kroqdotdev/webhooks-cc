@@ -198,6 +198,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 | `APPSIGNAL_COLLECTOR_URL` | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`) |
 | `NOTIFY_PROXY_URL`        | no       |         | Cloudflare Worker URL for outbound notification proxy                |
 | `NOTIFY_SECRET`           | no       |         | Shared secret for authenticating with the notify proxy               |
+| `REDIS_URL`               | no       |         | Redis connection URL for distributed rate limiting (e.g. `redis://127.0.0.1:6379`) |
 
 ### Notification Proxy (Cloudflare Worker)
 
@@ -373,6 +374,7 @@ const req = await client.requests.waitFor(endpoint.slug, {
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Receiver connection pool sizing                 |
 | `NOTIFY_PROXY_URL`            | Cloudflare Worker URL for notification proxy    |
 | `NOTIFY_SECRET`               | Shared secret for notify proxy authentication   |
+| `REDIS_URL`                   | Redis URL for distributed rate limiting         |
 
 ## CI/CD & Releases
 

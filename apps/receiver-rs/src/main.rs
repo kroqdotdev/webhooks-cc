@@ -21,6 +21,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Config,
     pub notification_limiter: handlers::webhook::NotificationLimiter,
+    pub redis: Option<redis::aio::MultiplexedConnection>,
 }
 
 /// Build an OpenTelemetry tracer provider exporting spans to the given collector URL.
@@ -131,11 +132,35 @@ async fn main() {
         "connected to Postgres"
     );
 
+    // Connect to Redis (optional — falls back to in-memory rate limiting)
+    let redis_conn = match config.redis_url.as_deref() {
+        Some(url) => {
+            match redis::Client::open(url) {
+                Ok(client) => match client.get_multiplexed_tokio_connection().await {
+                    Ok(conn) => {
+                        tracing::info!("connected to Redis");
+                        Some(conn)
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to connect to Redis, using in-memory fallback");
+                        None
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "invalid REDIS_URL, using in-memory fallback");
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
     // Build app state
     let state = AppState {
         pool,
         config: config.clone(),
         notification_limiter: handlers::webhook::new_notification_limiter(),
+        redis: redis_conn,
     };
 
     // CORS: allow all origins on public webhook capture endpoints
