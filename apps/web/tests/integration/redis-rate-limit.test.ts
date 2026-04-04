@@ -11,6 +11,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/database";
 import Redis from "ioredis";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 
@@ -23,7 +24,7 @@ const WEB_URL = "http://localhost:3000";
 const canRun = Boolean(REDIS_URL && SUPABASE_URL && SERVICE_ROLE_KEY);
 
 describe.skipIf(!canRun)("Redis rate limiting integration", () => {
-  let admin: ReturnType<typeof createClient>;
+  let admin: ReturnType<typeof createClient<Database>>;
   let redis: Redis;
   let testUserId: string;
   let testEndpointSlug: string;
@@ -31,7 +32,7 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
   const TEST_EMAIL = `test-redis-rl-${Date.now()}@webhooks-test.local`;
 
   beforeAll(async () => {
-    admin = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!, {
+    admin = createClient<Database>(SUPABASE_URL!, SERVICE_ROLE_KEY!, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     redis = new Redis(REDIS_URL!);
