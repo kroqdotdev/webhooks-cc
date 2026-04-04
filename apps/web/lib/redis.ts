@@ -6,6 +6,7 @@ import Redis from "ioredis";
 const globalForRedis = globalThis as unknown as {
   __redisClient?: Redis | null;
   __redisInitialized?: boolean;
+  __redisReady?: Promise<void>;
 };
 
 function createClient(): Redis | null {
@@ -24,6 +25,14 @@ function createClient(): Redis | null {
     console.error("[redis] connection error:", err.message);
   });
 
+  // Store a promise that resolves when the connection is ready (or fails)
+  globalForRedis.__redisReady = new Promise<void>((resolve) => {
+    redis.once("ready", resolve);
+    redis.once("error", resolve);
+    // Don't block forever if neither fires
+    setTimeout(resolve, 2000);
+  });
+
   return redis;
 }
 
@@ -33,6 +42,14 @@ export function getRedisClient(): Redis | null {
     globalForRedis.__redisClient = createClient();
   }
   return globalForRedis.__redisClient ?? null;
+}
+
+/** Wait for Redis to be connected (or give up). Call once at startup. */
+export async function waitForRedis(): Promise<void> {
+  getRedisClient(); // ensure initialized
+  if (globalForRedis.__redisReady) {
+    await globalForRedis.__redisReady;
+  }
 }
 
 export function isRedisAvailable(): boolean {
