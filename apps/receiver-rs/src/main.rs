@@ -132,7 +132,10 @@ async fn main() {
         "connected to Postgres"
     );
 
-    // Connect to Redis (optional — falls back to in-memory rate limiting)
+    // Connect to Redis (optional — falls back to in-memory rate limiting).
+    // NOTE: If Redis is down at startup, we use in-memory fallback for the
+    // lifetime of this process. MultiplexedConnection handles reconnection
+    // for established connections that drop, but not initial connection failures.
     let redis_conn = match config.redis_url.as_deref() {
         Some(url) => {
             match redis::Client::open(url) {

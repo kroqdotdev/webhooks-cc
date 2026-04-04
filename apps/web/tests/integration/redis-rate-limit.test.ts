@@ -271,12 +271,11 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       // Wait for TTL to expire so next webhook can trigger notification
       await new Promise((r) => setTimeout(r, 1200));
 
-      // Poison the notify key with wrong type to simulate Redis error
-      await redis.set(`whcc:notify:${testEndpointSlug}`, "poisoned");
-
-      // Send another webhook — the SET NX EX will fail on the wrong-type key,
-      // but the notification should still work via in-memory fallback.
-      // The receiver should NOT crash or return 500.
+      // Set the notify key so it already exists — SET NX will return nil
+      // (key exists), causing the notification to be suppressed as if cooldown
+      // were active. This verifies the receiver handles pre-existing keys
+      // gracefully and does not crash or return 500.
+      await redis.set(`whcc:notify:${testEndpointSlug}`, "occupied");
       const resp = await fetch(`${RECEIVER_URL}/w/${testEndpointSlug}/redis-fail-2`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
