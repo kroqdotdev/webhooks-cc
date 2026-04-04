@@ -8,6 +8,7 @@
 //! Run with: cargo test --test integration
 //! Skip with: cargo test --lib (unit tests only)
 
+use base64::Engine;
 use std::collections::HashMap;
 
 /// Helper to create a client pointing at local dev
@@ -296,4 +297,149 @@ async fn test_clear_requests() {
 
     // Cleanup
     client.delete_endpoint(&ep.slug).await.ok();
+}
+
+// ─── Tunnel forwarding (binary body fidelity) ──────────────────────────
+
+fn make_captured_request(
+    method: &str,
+    path: &str,
+    body: Option<String>,
+    body_raw: Option<String>,
+) -> whk::types::CapturedRequest {
+    whk::types::CapturedRequest {
+        id: "test-id".into(),
+        endpoint_id: "test-ep".into(),
+        method: method.into(),
+        path: path.into(),
+        headers: HashMap::new(),
+        body,
+        body_raw,
+        query_params: HashMap::new(),
+        content_type: Some("application/octet-stream".into()),
+        ip: "127.0.0.1".into(),
+        size: 0,
+        received_at: 0,
+    }
+}
+
+/// Start a local axum server that captures the request body via a oneshot channel.
+async fn start_echo_server() -> (
+    String,
+    tokio::sync::oneshot::Receiver<Vec<u8>>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    use axum::{Router, extract::Request, routing::any};
+
+    let (body_tx, body_rx) = tokio::sync::oneshot::channel::<Vec<u8>>();
+    let body_tx = std::sync::Arc::new(tokio::sync::Mutex::new(Some(body_tx)));
+
+    let app = Router::new().route(
+        "/{*path}",
+        any(move |req: Request| {
+            let tx = body_tx.clone();
+            async move {
+                let bytes = axum::body::to_bytes(req.into_body(), 1024 * 1024)
+                    .await
+                    .unwrap();
+                if let Some(sender) = tx.lock().await.take() {
+                    let _ = sender.send(bytes.to_vec());
+                }
+                "ok"
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+    tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    (format!("http://127.0.0.1:{}", addr.port()), body_rx, shutdown_tx)
+}
+
+#[tokio::test]
+async fn test_tunnel_forward_binary_body_raw_exact_bytes() {
+    let (base_url, body_rx, shutdown_tx) = start_echo_server().await;
+    let tunnel = whk::tunnel::Tunnel::new(base_url, HashMap::new()).unwrap();
+
+    // Binary payload with bytes that would be mangled by UTF-8 lossy conversion
+    let raw_bytes: Vec<u8> = vec![0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x80, 0x81, 0x82, 0xFF];
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&raw_bytes);
+    let lossy_text = String::from_utf8_lossy(&raw_bytes).into_owned();
+
+    // Verify the lossy text is different from raw bytes (the whole point)
+    assert_ne!(
+        lossy_text.as_bytes(),
+        &raw_bytes[..],
+        "lossy text should differ from raw bytes"
+    );
+
+    let req = make_captured_request("POST", "/webhook", Some(lossy_text), Some(b64));
+    let result = tunnel.forward(&req).await;
+    assert!(result.success);
+
+    // Verify the target server received the EXACT original bytes, not the lossy text
+    let received = body_rx.await.expect("should receive body from echo server");
+    assert_eq!(
+        received, raw_bytes,
+        "forwarded body should be byte-exact, not lossy UTF-8"
+    );
+
+    drop(shutdown_tx);
+}
+
+#[tokio::test]
+async fn test_tunnel_forward_utf8_body_without_body_raw() {
+    let (base_url, body_rx, shutdown_tx) = start_echo_server().await;
+    let tunnel = whk::tunnel::Tunnel::new(base_url, HashMap::new()).unwrap();
+
+    let json_body = r#"{"event":"test","data":42}"#.to_string();
+    let req = make_captured_request("POST", "/webhook", Some(json_body.clone()), None);
+    let result = tunnel.forward(&req).await;
+
+    assert!(result.success, "forward should succeed: {:?}", result.error);
+    assert_eq!(result.status_code, Some(200));
+
+    let received = body_rx.await.expect("should receive body");
+    assert_eq!(received, json_body.as_bytes());
+
+    drop(shutdown_tx);
+}
+
+#[tokio::test]
+async fn test_tunnel_forward_bad_base64_falls_back_to_text() {
+    let (base_url, body_rx, shutdown_tx) = start_echo_server().await;
+    let tunnel = whk::tunnel::Tunnel::new(base_url, HashMap::new()).unwrap();
+
+    // Invalid base64 in body_raw — should fall back to text body
+    let req = make_captured_request(
+        "POST",
+        "/webhook",
+        Some("fallback text".into()),
+        Some("!!!not-valid-base64!!!".into()),
+    );
+    let result = tunnel.forward(&req).await;
+
+    assert!(
+        result.success,
+        "forward should succeed even with bad base64: {:?}",
+        result.error
+    );
+
+    // Should have forwarded the fallback text body
+    let received = body_rx.await.expect("should receive body");
+    assert_eq!(received, b"fallback text");
+
+    drop(shutdown_tx);
 }
