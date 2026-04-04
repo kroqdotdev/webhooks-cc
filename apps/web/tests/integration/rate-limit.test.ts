@@ -20,7 +20,7 @@ describe("checkRateLimitByKeyWithInfo", () => {
 
   test("first request returns allowed=true with correct metadata", async () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
-    const info = checkRateLimitByKeyWithInfo("test-key", 5, 60_000);
+    const info = await checkRateLimitByKeyWithInfo("test-key", 5, 60_000);
 
     expect(info.allowed).toBe(true);
     expect(info.response).toBeNull();
@@ -35,13 +35,13 @@ describe("checkRateLimitByKeyWithInfo", () => {
   test("remaining decrements with each request", async () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
 
-    const info1 = checkRateLimitByKeyWithInfo("test-key", 3, 60_000);
+    const info1 = await checkRateLimitByKeyWithInfo("test-key", 3, 60_000);
     expect(info1.remaining).toBe(2);
 
-    const info2 = checkRateLimitByKeyWithInfo("test-key", 3, 60_000);
+    const info2 = await checkRateLimitByKeyWithInfo("test-key", 3, 60_000);
     expect(info2.remaining).toBe(1);
 
-    const info3 = checkRateLimitByKeyWithInfo("test-key", 3, 60_000);
+    const info3 = await checkRateLimitByKeyWithInfo("test-key", 3, 60_000);
     expect(info3.remaining).toBe(0);
     expect(info3.allowed).toBe(true); // still allowed (this is the 3rd of 3)
   });
@@ -50,11 +50,11 @@ describe("checkRateLimitByKeyWithInfo", () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
 
     // Use up all 2 allowed requests
-    checkRateLimitByKeyWithInfo("test-key", 2, 60_000);
-    checkRateLimitByKeyWithInfo("test-key", 2, 60_000);
+    await checkRateLimitByKeyWithInfo("test-key", 2, 60_000);
+    await checkRateLimitByKeyWithInfo("test-key", 2, 60_000);
 
     // Third request should be blocked
-    const info = checkRateLimitByKeyWithInfo("test-key", 2, 60_000);
+    const info = await checkRateLimitByKeyWithInfo("test-key", 2, 60_000);
     expect(info.allowed).toBe(false);
     expect(info.response).not.toBeNull();
     expect(info.response!.status).toBe(429);
@@ -66,8 +66,8 @@ describe("checkRateLimitByKeyWithInfo", () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
 
     // Exhaust the limit
-    checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
-    const info = checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
+    await checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
+    const info = await checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
 
     const response = info.response!;
     expect(response.headers.get("Retry-After")).toBe("60");
@@ -84,13 +84,13 @@ describe("checkRateLimitByKeyWithInfo", () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
 
     // Exhaust limit at t=0
-    checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
+    await checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
 
     // Advance 45 seconds into the 60s window
     vi.advanceTimersByTime(45_000);
 
     // Hit rate limit — should get ~15s retry, not 60s
-    const info = checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
+    const info = await checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
     expect(info.allowed).toBe(false);
     expect(info.response!.headers.get("Retry-After")).toBe("15");
   });
@@ -99,14 +99,14 @@ describe("checkRateLimitByKeyWithInfo", () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
 
     // First request at t=0
-    const info1 = checkRateLimitByKeyWithInfo("test-key", 5, 60_000);
+    const info1 = await checkRateLimitByKeyWithInfo("test-key", 5, 60_000);
     const firstRequestTime = Date.now();
 
     // Advance time by 10 seconds
     vi.advanceTimersByTime(10_000);
 
     // Second request at t=10s
-    const info2 = checkRateLimitByKeyWithInfo("test-key", 5, 60_000);
+    const info2 = await checkRateLimitByKeyWithInfo("test-key", 5, 60_000);
 
     // Reset should still be based on earliest timestamp (t=0) + windowMs
     const expectedReset = Math.ceil((firstRequestTime + 60_000) / 1000);
@@ -132,7 +132,7 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
       headers: { "x-forwarded-for": "1.2.3.4, 10.0.0.1" },
     });
 
-    const info = checkRateLimitWithInfo(request, 5, 60_000);
+    const info = await checkRateLimitWithInfo(request, 5, 60_000);
     expect(info.allowed).toBe(true);
     expect(info.remaining).toBe(4);
 
@@ -140,7 +140,7 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
     const request2 = new Request("https://example.com/test", {
       headers: { "x-forwarded-for": "5.6.7.8" },
     });
-    const info2 = checkRateLimitWithInfo(request2, 5, 60_000);
+    const info2 = await checkRateLimitWithInfo(request2, 5, 60_000);
     expect(info2.allowed).toBe(true);
     expect(info2.remaining).toBe(4); // independent counter
   });
@@ -152,7 +152,7 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
       headers: { "x-real-ip": "9.8.7.6" },
     });
 
-    const info = checkRateLimitWithInfo(request, 5, 60_000);
+    const info = await checkRateLimitWithInfo(request, 5, 60_000);
     expect(info.allowed).toBe(true);
     expect(info.remaining).toBe(4);
   });
@@ -161,18 +161,18 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
     const { checkRateLimitWithInfo } = await freshImport();
 
     const request = new Request("https://example.com/test");
-    const info = checkRateLimitWithInfo(request, 2, 60_000);
+    const info = await checkRateLimitWithInfo(request, 2, 60_000);
     expect(info.allowed).toBe(true);
 
     // Second request from same "unknown" key
     const request2 = new Request("https://example.com/test");
-    const info2 = checkRateLimitWithInfo(request2, 2, 60_000);
+    const info2 = await checkRateLimitWithInfo(request2, 2, 60_000);
     expect(info2.allowed).toBe(true);
     expect(info2.remaining).toBe(0);
 
     // Third request should be blocked
     const request3 = new Request("https://example.com/test");
-    const info3 = checkRateLimitWithInfo(request3, 2, 60_000);
+    const info3 = await checkRateLimitWithInfo(request3, 2, 60_000);
     expect(info3.allowed).toBe(false);
   });
 });
@@ -189,14 +189,14 @@ describe("backwards-compatible wrappers", () => {
 
   test("checkRateLimitByKey returns null when allowed", async () => {
     const { checkRateLimitByKey } = await freshImport();
-    const result = checkRateLimitByKey("test-key", 5, 60_000);
+    const result = await checkRateLimitByKey("test-key", 5, 60_000);
     expect(result).toBeNull();
   });
 
   test("checkRateLimitByKey returns Response when blocked", async () => {
     const { checkRateLimitByKey } = await freshImport();
-    checkRateLimitByKey("test-key", 1, 60_000);
-    const result = checkRateLimitByKey("test-key", 1, 60_000);
+    await checkRateLimitByKey("test-key", 1, 60_000);
+    const result = await checkRateLimitByKey("test-key", 1, 60_000);
     expect(result).toBeInstanceOf(Response);
     expect(result!.status).toBe(429);
   });
@@ -206,7 +206,7 @@ describe("backwards-compatible wrappers", () => {
     const request = new Request("https://example.com", {
       headers: { "x-forwarded-for": "1.2.3.4" },
     });
-    const result = checkRateLimit(request, 5, 60_000);
+    const result = await checkRateLimit(request, 5, 60_000);
     expect(result).toBeNull();
   });
 
@@ -215,8 +215,8 @@ describe("backwards-compatible wrappers", () => {
     const request = new Request("https://example.com", {
       headers: { "x-forwarded-for": "1.2.3.4" },
     });
-    checkRateLimit(request, 1, 60_000);
-    const result = checkRateLimit(request, 1, 60_000);
+    await checkRateLimit(request, 1, 60_000);
+    const result = await checkRateLimit(request, 1, 60_000);
     expect(result).toBeInstanceOf(Response);
     expect(result!.status).toBe(429);
   });

@@ -25,7 +25,7 @@ describe("GET /api/search/requests", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({
+    mockFns.checkRateLimitByKeyWithInfo.mockResolvedValue({
       allowed: true,
       response: null,
       limit: 60,
@@ -122,7 +122,7 @@ describe("GET /api/search/requests", () => {
       userId: "user_123",
       plan: "free",
     });
-    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({
+    mockFns.checkRateLimitByKeyWithInfo.mockResolvedValue({
       allowed: false,
       response: Response.json({ error: "Too many requests" }, { status: 429 }),
       limit: 60,

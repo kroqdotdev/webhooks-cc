@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = checkRateLimitByKeyWithInfo(
+  const rateLimit = await checkRateLimitByKeyWithInfo(
     `team-create:${auth.userId}`,
     TEAM_CREATE_RATE_LIMIT_MAX,
     TEAM_CREATE_RATE_LIMIT_WINDOW_MS

@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = checkRateLimitByKeyWithInfo(
+  const rateLimit = await checkRateLimitByKeyWithInfo(
     `endpoint-create:${auth.userId}`,
     USER_ENDPOINT_RATE_LIMIT_MAX,
     USER_ENDPOINT_RATE_LIMIT_WINDOW_MS

@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     const userId = validated.userId;
     const plan = validated.plan;
 
-    rateLimit = checkRateLimitByKeyWithInfo(`search-count:${userId}`, 120, 10 * 60_000);
+    rateLimit = await checkRateLimitByKeyWithInfo(`search-count:${userId}`, 120, 10 * 60_000);
     if (rateLimit.response) {
       return rateLimit.response;
     }

@@ -22,6 +22,7 @@ http = "1"
 http-body-util = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "json", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
+redis = { version = "0.27", features = ["tokio-comp", "aio"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 url = "2"
 gethostname = "1.1.0"

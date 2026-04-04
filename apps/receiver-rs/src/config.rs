@@ -13,6 +13,7 @@ pub struct Config {
     pub appsignal_push_api_key: Option<String>,
     pub notify_proxy_url: Option<String>,
     pub notify_secret: Option<String>,
+    pub redis_url: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -29,6 +30,7 @@ impl std::fmt::Debug for Config {
             .field("appsignal_push_api_key", &self.appsignal_push_api_key.as_ref().map(|_| "[REDACTED]"))
             .field("notify_proxy_url", &self.notify_proxy_url)
             .field("notify_secret", &self.notify_secret.as_ref().map(|_| "[REDACTED]"))
+            .field("redis_url", &self.redis_url.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }
@@ -69,6 +71,9 @@ impl Config {
         let notify_secret = env::var("NOTIFY_SECRET")
             .ok()
             .filter(|v| !v.is_empty());
+        let redis_url = env::var("REDIS_URL")
+            .ok()
+            .filter(|v| !v.is_empty());
 
         Self {
             database_url,
@@ -82,6 +87,7 @@ impl Config {
             appsignal_push_api_key,
             notify_proxy_url,
             notify_secret,
+            redis_url,
         }
     }
 }

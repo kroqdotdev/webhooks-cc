@@ -6,7 +6,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = checkRateLimitByKeyWithInfo(`team-share:${auth.userId}`, 30, 10 * 60_000);
+  const rateLimit = await checkRateLimitByKeyWithInfo(`team-share:${auth.userId}`, 30, 10 * 60_000);
   if (rateLimit.response) return rateLimit.response;
 
   const { teamId } = await params;
