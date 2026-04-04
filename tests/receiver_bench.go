@@ -268,7 +268,7 @@ func phaseSeed() []user {
 		for j := 0; j < endpointsPerUser; j++ {
 			slug := fmt.Sprintf("%s%d_%d_%d", testPrefix, i, j, time.Now().Unix())
 			dbExec(`INSERT INTO public.endpoints (slug, user_id, is_ephemeral, expires_at)
-				VALUES ($1, $2, false, now()+interval '1 hour') ON CONFLICT (slug) DO NOTHING`,
+				VALUES ($1, $2, false, now()+interval '1 hour') ON CONFLICT ((lower(slug))) DO NOTHING`,
 				slug, uid)
 			slugs = append(slugs, slug)
 		}

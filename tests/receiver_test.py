@@ -210,7 +210,7 @@ def phase_seed():
             db_exec("""
                 INSERT INTO public.endpoints (slug, user_id, is_ephemeral, expires_at)
                 VALUES (%s, %s, false, now() + interval '1 hour')
-                ON CONFLICT (slug) DO NOTHING
+                ON CONFLICT ((lower(slug))) DO NOTHING
             """, (slug, user_id))
             slugs.append(slug)
 
