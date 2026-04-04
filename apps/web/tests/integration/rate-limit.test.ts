@@ -80,6 +80,21 @@ describe("checkRateLimitByKeyWithInfo", () => {
     expect(resetValue).toBe(expectedReset);
   });
 
+  test("Retry-After reflects remaining time, not full window", async () => {
+    const { checkRateLimitByKeyWithInfo } = await freshImport();
+
+    // Exhaust limit at t=0
+    checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
+
+    // Advance 45 seconds into the 60s window
+    vi.advanceTimersByTime(45_000);
+
+    // Hit rate limit — should get ~15s retry, not 60s
+    const info = checkRateLimitByKeyWithInfo("test-key", 1, 60_000);
+    expect(info.allowed).toBe(false);
+    expect(info.response!.headers.get("Retry-After")).toBe("15");
+  });
+
   test("reset timestamp is based on earliest request in window", async () => {
     const { checkRateLimitByKeyWithInfo } = await freshImport();
 
