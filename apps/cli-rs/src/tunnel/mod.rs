@@ -6,9 +6,10 @@ use std::time::Instant;
 use crate::types::{CapturedRequest, ForwardResult};
 use crate::util::body::resolve_body;
 
-/// Headers that are always stripped from forwarded requests (security).
+/// Headers that are always stripped from forwarded requests (security + hop-by-hop).
 const SENSITIVE_HEADERS: &[&str] = &[
     "authorization",
+    "content-length",
     "cookie",
     "set-cookie",
     "x-api-key",
