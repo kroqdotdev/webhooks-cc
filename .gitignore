@@ -8,6 +8,7 @@ dist/
 .turbo/
 *.tsbuildinfo
 next-env.d.ts
+apps/cli/
 apps/cli-rs/target/
 apps/receiver-rs/target/
 
