@@ -17,7 +17,6 @@ import type {
   ClientOptions,
   ClientHooks,
   Endpoint,
-  MockResponse,
   Request,
   UsageInfo,
   CreateEndpointOptions,
@@ -54,6 +53,7 @@ import { parseSSE } from "./sse";
 import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "./templates";
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
+import { validateMockResponse } from "./validation";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
@@ -408,16 +408,6 @@ async function collectMatchingRequests(
   }
 
   throw new TimeoutError(timeout);
-}
-
-function validateMockResponse(mockResponse: MockResponse, fieldName: string): void {
-  const { status, delay } = mockResponse;
-  if (!Number.isInteger(status) || status < 100 || status > 599) {
-    throw new Error(`Invalid ${fieldName} status: ${status}. Must be an integer 100-599.`);
-  }
-  if (delay !== undefined && (!Number.isInteger(delay) || delay < 0 || delay > 30000)) {
-    throw new Error(`Invalid ${fieldName} delay: ${delay}. Must be an integer 0-30000.`);
-  }
 }
 
 /**

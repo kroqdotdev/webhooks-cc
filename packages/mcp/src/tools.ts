@@ -3,49 +3,25 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   diffRequests,
   extractJsonField,
+  MOCK_RESPONSE_DELAY_MAX,
+  MOCK_RESPONSE_DELAY_MIN,
+  MOCK_RESPONSE_STATUS_MAX,
+  MOCK_RESPONSE_STATUS_MIN,
   NotFoundError,
   RateLimitError,
+  TEMPLATE_PROVIDERS,
   TimeoutError,
   UnauthorizedError,
+  VERIFY_PROVIDERS,
   verifySignature,
   WebhooksCCError,
   type Request,
-  type TemplateProvider,
   type VerifyProvider,
   type WebhooksCC,
 } from "@webhooks-cc/sdk";
 
 const MAX_BODY_SIZE = 32_768;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
-const TEMPLATE_PROVIDER_VALUES = [
-  "stripe",
-  "github",
-  "shopify",
-  "twilio",
-  "slack",
-  "paddle",
-  "linear",
-  "sendgrid",
-  "clerk",
-  "discord",
-  "vercel",
-  "gitlab",
-  "standard-webhooks",
-] as const satisfies readonly TemplateProvider[];
-const VERIFY_PROVIDER_VALUES = [
-  "stripe",
-  "github",
-  "shopify",
-  "twilio",
-  "slack",
-  "paddle",
-  "linear",
-  "clerk",
-  "discord",
-  "vercel",
-  "gitlab",
-  "standard-webhooks",
-] as const satisfies readonly VerifyProvider[];
 const TIME_SEPARATOR = " — ";
 
 const httpUrlSchema = z
@@ -65,16 +41,23 @@ const httpUrlSchema = z
 const methodSchema = z.enum(HTTP_METHODS).default("POST").describe("HTTP method (default: POST)");
 const durationOrTimestampSchema = z.union([z.string(), z.number()]);
 const mockResponseSchema = z.object({
-  status: z.number().int().min(100).max(599).describe("HTTP status code (100-599)"),
+  status: z
+    .number()
+    .int()
+    .min(MOCK_RESPONSE_STATUS_MIN)
+    .max(MOCK_RESPONSE_STATUS_MAX)
+    .describe(`HTTP status code (${MOCK_RESPONSE_STATUS_MIN}-${MOCK_RESPONSE_STATUS_MAX})`),
   body: z.string().default("").describe("Response body string (default: empty)"),
   headers: z.record(z.string()).default({}).describe("Response headers (default: none)"),
   delay: z
     .number()
     .int()
-    .min(0)
-    .max(30000)
+    .min(MOCK_RESPONSE_DELAY_MIN)
+    .max(MOCK_RESPONSE_DELAY_MAX)
     .optional()
-    .describe("Response delay in milliseconds (0-30000, default: none)"),
+    .describe(
+      `Response delay in milliseconds (${MOCK_RESPONSE_DELAY_MIN}-${MOCK_RESPONSE_DELAY_MAX}, default: none)`
+    ),
 });
 
 type TextContent = { type: "text"; text: string };
@@ -521,7 +504,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       headers: z.record(z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body"),
       provider: z
-        .enum(TEMPLATE_PROVIDER_VALUES)
+        .enum(TEMPLATE_PROVIDERS)
         .optional()
         .describe("Optional provider template to send with signed headers"),
       template: z.string().optional().describe("Provider-specific template preset"),
@@ -739,7 +722,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     {
       requestId: z.string().describe("The captured request ID"),
       provider: z
-        .enum(VERIFY_PROVIDER_VALUES)
+        .enum(VERIFY_PROVIDERS)
         .describe("Provider whose signature scheme should be verified"),
       secret: z
         .string()
@@ -788,7 +771,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       headers: z.record(z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body"),
       provider: z
-        .enum(TEMPLATE_PROVIDER_VALUES)
+        .enum(TEMPLATE_PROVIDERS)
         .optional()
         .describe("Optional provider template for signing"),
       template: z.string().optional().describe("Provider-specific template preset"),
@@ -823,7 +806,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       headers: z.record(z.string()).optional().describe("HTTP headers to include"),
       body: z.unknown().optional().describe("Request body"),
       provider: z
-        .enum(TEMPLATE_PROVIDER_VALUES)
+        .enum(TEMPLATE_PROVIDERS)
         .optional()
         .describe("Optional provider template for signing"),
       template: z.string().optional().describe("Provider-specific template preset"),
@@ -848,7 +831,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     "list_provider_templates",
     "List supported webhook providers, templates, and signing metadata.",
     {
-      provider: z.enum(TEMPLATE_PROVIDER_VALUES).optional().describe("Filter to a single provider"),
+      provider: z.enum(TEMPLATE_PROVIDERS).optional().describe("Filter to a single provider"),
     },
     withErrorHandling(async ({ provider }) => {
       if (provider) {
@@ -879,7 +862,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     "Run a full webhook test flow: create endpoint, optionally mock, send, wait, verify, replay, and clean up.",
     {
       provider: z
-        .enum(TEMPLATE_PROVIDER_VALUES)
+        .enum(TEMPLATE_PROVIDERS)
         .optional()
         .describe("Optional provider template to use when sending the webhook"),
       event: z.string().optional().describe("Optional provider event or topic name"),

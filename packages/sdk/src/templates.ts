@@ -57,6 +57,21 @@ export const TEMPLATE_PROVIDERS = [
   "standard-webhooks",
 ] as const satisfies readonly TemplateProvider[];
 
+export const VERIFY_PROVIDERS = [
+  "stripe",
+  "github",
+  "shopify",
+  "twilio",
+  "slack",
+  "paddle",
+  "linear",
+  "clerk",
+  "discord",
+  "vercel",
+  "gitlab",
+  "standard-webhooks",
+] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
+
 export const TEMPLATE_METADATA = Object.freeze({
   stripe: Object.freeze({
     provider: "stripe",

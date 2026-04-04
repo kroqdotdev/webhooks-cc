@@ -175,7 +175,8 @@ describe("Supabase Guest Endpoint Integration", () => {
   });
 
   it("rate limits authenticated endpoint creation by user", async () => {
-    for (let i = 0; i < 10; i += 1) {
+    // USER_ENDPOINT_RATE_LIMIT_MAX is 30 in the endpoint route handler
+    for (let i = 0; i < 30; i += 1) {
       const response = await createEndpointRoute(authRequest("/api/endpoints", accessToken, {}));
       expect(response.status).toBe(200);
     }

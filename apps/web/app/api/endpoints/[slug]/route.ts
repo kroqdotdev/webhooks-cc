@@ -1,5 +1,5 @@
 import { authenticateRequest } from "@/lib/api-auth";
-import { validateNotificationUrl } from "@/lib/request-validation";
+import { validateNotificationUrl, validateMockResponseField } from "@/lib/request-validation";
 import {
   deleteEndpointBySlugForUser,
   getEndpointBySlugForUser,
@@ -59,41 +59,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   const notifCheck = validateNotificationUrl(body.notificationUrl);
   if (!notifCheck.valid) return notifCheck.response;
 
-  // Validate mockResponse structure if provided
-  if (body.mockResponse !== undefined && body.mockResponse !== null) {
-    if (typeof body.mockResponse !== "object" || Array.isArray(body.mockResponse)) {
-      return Response.json({ error: "Invalid mockResponse" }, { status: 400 });
-    }
-    const mr = body.mockResponse as Record<string, unknown>;
-    if (
-      mr.status !== undefined &&
-      (typeof mr.status !== "number" || mr.status < 100 || mr.status > 599)
-    ) {
-      return Response.json({ error: "Invalid status code" }, { status: 400 });
-    }
-    if (mr.body !== undefined && typeof mr.body !== "string") {
-      return Response.json({ error: "Invalid mockResponse body" }, { status: 400 });
-    }
-    if (mr.headers !== undefined) {
-      if (typeof mr.headers !== "object" || Array.isArray(mr.headers)) {
-        return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
-      }
-      for (const val of Object.values(mr.headers as Record<string, unknown>)) {
-        if (typeof val !== "string") {
-          return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
-        }
-      }
-    }
-    if (
-      mr.delay !== undefined &&
-      (typeof mr.delay !== "number" ||
-        !Number.isInteger(mr.delay) ||
-        mr.delay < 0 ||
-        mr.delay > 30000)
-    ) {
-      return Response.json({ error: "Invalid delay: must be 0-30000ms" }, { status: 400 });
-    }
-  }
+  const mockCheck = validateMockResponseField(body.mockResponse, true);
+  if (!mockCheck.valid) return mockCheck.response;
 
   try {
     // Allow team members to edit (they can rename + change mock response)
