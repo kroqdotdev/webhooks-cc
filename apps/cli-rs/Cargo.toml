@@ -36,6 +36,7 @@ anyhow = "1"
 thiserror = "2"
 
 # Utilities
+base64 = "0.22"
 dirs = "6"
 open = "5"
 sha2 = "0.11"
