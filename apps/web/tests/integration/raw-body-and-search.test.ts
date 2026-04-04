@@ -8,7 +8,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
-import { getRequestByIdForUser, listRequestsForEndpointByUser } from "@/lib/supabase/requests";
+import {
+  byteaToBase64,
+  getRequestByIdForUser,
+  listRequestsForEndpointByUser,
+} from "@/lib/supabase/requests";
 import { searchRequestsForUser, countSearchRequestsForUser } from "@/lib/supabase/search";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
@@ -64,6 +68,34 @@ describe("Raw Body Fidelity & Search", () => {
     await admin.from("users").delete().eq("id", testUserId);
     await admin.auth.admin.deleteUser(testUserId);
   }, 15000);
+
+  // =========================================================================
+  // SECTION 0: byteaToBase64 handles both PostgREST and Realtime formats
+  // =========================================================================
+
+  describe("byteaToBase64", () => {
+    it("converts PostgREST hex format (with \\x prefix)", () => {
+      // Bytes 0x80, 0x81, 0x82 -> base64 "gIGC"
+      expect(byteaToBase64("\\x808182")).toBe("gIGC");
+    });
+
+    it("converts Realtime hex format (without \\x prefix)", () => {
+      // Same bytes via wal2json: no prefix
+      expect(byteaToBase64("808182")).toBe("gIGC");
+    });
+
+    it("round-trips correctly", () => {
+      const original = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x80, 0xff]);
+      const hexWithPrefix = "\\x" + original.toString("hex");
+      const hexWithout = original.toString("hex");
+
+      const b64FromPostgrest = byteaToBase64(hexWithPrefix);
+      const b64FromRealtime = byteaToBase64(hexWithout);
+
+      expect(b64FromPostgrest).toBe(b64FromRealtime);
+      expect(Buffer.from(b64FromPostgrest, "base64")).toEqual(original);
+    });
+  });
 
   // =========================================================================
   // SECTION 1: Normal webhook capture still works

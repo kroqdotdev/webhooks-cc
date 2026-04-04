@@ -211,4 +211,117 @@ describe("Supabase Stream Route Integration", () => {
     controller.abort();
     await anonClient.auth.signOut();
   }, 20_000);
+
+  it("streams bodyRaw for non-UTF-8 binary payloads via receiver", async () => {
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+    const accessToken = signIn.data.session!.access_token;
+
+    // Set user as pro with quota
+    await admin
+      .from("users")
+      .update({
+        plan: "pro",
+        request_limit: 10000,
+        requests_used: 0,
+        period_end: new Date(Date.now() + 86400000).toISOString(),
+      })
+      .eq("id", testUserId);
+
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(`/api/stream/${testEndpointSlug}`, accessToken, controller.signal),
+      { params: Promise.resolve({ slug: testEndpointSlug }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toBeTruthy();
+
+    const requestEventPromise = waitForEvent(response.body!, "request");
+
+    // Send a binary payload through the actual receiver
+    const binaryPayload = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x80, 0x81, 0x82, 0xff]);
+    const receiverResp = await fetch(`http://localhost:3001/w/${testEndpointSlug}/stream-binary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: binaryPayload,
+    });
+    expect(receiverResp.status).toBe(200);
+
+    const frame = await requestEventPromise;
+    const payload = JSON.parse(frame.data) as {
+      _id: string;
+      endpointId: string;
+      method: string;
+      path: string;
+      body: string;
+      bodyRaw?: string;
+    };
+
+    expect(payload.method).toBe("POST");
+    expect(payload.path).toBe("/stream-binary");
+
+    // body should be the lossy UTF-8 text
+    expect(payload.body).toContain("Hello");
+
+    // bodyRaw should be present and decode to exact original bytes
+    expect(payload.bodyRaw).toBeDefined();
+    const decoded = Buffer.from(payload.bodyRaw!, "base64");
+    expect(decoded).toEqual(binaryPayload);
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 20_000);
+
+  it("streams UTF-8 requests without bodyRaw", async () => {
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+    const accessToken = signIn.data.session!.access_token;
+
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(`/api/stream/${testEndpointSlug}`, accessToken, controller.signal),
+      { params: Promise.resolve({ slug: testEndpointSlug }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toBeTruthy();
+
+    const requestEventPromise = waitForEvent(response.body!, "request");
+
+    // Send a normal UTF-8 JSON payload through the receiver
+    const jsonBody = JSON.stringify({ event: "stream.test", data: { ok: true } });
+    const receiverResp = await fetch(`http://localhost:3001/w/${testEndpointSlug}/stream-utf8`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: jsonBody,
+    });
+    expect(receiverResp.status).toBe(200);
+
+    const frame = await requestEventPromise;
+    const payload = JSON.parse(frame.data) as {
+      _id: string;
+      method: string;
+      path: string;
+      body: string;
+      bodyRaw?: string;
+    };
+
+    expect(payload.method).toBe("POST");
+    expect(payload.path).toBe("/stream-utf8");
+    expect(payload.body).toBe(jsonBody);
+    // UTF-8 payload: bodyRaw should be absent (null/undefined)
+    expect(payload.bodyRaw).toBeFalsy();
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 20_000);
 });

@@ -68,16 +68,15 @@ function asStringRecord(value: Json): Record<string, string> {
 
 /**
  * Convert Postgres bytea to base64.
- * PostgREST returns hex-escaped strings ("\\x808182").
- * Supabase Realtime returns base64 strings ("gIGC").
- * Detects the format and normalizes to base64.
+ *
+ * PostgREST returns hex with prefix: "\\x808182"
+ * Supabase Realtime (via wal2json) returns hex without prefix: "808182"
+ *
+ * Both are normalized to base64.
  */
 export function byteaToBase64(value: string): string {
-  if (value.startsWith("\\x")) {
-    return Buffer.from(value.slice(2), "hex").toString("base64");
-  }
-  // Already base64 (from Supabase Realtime)
-  return value;
+  const hex = value.startsWith("\\x") ? value.slice(2) : value;
+  return Buffer.from(hex, "hex").toString("base64");
 }
 
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {
