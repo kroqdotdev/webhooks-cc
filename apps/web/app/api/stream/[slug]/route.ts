@@ -68,6 +68,7 @@ function toStreamRequest(record: RequestRecord) {
     path: record.path,
     headers: record.headers,
     body: record.body,
+    bodyRaw: record.bodyRaw,
     queryParams: record.queryParams,
     contentType: record.contentType,
     ip: record.ip,

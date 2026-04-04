@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -90,7 +91,12 @@ impl Tunnel {
 
         let mut builder = self.http.request(method, &target_url).headers(headers);
 
-        if let Some(ref body) = req.body {
+        // Prefer raw bytes (base64-decoded) for byte-exact forwarding of non-UTF-8 payloads
+        if let Some(ref raw) = req.body_raw {
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(raw) {
+                builder = builder.body(bytes);
+            }
+        } else if let Some(ref body) = req.body {
             builder = builder.body(body.clone());
         }
 
