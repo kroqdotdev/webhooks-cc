@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.16.0";
+export const APP_VERSION = "0.17.0";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.17.0",
+    date: "2026-04-04",
+    title: "Redis-Backed Rate Limiting",
+    track: "web",
+    items: [
+      "Distributed rate limiting via Redis sliding window for all API routes",
+      "Receiver notification deduplication backed by Redis",
+      "Graceful fallback to in-memory rate limiting when Redis is unavailable",
+    ],
+  },
   {
     version: "0.16.0",
     date: "2026-04-04",
