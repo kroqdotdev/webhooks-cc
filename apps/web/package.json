@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/build-pagefind.mjs",
-    "start": "next start",
+    "build": "next build && node scripts/build-pagefind.mjs && cp -r public .next/standalone/apps/web/public && cp -r .next/static .next/standalone/apps/web/.next/static",
+    "start": "node .next/standalone/apps/web/server.js",
     "typecheck": "tsc --noEmit",
     "test:integration": "vitest run --config vitest.config.ts",
     "test:e2e": "playwright test",
