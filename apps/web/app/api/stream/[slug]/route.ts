@@ -45,6 +45,7 @@ function toRequestRecord(row: RequestRow): RequestRecord {
     path: row.path,
     headers: asStringRecord(row.headers),
     body: row.body ?? undefined,
+    bodyRaw: row.body_raw ?? undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,

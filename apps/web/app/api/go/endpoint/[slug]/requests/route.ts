@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
     )
     .eq("endpoint_id", endpoint.id)
     .order("received_at", { ascending: false })
