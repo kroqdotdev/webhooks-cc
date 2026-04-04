@@ -1,5 +1,5 @@
 /**
- * Comprehensive live tests for @webhooks-cc/sdk v0.6.0
+ * Comprehensive live tests for @webhooks-cc/sdk
  * Covers every client method and edge case against the production API.
  *
  * Run with: WHK_API_KEY=whcc_... pnpm test -- src/__tests__/live.test.ts
@@ -697,7 +697,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
     it("returns complete SDK description", () => {
       const desc = client.describe();
 
-      expect(desc.version).toBe("0.6.0");
+      expect(desc.version).toBe("1.2.1");
 
       // Endpoint operations
       expect(desc.endpoints.create).toBeDefined();

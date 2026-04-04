@@ -539,7 +539,7 @@ describe.skipIf(!API_KEY)("SDK integration tests", () => {
   it("describe: returns SDK description without API call", () => {
     const description = client.describe();
 
-    expect(description.version).toBe("0.6.0");
+    expect(description.version).toBe("1.2.1");
     expect(description.endpoints).toBeDefined();
     expect(description.templates).toBeDefined();
     expect(description.usage).toBeDefined();
