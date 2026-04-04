@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.17.0";
+export const APP_VERSION = "0.17.1";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.17.1",
+    date: "2026-04-05",
+    title: "Consolidated Provider Logic",
+    track: "web",
+    items: [
+      "Unified webhook provider lists, signing, and payload generation via SDK — single source of truth",
+      "Added standard-webhooks provider to Send Webhook dialog (fixes drift from SDK/MCP)",
+      "Shared mock response validation across endpoint routes using SDK constants",
+    ],
+  },
   {
     version: "0.17.0",
     date: "2026-04-04",
