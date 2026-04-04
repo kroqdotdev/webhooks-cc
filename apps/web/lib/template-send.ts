@@ -382,6 +382,11 @@ export async function buildTemplateRequest({
   return {
     method: "POST",
     headers: result.headers ?? {},
-    body: typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? ""),
+    body:
+      typeof result.body === "string"
+        ? result.body
+        : result.body != null
+          ? JSON.stringify(result.body)
+          : "",
   };
 }
