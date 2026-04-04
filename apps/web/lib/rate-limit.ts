@@ -1,11 +1,12 @@
 /**
- * Simple in-memory rate limiter for unauthenticated device auth endpoints.
- * Limits by IP address with a sliding window.
+ * Distributed rate limiter with Redis backend and in-memory fallback.
  *
- * NOTE: This rate limiter only works within a single process. In serverless or
- * multi-instance deployments, each instance maintains independent state.
- * See /docs/future/distributed-rate-limiting.md for a production-grade approach.
+ * When REDIS_URL is set, uses Redis sorted sets for a sliding window that
+ * works across multiple instances. Falls back to in-memory when Redis is
+ * unavailable or unset (development mode).
  */
+
+import { getRedisClient, isRedisAvailable } from "./redis";
 
 const store = new Map<string, number[]>();
 
@@ -42,35 +43,93 @@ function getClientIp(request: Request): string {
   );
 }
 
+// Lua script for atomic sliding window rate limiting via sorted set.
+// Returns [count_before_add, earliest_score].
+const SLIDING_WINDOW_SCRIPT = `
+local key = KEYS[1]
+local window = tonumber(ARGV[1])
+local max = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local member = ARGV[4]
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
+local count = redis.call('ZCARD', key)
+local earliest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+if count < max then
+  redis.call('ZADD', key, now, member)
+end
+redis.call('PEXPIRE', key, window + 1000)
+local score = 0
+if earliest[2] then score = tonumber(earliest[2]) else score = now end
+return {count, score}
+`;
+
 /**
- * Check if a request is rate-limited, returning full metadata.
- * @param request - The incoming request (IP extracted from headers)
- * @param maxRequests - Max requests allowed in the window
- * @param windowMs - Window size in milliseconds
- * @returns RateLimitInfo with allowed status, response, and metadata
+ * Try Redis-backed sliding window. Returns RateLimitInfo on success, null on failure.
  */
-export function checkRateLimitWithInfo(
-  request: Request,
+async function tryRedisRateLimit(
+  key: string,
   maxRequests: number,
-  windowMs: number = 60_000
-): RateLimitInfo {
-  const ip = getClientIp(request);
-  return checkRateLimitByKeyWithInfo(ip, maxRequests, windowMs);
+  windowMs: number
+): Promise<RateLimitInfo | null> {
+  if (!isRedisAvailable()) return null;
+  const redis = getRedisClient();
+  if (!redis) return null;
+
+  try {
+    const now = Date.now();
+    const member = `${now}:${Math.random().toString(36).slice(2, 8)}`;
+    // ioredis .eval() executes a Redis EVAL command (Lua script), not JS eval
+    const result = (await redis["eval"](
+      SLIDING_WINDOW_SCRIPT,
+      1,
+      `rate:${key}`,
+      String(windowMs),
+      String(maxRequests),
+      String(now),
+      member
+    )) as [number, number];
+
+    const count = result[0];
+    const earliest = result[1];
+    const reset = Math.ceil((earliest + windowMs) / 1000);
+
+    if (count >= maxRequests) {
+      const remaining = 0;
+      const retryAfter = Math.max(1, reset - Math.floor(now / 1000));
+      return {
+        allowed: false,
+        response: new Response(JSON.stringify({ error: "Too many requests" }), {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Limit": String(maxRequests),
+            "X-RateLimit-Remaining": String(remaining),
+            "X-RateLimit-Reset": String(reset),
+          },
+        }),
+        limit: maxRequests,
+        remaining,
+        reset,
+      };
+    }
+
+    return {
+      allowed: true,
+      response: null,
+      limit: maxRequests,
+      remaining: maxRequests - count - 1,
+      reset,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Check if a key is rate-limited, returning full metadata.
- * Performs lazy cleanup of expired entries on each call (no setInterval).
- * @param key - The rate limit key (e.g. IP address, user ID)
- * @param maxRequests - Max requests allowed in the window
- * @param windowMs - Window size in milliseconds
- * @returns RateLimitInfo with allowed status, response, and metadata
+ * In-memory sliding window fallback (unchanged from original implementation).
  */
-export function checkRateLimitByKeyWithInfo(
-  key: string,
-  maxRequests: number,
-  windowMs: number = 60_000
-): RateLimitInfo {
+function inMemoryRateLimit(key: string, maxRequests: number, windowMs: number): RateLimitInfo {
   const now = Date.now();
 
   // Lazy cleanup: remove expired entries periodically (every ~100 calls)
@@ -94,28 +153,23 @@ export function checkRateLimitByKeyWithInfo(
 
   if (valid.length >= maxRequests) {
     const remaining = 0;
-    const info: RateLimitInfo = {
+    const retryAfter = Math.max(1, reset - Math.floor(now / 1000));
+    return {
       allowed: false,
-      response: null, // set below
+      response: new Response(JSON.stringify({ error: "Too many requests" }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(retryAfter),
+          "X-RateLimit-Limit": String(maxRequests),
+          "X-RateLimit-Remaining": String(remaining),
+          "X-RateLimit-Reset": String(reset),
+        },
+      }),
       limit: maxRequests,
       remaining,
       reset,
     };
-
-    const retryAfter = Math.max(1, reset - Math.floor(now / 1000));
-    const response = new Response(JSON.stringify({ error: "Too many requests" }), {
-      status: 429,
-      headers: {
-        "Content-Type": "application/json",
-        "Retry-After": String(retryAfter),
-        "X-RateLimit-Limit": String(maxRequests),
-        "X-RateLimit-Remaining": String(remaining),
-        "X-RateLimit-Reset": String(reset),
-      },
-    });
-
-    info.response = response;
-    return info;
   }
 
   valid.push(now);
@@ -131,24 +185,58 @@ export function checkRateLimitByKeyWithInfo(
 }
 
 /**
+ * Check if a request is rate-limited, returning full metadata.
+ * @param request - The incoming request (IP extracted from headers)
+ * @param maxRequests - Max requests allowed in the window
+ * @param windowMs - Window size in milliseconds
+ * @returns RateLimitInfo with allowed status, response, and metadata
+ */
+export async function checkRateLimitWithInfo(
+  request: Request,
+  maxRequests: number,
+  windowMs: number = 60_000
+): Promise<RateLimitInfo> {
+  const ip = getClientIp(request);
+  return checkRateLimitByKeyWithInfo(ip, maxRequests, windowMs);
+}
+
+/**
+ * Check if a key is rate-limited, returning full metadata.
+ * Uses Redis when available, falls back to in-memory.
+ * @param key - The rate limit key (e.g. IP address, user ID)
+ * @param maxRequests - Max requests allowed in the window
+ * @param windowMs - Window size in milliseconds
+ * @returns RateLimitInfo with allowed status, response, and metadata
+ */
+export async function checkRateLimitByKeyWithInfo(
+  key: string,
+  maxRequests: number,
+  windowMs: number = 60_000
+): Promise<RateLimitInfo> {
+  const redisResult = await tryRedisRateLimit(key, maxRequests, windowMs);
+  if (redisResult) return redisResult;
+  return inMemoryRateLimit(key, maxRequests, windowMs);
+}
+
+/**
  * Check if a request is rate-limited.
  * @param request - The incoming request
  * @param maxRequests - Max requests allowed in the window
  * @param windowMs - Window size in milliseconds
  * @returns Response if rate-limited, null if allowed
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   request: Request,
   maxRequests: number,
   windowMs: number = 60_000
-): Response | null {
-  return checkRateLimitWithInfo(request, maxRequests, windowMs).response;
+): Promise<Response | null> {
+  return (await checkRateLimitWithInfo(request, maxRequests, windowMs)).response;
 }
 
-export function checkRateLimitByKey(
+export async function checkRateLimitByKey(
   key: string,
   maxRequests: number,
   windowMs: number = 60_000
-): Response | null {
-  return checkRateLimitByKeyWithInfo(key, maxRequests, windowMs).response;
+): Promise<Response | null> {
+  return (await checkRateLimitByKeyWithInfo(key, maxRequests, windowMs)).response;
 }

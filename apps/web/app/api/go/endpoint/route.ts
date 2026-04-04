@@ -5,7 +5,7 @@ const ANON_ENDPOINT_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 const ANON_ENDPOINT_RATE_LIMIT_MAX = 20;
 
 export async function POST(request: Request) {
-  const rateLimited = checkRateLimit(
+  const rateLimited = await checkRateLimit(
     request,
     ANON_ENDPOINT_RATE_LIMIT_MAX,
     ANON_ENDPOINT_RATE_LIMIT_WINDOW_MS

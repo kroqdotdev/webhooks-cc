@@ -9,7 +9,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = checkRateLimitByKeyWithInfo(
+  const rateLimit = await checkRateLimitByKeyWithInfo(
     `team-invite:${auth.userId}`,
     INVITE_RATE_LIMIT_MAX,
     INVITE_RATE_LIMIT_WINDOW_MS

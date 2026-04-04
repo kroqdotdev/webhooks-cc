@@ -4,7 +4,7 @@ import { claimDeviceCode } from "@/lib/supabase/device-auth";
 import { sendError } from "@appsignal/nodejs";
 
 export async function POST(request: Request) {
-  const rateLimited = checkRateLimit(request, 10);
+  const rateLimited = await checkRateLimit(request, 10);
   if (rateLimited) return rateLimited;
 
   const parsed = await parseJsonBody(request, 1024);
