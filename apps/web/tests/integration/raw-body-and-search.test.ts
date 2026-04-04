@@ -392,18 +392,18 @@ describe("Raw Body Fidelity & Search", () => {
         userId: testUserId,
         plan: "pro",
         slug: searchEndpointSlug,
-        q: "api",
+        q: "/api/",
       });
 
       const count = await countSearchRequestsForUser({
         userId: testUserId,
         plan: "pro",
         slug: searchEndpointSlug,
-        q: "api",
+        q: "/api/",
       });
 
       expect(count).toBe(results.length);
-      expect(count).toBe(3); // stripe, github, slack paths all contain "api"
+      expect(count).toBe(3); // stripe, github, slack paths all contain "/api/"
     });
 
     it("search with method filter narrows results", async () => {

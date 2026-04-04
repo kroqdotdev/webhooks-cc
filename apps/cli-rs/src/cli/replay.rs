@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, red};
+use crate::util::body::resolve_body;
 
 /// Headers to strip when replaying (hop-by-hop + sensitive + proxy).
 const STRIP_HEADERS: &[&str] = &[
@@ -58,18 +58,8 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
         .build()?;
 
     let mut builder = http.request(method.clone(), &url).headers(headers);
-    // Prefer raw bytes (base64-decoded) for byte-exact replay of non-UTF-8 payloads
-    if let Some(ref raw) = req.body_raw {
-        match base64::engine::general_purpose::STANDARD.decode(raw) {
-            Ok(bytes) => builder = builder.body(bytes),
-            Err(_) => {
-                if let Some(ref body) = req.body {
-                    builder = builder.body(body.clone());
-                }
-            }
-        }
-    } else if let Some(ref body) = req.body {
-        builder = builder.body(body.clone());
+    if let Some(bytes) = resolve_body(req.body_raw.as_deref(), req.body.as_deref()) {
+        builder = builder.body(bytes);
     }
 
     let start = std::time::Instant::now();

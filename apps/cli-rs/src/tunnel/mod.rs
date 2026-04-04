@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
-use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::types::{CapturedRequest, ForwardResult};
+use crate::util::body::resolve_body;
 
 /// Headers that are always stripped from forwarded requests (security).
 const SENSITIVE_HEADERS: &[&str] = &[
@@ -91,18 +91,8 @@ impl Tunnel {
 
         let mut builder = self.http.request(method, &target_url).headers(headers);
 
-        // Prefer raw bytes (base64-decoded) for byte-exact forwarding of non-UTF-8 payloads
-        if let Some(ref raw) = req.body_raw {
-            match base64::engine::general_purpose::STANDARD.decode(raw) {
-                Ok(bytes) => builder = builder.body(bytes),
-                Err(_) => {
-                    if let Some(ref body) = req.body {
-                        builder = builder.body(body.clone());
-                    }
-                }
-            }
-        } else if let Some(ref body) = req.body {
-            builder = builder.body(body.clone());
+        if let Some(bytes) = resolve_body(req.body_raw.as_deref(), req.body.as_deref()) {
+            builder = builder.body(bytes);
         }
 
         match builder.send().await {
