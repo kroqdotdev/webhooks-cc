@@ -123,7 +123,15 @@ async function tryRedisRateLimit(
       reset,
     };
   } catch (err) {
-    console.error("[rate-limit] Redis eval failed:", err instanceof Error ? err.message : err);
+    const error = err instanceof Error ? err : new Error(`[rate-limit] Redis eval failed: ${err}`);
+    console.error("[rate-limit] Redis eval failed:", error.message);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { sendError } = require("@appsignal/nodejs");
+      sendError(error);
+    } catch {
+      // AppSignal not available
+    }
     return null;
   }
 }

@@ -14,7 +14,7 @@ function createClient(): Redis | null {
   if (!url) return null;
 
   const redis = new Redis(url, {
-    maxRetriesPerRequest: 1,
+    maxRetriesPerRequest: 3,
     enableReadyCheck: true,
     retryStrategy(times) {
       return Math.min(times * 100, 5000);
@@ -22,6 +22,13 @@ function createClient(): Redis | null {
   });
 
   redis.on("error", (err) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { sendError } = require("@appsignal/nodejs");
+      sendError(err instanceof Error ? err : new Error(`[redis] ${err}`));
+    } catch {
+      // AppSignal not available (dev mode) — fall back to console
+    }
     console.error("[redis] connection error:", err.message);
   });
 

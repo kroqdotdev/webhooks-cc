@@ -220,4 +220,118 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       expect(exists2).toBe(0);
     }, 10000);
   });
+
+  // =========================================================================
+  // Redis dies mid-operation: verify graceful fallback and recovery
+  // =========================================================================
+
+  describe("Redis failure mid-operation", () => {
+    it("rate limiter falls back to in-memory when Redis key has wrong type", async () => {
+      const poisonKey = "whcc:rate:10.66.66.66";
+
+      // Warmup Redis connection
+      await fetch(`${WEB_URL}/api/go/endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.66.66.99" },
+        body: JSON.stringify({}),
+      });
+      await new Promise((r) => setTimeout(r, 500));
+      await redis.del("whcc:rate:10.66.66.99");
+
+      // Poison the key — set it to a string instead of a sorted set.
+      // The Lua script's ZREMRANGEBYSCORE will fail with WRONGTYPE.
+      await redis.set(poisonKey, "not-a-sorted-set");
+
+      // Hit the endpoint — should fall back to in-memory, NOT return 500
+      const resp = await fetch(`${WEB_URL}/api/go/endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.66.66.66" },
+        body: JSON.stringify({}),
+      });
+
+      // Should still succeed (in-memory fallback)
+      expect(resp.status).toBeLessThan(500);
+
+      // Cleanup
+      await redis.del(poisonKey);
+    });
+
+    it("notification limiter falls back when Redis is temporarily unavailable", async () => {
+      // Send first webhook — should use Redis
+      await fetch(`${RECEIVER_URL}/w/${testEndpointSlug}/redis-fail-1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test: "before-disconnect" }),
+      });
+      await new Promise((r) => setTimeout(r, 300));
+
+      const existsBefore = await redis.exists(`whcc:notify:${testEndpointSlug}`);
+      expect(existsBefore).toBe(1);
+
+      // Wait for TTL to expire so next webhook can trigger notification
+      await new Promise((r) => setTimeout(r, 1200));
+
+      // Poison the notify key with wrong type to simulate Redis error
+      await redis.set(`whcc:notify:${testEndpointSlug}`, "poisoned");
+
+      // Send another webhook — the SET NX EX will fail on the wrong-type key,
+      // but the notification should still work via in-memory fallback.
+      // The receiver should NOT crash or return 500.
+      const resp = await fetch(`${RECEIVER_URL}/w/${testEndpointSlug}/redis-fail-2`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test: "during-failure" }),
+      });
+      expect(resp.status).toBe(200);
+
+      // Cleanup
+      await redis.del(`whcc:notify:${testEndpointSlug}`);
+    }, 10000);
+
+    it("rate limiter recovers after Redis error is resolved", async () => {
+      const testIp = "10.77.77.77";
+      const poisonKey = `whcc:rate:${testIp}`;
+
+      // Warmup
+      await fetch(`${WEB_URL}/api/go/endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.77.77.99" },
+        body: JSON.stringify({}),
+      });
+      await new Promise((r) => setTimeout(r, 500));
+      await redis.del("whcc:rate:10.77.77.99");
+
+      // 1. Poison key
+      await redis.set(poisonKey, "broken");
+
+      // 2. Request falls back to in-memory
+      const resp1 = await fetch(`${WEB_URL}/api/go/endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
+        body: JSON.stringify({}),
+      });
+      expect(resp1.status).toBeLessThan(500);
+
+      // Key should still be the poisoned string (Lua script failed, didn't overwrite)
+      const type1 = await redis.type(poisonKey);
+      expect(type1).toBe("string");
+
+      // 3. Fix the key — delete the poison
+      await redis.del(poisonKey);
+
+      // 4. Next request should use Redis again (creates a sorted set)
+      const resp2 = await fetch(`${WEB_URL}/api/go/endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
+        body: JSON.stringify({}),
+      });
+      expect(resp2.status).toBeLessThan(500);
+
+      const type2 = await redis.type(poisonKey);
+      expect(type2).toBe("zset");
+
+      // Cleanup
+      await redis.del(poisonKey);
+    });
+  });
 });
