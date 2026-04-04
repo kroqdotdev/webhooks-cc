@@ -80,7 +80,7 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
     await admin.from("users").delete().eq("id", testUserId);
     await admin.auth.admin.deleteUser(testUserId);
     // Clean up Redis keys from this test
-    const keys = await redis.keys("rate:*test-redis*");
+    const keys = await redis.keys("whcc:rate:*test-redis*");
     if (keys.length > 0) await redis.del(...keys);
     await redis.quit();
   }, 15000);
@@ -90,9 +90,9 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
   // =========================================================================
 
   describe("web API rate limiter uses Redis", () => {
-    it("creates rate:* sorted set keys on rate-limited endpoints", async () => {
+    it("creates whcc:rate:* sorted set keys on rate-limited endpoints", async () => {
       const testIp = "10.99.99.1";
-      await redis.del(`rate:${testIp}`);
+      await redis.del(`whcc:rate:${testIp}`);
 
       // First request warms up the Redis connection (may fall back to in-memory)
       await fetch(`${WEB_URL}/api/go/endpoint`, {
@@ -111,7 +111,7 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       expect(resp.status).toBeLessThan(500);
 
       // Check Redis for the rate key
-      const keys = await redis.keys(`rate:${testIp}`);
+      const keys = await redis.keys(`whcc:rate:${testIp}`);
       expect(keys.length).toBe(1);
 
       // Verify it's a sorted set
@@ -130,7 +130,7 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       const testIp = "10.88.88.88";
 
       // Clean any prior state
-      await redis.del(`rate:${testIp}`);
+      await redis.del(`whcc:rate:${testIp}`);
 
       // Warmup request to ensure Redis connection is ready
       await fetch(`${WEB_URL}/api/auth/device-code`, {
@@ -139,7 +139,7 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
         body: JSON.stringify({}),
       });
       await new Promise((r) => setTimeout(r, 500));
-      await redis.del("rate:10.88.88.99");
+      await redis.del("whcc:rate:10.88.88.99");
 
       // Hit device-code endpoint (limit: 10 per 60s) repeatedly
       const responses: number[] = [];
@@ -160,11 +160,11 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       expect(rateLimited.length).toBe(2);
 
       // Verify the sorted set has exactly 10 members
-      const count = await redis.zcard(`rate:${testIp}`);
+      const count = await redis.zcard(`whcc:rate:${testIp}`);
       expect(count).toBe(10);
 
       // Cleanup
-      await redis.del(`rate:${testIp}`);
+      await redis.del(`whcc:rate:${testIp}`);
     });
   });
 
@@ -173,9 +173,9 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
   // =========================================================================
 
   describe("notification rate limiter uses Redis", () => {
-    it("creates notify:* key when webhook triggers notification", async () => {
+    it("creates whcc:notify:* key when webhook triggers notification", async () => {
       // Clean any prior state
-      await redis.del(`notify:${testEndpointSlug}`);
+      await redis.del(`whcc:notify:${testEndpointSlug}`);
 
       // Send a webhook to trigger a notification
       const resp = await fetch(`${RECEIVER_URL}/w/${testEndpointSlug}/redis-test`, {
@@ -189,11 +189,11 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       await new Promise((r) => setTimeout(r, 500));
 
       // Check Redis for the notify key
-      const exists = await redis.exists(`notify:${testEndpointSlug}`);
+      const exists = await redis.exists(`whcc:notify:${testEndpointSlug}`);
       expect(exists).toBe(1);
 
       // Verify it has a TTL of ~1 second
-      const ttl = await redis.ttl(`notify:${testEndpointSlug}`);
+      const ttl = await redis.ttl(`whcc:notify:${testEndpointSlug}`);
       expect(ttl).toBeGreaterThanOrEqual(0);
       expect(ttl).toBeLessThanOrEqual(1);
     });
@@ -209,14 +209,14 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
       await new Promise((r) => setTimeout(r, 200));
 
       // Key should exist
-      const exists1 = await redis.exists(`notify:${testEndpointSlug}`);
+      const exists1 = await redis.exists(`whcc:notify:${testEndpointSlug}`);
       expect(exists1).toBe(1);
 
       // Wait for TTL to expire
       await new Promise((r) => setTimeout(r, 1200));
 
       // Key should be gone
-      const exists2 = await redis.exists(`notify:${testEndpointSlug}`);
+      const exists2 = await redis.exists(`whcc:notify:${testEndpointSlug}`);
       expect(exists2).toBe(0);
     }, 10000);
   });

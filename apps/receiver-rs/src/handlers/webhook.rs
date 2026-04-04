@@ -254,7 +254,7 @@ fn spawn_notification(info: NotificationInfo) {
         // Try Redis first (distributed), fall back to in-memory on error or absence.
         let mut use_in_memory = info.redis.is_none();
         if let Some(mut conn) = info.redis.clone() {
-            let key = format!("notify:{}", info.slug);
+            let key = format!("whcc:notify:{}", info.slug);
             match redis::cmd("SET")
                 .arg(&key)
                 .arg("1")
@@ -267,7 +267,7 @@ fn spawn_notification(info: NotificationInfo) {
                 Ok(Some(_)) => { /* key was set, proceed with notification */ }
                 Ok(None) => return,    // cooldown active, skip
                 Err(e) => {
-                    tracing::debug!(error = %e, slug = %info.slug, "Redis notification rate limit failed, falling back to in-memory");
+                    tracing::warn!(error = %e, slug = %info.slug, "Redis notification rate limit failed, falling back to in-memory");
                     use_in_memory = true;
                 }
             }

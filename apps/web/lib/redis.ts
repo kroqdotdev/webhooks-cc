@@ -20,8 +20,8 @@ function createClient(): Redis | null {
     },
   });
 
-  redis.on("error", () => {
-    // ioredis handles reconnection automatically; suppress uncaught errors
+  redis.on("error", (err) => {
+    console.error("[redis] connection error:", err.message);
   });
 
   return redis;

@@ -25,7 +25,7 @@ describe("GET /api/search/requests/count", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mockFns.checkRateLimitByKeyWithInfo.mockReturnValue({
+    mockFns.checkRateLimitByKeyWithInfo.mockResolvedValue({
       allowed: true,
       response: null,
       limit: 120,

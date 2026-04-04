@@ -9,6 +9,7 @@
 import { getRedisClient, isRedisAvailable } from "./redis";
 
 const store = new Map<string, number[]>();
+let lastFallbackWarnAt = 0;
 
 /** Metadata returned by the WithInfo rate limit variants. */
 export interface RateLimitInfo {
@@ -82,7 +83,7 @@ async function tryRedisRateLimit(
     const result = (await redis["eval"](
       SLIDING_WINDOW_SCRIPT,
       1,
-      `rate:${key}`,
+      `whcc:rate:${key}`,
       String(windowMs),
       String(maxRequests),
       String(now),
@@ -121,7 +122,8 @@ async function tryRedisRateLimit(
       remaining: maxRequests - count - 1,
       reset,
     };
-  } catch {
+  } catch (err) {
+    console.error("[rate-limit] Redis eval failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -216,7 +218,11 @@ export async function checkRateLimitByKeyWithInfo(
   const redisResult = await tryRedisRateLimit(key, maxRequests, windowMs);
   if (redisResult) return redisResult;
   if (getRedisClient()) {
-    console.warn("[rate-limit] Redis unavailable, falling back to in-memory");
+    const now = Date.now();
+    if (now - lastFallbackWarnAt > 30_000) {
+      lastFallbackWarnAt = now;
+      console.warn("[rate-limit] Redis unavailable, falling back to in-memory");
+    }
   }
   return inMemoryRateLimit(key, maxRequests, windowMs);
 }
