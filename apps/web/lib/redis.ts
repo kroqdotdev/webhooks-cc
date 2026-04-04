@@ -1,14 +1,18 @@
 import Redis from "ioredis";
 
-let client: Redis | null = null;
-let connectionFailed = false;
+// Use globalThis to persist the Redis client across Next.js dev hot reloads.
+// In production, module-level singletons work fine. In dev, Turbopack
+// re-evaluates modules per request, losing module-level state.
+const globalForRedis = globalThis as unknown as {
+  __redisClient?: Redis | null;
+  __redisInitialized?: boolean;
+};
 
 function createClient(): Redis | null {
   const url = process.env.REDIS_URL;
   if (!url) return null;
 
   const redis = new Redis(url, {
-    lazyConnect: true,
     maxRetriesPerRequest: 1,
     enableReadyCheck: true,
     retryStrategy(times) {
@@ -17,27 +21,21 @@ function createClient(): Redis | null {
   });
 
   redis.on("error", () => {
-    connectionFailed = true;
-  });
-
-  redis.on("ready", () => {
-    connectionFailed = false;
-  });
-
-  redis.connect().catch(() => {
-    connectionFailed = true;
+    // ioredis handles reconnection automatically; suppress uncaught errors
   });
 
   return redis;
 }
 
 export function getRedisClient(): Redis | null {
-  if (!client && !connectionFailed) {
-    client = createClient();
+  if (!globalForRedis.__redisInitialized) {
+    globalForRedis.__redisInitialized = true;
+    globalForRedis.__redisClient = createClient();
   }
-  return client;
+  return globalForRedis.__redisClient ?? null;
 }
 
 export function isRedisAvailable(): boolean {
-  return client !== null && client.status === "ready" && !connectionFailed;
+  const client = getRedisClient();
+  return client !== null && client.status === "ready";
 }
