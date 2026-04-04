@@ -77,23 +77,27 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
   }, 15000);
 
   afterAll(async () => {
-    // Cleanup
-    await admin.from("endpoints").delete().eq("id", testEndpointId);
-    await admin.from("users").delete().eq("id", testUserId);
-    await admin.auth.admin.deleteUser(testUserId);
-    // Clean up Redis keys from this test
-    const cleanupKeys = [
-      "whcc:rate:10.99.99.1",
-      "whcc:rate:10.88.88.88",
-      "whcc:rate:10.88.88.99",
-      "whcc:rate:10.66.66.66",
-      "whcc:rate:10.66.66.99",
-      "whcc:rate:10.77.77.77",
-      "whcc:rate:10.77.77.99",
-      `whcc:notify:${testEndpointSlug}`,
-    ];
-    await redis.del(...cleanupKeys);
-    await redis.quit();
+    if (admin && testEndpointId) {
+      await admin.from("endpoints").delete().eq("id", testEndpointId);
+    }
+    if (admin && testUserId) {
+      await admin.from("users").delete().eq("id", testUserId);
+      await admin.auth.admin.deleteUser(testUserId);
+    }
+    if (redis) {
+      const cleanupKeys = [
+        "whcc:rate:10.99.99.1",
+        "whcc:rate:10.88.88.88",
+        "whcc:rate:10.88.88.99",
+        "whcc:rate:10.66.66.66",
+        "whcc:rate:10.66.66.99",
+        "whcc:rate:10.77.77.77",
+        "whcc:rate:10.77.77.99",
+        ...(testEndpointSlug ? [`whcc:notify:${testEndpointSlug}`] : []),
+      ];
+      await redis.del(...cleanupKeys);
+      await redis.quit();
+    }
   }, 15000);
 
   // =========================================================================
@@ -153,22 +157,28 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       await redis.del("whcc:rate:10.88.88.99");
 
       // Hit device-code endpoint (limit: 10 per 60s) repeatedly
-      const responses: number[] = [];
+      const responses: { status: number; retryAfter: string | null }[] = [];
       for (let i = 0; i < 12; i++) {
         const resp = await fetch(`${WEB_URL}/api/auth/device-code`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
           body: JSON.stringify({}),
         });
-        responses.push(resp.status);
+        responses.push({
+          status: resp.status,
+          retryAfter: resp.headers.get("Retry-After"),
+        });
       }
 
-      // First 10 should not be 429, last 2 should be 429
-      const nonRateLimited = responses.filter((s) => s !== 429);
-      const rateLimited = responses.filter((s) => s === 429);
-
-      expect(nonRateLimited.length).toBe(10);
-      expect(rateLimited.length).toBe(2);
+      // First 10 should succeed (2xx), last 2 should be exactly 429
+      for (let i = 0; i < 10; i++) {
+        expect(responses[i].status).toBeGreaterThanOrEqual(200);
+        expect(responses[i].status).toBeLessThan(300);
+      }
+      for (let i = 10; i < 12; i++) {
+        expect(responses[i].status).toBe(429);
+        expect(responses[i].retryAfter).toBeDefined();
+      }
 
       // Verify the sorted set has exactly 10 members
       const count = await redis.zcard(`whcc:rate:${testIp}`);
@@ -267,7 +277,7 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       await redis.del(poisonKey);
     });
 
-    it("notification limiter falls back when Redis is temporarily unavailable", async () => {
+    it("notification limiter suppresses duplicate when notify key already exists", async () => {
       // Send first webhook — should use Redis
       await fetch(`${RECEIVER_URL}/w/${testEndpointSlug}/redis-fail-1`, {
         method: "POST",
