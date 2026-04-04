@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.15.0";
+export const APP_VERSION = "0.16.0";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.16.0",
+    date: "2026-04-04",
+    title: "Raw Body Fidelity & Search Performance",
+    track: "web",
+    items: [
+      "Raw body storage for non-UTF-8 payloads preserves byte-exact fidelity",
+      "Trigram-indexed full-text search across request path, body, and headers",
+      "Improved SSE streaming with raw body support",
+      "SDK version drift fix and accurate Retry-After headers",
+    ],
+  },
   {
     version: "0.15.0",
     date: "2026-04-03",
