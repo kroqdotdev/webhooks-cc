@@ -37,6 +37,11 @@ function parseMillis(timestamp: string): number {
   return Date.parse(timestamp);
 }
 
+function hexByteaToBase64(hex: string): string {
+  const raw = hex.startsWith("\\x") ? hex.slice(2) : hex;
+  return Buffer.from(raw, "hex").toString("base64");
+}
+
 function toRequestRecord(row: RequestRow): RequestRecord {
   return {
     id: row.id,
@@ -45,7 +50,7 @@ function toRequestRecord(row: RequestRow): RequestRecord {
     path: row.path,
     headers: asStringRecord(row.headers),
     body: row.body ?? undefined,
-    bodyRaw: row.body_raw ?? undefined,
+    bodyRaw: row.body_raw ? hexByteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
