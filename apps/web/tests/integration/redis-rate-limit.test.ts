@@ -14,20 +14,16 @@ import { createClient } from "@supabase/supabase-js";
 import Redis from "ioredis";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 
-if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-if (!SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required");
-
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const REDIS_URL = process.env.REDIS_URL;
 const RECEIVER_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+const canRun = Boolean(REDIS_URL && SUPABASE_URL && SERVICE_ROLE_KEY);
 
-describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
+describe.skipIf(!canRun)("Redis rate limiting integration", () => {
+  let admin: ReturnType<typeof createClient>;
   let redis: Redis;
   let testUserId: string;
   let testEndpointSlug: string;
@@ -35,6 +31,9 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
   const TEST_EMAIL = `test-redis-rl-${Date.now()}@webhooks-test.local`;
 
   beforeAll(async () => {
+    admin = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
     redis = new Redis(REDIS_URL!);
     await redis.ping();
 
@@ -49,7 +48,7 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
     testUserId = data.user!.id;
 
     // Set as pro with quota
-    await admin
+    const { error: userUpdateError } = await admin
       .from("users")
       .update({
         plan: "pro",
@@ -58,6 +57,7 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
         period_end: new Date(Date.now() + 86400000).toISOString(),
       })
       .eq("id", testUserId);
+    if (userUpdateError) throw userUpdateError;
 
     // Create endpoint with notification URL
     const ep = await createEndpointForUser({
@@ -68,10 +68,11 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
     testEndpointSlug = ep.slug;
 
     // Set notification URL on endpoint
-    await admin
+    const { error: epUpdateError } = await admin
       .from("endpoints")
       .update({ notification_url: "https://httpbin.org/post" })
       .eq("id", testEndpointId);
+    if (epUpdateError) throw epUpdateError;
   }, 15000);
 
   afterAll(async () => {
@@ -80,8 +81,17 @@ describe.skipIf(!REDIS_URL)("Redis rate limiting integration", () => {
     await admin.from("users").delete().eq("id", testUserId);
     await admin.auth.admin.deleteUser(testUserId);
     // Clean up Redis keys from this test
-    const keys = await redis.keys("whcc:rate:*test-redis*");
-    if (keys.length > 0) await redis.del(...keys);
+    const cleanupKeys = [
+      "whcc:rate:10.99.99.1",
+      "whcc:rate:10.88.88.88",
+      "whcc:rate:10.88.88.99",
+      "whcc:rate:10.66.66.66",
+      "whcc:rate:10.66.66.99",
+      "whcc:rate:10.77.77.77",
+      "whcc:rate:10.77.77.99",
+      `whcc:notify:${testEndpointSlug}`,
+    ];
+    await redis.del(...cleanupKeys);
     await redis.quit();
   }, 15000);
 

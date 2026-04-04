@@ -154,7 +154,7 @@ External service -> POST /w/{slug}/path
 
 ### Receiver Internals (Rust)
 
-The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connects directly to Postgres via sqlx — no Redis, no intermediary services.
+The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connects directly to Postgres via sqlx for the capture path. Redis is optionally used for distributed notification rate limiting (falls back to in-memory when absent).
 
 **Architecture:**
 

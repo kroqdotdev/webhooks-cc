@@ -272,8 +272,12 @@ fn spawn_notification(info: NotificationInfo) {
                 Ok(Ok(Some(_))) => {
                     // Redis admitted the notification — also record in the in-memory
                     // map so a subsequent Redis error within 1s doesn't cause a duplicate.
+                    let now = std::time::Instant::now();
                     let mut map = info.limiter.lock().await;
-                    map.insert(info.slug.clone(), std::time::Instant::now());
+                    map.insert(info.slug.clone(), now);
+                    if map.len() > NOTIFICATION_LIMITER_MAX {
+                        map.retain(|_, last_time| now.duration_since(*last_time) < NOTIFICATION_COOLDOWN);
+                    }
                 }
                 Ok(Ok(None)) => return,    // cooldown active, skip
                 Ok(Err(e)) => {
