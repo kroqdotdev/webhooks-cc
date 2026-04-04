@@ -139,16 +139,28 @@ async fn main() {
     let redis_conn = match config.redis_url.as_deref() {
         Some(url) => {
             match redis::Client::open(url) {
-                Ok(client) => match client.get_multiplexed_tokio_connection().await {
-                    Ok(conn) => {
-                        tracing::info!("connected to Redis");
-                        Some(conn)
+                Ok(client) => {
+                    // 2s timeout — don't block startup if Redis is unreachable
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        client.get_multiplexed_tokio_connection(),
+                    )
+                    .await
+                    {
+                        Ok(Ok(conn)) => {
+                            tracing::info!("connected to Redis");
+                            Some(conn)
+                        }
+                        Ok(Err(e)) => {
+                            tracing::warn!(error = %e, "failed to connect to Redis, using in-memory fallback");
+                            None
+                        }
+                        Err(_) => {
+                            tracing::warn!("Redis connection timed out (2s), using in-memory fallback");
+                            None
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "failed to connect to Redis, using in-memory fallback");
-                        None
-                    }
-                },
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "invalid REDIS_URL, using in-memory fallback");
                     None

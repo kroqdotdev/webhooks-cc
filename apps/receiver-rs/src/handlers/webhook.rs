@@ -269,7 +269,12 @@ fn spawn_notification(info: NotificationInfo) {
             .await;
 
             match redis_result {
-                Ok(Ok(Some(_))) => { /* key was set, proceed with notification */ }
+                Ok(Ok(Some(_))) => {
+                    // Redis admitted the notification — also record in the in-memory
+                    // map so a subsequent Redis error within 1s doesn't cause a duplicate.
+                    let mut map = info.limiter.lock().await;
+                    map.insert(info.slug.clone(), std::time::Instant::now());
+                }
                 Ok(Ok(None)) => return,    // cooldown active, skip
                 Ok(Err(e)) => {
                     tracing::warn!(error = %e, slug = %info.slug, "Redis notification rate limit failed, falling back to in-memory");

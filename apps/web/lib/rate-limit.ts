@@ -79,8 +79,9 @@ async function tryRedisRateLimit(
   try {
     const now = Date.now();
     const member = `${now}:${Math.random().toString(36).slice(2, 8)}`;
-    // ioredis .eval() executes a Redis EVAL command (Lua script), not JS eval
-    const result = (await redis["eval"](
+    // ioredis .eval() executes a Redis EVAL command (Lua script), not JS eval.
+    // 100ms timeout — if Redis doesn't respond on localhost, fall back fast.
+    const evalPromise = redis["eval"](
       SLIDING_WINDOW_SCRIPT,
       1,
       `whcc:rate:${key}`,
@@ -88,7 +89,11 @@ async function tryRedisRateLimit(
       String(maxRequests),
       String(now),
       member
-    )) as [number, number];
+    );
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Redis eval timeout")), 100)
+    );
+    const result = (await Promise.race([evalPromise, timeoutPromise])) as [number, number];
 
     const count = result[0];
     const earliest = result[1];
