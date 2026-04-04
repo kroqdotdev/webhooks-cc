@@ -215,6 +215,9 @@ export async function checkRateLimitByKeyWithInfo(
 ): Promise<RateLimitInfo> {
   const redisResult = await tryRedisRateLimit(key, maxRequests, windowMs);
   if (redisResult) return redisResult;
+  if (getRedisClient()) {
+    console.warn("[rate-limit] Redis unavailable, falling back to in-memory");
+  }
   return inMemoryRateLimit(key, maxRequests, windowMs);
 }
 
