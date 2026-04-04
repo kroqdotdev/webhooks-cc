@@ -1195,7 +1195,11 @@ export class WebhooksCC {
       if (upperMethod === "GET" || upperMethod === "HEAD") {
         body = undefined;
       } else if (captured.bodyRaw) {
-        body = Uint8Array.from(atob(captured.bodyRaw), (c) => c.charCodeAt(0));
+        try {
+          body = Uint8Array.from(atob(captured.bodyRaw), (c) => c.charCodeAt(0));
+        } catch {
+          body = captured.body ?? undefined;
+        }
       } else {
         body = captured.body ?? undefined;
       }

@@ -44,7 +44,12 @@ describe("Raw Body Fidelity & Search", () => {
     // Set as pro with generous quota
     await admin
       .from("users")
-      .update({ plan: "pro", request_limit: 10000, requests_used: 0, period_end: new Date(Date.now() + 86400000).toISOString() })
+      .update({
+        plan: "pro",
+        request_limit: 10000,
+        requests_used: 0,
+        period_end: new Date(Date.now() + 86400000).toISOString(),
+      })
       .eq("id", testUserId);
 
     // Create test endpoint
@@ -78,12 +83,11 @@ describe("Raw Body Fidelity & Search", () => {
       // Give the DB a moment to process
       await new Promise((r) => setTimeout(r, 200));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 1,
-      });
+      }))!;
 
       expect(requests.length).toBeGreaterThanOrEqual(1);
       const req = requests[0];
@@ -103,12 +107,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 200));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 10,
-      });
+      }))!;
 
       const getReq = requests.find((r) => r.method === "GET");
       expect(getReq).toBeDefined();
@@ -129,12 +132,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 200));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 10,
-      });
+      }))!;
 
       const formReq = requests.find((r) => r.path === "/form");
       expect(formReq).toBeDefined();
@@ -151,10 +153,21 @@ describe("Raw Body Fidelity & Search", () => {
     it("stores body_raw for non-UTF-8 binary payloads", async () => {
       // Construct a payload with invalid UTF-8 bytes
       const binaryPayload = Buffer.from([
-        0x48, 0x65, 0x6c, 0x6c, 0x6f, // "Hello"
-        0x80, 0x81, 0x82,               // invalid UTF-8 continuation bytes
-        0xff, 0xfe,                      // more invalid bytes
-        0x57, 0x6f, 0x72, 0x6c, 0x64,  // "World"
+        0x48,
+        0x65,
+        0x6c,
+        0x6c,
+        0x6f, // "Hello"
+        0x80,
+        0x81,
+        0x82, // invalid UTF-8 continuation bytes
+        0xff,
+        0xfe, // more invalid bytes
+        0x57,
+        0x6f,
+        0x72,
+        0x6c,
+        0x64, // "World"
       ]);
 
       const resp = await fetch(`${RECEIVER_URL}/w/${endpointSlug}/binary`, {
@@ -166,12 +179,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 10,
-      });
+      }))!;
 
       const binReq = requests.find((r) => r.path === "/binary");
       expect(binReq).toBeDefined();
@@ -202,12 +214,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 200));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 10,
-      });
+      }))!;
 
       const uniReq = requests.find((r) => r.path === "/unicode");
       expect(uniReq).toBeDefined();
@@ -226,12 +237,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 50,
-      });
+      }))!;
       const binReq = requests.find((r) => r.path === "/binary-get");
       expect(binReq).toBeDefined();
 
@@ -261,10 +271,30 @@ describe("Raw Body Fidelity & Search", () => {
       // Insert requests with diverse content for search testing
       const now = Date.now();
       const requests = [
-        { path: "/api/stripe/webhook", method: "POST", body: '{"type":"payment_intent.succeeded","amount":4200}', receivedAt: now - 5000 },
-        { path: "/api/github/push", method: "POST", body: '{"action":"push","ref":"refs/heads/main"}', receivedAt: now - 4000 },
-        { path: "/api/slack/event", method: "POST", body: '{"type":"message","text":"hello world"}', receivedAt: now - 3000 },
-        { path: "/webhooks/shopify/order", method: "POST", body: '{"topic":"orders/create","shop_domain":"test.myshopify.com"}', receivedAt: now - 2000 },
+        {
+          path: "/api/stripe/webhook",
+          method: "POST",
+          body: '{"type":"payment_intent.succeeded","amount":4200}',
+          receivedAt: now - 5000,
+        },
+        {
+          path: "/api/github/push",
+          method: "POST",
+          body: '{"action":"push","ref":"refs/heads/main"}',
+          receivedAt: now - 4000,
+        },
+        {
+          path: "/api/slack/event",
+          method: "POST",
+          body: '{"type":"message","text":"hello world"}',
+          receivedAt: now - 3000,
+        },
+        {
+          path: "/webhooks/shopify/order",
+          method: "POST",
+          body: '{"topic":"orders/create","shop_domain":"test.myshopify.com"}',
+          receivedAt: now - 2000,
+        },
         { path: "/health", method: "GET", body: null, receivedAt: now - 1000 },
       ];
 
@@ -418,12 +448,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 200));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 20,
-      });
+      }))!;
 
       const emptyReq = requests.find((r) => r.path === "/empty");
       expect(emptyReq).toBeDefined();
@@ -448,12 +477,11 @@ describe("Raw Body Fidelity & Search", () => {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      const requests = await listRequestsForEndpointByUser({
+      const requests = (await listRequestsForEndpointByUser({
         userId: testUserId,
-        plan: "pro",
         slug: endpointSlug,
         limit: 20,
-      });
+      }))!;
 
       const largeReq = requests.find((r) => r.path === "/large");
       expect(largeReq).toBeDefined();

@@ -60,8 +60,13 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
     let mut builder = http.request(method.clone(), &url).headers(headers);
     // Prefer raw bytes (base64-decoded) for byte-exact replay of non-UTF-8 payloads
     if let Some(ref raw) = req.body_raw {
-        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(raw) {
-            builder = builder.body(bytes);
+        match base64::engine::general_purpose::STANDARD.decode(raw) {
+            Ok(bytes) => builder = builder.body(bytes),
+            Err(_) => {
+                if let Some(ref body) = req.body {
+                    builder = builder.body(body.clone());
+                }
+            }
         }
     } else if let Some(ref body) = req.body {
         builder = builder.body(body.clone());
