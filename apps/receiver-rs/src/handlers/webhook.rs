@@ -255,19 +255,28 @@ fn spawn_notification(info: NotificationInfo) {
         let mut use_in_memory = info.redis.is_none();
         if let Some(mut conn) = info.redis.clone() {
             let key = format!("whcc:notify:{}", info.slug);
-            match redis::cmd("SET")
-                .arg(&key)
-                .arg("1")
-                .arg("NX")
-                .arg("EX")
-                .arg(1_u64)
-                .query_async::<Option<String>>(&mut conn)
-                .await
-            {
-                Ok(Some(_)) => { /* key was set, proceed with notification */ }
-                Ok(None) => return,    // cooldown active, skip
-                Err(e) => {
+            // 100ms timeout — if Redis doesn't respond on localhost, fall back fast
+            let redis_result = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                redis::cmd("SET")
+                    .arg(&key)
+                    .arg("1")
+                    .arg("NX")
+                    .arg("EX")
+                    .arg(1_u64)
+                    .query_async::<Option<String>>(&mut conn),
+            )
+            .await;
+
+            match redis_result {
+                Ok(Ok(Some(_))) => { /* key was set, proceed with notification */ }
+                Ok(Ok(None)) => return,    // cooldown active, skip
+                Ok(Err(e)) => {
                     tracing::warn!(error = %e, slug = %info.slug, "Redis notification rate limit failed, falling back to in-memory");
+                    use_in_memory = true;
+                }
+                Err(_) => {
+                    tracing::warn!(slug = %info.slug, "Redis notification rate limit timed out, falling back to in-memory");
                     use_in_memory = true;
                 }
             }
