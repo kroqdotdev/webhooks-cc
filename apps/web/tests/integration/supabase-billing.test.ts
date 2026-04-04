@@ -49,7 +49,7 @@ import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ANON_KEY = process.env.SUPABASE_ANON_KEY!;
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const TEST_PASSWORD = "TestPassword123!";
 
 if (!SERVICE_ROLE_KEY) {

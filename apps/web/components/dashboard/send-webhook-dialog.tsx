@@ -48,6 +48,7 @@ function defaultTemplateSelection(): TemplateSelectionByProvider {
     discord: getDefaultTemplateId("discord"),
     vercel: getDefaultTemplateId("vercel"),
     gitlab: getDefaultTemplateId("gitlab"),
+    "standard-webhooks": getDefaultTemplateId("standard-webhooks"),
   };
 }
 
@@ -252,6 +253,7 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
                 <option value="discord">Discord template</option>
                 <option value="vercel">Vercel template (signed)</option>
                 <option value="gitlab">GitLab template (token)</option>
+                <option value="standard-webhooks">Standard Webhooks (signed)</option>
               </select>
             </div>
             {isTemplateMode && (

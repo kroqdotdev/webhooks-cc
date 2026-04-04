@@ -3,7 +3,11 @@ import {
   extractBearerToken,
   validateBearerTokenWithPlan,
 } from "@/lib/api-auth";
-import { parseJsonBody, validateNotificationUrl } from "@/lib/request-validation";
+import {
+  parseJsonBody,
+  validateNotificationUrl,
+  validateMockResponseField,
+} from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
 import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/lib/supabase/teams";
@@ -84,40 +88,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "expiresAt must be a future timestamp" }, { status: 400 });
   }
 
-  if (body.mockResponse !== undefined && body.mockResponse !== null) {
-    if (typeof body.mockResponse !== "object" || Array.isArray(body.mockResponse)) {
-      return Response.json({ error: "Invalid mockResponse" }, { status: 400 });
-    }
-    const mr = body.mockResponse as Record<string, unknown>;
-    if (
-      typeof mr.status !== "number" ||
-      mr.status < 100 ||
-      mr.status > 599 ||
-      !Number.isInteger(mr.status)
-    ) {
-      return Response.json({ error: "Invalid status code" }, { status: 400 });
-    }
-    if (typeof mr.body !== "string") {
-      return Response.json({ error: "Invalid mockResponse body" }, { status: 400 });
-    }
-    if (typeof mr.headers !== "object" || mr.headers === null || Array.isArray(mr.headers)) {
-      return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
-    }
-    for (const val of Object.values(mr.headers as Record<string, unknown>)) {
-      if (typeof val !== "string") {
-        return Response.json({ error: "Invalid mockResponse headers" }, { status: 400 });
-      }
-    }
-    if (
-      mr.delay !== undefined &&
-      (typeof mr.delay !== "number" ||
-        !Number.isInteger(mr.delay) ||
-        mr.delay < 0 ||
-        mr.delay > 30000)
-    ) {
-      return Response.json({ error: "Invalid delay: must be 0-30000ms" }, { status: 400 });
-    }
-  }
+  const mockCheck = validateMockResponseField(body.mockResponse);
+  if (!mockCheck.valid) return mockCheck.response;
 
   const notifCheck = validateNotificationUrl(body.notificationUrl);
   if (!notifCheck.valid) return notifCheck.response;

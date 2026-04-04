@@ -34,14 +34,14 @@ test.describe("Authentication", () => {
   test("authenticated user can access account page and see their info", async ({ page }) => {
     await signInTestUser(page, testUser, "/account");
 
-    await expect(page.getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("main").getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
     await expect(page.getByText(testUser.email)).toBeVisible();
     await expect(page.getByText("Free", { exact: true })).toBeVisible();
   });
 
   test("sign out redirects away from protected pages", async ({ page }) => {
     await signInTestUser(page, testUser, "/account");
-    await expect(page.getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("main").getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
 
     // Sign out lives in the avatar dropdown in the header
     await page.locator("header").getByRole("button").last().click();
@@ -55,12 +55,12 @@ test.describe("Authentication", () => {
 
   test("session persists across page reload", async ({ page }) => {
     await signInTestUser(page, testUser, "/account");
-    await expect(page.getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("main").getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
 
     // Reload the page
     await page.reload();
 
     // User should still be visible (session persisted via cookies)
-    await expect(page.getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("main").getByText("E2E Test User")).toBeVisible({ timeout: 15000 });
   });
 });
