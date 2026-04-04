@@ -379,14 +379,19 @@ export async function buildTemplateRequest({
     throw new Error(`Failed to build ${provider} template request: ${message}`);
   }
 
-  return {
-    method: "POST",
-    headers: result.headers ?? {},
-    body:
-      typeof result.body === "string"
-        ? result.body
-        : result.body != null
-          ? JSON.stringify(result.body)
-          : "",
-  };
+  let body: string;
+  if (typeof result.body === "string") {
+    body = result.body;
+  } else if (result.body != null) {
+    try {
+      body = JSON.stringify(result.body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to serialize ${provider} template body: ${message}`);
+    }
+  } else {
+    body = "";
+  }
+
+  return { method: "POST", headers: result.headers ?? {}, body };
 }
