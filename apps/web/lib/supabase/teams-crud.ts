@@ -112,14 +112,19 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
 
   // Batch: get owner plans to determine suspension
   const ownerIds = [...new Set(teams.map((t) => t.created_by))];
-  const { data: ownerRows, error: ownerError } = await admin
-    .from("users")
-    .select("id, plan")
-    .in("id", ownerIds);
 
-  if (ownerError) throw ownerError;
+  let ownerRows: { id: string; plan: "free" | "pro" }[] = [];
+  if (ownerIds.length > 0) {
+    const { data, error: ownerError } = await admin
+      .from("users")
+      .select("id, plan")
+      .in("id", ownerIds);
 
-  const ownerPlanMap = new Map((ownerRows ?? []).map((u) => [u.id, u.plan]));
+    if (ownerError) throw ownerError;
+    ownerRows = data ?? [];
+  }
+
+  const ownerPlanMap = new Map(ownerRows.map((u) => [u.id, u.plan]));
 
   return teams.map((team) => ({
     id: team.id,

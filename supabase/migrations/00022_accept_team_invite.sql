@@ -29,7 +29,12 @@ begin
     return jsonb_build_object('status', 'not_found');
   end if;
 
-  -- Lock existing memberships for this team to prevent concurrent accepts
+  -- Lock team row first to serialize concurrent accepts (even when no members exist yet)
+  perform 1 from public.teams
+  where id = v_team_id
+  for update;
+
+  -- Also lock existing memberships for this team
   perform 1 from public.team_members
   where team_id = v_team_id
   for update;
