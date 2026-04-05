@@ -382,6 +382,13 @@ export interface Database {
         };
         Returns: Json;
       };
+      accept_team_invite: {
+        Args: {
+          p_user_id: string;
+          p_invite_id: string;
+        };
+        Returns: Json;
+      };
       search_requests: {
         Args: {
           p_user_id: string;

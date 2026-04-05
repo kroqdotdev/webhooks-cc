@@ -50,10 +50,14 @@ export async function createTeam(userId: string, name: string): Promise<Team | {
     return { error: result.error };
   }
 
+  if (!result.id || !result.name || !result.created_by) {
+    return { error: "Unexpected response from create_team_with_owner" };
+  }
+
   return {
-    id: result.id!,
-    name: result.name!,
-    createdBy: result.created_by!,
+    id: result.id,
+    name: result.name,
+    createdBy: result.created_by,
     createdAt: parseMillis(result.created_at ?? null),
     memberCount: 1,
     role: "owner",

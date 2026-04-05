@@ -298,43 +298,19 @@ export async function acceptInvite(
 
   const admin = createAdminClient();
 
-  // Atomically claim the invite by updating status from pending → accepted
-  // Only the invited user can claim it, and only if still pending (prevents race conditions)
-  const { data: claimed, error: claimError } = await admin
-    .from("team_invites")
-    .update({ status: "accepted" })
-    .eq("id", inviteId)
-    .eq("invited_user_id", userId)
-    .eq("status", "pending")
-    .select("id, team_id")
-    .maybeSingle();
+  // Atomic: claim invite + enforce 25-member limit + insert member in one transaction
+  const { data, error } = await admin.rpc("accept_team_invite", {
+    p_user_id: userId,
+    p_invite_id: inviteId,
+  });
 
-  if (claimError) throw claimError;
-  if (!claimed) return { accepted: false };
+  if (error) throw error;
 
-  const inviteRow = claimed as { id: string; team_id: string };
+  const result = data as { status: string };
 
-  // Check member limit before adding
-  const { count: memberCount, error: countError } = await admin
-    .from("team_members")
-    .select("id", { count: "exact", head: true })
-    .eq("team_id", inviteRow.team_id);
-
-  if (countError) throw countError;
-  if ((memberCount ?? 0) >= 25) {
-    // Roll back: set invite back to pending so user can retry later
-    await admin.from("team_invites").update({ status: "pending" }).eq("id", inviteId);
+  if (result.status === "not_found") return { accepted: false };
+  if (result.status === "full") {
     return { accepted: false, error: "Team has reached the maximum of 25 members" };
-  }
-
-  // Add as team member
-  const { error: memberError } = await admin
-    .from("team_members")
-    .insert({ team_id: inviteRow.team_id, user_id: userId, role: "member" });
-
-  if (memberError) {
-    // Ignore unique constraint — user might already be a member
-    if (memberError.code !== "23505") throw memberError;
   }
 
   return { accepted: true };
