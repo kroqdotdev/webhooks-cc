@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.17.1";
+export const APP_VERSION = "0.17.2";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.17.2",
+    date: "2026-04-06",
+    title: "Teams Module Refactor",
+    track: "web",
+    items: [
+      "Atomic team invite acceptance with member limit enforcement (max 25)",
+      "Split teams module into focused sub-modules for better maintainability",
+    ],
+  },
   {
     version: "0.17.1",
     date: "2026-04-05",
