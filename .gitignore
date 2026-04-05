@@ -52,6 +52,7 @@ supabase/.temp/
 # Playwright artifacts
 apps/web/playwright-report/
 apps/web/test-results/
+.playwright-mcp/
 
 # Migration data (Convex export)
 convex-export/
