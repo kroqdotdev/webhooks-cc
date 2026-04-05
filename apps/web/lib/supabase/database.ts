@@ -273,9 +273,122 @@ export interface Database {
         };
         Relationships: [];
       };
+      team_endpoints: {
+        Row: {
+          id: string;
+          team_id: string;
+          endpoint_id: string;
+          shared_by: string;
+          shared_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          endpoint_id: string;
+          shared_by: string;
+          shared_at?: string;
+        };
+        Update: {
+          id?: string;
+          team_id?: string;
+          endpoint_id?: string;
+          shared_by?: string;
+          shared_at?: string;
+        };
+        Relationships: [];
+      };
+      team_invites: {
+        Row: {
+          id: string;
+          team_id: string;
+          invited_by: string;
+          invited_email: string;
+          invited_user_id: string | null;
+          status: "pending" | "accepted" | "declined";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          invited_by: string;
+          invited_email: string;
+          invited_user_id?: string | null;
+          status?: "pending" | "accepted" | "declined";
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          team_id?: string;
+          invited_by?: string;
+          invited_email?: string;
+          invited_user_id?: string | null;
+          status?: "pending" | "accepted" | "declined";
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      team_members: {
+        Row: {
+          id: string;
+          team_id: string;
+          user_id: string;
+          role: "owner" | "member";
+          joined_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          user_id: string;
+          role: "owner" | "member";
+          joined_at?: string;
+        };
+        Update: {
+          id?: string;
+          team_id?: string;
+          user_id?: string;
+          role?: "owner" | "member";
+          joined_at?: string;
+        };
+        Relationships: [];
+      };
+      teams: {
+        Row: {
+          id: string;
+          name: string;
+          created_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          created_by: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          created_by?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      create_team_with_owner: {
+        Args: {
+          p_user_id: string;
+          p_name: string;
+        };
+        Returns: Json;
+      };
+      accept_team_invite: {
+        Args: {
+          p_user_id: string;
+          p_invite_id: string;
+        };
+        Returns: Json;
+      };
       search_requests: {
         Args: {
           p_user_id: string;
