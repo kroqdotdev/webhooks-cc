@@ -51,7 +51,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Webhook.site Alternative — Full Comparison (2026)",
   description:
-    "Looking for a Webhook.site alternative? webhooks.cc adds a TypeScript SDK for CI testing, a CLI tunnel, and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
+    "Webhook.site alternative with a TypeScript SDK for CI testing, CLI tunnel to localhost, and MCP server for AI agents. Free tier includes every feature.",
   path: "/compare/webhook-site",
   keywords: [
     "webhook.site alternative",

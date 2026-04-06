@@ -6,7 +6,7 @@ export const SITE_NAME = "webhooks.cc";
 export const DEFAULT_PAGE_TITLE = "Webhook Testing Platform: CLI, SDK & MCP";
 export const DEFAULT_PAGE_DESCRIPTION =
   "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test in CI with the TypeScript SDK, and automate workflows with the MCP server.";
-export const DEFAULT_OG_IMAGE_PATH = "/og-image.png";
+export const DEFAULT_OG_IMAGE_PATH = "/og-image.jpg";
 
 export const LAST_CONTENT_UPDATE = new Date("2026-03-30T00:00:00.000Z");
 
@@ -32,7 +32,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   // Blog pages are dynamically generated from Supabase in sitemaps/blog.xml
   { path: "/api-explorer", changeFrequency: "monthly", priority: 0.7 },
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
-  { path: "/login", changeFrequency: "monthly", priority: 0.4 },
+  // /login is noindexed — excluded from sitemap intentionally
   { path: "/changelog", changeFrequency: "weekly", priority: 0.5 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "yearly", priority: 0.3 },

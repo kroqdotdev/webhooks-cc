@@ -52,7 +52,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Hookdeck Alternative for Dev & Testing (2026)",
   description:
-    "Evaluating Hookdeck alternatives for webhook development? webhooks.cc handles testing with inspection, replay, SDK assertions, and MCP for AI agents. Every feature on both tiers — only Teams requires Pro.",
+    "Hookdeck alternative for webhook development and testing. Inspect, replay, and assert on payloads with SDK, CLI tunnel, and MCP server.",
   path: "/compare/hookdeck",
   keywords: [
     "hookdeck alternative",

@@ -51,7 +51,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "RequestBin Alternative — Open Source & Free (2026)",
   description:
-    "Looking for a RequestBin alternative? webhooks.cc is an open-source webhook testing tool with inspection, replay, TypeScript SDK, CLI tunnel, and MCP server. Free tier, no credit card.",
+    "Open-source RequestBin alternative with webhook inspection, replay, TypeScript SDK for CI, CLI tunnel, and MCP server. Free tier, no credit card.",
   path: "/compare/requestbin",
   keywords: [
     "requestbin alternative",

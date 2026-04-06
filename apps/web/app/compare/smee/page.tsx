@@ -52,7 +52,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Smee.io Alternative with Full Webhook Testing (2026)",
   description:
-    "Looking for a Smee.io alternative? webhooks.cc adds persistent history, replay, TypeScript SDK for CI assertions, and MCP for AI agents on top of localhost forwarding. Free and open source.",
+    "Smee.io alternative with persistent request history, replay, TypeScript SDK for CI assertions, and MCP for AI agents. Free and open source.",
   path: "/compare/smee",
   keywords: [
     "smee.io alternative",

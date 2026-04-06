@@ -158,7 +158,7 @@ export function blogPostingSchema(post: BlogPostData) {
     keywords: [...new Set([...post.keywords, ...post.tags.map((t) => t.toLowerCase())])],
     inLanguage: "en-US",
     isAccessibleForFree: true,
-    image: `${SITE_URL}/og-image.png`,
+    image: `${SITE_URL}/og-image.jpg`,
     author: {
       "@type": "Organization",
       name: post.authorName,

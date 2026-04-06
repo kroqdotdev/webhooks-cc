@@ -31,12 +31,33 @@ async function main() {
   const errors = [];
   const warnings = [];
 
-  const sitemap = await fetchText(`${baseUrl}/sitemap.xml`);
-  if (!sitemap.response.ok) {
-    throw new Error(`Failed to fetch sitemap.xml from ${baseUrl}: ${sitemap.response.status}`);
+  // Fetch the sitemap index and extract child sitemap URLs
+  const sitemapIndex = await fetchText(`${baseUrl}/sitemap-index.xml`);
+  if (!sitemapIndex.response.ok) {
+    throw new Error(
+      `Failed to fetch sitemap-index.xml from ${baseUrl}: ${sitemapIndex.response.status}`
+    );
   }
 
-  const sitemapUrls = [...sitemap.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  const childSitemapUrls = [...sitemapIndex.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+
+  // Collect all page URLs from child sitemaps
+  const sitemapUrls = [];
+  for (const childUrl of childSitemapUrls) {
+    const childPath = normalizePath(childUrl);
+    const child = await fetchText(`${baseUrl}${childPath}`);
+    if (!child.response.ok) {
+      errors.push(`Sitemap ${childPath}: HTTP ${child.response.status}`);
+      continue;
+    }
+    const urls = [...child.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    sitemapUrls.push(...urls);
+  }
+
+  if (sitemapUrls.length === 0) {
+    throw new Error("No URLs found in sitemaps");
+  }
+
   for (const canonicalUrl of sitemapUrls) {
     const path = normalizePath(canonicalUrl);
     const page = await fetchText(`${baseUrl}${path}`);
@@ -68,6 +89,12 @@ async function main() {
       warnings.push(`${path}: description length ${description.length} (target 120-170)`);
     }
 
+    // Check for duplicate branding in title
+    const brandMatches = (title.match(/webhooks\.cc/gi) || []).length;
+    if (brandMatches > 1) {
+      warnings.push(`${path}: title contains "webhooks.cc" ${brandMatches} times`);
+    }
+
     if (path.startsWith("/blog/")) {
       const ogType = readFirst(
         html,
@@ -90,21 +117,35 @@ async function main() {
     }
   }
 
+  // Check noindex on private routes
   const login = await fetchText(`${baseUrl}/login`);
-  if (!/noindex/i.test(login.response.headers.get("x-robots-tag") || "")) {
-    errors.push("/login: missing X-Robots-Tag noindex header");
-  }
-  if (
-    !/noindex/i.test(
-      readFirst(login.text, /<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i)
-    )
-  ) {
+  const loginRobots = readFirst(
+    login.text,
+    /<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i
+  );
+  if (!/noindex/i.test(loginRobots)) {
     errors.push("/login: missing noindex robots meta");
   }
 
   const apiHealth = await fetchText(`${baseUrl}/api/health`);
   if (!/noindex/i.test(apiHealth.response.headers.get("x-robots-tag") || "")) {
     errors.push("/api/health: missing X-Robots-Tag noindex header");
+  }
+
+  // Check that /teams is noindexed
+  const teams = await fetchText(`${baseUrl}/teams`);
+  const teamsRobots = readFirst(
+    teams.text,
+    /<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i
+  );
+  if (!/noindex/i.test(teamsRobots)) {
+    errors.push("/teams: missing noindex robots meta");
+  }
+
+  // Check /sitemap.xml redirects
+  const sitemapXml = await fetchText(`${baseUrl}/sitemap.xml`);
+  if (sitemapXml.response.status !== 301 && sitemapXml.response.redirected !== true) {
+    warnings.push("/sitemap.xml: expected 301 redirect to /sitemap-index.xml");
   }
 
   if (warnings.length) {

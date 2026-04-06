@@ -3,6 +3,7 @@ Allow: /
 Disallow: /dashboard
 Disallow: /account
 Disallow: /endpoints
+Disallow: /teams
 Disallow: /api/
 Disallow: /cli/verify
 Disallow: /blog/preview

@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 export const metadata = createPageMetadata({
   title: "webhooks.cc Blog",
