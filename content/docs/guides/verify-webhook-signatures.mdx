@@ -1,6 +1,6 @@
 ---
 title: "How to Verify Webhook Signatures"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more providers. Protect your handlers from forged payloads."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
 section: guides
 order: 5
 lastUpdated: 2026-03-20
@@ -9,7 +9,7 @@ keywords:
   ["verify webhook signature", "webhook HMAC", "webhook security", "webhook signature validation"]
 seo:
   ogTitle: "How to Verify Webhook Signatures"
-  ogDescription: "Step-by-step guide to verifying webhook signatures for 13 providers using HMAC-SHA256, HMAC-SHA1, Ed25519, and token comparison."
+  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
 ---
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord is the exception, using Ed25519 public-key cryptography. Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.

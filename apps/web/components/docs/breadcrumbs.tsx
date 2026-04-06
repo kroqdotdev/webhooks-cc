@@ -63,7 +63,6 @@ export function DocsBreadcrumbs() {
             );
           })}
         </ol>
-        <span className="text-xs text-muted-foreground hidden sm:block">Updated Feb 2026</span>
       </nav>
     </>
   );

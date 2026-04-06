@@ -1,6 +1,6 @@
 ---
 title: "How to Test GitHub Webhooks"
-description: "Test GitHub webhook handlers with signed push, PR, and ping events. Send HMAC-SHA256 signed payloads to your localhost handler."
+description: "Test GitHub webhook handlers with HMAC-SHA256 signed push, PR, and ping events. Send realistic payloads to your localhost handler and verify signatures end-to-end."
 section: guides
 order: 3
 lastUpdated: 2026-03-10
@@ -14,7 +14,7 @@ keywords:
   ]
 seo:
   ogTitle: "How to Test GitHub Webhooks"
-  ogDescription: "Step-by-step guide to testing GitHub webhook handlers with signed payloads and signature verification."
+  ogDescription: "Test GitHub webhook handlers with HMAC-SHA256 signed push, PR, and ping events. Send realistic payloads to your localhost handler and verify signatures end-to-end."
 ---
 
 GitHub sends webhooks for pushes, pull requests, issues, and 40+ other events. Each webhook is signed with HMAC-SHA256 via the `x-hub-signature-256` header. Testing these handlers requires properly signed payloads -- your handler should reject unsigned requests. webhooks.cc sends signed GitHub webhooks to your handler, no GitHub repo configuration needed.

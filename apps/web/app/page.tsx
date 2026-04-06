@@ -9,7 +9,13 @@ import { PricingCTA } from "@/components/landing/pricing-cta";
 import { LivePreview } from "@/components/landing/live-preview";
 import { TeamsVideo } from "@/components/landing/teams-video";
 import { createPageMetadata } from "@/lib/seo";
-import { JsonLd, softwareApplicationSchema, faqSchema, type FAQItem } from "@/lib/schemas";
+import {
+  JsonLd,
+  softwareApplicationSchema,
+  faqSchema,
+  videoObjectSchema,
+  type FAQItem,
+} from "@/lib/schemas";
 import { createClient } from "@supabase/supabase-js";
 
 export const revalidate = 600; // re-render landing page every 10 min to pick up fresh site_stats
@@ -124,6 +130,7 @@ export default async function Home() {
     <main className="min-h-screen">
       <JsonLd data={softwareApplicationSchema()} />
       <JsonLd data={faqSchema(LANDING_FAQ)} />
+      <JsonLd data={videoObjectSchema()} />
 
       {/* Navigation */}
       <FloatingNavbar />
@@ -137,8 +144,8 @@ export default async function Home() {
                 Free forever &middot; No credit card
               </div>
               <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.2]">
-                See every webhook
-                <br />
+                See every webhook{" "}
+                <br className="hidden md:block" />
                 <span className="bg-primary text-primary-foreground px-2">as it arrives</span>
               </h1>
               <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
@@ -554,13 +561,13 @@ export default async function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-4 gap-8">
             <div>
-              <h4 className="font-bold text-lg mb-4">webhooks.cc</h4>
+              <p className="font-bold text-lg mb-4">webhooks.cc</p>
               <p className="text-muted-foreground text-sm">
                 Webhook testing tools for developers. Inspect, forward, test, and automate.
               </p>
             </div>
             <div>
-              <h4 className="font-bold mb-4">Product</h4>
+              <p className="font-bold mb-4">Product</p>
               <ul className="space-y-2 text-sm">
                 <li>
                   <Link href="/docs" className="text-muted-foreground hover:text-foreground">
@@ -593,7 +600,7 @@ export default async function Home() {
               </ul>
             </div>
             <div>
-              <h4 className="font-bold mb-4">Resources</h4>
+              <p className="font-bold mb-4">Resources</p>
               <ul className="space-y-2 text-sm">
                 <li>
                   <Link href="/docs/cli" className="text-muted-foreground hover:text-foreground">
@@ -618,7 +625,7 @@ export default async function Home() {
               </ul>
             </div>
             <div>
-              <h4 className="font-bold mb-4">Legal</h4>
+              <p className="font-bold mb-4">Legal</p>
               <ul className="space-y-2 text-sm">
                 <li>
                   <Link href="/privacy" className="text-muted-foreground hover:text-foreground">

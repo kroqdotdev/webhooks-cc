@@ -1,0 +1,626 @@
+# webhooks.cc — Full Reference
+
+> Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.
+
+## What is webhooks.cc?
+
+webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses, forward webhooks to localhost for local development, and write automated test assertions against captured requests.
+
+The Rust receiver handles 86,000+ requests per second with sub-millisecond capture latency. Requests are written directly to Postgres via a single stored procedure and surfaced in the dashboard through Supabase Realtime.
+
+## Architecture
+
+- **Dashboard**: Next.js App Router with real-time updates via Supabase Realtime (postgres_changes)
+- **Receiver**: Rust (Axum + Tokio) writing directly to Postgres via sqlx and a single stored procedure
+- **Database**: Self-hosted Supabase (Postgres) with row-level security
+- **CLI**: Rust (Clap + Ratatui) connecting via SSE streams
+- **SDK**: TypeScript (`@webhooks-cc/sdk`) published to npm
+- **MCP Server**: TypeScript (`@webhooks-cc/mcp`) for AI coding agents
+
+## URLs
+
+- Homepage: https://webhooks.cc
+- Webhook receiver: https://go.webhooks.cc
+- Endpoint URL format: `https://go.webhooks.cc/w/<slug>` or `https://go.webhooks.cc/w/<slug>/optional/path`
+- Documentation: https://webhooks.cc/docs
+- Installation: https://webhooks.cc/installation
+- GitHub: https://github.com/kroqdotdev/webhooks-cc
+- npm SDK: https://www.npmjs.com/package/@webhooks-cc/sdk
+- npm MCP: https://www.npmjs.com/package/@webhooks-cc/mcp
+
+## Pricing
+
+- **Free**: 50 requests/day, unlimited endpoints, 7-day retention, full CLI/SDK/MCP access
+- **Pro** ($8/month): 100,000 requests/month, 30-day retention, team collaboration
+
+## Authentication
+
+API keys use the `whcc_` prefix. Generate from https://webhooks.cc/account or via `whk auth login`.
+
+All API requests require a Bearer token:
+```
+Authorization: Bearer whcc_...
+```
+
+---
+
+## TypeScript SDK Reference
+
+Package: `@webhooks-cc/sdk` on npm.
+
+### Installation
+
+```bash
+npm install @webhooks-cc/sdk
+```
+
+### Client Constructor
+
+```typescript
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({
+  apiKey: "whcc_...",         // Required
+  baseUrl: "https://webhooks.cc",         // Optional
+  webhookUrl: "https://go.webhooks.cc",   // Optional
+  timeout: 30000,             // Request timeout in ms
+  retry: {                    // Optional retry policy
+    maxAttempts: 3,
+    backoffMs: 1000,
+    retryOn: [502, 503, 504],
+  },
+  hooks: {                    // Optional lifecycle hooks
+    onRequest: (info) => {},
+    onResponse: (info) => {},
+    onError: (info) => {},
+  },
+});
+```
+
+### Endpoints
+
+```typescript
+// Create endpoint
+const endpoint = await client.endpoints.create({
+  name?: string,              // Display name
+  ephemeral?: boolean,        // Auto-expire
+  expiresIn?: number | string,  // e.g. "12h"
+  mockResponse?: MockResponse,
+  notificationUrl?: string,   // Slack/Discord URL
+});
+// Returns: Endpoint { id, slug, name, url, createdAt, ... }
+
+// List all endpoints
+const endpoints = await client.endpoints.list();
+// Returns: Endpoint[]
+
+// Get single endpoint
+const ep = await client.endpoints.get("my-slug");
+
+// Update endpoint
+const updated = await client.endpoints.update("my-slug", {
+  name?: string,
+  mockResponse?: MockResponse | null,  // null clears mock
+  notificationUrl?: string | null,     // null clears notification
+});
+
+// Delete endpoint
+await client.endpoints.delete("my-slug");
+
+// Send test webhook to your own endpoint
+const response = await client.endpoints.send("my-slug", {
+  method?: string,            // Default: "POST"
+  headers?: Record<string, string>,
+  body?: unknown,             // JSON-serialized if object
+});
+
+// Send signed provider webhook template
+await client.endpoints.sendTemplate("my-slug", {
+  provider: "stripe",        // stripe|github|shopify|twilio|slack|paddle|linear|sendgrid|clerk|discord|vercel|gitlab|standard-webhooks
+  template?: string,         // Provider-specific preset
+  secret: "whsec_test",      // Signing secret
+  event?: string,            // Event type override
+  timestamp?: number,        // For deterministic signatures
+});
+```
+
+### Requests
+
+```typescript
+// List recent requests
+const requests = await client.requests.list("my-slug", {
+  limit?: number,
+  since?: number,           // Timestamp in ms
+});
+
+// Paginated listing
+const page = await client.requests.listPaginated("my-slug", {
+  limit?: number,
+  cursor?: string,          // From previous page
+});
+// Returns: { items: Request[], cursor?: string, hasMore: boolean }
+
+// Get single request
+const req = await client.requests.get("request-id");
+
+// Wait for next request (polling)
+const req = await client.requests.waitFor("my-slug", {
+  timeout?: number | string,     // Default: "30s", e.g. "5m"
+  pollInterval?: number | string, // Default: "500ms"
+  match?: (request: Request) => boolean,
+});
+
+// Wait for multiple requests
+const reqs = await client.requests.waitForAll("my-slug", {
+  count: 3,
+  timeout?: number | string,
+  match?: (request: Request) => boolean,
+});
+
+// Stream requests in real time (SSE)
+for await (const req of client.requests.subscribe("my-slug", {
+  signal?: AbortSignal,
+  timeout?: number | string,
+  reconnect?: boolean,
+  maxReconnectAttempts?: number,  // Default: 5
+})) {
+  console.log(req.method, req.path);
+}
+
+// Replay captured request to a URL
+const response = await client.requests.replay("request-id", "http://localhost:8080");
+
+// Search requests (ClickHouse)
+const results = await client.requests.search({
+  slug?: string,
+  method?: string,
+  q?: string,               // Free-text search
+  from?: number | string,   // Start time
+  to?: number | string,     // End time
+  limit?: number,           // Default: 50
+  offset?: number,
+  order?: "asc" | "desc",
+});
+
+// Count matching requests
+const count = await client.requests.count({ slug: "my-slug", method: "POST" });
+
+// Clear requests
+await client.requests.clear("my-slug", { before?: number | string });
+
+// Export requests
+const exported = await client.requests.export("my-slug", {
+  format: "har" | "curl",
+  limit?: number,
+  since?: number,
+});
+```
+
+### Send to Arbitrary URLs
+
+```typescript
+// Send webhook to any URL (not just your endpoints)
+const response = await client.sendTo("https://example.com/webhook", {
+  method?: string,
+  headers?: Record<string, string>,
+  body?: unknown,
+  provider?: string,        // For signed payloads
+  secret?: string,
+  event?: string,
+});
+
+// Preview without sending
+const preview = await client.buildRequest("https://example.com/webhook", { ... });
+// Returns: { url, method, headers, body }
+```
+
+### Usage
+
+```typescript
+const usage = await client.usage();
+// Returns: { used, limit, remaining, plan: "free"|"pro", periodEnd }
+```
+
+### Matchers
+
+All matchers return `(request: Request) => boolean` for use with `waitFor` and `waitForAll`:
+
+```typescript
+import {
+  matchMethod,      // matchMethod("POST")
+  matchHeader,      // matchHeader("stripe-signature") or matchHeader("content-type", "application/json")
+  matchPath,        // matchPath("/api/**") — glob wildcards
+  matchQueryParam,  // matchQueryParam("token", "abc")
+  matchBodyPath,    // matchBodyPath("data.object.id", "cs_123") — dot-notation
+  matchBodySubset,  // matchBodySubset({ type: "checkout.session.completed" })
+  matchContentType, // matchContentType("application/json")
+  matchAll,         // matchAll(matchMethod("POST"), matchHeader("stripe-signature"))
+  matchAny,         // matchAny(matchMethod("POST"), matchMethod("PUT"))
+} from "@webhooks-cc/sdk";
+```
+
+### Provider Detection Helpers
+
+```typescript
+import {
+  isStripeWebhook,     // Checks stripe-signature header
+  isGitHubWebhook,     // Checks x-github-event header
+  isShopifyWebhook,    // Checks x-shopify-hmac-sha256 header
+  isSlackWebhook,      // Checks x-slack-signature header
+  isTwilioWebhook,     // Checks x-twilio-signature header
+  isPaddleWebhook,     // Checks paddle-signature header
+  isLinearWebhook,     // Checks linear-signature header
+  isDiscordWebhook,    // Checks x-signature-ed25519 + x-signature-timestamp
+  isSendGridWebhook,   // Checks body for sg_event_id
+  isClerkWebhook,      // Checks svix-id header
+  isVercelWebhook,     // Checks x-vercel-signature header
+  isGitLabWebhook,     // Checks x-gitlab-event or x-gitlab-token header
+  isStandardWebhook,   // Checks svix-id header (Polar, Svix, Clerk, Resend)
+} from "@webhooks-cc/sdk";
+```
+
+### Body Parsing Helpers
+
+```typescript
+import {
+  parseJsonBody,      // parseJsonBody(request) → parsed JSON or undefined
+  parseFormBody,       // parseFormBody(request) → Record<string, string | string[]>
+  parseBody,           // Auto-detect content-type and parse
+  extractJsonField,    // extractJsonField<T>(request, "data.object.id")
+  matchJsonField,      // matchJsonField("event", "invoice.paid") — returns matcher
+} from "@webhooks-cc/sdk";
+```
+
+### Error Classes
+
+```typescript
+import {
+  WebhooksCCError,    // Base error (statusCode, message)
+  UnauthorizedError,  // 401 — invalid/missing API key
+  NotFoundError,      // 404 — resource not found
+  TimeoutError,       // Request timeout
+  RateLimitError,     // 429 — includes retryAfter, limit, remaining, reset
+  ApiError,           // General API error
+} from "@webhooks-cc/sdk";
+```
+
+### Type Definitions
+
+```typescript
+interface Endpoint {
+  id: string;
+  slug: string;
+  name?: string;
+  url?: string;
+  notificationUrl?: string;
+  isEphemeral?: boolean;
+  expiresAt?: number;       // Unix ms
+  createdAt: number;        // Unix ms
+  sharedWith?: TeamShare[];
+  fromTeam?: TeamShare;
+}
+
+interface Request {
+  id: string;
+  endpointId: string;
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body?: string;
+  bodyRaw?: string;         // Base64-encoded raw bytes
+  queryParams: Record<string, string>;
+  contentType?: string;
+  ip: string;
+  size: number;             // Bytes
+  receivedAt: number;       // Unix ms
+}
+
+interface MockResponse {
+  status: number;           // 100-599
+  body: string;
+  headers: Record<string, string>;
+  delay?: number;           // 0-30000ms
+}
+
+interface UsageInfo {
+  used: number;
+  limit: number;
+  remaining: number;
+  plan: "free" | "pro";
+  periodEnd: number | null;
+}
+```
+
+### SDK Quick Start Example
+
+```typescript
+import { WebhooksCC, matchAll, matchMethod, matchBodyPath } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+// Create an endpoint
+const endpoint = await client.endpoints.create({ name: "stripe-test" });
+console.log(endpoint.url); // https://go.webhooks.cc/w/<slug>
+
+// Send a signed Stripe webhook
+await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "stripe",
+  secret: "whsec_test_secret",
+  event: "checkout.session.completed",
+});
+
+// Wait for it
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "30s",
+  match: matchAll(
+    matchMethod("POST"),
+    matchBodyPath("type", "checkout.session.completed"),
+  ),
+});
+
+console.log(request.headers["stripe-signature"]);
+
+// Clean up
+await client.endpoints.delete(endpoint.slug);
+```
+
+---
+
+## MCP Server Reference
+
+Package: `@webhooks-cc/mcp` on npm.
+
+### Installation
+
+```bash
+# Claude Code
+claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
+
+# Cursor / VS Code / Windsurf
+npx @webhooks-cc/mcp setup cursor
+npx @webhooks-cc/mcp setup vscode
+npx @webhooks-cc/mcp setup windsurf
+
+# Codex
+codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
+```
+
+Set `WHK_API_KEY` environment variable to your API key.
+
+### All 25 MCP Tools
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `create_endpoint` | name?, ephemeral?, expiresIn?, mockResponse?, notificationUrl? | Create a new webhook endpoint |
+| `list_endpoints` | (none) | List all user endpoints |
+| `get_endpoint` | slug | Get endpoint details |
+| `update_endpoint` | slug, name?, mockResponse?, notificationUrl? | Update endpoint config |
+| `delete_endpoint` | slug | Delete endpoint |
+| `create_endpoints` | count (1-20), namePrefix?, ephemeral?, expiresIn? | Bulk create endpoints |
+| `delete_endpoints` | slugs (array, 1-100) | Bulk delete endpoints |
+| `send_webhook` | slug, method?, headers?, body?, provider?, template?, event?, secret? | Send test webhook |
+| `list_requests` | endpointSlug, limit (1-100), since? | List recent requests |
+| `search_requests` | slug?, method?, q?, from?, to?, limit, offset, order | Search request history |
+| `count_requests` | slug?, method?, q?, from?, to? | Count matching requests |
+| `get_request` | requestId | Get single request |
+| `wait_for_request` | endpointSlug, timeout?, pollInterval? | Wait for next request |
+| `wait_for_requests` | endpointSlug, count (1-20), timeout?, pollInterval?, method? | Collect N requests |
+| `replay_request` | requestId, targetUrl | Replay request to URL |
+| `compare_requests` | leftRequestId, rightRequestId, ignoreHeaders? | Diff two requests |
+| `extract_from_request` | requestId, jsonPaths (1-50) | Extract JSON fields |
+| `verify_signature` | requestId, provider, secret?, publicKey?, url? | Verify webhook signature |
+| `clear_requests` | slug, before? | Delete captured requests |
+| `send_to` | url, method?, headers?, body?, provider?, template?, event?, secret? | Send to any URL |
+| `preview_webhook` | url, provider?, template?, event?, secret? | Preview without sending |
+| `list_provider_templates` | provider? | List providers/templates |
+| `get_usage` | (none) | Get usage and quota info |
+| `test_webhook_flow` | provider?, event?, secret?, mockStatus?, targetUrl?, verifySignature?, cleanup? | Full end-to-end test flow |
+| `describe` | (none) | Get SDK schema introspection |
+
+### Supported Providers for Signed Webhooks
+
+stripe, github, shopify, twilio, slack, paddle, linear, sendgrid, clerk, discord, vercel, gitlab, standard-webhooks
+
+Each provider signs payloads with its native algorithm (HMAC-SHA256, Ed25519, etc.) so your handler verification code works identically to production.
+
+---
+
+## CLI Reference
+
+Binary: `whk`. Install via Homebrew or download from GitHub releases.
+
+```bash
+brew install kroqdotdev/tap/whk
+```
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--nogui` | Disable TUI mode |
+| `--json` | Output as JSON |
+| `--api-url <url>` | Override API URL (env: WHK_API_URL) |
+| `--webhook-url <url>` | Override receiver URL (env: WHK_WEBHOOK_URL) |
+| `--no-color` | Disable colored output |
+
+### Commands
+
+```bash
+whk                                    # Interactive TUI dashboard
+
+# Authentication
+whk auth login                         # Browser-based device auth
+whk auth status                        # Show login status
+whk auth logout                        # Clear stored token
+
+# Endpoint management
+whk create [name]                      # Create endpoint
+  --ephemeral / -e                     # Auto-expire
+  --expires-in <duration>              # e.g. "12h"
+  --mock-status <code>                 # Mock response status
+  --mock-body <text>                   # Mock response body
+  --mock-header KEY:VALUE              # Mock header (repeatable)
+
+whk list                               # List endpoints
+whk get <slug>                         # Get endpoint details
+whk delete <slug> [--force/-f]         # Delete endpoint
+
+whk update-endpoint <slug>             # Update endpoint
+  --name <text>
+  --mock-status <code>
+  --mock-body <text>
+  --mock-header KEY:VALUE
+  --clear-mock
+
+# Tunneling and streaming
+whk tunnel <port>[/path]               # Forward webhooks to localhost
+  --endpoint <slug>                    # Reuse existing endpoint
+  --ephemeral / -e                     # Delete on exit
+  -H, --header KEY:VALUE              # Custom forwarding headers
+
+whk listen <slug>                      # Stream requests to terminal
+
+# Sending and replaying
+whk send <slug>                        # Send test webhook
+  --method <method>
+  -H, --header KEY:VALUE
+  -d, --data <string|@file>
+
+whk send-to <url>                      # Send to any URL
+  --method <method>
+  -H, --header KEY:VALUE
+  -d, --data <string|@file>
+
+whk replay <id>                        # Replay captured request
+  --to <url>                           # Default: http://localhost:8080
+
+# Request management
+whk requests list <slug>               # List requests
+  --limit <n> --since <ts> --cursor <c>
+
+whk requests get <id>                  # Get single request
+whk requests search                    # Search requests
+  --slug --method -q --from --to --limit --offset --order
+
+whk requests count                     # Count matching requests
+whk requests clear <slug> [--force]    # Delete requests
+whk requests export <slug>             # Export requests
+  --format har|curl --limit <n> -o <file>
+
+# Other
+whk usage                              # Show quota info
+whk update                             # Self-update (SHA256 verified)
+whk completions <shell>                # Generate shell completions
+```
+
+Config stored at `~/.config/whk/token.json`.
+
+---
+
+## REST API Reference
+
+Base URL: `https://webhooks.cc`
+
+All endpoints require `Authorization: Bearer whcc_...` unless noted.
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/endpoints` | Bearer | List all endpoints (owned + shared) |
+| POST | `/api/endpoints` | Bearer | Create endpoint |
+| GET | `/api/endpoints/[slug]` | Bearer | Get endpoint |
+| PATCH | `/api/endpoints/[slug]` | Bearer | Update endpoint |
+| DELETE | `/api/endpoints/[slug]` | Bearer | Delete endpoint |
+| POST | `/api/endpoints/claim` | Bearer | Claim a guest endpoint |
+
+### Requests
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests (limit, since, cursor) |
+| GET | `/api/requests/[id]` | Bearer | Get single request |
+| GET | `/api/search/requests` | Bearer | Search requests (slug, method, q, from, to) |
+| GET | `/api/search/requests/count` | Bearer | Count matching requests |
+
+### Webhooks
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/send-test` | Bearer | Send test webhook (rate limit: 30/min) |
+
+### Streaming
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/stream/[slug]` | Bearer | SSE stream of incoming requests |
+
+### Auth (Device Flow for CLI)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/auth/device-code` | None | Create device code |
+| POST | `/api/auth/device-authorize` | Session | Authorize device |
+
+### Account
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/usage` | Bearer | Get usage and quota |
+| GET | `/api/api-keys` | Bearer | List API keys |
+| POST | `/api/api-keys` | Bearer | Create API key |
+| DELETE | `/api/api-keys` | Bearer | Delete API key |
+| DELETE | `/api/account` | Session | Delete account (session auth only) |
+
+### Teams
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/teams` | Bearer | List teams |
+| POST | `/api/teams` | Bearer | Create team |
+| GET/PATCH/DELETE | `/api/teams/[id]` | Bearer | Manage team |
+| GET/POST | `/api/teams/[id]/members` | Bearer | Manage members |
+| GET/POST | `/api/teams/[id]/endpoints` | Bearer | Team endpoints |
+| POST | `/api/teams/[id]/invite` | Bearer | Send invite |
+| POST | `/api/invites/[id]/accept` | Bearer | Accept invite |
+
+### Guest (No Auth)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/go/endpoint` | None | Create ephemeral endpoint (IP rate limited) |
+
+---
+
+## Webhook Capture Details
+
+Any HTTP method, content type, and body up to 1 MB is accepted at `https://go.webhooks.cc/w/<slug>`.
+
+Captured data per request:
+- HTTP method
+- Path (after slug)
+- All headers (proxy headers filtered)
+- Body (text)
+- Query parameters
+- Content-Type
+- Client IP
+- Received timestamp
+- Body size in bytes
+
+Mock responses can return custom status codes (100-599), headers, body, and an optional delay (0-30 seconds).
+
+The receiver fails open: if the database is unavailable, it returns 200 OK so webhook senders don't retry.
+
+## Rate Limits
+
+- Endpoint creation: 30 per 10 minutes
+- Send test: 30 per minute
+- Search: 60 per 10 minutes
+- Guest endpoint creation: 20 per 10 minutes per IP
+- Device auth: 10 per minute per IP
+
+## Data Retention
+
+- **Free plan**: 7 days
+- **Pro plan**: 30 days
+- Ephemeral endpoints: 12 hours, max 25 requests

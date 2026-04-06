@@ -1,6 +1,6 @@
 ---
 title: "How to Test Shopify Webhooks"
-description: "Test Shopify webhook handlers with HMAC-SHA256 signed payloads for orders, products, and app events. No Shopify admin needed."
+description: "Test Shopify webhook handlers with HMAC-SHA256 signed payloads for orders, products, and app events. Verify signatures locally without a Shopify admin account."
 section: guides
 order: 4
 lastUpdated: 2026-03-10
@@ -14,7 +14,7 @@ keywords:
   ]
 seo:
   ogTitle: "How to Test Shopify Webhooks"
-  ogDescription: "Step-by-step guide to testing Shopify webhook handlers with signed payloads and HMAC-SHA256 verification."
+  ogDescription: "Test Shopify webhook handlers with HMAC-SHA256 signed payloads for orders, products, and app events. Verify signatures locally without a Shopify admin account."
 ---
 
 Shopify sends webhooks for orders, products, customers, and app lifecycle events. Each payload is signed with HMAC-SHA256 and the hash is base64-encoded in the `x-shopify-hmac-sha256` header. Testing these handlers during development means generating correctly signed payloads -- and Shopify's admin panel cannot send test events to localhost. webhooks.cc solves this by signing payloads locally with your secret and sending them directly to your handler.

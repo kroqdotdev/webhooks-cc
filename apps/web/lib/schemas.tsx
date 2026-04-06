@@ -136,6 +136,21 @@ export function breadcrumbSchema(items: BreadcrumbItem[]) {
   };
 }
 
+// --- VideoObject ---
+
+export function videoObjectSchema() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "VideoObject",
+    name: "webhooks.cc Teams Feature Demo",
+    description:
+      "Demo of team collaboration features: creating a team, inviting members, and sharing webhook endpoints in real time.",
+    thumbnailUrl: `${SITE_URL}/og-image.jpg`,
+    contentUrl: `${SITE_URL}/video/TeamsFeature.mp4`,
+    uploadDate: "2026-03-01",
+  };
+}
+
 // --- BlogPosting ---
 
 export function blogPostingSchema(post: BlogPostData) {
@@ -148,7 +163,7 @@ export function blogPostingSchema(post: BlogPostData) {
   return {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    headline: post.seoTitle || post.title,
+    headline: (post.seoTitle || post.title).replace(/ \| webhooks\.cc$/i, ""),
     description: post.seoDescription || post.description,
     url,
     mainEntityOfPage: url,

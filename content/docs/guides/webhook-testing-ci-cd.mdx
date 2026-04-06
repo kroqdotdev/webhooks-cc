@@ -1,6 +1,6 @@
 ---
 title: "Webhook Testing in CI/CD"
-description: "Run webhook integration tests in GitHub Actions, GitLab CI, and other CI environments with deterministic, signed payloads."
+description: "Run webhook integration tests in GitHub Actions, GitLab CI, and other CI environments. Use deterministic, signed payloads for repeatable assertions in your pipeline."
 section: guides
 order: 6
 lastUpdated: 2026-03-10
@@ -14,7 +14,7 @@ keywords:
   ]
 seo:
   ogTitle: "Webhook Testing in CI/CD"
-  ogDescription: "Step-by-step guide to running webhook integration tests in CI/CD with signed payloads, assertions, and cleanup."
+  ogDescription: "Run webhook integration tests in GitHub Actions, GitLab CI, and other CI environments. Use deterministic, signed payloads for repeatable assertions in your pipeline."
 ---
 
 Webhook handlers are integration points. They receive external HTTP requests, verify signatures, parse payloads, and trigger business logic. Testing them locally is straightforward, but testing them in CI/CD adds three challenges: you need real-looking payloads with valid signatures, you need to wait for asynchronous processing, and you need deterministic cleanup so parallel pipelines do not collide.

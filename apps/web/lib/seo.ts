@@ -94,7 +94,8 @@ export function createPageMetadata({
 }
 
 export function createDynamicBlogPostMetadata(post: BlogPostData): Metadata {
-  const title = post.seoTitle || post.title;
+  const rawTitle = post.seoTitle || post.title;
+  const title = rawTitle.replace(/ \| webhooks\.cc$/i, "");
   const description = post.seoDescription || post.description;
   const canonical = post.canonicalUrl ?? `/blog/${post.slug}`;
   const absoluteUrl = toAbsoluteUrl(`/blog/${post.slug}`);

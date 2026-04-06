@@ -14,7 +14,7 @@ function ThemeToggleButtons() {
     <div className="flex items-center border-2 border-foreground rounded-none bg-background">
       <button
         onClick={() => setTheme("light")}
-        className={`p-2 transition-colors cursor-pointer ${
+        className={`p-2.5 transition-colors cursor-pointer ${
           theme === "light" ? "bg-foreground text-background" : "hover:bg-muted"
         }`}
         aria-label="Light mode"
@@ -23,7 +23,7 @@ function ThemeToggleButtons() {
       </button>
       <button
         onClick={() => setTheme("system")}
-        className={`p-2 transition-colors cursor-pointer border-x-2 border-foreground ${
+        className={`p-2.5 transition-colors cursor-pointer border-x-2 border-foreground ${
           theme === "system" ? "bg-foreground text-background" : "hover:bg-muted"
         }`}
         aria-label="System theme"
@@ -32,7 +32,7 @@ function ThemeToggleButtons() {
       </button>
       <button
         onClick={() => setTheme("dark")}
-        className={`p-2 transition-colors cursor-pointer ${
+        className={`p-2.5 transition-colors cursor-pointer ${
           theme === "dark" ? "bg-foreground text-background" : "hover:bg-muted"
         }`}
         aria-label="Dark mode"
