@@ -27,10 +27,10 @@ import (
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 var (
-	userCount          = 200
-	endpointsPerUser   = 2
+	userCount          = 400
+	endpointsPerUser   = 4
 	reqsPerEndpoint    = 150
-	requestLimitPerUser = 100
+	requestLimitPerUser = 570
 	maxOverrun         = 5
 	ephemeralLimit     = 25
 	receiverURL        = "http://localhost:3001"
