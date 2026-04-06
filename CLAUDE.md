@@ -186,19 +186,22 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 
 **Receiver env vars:**
 
-| Variable                  | Required | Default | Purpose                                                                            |
-| ------------------------- | -------- | ------- | ---------------------------------------------------------------------------------- |
-| `DATABASE_URL`            | yes      |         | Postgres connection string (use session pooler)                                    |
-| `CAPTURE_SHARED_SECRET`   | yes      |         | Shared secret (kept for future internal auth)                                      |
-| `PORT`                    | no       | 3001    | Listen port                                                                        |
-| `RECEIVER_DEBUG`          | no       |         | Enable debug logging                                                               |
-| `RECEIVER_LOG_DIR`        | no       | logs/   | Rolling JSON log file directory                                                    |
-| `PG_POOL_MIN`             | no       | 5       | Min Postgres pool connections                                                      |
-| `PG_POOL_MAX`             | no       | 20      | Max Postgres pool connections                                                      |
-| `APPSIGNAL_COLLECTOR_URL` | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`)               |
-| `NOTIFY_PROXY_URL`        | no       |         | Cloudflare Worker URL for outbound notification proxy                              |
-| `NOTIFY_SECRET`           | no       |         | Shared secret for authenticating with the notify proxy                             |
-| `REDIS_URL`               | no       |         | Redis connection URL for distributed rate limiting (e.g. `redis://127.0.0.1:6379`) |
+| Variable                     | Required | Default | Purpose                                                                            |
+| ---------------------------- | -------- | ------- | ---------------------------------------------------------------------------------- |
+| `DATABASE_URL`               | yes      |         | Postgres connection string (use session pooler)                                    |
+| `CAPTURE_SHARED_SECRET`      | yes      |         | Shared secret (kept for future internal auth)                                      |
+| `PORT`                       | no       | 3001    | Listen port                                                                        |
+| `RECEIVER_DEBUG`             | no       |         | Enable debug logging                                                               |
+| `RECEIVER_LOG_DIR`           | no       | logs/   | Rolling JSON log file directory                                                    |
+| `PG_POOL_MIN`                | no       | 5       | Min Postgres pool connections                                                      |
+| `PG_POOL_MAX`                | no       | 20      | Max Postgres pool connections                                                      |
+| `APPSIGNAL_COLLECTOR_URL`    | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`)               |
+| `NOTIFY_PROXY_URL`           | no       |         | Cloudflare Worker URL for outbound notification proxy                              |
+| `NOTIFY_SECRET`              | no       |         | Shared secret for authenticating with the notify proxy                             |
+| `REDIS_URL`                  | no       |         | Redis connection URL for distributed rate limiting (e.g. `redis://127.0.0.1:6379`) |
+| `RECEIVER_MAX_BODY_SIZE`     | no       | 1048576 | Max request body size in bytes (default 1 MB)                                      |
+| `NOTIFICATION_COOLDOWN_SECS` | no       | 1       | Min seconds between notification webhooks per endpoint                             |
+| `NOTIFICATION_TIMEOUT_SECS`  | no       | 5       | Timeout for notification DNS resolve + HTTP POST                                   |
 
 ### Notification Proxy (Cloudflare Worker)
 
@@ -352,29 +355,34 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 ### Supabase Environment
 
-| Variable                | Purpose                        |
-| ----------------------- | ------------------------------ |
-| `POLAR_ACCESS_TOKEN`    | Polar.sh API                   |
-| `POLAR_ORGANIZATION_ID` | Polar org                      |
-| `POLAR_WEBHOOK_SECRET`  | Webhook signature verification |
-| `POLAR_PRO_PRODUCT_ID`  | Product ID for checkout        |
-| `POLAR_PRO_PRICE_ID`    | Price ID for checkout          |
-| `POLAR_SANDBOX`         | `true` for sandbox mode        |
-| `BLOG_API_SECRET`       | Blog admin API auth            |
+| Variable               | Purpose                        |
+| ---------------------- | ------------------------------ |
+| `POLAR_ACCESS_TOKEN`   | Polar.sh API                   |
+| `POLAR_WEBHOOK_SECRET` | Webhook signature verification |
+| `POLAR_PRO_PRODUCT_ID` | Product ID for checkout        |
+| `POLAR_SANDBOX`        | `true` for sandbox mode        |
+| `BLOG_API_SECRET`      | Blog admin API auth            |
 
 ### Optional
 
-| Variable                      | Purpose                                         |
-| ----------------------------- | ----------------------------------------------- |
-| `APPSIGNAL_PUSH_API_KEY`      | AppSignal API key (web app)                     |
-| `APPSIGNAL_APP_NAME`          | AppSignal app name (default: `webhooks-cc-web`) |
-| `APPSIGNAL_COLLECTOR_URL`     | OTel collector URL for receiver                 |
-| `RECEIVER_DEBUG`              | Enable receiver debug logging                   |
-| `WHK_DEBUG`                   | Enable CLI debug logging                        |
-| `PG_POOL_MIN` / `PG_POOL_MAX` | Receiver connection pool sizing                 |
-| `NOTIFY_PROXY_URL`            | Cloudflare Worker URL for notification proxy    |
-| `NOTIFY_SECRET`               | Shared secret for notify proxy authentication   |
-| `REDIS_URL`                   | Redis URL for distributed rate limiting         |
+| Variable                         | Purpose                                            |
+| -------------------------------- | -------------------------------------------------- |
+| `APPSIGNAL_PUSH_API_KEY`         | AppSignal API key (web app)                        |
+| `APPSIGNAL_APP_NAME`             | AppSignal app name (default: `webhooks-cc-web`)    |
+| `APPSIGNAL_COLLECTOR_URL`        | OTel collector URL for receiver                    |
+| `RECEIVER_DEBUG`                 | Enable receiver debug logging                      |
+| `WHK_DEBUG`                      | Enable CLI debug logging                           |
+| `PG_POOL_MIN` / `PG_POOL_MAX`    | Receiver connection pool sizing                    |
+| `NOTIFY_PROXY_URL`               | Cloudflare Worker URL for notification proxy       |
+| `NOTIFY_SECRET`                  | Shared secret for notify proxy authentication      |
+| `REDIS_URL`                      | Redis URL for distributed rate limiting            |
+| `RECEIVER_MAX_BODY_SIZE`         | Receiver max body size in bytes (default: 1 MB)    |
+| `NOTIFICATION_COOLDOWN_SECS`     | Min seconds between notifications per endpoint     |
+| `NOTIFICATION_TIMEOUT_SECS`      | Notification delivery timeout in seconds           |
+| `ENDPOINT_CREATE_RATE_LIMIT`     | Max endpoint creations per window (default: 30)    |
+| `ENDPOINT_CREATE_RATE_WINDOW_MS` | Rate limit window in ms (default: 600000)          |
+| `MAX_EPHEMERAL_ENDPOINTS`        | Max concurrent ephemeral endpoints (default: 500)  |
+| `EPHEMERAL_TTL_HOURS`            | Ephemeral endpoint lifetime in hours (default: 12) |
 
 ## CI/CD & Releases
 

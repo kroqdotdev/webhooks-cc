@@ -1,9 +1,8 @@
 import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
+import { serverEnv } from "../env";
 import type { Database, Json } from "./database";
 
-const DEFAULT_EPHEMERAL_TTL_MS = 12 * 60 * 60 * 1000;
-const MAX_EPHEMERAL_ENDPOINTS = 500;
 const MAX_SLUG_ATTEMPTS = 5;
 const nanoidSlug = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
 
@@ -166,7 +165,7 @@ async function enforceEphemeralCapacity(): Promise<void> {
     throw error;
   }
 
-  if ((count ?? 0) >= MAX_EPHEMERAL_ENDPOINTS) {
+  if ((count ?? 0) >= serverEnv().MAX_EPHEMERAL_ENDPOINTS) {
     throw new Error("Too many active demo endpoints. Please try again later.");
   }
 }
@@ -231,7 +230,7 @@ export async function createEndpointForUser({
     ephemeral && expiresAt !== undefined
       ? new Date(expiresAt).toISOString()
       : ephemeral
-        ? new Date(Date.now() + DEFAULT_EPHEMERAL_TTL_MS).toISOString()
+        ? new Date(Date.now() + serverEnv().EPHEMERAL_TTL_HOURS * 60 * 60 * 1000).toISOString()
         : null;
 
   const insert: EndpointInsert = {
