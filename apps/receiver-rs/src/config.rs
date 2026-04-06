@@ -14,6 +14,9 @@ pub struct Config {
     pub notify_proxy_url: Option<String>,
     pub notify_secret: Option<String>,
     pub redis_url: Option<String>,
+    pub max_body_size: usize,
+    pub notification_cooldown_secs: u64,
+    pub notification_timeout_secs: u64,
 }
 
 impl std::fmt::Debug for Config {
@@ -31,6 +34,9 @@ impl std::fmt::Debug for Config {
             .field("notify_proxy_url", &self.notify_proxy_url)
             .field("notify_secret", &self.notify_secret.as_ref().map(|_| "[REDACTED]"))
             .field("redis_url", &self.redis_url.as_ref().map(|_| "[REDACTED]"))
+            .field("max_body_size", &self.max_body_size)
+            .field("notification_cooldown_secs", &self.notification_cooldown_secs)
+            .field("notification_timeout_secs", &self.notification_timeout_secs)
             .finish()
     }
 }
@@ -74,6 +80,9 @@ impl Config {
         let redis_url = env::var("REDIS_URL")
             .ok()
             .filter(|v| !v.is_empty());
+        let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
+        let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
+        let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);
 
         Self {
             database_url,
@@ -88,6 +97,9 @@ impl Config {
             notify_proxy_url,
             notify_secret,
             redis_url,
+            max_body_size,
+            notification_cooldown_secs,
+            notification_timeout_secs,
         }
     }
 }
