@@ -102,16 +102,16 @@ cd apps/receiver-rs && cargo clippy     # Rust receiver lint
 
 ### Service Layout
 
-| Service   | Port | Stack                                | Purpose                                              |
-| --------- | ---- | ------------------------------------ | ---------------------------------------------------- |
-| Web app   | 3000 | Next.js 16, React 19, Tailwind v4    | Dashboard, docs, landing page, API routes            |
-| Receiver  | 3001 | Rust (Axum, Tokio, sqlx/Postgres)    | Captures webhooks at `/w/{slug}`                     |
-| Collector | 8099 | AppSignal Collector (Rust binary)    | Receives OTel traces from receiver, host metrics     |
-| Supabase  | —    | Self-hosted Postgres, Auth, Realtime | Database, auth, real-time subscriptions              |
+| Service   | Port | Stack                                | Purpose                                                    |
+| --------- | ---- | ------------------------------------ | ---------------------------------------------------------- |
+| Web app   | 3000 | Next.js 16, React 19, Tailwind v4    | Dashboard, docs, landing page, API routes                  |
+| Receiver  | 3001 | Rust (Axum, Tokio, sqlx/Postgres)    | Captures webhooks at `/w/{slug}`                           |
+| Collector | 8099 | AppSignal Collector (Rust binary)    | Receives OTel traces from receiver, host metrics           |
+| Supabase  | —    | Self-hosted Postgres, Auth, Realtime | Database, auth, real-time subscriptions                    |
 | Notify    | —    | Cloudflare Worker (TypeScript)       | Outbound proxy for notification webhooks (hides origin IP) |
-| CLI       | n/a  | Rust (Clap, Ratatui, Reqwest)        | `whk tunnel`, `whk listen`, device auth              |
-| SDK       | n/a  | TypeScript, tsup                     | `@webhooks-cc/sdk` on npm                            |
-| MCP       | n/a  | TypeScript, tsup                     | `@webhooks-cc/mcp` on npm — MCP server for AI agents |
+| CLI       | n/a  | Rust (Clap, Ratatui, Reqwest)        | `whk tunnel`, `whk listen`, device auth                    |
+| SDK       | n/a  | TypeScript, tsup                     | `@webhooks-cc/sdk` on npm                                  |
+| MCP       | n/a  | TypeScript, tsup                     | `@webhooks-cc/mcp` on npm — MCP server for AI agents       |
 
 ### Directory Structure
 
@@ -186,18 +186,18 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 
 **Receiver env vars:**
 
-| Variable                  | Required | Default | Purpose                                                              |
-| ------------------------- | -------- | ------- | -------------------------------------------------------------------- |
-| `DATABASE_URL`            | yes      |         | Postgres connection string (use session pooler)                      |
-| `CAPTURE_SHARED_SECRET`   | yes      |         | Shared secret (kept for future internal auth)                        |
-| `PORT`                    | no       | 3001    | Listen port                                                          |
-| `RECEIVER_DEBUG`          | no       |         | Enable debug logging                                                 |
-| `RECEIVER_LOG_DIR`        | no       | logs/   | Rolling JSON log file directory                                      |
-| `PG_POOL_MIN`             | no       | 5       | Min Postgres pool connections                                        |
-| `PG_POOL_MAX`             | no       | 20      | Max Postgres pool connections                                        |
-| `APPSIGNAL_COLLECTOR_URL` | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`) |
-| `NOTIFY_PROXY_URL`        | no       |         | Cloudflare Worker URL for outbound notification proxy                |
-| `NOTIFY_SECRET`           | no       |         | Shared secret for authenticating with the notify proxy               |
+| Variable                  | Required | Default | Purpose                                                                            |
+| ------------------------- | -------- | ------- | ---------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | yes      |         | Postgres connection string (use session pooler)                                    |
+| `CAPTURE_SHARED_SECRET`   | yes      |         | Shared secret (kept for future internal auth)                                      |
+| `PORT`                    | no       | 3001    | Listen port                                                                        |
+| `RECEIVER_DEBUG`          | no       |         | Enable debug logging                                                               |
+| `RECEIVER_LOG_DIR`        | no       | logs/   | Rolling JSON log file directory                                                    |
+| `PG_POOL_MIN`             | no       | 5       | Min Postgres pool connections                                                      |
+| `PG_POOL_MAX`             | no       | 20      | Max Postgres pool connections                                                      |
+| `APPSIGNAL_COLLECTOR_URL` | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`)               |
+| `NOTIFY_PROXY_URL`        | no       |         | Cloudflare Worker URL for outbound notification proxy                              |
+| `NOTIFY_SECRET`           | no       |         | Shared secret for authenticating with the notify proxy                             |
 | `REDIS_URL`               | no       |         | Redis connection URL for distributed rate limiting (e.g. `redis://127.0.0.1:6379`) |
 
 ### Notification Proxy (Cloudflare Worker)
