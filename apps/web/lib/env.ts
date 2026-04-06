@@ -28,6 +28,10 @@ const serverEnvSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   RECEIVER_INTERNAL_URL: z.string().url(),
+  ENDPOINT_CREATE_RATE_LIMIT: z.coerce.number().int().min(1).default(30),
+  ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
+  MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
+  EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
 });
 
 /** Validated public env vars (available in both server and client). */
@@ -61,6 +65,10 @@ export function serverEnv() {
       SUPABASE_URL: process.env.SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       RECEIVER_INTERNAL_URL: process.env.RECEIVER_INTERNAL_URL,
+      ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,
+      ENDPOINT_CREATE_RATE_WINDOW_MS: process.env.ENDPOINT_CREATE_RATE_WINDOW_MS,
+      MAX_EPHEMERAL_ENDPOINTS: process.env.MAX_EPHEMERAL_ENDPOINTS,
+      EPHEMERAL_TTL_HOURS: process.env.EPHEMERAL_TTL_HOURS,
     });
   }
   return _serverEnv;
