@@ -5,7 +5,7 @@ import { Mail, Bug, CreditCard, MessageSquare } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "webhooks.cc Support",
+  title: "Support",
   description:
     "Contact support for webhooks.cc issues, including bug reports, billing questions, account access, and general product help.",
   path: "/support",

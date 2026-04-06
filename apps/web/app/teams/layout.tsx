@@ -4,6 +4,9 @@ import { AppHeader } from "@/components/nav/app-header";
 
 export const metadata: Metadata = {
   title: "Teams",
+  description: "Manage your webhook testing teams.",
+  alternates: { canonical: null },
+  openGraph: { title: "Teams", description: "Manage your webhook testing teams." },
   robots: { index: false, follow: false },
 };
 

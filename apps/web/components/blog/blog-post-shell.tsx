@@ -63,6 +63,7 @@ export function BlogPostShell({
 
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
+      {!isDraft && <JsonLd data={blogPostingSchema(post)} />}
       {!isDraft && useHowTo && (
         <JsonLd
           data={howToSchema({
@@ -73,7 +74,6 @@ export function BlogPostShell({
           })}
         />
       )}
-      {!isDraft && !useHowTo && <JsonLd data={blogPostingSchema(post)} />}
       {!isDraft && (
         <JsonLd
           data={breadcrumbSchema([
