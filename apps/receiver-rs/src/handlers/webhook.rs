@@ -117,8 +117,6 @@ const MAX_DELAY_MS: u64 = 30_000;
 /// Maximum body preview length in notification payloads (characters, not bytes).
 const NOTIFICATION_PREVIEW_LEN: usize = 200;
 
-/// Minimum interval between notifications for a single endpoint (rate limit).
-const NOTIFICATION_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Maximum entries in the rate limiter before a full prune is triggered.
 const NOTIFICATION_LIMITER_MAX: usize = 10_000;
@@ -245,6 +243,10 @@ struct NotificationInfo {
     proxy_url: Option<String>,
     /// Shared secret for authenticating with the proxy.
     proxy_secret: Option<String>,
+    /// Minimum interval between notifications for the same endpoint.
+    cooldown: std::time::Duration,
+    /// Overall timeout budget for DNS resolution + HTTP POST.
+    timeout_secs: u64,
 }
 
 /// Fire-and-forget POST to the notification URL with a JSON summary.
@@ -263,7 +265,7 @@ fn spawn_notification(info: NotificationInfo) {
                     .arg("1")
                     .arg("NX")
                     .arg("EX")
-                    .arg(1_u64)
+                    .arg(info.cooldown.as_secs())
                     .query_async::<Option<String>>(&mut conn),
             )
             .await;
@@ -276,7 +278,7 @@ fn spawn_notification(info: NotificationInfo) {
                     let mut map = info.limiter.lock().await;
                     map.insert(info.slug.clone(), now);
                     if map.len() > NOTIFICATION_LIMITER_MAX {
-                        map.retain(|_, last_time| now.duration_since(*last_time) < NOTIFICATION_COOLDOWN);
+                        map.retain(|_, last_time| now.duration_since(*last_time) < info.cooldown);
                     }
                 }
                 Ok(Ok(None)) => return,    // cooldown active, skip
@@ -294,7 +296,7 @@ fn spawn_notification(info: NotificationInfo) {
             let mut map = info.limiter.lock().await;
             let now = std::time::Instant::now();
             if let Some(last) = map.get(&info.slug)
-                && now.duration_since(*last) < NOTIFICATION_COOLDOWN
+                && now.duration_since(*last) < info.cooldown
             {
                 return;
             }
@@ -302,14 +304,16 @@ fn spawn_notification(info: NotificationInfo) {
 
             // Prune stale entries to prevent unbounded memory growth
             if map.len() > NOTIFICATION_LIMITER_MAX {
-                map.retain(|_, last_time| now.duration_since(*last_time) < NOTIFICATION_COOLDOWN);
+                map.retain(|_, last_time| now.duration_since(*last_time) < info.cooldown);
             }
         }
 
-        // Wrap DNS resolution + POST in a single 5s timeout so slow DNS
+        // Wrap DNS resolution + POST in a single timeout so slow DNS
         // can't keep fire-and-forget tasks alive past the budget.
         let slug_ref = info.slug.clone();
-        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let outer_timeout = std::time::Duration::from_secs(info.timeout_secs);
+        let inner_timeout = std::time::Duration::from_secs(info.timeout_secs.saturating_sub(1).max(1));
+        let result = tokio::time::timeout(outer_timeout, async {
             let payload = serde_json::json!({
                 "slug": info.slug,
                 "method": info.method,
@@ -323,7 +327,7 @@ fn spawn_notification(info: NotificationInfo) {
             // otherwise deliver directly with SSRF-safe DNS pinning.
             if let Some(ref proxy_url) = info.proxy_url {
                 let client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(4))
+                    .timeout(inner_timeout)
                     .redirect(reqwest::redirect::Policy::none())
                     .build()
                     .map_err(|_| "failed to build client")?;
@@ -346,7 +350,7 @@ fn spawn_notification(info: NotificationInfo) {
                 let target = resolve_notification_target(&info.url).await?;
 
                 let pinned_client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(4))
+                    .timeout(inner_timeout)
                     .redirect(reqwest::redirect::Policy::none())
                     .resolve_to_addrs(&target.host, &target.addrs)
                     .build()
@@ -544,6 +548,8 @@ async fn handle_webhook_inner(
                             received_at: received_at.to_rfc3339(),
                             proxy_url: state.config.notify_proxy_url.clone(),
                             proxy_secret: state.config.notify_secret.clone(),
+                            cooldown: std::time::Duration::from_secs(state.config.notification_cooldown_secs),
+                            timeout_secs: state.config.notification_timeout_secs,
                         });
                     }
 

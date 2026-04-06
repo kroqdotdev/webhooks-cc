@@ -11,9 +11,7 @@ import {
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
 import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/lib/supabase/teams";
-
-const USER_ENDPOINT_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
-const USER_ENDPOINT_RATE_LIMIT_MAX = 30;
+import { serverEnv } from "@/lib/env";
 
 export async function GET(request: Request) {
   const auth = await authenticateRequest(request);
@@ -60,8 +58,8 @@ export async function POST(request: Request) {
 
   const rateLimit = await checkRateLimitByKeyWithInfo(
     `endpoint-create:${auth.userId}`,
-    USER_ENDPOINT_RATE_LIMIT_MAX,
-    USER_ENDPOINT_RATE_LIMIT_WINDOW_MS
+    serverEnv().ENDPOINT_CREATE_RATE_LIMIT,
+    serverEnv().ENDPOINT_CREATE_RATE_WINDOW_MS
   );
   if (rateLimit.response) {
     return rateLimit.response;

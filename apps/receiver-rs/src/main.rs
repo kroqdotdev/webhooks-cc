@@ -13,8 +13,6 @@ use tower_http::trace::TraceLayer;
 
 use config::Config;
 
-const MAX_BODY_SIZE: usize = 1_024 * 1_024; // 1MB
-
 /// Shared application state passed to all handlers.
 #[derive(Clone)]
 pub struct AppState {
@@ -143,7 +141,7 @@ async fn main() {
                     // 2s timeout — don't block startup if Redis is unreachable
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(2),
-                        client.get_multiplexed_tokio_connection(),
+                        client.get_multiplexed_async_connection(),
                     )
                     .await
                     {
@@ -196,7 +194,7 @@ async fn main() {
             any(handlers::webhook::handle_webhook_no_path),
         )
         .layer(public_cors)
-        .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
+        .layer(RequestBodyLimitLayer::new(config.max_body_size))
         .layer(
             TraceLayer::new_for_http()
                 .on_response(
