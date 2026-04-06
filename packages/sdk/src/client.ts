@@ -1197,7 +1197,7 @@ export class WebhooksCC {
       return fetch(targetUrl, {
         method: captured.method,
         headers,
-        body,
+        body: body as BodyInit | undefined,
         signal: AbortSignal.timeout(this.timeout),
       });
     },
