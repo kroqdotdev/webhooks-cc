@@ -63,6 +63,13 @@ async function main() {
     throw new Error("No URLs found in sitemaps");
   }
 
+  const sitemapPathSet = new Set(sitemapUrls.map((url) => normalizePath(url)));
+  for (const excludedPath of ["/login", "/api-explorer"]) {
+    if (sitemapPathSet.has(excludedPath)) {
+      errors.push(`${excludedPath}: should not appear in public sitemap`);
+    }
+  }
+
   for (const canonicalUrl of sitemapUrls) {
     const path = normalizePath(canonicalUrl);
     const page = await fetchText(`${baseUrl}${path}`);

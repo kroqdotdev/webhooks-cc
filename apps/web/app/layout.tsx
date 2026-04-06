@@ -142,7 +142,7 @@ export default function RootLayout({
             </noscript>
             <MaintenanceBanner />
             <AnnouncementBanner />
-            <div id="main-content" />
+            <div id="main-content" tabIndex={-1} />
             {children}
           </ThemeProvider>
         </PostHogProvider>

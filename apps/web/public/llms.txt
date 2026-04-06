@@ -26,6 +26,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 
 ## Links
 
+- Full reference: https://webhooks.cc/llms-full.txt
 - Homepage: https://webhooks.cc
 - Documentation: https://webhooks.cc/docs
 - Installation: https://webhooks.cc/installation

@@ -37,10 +37,12 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 
 API keys use the `whcc_` prefix. Generate from https://webhooks.cc/account or via `whk auth login`.
 
-All API requests require a Bearer token:
+Protected endpoints require a Bearer token:
 ```
 Authorization: Bearer whcc_...
 ```
+
+Public (unauthenticated) routes: `POST /api/auth/device-code`, `POST /api/auth/device-token`, `POST /api/go/endpoint`.
 
 ---
 

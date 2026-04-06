@@ -22,7 +22,7 @@ export function Steps({ children }: { children: React.ReactNode }) {
 export function Step({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h2 className="font-bold text-lg mb-3 pt-0.5">{title}</h2>
+      <h3 className="font-bold text-lg mb-3 pt-0.5">{title}</h3>
       <div className="[&>p]:mb-3 [&>pre]:my-3">{children}</div>
     </div>
   );

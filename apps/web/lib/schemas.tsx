@@ -1,4 +1,4 @@
-import { SITE_URL } from "./seo";
+import { DEFAULT_OG_IMAGE_PATH, SITE_URL } from "./seo";
 import type { BlogPostData } from "@/components/blog/blog-post-shell";
 
 // --- JsonLd component ---
@@ -145,7 +145,7 @@ export function videoObjectSchema() {
     name: "webhooks.cc Teams Feature Demo",
     description:
       "Demo of team collaboration features: creating a team, inviting members, and sharing webhook endpoints in real time.",
-    thumbnailUrl: `${SITE_URL}/og-image.jpg`,
+    thumbnailUrl: `${SITE_URL}${DEFAULT_OG_IMAGE_PATH}`,
     contentUrl: `${SITE_URL}/video/TeamsFeature.mp4`,
     uploadDate: "2026-03-01",
   };
@@ -173,7 +173,7 @@ export function blogPostingSchema(post: BlogPostData) {
     keywords: [...new Set([...post.keywords, ...post.tags.map((t) => t.toLowerCase())])],
     inLanguage: "en-US",
     isAccessibleForFree: true,
-    image: `${SITE_URL}/og-image.jpg`,
+    image: `${SITE_URL}${DEFAULT_OG_IMAGE_PATH}`,
     author: {
       "@type": "Organization",
       name: post.authorName,
