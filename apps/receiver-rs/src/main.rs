@@ -141,7 +141,7 @@ async fn main() {
                     // 2s timeout — don't block startup if Redis is unreachable
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(2),
-                        client.get_multiplexed_tokio_connection(),
+                        client.get_multiplexed_async_connection(),
                     )
                     .await
                     {
