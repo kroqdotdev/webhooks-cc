@@ -7,17 +7,17 @@ export const metadata = createPageMetadata({
   description:
     "Interactive REST API reference for webhooks.cc. Try endpoints, inspect schemas, and generate code snippets.",
   path: "/api-explorer",
-  keywords: ["webhook api", "webhook rest api", "webhook api reference", "webhooks.cc api"],
+  noIndex: true,
 });
 
 export default function ApiExplorerPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader showBackButton />
-      <div className="flex-1">
+      <main className="flex-1">
         <h1 className="sr-only">API Explorer</h1>
         <ScalarViewer />
-      </div>
+      </main>
     </div>
   );
 }

@@ -30,7 +30,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/compare/smee", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/localtunnel", changeFrequency: "monthly", priority: 0.6 },
   // Blog pages are dynamically generated from Supabase in sitemaps/blog.xml
-  { path: "/api-explorer", changeFrequency: "monthly", priority: 0.7 },
+  // /api-explorer is noindexed — client-only Scalar viewer, /docs/api owns this query
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
   // /login is noindexed — excluded from sitemap intentionally
   { path: "/changelog", changeFrequency: "weekly", priority: 0.5 },

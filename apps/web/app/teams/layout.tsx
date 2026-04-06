@@ -3,6 +3,7 @@ import { RequireAuth } from "@/components/auth/require-auth";
 import { AppHeader } from "@/components/nav/app-header";
 
 export const metadata: Metadata = {
+  title: "Teams",
   robots: { index: false, follow: false },
 };
 

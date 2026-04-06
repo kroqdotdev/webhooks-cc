@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return createPageMetadata({
     title: fm.seo?.ogTitle ?? fm.title,
     description: fm.seo?.ogDescription ?? fm.description,
-    path: `/docs/${slugPath}`,
+    path: slugPath ? `/docs/${slugPath}` : "/docs",
     keywords: fm.keywords,
   });
 }
