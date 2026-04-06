@@ -19,12 +19,17 @@ function count(html, re) {
   return (html.match(re) || []).length;
 }
 
-async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: { "user-agent": "webhooks.cc SEO smoke check" },
-  });
-  const text = await response.text();
-  return { response, text };
+async function fetchText(url, opts = {}) {
+  try {
+    const response = await fetch(url, {
+      headers: { "user-agent": "webhooks.cc SEO smoke check" },
+      ...opts,
+    });
+    const text = await response.text();
+    return { response, text };
+  } catch (err) {
+    throw new Error(`Failed to fetch ${url}: ${err.message}. Is the server running at ${baseUrl}?`);
+  }
 }
 
 async function main() {
@@ -142,10 +147,15 @@ async function main() {
     errors.push("/teams: missing noindex robots meta");
   }
 
-  // Check /sitemap.xml redirects
-  const sitemapXml = await fetchText(`${baseUrl}/sitemap.xml`);
-  if (sitemapXml.response.status !== 301 && sitemapXml.response.redirected !== true) {
-    warnings.push("/sitemap.xml: expected 301 redirect to /sitemap-index.xml");
+  // Check /sitemap.xml redirects (use redirect: manual to observe the 301)
+  const sitemapXml = await fetchText(`${baseUrl}/sitemap.xml`, { redirect: "manual" });
+  if (sitemapXml.response.status !== 301) {
+    warnings.push(`/sitemap.xml: expected 301, got ${sitemapXml.response.status}`);
+  } else {
+    const location = sitemapXml.response.headers.get("location") || "";
+    if (!location.endsWith("/sitemap-index.xml")) {
+      warnings.push(`/sitemap.xml: redirect target is "${location}", expected /sitemap-index.xml`);
+    }
   }
 
   if (warnings.length) {
