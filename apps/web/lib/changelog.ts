@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.17.3";
+export const APP_VERSION = "0.17.4";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.17.4",
+    date: "2026-04-08",
+    title: "SEO & Accessibility Improvements",
+    track: "web",
+    items: [
+      "Custom 404 page, OG image optimization (PNG→JPG), and improved sitemap generation",
+      "Comprehensive structured data (JSON-LD) and meta tag improvements across all pages",
+      "LLMs-full.txt for AI agent discoverability",
+    ],
+  },
   {
     version: "0.17.3",
     date: "2026-04-06",
