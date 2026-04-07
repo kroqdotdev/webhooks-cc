@@ -63,9 +63,10 @@ async function main() {
     throw new Error("No URLs found in sitemaps");
   }
 
-  const sitemapPathSet = new Set(sitemapUrls.map((url) => normalizePath(url)));
+  const stripTrailing = (p) => (p !== "/" && p.endsWith("/") ? p.slice(0, -1) : p);
+  const sitemapPathSet = new Set(sitemapUrls.map((url) => stripTrailing(normalizePath(url))));
   for (const excludedPath of ["/login", "/api-explorer", "/teams"]) {
-    if (sitemapPathSet.has(excludedPath)) {
+    if (sitemapPathSet.has(stripTrailing(excludedPath))) {
       errors.push(`${excludedPath}: should not appear in public sitemap`);
     }
   }
