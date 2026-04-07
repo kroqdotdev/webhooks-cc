@@ -64,7 +64,7 @@ async function main() {
   }
 
   const sitemapPathSet = new Set(sitemapUrls.map((url) => normalizePath(url)));
-  for (const excludedPath of ["/login", "/api-explorer"]) {
+  for (const excludedPath of ["/login", "/api-explorer", "/teams"]) {
     if (sitemapPathSet.has(excludedPath)) {
       errors.push(`${excludedPath}: should not appear in public sitemap`);
     }
