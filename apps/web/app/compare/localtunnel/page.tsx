@@ -53,7 +53,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "LocalTunnel Alternative with Webhook Testing (2026)",
   description:
-    "Need a LocalTunnel alternative with webhook inspection? webhooks.cc captures, stores, and replays requests with SDK assertions and MCP for AI agents. Every feature on both tiers — only Teams requires Pro.",
+    "LocalTunnel alternative with webhook capture, inspection, and replay. Add SDK assertions and MCP for AI agents on top of localhost tunneling.",
   path: "/compare/localtunnel",
   keywords: [
     "localtunnel alternative",

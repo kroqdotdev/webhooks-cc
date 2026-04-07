@@ -52,7 +52,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "ngrok Alternative for Webhook Testing (2026)",
   description:
-    "Need an ngrok alternative for webhook testing? webhooks.cc captures, inspects, and replays webhooks with SDK assertions and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
+    "ngrok alternative built for webhook testing. Capture, inspect, and replay webhooks with SDK assertions, CLI tunnel, and MCP for AI agents.",
   path: "/compare/ngrok",
   keywords: [
     "ngrok alternative",

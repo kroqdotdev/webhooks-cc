@@ -1,6 +1,6 @@
 ---
 title: "How to Test Stripe Webhooks"
-description: "Test Stripe webhook handlers with signed payloads, signature verification, and real event capture — no Stripe CLI needed."
+description: "Test Stripe webhook handlers with signed checkout, invoice, and payment payloads. Verify Stripe signature verification end-to-end — no Stripe CLI dependency needed."
 section: guides
 order: 2
 lastUpdated: 2026-03-10
@@ -13,8 +13,8 @@ keywords:
     "stripe webhook localhost",
   ]
 seo:
-  ogTitle: "How to Test Stripe Webhooks — webhooks.cc"
-  ogDescription: "Step-by-step guide to testing Stripe webhook handlers with real signed payloads and signature verification."
+  ogTitle: "How to Test Stripe Webhooks"
+  ogDescription: "Test Stripe webhook handlers with signed checkout, invoice, and payment payloads. Verify Stripe signature verification end-to-end — no Stripe CLI dependency needed."
 ---
 
 Stripe sends webhooks for payments, subscriptions, invoices, and disputes. Every webhook carries a `stripe-signature` header with an HMAC-SHA256 hash that your handler must verify before processing. If the signature check fails, you reject the request. This means you cannot test your webhook handler with plain HTTP requests -- you need properly signed payloads. webhooks.cc sends Stripe webhooks with valid signatures computed from your webhook secret, captures real Stripe events for replay, and provides templates for common event types.

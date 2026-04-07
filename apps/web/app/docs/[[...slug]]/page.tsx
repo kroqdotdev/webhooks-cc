@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return createPageMetadata({
     title: fm.seo?.ogTitle ?? fm.title,
     description: fm.seo?.ogDescription ?? fm.description,
-    path: `/docs/${slugPath}`,
+    path: slugPath ? `/docs/${slugPath}` : "/docs",
     keywords: fm.keywords,
   });
 }
@@ -103,7 +103,17 @@ export default async function DocsCatchAllPage({ params }: PageProps) {
       {schemaData && <JsonLd data={schemaData} />}
       <article className="max-w-3xl flex-1 min-w-0">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">{fm.title}</h1>
-        <p className="text-lg text-muted-foreground mb-10">{fm.description}</p>
+        <p className="text-lg text-muted-foreground mb-2">{fm.description}</p>
+        {fm.lastUpdated && (
+          <p className="text-xs text-muted-foreground mb-10">
+            Updated{" "}
+            {new Date(fm.lastUpdated).toLocaleDateString("en-US", {
+              month: "short",
+              year: "numeric",
+            })}
+          </p>
+        )}
+        {!fm.lastUpdated && <div className="mb-6" />}
         <div className="docs-content">{mdxContent}</div>
         <PrevNextNav prev={prev} next={next} />
         <DocsCTA />

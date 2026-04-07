@@ -7,7 +7,7 @@ import { BlogPostShell, type BlogPostData } from "@/components/blog/blog-post-sh
 import { extractHowToSteps } from "@/lib/mdx-schema-extract";
 import { getPublishedBlogPostBySlug, listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 interface PageProps {
   params: Promise<{ slug: string }>;

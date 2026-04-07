@@ -65,6 +65,8 @@ deploy-web:
 	pnpm build
 	@echo "Restarting web server..."
 	@systemctl --user restart webhooks-web
+	@echo "Submitting URLs to IndexNow..."
+	-pnpm --filter web indexnow
 	@echo "Web deployed."
 
 deploy-collector:

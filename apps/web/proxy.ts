@@ -19,8 +19,8 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
 }
 
 function shouldNoIndexPath(pathname: string): boolean {
-  if (pathname === "/login") return true;
-  const privatePrefixes = ["/dashboard", "/account", "/endpoints", "/api", "/cli/verify"];
+  if (pathname === "/login" || pathname === "/api-explorer") return true;
+  const privatePrefixes = ["/dashboard", "/account", "/endpoints", "/api", "/cli/verify", "/teams"];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 

@@ -77,10 +77,14 @@ jobs:
       - name: Build
         run: pnpm build
         env:
-          NEXT_PUBLIC_WEBHOOK_URL: https://placeholder.example.com
-          NEXT_PUBLIC_APP_URL: https://placeholder.example.com
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_WEBHOOK_URL: ${{ vars.NEXT_PUBLIC_WEBHOOK_URL }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RECEIVER_INTERNAL_URL: ${{ vars.RECEIVER_INTERNAL_URL }}
+          CAPTURE_SHARED_SECRET: ${{ secrets.CAPTURE_SHARED_SECRET }}
 
   build-cli:
     name: Build Rust CLI

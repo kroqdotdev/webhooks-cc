@@ -4,6 +4,7 @@
 /* Offset anchor scroll targets so they clear the fixed navbar */
 html {
   scroll-padding-top: 6rem;
+  overflow-x: clip;
   --ann-h: 0px; /* set dynamically by announcement banner */
 }
 

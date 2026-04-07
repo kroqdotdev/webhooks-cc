@@ -1,4 +1,4 @@
-import { SITE_URL } from "./seo";
+import { DEFAULT_OG_IMAGE_PATH, SITE_URL } from "./seo";
 import type { BlogPostData } from "@/components/blog/blog-post-shell";
 
 // --- JsonLd component ---
@@ -136,6 +136,21 @@ export function breadcrumbSchema(items: BreadcrumbItem[]) {
   };
 }
 
+// --- VideoObject ---
+
+export function videoObjectSchema() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "VideoObject",
+    name: "webhooks.cc Teams Feature Demo",
+    description:
+      "Demo of team collaboration features: creating a team, inviting members, and sharing webhook endpoints in real time.",
+    thumbnailUrl: `${SITE_URL}${DEFAULT_OG_IMAGE_PATH}`,
+    contentUrl: `${SITE_URL}/video/TeamsFeature.mp4`,
+    uploadDate: "2026-03-01",
+  };
+}
+
 // --- BlogPosting ---
 
 export function blogPostingSchema(post: BlogPostData) {
@@ -148,7 +163,7 @@ export function blogPostingSchema(post: BlogPostData) {
   return {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    headline: post.seoTitle || post.title,
+    headline: (post.seoTitle || post.title).replace(/ \| webhooks\.cc$/i, ""),
     description: post.seoDescription || post.description,
     url,
     mainEntityOfPage: url,
@@ -158,7 +173,7 @@ export function blogPostingSchema(post: BlogPostData) {
     keywords: [...new Set([...post.keywords, ...post.tags.map((t) => t.toLowerCase())])],
     inLanguage: "en-US",
     isAccessibleForFree: true,
-    image: `${SITE_URL}/og-image.png`,
+    image: `${SITE_URL}${DEFAULT_OG_IMAGE_PATH}`,
     author: {
       "@type": "Organization",
       name: post.authorName,

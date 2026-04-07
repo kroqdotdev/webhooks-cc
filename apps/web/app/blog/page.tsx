@@ -4,10 +4,10 @@ import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 export const metadata = createPageMetadata({
-  title: "webhooks.cc Blog",
+  title: "Webhook Engineering Blog",
   description:
     "Practical webhook guides for local development, CI assertions, provider signature verification, and AI-assisted debugging workflows.",
   path: "/blog",
@@ -28,6 +28,12 @@ export default async function BlogIndexPage() {
   if (posts.length === 0) {
     return (
       <main className="min-h-screen pt-28 pb-20 px-4">
+        <JsonLd
+          data={breadcrumbSchema([
+            { name: "Home", path: "/" },
+            { name: "Blog", path: "/blog" },
+          ])}
+        />
         <div className="max-w-6xl mx-auto text-center">
           <h1 className="text-4xl font-bold mb-4">Blog</h1>
           <p className="text-muted-foreground">No posts yet. Check back soon.</p>

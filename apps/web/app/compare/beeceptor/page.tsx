@@ -51,7 +51,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Beeceptor Alternative for Webhook Testing (2026)",
   description:
-    "Comparing Beeceptor alternatives? webhooks.cc focuses on webhook testing with inspection, replay, a TypeScript SDK for CI, and an MCP server for AI agents. Every feature on both tiers — only Teams requires Pro.",
+    "Beeceptor alternative focused on webhook testing. Inspect, replay, and assert on payloads with a TypeScript SDK, CLI tunnel, and MCP server.",
   path: "/compare/beeceptor",
   keywords: [
     "beeceptor alternative",

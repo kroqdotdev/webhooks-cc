@@ -1,20 +1,23 @@
-import type { Metadata } from "next";
+import { createPageMetadata } from "@/lib/seo";
 import { AppHeader } from "@/components/nav/app-header";
 import { ScalarViewer } from "@/components/docs/scalar-viewer";
 
-export const metadata: Metadata = {
-  title: "API Explorer — webhooks.cc",
+export const metadata = createPageMetadata({
+  title: "API Explorer",
   description:
-    "Interactive API reference for the webhooks.cc REST API. Try endpoints, inspect schemas, and generate code snippets.",
-};
+    "Interactive REST API reference for webhooks.cc. Try endpoints, inspect schemas, and generate code snippets.",
+  path: "/api-explorer",
+  noIndex: true,
+});
 
 export default function ApiExplorerPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader showBackButton />
-      <div className="flex-1">
+      <main className="flex-1">
+        <h1 className="sr-only">API Explorer</h1>
         <ScalarViewer />
-      </div>
+      </main>
     </div>
   );
 }

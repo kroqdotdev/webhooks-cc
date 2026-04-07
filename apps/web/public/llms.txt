@@ -6,7 +6,7 @@
 
 webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses, forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
-The Rust receiver handles 86,000+ requests per second with sub-millisecond capture latency. All state is buffered in Redis and flushed to Convex for real-time dashboard updates.
+Requests are captured by a Rust receiver, written directly to Postgres via a single stored procedure, and surfaced in the dashboard through Supabase Realtime.
 
 ## Core capabilities
 
@@ -15,7 +15,7 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 - CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>` — no port forwarding or ngrok needed
 - TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming
 - MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf)
-- Real-time streaming: Dashboard updates via Convex reactive queries, CLI via Server-Sent Events
+- Real-time streaming: Dashboard updates via Supabase Realtime (postgres_changes), CLI via Server-Sent Events
 - Request replay: Resend captured requests to any URL
 - Provider detection: Built-in helpers for Stripe, GitHub, Shopify, Slack, Twilio, Paddle, and Linear webhooks
 
@@ -26,6 +26,7 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 
 ## Links
 
+- Full reference: https://webhooks.cc/llms-full.txt
 - Homepage: https://webhooks.cc
 - Documentation: https://webhooks.cc/docs
 - Installation: https://webhooks.cc/installation
@@ -42,14 +43,14 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 
 ## API key format
 
-All API keys use the prefix `whcc_`. Keys are generated from the account page at https://webhooks.cc/account or via the CLI with `whk auth login`.
+All API keys use the prefix `whcc_`. Keys are generated via the CLI with `whk auth login` or from the account page after signing in. See https://webhooks.cc/docs for setup instructions.
 
 ## Webhook endpoint URL format
 
 https://go.webhooks.cc/w/<slug>
 https://go.webhooks.cc/w/<slug>/optional/path
 
-Any HTTP method, content type, and body up to 100KB is accepted.
+Any HTTP method, content type, and body up to 1 MB is accepted.
 
 ## CLI commands
 

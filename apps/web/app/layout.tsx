@@ -116,6 +116,12 @@ export default function RootLayout({
         <JsonLd data={organizationSchema()} />
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}>
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-background focus:border-2 focus:border-foreground focus:px-4 focus:py-2 focus:font-bold"
+        >
+          Skip to content
+        </a>
         <PostHogProvider>
           <ThemeProvider>
             <noscript>
@@ -136,6 +142,7 @@ export default function RootLayout({
             </noscript>
             <MaintenanceBanner />
             <AnnouncementBanner />
+            <div id="main-content" tabIndex={-1} />
             {children}
           </ThemeProvider>
         </PostHogProvider>

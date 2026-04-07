@@ -1,6 +1,6 @@
 ---
 title: "How to Test Webhooks Locally"
-description: "Send real webhook payloads to your localhost development server. Capture, inspect, and replay webhooks without deploying."
+description: "Send real webhook payloads from Stripe, GitHub, and Shopify to your localhost development server. Capture, inspect, replay, and debug webhooks without deploying."
 section: guides
 order: 1
 lastUpdated: 2026-03-10
@@ -8,8 +8,8 @@ schema: howto
 keywords:
   ["test webhooks locally", "localhost webhook testing", "webhook development", "webhook debugging"]
 seo:
-  ogTitle: "How to Test Webhooks Locally — webhooks.cc"
-  ogDescription: "Step-by-step guide to testing webhooks on localhost with capture, inspection, and replay."
+  ogTitle: "How to Test Webhooks Locally"
+  ogDescription: "Send real webhook payloads from Stripe, GitHub, and Shopify to your localhost development server. Capture, inspect, replay, and debug webhooks without deploying."
 ---
 
 Testing webhooks during development is hard. External services cannot reach localhost, signatures break when you proxy through generic tunneling tools, and real webhook events fire at unpredictable times with unpredictable payloads. webhooks.cc gives you three approaches that solve different parts of the problem: capture and replay real webhooks, send signed payloads directly to localhost, or tunnel live webhooks to your local server in real-time.

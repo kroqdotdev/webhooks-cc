@@ -10,11 +10,11 @@ export function FloatingNavbar({ children }: FloatingNavbarProps) {
   const baseTop = getMaintenanceTopOffset();
 
   return (
-    <nav
+    <header
       className="fixed left-4 right-4 z-50"
       style={{ top: `calc(${baseTop} + var(--ann-h, 0px))` }}
     >
-      <div className="max-w-6xl mx-auto border-2 border-foreground bg-background shadow-neo relative">
+      <nav className="max-w-6xl mx-auto border-2 border-foreground bg-background shadow-neo relative">
         <div className="px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="font-bold text-xl tracking-tight">
@@ -24,7 +24,7 @@ export function FloatingNavbar({ children }: FloatingNavbarProps) {
           </div>
           <AuthNav />
         </div>
-      </div>
-    </nav>
+      </nav>
+    </header>
   );
 }
