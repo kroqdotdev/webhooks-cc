@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.17.2";
+export const APP_VERSION = "0.17.3";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.17.3",
+    date: "2026-04-06",
+    title: "Configurable Limits & Security Hardening",
+    track: "web",
+    items: [
+      "Endpoint creation rate limits, ephemeral caps, and receiver body size now configurable via env vars",
+      "Stored XSS regression test suite for endpoint names, mock responses, and request data",
+    ],
+  },
   {
     version: "0.17.2",
     date: "2026-04-06",
