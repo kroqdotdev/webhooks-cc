@@ -7,6 +7,7 @@ import {
   parseJsonBody,
   validateNotificationUrl,
   validateMockResponseField,
+  validateResponseRules,
 } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
@@ -92,6 +93,9 @@ export async function POST(request: Request) {
   const notifCheck = validateNotificationUrl(body.notificationUrl);
   if (!notifCheck.valid) return notifCheck.response;
 
+  const rulesCheck = validateResponseRules(body.responseRules);
+  if (!rulesCheck.valid) return rulesCheck.response;
+
   const isEphemeral = body.isEphemeral === true || expiresAt !== undefined;
 
   try {
@@ -104,6 +108,10 @@ export async function POST(request: Request) {
         body.mockResponse === undefined
           ? undefined
           : (body.mockResponse as Record<string, unknown>),
+      responseRules:
+        body.responseRules === undefined
+          ? undefined
+          : (body.responseRules as unknown[]),
       notificationUrl:
         typeof body.notificationUrl === "string" && body.notificationUrl.length > 0
           ? body.notificationUrl

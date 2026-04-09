@@ -49,10 +49,13 @@ export {
 } from "./templates";
 export {
   validateMockResponse,
+  validateResponseRules,
   MOCK_RESPONSE_STATUS_MIN,
   MOCK_RESPONSE_STATUS_MAX,
   MOCK_RESPONSE_DELAY_MIN,
   MOCK_RESPONSE_DELAY_MAX,
+  MAX_RESPONSE_RULES,
+  MAX_CONDITIONS_PER_RULE,
 } from "./validation";
 export { WebhookFlowBuilder } from "./flow";
 export {
@@ -90,6 +93,8 @@ export type {
   Endpoint,
   TeamShare,
   MockResponse,
+  ResponseRule,
+  ResponseRuleCondition,
   Request,
   SearchResult,
   UsageInfo,

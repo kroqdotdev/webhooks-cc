@@ -7,7 +7,19 @@ import {
   MOCK_RESPONSE_STATUS_MAX,
   MOCK_RESPONSE_DELAY_MIN,
   MOCK_RESPONSE_DELAY_MAX,
+  MAX_RESPONSE_RULES,
+  MAX_CONDITIONS_PER_RULE,
 } from "@webhooks-cc/sdk";
+
+const VALID_RULE_FIELDS = new Set([
+  "method",
+  "path",
+  "header",
+  "body_contains",
+  "body_path",
+  "query",
+]);
+const VALID_RULE_OPS = new Set(["eq", "contains", "starts_with", "matches", "exists"]);
 
 /**
  * Validate a notificationUrl field from a request body.
@@ -141,6 +153,98 @@ export function validateMockResponseField(
     };
   }
 
+  return { valid: true };
+}
+
+/**
+ * Validate a responseRules field from a request body.
+ * Accepts undefined/null (skip) or a valid array of rule objects.
+ */
+export function validateResponseRules(
+  value: unknown
+): { valid: true } | { valid: false; response: Response } {
+  if (value === undefined || value === null) return { valid: true };
+  if (!Array.isArray(value)) {
+    return {
+      valid: false,
+      response: Response.json({ error: "responseRules must be an array" }, { status: 400 }),
+    };
+  }
+  if (value.length > MAX_RESPONSE_RULES) {
+    return {
+      valid: false,
+      response: Response.json(
+        { error: `responseRules: max ${MAX_RESPONSE_RULES} rules` },
+        { status: 400 }
+      ),
+    };
+  }
+  for (let i = 0; i < value.length; i++) {
+    const rule = value[i] as Record<string, unknown>;
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
+      return {
+        valid: false,
+        response: Response.json(
+          { error: `responseRules[${i}]: must be an object` },
+          { status: 400 }
+        ),
+      };
+    }
+    const conditions = rule.conditions;
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      return {
+        valid: false,
+        response: Response.json(
+          { error: `responseRules[${i}]: conditions must be a non-empty array` },
+          { status: 400 }
+        ),
+      };
+    }
+    if (conditions.length > MAX_CONDITIONS_PER_RULE) {
+      return {
+        valid: false,
+        response: Response.json(
+          { error: `responseRules[${i}]: max ${MAX_CONDITIONS_PER_RULE} conditions` },
+          { status: 400 }
+        ),
+      };
+    }
+    for (let j = 0; j < conditions.length; j++) {
+      const c = conditions[j] as Record<string, unknown>;
+      if (!c || typeof c !== "object") {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: must be an object` },
+            { status: 400 }
+          ),
+        };
+      }
+      if (!VALID_RULE_FIELDS.has(c.field as string)) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: invalid field` },
+            { status: 400 }
+          ),
+        };
+      }
+      if (!VALID_RULE_OPS.has(c.op as string)) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: invalid op` },
+            { status: 400 }
+          ),
+        };
+      }
+    }
+    // Validate the rule's response using the existing mock response validator
+    if (rule.response !== undefined) {
+      const mockCheck = validateMockResponseField(rule.response);
+      if (!mockCheck.valid) return mockCheck;
+    }
+  }
   return { valid: true };
 }
 

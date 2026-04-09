@@ -53,7 +53,7 @@ import { parseSSE } from "./sse";
 import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "./templates";
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
-import { validateMockResponse } from "./validation";
+import { validateMockResponse, validateResponseRules } from "./validation";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
@@ -745,6 +745,9 @@ export class WebhooksCC {
       if (options.mockResponse) {
         validateMockResponse(options.mockResponse, "mock response");
       }
+      if (options.responseRules) {
+        validateResponseRules(options.responseRules);
+      }
 
       const body: Record<string, unknown> = {};
       if (options.name !== undefined) {
@@ -755,6 +758,9 @@ export class WebhooksCC {
       }
       if (options.notificationUrl !== undefined) {
         body.notificationUrl = options.notificationUrl;
+      }
+      if (options.responseRules !== undefined) {
+        body.responseRules = options.responseRules;
       }
 
       const isEphemeral = options.ephemeral === true || options.expiresIn !== undefined;
@@ -789,6 +795,9 @@ export class WebhooksCC {
       validatePathSegment(slug, "slug");
       if (options.mockResponse && options.mockResponse !== null) {
         validateMockResponse(options.mockResponse, "mock response");
+      }
+      if (options.responseRules && options.responseRules !== null) {
+        validateResponseRules(options.responseRules);
       }
       return this.request<Endpoint>("PATCH", `/endpoints/${slug}`, options);
     },
