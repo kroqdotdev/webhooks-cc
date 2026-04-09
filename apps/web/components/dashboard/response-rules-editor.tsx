@@ -52,6 +52,25 @@ const OPS_BY_FIELD: Record<string, { value: string; label: string }[]> = {
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
+/** Suggested response bodies by status code, matching the main mock response editor. */
+const SUGGESTED_BODIES: Record<string, string> = {
+  "200": '{"status": "ok"}',
+  "201": '{"id": "abc-123", "created": true}',
+  "202": '{"accepted": true, "message": "Processing"}',
+  "204": "",
+  "400": '{"error": "bad_request", "message": "Invalid input"}',
+  "401": '{"error": "unauthorized"}',
+  "403": '{"error": "forbidden"}',
+  "404": '{"error": "not_found"}',
+  "409": '{"error": "conflict", "message": "Resource already exists"}',
+  "422": '{"error": "unprocessable_entity", "message": "Validation failed"}',
+  "429": '{"error": "too_many_requests", "retry_after": 60}',
+  "500": '{"error": "internal_server_error"}',
+  "502": '{"error": "bad_gateway"}',
+  "503": '{"error": "service_unavailable"}',
+};
+const SUGGESTED_BODY_VALUES = new Set(Object.values(SUGGESTED_BODIES).filter(Boolean));
+
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -344,12 +363,16 @@ function RuleCard({
               <StatusCodePicker
                 id={`rule-${rule.id}-status`}
                 value={rule.response.status.toString()}
-                onChange={(code) =>
+                onChange={(code) => {
+                  const body =
+                    !rule.response.body || SUGGESTED_BODY_VALUES.has(rule.response.body)
+                      ? (SUGGESTED_BODIES[code] ?? "")
+                      : rule.response.body;
                   onChange({
                     ...rule,
-                    response: { ...rule.response, status: parseInt(code, 10) },
-                  })
-                }
+                    response: { ...rule.response, status: parseInt(code, 10), body },
+                  });
+                }}
               />
             </div>
             <Textarea
