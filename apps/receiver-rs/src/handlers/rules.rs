@@ -284,6 +284,7 @@ const MAX_GLOB_PATTERN_LEN: usize = 500;
 /// Supports `*` (any characters except `/`) and `**` (any characters including `/`).
 fn glob_match(pattern: &str, input: &str) -> bool {
     if pattern.len() > MAX_GLOB_PATTERN_LEN {
+        tracing::warn!(len = pattern.len(), max = MAX_GLOB_PATTERN_LEN, "glob pattern exceeds max length, skipping");
         return false;
     }
     let regex_str = glob_to_regex(pattern);

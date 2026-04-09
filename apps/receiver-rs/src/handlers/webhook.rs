@@ -563,7 +563,7 @@ async fn handle_webhook_inner(
                         .response_rules
                         .and_then(|v| {
                             serde_json::from_value(v).map_err(|e| {
-                                tracing::warn!(slug, error = %e, "failed to parse response_rules");
+                                tracing::error!(slug, error = %e, "failed to parse response_rules — rules ignored, falling back to default mock");
                                 e
                             }).ok()
                         });

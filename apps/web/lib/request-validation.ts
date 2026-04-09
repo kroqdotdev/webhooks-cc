@@ -308,6 +308,50 @@ export function validateResponseRules(
           ),
         };
       }
+      // Require value for non-exists ops
+      if (
+        c.op !== "exists" &&
+        (c.value === undefined || c.value === null || typeof c.value !== "string")
+      ) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: value required when op is "${c.op}"` },
+            { status: 400 }
+          ),
+        };
+      }
+      // Validate op/field compatibility
+      const validOpsForField: Record<string, Set<string>> = {
+        method: new Set(["eq"]),
+        path: new Set(["eq", "contains", "starts_with", "matches"]),
+        header: new Set(["exists", "eq", "contains"]),
+        body_contains: new Set(["contains"]),
+        body_path: new Set(["exists", "eq", "contains"]),
+        query: new Set(["exists", "eq"]),
+      };
+      const fieldOps = validOpsForField[c.field as string];
+      if (fieldOps && !fieldOps.has(c.op as string)) {
+        return {
+          valid: false,
+          response: Response.json(
+            {
+              error: `responseRules[${i}].conditions[${j}]: op "${c.op}" not valid for field "${c.field}"`,
+            },
+            { status: 400 }
+          ),
+        };
+      }
+      // Enforce glob pattern max length at API level
+      if (c.op === "matches" && typeof c.value === "string" && c.value.length > 500) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: matches pattern too long (max 500)` },
+            { status: 400 }
+          ),
+        };
+      }
     }
     // Validate the rule's response (required)
     if (rule.response === undefined || rule.response === null || typeof rule.response !== "object") {
