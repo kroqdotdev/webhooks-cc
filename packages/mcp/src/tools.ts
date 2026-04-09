@@ -7,6 +7,11 @@ import {
   MOCK_RESPONSE_DELAY_MIN,
   MOCK_RESPONSE_STATUS_MAX,
   MOCK_RESPONSE_STATUS_MIN,
+  MAX_CONDITION_VALUE_LEN,
+  MAX_CONDITION_NAME_LEN,
+  MAX_CONDITION_PATH_LEN,
+  MAX_RULE_NAME_LEN,
+  MAX_GLOB_PATTERN_LEN,
   NotFoundError,
   RateLimitError,
   TEMPLATE_PROVIDERS,
@@ -47,19 +52,28 @@ const ruleConditionSchema = z.object({
   op: z
     .enum(["eq", "contains", "starts_with", "matches", "exists"])
     .describe("Comparison operator"),
-  value: z.string().optional().describe("Value to compare against (not required for exists)"),
-  name: z
-    .string()
-    .optional()
-    .describe("Header name or query param name (required for header/query)"),
-  path: z
-    .string()
-    .optional()
-    .describe("JSON dot-notation path (required for body_path)"),
-});
+  value: z.string().max(MAX_CONDITION_VALUE_LEN).optional()
+    .describe(`Value to compare against (required unless op is "exists", max ${MAX_CONDITION_VALUE_LEN} chars)`),
+  name: z.string().max(MAX_CONDITION_NAME_LEN).optional()
+    .describe(`Header name or query param name (required for header/query, max ${MAX_CONDITION_NAME_LEN} chars)`),
+  path: z.string().max(MAX_CONDITION_PATH_LEN).optional()
+    .describe(`JSON dot-notation path (required for body_path, max ${MAX_CONDITION_PATH_LEN} chars)`),
+}).refine(
+  (c) => c.op === "exists" || (c.value !== undefined && c.value.length > 0),
+  { message: "value is required when op is not \"exists\"" }
+).refine(
+  (c) => !(c.field === "header" || c.field === "query") || (c.name !== undefined && c.name.length > 0),
+  { message: "name is required for header and query conditions" }
+).refine(
+  (c) => c.field !== "body_path" || (c.path !== undefined && c.path.length > 0),
+  { message: "path is required for body_path conditions" }
+).refine(
+  (c) => c.op !== "matches" || !c.value || c.value.length <= MAX_GLOB_PATTERN_LEN,
+  { message: `matches pattern must be ${MAX_GLOB_PATTERN_LEN} chars or less` }
+);
 
 const responseRuleSchema = z.object({
-  name: z.string().optional().describe("Human-readable rule name"),
+  name: z.string().max(MAX_RULE_NAME_LEN).optional().describe(`Human-readable rule name (max ${MAX_RULE_NAME_LEN} chars)`),
   enabled: z.boolean().optional().default(true).describe("Whether this rule is active"),
   logic: z
     .enum(["and", "or"])

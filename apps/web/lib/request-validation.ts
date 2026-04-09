@@ -397,7 +397,8 @@ export async function parseJsonBody(
   let buffer: ArrayBuffer;
   try {
     buffer = await request.arrayBuffer();
-  } catch {
+  } catch (err) {
+    console.error("Failed to read request body:", err);
     return {
       error: Response.json({ error: "Failed to read request body" }, { status: 400 }),
     };
@@ -418,7 +419,8 @@ export async function parseJsonBody(
   let data: unknown;
   try {
     data = JSON.parse(text);
-  } catch {
+  } catch (err) {
+    console.error("Failed to parse JSON body:", err);
     return {
       error: Response.json({ error: "Invalid JSON" }, { status: 400 }),
     };
