@@ -797,10 +797,10 @@ export class WebhooksCC {
 
     update: async (slug: string, options: UpdateEndpointOptions): Promise<Endpoint> => {
       validatePathSegment(slug, "slug");
-      if (options.mockResponse && options.mockResponse !== null) {
+      if (options.mockResponse != null) {
         validateMockResponse(options.mockResponse, "mock response");
       }
-      if (options.responseRules && options.responseRules !== null) {
+      if (options.responseRules != null) {
         validateResponseRules(options.responseRules);
       }
       return this.request<Endpoint>("PATCH", `/endpoints/${slug}`, options);
