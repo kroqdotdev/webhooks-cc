@@ -1175,6 +1175,11 @@ components:
           description: Full webhook URL (e.g. https://go.webhooks.cc/w/{slug})
         mockResponse:
           $ref: "#/components/schemas/MockResponse"
+        responseRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResponseRule"
+          description: Ordered conditional response rules. First matching rule wins, then falls back to mockResponse.
         notificationUrl:
           type: string
           format: uri
@@ -1219,6 +1224,62 @@ components:
           maximum: 30000
           description: Response delay in milliseconds
 
+    ResponseRuleCondition:
+      type: object
+      required: [field, op]
+      properties:
+        field:
+          type: string
+          enum: [method, path, header, body_contains, body_path, query]
+          description: Request field to match against
+        op:
+          type: string
+          enum: [eq, contains, starts_with, matches, exists]
+          description: Comparison operator
+        value:
+          type: string
+          maxLength: 4096
+          description: Value to compare against (required unless op is "exists")
+        name:
+          type: string
+          maxLength: 256
+          description: Header name or query param name (required for header/query conditions)
+        path:
+          type: string
+          maxLength: 256
+          description: JSON dot-notation path (required for body_path conditions)
+
+    ResponseRule:
+      type: object
+      required: [conditions, response]
+      properties:
+        id:
+          type: string
+          description: Stable identifier for UI reference
+        name:
+          type: string
+          maxLength: 200
+          description: Human-readable rule name
+        enabled:
+          type: boolean
+          default: true
+          description: Whether this rule is active
+        logic:
+          type: string
+          enum: [and, or]
+          default: and
+          description: How to combine conditions ("and" = all must match, "or" = any must match)
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResponseRuleCondition"
+          minItems: 1
+          maxItems: 10
+          description: Conditions to evaluate (1-10)
+        response:
+          $ref: "#/components/schemas/MockResponse"
+          description: Response to return when conditions match
+
     CreateEndpointRequest:
       type: object
       properties:
@@ -1234,6 +1295,12 @@ components:
           description: Unix timestamp (ms) for expiry (implies ephemeral)
         mockResponse:
           $ref: "#/components/schemas/MockResponse"
+        responseRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResponseRule"
+          maxItems: 50
+          description: Ordered conditional response rules (first match wins, max 50)
         notificationUrl:
           type: string
           format: uri
@@ -1251,7 +1318,15 @@ components:
           oneOf:
             - $ref: "#/components/schemas/MockResponse"
             - type: "null"
-          description: Mock response config, or null to clear
+          description: Default mock response (used when no rule matches), or null to clear
+        responseRules:
+          oneOf:
+            - type: array
+              items:
+                $ref: "#/components/schemas/ResponseRule"
+              maxItems: 50
+            - type: "null"
+          description: Conditional response rules, or null to clear
         notificationUrl:
           oneOf:
             - type: string
