@@ -24,6 +24,7 @@ import {
   Settings,
   Users,
   Code2,
+  ListOrdered,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -270,18 +271,71 @@ const SECTIONS: Section[] = [
     content: (
       <div className="space-y-3">
         <p>Configure how your endpoint responds to incoming webhooks.</p>
-        <ul className="space-y-1 text-sm">
+        <ul className="space-y-1.5 text-sm">
           <li>
             Click the <Settings className="inline h-3 w-3" /> gear icon in the URL bar
           </li>
           <li>
-            <strong>Mock response</strong> — set a custom status code, headers, and body to return
+            <strong>Response rules</strong> — define conditional responses based on method, path,
+            headers, or body content (see next section)
+          </li>
+          <li>
+            <strong>Default mock response</strong> — set a status code, headers, body, and delay
+            returned when no rule matches
+          </li>
+          <li>
+            <strong>Notification webhook</strong> — POST a JSON summary to Slack, Discord, or any
+            URL when a request arrives
+          </li>
+          <li>
+            <strong>Team sharing</strong> — share the endpoint with your teams (Pro)
           </li>
           <li>
             <strong>Rename</strong> your endpoint for easier identification
           </li>
           <li>Changes take effect immediately (no caching layer)</li>
         </ul>
+      </div>
+    ),
+  },
+  {
+    id: "response-rules",
+    title: "Response Rules",
+    icon: <ListOrdered className="h-3.5 w-3.5" />,
+    content: (
+      <div className="space-y-3">
+        <p>
+          Return different responses based on the incoming request. Define rules with conditions and
+          responses — first matching rule wins, then falls back to the default mock.
+        </p>
+        <ul className="space-y-1.5 text-sm">
+          <li>
+            Open endpoint settings and click <strong>Add Rule</strong>
+          </li>
+          <li>
+            Each rule has <strong>conditions</strong> (method, path, header, body content, JSON
+            path, query param) and a <strong>response</strong> (status + body)
+          </li>
+          <li>
+            Choose <strong>ALL (AND)</strong> or <strong>ANY (OR)</strong> logic for combining
+            conditions
+          </li>
+          <li>
+            <strong>Reorder</strong> rules with the arrow buttons — rules are evaluated top to
+            bottom, first match wins
+          </li>
+          <li>
+            <strong>Disable</strong> a rule temporarily with the checkbox toggle
+          </li>
+          <li>
+            The <strong>Default Response</strong> section below rules is returned when no rule
+            matches
+          </li>
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          Example: Route Stripe webhooks to a 201 response and GitHub webhooks to a 200 response,
+          with a 500 fallback for anything else — all from one endpoint.
+        </p>
       </div>
     ),
   },
@@ -380,10 +434,10 @@ export function DashboardGuideDialog() {
           Guide
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl h-[520px] max-h-[80vh] p-0 overflow-hidden">
+      <DialogContent className="max-w-4xl h-[640px] max-h-[85vh] p-0 overflow-hidden">
         <div className="flex h-full">
           {/* Sidebar */}
-          <nav className="w-48 shrink-0 border-r-2 border-foreground overflow-y-auto py-4">
+          <nav className="w-52 shrink-0 border-r-2 border-foreground overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
               <DialogTitle className="text-sm uppercase tracking-wide">Dashboard Guide</DialogTitle>
             </DialogHeader>
