@@ -570,6 +570,8 @@ export class WebhooksCC {
             ephemeral: "boolean?",
             expiresIn: "number|string?",
             mockResponse: "object?",
+            responseRules:
+              "ResponseRule[]? — ordered conditional rules (first match wins, max 50). Each rule has conditions (field/op/value) and a response.",
             notificationUrl: "string?",
           },
         },
@@ -586,7 +588,9 @@ export class WebhooksCC {
           params: {
             slug: "string",
             name: "string?",
-            mockResponse: "object?",
+            mockResponse: "object? — default response when no rule matches",
+            responseRules:
+              "ResponseRule[]|null? — conditional rules (first match wins), or null to clear",
             notificationUrl: "string?",
           },
         },

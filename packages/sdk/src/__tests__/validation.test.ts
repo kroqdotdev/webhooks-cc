@@ -89,6 +89,26 @@ describe("validateResponseRules", () => {
     ).toThrow('invalid op "regex"');
   });
 
+  it("rejects invalid op for field (method + contains)", () => {
+    expect(() =>
+      validateResponseRules([
+        makeRule({
+          conditions: [{ field: "method", op: "contains", value: "POST" }],
+        }),
+      ])
+    ).toThrow('op "contains" is not valid for field "method"');
+  });
+
+  it("rejects invalid op for field (query + matches)", () => {
+    expect(() =>
+      validateResponseRules([
+        makeRule({
+          conditions: [{ field: "query", op: "matches" as never, name: "q", value: "*" }],
+        }),
+      ])
+    ).toThrow('op "matches" is not valid for field "query"');
+  });
+
   it("rejects invalid logic value", () => {
     expect(() => validateResponseRules([makeRule({ logic: "xor" as never })])).toThrow("logic");
   });

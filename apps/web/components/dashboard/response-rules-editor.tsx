@@ -67,8 +67,15 @@ function generateId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function newCondition(): ResponseRuleCondition {
-  return { field: "method", op: "eq", value: "POST" };
+/** Condition with a stable React key (not persisted to the API). */
+type KeyedCondition = ResponseRuleCondition & { _key: string };
+
+function ensureKey(c: ResponseRuleCondition): KeyedCondition {
+  return "_key" in c ? (c as KeyedCondition) : { ...c, _key: generateId() };
+}
+
+function newCondition(): KeyedCondition {
+  return { field: "method", op: "eq", value: "POST", _key: generateId() };
 }
 
 function newRule(): ResponseRule {
@@ -225,18 +232,21 @@ function RuleCard({
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
+  // Ensure all conditions have stable keys for React
+  const keyedConditions = rule.conditions.map(ensureKey);
+
   const updateCondition = (i: number, c: ResponseRuleCondition) => {
-    const next = [...rule.conditions];
-    next[i] = c;
+    const next = [...keyedConditions];
+    next[i] = ensureKey(c);
     onChange({ ...rule, conditions: next });
   };
 
   const removeCondition = (i: number) => {
-    onChange({ ...rule, conditions: rule.conditions.filter((_, idx) => idx !== i) });
+    onChange({ ...rule, conditions: keyedConditions.filter((_, idx) => idx !== i) });
   };
 
   const addCondition = () => {
-    onChange({ ...rule, conditions: [...rule.conditions, newCondition()] });
+    onChange({ ...rule, conditions: [...keyedConditions, newCondition()] });
   };
 
   const summary =
@@ -333,9 +343,9 @@ function RuleCard({
           {/* Conditions */}
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wide">Conditions</p>
-            {rule.conditions.map((cond, i) => (
+            {keyedConditions.map((cond, i) => (
               <ConditionRow
-                key={i}
+                key={cond._key}
                 condition={cond}
                 onChange={(c) => updateCondition(i, c)}
                 onRemove={() => removeCondition(i)}

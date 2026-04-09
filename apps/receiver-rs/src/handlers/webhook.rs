@@ -558,14 +558,27 @@ async fn handle_webhook_inner(
                     }
 
                     // Evaluate conditional response rules first, fall back to default mock.
-                    // Parse rules separately so malformed rules don't break mock_response.
+                    // Parse rules item-by-item so one malformed rule doesn't kill all rules.
                     let parsed_rules: Option<Vec<ResponseRule>> = capture
                         .response_rules
-                        .and_then(|v| {
-                            serde_json::from_value(v).map_err(|e| {
-                                tracing::error!(slug, error = %e, "failed to parse response_rules — rules ignored, falling back to default mock");
-                                e
-                            }).ok()
+                        .and_then(|v| match v {
+                            serde_json::Value::Array(items) => {
+                                let mut rules = Vec::with_capacity(items.len());
+                                for (idx, item) in items.into_iter().enumerate() {
+                                    match serde_json::from_value::<ResponseRule>(item) {
+                                        Ok(rule) => rules.push(rule),
+                                        Err(e) => {
+                                            tracing::error!(slug, index = idx, error = %e, "skipping malformed response rule");
+                                        }
+                                    }
+                                }
+                                if rules.is_empty() { None } else { Some(rules) }
+                            }
+                            serde_json::Value::Null => None,
+                            other => {
+                                tracing::error!(slug, kind = %other, "response_rules is not an array");
+                                None
+                            }
                         });
 
                     let effective_mock = if let Some(ref rules) = parsed_rules {

@@ -21,6 +21,16 @@ const VALID_RULE_FIELDS = new Set([
 ]);
 const VALID_RULE_OPS = new Set(["eq", "contains", "starts_with", "matches", "exists"]);
 
+/** Valid ops per field — must match the Rust evaluator and SDK validation. */
+const VALID_OPS_BY_FIELD: Record<string, Set<string>> = {
+  method: new Set(["eq"]),
+  path: new Set(["eq", "contains", "starts_with", "matches"]),
+  header: new Set(["exists", "eq", "contains"]),
+  body_contains: new Set(["contains"]),
+  body_path: new Set(["exists", "eq", "contains"]),
+  query: new Set(["exists", "eq"]),
+};
+
 /**
  * Validate a notificationUrl field from a request body.
  * Accepts undefined/null (skip), empty string (allowed), or a valid http/https URL (max 2048).
@@ -322,15 +332,7 @@ export function validateResponseRules(
         };
       }
       // Validate op/field compatibility
-      const validOpsForField: Record<string, Set<string>> = {
-        method: new Set(["eq"]),
-        path: new Set(["eq", "contains", "starts_with", "matches"]),
-        header: new Set(["exists", "eq", "contains"]),
-        body_contains: new Set(["contains"]),
-        body_path: new Set(["exists", "eq", "contains"]),
-        query: new Set(["exists", "eq"]),
-      };
-      const fieldOps = validOpsForField[c.field as string];
+      const fieldOps = VALID_OPS_BY_FIELD[c.field as string];
       if (fieldOps && !fieldOps.has(c.op as string)) {
         return {
           valid: false,

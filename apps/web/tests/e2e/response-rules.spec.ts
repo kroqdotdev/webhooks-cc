@@ -246,8 +246,18 @@ test("can save rules and they persist after reopening", async ({ page }) => {
     timeout: 5000,
   });
 
-  // Wait for the endpoint list to refresh (emitDashboardEndpointsChanged triggers a refetch)
-  await page.waitForTimeout(1000);
+  // After save, emitDashboardEndpointsChanged triggers a GET /api/endpoints refetch.
+  // Wait for that refetch to complete so the dialog will have fresh data when reopened.
+  await page.waitForResponse(
+    (resp) =>
+      resp.url().includes("/api/endpoints") &&
+      resp.request().method() === "GET" &&
+      resp.status() === 200,
+    { timeout: 10000 }
+  );
+
+  // Small buffer for React to re-render with the new endpoint data
+  await page.waitForTimeout(500);
 
   // Reopen settings
   await page.getByLabel("Endpoint settings").click();
@@ -280,10 +290,12 @@ test("saved rules work in the receiver", async ({ request }) => {
   expect(noMatchResponse.status()).toBe(200);
 });
 
+// Depends on "can save rules and they persist after reopening" having saved "Persist Test" rule.
+// Tests run serially (mode: "serial") so this state is guaranteed.
 test("can collapse and expand a rule", async ({ page }) => {
   await openSettings(page);
 
-  // Should see the persisted rule from earlier
+  // Should see the persisted rule from the earlier save test
   await expect(page.getByText("Persist Test")).toBeVisible({ timeout: 5000 });
 
   // Click the rule header to collapse
