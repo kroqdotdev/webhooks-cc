@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
 import { Settings } from "lucide-react";
+import { ResponseRulesEditor } from "./response-rules-editor";
+import type { ResponseRule } from "@/lib/dashboard-api";
 import { parseStatusCode } from "@/lib/http";
 import {
   deleteDashboardEndpoint,
@@ -66,6 +68,8 @@ interface EndpointSettingsDialogProps {
     headers: Record<string, string>;
     delay?: number;
   };
+  /** Current conditional response rules. */
+  responseRules?: ResponseRule[];
   /** Current notification webhook URL. null = owned, not set. undefined = shared endpoint (hidden). */
   notificationUrl?: string | null;
 }
@@ -191,6 +195,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
     endpointName,
     slug,
     mockResponse,
+    responseRules: initialResponseRules,
     notificationUrl: initialNotificationUrl,
   } = props;
   const { session } = useAuth();
@@ -203,6 +208,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [mockDelay, setMockDelay] = useState(mockResponse?.delay?.toString() || "");
   const [delayEnabled, setDelayEnabled] = useState(!!mockResponse?.delay);
   const [notificationUrl, setNotificationUrl] = useState(initialNotificationUrl || "");
+  const [responseRules, setResponseRules] = useState<ResponseRule[]>(initialResponseRules || []);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -218,11 +224,12 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setMockDelay(mockResponse?.delay?.toString() || "");
       setDelayEnabled(!!mockResponse?.delay);
       setNotificationUrl(initialNotificationUrl || "");
+      setResponseRules(initialResponseRules || []);
       setError(null);
       setConfirmDelete(false);
     }
     prevOpen.current = open;
-  }, [open, endpointName, mockResponse, initialNotificationUrl]);
+  }, [open, endpointName, mockResponse, initialResponseRules, initialNotificationUrl]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -246,6 +253,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               ...(delayMs && delayMs > 0 ? { delay: delayMs } : {}),
             }
           : null,
+        responseRules: responseRules.length > 0 ? responseRules : null,
       };
       // Only send notificationUrl if the user owns the endpoint (prop was defined).
       // Shared endpoints don't include notificationUrl — sending null would wipe it.
@@ -306,7 +314,7 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
           <Settings className="h-3.5 w-3.5" />
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo max-h-[90vh] overflow-y-auto max-w-lg sm:max-w-2xl">
+      <DialogContent className="border-2 border-foreground shadow-neo max-h-[90vh] overflow-y-auto max-w-[90vw] sm:max-w-[80vw] lg:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="font-bold uppercase tracking-wide">Endpoint Settings</DialogTitle>
           <DialogDescription>Configure {endpointName || slug}</DialogDescription>
@@ -330,12 +338,21 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
               />
             </div>
 
-            {/* Mock Response */}
+            {/* Response Rules */}
+            <div className="border-2 border-foreground p-4">
+              <ResponseRulesEditor rules={responseRules} onChange={setResponseRules} />
+            </div>
+
+            {/* Default Mock Response */}
             <div className="border-2 border-foreground p-4 space-y-4">
               <div>
-                <p className="font-bold uppercase tracking-wide text-xs mb-1">Mock Response</p>
+                <p className="font-bold uppercase tracking-wide text-xs mb-1">
+                  {responseRules.length > 0 ? "Default Response" : "Mock Response"}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  What this endpoint returns when it receives a request.
+                  {responseRules.length > 0
+                    ? "Returned when no rule matches."
+                    : "What this endpoint returns when it receives a request."}
                 </p>
               </div>
 

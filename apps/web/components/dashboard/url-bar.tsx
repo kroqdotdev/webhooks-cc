@@ -8,6 +8,8 @@ import { DashboardGuideDialog } from "./dashboard-guide-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 
+import type { ResponseRule } from "@/lib/dashboard-api";
+
 interface UrlBarProps {
   endpointId: string;
   endpointName: string;
@@ -17,6 +19,7 @@ interface UrlBarProps {
     body: string;
     headers: Record<string, string>;
   };
+  responseRules?: ResponseRule[];
   notificationUrl?: string | null;
   extra?: React.ReactNode;
 }
@@ -26,6 +29,7 @@ export function UrlBar({
   endpointName,
   slug,
   mockResponse,
+  responseRules,
   notificationUrl,
   extra,
 }: UrlBarProps) {
@@ -49,6 +53,7 @@ export function UrlBar({
           endpointName={endpointName}
           slug={slug}
           mockResponse={mockResponse}
+          responseRules={responseRules}
           notificationUrl={notificationUrl}
         />
         <span className="font-bold text-sm uppercase tracking-wide shrink-0">{endpointName}</span>

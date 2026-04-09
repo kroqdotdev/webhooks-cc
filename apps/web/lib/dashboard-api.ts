@@ -2,6 +2,28 @@
 
 import type { ClickHouseRequest, Request } from "@/types/request";
 
+export interface ResponseRuleCondition {
+  field: string;
+  op: string;
+  value?: string;
+  name?: string;
+  path?: string;
+}
+
+export interface ResponseRule {
+  id?: string;
+  name?: string;
+  enabled?: boolean;
+  logic?: string;
+  conditions: ResponseRuleCondition[];
+  response: {
+    status: number;
+    body: string;
+    headers: Record<string, string>;
+    delay?: number;
+  };
+}
+
 export interface DashboardEndpoint {
   id: string;
   slug: string;
@@ -12,6 +34,7 @@ export interface DashboardEndpoint {
     body: string;
     headers: Record<string, string>;
   };
+  responseRules?: ResponseRule[];
   notificationUrl?: string | null;
   isEphemeral?: boolean;
   expiresAt?: number;

@@ -910,6 +910,7 @@ export default function DashboardPage() {
         endpointName={currentEndpoint.name || currentEndpoint.slug}
         slug={currentEndpoint.slug}
         mockResponse={currentEndpoint.mockResponse}
+        responseRules={currentEndpoint.responseRules}
         notificationUrl={currentEndpoint.notificationUrl}
         extra={
           hasRequests ? (
