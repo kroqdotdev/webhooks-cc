@@ -7,6 +7,11 @@ import {
   MOCK_RESPONSE_DELAY_MIN,
   MOCK_RESPONSE_STATUS_MAX,
   MOCK_RESPONSE_STATUS_MIN,
+  MAX_CONDITION_VALUE_LEN,
+  MAX_CONDITION_NAME_LEN,
+  MAX_CONDITION_PATH_LEN,
+  MAX_RULE_NAME_LEN,
+  MAX_GLOB_PATTERN_LEN,
   NotFoundError,
   RateLimitError,
   TEMPLATE_PROVIDERS,
@@ -40,6 +45,72 @@ const httpUrlSchema = z
   );
 const methodSchema = z.enum(HTTP_METHODS).default("POST").describe("HTTP method (default: POST)");
 const durationOrTimestampSchema = z.union([z.string(), z.number()]);
+const ruleConditionSchema = z
+  .object({
+    field: z
+      .enum(["method", "path", "header", "body_contains", "body_path", "query"])
+      .describe("Request field to match against"),
+    op: z
+      .enum(["eq", "contains", "starts_with", "matches", "exists"])
+      .describe("Comparison operator"),
+    value: z
+      .string()
+      .max(MAX_CONDITION_VALUE_LEN)
+      .optional()
+      .describe(
+        `Value to compare against (required unless op is "exists", max ${MAX_CONDITION_VALUE_LEN} chars)`
+      ),
+    name: z
+      .string()
+      .max(MAX_CONDITION_NAME_LEN)
+      .optional()
+      .describe(
+        `Header name or query param name (required for header/query, max ${MAX_CONDITION_NAME_LEN} chars)`
+      ),
+    path: z
+      .string()
+      .max(MAX_CONDITION_PATH_LEN)
+      .optional()
+      .describe(
+        `JSON dot-notation path (required for body_path, max ${MAX_CONDITION_PATH_LEN} chars)`
+      ),
+  })
+  .refine((c) => c.op === "exists" || (c.value !== undefined && c.value.length > 0), {
+    message: 'value is required when op is not "exists"',
+  })
+  .refine(
+    (c) =>
+      !(c.field === "header" || c.field === "query") || (c.name !== undefined && c.name.length > 0),
+    { message: "name is required for header and query conditions" }
+  )
+  .refine((c) => c.field !== "body_path" || (c.path !== undefined && c.path.length > 0), {
+    message: "path is required for body_path conditions",
+  })
+  .refine((c) => c.op !== "matches" || !c.value || c.value.length <= MAX_GLOB_PATTERN_LEN, {
+    message: `matches pattern must be ${MAX_GLOB_PATTERN_LEN} chars or less`,
+  });
+
+const responseRuleSchema = z.object({
+  name: z
+    .string()
+    .max(MAX_RULE_NAME_LEN)
+    .optional()
+    .describe(`Human-readable rule name (max ${MAX_RULE_NAME_LEN} chars)`),
+  enabled: z.boolean().optional().default(true).describe("Whether this rule is active"),
+  logic: z
+    .enum(["and", "or"])
+    .optional()
+    .default("and")
+    .describe('How to combine conditions: "and" (all match) or "or" (any match)'),
+  conditions: z.array(ruleConditionSchema).min(1).max(10).describe("Conditions to evaluate (1-10)"),
+  response: z.lazy(() => mockResponseSchema).describe("Response when conditions match"),
+});
+
+const responseRulesSchema = z
+  .array(responseRuleSchema)
+  .max(50)
+  .describe("Ordered conditional response rules (first match wins, max 50)");
+
 const mockResponseSchema = z.object({
   status: z
     .number()
@@ -361,6 +432,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       mockResponse: mockResponseSchema
         .optional()
         .describe("Optional mock response to return when the endpoint receives a request"),
+      responseRules: responseRulesSchema
+        .optional()
+        .describe(
+          "Conditional response rules. Each rule has conditions and a response. First matching rule wins."
+        ),
       notificationUrl: z
         .string()
         .url()
@@ -369,16 +445,19 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
           "URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"
         ),
     },
-    withErrorHandling(async ({ name, ephemeral, expiresIn, mockResponse, notificationUrl }) => {
-      const endpoint = await client.endpoints.create({
-        name,
-        ephemeral,
-        expiresIn,
-        mockResponse,
-        notificationUrl,
-      });
-      return jsonContent(endpoint);
-    })
+    withErrorHandling(
+      async ({ name, ephemeral, expiresIn, mockResponse, responseRules, notificationUrl }) => {
+        const endpoint = await client.endpoints.create({
+          name,
+          ephemeral,
+          expiresIn,
+          mockResponse,
+          responseRules,
+          notificationUrl,
+        });
+        return jsonContent(endpoint);
+      }
+    )
   );
 
   server.tool(
@@ -403,14 +482,18 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "update_endpoint",
-    "Update an endpoint name or mock response configuration.",
+    "Update an endpoint name, mock response, or conditional response rules.",
     {
       slug: z.string().describe("The endpoint slug to update"),
       name: z.string().optional().describe("New display name"),
       mockResponse: mockResponseSchema
         .nullable()
         .optional()
-        .describe("Mock response config, or null to clear it"),
+        .describe("Default mock response (used when no rule matches), or null to clear"),
+      responseRules: responseRulesSchema
+        .nullable()
+        .optional()
+        .describe("Conditional response rules (first match wins), or null to clear"),
       notificationUrl: z
         .string()
         .url()
@@ -418,8 +501,13 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .optional()
         .describe("Notification webhook URL, or null to clear it"),
     },
-    withErrorHandling(async ({ slug, name, mockResponse, notificationUrl }) => {
-      const endpoint = await client.endpoints.update(slug, { name, mockResponse, notificationUrl });
+    withErrorHandling(async ({ slug, name, mockResponse, responseRules, notificationUrl }) => {
+      const endpoint = await client.endpoints.update(slug, {
+        name,
+        mockResponse,
+        responseRules,
+        notificationUrl,
+      });
       return jsonContent(endpoint);
     })
   );

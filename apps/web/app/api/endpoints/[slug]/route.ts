@@ -1,5 +1,10 @@
 import { authenticateRequest } from "@/lib/api-auth";
-import { validateNotificationUrl, validateMockResponseField } from "@/lib/request-validation";
+import {
+  parseJsonBody,
+  validateNotificationUrl,
+  validateMockResponseField,
+  validateResponseRules,
+} from "@/lib/request-validation";
 import {
   deleteEndpointBySlugForUser,
   getEndpointBySlugForUser,
@@ -44,12 +49,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   const { slug } = await params;
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as Record<string, unknown>;
 
   // Validate name type and length if provided
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length > 100)) {
@@ -61,6 +63,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   const mockCheck = validateMockResponseField(body.mockResponse, true);
   if (!mockCheck.valid) return mockCheck.response;
+
+  const rulesCheck = validateResponseRules(body.responseRules);
+  if (!rulesCheck.valid) return rulesCheck.response;
 
   try {
     // Allow team members to edit (they can rename + change mock response)
@@ -77,6 +82,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.mockResponse === undefined
           ? undefined
           : (body.mockResponse as Record<string, unknown> | null),
+      responseRules:
+        body.responseRules === undefined ? undefined : (body.responseRules as unknown[] | null),
       notificationUrl:
         body.notificationUrl === undefined
           ? undefined

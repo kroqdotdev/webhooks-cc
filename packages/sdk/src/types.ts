@@ -21,6 +21,8 @@ export interface Endpoint {
   url?: string;
   /** URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook) */
   notificationUrl?: string;
+  /** Ordered conditional response rules (first match wins, then falls back to default mock) */
+  responseRules?: ResponseRule[];
   /** Whether the endpoint auto-expires and may be cleaned up automatically */
   isEphemeral?: boolean;
   /** Unix timestamp (ms) when the endpoint expires, if ephemeral */
@@ -31,6 +33,36 @@ export interface Endpoint {
   sharedWith?: TeamShare[];
   /** Team this endpoint was shared from (present when shared with you) */
   fromTeam?: TeamShare;
+}
+
+/** A single condition within a response rule. */
+export interface ResponseRuleCondition {
+  /** Field to match: method, path, header, body_contains, body_path, query */
+  field: "method" | "path" | "header" | "body_contains" | "body_path" | "query";
+  /** Comparison operator */
+  op: "eq" | "contains" | "starts_with" | "matches" | "exists";
+  /** Value to compare against (not required for "exists") */
+  value?: string;
+  /** Header name or query param name (required for header/query conditions) */
+  name?: string;
+  /** JSON dot-notation path (required for body_path conditions) */
+  path?: string;
+}
+
+/** A conditional response rule: when conditions match, return this response. */
+export interface ResponseRule {
+  /** Stable identifier for UI drag-reorder */
+  id?: string;
+  /** Human-readable rule name */
+  name?: string;
+  /** Whether this rule is active (default: true) */
+  enabled?: boolean;
+  /** How to combine conditions: "and" (all match) or "or" (any match). Default: "and" */
+  logic?: "and" | "or";
+  /** Conditions to evaluate against the incoming request */
+  conditions: ResponseRuleCondition[];
+  /** Response to return when conditions match */
+  response: MockResponse;
 }
 
 /** Mock response returned by the receiver instead of the default 200 OK. */
@@ -133,6 +165,8 @@ export interface CreateEndpointOptions {
   mockResponse?: MockResponse;
   /** URL to POST a JSON summary to after each captured request */
   notificationUrl?: string;
+  /** Ordered conditional response rules */
+  responseRules?: ResponseRule[];
 }
 
 /**
@@ -145,6 +179,8 @@ export interface UpdateEndpointOptions {
   mockResponse?: MockResponse | null;
   /** Notification webhook URL, or null to clear */
   notificationUrl?: string | null;
+  /** Ordered conditional response rules, or null to clear */
+  responseRules?: ResponseRule[] | null;
 }
 
 /**

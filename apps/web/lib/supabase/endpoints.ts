@@ -16,6 +16,7 @@ type SelectedEndpointRow = Pick<
   | "slug"
   | "name"
   | "mock_response"
+  | "response_rules"
   | "notification_url"
   | "is_ephemeral"
   | "expires_at"
@@ -34,6 +35,7 @@ export interface EndpointRecord {
     headers: Record<string, string>;
     delay?: number;
   };
+  responseRules?: unknown[];
   notificationUrl: string | null;
   isEphemeral?: boolean;
   expiresAt?: number;
@@ -46,6 +48,7 @@ interface CreateEndpointInput {
   isEphemeral?: boolean;
   expiresAt?: number;
   mockResponse?: Record<string, unknown>;
+  responseRules?: unknown[] | null;
   notificationUrl?: string;
 }
 
@@ -54,6 +57,7 @@ interface UpdateEndpointInput {
   slug: string;
   name?: string;
   mockResponse?: Record<string, unknown> | null;
+  responseRules?: unknown[] | null;
   notificationUrl?: string | null;
 }
 
@@ -103,6 +107,10 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
               ? { delay: mockResponse.delay }
               : {}),
           }
+        : undefined,
+    responseRules:
+      Array.isArray(row.response_rules) && row.response_rules.length > 0
+        ? (row.response_rules as unknown[])
         : undefined,
     notificationUrl: row.notification_url ?? null,
     isEphemeral: row.is_ephemeral || undefined,
@@ -175,7 +183,7 @@ export async function listEndpointsForUser(userId: string): Promise<EndpointReco
   const { data, error } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -196,7 +204,7 @@ export async function getEndpointBySlugForUser(
   const { data, error } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
     )
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
@@ -216,6 +224,7 @@ export async function createEndpointForUser({
   isEphemeral = false,
   expiresAt,
   mockResponse,
+  responseRules,
   notificationUrl,
 }: CreateEndpointInput): Promise<EndpointRecord> {
   const admin = createAdminClient();
@@ -238,6 +247,7 @@ export async function createEndpointForUser({
     slug,
     name: name ?? null,
     mock_response: (mockResponse as Json | undefined) ?? null,
+    response_rules: (responseRules as Json | undefined) ?? null,
     notification_url: notificationUrl ?? null,
     is_ephemeral: ephemeral,
     expires_at: expiresAtIso,
@@ -247,7 +257,7 @@ export async function createEndpointForUser({
     .from("endpoints")
     .insert(insert)
     .select(
-      "id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
     )
     .returns<SelectedEndpointRow>()
     .single();
@@ -306,7 +316,7 @@ export async function claimGuestEndpoint(
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
     .select(
-      "id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
     )
     .returns<SelectedEndpointRow>()
     .maybeSingle();
@@ -320,6 +330,7 @@ export async function updateEndpointBySlugForUser({
   slug,
   name,
   mockResponse,
+  responseRules,
   notificationUrl,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
@@ -331,6 +342,9 @@ export async function updateEndpointBySlugForUser({
   if (mockResponse !== undefined) {
     updates.mock_response = mockResponse as Json | null;
   }
+  if (responseRules !== undefined) {
+    updates.response_rules = responseRules as Json | null;
+  }
   if (notificationUrl !== undefined) {
     updates.notification_url = notificationUrl;
   }
@@ -341,7 +355,7 @@ export async function updateEndpointBySlugForUser({
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
     .select(
-      "id, user_id, slug, name, mock_response, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
     )
     .returns<SelectedEndpointRow>()
     .maybeSingle();

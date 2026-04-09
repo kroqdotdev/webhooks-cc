@@ -1,9 +1,9 @@
 ---
 title: "Mock Responses"
-description: "Control what your endpoint returns to the sender. Set status codes, response headers, body content, and response delay to simulate real API behavior."
+description: "Control what your endpoint returns to the sender. Set status codes, response headers, body content, response delay, and conditional response rules to simulate real API behavior."
 section: dashboard
 order: 4
-lastUpdated: 2026-03-10
+lastUpdated: 2026-04-09
 schema: none
 keywords:
   [
@@ -13,10 +13,13 @@ keywords:
     "simulate API",
     "response delay",
     "timeout testing",
+    "conditional response",
+    "response rules",
+    "webhook routing",
   ]
 seo:
-  ogTitle: "Webhook Mock Responses Guide"
-  ogDescription: "Configure status codes, headers, response bodies, and delays for webhook endpoints to simulate downstream APIs and test error handling."
+  ogTitle: "Webhook Mock Responses & Conditional Rules"
+  ogDescription: "Configure status codes, headers, response bodies, delays, and conditional response rules for webhook endpoints. Return different responses based on method, path, headers, or body content."
 ---
 
 ## How it works
@@ -34,12 +37,128 @@ Open endpoint settings (gear icon in the URL bar) to configure the mock response
 - **Response body** — the content returned. Can be JSON, XML, plain text, or any other format.
 - **Response delay** — wait time in milliseconds before sending the response (0-30000). The request is captured instantly; only the response to the sender is delayed.
 
+## Conditional response rules
+
+Response rules let you return different responses based on the incoming request. Define an ordered list of rules — each with conditions and a response. The first matching rule wins. If no rule matches, the default mock response is returned.
+
+### How rules work
+
+1. When a webhook arrives, the receiver evaluates your rules from top to bottom.
+2. Each rule has one or more conditions. If all conditions match (AND logic) or any condition matches (OR logic), that rule's response is returned.
+3. If no rule matches, the **default mock response** is returned.
+4. If no default mock is configured either, the endpoint returns `200 OK`.
+
+### Setting up rules
+
+In endpoint settings, click **Add Rule** to create a conditional response rule. Each rule has:
+
+- **Name** — optional label for your reference (e.g. "Stripe invoice paid")
+- **Logic** — **ALL conditions (AND)** or **ANY condition (OR)**
+- **Conditions** — one or more conditions to match against the incoming request
+- **Response** — the status code, headers, and body to return when conditions match
+- **Enable/disable toggle** — temporarily disable a rule without deleting it
+- **Ordering** — drag or use the arrow buttons to reorder. First match wins.
+
+### Condition types
+
+| Condition          | Operators                                     | Example                              |
+| ------------------ | --------------------------------------------- | ------------------------------------ |
+| **Method**         | equals                                        | `Method equals POST`                 |
+| **Path**           | equals, contains, starts with, matches (glob) | `Path contains /stripe`              |
+| **Header**         | exists, equals, contains                      | `Header stripe-signature exists`     |
+| **Body Contains**  | contains                                      | `Body contains invoice.paid`         |
+| **Body JSON Path** | exists, equals, contains                      | `Body path type equals invoice.paid` |
+| **Query Param**    | exists, equals                                | `Query param source equals test`     |
+
+**Body JSON Path** uses dot notation to access nested fields. For example, `data.object.status` matches `{"data": {"object": {"status": "active"}}}`. Array indices are supported: `items.0.sku`.
+
+**Path matches** supports glob patterns: `*` matches any characters except `/`, and `**` matches any characters including `/`. Example: `/webhooks/*/events` matches `/webhooks/stripe/events`.
+
+### Example: Route by provider
+
+Simulate different responses for different webhook providers on a single endpoint:
+
+**Rule 1: Stripe webhooks**
+
+- Conditions: `Header stripe-signature exists` AND `Body path type equals invoice.payment_succeeded`
+- Response: `201` with `{"received": true, "event": "invoice"}`
+
+**Rule 2: GitHub webhooks**
+
+- Conditions: `Header x-github-event exists`
+- Response: `200` with `{"ok": true}`
+
+**Default response**: `200` with `{"received": true}`
+
+### Example: Simulate success and failure
+
+Test how your application handles different webhook outcomes:
+
+**Rule 1: Simulate failure for checkout events**
+
+- Conditions: `Body path type equals checkout.session.completed`
+- Response: `500` with `{"error": "internal_server_error"}`
+
+**Rule 2: Everything else succeeds**
+
+- (No additional rules needed — the default mock handles it)
+
+**Default response**: `200` with `{"status": "ok"}`
+
+### Limits
+
+- Maximum **50 rules** per endpoint
+- Maximum **10 conditions** per rule
+- Glob patterns: maximum 500 characters
+- Condition values: maximum 4096 characters
+
+### SDK and MCP
+
+Response rules are fully supported in the SDK and MCP server:
+
+```typescript
+const client = new WebhooksCC({ apiKey: "whcc_..." });
+
+const endpoint = await client.endpoints.create({
+  name: "multi-response",
+  responseRules: [
+    {
+      name: "Stripe invoice",
+      logic: "and",
+      conditions: [
+        { field: "header", op: "exists", name: "stripe-signature" },
+        { field: "body_path", op: "eq", path: "type", value: "invoice.paid" },
+      ],
+      response: { status: 200, body: '{"received": true}', headers: {} },
+    },
+  ],
+  mockResponse: { status: 200, body: "default", headers: {} },
+});
+```
+
+Update rules on an existing endpoint:
+
+```typescript
+await client.endpoints.update("my-endpoint", {
+  responseRules: [
+    /* new rules */
+  ],
+});
+
+// Clear all rules:
+await client.endpoints.update("my-endpoint", {
+  responseRules: null,
+});
+```
+
 ## Use cases
 
 - **Simulate success** — return 200 with a JSON body to satisfy webhook senders that expect confirmation
 - **Test error handling** — return 500 or 503 to verify your sender retries on failure
 - **Test timeout handling** — add a response delay to verify your sender handles slow responses correctly
 - **Validate signatures** — return the expected response format for services like Stripe that check the response
+- **Route by provider** — return different responses for Stripe, GitHub, and Shopify webhooks on a single endpoint
+- **Simulate mixed outcomes** — return success for some event types and failure for others to test your error handling
 
 ## Example
 

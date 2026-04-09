@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::AppState;
+use super::rules::{self, ResponseRule, RequestContext}; // ResponseRule needed for deserialization
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
@@ -98,17 +99,20 @@ fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
 struct CaptureResult {
     status: String,
     mock_response: Option<MockResponse>,
+    /// Raw JSON so that malformed rules don't break mock_response deserialization.
+    #[serde(default)]
+    response_rules: Option<serde_json::Value>,
     retry_after: Option<i64>,
     notification_url: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct MockResponse {
-    status: i64,
-    body: String,
-    headers: HashMap<String, String>,
+#[derive(Debug, Deserialize, Clone)]
+pub struct MockResponse {
+    pub status: i64,
+    pub body: String,
+    pub headers: HashMap<String, String>,
     #[serde(default)]
-    delay: Option<u64>,
+    pub delay: Option<u64>,
 }
 
 /// Maximum allowed mock response delay (30 seconds).
@@ -553,7 +557,45 @@ async fn handle_webhook_inner(
                         });
                     }
 
-                    if let Some(mock) = &capture.mock_response {
+                    // Evaluate conditional response rules first, fall back to default mock.
+                    // Parse rules item-by-item so one malformed rule doesn't kill all rules.
+                    let parsed_rules: Option<Vec<ResponseRule>> = capture
+                        .response_rules
+                        .and_then(|v| match v {
+                            serde_json::Value::Array(items) => {
+                                let mut rules = Vec::with_capacity(items.len());
+                                for (idx, item) in items.into_iter().enumerate() {
+                                    match serde_json::from_value::<ResponseRule>(item) {
+                                        Ok(rule) => rules.push(rule),
+                                        Err(e) => {
+                                            tracing::error!(slug, index = idx, error = %e, "skipping malformed response rule");
+                                        }
+                                    }
+                                }
+                                if rules.is_empty() { None } else { Some(rules) }
+                            }
+                            serde_json::Value::Null => None,
+                            other => {
+                                tracing::error!(slug, kind = %other, "response_rules is not an array");
+                                None
+                            }
+                        });
+
+                    let effective_mock = if let Some(ref rules) = parsed_rules {
+                        let ctx = RequestContext {
+                            method: method.as_str(),
+                            path: &req_path,
+                            headers: &filtered_headers,
+                            body: &body_str,
+                            query: &query.0,
+                        };
+                        rules::evaluate_rules(rules, &ctx)
+                            .or(capture.mock_response.clone())
+                    } else {
+                        capture.mock_response.clone()
+                    };
+
+                    if let Some(ref mock) = effective_mock {
                         if let Some(delay) = mock.delay {
                             let capped = delay.min(MAX_DELAY_MS);
                             if capped > 0 {
