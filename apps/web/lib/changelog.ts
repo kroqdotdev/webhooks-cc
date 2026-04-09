@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.17.4";
+export const APP_VERSION = "0.18.0";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.18.0",
+    date: "2026-04-10",
+    title: "Conditional Response Rules",
+    track: "web",
+    items: [
+      "Define ordered response rules that match on method, path, headers, or body — first match wins",
+      "Visual response rules editor in endpoint settings with drag-to-reorder",
+      "Rules evaluated in the Rust receiver for low-latency conditional responses",
+      "Full SDK, MCP, and API support for managing response rules",
+    ],
+  },
   {
     version: "0.17.4",
     date: "2026-04-08",
