@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.18.1";
+export const APP_VERSION = "0.18.2";
 export const CLI_VERSION = "1.0.0";
-export const SDK_VERSION = "1.2.1";
-export const MCP_VERSION = "1.1.0";
+export const SDK_VERSION = "1.3.0";
+export const MCP_VERSION = "1.2.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.18.2",
+    date: "2026-04-10",
+    title: "SDK v1.3.0 & MCP v1.2.0 Release",
+    track: "web",
+    items: [
+      "Updated llms.txt and llms-full.txt with conditional response rules documentation",
+      "SDK and MCP version bumps for response rules and provider consolidation",
+    ],
+  },
   {
     version: "0.18.1",
     date: "2026-04-10",
@@ -488,6 +498,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.3.0",
+    date: "2026-04-10",
+    title: "Response Rules & Provider Consolidation",
+    track: "sdk",
+    items: [
+      "ResponseRule and ResponseRuleCondition types for conditional mock responses",
+      "validateResponseRules() and validation constants exported for shared use",
+      "TEMPLATE_PROVIDERS, VERIFY_PROVIDERS, and buildTemplateSendOptions exports — single source of truth for provider logic",
+      "Notification URL support in create/update endpoint options",
+      "Raw body replay with byte-exact fidelity (base64-decoded bodyRaw)",
+    ],
+  },
+  {
     version: "1.2.1",
     date: "2026-03-29",
     title: "Rate Limit Metadata",
@@ -604,6 +627,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.2.0",
+    date: "2026-04-10",
+    title: "Response Rules & Notifications",
+    track: "mcp",
+    items: [
+      "Response rules support in create_endpoint and update_endpoint tools",
+      "Notification URL parameter for endpoint creation and updates",
+      "Provider lists imported from SDK — single source of truth",
+    ],
+  },
   {
     version: "1.1.0",
     date: "2026-03-20",
