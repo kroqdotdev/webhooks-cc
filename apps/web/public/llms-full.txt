@@ -4,7 +4,7 @@
 
 ## What is webhooks.cc?
 
-webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses, forward webhooks to localhost for local development, and write automated test assertions against captured requests.
+webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses with conditional rules (route different responses based on method, path, headers, body, or query params), forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
 The Rust receiver handles 86,000+ requests per second with sub-millisecond capture latency. Requests are written directly to Postgres via a single stored procedure and surfaced in the dashboard through Supabase Realtime.
 
@@ -88,6 +88,7 @@ const endpoint = await client.endpoints.create({
   ephemeral?: boolean,        // Auto-expire
   expiresIn?: number | string,  // e.g. "12h"
   mockResponse?: MockResponse,
+  responseRules?: ResponseRule[],  // Conditional response rules (first match wins)
   notificationUrl?: string,   // Slack/Discord URL
 });
 // Returns: Endpoint { id, slug, name, url, createdAt, ... }
@@ -103,6 +104,7 @@ const ep = await client.endpoints.get("my-slug");
 const updated = await client.endpoints.update("my-slug", {
   name?: string,
   mockResponse?: MockResponse | null,  // null clears mock
+  responseRules?: ResponseRule[] | null,  // null clears all rules
   notificationUrl?: string | null,     // null clears notification
 });
 
@@ -298,6 +300,7 @@ interface Endpoint {
   isEphemeral?: boolean;
   expiresAt?: number;       // Unix ms
   createdAt: number;        // Unix ms
+  responseRules?: ResponseRule[];  // Conditional response rules
   sharedWith?: TeamShare[];
   fromTeam?: TeamShare;
 }
@@ -393,10 +396,10 @@ Set `WHK_API_KEY` environment variable to your API key.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `create_endpoint` | name?, ephemeral?, expiresIn?, mockResponse?, notificationUrl? | Create a new webhook endpoint |
+| `create_endpoint` | name?, ephemeral?, expiresIn?, mockResponse?, responseRules?, notificationUrl? | Create a new webhook endpoint |
 | `list_endpoints` | (none) | List all user endpoints |
 | `get_endpoint` | slug | Get endpoint details |
-| `update_endpoint` | slug, name?, mockResponse?, notificationUrl? | Update endpoint config |
+| `update_endpoint` | slug, name?, mockResponse?, responseRules?, notificationUrl? | Update endpoint config |
 | `delete_endpoint` | slug | Delete endpoint |
 | `create_endpoints` | count (1-20), namePrefix?, ephemeral?, expiresIn? | Bulk create endpoints |
 | `delete_endpoints` | slugs (array, 1-100) | Bulk delete endpoints |
@@ -594,6 +597,120 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 
 ---
 
+## Conditional Response Rules
+
+Endpoints can have an ordered list of conditional response rules. Each rule has match conditions and its own response (status, headers, body, delay). Rules are evaluated in order — first match wins. If no rule matches, the default `mockResponse` is returned. If no default exists, the endpoint returns 200 OK.
+
+### Rule Structure
+
+```typescript
+interface ResponseRule {
+  id?: string;                    // Stable ID for UI reordering
+  name?: string;                  // Human-readable label (max 200 chars)
+  enabled?: boolean;              // Default: true
+  logic?: "and" | "or";          // How conditions combine (default: "and")
+  conditions: ResponseRuleCondition[];  // 1-10 conditions per rule
+  response: MockResponse;         // Status, body, headers, delay
+}
+
+interface ResponseRuleCondition {
+  field: "method" | "path" | "header" | "body_contains" | "body_path" | "query";
+  op: "eq" | "contains" | "starts_with" | "matches" | "exists";
+  value?: string;                 // Required for non-"exists" ops (max 4096 chars)
+  name?: string;                  // Required for header/query conditions (max 256 chars)
+  path?: string;                  // Required for body_path conditions, dot-notation (max 256 chars)
+}
+```
+
+### Condition Types
+
+| Field | Operators | Description |
+|-------|-----------|-------------|
+| `method` | `eq` | HTTP method (case-insensitive) |
+| `path` | `eq`, `contains`, `starts_with`, `matches` | Request path after slug. `matches` uses glob patterns (`*` = segment, `**` = any) |
+| `header` | `exists`, `eq`, `contains` | Header lookup by `name` (case-insensitive) |
+| `body_contains` | `contains` | Substring search in raw body |
+| `body_path` | `exists`, `eq`, `contains` | JSON dot-notation path (e.g. `data.object.id`, `items.0.name`) |
+| `query` | `exists`, `eq` | Query parameter lookup by `name` |
+
+### Limits
+
+- Max 50 rules per endpoint
+- Max 10 conditions per rule
+- Glob patterns max 500 chars
+- Body JSON parsing is lazy — only triggered when a `body_path` condition exists
+
+### SDK Usage
+
+```typescript
+// Create endpoint with conditional rules
+const endpoint = await client.endpoints.create({
+  name: "multi-provider",
+  responseRules: [
+    {
+      name: "Stripe invoices",
+      logic: "and",
+      conditions: [
+        { field: "header", op: "exists", name: "stripe-signature" },
+        { field: "body_path", op: "eq", path: "type", value: "invoice.paid" },
+      ],
+      response: { status: 200, body: '{"received": true}', headers: { "content-type": "application/json" } },
+    },
+    {
+      name: "GitHub pushes",
+      conditions: [
+        { field: "header", op: "eq", name: "x-github-event", value: "push" },
+      ],
+      response: { status: 202, body: "accepted", headers: {} },
+    },
+    {
+      name: "Any PUT or PATCH",
+      logic: "or",
+      conditions: [
+        { field: "method", op: "eq", value: "PUT" },
+        { field: "method", op: "eq", value: "PATCH" },
+      ],
+      response: { status: 204, body: "", headers: {} },
+    },
+  ],
+  mockResponse: { status: 200, body: "ok", headers: {} }, // default fallback
+});
+
+// Update rules on existing endpoint
+await client.endpoints.update("my-slug", {
+  responseRules: [/* new rules */],
+});
+
+// Clear all rules
+await client.endpoints.update("my-slug", {
+  responseRules: null,
+});
+```
+
+### MCP Usage
+
+The `create_endpoint` and `update_endpoint` MCP tools accept `responseRules` with the same schema. Pass `responseRules: null` to clear rules.
+
+### Dashboard
+
+The endpoint settings dialog includes a visual rule editor with:
+- Drag-to-reorder rules (first match wins)
+- Enable/disable toggle per rule
+- AND/OR logic selector
+- Condition builder with field-aware operator and input dropdowns
+- Per-rule response configuration (status, headers, body, delay)
+- Default response section below rules
+
+### Evaluation Flow
+
+1. Webhook arrives at receiver
+2. `capture_webhook()` returns rules + default mock from Postgres
+3. Rust receiver evaluates rules in order (first match wins)
+4. If no rule matches, default `mockResponse` is used
+5. If no default exists, returns 200 OK
+
+---
+
 ## Webhook Capture Details
 
 Any HTTP method, content type, and body up to 1 MB is accepted at `https://go.webhooks.cc/w/<slug>`.
@@ -609,7 +726,7 @@ Captured data per request:
 - Received timestamp
 - Body size in bytes
 
-Mock responses can return custom status codes (100-599), headers, body, and an optional delay (0-30 seconds).
+Mock responses can return custom status codes (100-599), headers, body, and an optional delay (0-30 seconds). Conditional response rules allow different responses based on request properties (method, path, headers, body content, JSON paths, query params) — first matching rule wins, with fallback to the default mock response.
 
 The receiver fails open: if the database is unavailable, it returns 200 OK so webhook senders don't retry.
 

@@ -4,14 +4,14 @@
 
 ## What is webhooks.cc?
 
-webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses, forward webhooks to localhost for local development, and write automated test assertions against captured requests.
+webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses with conditional rules (route different responses based on method, path, headers, body, or query params), forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
 Requests are captured by a Rust receiver, written directly to Postgres via a single stored procedure, and surfaced in the dashboard through Supabase Realtime.
 
 ## Core capabilities
 
 - Webhook capture: Send any HTTP request to https://go.webhooks.cc/w/<slug> and inspect it instantly
-- Mock responses: Configure status codes, headers, and response bodies per endpoint
+- Mock responses: Configure status codes, headers, and response bodies per endpoint — with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins)
 - CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>` — no port forwarding or ngrok needed
 - TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming
 - MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf)
@@ -73,8 +73,21 @@ import { WebhooksCC, matchBodyPath } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY });
 
-// Create an endpoint
-const endpoint = await client.endpoints.create({ name: "test" });
+// Create an endpoint with conditional response rules
+const endpoint = await client.endpoints.create({
+  name: "test",
+  responseRules: [
+    {
+      name: "Stripe invoices",
+      conditions: [
+        { field: "header", op: "exists", name: "stripe-signature" },
+        { field: "body_path", op: "eq", path: "type", value: "invoice.paid" },
+      ],
+      response: { status: 200, body: '{"received": true}', headers: {} },
+    },
+  ],
+  mockResponse: { status: 200, body: "ok", headers: {} }, // default fallback
+});
 console.log(endpoint.url); // https://go.webhooks.cc/w/<slug>
 
 // Wait for a webhook to arrive
