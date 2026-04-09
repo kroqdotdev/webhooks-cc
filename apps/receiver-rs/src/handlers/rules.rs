@@ -277,11 +277,23 @@ fn json_value_to_string(value: &serde_json::Value) -> String {
     }
 }
 
+/// Maximum glob pattern length to prevent excessive regex compilation cost.
+const MAX_GLOB_PATTERN_LEN: usize = 500;
+
 /// Simple glob pattern matching.
 /// Supports `*` (any characters except `/`) and `**` (any characters including `/`).
 fn glob_match(pattern: &str, input: &str) -> bool {
+    if pattern.len() > MAX_GLOB_PATTERN_LEN {
+        return false;
+    }
     let regex_str = glob_to_regex(pattern);
-    regex_lite::Regex::new(&regex_str).is_ok_and(|re| re.is_match(input))
+    match regex_lite::Regex::new(&regex_str) {
+        Ok(re) => re.is_match(input),
+        Err(_) => {
+            tracing::debug!(pattern, "glob pattern failed to compile as regex");
+            false
+        }
+    }
 }
 
 /// Convert a glob pattern to a regex string.

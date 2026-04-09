@@ -3,8 +3,8 @@
 import type { ClickHouseRequest, Request } from "@/types/request";
 
 export interface ResponseRuleCondition {
-  field: string;
-  op: string;
+  field: "method" | "path" | "header" | "body_contains" | "body_path" | "query";
+  op: "eq" | "contains" | "starts_with" | "matches" | "exists";
   value?: string;
   name?: string;
   path?: string;
@@ -14,7 +14,7 @@ export interface ResponseRule {
   id?: string;
   name?: string;
   enabled?: boolean;
-  logic?: string;
+  logic?: "and" | "or";
   conditions: ResponseRuleCondition[];
   response: {
     status: number;

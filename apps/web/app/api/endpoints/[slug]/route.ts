@@ -1,5 +1,6 @@
 import { authenticateRequest } from "@/lib/api-auth";
 import {
+  parseJsonBody,
   validateNotificationUrl,
   validateMockResponseField,
   validateResponseRules,
@@ -48,12 +49,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   const { slug } = await params;
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as Record<string, unknown>;
 
   // Validate name type and length if provided
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length > 100)) {

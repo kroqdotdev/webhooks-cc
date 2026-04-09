@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::AppState;
-use super::rules::{self, ResponseRule, RequestContext};
+use super::rules::{self, ResponseRule, RequestContext}; // ResponseRule needed for deserialization
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
@@ -99,8 +99,9 @@ fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
 struct CaptureResult {
     status: String,
     mock_response: Option<MockResponse>,
+    /// Raw JSON so that malformed rules don't break mock_response deserialization.
     #[serde(default)]
-    response_rules: Option<Vec<ResponseRule>>,
+    response_rules: Option<serde_json::Value>,
     retry_after: Option<i64>,
     notification_url: Option<String>,
 }
@@ -556,8 +557,18 @@ async fn handle_webhook_inner(
                         });
                     }
 
-                    // Evaluate conditional response rules first, fall back to default mock
-                    let effective_mock = if let Some(ref rules) = capture.response_rules {
+                    // Evaluate conditional response rules first, fall back to default mock.
+                    // Parse rules separately so malformed rules don't break mock_response.
+                    let parsed_rules: Option<Vec<ResponseRule>> = capture
+                        .response_rules
+                        .and_then(|v| {
+                            serde_json::from_value(v).map_err(|e| {
+                                tracing::warn!(slug, error = %e, "failed to parse response_rules");
+                                e
+                            }).ok()
+                        });
+
+                    let effective_mock = if let Some(ref rules) = parsed_rules {
                         let ctx = RequestContext {
                             method: method.as_str(),
                             path: &req_path,

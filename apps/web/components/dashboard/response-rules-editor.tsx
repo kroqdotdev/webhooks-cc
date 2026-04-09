@@ -116,11 +116,11 @@ function ConditionRow({
         aria-label="Condition field"
         value={condition.field}
         onChange={(e) => {
-          const field = e.target.value;
+          const field = e.target.value as ResponseRuleCondition["field"];
           const fieldOps = OPS_BY_FIELD[field] || [];
           onChange({
             field,
-            op: fieldOps[0]?.value || "eq",
+            op: (fieldOps[0]?.value || "eq") as ResponseRuleCondition["op"],
             value: field === "method" ? "POST" : "",
             name: undefined,
             path: undefined,
@@ -161,7 +161,7 @@ function ConditionRow({
       <select
         aria-label="Condition operator"
         value={condition.op}
-        onChange={(e) => onChange({ ...condition, op: e.target.value })}
+        onChange={(e) => onChange({ ...condition, op: e.target.value as ResponseRuleCondition["op"] })}
         className="neo-input text-xs py-1! px-2!"
       >
         {ops.map((o) => (
@@ -326,7 +326,7 @@ function RuleCard({
             <span className="text-xs text-muted-foreground">Match</span>
             <select
               value={rule.logic || "and"}
-              onChange={(e) => onChange({ ...rule, logic: e.target.value })}
+              onChange={(e) => onChange({ ...rule, logic: e.target.value as "and" | "or" })}
               className="neo-input text-xs py-0.5! px-2!"
             >
               <option value="and">ALL conditions (AND)</option>

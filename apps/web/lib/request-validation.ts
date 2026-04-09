@@ -209,6 +209,26 @@ export function validateResponseRules(
         ),
       };
     }
+    // Validate logic field
+    if (rule.logic !== undefined && rule.logic !== "and" && rule.logic !== "or") {
+      return {
+        valid: false,
+        response: Response.json(
+          { error: `responseRules[${i}]: logic must be "and" or "or"` },
+          { status: 400 }
+        ),
+      };
+    }
+    // Validate rule name length
+    if (rule.name !== undefined && (typeof rule.name !== "string" || rule.name.length > 200)) {
+      return {
+        valid: false,
+        response: Response.json(
+          { error: `responseRules[${i}]: name must be a string (max 200 chars)` },
+          { status: 400 }
+        ),
+      };
+    }
     for (let j = 0; j < conditions.length; j++) {
       const c = conditions[j] as Record<string, unknown>;
       if (!c || typeof c !== "object") {
@@ -238,12 +258,69 @@ export function validateResponseRules(
           ),
         };
       }
+      // String length limits
+      if (typeof c.value === "string" && c.value.length > 4096) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: value too long (max 4096)` },
+            { status: 400 }
+          ),
+        };
+      }
+      if (typeof c.name === "string" && c.name.length > 256) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: name too long (max 256)` },
+            { status: 400 }
+          ),
+        };
+      }
+      if (typeof c.path === "string" && c.path.length > 256) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: path too long (max 256)` },
+            { status: 400 }
+          ),
+        };
+      }
+      // Required sub-fields
+      if (
+        (c.field === "header" || c.field === "query") &&
+        (typeof c.name !== "string" || c.name.length === 0)
+      ) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: name required for ${c.field}` },
+            { status: 400 }
+          ),
+        };
+      }
+      if (c.field === "body_path" && (typeof c.path !== "string" || c.path.length === 0)) {
+        return {
+          valid: false,
+          response: Response.json(
+            { error: `responseRules[${i}].conditions[${j}]: path required for body_path` },
+            { status: 400 }
+          ),
+        };
+      }
     }
-    // Validate the rule's response using the existing mock response validator
-    if (rule.response !== undefined) {
-      const mockCheck = validateMockResponseField(rule.response);
-      if (!mockCheck.valid) return mockCheck;
+    // Validate the rule's response (required)
+    if (rule.response === undefined || rule.response === null || typeof rule.response !== "object") {
+      return {
+        valid: false,
+        response: Response.json(
+          { error: `responseRules[${i}]: response is required` },
+          { status: 400 }
+        ),
+      };
     }
+    const mockCheck = validateMockResponseField(rule.response);
+    if (!mockCheck.valid) return mockCheck;
   }
   return { valid: true };
 }
