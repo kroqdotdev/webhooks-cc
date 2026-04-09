@@ -49,7 +49,8 @@ apps/web/public/_pagefind/
 tmp/
 supabase/.temp/
 
-# Playwright artifacts
+# Playwright artifacts (all output goes to apps/web/screenshots/)
+apps/web/screenshots/
 apps/web/playwright-report/
 apps/web/test-results/
 .playwright-mcp/
@@ -60,9 +61,6 @@ convex-export-prod.zip
 
 # Redis dump
 dump.rdb
-
-# Screenshots
-*.png
 
 # Load test env
 .env.loadtest
