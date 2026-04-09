@@ -81,7 +81,10 @@ export function validateResponseRules(rules: ResponseRule[]): void {
     const rule = rules[i];
     const prefix = `responseRules[${i}]`;
 
-    if (rule.name !== undefined && (typeof rule.name !== "string" || rule.name.length > MAX_RULE_NAME_LEN)) {
+    if (
+      rule.name !== undefined &&
+      (typeof rule.name !== "string" || rule.name.length > MAX_RULE_NAME_LEN)
+    ) {
       throw new Error(`${prefix}: name must be a string (max ${MAX_RULE_NAME_LEN} chars)`);
     }
     if (!Array.isArray(rule.conditions) || rule.conditions.length === 0) {
@@ -109,13 +112,25 @@ export function validateResponseRules(rules: ResponseRule[]): void {
         throw new Error(`${cp}: op "${c.op}" is not valid for field "${c.field}"`);
       }
       // String length limits
-      if (c.value !== undefined && typeof c.value === "string" && c.value.length > MAX_CONDITION_VALUE_LEN) {
+      if (
+        c.value !== undefined &&
+        typeof c.value === "string" &&
+        c.value.length > MAX_CONDITION_VALUE_LEN
+      ) {
         throw new Error(`${cp}: value too long (max ${MAX_CONDITION_VALUE_LEN} chars)`);
       }
-      if (c.name !== undefined && typeof c.name === "string" && c.name.length > MAX_CONDITION_NAME_LEN) {
+      if (
+        c.name !== undefined &&
+        typeof c.name === "string" &&
+        c.name.length > MAX_CONDITION_NAME_LEN
+      ) {
         throw new Error(`${cp}: name too long (max ${MAX_CONDITION_NAME_LEN} chars)`);
       }
-      if (c.path !== undefined && typeof c.path === "string" && c.path.length > MAX_CONDITION_PATH_LEN) {
+      if (
+        c.path !== undefined &&
+        typeof c.path === "string" &&
+        c.path.length > MAX_CONDITION_PATH_LEN
+      ) {
         throw new Error(`${cp}: path too long (max ${MAX_CONDITION_PATH_LEN} chars)`);
       }
       // Required sub-fields

@@ -354,7 +354,11 @@ export function validateResponseRules(
       }
     }
     // Validate the rule's response (required)
-    if (rule.response === undefined || rule.response === null || typeof rule.response !== "object") {
+    if (
+      rule.response === undefined ||
+      rule.response === null ||
+      typeof rule.response !== "object"
+    ) {
       return {
         valid: false,
         response: Response.json(

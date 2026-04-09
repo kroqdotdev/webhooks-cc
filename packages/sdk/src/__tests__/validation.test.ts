@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  validateMockResponse,
-  validateResponseRules,
-} from "../validation";
+import { validateMockResponse, validateResponseRules } from "../validation";
 import type { ResponseRule, MockResponse } from "../types";
 
 const validResponse: MockResponse = {
@@ -45,15 +42,13 @@ describe("validateResponseRules", () => {
   });
 
   it("accepts rules with OR logic", () => {
-    expect(() =>
-      validateResponseRules([makeRule({ logic: "or" })])
-    ).not.toThrow();
+    expect(() => validateResponseRules([makeRule({ logic: "or" })])).not.toThrow();
   });
 
   it("rejects non-array", () => {
-    expect(() =>
-      validateResponseRules("not an array" as unknown as ResponseRule[])
-    ).toThrow("must be an array");
+    expect(() => validateResponseRules("not an array" as unknown as ResponseRule[])).toThrow(
+      "must be an array"
+    );
   });
 
   it("rejects more than 50 rules", () => {
@@ -62,9 +57,7 @@ describe("validateResponseRules", () => {
   });
 
   it("rejects rule with empty conditions", () => {
-    expect(() =>
-      validateResponseRules([makeRule({ conditions: [] })])
-    ).toThrow("non-empty array");
+    expect(() => validateResponseRules([makeRule({ conditions: [] })])).toThrow("non-empty array");
   });
 
   it("rejects rule with more than 10 conditions", () => {
@@ -73,9 +66,7 @@ describe("validateResponseRules", () => {
       op: "eq" as const,
       value: "POST",
     }));
-    expect(() =>
-      validateResponseRules([makeRule({ conditions })])
-    ).toThrow("max 10");
+    expect(() => validateResponseRules([makeRule({ conditions })])).toThrow("max 10");
   });
 
   it("rejects invalid condition field", () => {
@@ -99,9 +90,7 @@ describe("validateResponseRules", () => {
   });
 
   it("rejects invalid logic value", () => {
-    expect(() =>
-      validateResponseRules([makeRule({ logic: "xor" as never })])
-    ).toThrow("logic");
+    expect(() => validateResponseRules([makeRule({ logic: "xor" as never })])).toThrow("logic");
   });
 
   it("rejects invalid response status", () => {
@@ -131,26 +120,18 @@ describe("validateMockResponse", () => {
   });
 
   it("accepts a mock response with delay", () => {
-    expect(() =>
-      validateMockResponse({ ...validResponse, delay: 1000 })
-    ).not.toThrow();
+    expect(() => validateMockResponse({ ...validResponse, delay: 1000 })).not.toThrow();
   });
 
   it("rejects status below minimum", () => {
-    expect(() =>
-      validateMockResponse({ ...validResponse, status: 50 })
-    ).toThrow("status");
+    expect(() => validateMockResponse({ ...validResponse, status: 50 })).toThrow("status");
   });
 
   it("rejects status above maximum", () => {
-    expect(() =>
-      validateMockResponse({ ...validResponse, status: 600 })
-    ).toThrow("status");
+    expect(() => validateMockResponse({ ...validResponse, status: 600 })).toThrow("status");
   });
 
   it("rejects delay above maximum", () => {
-    expect(() =>
-      validateMockResponse({ ...validResponse, delay: 60000 })
-    ).toThrow("delay");
+    expect(() => validateMockResponse({ ...validResponse, delay: 60000 })).toThrow("delay");
   });
 });

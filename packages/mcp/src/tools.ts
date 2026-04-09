@@ -45,46 +45,64 @@ const httpUrlSchema = z
   );
 const methodSchema = z.enum(HTTP_METHODS).default("POST").describe("HTTP method (default: POST)");
 const durationOrTimestampSchema = z.union([z.string(), z.number()]);
-const ruleConditionSchema = z.object({
-  field: z
-    .enum(["method", "path", "header", "body_contains", "body_path", "query"])
-    .describe("Request field to match against"),
-  op: z
-    .enum(["eq", "contains", "starts_with", "matches", "exists"])
-    .describe("Comparison operator"),
-  value: z.string().max(MAX_CONDITION_VALUE_LEN).optional()
-    .describe(`Value to compare against (required unless op is "exists", max ${MAX_CONDITION_VALUE_LEN} chars)`),
-  name: z.string().max(MAX_CONDITION_NAME_LEN).optional()
-    .describe(`Header name or query param name (required for header/query, max ${MAX_CONDITION_NAME_LEN} chars)`),
-  path: z.string().max(MAX_CONDITION_PATH_LEN).optional()
-    .describe(`JSON dot-notation path (required for body_path, max ${MAX_CONDITION_PATH_LEN} chars)`),
-}).refine(
-  (c) => c.op === "exists" || (c.value !== undefined && c.value.length > 0),
-  { message: "value is required when op is not \"exists\"" }
-).refine(
-  (c) => !(c.field === "header" || c.field === "query") || (c.name !== undefined && c.name.length > 0),
-  { message: "name is required for header and query conditions" }
-).refine(
-  (c) => c.field !== "body_path" || (c.path !== undefined && c.path.length > 0),
-  { message: "path is required for body_path conditions" }
-).refine(
-  (c) => c.op !== "matches" || !c.value || c.value.length <= MAX_GLOB_PATTERN_LEN,
-  { message: `matches pattern must be ${MAX_GLOB_PATTERN_LEN} chars or less` }
-);
+const ruleConditionSchema = z
+  .object({
+    field: z
+      .enum(["method", "path", "header", "body_contains", "body_path", "query"])
+      .describe("Request field to match against"),
+    op: z
+      .enum(["eq", "contains", "starts_with", "matches", "exists"])
+      .describe("Comparison operator"),
+    value: z
+      .string()
+      .max(MAX_CONDITION_VALUE_LEN)
+      .optional()
+      .describe(
+        `Value to compare against (required unless op is "exists", max ${MAX_CONDITION_VALUE_LEN} chars)`
+      ),
+    name: z
+      .string()
+      .max(MAX_CONDITION_NAME_LEN)
+      .optional()
+      .describe(
+        `Header name or query param name (required for header/query, max ${MAX_CONDITION_NAME_LEN} chars)`
+      ),
+    path: z
+      .string()
+      .max(MAX_CONDITION_PATH_LEN)
+      .optional()
+      .describe(
+        `JSON dot-notation path (required for body_path, max ${MAX_CONDITION_PATH_LEN} chars)`
+      ),
+  })
+  .refine((c) => c.op === "exists" || (c.value !== undefined && c.value.length > 0), {
+    message: 'value is required when op is not "exists"',
+  })
+  .refine(
+    (c) =>
+      !(c.field === "header" || c.field === "query") || (c.name !== undefined && c.name.length > 0),
+    { message: "name is required for header and query conditions" }
+  )
+  .refine((c) => c.field !== "body_path" || (c.path !== undefined && c.path.length > 0), {
+    message: "path is required for body_path conditions",
+  })
+  .refine((c) => c.op !== "matches" || !c.value || c.value.length <= MAX_GLOB_PATTERN_LEN, {
+    message: `matches pattern must be ${MAX_GLOB_PATTERN_LEN} chars or less`,
+  });
 
 const responseRuleSchema = z.object({
-  name: z.string().max(MAX_RULE_NAME_LEN).optional().describe(`Human-readable rule name (max ${MAX_RULE_NAME_LEN} chars)`),
+  name: z
+    .string()
+    .max(MAX_RULE_NAME_LEN)
+    .optional()
+    .describe(`Human-readable rule name (max ${MAX_RULE_NAME_LEN} chars)`),
   enabled: z.boolean().optional().default(true).describe("Whether this rule is active"),
   logic: z
     .enum(["and", "or"])
     .optional()
     .default("and")
     .describe('How to combine conditions: "and" (all match) or "or" (any match)'),
-  conditions: z
-    .array(ruleConditionSchema)
-    .min(1)
-    .max(10)
-    .describe("Conditions to evaluate (1-10)"),
+  conditions: z.array(ruleConditionSchema).min(1).max(10).describe("Conditions to evaluate (1-10)"),
   response: z.lazy(() => mockResponseSchema).describe("Response when conditions match"),
 });
 

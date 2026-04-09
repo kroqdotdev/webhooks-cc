@@ -83,9 +83,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
           ? undefined
           : (body.mockResponse as Record<string, unknown> | null),
       responseRules:
-        body.responseRules === undefined
-          ? undefined
-          : (body.responseRules as unknown[] | null),
+        body.responseRules === undefined ? undefined : (body.responseRules as unknown[] | null),
       notificationUrl:
         body.notificationUrl === undefined
           ? undefined

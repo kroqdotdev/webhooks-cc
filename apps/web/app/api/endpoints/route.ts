@@ -109,9 +109,7 @@ export async function POST(request: Request) {
           ? undefined
           : (body.mockResponse as Record<string, unknown>),
       responseRules:
-        body.responseRules === undefined
-          ? undefined
-          : (body.responseRules as unknown[]),
+        body.responseRules === undefined ? undefined : (body.responseRules as unknown[]),
       notificationUrl:
         typeof body.notificationUrl === "string" && body.notificationUrl.length > 0
           ? body.notificationUrl

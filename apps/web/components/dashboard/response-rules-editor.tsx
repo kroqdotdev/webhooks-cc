@@ -1,17 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
-import {
-  ChevronDown,
-  ChevronUp,
-  GripVertical,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Plus, Trash2, X } from "lucide-react";
 import type { ResponseRule, ResponseRuleCondition } from "@/lib/dashboard-api";
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -161,7 +153,9 @@ function ConditionRow({
       <select
         aria-label="Condition operator"
         value={condition.op}
-        onChange={(e) => onChange({ ...condition, op: e.target.value as ResponseRuleCondition["op"] })}
+        onChange={(e) =>
+          onChange({ ...condition, op: e.target.value as ResponseRuleCondition["op"] })
+        }
         className="neo-input text-xs py-1! px-2!"
       >
         {ops.map((o) => (
@@ -245,13 +239,12 @@ function RuleCard({
     onChange({ ...rule, conditions: [...rule.conditions, newCondition()] });
   };
 
-  const summary = rule.name
-    || `Rule ${index + 1}: ${rule.conditions.length} condition${rule.conditions.length !== 1 ? "s" : ""}`;
+  const summary =
+    rule.name ||
+    `Rule ${index + 1}: ${rule.conditions.length} condition${rule.conditions.length !== 1 ? "s" : ""}`;
 
   return (
-    <div
-      className={`border-2 border-foreground ${!rule.enabled ? "opacity-50" : ""}`}
-    >
+    <div className={`border-2 border-foreground ${!rule.enabled ? "opacity-50" : ""}`}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -289,7 +282,10 @@ function RuleCard({
         </button>
 
         {/* Enable/Disable */}
-        <label className="flex items-center gap-1 shrink-0 cursor-pointer" title="Enable/disable rule">
+        <label
+          className="flex items-center gap-1 shrink-0 cursor-pointer"
+          title="Enable/disable rule"
+        >
           <input
             type="checkbox"
             checked={rule.enabled !== false}

@@ -9,7 +9,6 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { createEndpointForUser } from "@/lib/supabase/endpoints";
 
 import * as dotenv from "dotenv";
 import * as path from "path";
