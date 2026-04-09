@@ -44,6 +44,8 @@ export default async function BlogIndexPage() {
 
   const featured = posts.find((p) => p.featured) ?? posts[0]!;
   const rest = posts.filter((p) => p.slug !== featured.slug);
+  const latestTwo = rest.slice(0, 2);
+  const remaining = rest.slice(2);
 
   return (
     <main className="min-h-screen pt-28 pb-20 px-4">
@@ -54,45 +56,16 @@ export default async function BlogIndexPage() {
         ])}
       />
       <div className="max-w-6xl mx-auto">
-        <section className="neo-card neo-card-static p-0 overflow-hidden mb-10">
-          <div className="h-2 bg-gradient-to-r from-secondary via-primary to-accent" />
-          <div className="p-6 md:p-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
-                Engineering Blog
-              </p>
-              <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-5 leading-tight">
-                Webhook guides you can run in one sitting
-              </h1>
-              <p className="text-lg text-muted-foreground max-w-2xl">
-                Focused posts for debugging, testing, and automation. Every guide is built around
-                real request payloads and repeatable workflows.
-              </p>
-            </div>
-
-            <div className="neo-card neo-card-static p-5 bg-muted/50">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-4">
-                What you get
-              </p>
-              <ul className="space-y-3 text-sm">
-                <li className="font-medium">Practical setup steps, not theory</li>
-                <li className="font-medium">Provider-specific payload and signature patterns</li>
-                <li className="font-medium">CLI, SDK, and MCP examples you can copy</li>
-              </ul>
-              <div className="mt-6 pt-4 border-t-2 border-foreground/20">
-                <p className="text-xs text-muted-foreground mb-2">Need docs first?</p>
-                <Link
-                  href="/docs"
-                  className="font-bold hover:underline inline-flex items-center gap-2"
-                >
-                  Open documentation
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
+        {/* Compact header */}
+        <section className="mb-10">
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">Engineering Blog</h1>
+          <p className="text-lg text-muted-foreground max-w-2xl">
+            Practical webhook guides for local development, CI assertions, provider signatures, and
+            AI-assisted debugging workflows.
+          </p>
         </section>
 
+        {/* Featured post */}
         <section className="mb-8">
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
             Featured
@@ -130,19 +103,20 @@ export default async function BlogIndexPage() {
           </Link>
         </section>
 
-        {rest.length > 0 && (
-          <section>
+        {/* Latest two posts */}
+        {latestTwo.length > 0 && (
+          <section className="mb-10">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
-              Latest posts
+              Latest
             </p>
             <div className="grid gap-4 md:grid-cols-2">
-              {rest.map((post, index) => (
+              {latestTwo.map((post, index) => (
                 <Link
                   key={post.slug}
                   href={`/blog/${post.slug}`}
-                  className="neo-card neo-card-static block p-0 overflow-hidden group"
+                  className="neo-card block p-0 overflow-hidden group"
                 >
-                  <div className={index % 2 === 0 ? "h-2 bg-secondary" : "h-2 bg-accent"} />
+                  <div className={index === 0 ? "h-2 bg-secondary" : "h-2 bg-accent"} />
                   <div className="p-5">
                     <div className="flex flex-wrap items-center gap-3 mb-3">
                       <span className="text-xs font-bold uppercase tracking-wide border-2 border-foreground px-2 py-1 bg-background">
@@ -159,6 +133,47 @@ export default async function BlogIndexPage() {
                       {post.title}
                     </h3>
                     <p className="text-muted-foreground">{post.description}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* All posts list */}
+        {remaining.length > 0 && (
+          <section>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
+              All posts
+            </p>
+            <div className="neo-card neo-card-static p-0 overflow-hidden">
+              <div className="h-2 bg-gradient-to-r from-primary via-secondary to-accent" />
+              {remaining.map((post, index) => (
+                <Link
+                  key={post.slug}
+                  href={`/blog/${post.slug}`}
+                  className={`block px-5 py-4 group transition-colors hover:bg-muted ${
+                    index < remaining.length - 1 ? "border-b border-foreground/20" : ""
+                  }`}
+                >
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-xs font-bold uppercase tracking-wide border-2 border-foreground px-2 py-0.5 bg-background shrink-0">
+                          {post.category}
+                        </span>
+                        <h3 className="text-base font-bold leading-snug group-hover:underline truncate">
+                          {post.title}
+                        </h3>
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-1">
+                        {post.description}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 md:ml-4">
+                      {post.publishedAt && <span>{formatBlogDate(post.publishedAt)}</span>}
+                      <span>{post.readMinutes} min</span>
+                    </div>
                   </div>
                 </Link>
               ))}

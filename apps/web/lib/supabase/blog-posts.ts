@@ -102,6 +102,9 @@ function createPublicClient(): SupabaseClient<Database> {
       autoRefreshToken: false,
       persistSession: false,
     },
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, next: { revalidate: 3600 } }),
+    },
   });
 
   return _public;

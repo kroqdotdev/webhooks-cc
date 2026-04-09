@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.18.0";
+export const APP_VERSION = "0.18.1";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.2.1";
 export const MCP_VERSION = "1.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.18.1",
+    date: "2026-04-10",
+    title: "Blog Page Redesign",
+    track: "web",
+    items: [
+      "Redesigned blog index with clear visual hierarchy: featured post, two latest cards, and a scannable list for all posts",
+      "Compact page header replacing the bulky hero section",
+      "Fixed blog posts not appearing after publish due to stale Next.js fetch cache",
+    ],
+  },
   {
     version: "0.18.0",
     date: "2026-04-10",
