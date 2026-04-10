@@ -38,8 +38,7 @@ logs/
 # Feature work
 feat/
 
-# Documentation (internal planning docs, root only)
-/docs/
+# Documentation (internal planning docs)
 /branch-docs/
 
 # Pagefind search index (generated at build time)
