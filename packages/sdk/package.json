@@ -45,9 +45,9 @@
   },
   "homepage": "https://webhooks.cc",
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.12.2",
     "tsup": "^8.5.1",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.4"
   }
 }

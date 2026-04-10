@@ -697,7 +697,7 @@ describe.skipIf(!API_KEY)("Live SDK tests", () => {
     it("returns complete SDK description", () => {
       const desc = client.describe();
 
-      expect(desc.version).toBe("1.2.1");
+      expect(desc.version).toBe("1.3.0");
 
       // Endpoint operations
       expect(desc.endpoints.create).toBeDefined();
