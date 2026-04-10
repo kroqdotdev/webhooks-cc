@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.18.2";
+export const APP_VERSION = "0.18.3";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.3.0";
 export const MCP_VERSION = "1.2.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.18.3",
+    date: "2026-04-11",
+    title: "Blog Resilience & Housekeeping",
+    track: "web",
+    items: [
+      "Blog pages gracefully fall back when Supabase is unreachable instead of erroring",
+      "Added SECURITY.md and CODE_OF_CONDUCT.md for open-source governance",
+    ],
+  },
   {
     version: "0.18.2",
     date: "2026-04-10",
