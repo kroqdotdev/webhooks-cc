@@ -8,16 +8,25 @@ assignees: ""
 
 ## Problem
 
-What problem does this solve?
+What problem does this solve? Describe the situation you run into.
 
-## Solution
+## Proposed Solution
 
-What should we build?
+What should we build? Be as specific as you can.
 
-## Alternatives
+## Alternatives Considered
 
-What other approaches did you consider?
+What other approaches did you evaluate, and why did you rule them out?
 
-## Use Case
+## Which component does this affect?
 
-Who benefits and how?
+- [ ] Web app / dashboard
+- [ ] Receiver
+- [ ] CLI (`whk`)
+- [ ] SDK (`@webhooks-cc/sdk`)
+- [ ] MCP server (`@webhooks-cc/mcp`)
+- [ ] Other
+
+## Additional Context
+
+Anything else: screenshots, links to related issues, or examples from other tools.

@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 Before you begin, install the following:
 
 - **Node.js** 20+ (with npm)
-- **pnpm** 8+ (`npm install -g pnpm`)
+- **pnpm** 10+ (`npm install -g pnpm`)
 - **Rust** 1.85+ (edition 2024) — install via [rustup](https://rustup.rs)
 - **Make**
 
@@ -16,7 +16,7 @@ Before you begin, install the following:
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/your-username/webhooks-cc.git
+   git clone https://github.com/kroqdotdev/webhooks-cc.git
    cd webhooks-cc
    ```
 

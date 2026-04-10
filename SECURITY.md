@@ -1,61 +1,34 @@
 # Security Policy
 
-## Supported Versions
-
-| Version | Supported |
-| ------- | --------- |
-| latest  | Yes       |
-
 ## Reporting a Vulnerability
 
-Report security issues responsibly. Do not open public GitHub issues.
+If you find a security vulnerability in webhooks.cc, please report it privately. Do not open a public issue.
 
-### How to Report
+**Email:** security@webhooks.cc
 
-1. Use GitHub's private vulnerability reporting:
-   - Go to **Security** → **Report a vulnerability**
-   - Fill out the form
-2. Or email the maintainers directly (see repository owner)
+Include:
 
-### What to Include
+- A description of the vulnerability
+- Steps to reproduce it
+- The affected component (web app, receiver, CLI, SDK, or MCP server)
+- Any potential impact you've identified
 
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+We will acknowledge your report within 48 hours and aim to release a fix within 7 days for critical issues.
 
-### Response Timeline
+## Scope
 
-| Stage              | Time     |
-| ------------------ | -------- |
-| Acknowledgment     | 48 hours |
-| Initial assessment | 1 week   |
-| Critical fix       | 7 days   |
-| High severity fix  | 30 days  |
-| Medium/Low fix     | 90 days  |
+This policy covers:
 
-### Safe Harbor
+- The hosted service at webhooks.cc and go.webhooks.cc
+- The open source code in this repository
+- The CLI (`whk`), SDK (`@webhooks-cc/sdk`), and MCP server (`@webhooks-cc/mcp`) published to npm and GitHub Releases
 
-Security research conducted in good faith is authorized. We will not pursue legal action against researchers who:
+## Out of Scope
 
-- Avoid privacy violations, data destruction, and service interruption
-- Test only accounts they own or have permission to access
-- Demonstrate issues without exploitation beyond proof of concept
-- Report promptly and allow time for fixes before disclosure
+- Denial-of-service attacks against the hosted service
+- Social engineering of maintainers or users
+- Vulnerabilities in third-party dependencies (report these upstream, but let us know if they affect webhooks.cc)
 
-## Security Measures
+## Disclosure
 
-- **Input validation** — All user inputs validated and sanitized
-- **Authentication** — Token-based with expiration
-- **Authorization** — Role-based access on all endpoints
-- **Dependency scanning** — Dependabot and CodeQL
-- **Secret management** — No secrets in repository
-- **Encryption** — HTTPS only in production
-
-## Deployment Checklist
-
-1. Set strong, unique secrets (`CAPTURE_SHARED_SECRET`, `POLAR_WEBHOOK_SECRET`)
-2. Use HTTPS for all endpoints
-3. Keep dependencies updated
-4. Apply security patches promptly
-5. Store sensitive configuration in environment variables
+We follow coordinated disclosure. Once a fix ships, we will credit you in the release notes unless you prefer otherwise.

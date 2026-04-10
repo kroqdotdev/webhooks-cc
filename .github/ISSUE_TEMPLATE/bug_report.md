@@ -29,7 +29,9 @@ What happens instead.
 - OS:
 - Browser:
 - Node.js:
-- Go:
+- Rust:
+- CLI version (`whk --version`):
+- SDK version:
 
 ## Screenshots
 
