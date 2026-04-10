@@ -4,7 +4,9 @@
 
 If you find a security vulnerability in webhooks.cc, please report it privately. Do not open a public issue.
 
-**Email:** security@webhooks.cc
+**Preferred:** Use [GitHub's security advisory reporting](https://github.com/kroqdotdev/webhooks-cc/security/advisories/new) to submit your report directly through GitHub. This keeps the conversation private and lets us coordinate a fix before public disclosure.
+
+**Alternatively:** Email support@webhooks.cc with the subject line "Security Report."
 
 Include:
 
