@@ -22,7 +22,7 @@ Maintainers may remove, edit, or reject comments, commits, issues, and pull requ
 
 ## Reporting
 
-Report unacceptable behavior to conduct@webhooks.cc. All reports will be reviewed and handled confidentially.
+Report unacceptable behavior to support@webhooks.cc. All reports will be reviewed and handled confidentially.
 
 ## Attribution
 
