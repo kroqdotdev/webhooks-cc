@@ -85,7 +85,7 @@ const FULL_SELECT = `${BASE_SELECT}, content`;
 
 let _public: SupabaseClient<Database> | null = null;
 
-function createPublicClient(): SupabaseClient<Database> {
+function createPublicClient(): SupabaseClient<Database> | null {
   if (_public) {
     return _public;
   }
@@ -94,7 +94,7 @@ function createPublicClient(): SupabaseClient<Database> {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !anonKey) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required");
+    return null;
   }
 
   _public = createClient<Database>(url, anonKey, {
@@ -167,35 +167,42 @@ function normalizeBlogPreview(row: BlogPostPreview): Omit<BlogPostRecord, "conte
 
 export async function listPublishedBlogPosts(): Promise<Array<Omit<BlogPostRecord, "content">>> {
   const client = createPublicClient();
-  const { data, error } = await client
-    .from("blog_posts")
-    .select(BASE_SELECT)
-    .eq("status", "published")
-    .order("published_at", { ascending: false, nullsFirst: false })
-    .returns<BlogPostPreview[]>();
+  if (!client) return [];
 
-  if (error) {
-    throw error;
+  try {
+    const { data, error } = await client
+      .from("blog_posts")
+      .select(BASE_SELECT)
+      .eq("status", "published")
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .returns<BlogPostPreview[]>();
+
+    if (error) throw error;
+    return (data ?? []).map(normalizeBlogPreview);
+  } catch {
+    // Graceful fallback during build/CI when Supabase is unreachable
+    return [];
   }
-
-  return (data ?? []).map(normalizeBlogPreview);
 }
 
 export async function getPublishedBlogPostBySlug(slug: string): Promise<BlogPostRecord | null> {
   const client = createPublicClient();
-  const { data, error } = await client
-    .from("blog_posts")
-    .select(FULL_SELECT)
-    .eq("slug", slug)
-    .eq("status", "published")
-    .returns<SelectedBlogPostRow>()
-    .maybeSingle();
+  if (!client) return null;
 
-  if (error) {
-    throw error;
+  try {
+    const { data, error } = await client
+      .from("blog_posts")
+      .select(FULL_SELECT)
+      .eq("slug", slug)
+      .eq("status", "published")
+      .returns<SelectedBlogPostRow>()
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? normalizeBlogPost(data) : null;
+  } catch {
+    return null;
   }
-
-  return data ? normalizeBlogPost(data) : null;
 }
 
 export async function getDraftBlogPostBySlug(slug: string): Promise<BlogPostRecord | null> {
