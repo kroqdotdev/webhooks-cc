@@ -26,10 +26,10 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "jose": "^6.2.2",
     "nanoid": "^5.1.7",
-    "pagefind": "^1.5.0",
-    "prettier": "^3.8.1",
+    "pagefind": "^1.5.2",
+    "prettier": "^3.8.2",
     "tsx": "^4.21.0",
-    "turbo": "^2.9.5",
+    "turbo": "^2.9.6",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.1",
     "vitest": "^4.1.4"
