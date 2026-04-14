@@ -547,8 +547,8 @@ async fn handle_webhook_inner(
                     if let Some(ref provider) = capture.signing_provider
                         && let Some(ref encrypted_b64) = capture.signing_secret_encrypted
                         && let Some(ref request_id) = capture.request_id
-                        && let Some(ref encryption_key) = state.config.signing_secret_key
                     {
+                        if let Some(ref encryption_key) = state.config.signing_secret_key {
                         let pool = state.pool.clone();
                         let request_id = request_id.clone();
                         let provider = provider.clone();
@@ -568,7 +568,7 @@ async fn handle_webhook_inner(
                                         "code": "decryption_failed",
                                         "message": "Failed to decrypt signing secret. The encryption key may have changed."
                                     }).to_string();
-                                    let _ = sqlx::query(
+                                    if let Err(db_err) = sqlx::query(
                                         "UPDATE public.requests SET signature_verified = $1, signature_error = $2, signing_provider = $3 WHERE id = $4::uuid"
                                     )
                                     .bind(Some(false))
@@ -576,7 +576,9 @@ async fn handle_webhook_inner(
                                     .bind(provider.as_str())
                                     .bind(&request_id)
                                     .execute(&pool)
-                                    .await;
+                                    .await {
+                                        tracing::error!(request_id, error = %db_err, "failed to persist decryption error to request row");
+                                    }
                                     return;
                                 }
                             };
@@ -595,12 +597,16 @@ async fn handle_webhook_inner(
                                     (Some(true), None, Some(provider.as_str()))
                                 }
                                 crate::verification::VerificationResult::Invalid(err) => {
-                                    let json = serde_json::to_string(err).ok();
-                                    (Some(false), json, Some(provider.as_str()))
+                                    let json = serde_json::to_string(err).unwrap_or_else(|_| {
+                                        r#"{"code":"serialization_error","message":"Verification failed but error details could not be serialized"}"#.to_string()
+                                    });
+                                    (Some(false), Some(json), Some(provider.as_str()))
                                 }
                                 crate::verification::VerificationResult::Skipped(err) => {
-                                    let json = serde_json::to_string(err).ok();
-                                    (None, json, Some(provider.as_str()))
+                                    let json = serde_json::to_string(err).unwrap_or_else(|_| {
+                                        r#"{"code":"serialization_error","message":"Verification skipped but error details could not be serialized"}"#.to_string()
+                                    });
+                                    (None, Some(json), Some(provider.as_str()))
                                 }
                             };
 
@@ -616,6 +622,28 @@ async fn handle_webhook_inner(
                                 tracing::error!(request_id, error = %e, "failed to update verification result");
                             }
                         });
+                        } else {
+                            // Server missing SIGNING_SECRET_KEY — write error so user sees feedback
+                            let pool = state.pool.clone();
+                            let request_id = request_id.clone();
+                            let provider = provider.clone();
+                            tokio::spawn(async move {
+                                let error_json = serde_json::json!({
+                                    "code": "server_not_configured",
+                                    "message": "Signature verification is configured but the server encryption key is missing."
+                                }).to_string();
+                                if let Err(e) = sqlx::query(
+                                    "UPDATE public.requests SET signature_error = $1, signing_provider = $2 WHERE id = $3::uuid"
+                                )
+                                .bind(Some(&error_json))
+                                .bind(provider.as_str())
+                                .bind(&request_id)
+                                .execute(&pool)
+                                .await {
+                                    tracing::error!(request_id, error = %e, "failed to write server-not-configured error");
+                                }
+                            });
+                        }
                     }
 
                     // Fire notification webhook if configured

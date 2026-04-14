@@ -469,11 +469,17 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         });
         // Configure signing after creation (create doesn't support signing fields yet)
         if (signingProvider && signingSecret) {
-          await client.endpoints.update(endpoint.slug, {
-            signingProvider,
-            signingSecret,
-            signingHeader,
-          });
+          try {
+            await client.endpoints.update(endpoint.slug, {
+              signingProvider,
+              signingSecret,
+              signingHeader,
+            });
+          } catch (err) {
+            throw new Error(
+              `Endpoint "${endpoint.slug}" was created but signing configuration failed: ${err instanceof Error ? err.message : String(err)}. Update the endpoint manually to add signing.`
+            );
+          }
         }
         return jsonContent(endpoint);
       }

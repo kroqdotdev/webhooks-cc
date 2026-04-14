@@ -154,14 +154,9 @@ interface SignatureTabProps {
 }
 
 export function SignatureTab({ request, onOpenSettings }: SignatureTabProps) {
-  const req = request as DisplayableRequest & {
-    signatureVerified?: boolean | null;
-    signatureError?: string | null;
-    signingProvider?: string | null;
-  };
-  const signatureVerified = req.signatureVerified;
-  const signatureError = req.signatureError;
-  const signingProvider = req.signingProvider;
+  const signatureVerified = request.signatureVerified;
+  const signatureError = request.signatureError;
+  const signingProvider = request.signingProvider;
 
   // Server-side result available
   if (signatureVerified !== null && signatureVerified !== undefined) {
@@ -175,7 +170,16 @@ export function SignatureTab({ request, onOpenSettings }: SignatureTabProps) {
   }
 
   // Client-side verification mode
-  return <ClientSideVerification request={request} onOpenSettings={onOpenSettings} />;
+  // key resets component state when switching between requests
+  const requestId =
+    "id" in request
+      ? (request as { id: string }).id
+      : "_id" in request
+        ? (request as { _id: string })._id
+        : "";
+  return (
+    <ClientSideVerification key={requestId} request={request} onOpenSettings={onOpenSettings} />
+  );
 }
 
 /** Display server-side verification result (read-only). */

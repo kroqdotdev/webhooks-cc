@@ -13,7 +13,7 @@ function getKey(): Buffer | null {
   if (!b64) return null;
   const buf = Buffer.from(b64, "base64");
   if (buf.length !== 32) {
-    console.warn(
+    console.error(
       "SIGNING_SECRET_KEY is not 32 bytes after base64 decode — signing features disabled"
     );
     return null;

@@ -384,6 +384,8 @@ export async function updateEndpointBySlugForUser({
     const encrypted = encryptSigningSecret(signingSecret);
     // Supabase PostgREST expects hex-encoded bytea with \\x prefix
     updates.signing_secret_encrypted = `\\x${encrypted.toString("hex")}`;
+  } else if (signingSecret === null) {
+    updates.signing_secret_encrypted = null;
   }
   if (signingHeader !== undefined) {
     updates.signing_header = signingHeader || null;

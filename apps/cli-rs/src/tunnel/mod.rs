@@ -107,9 +107,13 @@ impl Tunnel {
                 }
             if !verified
                 && let Some(ref error) = req.signature_error {
-                    // Truncate error for header safety (max ~200 chars), UTF-8 safe
-                    let short: String = error.chars().take(200).collect();
-                    if let Ok(val) = HeaderValue::from_str(&short) {
+                    // Extract just the error code from JSON (e.g., "mismatch") since
+                    // full JSON contains chars invalid in HTTP header values
+                    let code = serde_json::from_str::<serde_json::Value>(error)
+                        .ok()
+                        .and_then(|v| v.get("code").and_then(|c| c.as_str().map(String::from)))
+                        .unwrap_or_else(|| "unknown".to_string());
+                    if let Ok(val) = HeaderValue::from_str(&code) {
                         headers.insert(
                             HeaderName::from_static("x-signature-error"),
                             val,

@@ -50,8 +50,8 @@ describe.skipIf(!API_KEY)("Live Signature Verification", () => {
     expect(updated.signingProvider).toBe("standard-webhooks");
     expect(updated.hasSigningSecret).toBe(true);
     // Secret itself should never be returned
-    expect((updated as Record<string, unknown>).signingSecret).toBeUndefined();
-    expect((updated as Record<string, unknown>).signingSecretEncrypted).toBeUndefined();
+    expect((updated as unknown as Record<string, unknown>).signingSecret).toBeUndefined();
+    expect((updated as unknown as Record<string, unknown>).signingSecretEncrypted).toBeUndefined();
   });
 
   it("send a correctly signed webhook and verify", async () => {
