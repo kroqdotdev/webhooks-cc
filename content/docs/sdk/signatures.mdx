@@ -41,6 +41,49 @@ import {
 } from "@webhooks-cc/sdk";
 ```
 
+## Server-side verification
+
+When you configure a signing secret on an endpoint (via the dashboard or SDK), the server verifies every incoming webhook automatically and stores the result on the request:
+
+```ts
+const req = await client.requests.waitFor(slug, {
+  match: matchAll(matchMethod("POST"), matchVerified()),
+  timeout: "30s",
+});
+
+console.log(req.signatureVerified); // true
+console.log(req.signingProvider); // "stripe"
+```
+
+Configure signing via the SDK:
+
+```ts
+await client.endpoints.update(slug, {
+  signingProvider: "stripe",
+  signingSecret: "whsec_...",
+});
+```
+
+Clear it:
+
+```ts
+await client.endpoints.update(slug, {
+  signingProvider: null,
+});
+```
+
+The request object includes three verification fields:
+
+| Field               | Type              | Description                                          |
+| ------------------- | ----------------- | ---------------------------------------------------- |
+| `signatureVerified` | `boolean \| null` | `true` = valid, `false` = invalid, `null` = not configured |
+| `signatureError`    | `string \| null`  | Structured JSON error when verification failed       |
+| `signingProvider`   | `string \| null`  | Provider that performed the verification             |
+
+## Client-side verification
+
+The SDK also includes client-side verification functions that work without server-side configuration. These are useful in your own webhook handlers:
+
 ## Provider reference
 
 | Provider          | Header                                                   | Algorithm            | Secret format       |
