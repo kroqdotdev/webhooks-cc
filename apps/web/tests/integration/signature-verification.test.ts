@@ -6,10 +6,7 @@ import {
   getEndpointBySlugForUser,
   updateEndpointBySlugForUser,
 } from "@/lib/supabase/endpoints";
-import {
-  getRequestByIdForUser,
-  listRequestsForEndpointByUser,
-} from "@/lib/supabase/requests";
+import { getRequestByIdForUser, listRequestsForEndpointByUser } from "@/lib/supabase/requests";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -95,7 +92,9 @@ describe("Signature Verification Integration", () => {
     // Secret must never be exposed
     expect((endpoint as unknown as Record<string, unknown>).signingSecret).toBeUndefined();
     expect((endpoint as unknown as Record<string, unknown>).signingSecretEncrypted).toBeUndefined();
-    expect((endpoint as unknown as Record<string, unknown>).signing_secret_encrypted).toBeUndefined();
+    expect(
+      (endpoint as unknown as Record<string, unknown>).signing_secret_encrypted
+    ).toBeUndefined();
   });
 
   it("PATCH: update provider without re-entering secret", async () => {
@@ -219,7 +218,7 @@ describe("Signature Verification Integration", () => {
         method: "POST",
         path: "/test-failed",
         headers: { "stripe-signature": "t=123,v1=wrong" },
-        body: '{}',
+        body: "{}",
         query_params: {},
         content_type: "application/json",
         ip: "127.0.0.1",
@@ -244,7 +243,10 @@ describe("Signature Verification Integration", () => {
   });
 
   it("list requests includes verification fields", async () => {
-    const requests = await listRequestsForEndpointByUser({ userId: testUserId, slug: testEndpointSlug });
+    const requests = await listRequestsForEndpointByUser({
+      userId: testUserId,
+      slug: testEndpointSlug,
+    });
     expect(requests).not.toBeNull();
     expect(requests!.length).toBeGreaterThan(0);
 

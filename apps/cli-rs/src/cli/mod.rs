@@ -80,8 +80,8 @@ pub enum Command {
         #[arg(long)]
         signing_provider: Option<String>,
 
-        /// Signing secret (encrypted server-side)
-        #[arg(long)]
+        /// Signing secret (encrypted server-side). Use env var WHK_SIGNING_SECRET or pass via stdin.
+        #[arg(long, env = "WHK_SIGNING_SECRET", hide_env_values = true)]
         signing_secret: Option<String>,
     },
 

@@ -31,17 +31,17 @@ The dashboard packs a lot of power into a simple split-pane layout. This page co
 
 Navigate the entire dashboard without touching the mouse. Press **?** to see the full list at any time.
 
-| Key             | Action                                                        |
-| --------------- | ------------------------------------------------------------- |
-| `j` / `k`       | Move down / up in the request list                            |
-| `1` `2` `3` `4` `5` | Switch to Body / Headers / Query / Raw / Signature tab   |
-| `c`             | Copy cURL command for the selected request                    |
-| `r`             | Open the replay dialog                                        |
-| `n`             | Create a new endpoint                                         |
-| `/`             | Focus the search input                                        |
-| `l`             | Toggle live / paused mode                                     |
-| `[`             | Collapse or expand the sidebar                                |
-| `Esc`           | Close any dialog, exit compare mode, or blur the search input |
+| Key                 | Action                                                        |
+| ------------------- | ------------------------------------------------------------- |
+| `j` / `k`           | Move down / up in the request list                            |
+| `1` `2` `3` `4` `5` | Switch to Body / Headers / Query / Raw / Signature tab        |
+| `c`                 | Copy cURL command for the selected request                    |
+| `r`                 | Open the replay dialog                                        |
+| `n`                 | Create a new endpoint                                         |
+| `/`                 | Focus the search input                                        |
+| `l`                 | Toggle live / paused mode                                     |
+| `[`                 | Collapse or expand the sidebar                                |
+| `Esc`               | Close any dialog, exit compare mode, or blur the search input |
 
 Shortcuts are disabled when you're typing in an input field, and modifier keys (Ctrl, Cmd, Alt) are never intercepted so browser shortcuts work normally.
 
@@ -199,5 +199,6 @@ For automatic verification on every request, configure a signing secret in endpo
 When server-side verification is configured, the Signature tab shows the stored result with detailed error info for failures — including expected vs. received signatures, timestamp analysis, and provider-specific debugging tips.
 
 <Callout type="tip">
-  Start with the client-side Signature tab for quick debugging. If you find yourself pasting the same secret repeatedly, save it to endpoint settings for automatic verification.
+  Start with the client-side Signature tab for quick debugging. If you find yourself pasting the
+  same secret repeatedly, save it to endpoint settings for automatic verification.
 </Callout>

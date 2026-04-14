@@ -20,6 +20,10 @@ pub async fn create(
     signing_secret: Option<String>,
     json: bool,
 ) -> Result<()> {
+    if signing_secret.is_some() && signing_provider.is_none() {
+        anyhow::bail!("--signing-secret requires --signing-provider");
+    }
+
     let mock_response = build_mock_response(mock_status, mock_body, mock_headers)?;
 
     let expires_at = match expires_in {
@@ -49,7 +53,15 @@ pub async fn create(
             signing_secret: signing_secret.clone(),
             signing_header: None,
         };
-        client.update_endpoint(&endpoint.slug, &update).await?;
+        if let Err(e) = client.update_endpoint(&endpoint.slug, &update).await {
+            eprintln!(
+                "  {} Endpoint {} was created but signing setup failed: {}",
+                red("⚠"),
+                bold(&endpoint.slug),
+                e
+            );
+            eprintln!("  Update the endpoint manually to configure signing.");
+        }
     }
 
     if json {

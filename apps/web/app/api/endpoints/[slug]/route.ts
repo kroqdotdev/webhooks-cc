@@ -68,7 +68,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   if (!rulesCheck.valid) return rulesCheck.response;
 
   // Validate signing config if provided
-  const VALID_PROVIDERS = new Set([
+  const validProviders = new Set([
     "stripe",
     "github",
     "shopify",
@@ -85,10 +85,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     "sendgrid",
   ]);
   if (body.signingProvider !== undefined && body.signingProvider !== null) {
-    if (typeof body.signingProvider !== "string" || !VALID_PROVIDERS.has(body.signingProvider)) {
+    if (typeof body.signingProvider !== "string" || !validProviders.has(body.signingProvider)) {
       return Response.json({ error: "Invalid signing provider" }, { status: 400 });
     }
-    if (body.signingProvider === "generic-hmac" && body.signingHeader !== undefined) {
+  }
+  // Validate signingHeader for generic-hmac — check both explicit provider and existing endpoint config
+  const effectiveProvider = body.signingProvider ?? undefined;
+  if (body.signingHeader !== undefined) {
+    // We need to validate if the effective provider is generic-hmac
+    // If body.signingProvider is set, use that; otherwise we'll validate after loading the endpoint
+    if (effectiveProvider === "generic-hmac") {
       if (
         typeof body.signingHeader !== "string" ||
         body.signingHeader.length === 0 ||
@@ -120,6 +126,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     const access = await resolveEndpointAccess(auth.userId, slug);
     if (!access) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
+    }
+
+    // Validate signingHeader when existing endpoint uses generic-hmac and provider isn't being changed
+    if (body.signingHeader !== undefined && effectiveProvider === undefined) {
+      const existing = await getEndpointBySlugForUser(access.ownerId, slug);
+      if (existing?.signingProvider === "generic-hmac") {
+        if (
+          typeof body.signingHeader !== "string" ||
+          body.signingHeader.length === 0 ||
+          body.signingHeader.length > 256 ||
+          !/^[a-zA-Z0-9\-_]+$/.test(body.signingHeader)
+        ) {
+          return Response.json({ error: "Invalid signing header name" }, { status: 400 });
+        }
+      }
     }
 
     const endpoint = await updateEndpointBySlugForUser({

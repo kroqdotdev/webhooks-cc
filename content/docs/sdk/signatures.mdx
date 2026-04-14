@@ -46,6 +46,8 @@ import {
 When you configure a signing secret on an endpoint (via the dashboard or SDK), the server verifies every incoming webhook automatically and stores the result on the request:
 
 ```ts
+import { matchAll, matchMethod, matchVerified } from "@webhooks-cc/sdk";
+
 const req = await client.requests.waitFor(slug, {
   match: matchAll(matchMethod("POST"), matchVerified()),
   timeout: "30s",
@@ -74,11 +76,11 @@ await client.endpoints.update(slug, {
 
 The request object includes three verification fields:
 
-| Field               | Type              | Description                                          |
-| ------------------- | ----------------- | ---------------------------------------------------- |
+| Field               | Type              | Description                                                |
+| ------------------- | ----------------- | ---------------------------------------------------------- |
 | `signatureVerified` | `boolean \| null` | `true` = valid, `false` = invalid, `null` = not configured |
-| `signatureError`    | `string \| null`  | Structured JSON error when verification failed       |
-| `signingProvider`   | `string \| null`  | Provider that performed the verification             |
+| `signatureError`    | `string \| null`  | Structured JSON error when verification failed             |
+| `signingProvider`   | `string \| null`  | Provider that performed the verification                   |
 
 ## Client-side verification
 

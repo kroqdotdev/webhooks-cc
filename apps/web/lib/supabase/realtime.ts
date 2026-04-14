@@ -43,7 +43,7 @@ export function subscribeToUserRow(userId: string, onChange: (row: UserRow | nul
   return () => removeChannel(channel);
 }
 
-export function subscribeToEndpointRequestInserts(endpointId: string, onChange: () => void) {
+export function subscribeToEndpointRequestChanges(endpointId: string, onChange: () => void) {
   const supabase = createClient();
   const channel = supabase
     .channel(nextChannelName(`requests:${endpointId}`))

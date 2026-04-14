@@ -447,18 +447,45 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       signingProvider: z
         .string()
         .optional()
-        .describe("Signing provider for automatic signature verification (e.g. stripe, github, shopify)"),
+        .describe(
+          "Signing provider for automatic signature verification (e.g. stripe, github, shopify)"
+        ),
       signingSecret: z
         .string()
         .optional()
-        .describe("Signing secret (encrypted server-side, never returned). Required when signingProvider is set."),
+        .describe(
+          "Signing secret (encrypted server-side, never returned). Required when signingProvider is set."
+        ),
       signingHeader: z
         .string()
         .optional()
         .describe("Custom signature header name. Only used with generic-hmac provider."),
     },
     withErrorHandling(
-      async ({ name, ephemeral, expiresIn, mockResponse, responseRules, notificationUrl, signingProvider, signingSecret, signingHeader }) => {
+      async ({
+        name,
+        ephemeral,
+        expiresIn,
+        mockResponse,
+        responseRules,
+        notificationUrl,
+        signingProvider,
+        signingSecret,
+        signingHeader,
+      }) => {
+        // Validate signing fields before creating endpoint
+        if (signingProvider) {
+          if (signingProvider !== "discord" && !signingSecret) {
+            throw new Error(`signingSecret is required for provider "${signingProvider}"`);
+          }
+          if (signingProvider === "generic-hmac" && !signingHeader) {
+            throw new Error("signingHeader is required for generic-hmac provider");
+          }
+        }
+        if (signingSecret && !signingProvider) {
+          throw new Error("signingProvider is required when signingSecret is set");
+        }
+
         const endpoint = await client.endpoints.create({
           name,
           ephemeral,
@@ -476,9 +503,10 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
               signingHeader,
             });
           } catch (err) {
-            throw new Error(
-              `Endpoint "${endpoint.slug}" was created but signing configuration failed: ${err instanceof Error ? err.message : String(err)}. Update the endpoint manually to add signing.`
-            );
+            return jsonContent({
+              ...endpoint,
+              warning: `Endpoint created but signing configuration failed: ${err instanceof Error ? err.message : String(err)}. Update endpoint "${endpoint.slug}" to add signing.`,
+            });
           }
         }
         return jsonContent(endpoint);
@@ -530,7 +558,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .string()
         .nullable()
         .optional()
-        .describe("Signing provider for automatic verification (e.g. stripe, github), or null to disable"),
+        .describe(
+          "Signing provider for automatic verification (e.g. stripe, github), or null to disable"
+        ),
       signingSecret: z
         .string()
         .nullable()
@@ -540,10 +570,13 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .string()
         .nullable()
         .optional()
-        .describe("Custom signature header name (only for generic-hmac provider), or null to clear"),
+        .describe(
+          "Custom signature header name (only for generic-hmac provider), or null to clear"
+        ),
     },
-    withErrorHandling(async ({ slug, name, mockResponse, responseRules, notificationUrl, signingProvider, signingSecret, signingHeader }) => {
-      const endpoint = await client.endpoints.update(slug, {
+    withErrorHandling(
+      async ({
+        slug,
         name,
         mockResponse,
         responseRules,
@@ -551,9 +584,19 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         signingProvider,
         signingSecret,
         signingHeader,
-      });
-      return jsonContent(endpoint);
-    })
+      }) => {
+        const endpoint = await client.endpoints.update(slug, {
+          name,
+          mockResponse,
+          responseRules,
+          notificationUrl,
+          signingProvider,
+          signingSecret,
+          signingHeader,
+        });
+        return jsonContent(endpoint);
+      }
+    )
   );
 
   server.tool(
@@ -860,7 +903,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       secret: z
         .string()
         .optional()
-        .describe("Shared signing secret. Required for non-Discord providers when doing client-side verification."),
+        .describe(
+          "Shared signing secret. Required for non-Discord providers when doing client-side verification."
+        ),
       publicKey: z
         .string()
         .optional()
@@ -878,16 +923,34 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         if (verified === null || verified === undefined) {
           return jsonContent({
             valid: null,
-            details: "No signature verification configured on this endpoint. Pass provider and secret to verify client-side.",
+            details:
+              "No signature verification configured on this endpoint. Pass provider and secret to verify client-side.",
           });
         }
+        // Parse stored error to check for skipped verification
+        let errorData: { code?: string; message?: string } | null = null;
+        if (request.signatureError) {
+          try {
+            errorData = JSON.parse(request.signatureError);
+          } catch {
+            errorData = null;
+          }
+        }
+        const isSkipped =
+          !verified &&
+          errorData?.code &&
+          (errorData.code === "missing_header" || errorData.code === "unsupported");
+
         return jsonContent({
-          valid: verified,
+          valid: isSkipped ? null : verified,
           provider: request.signingProvider ?? null,
           details: verified
             ? "Signature verified by server."
-            : `Signature invalid: ${request.signatureError ?? "unknown error"}`,
+            : isSkipped
+              ? `Verification skipped: ${errorData?.message ?? errorData?.code}`
+              : `Signature invalid: ${request.signatureError ?? "unknown error"}`,
           error: request.signatureError ?? null,
+          skipped: isSkipped ?? false,
         });
       }
 

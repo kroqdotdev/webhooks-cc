@@ -558,8 +558,19 @@ async fn handle_webhook_inner(
                         let verify_headers = filtered_headers.clone();
                         let verify_body = body.to_vec();
                         // Construct full URL for Twilio verification (signs URL + params)
+                        let verify_query = query.0.clone();
                         let request_url = state.config.webhook_base_url.as_ref().map(|base| {
-                            format!("{base}/w/{slug}{}", if req_path == "/" { "".to_string() } else { req_path.clone() })
+                            let path_part = if req_path == "/" { "".to_string() } else { req_path.clone() };
+                            if verify_query.is_empty() {
+                                format!("{base}/w/{slug}{path_part}")
+                            } else {
+                                let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+                                for (k, v) in &verify_query {
+                                    serializer.append_pair(k, v);
+                                }
+                                let qs = serializer.finish();
+                                format!("{base}/w/{slug}{path_part}?{qs}")
+                            }
                         });
 
                         tokio::spawn(async move {

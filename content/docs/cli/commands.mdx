@@ -110,6 +110,8 @@ When signature verification is configured on the endpoint, tunnel injects verifi
 
 Your local server can use these headers to skip its own verification during development.
 
+> **Warning:** These headers are injected by the local tunnel client and are **not authenticated**. Never trust them in production — any HTTP client can send arbitrary `X-Signature-*` headers. Always perform your own signature verification in production environments.
+
 ## listen
 
 Stream incoming requests for an endpoint to the terminal without forwarding them.

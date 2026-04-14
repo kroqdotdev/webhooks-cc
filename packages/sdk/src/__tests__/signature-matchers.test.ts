@@ -69,15 +69,9 @@ describe("matchUnverified", () => {
 describe("matchVerified with composition", () => {
   it("combines with matchMethod via matchAll", () => {
     const matcher = matchAll(matchMethod("POST"), matchVerified());
-    expect(
-      matcher(makeRequest({ method: "POST", signatureVerified: true }))
-    ).toBe(true);
-    expect(
-      matcher(makeRequest({ method: "GET", signatureVerified: true }))
-    ).toBe(false);
-    expect(
-      matcher(makeRequest({ method: "POST", signatureVerified: false }))
-    ).toBe(false);
+    expect(matcher(makeRequest({ method: "POST", signatureVerified: true }))).toBe(true);
+    expect(matcher(makeRequest({ method: "GET", signatureVerified: true }))).toBe(false);
+    expect(matcher(makeRequest({ method: "POST", signatureVerified: false }))).toBe(false);
   });
 });
 

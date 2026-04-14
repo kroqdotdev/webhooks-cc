@@ -94,12 +94,10 @@ impl Config {
         let signing_secret_key = env::var("SIGNING_SECRET_KEY")
             .ok()
             .filter(|v| !v.is_empty())
-            .and_then(|v| {
-                let key = crate::crypto::parse_signing_key(&v);
-                if key.is_none() {
-                    tracing::warn!("SIGNING_SECRET_KEY is set but not valid base64 or not 32 bytes — signature verification disabled");
-                }
-                key
+            .map(|v| {
+                crate::crypto::parse_signing_key(&v).unwrap_or_else(|| {
+                    panic!("SIGNING_SECRET_KEY is set but not valid base64 or not exactly 32 bytes. Generate a valid key with: openssl rand -base64 32");
+                })
             });
 
         let webhook_base_url = env::var("WEBHOOK_BASE_URL")

@@ -371,24 +371,37 @@ export async function updateEndpointBySlugForUser({
   // Handle signing config
   if (signingProvider !== undefined) {
     if (signingProvider === null) {
-      // Clearing signing config
+      // Clearing signing config — wipe everything
       updates.signing_provider = null;
       updates.signing_secret_encrypted = null;
       updates.signing_header = null;
     } else {
       updates.signing_provider = signingProvider;
+      // Only process secret/header when not clearing
+      if (signingSecret !== undefined && signingSecret !== null && signingSecret !== "") {
+        const { encryptSigningSecret } = await import("@/lib/crypto");
+        const encrypted = encryptSigningSecret(signingSecret);
+        // Supabase PostgREST expects hex-encoded bytea with \\x prefix
+        updates.signing_secret_encrypted = `\\x${encrypted.toString("hex")}`;
+      } else if (signingSecret === null) {
+        updates.signing_secret_encrypted = null;
+      }
+      if (signingHeader !== undefined) {
+        updates.signing_header = signingHeader || null;
+      }
     }
-  }
-  if (signingSecret !== undefined && signingSecret !== null && signingSecret !== "") {
-    const { encryptSigningSecret } = await import("@/lib/crypto");
-    const encrypted = encryptSigningSecret(signingSecret);
-    // Supabase PostgREST expects hex-encoded bytea with \\x prefix
-    updates.signing_secret_encrypted = `\\x${encrypted.toString("hex")}`;
-  } else if (signingSecret === null) {
-    updates.signing_secret_encrypted = null;
-  }
-  if (signingHeader !== undefined) {
-    updates.signing_header = signingHeader || null;
+  } else {
+    // Provider not being changed — still allow updating secret/header independently
+    if (signingSecret !== undefined && signingSecret !== null && signingSecret !== "") {
+      const { encryptSigningSecret } = await import("@/lib/crypto");
+      const encrypted = encryptSigningSecret(signingSecret);
+      updates.signing_secret_encrypted = `\\x${encrypted.toString("hex")}`;
+    } else if (signingSecret === null) {
+      updates.signing_secret_encrypted = null;
+    }
+    if (signingHeader !== undefined) {
+      updates.signing_header = signingHeader || null;
+    }
   }
 
   const { data, error } = await admin

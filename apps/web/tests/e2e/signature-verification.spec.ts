@@ -57,9 +57,9 @@ test.afterAll(async () => {
 
 async function openDashboard(page: import("@playwright/test").Page) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(
-    page.locator("span.font-bold.uppercase", { hasText: "Sig Verify E2E" })
-  ).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("span.font-bold.uppercase", { hasText: "Sig Verify E2E" })).toBeVisible(
+    { timeout: 10000 }
+  );
 }
 
 async function openSettings(page: import("@playwright/test").Page) {
@@ -186,7 +186,9 @@ test("invalid signature shows mismatch details", async ({ page }) => {
   await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
   await page.click("button:has-text('SIGNATURE')");
 
-  await expect(page.locator("text=Signature Mismatch").or(page.locator("text=Signature Invalid"))).toBeVisible({ timeout: 5000 });
+  await expect(
+    page.locator("text=Signature Mismatch").or(page.locator("text=Signature Invalid"))
+  ).toBeVisible({ timeout: 5000 });
 });
 
 // ── Verification Badges ──

@@ -299,24 +299,25 @@ export const EndpointSettingsDialog = forwardRef<
       // Signing config — only for owned endpoints
       if (initialNotificationUrl !== undefined) {
         const providerChanged = signingProvider !== (initialSigningProvider || "");
-        if (providerChanged) {
-          updates.signingProvider = signingProvider || null;
-        }
-        if (signingSecret) {
-          updates.signingSecret = signingSecret;
-        } else if (providerChanged && signingProvider) {
-          // Provider changed without re-entering secret — clear old secret
-          // so the DB constraint catches it and forces re-entry
-          updates.signingSecret = null;
-        }
-        if (signingProvider === "generic-hmac" && signingHeader !== (initialSigningHeader || "")) {
-          updates.signingHeader = signingHeader || null;
-        }
         // When clearing provider, clear everything
         if (!signingProvider && initialSigningProvider) {
           updates.signingProvider = null;
           updates.signingSecret = null;
           updates.signingHeader = null;
+        } else {
+          if (providerChanged) {
+            updates.signingProvider = signingProvider || null;
+          }
+          // Only send signingSecret when a new value was entered
+          if (signingSecret) {
+            updates.signingSecret = signingSecret;
+          }
+          if (
+            signingProvider === "generic-hmac" &&
+            signingHeader !== (initialSigningHeader || "")
+          ) {
+            updates.signingHeader = signingHeader || null;
+          }
         }
       }
       await updateDashboardEndpoint(accessToken, slug, updates);
@@ -561,18 +562,13 @@ export const EndpointSettingsDialog = forwardRef<
                       <option value="discord">Discord</option>
                       <option value="standard-webhooks">Standard Webhooks</option>
                       <option value="generic-hmac">Generic HMAC</option>
-                      <option value="sendgrid">SendGrid</option>
                     </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      SendGrid uses IP allowlisting and is not supported for signature verification.
+                    </p>
                   </div>
 
-                  {signingProvider === "sendgrid" && (
-                    <p className="text-xs text-muted-foreground">
-                      SendGrid uses IP allowlisting, not signatures. Signature verification is not
-                      applicable.
-                    </p>
-                  )}
-
-                  {signingProvider && signingProvider !== "sendgrid" && (
+                  {signingProvider && (
                     <>
                       <div className="space-y-1">
                         <label

@@ -73,8 +73,7 @@ declare
   v_slug        text;
   v_request_id  uuid;
 begin
-  -- Normalize slug to lowercase for case-insensitive lookup
-  v_slug := lower(p_slug);
+  v_slug := p_slug;
 
   -- 1. Look up endpoint by slug (now includes signing fields)
   select id, user_id, is_ephemeral, expires_at, mock_response, response_rules,

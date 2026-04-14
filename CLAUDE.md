@@ -366,24 +366,24 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 ### Optional
 
-| Variable                         | Purpose                                            |
-| -------------------------------- | -------------------------------------------------- |
-| `APPSIGNAL_PUSH_API_KEY`         | AppSignal API key (web app)                        |
-| `APPSIGNAL_APP_NAME`             | AppSignal app name (default: `webhooks-cc-web`)    |
-| `APPSIGNAL_COLLECTOR_URL`        | OTel collector URL for receiver                    |
-| `RECEIVER_DEBUG`                 | Enable receiver debug logging                      |
-| `WHK_DEBUG`                      | Enable CLI debug logging                           |
-| `PG_POOL_MIN` / `PG_POOL_MAX`    | Receiver connection pool sizing                    |
-| `NOTIFY_PROXY_URL`               | Cloudflare Worker URL for notification proxy       |
-| `NOTIFY_SECRET`                  | Shared secret for notify proxy authentication      |
-| `REDIS_URL`                      | Redis URL for distributed rate limiting            |
-| `RECEIVER_MAX_BODY_SIZE`         | Receiver max body size in bytes (default: 1 MB)    |
-| `NOTIFICATION_COOLDOWN_SECS`     | Min seconds between notifications per endpoint     |
-| `NOTIFICATION_TIMEOUT_SECS`      | Notification delivery timeout in seconds           |
-| `ENDPOINT_CREATE_RATE_LIMIT`     | Max endpoint creations per window (default: 30)    |
-| `ENDPOINT_CREATE_RATE_WINDOW_MS` | Rate limit window in ms (default: 600000)          |
-| `MAX_EPHEMERAL_ENDPOINTS`        | Max concurrent ephemeral endpoints (default: 500)  |
-| `EPHEMERAL_TTL_HOURS`            | Ephemeral endpoint lifetime in hours (default: 12) |
+| Variable                         | Purpose                                                                                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APPSIGNAL_PUSH_API_KEY`         | AppSignal API key (web app)                                                                                                                                                                 |
+| `APPSIGNAL_APP_NAME`             | AppSignal app name (default: `webhooks-cc-web`)                                                                                                                                             |
+| `APPSIGNAL_COLLECTOR_URL`        | OTel collector URL for receiver                                                                                                                                                             |
+| `RECEIVER_DEBUG`                 | Enable receiver debug logging                                                                                                                                                               |
+| `WHK_DEBUG`                      | Enable CLI debug logging                                                                                                                                                                    |
+| `PG_POOL_MIN` / `PG_POOL_MAX`    | Receiver connection pool sizing                                                                                                                                                             |
+| `NOTIFY_PROXY_URL`               | Cloudflare Worker URL for notification proxy                                                                                                                                                |
+| `NOTIFY_SECRET`                  | Shared secret for notify proxy authentication                                                                                                                                               |
+| `REDIS_URL`                      | Redis URL for distributed rate limiting                                                                                                                                                     |
+| `RECEIVER_MAX_BODY_SIZE`         | Receiver max body size in bytes (default: 1 MB)                                                                                                                                             |
+| `NOTIFICATION_COOLDOWN_SECS`     | Min seconds between notifications per endpoint                                                                                                                                              |
+| `NOTIFICATION_TIMEOUT_SECS`      | Notification delivery timeout in seconds                                                                                                                                                    |
+| `ENDPOINT_CREATE_RATE_LIMIT`     | Max endpoint creations per window (default: 30)                                                                                                                                             |
+| `ENDPOINT_CREATE_RATE_WINDOW_MS` | Rate limit window in ms (default: 600000)                                                                                                                                                   |
+| `MAX_EPHEMERAL_ENDPOINTS`        | Max concurrent ephemeral endpoints (default: 500)                                                                                                                                           |
+| `EPHEMERAL_TTL_HOURS`            | Ephemeral endpoint lifetime in hours (default: 12)                                                                                                                                          |
 | `SIGNING_SECRET_KEY`             | AES-256-GCM key for signing secret encryption (base64, 32 bytes). Required by both receiver and web app when signature verification is configured. Generate with `openssl rand -base64 32`. |
 
 ## CI/CD & Releases

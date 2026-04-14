@@ -27,7 +27,7 @@ import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
 import { trackRequestExported } from "@/lib/analytics";
-import { subscribeToEndpointRequestInserts } from "@/lib/supabase/realtime";
+import { subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import {
   fetchDashboardEndpoints,
   fetchDashboardRequests,
@@ -603,7 +603,7 @@ export default function DashboardPage() {
       }, 150);
     };
 
-    const unsubscribe = subscribeToEndpointRequestInserts(currentEndpointId, queueRefresh);
+    const unsubscribe = subscribeToEndpointRequestChanges(currentEndpointId, queueRefresh);
     return () => {
       if (realtimeRefreshTimeoutRef.current) {
         clearTimeout(realtimeRefreshTimeoutRef.current);
@@ -854,7 +854,8 @@ export default function DashboardPage() {
         case "1":
         case "2":
         case "3":
-        case "4": {
+        case "4":
+        case "5": {
           e.preventDefault();
           const tabIndex = parseInt(e.key) - 1;
           setActiveTab(TABS[tabIndex]);

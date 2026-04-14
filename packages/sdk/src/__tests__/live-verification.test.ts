@@ -11,20 +11,33 @@ import { WebhooksCC } from "../client";
 import { matchVerified, matchUnverified } from "../matchers";
 
 const API_KEY = process.env.WHK_API_KEY;
-const BASE_URL = process.env.WHK_BASE_URL ?? "https://webhooks.cc";
-const WEBHOOK_URL = process.env.WHK_WEBHOOK_URL ?? "https://go.webhooks.cc";
+const BASE_URL = process.env.WHK_BASE_URL;
+const WEBHOOK_URL = process.env.WHK_WEBHOOK_URL;
+
+const PRODUCTION_HOSTS = ["https://webhooks.cc", "https://go.webhooks.cc"];
+
+function isProductionUrl(url: string | undefined): boolean {
+  return !!url && PRODUCTION_HOSTS.some((h) => url.startsWith(h));
+}
+
+const shouldSkip =
+  !API_KEY ||
+  !BASE_URL ||
+  !WEBHOOK_URL ||
+  isProductionUrl(BASE_URL) ||
+  isProductionUrl(WEBHOOK_URL);
 
 const createdSlugs: string[] = [];
 
-describe.skipIf(!API_KEY)("Live Signature Verification", () => {
+describe.skipIf(shouldSkip)("Live Signature Verification", () => {
   let client: WebhooksCC;
   const TEST_SECRET = "whsec_gK8z2xRvPqN7mT4jL9wYcE5bA1dF6hU3";
 
   beforeAll(() => {
     client = new WebhooksCC({
       apiKey: API_KEY!,
-      baseUrl: BASE_URL,
-      webhookUrl: WEBHOOK_URL,
+      baseUrl: BASE_URL!,
+      webhookUrl: WEBHOOK_URL!,
     });
   });
 
@@ -82,13 +95,13 @@ describe.skipIf(!API_KEY)("Live Signature Verification", () => {
       body,
     });
 
-    // Wait for the verification to complete (fire-and-forget, ~50ms)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Poll until verification completes instead of fixed sleep
+    const req = await client.requests.waitFor(ep.slug, {
+      match: matchVerified(),
+      timeout: "10s",
+      pollInterval: "500ms",
+    });
 
-    const requests = await client.requests.list(ep.slug, { limit: 1 });
-    expect(requests.length).toBeGreaterThan(0);
-
-    const req = requests[0];
     expect(req.signatureVerified).toBe(true);
     expect(req.signingProvider).toBe("standard-webhooks");
     expect(req.signatureError).toBeNull();
@@ -115,12 +128,13 @@ describe.skipIf(!API_KEY)("Live Signature Verification", () => {
       body: '{"type":"test.invalid"}',
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Poll until verification completes
+    const req = await client.requests.waitFor(ep.slug, {
+      match: matchUnverified(),
+      timeout: "10s",
+      pollInterval: "500ms",
+    });
 
-    const requests = await client.requests.list(ep.slug, { limit: 1 });
-    expect(requests.length).toBeGreaterThan(0);
-
-    const req = requests[0];
     expect(req.signatureVerified).toBe(false);
     expect(req.signingProvider).toBe("standard-webhooks");
     expect(req.signatureError).toBeTruthy();

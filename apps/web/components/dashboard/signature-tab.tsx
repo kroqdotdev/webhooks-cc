@@ -525,11 +525,20 @@ export function SignatureVerificationBadge({
   const errorData = parseSignatureError(signatureError);
   const providerLabel = signingProvider && PROVIDERS[signingProvider]?.label;
 
+  const isSkipped =
+    !signatureVerified &&
+    errorData?.code &&
+    (errorData.code === "missing_header" || errorData.code === "unsupported");
+
   const title = signatureVerified
     ? `Signature verified${providerLabel ? ` (${providerLabel})` : ""}`
-    : `Signature invalid${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`;
+    : isSkipped
+      ? `Verification skipped${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`
+      : `Signature invalid${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`;
   const icon = signatureVerified ? (
     <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+  ) : isSkipped ? (
+    <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
   ) : (
     <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
   );
