@@ -6,7 +6,7 @@ import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
-import { Settings } from "lucide-react";
+import { Settings, ShieldCheck } from "lucide-react";
 import { ResponseRulesEditor } from "./response-rules-editor";
 import type { ResponseRule } from "@/lib/dashboard-api";
 import { parseStatusCode } from "@/lib/http";
@@ -72,6 +72,12 @@ interface EndpointSettingsDialogProps {
   responseRules?: ResponseRule[];
   /** Current notification webhook URL. null = owned, not set. undefined = shared endpoint (hidden). */
   notificationUrl?: string | null;
+  /** Current signing provider (null = not configured). */
+  signingProvider?: string | null;
+  /** Whether a signing secret is stored. */
+  hasSigningSecret?: boolean;
+  /** Custom header name for generic-hmac. */
+  signingHeader?: string | null;
 }
 
 function TeamSharingSection({
@@ -197,6 +203,9 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
     mockResponse,
     responseRules: initialResponseRules,
     notificationUrl: initialNotificationUrl,
+    signingProvider: initialSigningProvider,
+    hasSigningSecret: initialHasSigningSecret,
+    signingHeader: initialSigningHeader,
   } = props;
   const { session } = useAuth();
   const router = useRouter();
@@ -209,6 +218,10 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [delayEnabled, setDelayEnabled] = useState(!!mockResponse?.delay);
   const [notificationUrl, setNotificationUrl] = useState(initialNotificationUrl || "");
   const [responseRules, setResponseRules] = useState<ResponseRule[]>(initialResponseRules || []);
+  const [signingProvider, setSigningProvider] = useState<string>(initialSigningProvider || "");
+  const [signingSecret, setSigningSecret] = useState("");
+  const [signingHeader, setSigningHeader] = useState(initialSigningHeader || "");
+  const [hasSigningSecret, setHasSigningSecret] = useState(!!initialHasSigningSecret);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -225,11 +238,15 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setDelayEnabled(!!mockResponse?.delay);
       setNotificationUrl(initialNotificationUrl || "");
       setResponseRules(initialResponseRules || []);
+      setSigningProvider(initialSigningProvider || "");
+      setSigningSecret("");
+      setSigningHeader(initialSigningHeader || "");
+      setHasSigningSecret(!!initialHasSigningSecret);
       setError(null);
       setConfirmDelete(false);
     }
     prevOpen.current = open;
-  }, [open, endpointName, mockResponse, initialResponseRules, initialNotificationUrl]);
+  }, [open, endpointName, mockResponse, initialResponseRules, initialNotificationUrl, initialSigningProvider, initialHasSigningSecret, initialSigningHeader]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -259,6 +276,24 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       // Shared endpoints don't include notificationUrl — sending null would wipe it.
       if (initialNotificationUrl !== undefined) {
         updates.notificationUrl = notificationUrl || null;
+      }
+      // Signing config — only for owned endpoints
+      if (initialNotificationUrl !== undefined) {
+        if (signingProvider !== (initialSigningProvider || "")) {
+          updates.signingProvider = signingProvider || null;
+        }
+        if (signingSecret) {
+          updates.signingSecret = signingSecret;
+        }
+        if (signingProvider === "generic-hmac" && signingHeader !== (initialSigningHeader || "")) {
+          updates.signingHeader = signingHeader || null;
+        }
+        // When clearing provider, clear everything
+        if (!signingProvider && initialSigningProvider) {
+          updates.signingProvider = null;
+          updates.signingSecret = null;
+          updates.signingHeader = null;
+        }
       }
       await updateDashboardEndpoint(accessToken, slug, updates);
       emitDashboardEndpointsChanged();
@@ -461,6 +496,125 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
                   accessToken={session?.access_token ?? null}
                   endpointId={endpointId}
                 />
+              )}
+
+              {/* Signature Verification — only for owned endpoints */}
+              {initialNotificationUrl !== undefined && (
+                <div className="border-2 border-foreground p-4 space-y-3">
+                  <div>
+                    <p className="font-bold uppercase tracking-wide text-xs mb-1">
+                      Signature Verification
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Automatically verify webhook signatures on every request.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="settings-signing-provider"
+                      className="font-bold uppercase tracking-wide text-xs"
+                    >
+                      Provider
+                    </label>
+                    <select
+                      id="settings-signing-provider"
+                      value={signingProvider}
+                      onChange={(e) => setSigningProvider(e.target.value)}
+                      className="neo-input w-full text-sm"
+                    >
+                      <option value="">None</option>
+                      <option value="stripe">Stripe</option>
+                      <option value="github">GitHub</option>
+                      <option value="shopify">Shopify</option>
+                      <option value="twilio">Twilio</option>
+                      <option value="slack">Slack</option>
+                      <option value="paddle">Paddle</option>
+                      <option value="linear">Linear</option>
+                      <option value="vercel">Vercel</option>
+                      <option value="gitlab">GitLab</option>
+                      <option value="clerk">Clerk</option>
+                      <option value="discord">Discord</option>
+                      <option value="standard-webhooks">Standard Webhooks</option>
+                      <option value="generic-hmac">Generic HMAC</option>
+                      <option value="sendgrid">SendGrid</option>
+                    </select>
+                  </div>
+
+                  {signingProvider === "sendgrid" && (
+                    <p className="text-xs text-muted-foreground">
+                      SendGrid uses IP allowlisting, not signatures. Signature verification is not applicable.
+                    </p>
+                  )}
+
+                  {signingProvider && signingProvider !== "sendgrid" && (
+                    <>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="settings-signing-secret"
+                          className="font-bold uppercase tracking-wide text-xs"
+                        >
+                          {signingProvider === "discord" ? "Public Key" : "Signing Secret"}
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            id="settings-signing-secret"
+                            type="password"
+                            value={signingSecret}
+                            onChange={(e) => setSigningSecret(e.target.value)}
+                            placeholder={hasSigningSecret ? "Enter new secret to replace" : signingProvider === "discord" ? "Ed25519 public key" : "Paste secret here"}
+                            className="neo-input flex-1 text-sm font-mono"
+                          />
+                          {hasSigningSecret && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSigningProvider("");
+                                setSigningSecret("");
+                                setHasSigningSecret(false);
+                              }}
+                              className="neo-btn-outline py-1.5! px-3! text-xs shrink-0"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {hasSigningSecret
+                            ? "Secret is encrypted at rest. Enter a new value to replace it."
+                            : "Encrypted at rest. Never visible after save."}
+                        </p>
+                      </div>
+
+                      {signingProvider === "generic-hmac" && (
+                        <div className="space-y-1">
+                          <label
+                            htmlFor="settings-signing-header"
+                            className="font-bold uppercase tracking-wide text-xs"
+                          >
+                            Signature Header
+                          </label>
+                          <input
+                            id="settings-signing-header"
+                            value={signingHeader}
+                            onChange={(e) => setSigningHeader(e.target.value)}
+                            placeholder="x-my-signature"
+                            className="neo-input w-full text-sm font-mono"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {hasSigningSecret && signingProvider && (
+                    <div className="flex items-center gap-1.5 text-xs text-primary">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      <span className="font-bold uppercase tracking-wide">
+                        Configured &middot; {signingProvider}
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
