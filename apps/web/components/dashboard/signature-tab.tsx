@@ -85,9 +85,10 @@ interface SignatureTabProps {
 }
 
 export function SignatureTab({ request, onOpenSettings }: SignatureTabProps) {
-  const signatureVerified = "signatureVerified" in request ? (request as Record<string, unknown>).signatureVerified as boolean | null | undefined : undefined;
-  const signatureError = "signatureError" in request ? (request as Record<string, unknown>).signatureError as string | null | undefined : undefined;
-  const signingProvider = "signingProvider" in request ? (request as Record<string, unknown>).signingProvider as string | null | undefined : undefined;
+  const req = request as DisplayableRequest & { signatureVerified?: boolean | null; signatureError?: string | null; signingProvider?: string | null };
+  const signatureVerified = req.signatureVerified;
+  const signatureError = req.signatureError;
+  const signingProvider = req.signingProvider;
 
   // Server-side result available
   if (signatureVerified !== null && signatureVerified !== undefined) {
@@ -241,11 +242,10 @@ function ClientSideVerification({
 
     try {
       const { verifySignature } = await import("@webhooks-cc/sdk");
-      const options: { provider: string; secret: string; publicKey: string; url?: string } = {
-        provider,
-        secret,
-        publicKey: provider === "discord" ? secret : "",
-      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const options: any = provider === "discord"
+        ? { provider: "discord", publicKey: secret }
+        : { provider, secret };
       const res = await verifySignature(
         { body: request.body ?? "", headers: request.headers },
         options

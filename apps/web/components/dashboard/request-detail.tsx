@@ -190,15 +190,18 @@ export function RequestDetail({
               <span>{request.ip}</span>
               <span>{formatBytes(request.size)}</span>
               <span>{fullTime}</span>
-              {"signatureVerified" in request && (
-                <SignatureVerificationBadge
-                  signatureVerified={(request as Record<string, unknown>).signatureVerified as boolean | null | undefined}
-                  signatureError={(request as Record<string, unknown>).signatureError as string | null | undefined}
-                  signingProvider={(request as Record<string, unknown>).signingProvider as string | null | undefined}
-                  onClick={() => setTab("signature")}
-                  className="cursor-pointer"
-                />
-              )}
+              {(() => {
+                const r = request as DisplayableRequest & { signatureVerified?: boolean | null; signatureError?: string | null; signingProvider?: string | null };
+                return r.signatureVerified != null ? (
+                  <SignatureVerificationBadge
+                    signatureVerified={r.signatureVerified}
+                    signatureError={r.signatureError}
+                    signingProvider={r.signingProvider}
+                    onClick={() => setTab("signature")}
+                    className="cursor-pointer"
+                  />
+                ) : null;
+              })()}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">

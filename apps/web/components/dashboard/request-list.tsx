@@ -429,11 +429,11 @@ export function RequestList({
           >
             {request.method}
           </span>
-          {"signatureVerified" in request && (request as Record<string, unknown>).signatureVerified != null && (
+          {request.signatureVerified != null && (
             <SignatureVerificationBadge
-              signatureVerified={(request as Record<string, unknown>).signatureVerified as boolean | null}
-              signatureError={(request as Record<string, unknown>).signatureError as string | null | undefined}
-              signingProvider={(request as Record<string, unknown>).signingProvider as string | null | undefined}
+              signatureVerified={request.signatureVerified}
+              signatureError={request.signatureError}
+              signingProvider={request.signingProvider}
             />
           )}
           <span className="text-xs font-mono truncate flex-1">{request.path}</span>

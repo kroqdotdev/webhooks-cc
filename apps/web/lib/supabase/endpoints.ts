@@ -355,8 +355,7 @@ export async function updateEndpointBySlugForUser({
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updates: Record<string, any> = {};
+  const updates: EndpointUpdate = {};
   if (name !== undefined) {
     updates.name = name;
   }
