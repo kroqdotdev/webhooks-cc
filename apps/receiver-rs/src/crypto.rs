@@ -61,8 +61,10 @@ pub fn decrypt_secret(encrypted: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, Crypt
 /// stored procedure which returns it as base64 text.
 pub fn decrypt_secret_b64(encoded: &str, key: &[u8; 32]) -> Result<Vec<u8>, CryptoError> {
     use base64::Engine;
+    // SQL encode(..., 'base64') inserts newlines every 76 chars — strip whitespace before decoding
+    let cleaned: String = encoded.chars().filter(|c| !c.is_whitespace()).collect();
     let encrypted = base64::engine::general_purpose::STANDARD
-        .decode(encoded)
+        .decode(&cleaned)
         .map_err(|_| CryptoError::Base64DecodeFailed)?;
     decrypt_secret(&encrypted, key)
 }
