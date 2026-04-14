@@ -15,13 +15,28 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.18.2";
+export const APP_VERSION = "0.19.0";
 export const CLI_VERSION = "1.0.0";
 export const SDK_VERSION = "1.3.0";
 export const MCP_VERSION = "1.2.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.19.0",
+    date: "2026-04-14",
+    title: "Signature Verification",
+    track: "web",
+    items: [
+      "Server-side webhook signature verification for 13 providers — configure once per endpoint, every request verified automatically",
+      "New Signature tab in request detail: paste a secret for instant client-side verification, or view stored server-side results with detailed error diagnostics",
+      "Verification badges (shield icons) in the request list and summary bar for at-a-glance valid/invalid status",
+      "Signing configuration section in endpoint settings: provider dropdown, encrypted secret storage, provider-specific tips",
+      "SDK: matchVerified() and matchUnverified() matchers for test assertions",
+      "MCP: verify_signature returns stored results without needing a secret; create/update endpoints with signing config",
+      "CLI: X-Signature-Verified headers on tunnel, verification status in listen output, --signing-provider/--signing-secret on create",
+    ],
+  },
   {
     version: "0.18.2",
     date: "2026-04-10",
