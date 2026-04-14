@@ -444,9 +444,21 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .describe(
           "URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"
         ),
+      signingProvider: z
+        .string()
+        .optional()
+        .describe("Signing provider for automatic signature verification (e.g. stripe, github, shopify)"),
+      signingSecret: z
+        .string()
+        .optional()
+        .describe("Signing secret (encrypted server-side, never returned). Required when signingProvider is set."),
+      signingHeader: z
+        .string()
+        .optional()
+        .describe("Custom signature header name. Only used with generic-hmac provider."),
     },
     withErrorHandling(
-      async ({ name, ephemeral, expiresIn, mockResponse, responseRules, notificationUrl }) => {
+      async ({ name, ephemeral, expiresIn, mockResponse, responseRules, notificationUrl, signingProvider, signingSecret, signingHeader }) => {
         const endpoint = await client.endpoints.create({
           name,
           ephemeral,
@@ -455,6 +467,14 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
           responseRules,
           notificationUrl,
         });
+        // Configure signing after creation (create doesn't support signing fields yet)
+        if (signingProvider && signingSecret) {
+          await client.endpoints.update(endpoint.slug, {
+            signingProvider,
+            signingSecret,
+            signingHeader,
+          });
+        }
         return jsonContent(endpoint);
       }
     )
@@ -482,7 +502,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "update_endpoint",
-    "Update an endpoint name, mock response, or conditional response rules.",
+    "Update an endpoint name, mock response, conditional response rules, or signing configuration.",
     {
       slug: z.string().describe("The endpoint slug to update"),
       name: z.string().optional().describe("New display name"),
@@ -500,13 +520,31 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .nullable()
         .optional()
         .describe("Notification webhook URL, or null to clear it"),
+      signingProvider: z
+        .string()
+        .nullable()
+        .optional()
+        .describe("Signing provider for automatic verification (e.g. stripe, github), or null to disable"),
+      signingSecret: z
+        .string()
+        .nullable()
+        .optional()
+        .describe("New signing secret (encrypted server-side). Pass null to clear."),
+      signingHeader: z
+        .string()
+        .nullable()
+        .optional()
+        .describe("Custom signature header name (only for generic-hmac provider), or null to clear"),
     },
-    withErrorHandling(async ({ slug, name, mockResponse, responseRules, notificationUrl }) => {
+    withErrorHandling(async ({ slug, name, mockResponse, responseRules, notificationUrl, signingProvider, signingSecret, signingHeader }) => {
       const endpoint = await client.endpoints.update(slug, {
         name,
         mockResponse,
         responseRules,
         notificationUrl,
+        signingProvider,
+        signingSecret,
+        signingHeader,
       });
       return jsonContent(endpoint);
     })
@@ -806,16 +844,17 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "verify_signature",
-    "Verify the webhook signature on a captured request.",
+    "Verify the webhook signature on a captured request. When called without provider/secret, returns the server-side pre-computed result (if signing is configured on the endpoint). When called with provider+secret, performs client-side verification.",
     {
       requestId: z.string().describe("The captured request ID"),
       provider: z
         .enum(VERIFY_PROVIDERS)
-        .describe("Provider whose signature scheme should be verified"),
+        .optional()
+        .describe("Provider whose signature scheme should be verified. Omit to use stored result."),
       secret: z
         .string()
         .optional()
-        .describe("Shared signing secret. Required for non-Discord providers."),
+        .describe("Shared signing secret. Required for non-Discord providers when doing client-side verification."),
       publicKey: z
         .string()
         .optional()
@@ -826,7 +865,28 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     },
     withErrorHandling(async ({ requestId, provider, secret, publicKey, url }) => {
       const request = await client.requests.get(requestId);
-      const verificationOptions = ensureVerifyArgs({ provider, secret, publicKey, url });
+
+      // If no provider/secret given, return the stored server-side result
+      if (!provider && !secret && !publicKey) {
+        const verified = request.signatureVerified;
+        if (verified === null || verified === undefined) {
+          return jsonContent({
+            valid: null,
+            details: "No signature verification configured on this endpoint. Pass provider and secret to verify client-side.",
+          });
+        }
+        return jsonContent({
+          valid: verified,
+          provider: request.signingProvider ?? null,
+          details: verified
+            ? "Signature verified by server."
+            : `Signature invalid: ${request.signatureError ?? "unknown error"}`,
+          error: request.signatureError ?? null,
+        });
+      }
+
+      // Client-side verification with explicit provider/secret
+      const verificationOptions = ensureVerifyArgs({ provider: provider!, secret, publicKey, url });
       const result = await verifySignature(request, verificationOptions);
       return jsonContent({
         valid: result.valid,
