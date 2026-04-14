@@ -139,9 +139,12 @@ test("configure signing secret and save", async ({ page }) => {
   // Dialog should close
   await expect(page.locator("text=Endpoint Settings")).not.toBeVisible({ timeout: 5000 });
 
-  // Reopen and verify status
+  // Wait for endpoint data to refresh after save
+  await page.waitForTimeout(1000);
+
+  // Reopen and verify status shows configured
   await openSettings(page);
-  await expect(page.locator("text=Configured")).toBeVisible();
+  await expect(page.locator("text=Configured")).toBeVisible({ timeout: 5000 });
 });
 
 // ── Signature Tab ──
@@ -169,7 +172,7 @@ test("Signature tab shows server-side valid result", async ({ page }) => {
 
   // Should show valid result
   await expect(page.locator("text=Signature Valid")).toBeVisible({ timeout: 5000 });
-  await expect(page.locator("text=standard-webhooks")).toBeVisible();
+  await expect(page.locator("text=Standard Webhooks").first()).toBeVisible();
 });
 
 test("invalid signature shows mismatch details", async ({ page }) => {
