@@ -37,6 +37,8 @@ export {
   matchContentType,
   matchAll,
   matchAny,
+  matchVerified,
+  matchUnverified,
 } from "./matchers";
 export { diffRequests } from "./diff";
 export { parseDuration } from "./utils";
