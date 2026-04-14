@@ -81,7 +81,9 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}...", &s[..max.saturating_sub(3)])
+        // Safe for multi-byte UTF-8: find a char boundary before the limit
+        let end = s.floor_char_boundary(max.saturating_sub(3));
+        format!("{}...", &s[..end])
     }
 }
 
@@ -613,12 +615,15 @@ fn verify_discord(
         }
     };
 
-    let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(
-        pk_bytes
-            .as_slice()
-            .try_into()
-            .unwrap_or(&[0u8; 32]),
-    ) {
+    let pk_array: [u8; 32] = match pk_bytes.as_slice().try_into() {
+        Ok(a) => a,
+        Err(_) => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                &format!("Ed25519 public key must be 32 bytes, got {}", pk_bytes.len()),
+            ));
+        }
+    };
+    let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&pk_array) {
         Ok(vk) => vk,
         Err(_) => {
             return VerificationResult::Invalid(SignatureError::invalid_encoding(

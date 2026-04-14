@@ -93,9 +93,9 @@ describe("Signature Verification Integration", () => {
     expect(endpoint!.signingProvider).toBe("stripe");
     expect(endpoint!.hasSigningSecret).toBe(true);
     // Secret must never be exposed
-    expect((endpoint as Record<string, unknown>).signingSecret).toBeUndefined();
-    expect((endpoint as Record<string, unknown>).signingSecretEncrypted).toBeUndefined();
-    expect((endpoint as Record<string, unknown>).signing_secret_encrypted).toBeUndefined();
+    expect((endpoint as unknown as Record<string, unknown>).signingSecret).toBeUndefined();
+    expect((endpoint as unknown as Record<string, unknown>).signingSecretEncrypted).toBeUndefined();
+    expect((endpoint as unknown as Record<string, unknown>).signing_secret_encrypted).toBeUndefined();
   });
 
   it("PATCH: update provider without re-entering secret", async () => {
@@ -245,10 +245,11 @@ describe("Signature Verification Integration", () => {
 
   it("list requests includes verification fields", async () => {
     const requests = await listRequestsForEndpointByUser({ userId: testUserId, slug: testEndpointSlug });
-    expect(requests.length).toBeGreaterThan(0);
+    expect(requests).not.toBeNull();
+    expect(requests!.length).toBeGreaterThan(0);
 
     // At least one request should have verification data
-    const verified = requests.find((r) => r.signatureVerified === true);
+    const verified = requests!.find((r) => r.signatureVerified === true);
     expect(verified).toBeTruthy();
     expect(verified!.signingProvider).toBe("stripe");
   });

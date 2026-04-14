@@ -88,20 +88,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     if (typeof body.signingProvider !== "string" || !VALID_PROVIDERS.has(body.signingProvider)) {
       return Response.json({ error: "Invalid signing provider" }, { status: 400 });
     }
-    // Secret required for new provider config (except sendgrid)
-    if (
-      body.signingProvider !== "sendgrid" &&
-      !body.signingSecret &&
-      typeof body.signingSecret !== "string"
-    ) {
-      // Only require secret when setting a new provider, not when updating other fields
-      // If hasSigningSecret is already true, the user can change provider without re-entering
-    }
     if (body.signingProvider === "generic-hmac" && body.signingHeader !== undefined) {
       if (
         typeof body.signingHeader !== "string" ||
         body.signingHeader.length === 0 ||
-        body.signingHeader.length > 256
+        body.signingHeader.length > 256 ||
+        !/^[a-zA-Z0-9\-_]+$/.test(body.signingHeader)
       ) {
         return Response.json({ error: "Invalid signing header name" }, { status: 400 });
       }
@@ -114,6 +106,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   }
 
   try {
+    // Check encryption key is available before attempting to save a signing secret
+    if (body.signingSecret && typeof body.signingSecret === "string") {
+      const { isSigningKeyConfigured } = await import("@/lib/crypto");
+      if (!isSigningKeyConfigured()) {
+        return Response.json(
+          { error: "Signature verification is not available. Contact support." },
+          { status: 503 }
+        );
+      }
+    }
     // Allow team members to edit (they can rename + change mock response)
     const access = await resolveEndpointAccess(auth.userId, slug);
     if (!access) {

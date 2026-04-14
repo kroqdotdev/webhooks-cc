@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { ShieldCheck, ShieldAlert, Shield, Copy, Check, Loader2 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -327,11 +327,16 @@ function ClientSideVerification({
             }),
       });
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Verification failed";
+      const isLoadError =
+        message.includes("import") || message.includes("fetch") || message.includes("chunk");
       setResult({
         verified: false,
         error: JSON.stringify({
-          code: "mismatch",
-          message: err instanceof Error ? err.message : "Verification failed",
+          code: isLoadError ? "load_error" : "verification_error",
+          message: isLoadError
+            ? "Failed to load verification library. Check your network connection and try again."
+            : message,
         }),
       });
     } finally {
@@ -463,11 +468,18 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function CopyableRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
   const handleCopy = async () => {
     const success = await copyToClipboard(value);
     if (success) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -509,27 +521,35 @@ export function SignatureVerificationBadge({
   const errorData = parseSignatureError(signatureError);
   const providerLabel = signingProvider && PROVIDERS[signingProvider]?.label;
 
-  if (signatureVerified) {
+  const title = signatureVerified
+    ? `Signature verified${providerLabel ? ` (${providerLabel})` : ""}`
+    : `Signature invalid${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`;
+  const icon = signatureVerified ? (
+    <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+  ) : (
+    <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+  );
+
+  if (onClick) {
     return (
-      <span
-        className={cn("inline-flex items-center gap-0.5 cursor-default", className)}
-        title={`Signature verified${providerLabel ? ` (${providerLabel})` : ""}`}
+      <button
+        type="button"
+        className={cn("inline-flex items-center gap-0.5 cursor-pointer", className)}
+        title={title}
         onClick={onClick}
-        role={onClick ? "button" : undefined}
+        aria-label={title}
       >
-        <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-      </span>
+        {icon}
+      </button>
     );
   }
 
   return (
     <span
       className={cn("inline-flex items-center gap-0.5 cursor-default", className)}
-      title={`Signature invalid${errorData?.code ? `: ${errorData.code}` : ""}${providerLabel ? ` (${providerLabel})` : ""}`}
-      onClick={onClick}
-      role={onClick ? "button" : undefined}
+      title={title}
     >
-      <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+      {icon}
     </span>
   );
 }

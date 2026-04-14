@@ -107,9 +107,9 @@ impl Tunnel {
                 }
             if !verified
                 && let Some(ref error) = req.signature_error {
-                    // Truncate error for header safety (max ~200 chars)
-                    let short = if error.len() > 200 { &error[..200] } else { error };
-                    if let Ok(val) = HeaderValue::from_str(short) {
+                    // Truncate error for header safety (max ~200 chars), UTF-8 safe
+                    let short: String = error.chars().take(200).collect();
+                    if let Ok(val) = HeaderValue::from_str(&short) {
                         headers.insert(
                             HeaderName::from_static("x-signature-error"),
                             val,

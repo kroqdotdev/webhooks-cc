@@ -288,11 +288,16 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       }
       // Signing config — only for owned endpoints
       if (initialNotificationUrl !== undefined) {
-        if (signingProvider !== (initialSigningProvider || "")) {
+        const providerChanged = signingProvider !== (initialSigningProvider || "");
+        if (providerChanged) {
           updates.signingProvider = signingProvider || null;
         }
         if (signingSecret) {
           updates.signingSecret = signingSecret;
+        } else if (providerChanged && signingProvider) {
+          // Provider changed without re-entering secret — clear old secret
+          // so the DB constraint catches it and forces re-entry
+          updates.signingSecret = null;
         }
         if (signingProvider === "generic-hmac" && signingHeader !== (initialSigningHeader || "")) {
           updates.signingHeader = signingHeader || null;

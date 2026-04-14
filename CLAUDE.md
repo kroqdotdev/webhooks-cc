@@ -202,6 +202,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 | `RECEIVER_MAX_BODY_SIZE`     | no       | 1048576 | Max request body size in bytes (default 1 MB)                                      |
 | `NOTIFICATION_COOLDOWN_SECS` | no       | 1       | Min seconds between notification webhooks per endpoint                             |
 | `NOTIFICATION_TIMEOUT_SECS`  | no       | 5       | Timeout for notification DNS resolve + HTTP POST                                   |
+| `SIGNING_SECRET_KEY`         | no       |         | AES-256-GCM key for signing secret encryption (base64, 32 bytes)                   |
 
 ### Notification Proxy (Cloudflare Worker)
 
@@ -383,6 +384,7 @@ const req = await client.requests.waitFor(endpoint.slug, {
 | `ENDPOINT_CREATE_RATE_WINDOW_MS` | Rate limit window in ms (default: 600000)          |
 | `MAX_EPHEMERAL_ENDPOINTS`        | Max concurrent ephemeral endpoints (default: 500)  |
 | `EPHEMERAL_TTL_HOURS`            | Ephemeral endpoint lifetime in hours (default: 12) |
+| `SIGNING_SECRET_KEY`             | AES-256-GCM key for signing secret encryption (base64, 32 bytes). Required by both receiver and web app when signature verification is configured. Generate with `openssl rand -base64 32`. |
 
 ## CI/CD & Releases
 

@@ -563,6 +563,20 @@ async fn handle_webhook_inner(
                                 Ok(s) => s,
                                 Err(e) => {
                                     tracing::error!(request_id, error = %e, "failed to decrypt signing secret");
+                                    // Write the error to the request row so the user sees it in the dashboard
+                                    let error_json = serde_json::json!({
+                                        "code": "decryption_failed",
+                                        "message": "Failed to decrypt signing secret. The encryption key may have changed."
+                                    }).to_string();
+                                    let _ = sqlx::query(
+                                        "UPDATE public.requests SET signature_verified = $1, signature_error = $2, signing_provider = $3 WHERE id = $4::uuid"
+                                    )
+                                    .bind(Some(false))
+                                    .bind(Some(&error_json))
+                                    .bind(provider.as_str())
+                                    .bind(&request_id)
+                                    .execute(&pool)
+                                    .await;
                                     return;
                                 }
                             };

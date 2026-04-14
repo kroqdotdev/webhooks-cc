@@ -219,6 +219,9 @@ export interface Database {
           ip: string;
           size?: number;
           received_at?: string;
+          signature_verified?: boolean | null;
+          signature_error?: string | null;
+          signing_provider?: string | null;
         };
         Update: {
           id?: string;
@@ -234,6 +237,9 @@ export interface Database {
           ip?: string;
           size?: number;
           received_at?: string;
+          signature_verified?: boolean | null;
+          signature_error?: string | null;
+          signing_provider?: string | null;
         };
         Relationships: [];
       };
