@@ -11,19 +11,84 @@ const PROVIDERS: Record<
   string,
   { label: string; algorithm: string; header: string; secretPlaceholder: string }
 > = {
-  stripe: { label: "Stripe", algorithm: "HMAC-SHA256", header: "stripe-signature", secretPlaceholder: "whsec_..." },
-  github: { label: "GitHub", algorithm: "HMAC-SHA256", header: "x-hub-signature-256", secretPlaceholder: "your webhook secret" },
-  shopify: { label: "Shopify", algorithm: "HMAC-SHA256", header: "x-shopify-hmac-sha256", secretPlaceholder: "your Shopify secret" },
-  twilio: { label: "Twilio", algorithm: "HMAC-SHA1", header: "x-twilio-signature", secretPlaceholder: "your auth token" },
-  slack: { label: "Slack", algorithm: "HMAC-SHA256", header: "x-slack-signature", secretPlaceholder: "your signing secret" },
-  paddle: { label: "Paddle", algorithm: "HMAC-SHA256", header: "paddle-signature", secretPlaceholder: "your webhook secret" },
-  linear: { label: "Linear", algorithm: "HMAC-SHA256", header: "linear-signature", secretPlaceholder: "your webhook secret" },
-  vercel: { label: "Vercel", algorithm: "HMAC-SHA1", header: "x-vercel-signature", secretPlaceholder: "your webhook secret" },
-  gitlab: { label: "GitLab", algorithm: "Token", header: "x-gitlab-token", secretPlaceholder: "your secret token" },
-  clerk: { label: "Clerk", algorithm: "HMAC-SHA256", header: "svix-id", secretPlaceholder: "whsec_..." },
-  discord: { label: "Discord", algorithm: "Ed25519", header: "x-signature-ed25519", secretPlaceholder: "your application public key" },
-  "standard-webhooks": { label: "Standard Webhooks", algorithm: "HMAC-SHA256", header: "webhook-signature", secretPlaceholder: "whsec_..." },
-  "generic-hmac": { label: "Generic HMAC", algorithm: "HMAC-SHA256", header: "", secretPlaceholder: "your shared secret" },
+  stripe: {
+    label: "Stripe",
+    algorithm: "HMAC-SHA256",
+    header: "stripe-signature",
+    secretPlaceholder: "whsec_...",
+  },
+  github: {
+    label: "GitHub",
+    algorithm: "HMAC-SHA256",
+    header: "x-hub-signature-256",
+    secretPlaceholder: "your webhook secret",
+  },
+  shopify: {
+    label: "Shopify",
+    algorithm: "HMAC-SHA256",
+    header: "x-shopify-hmac-sha256",
+    secretPlaceholder: "your Shopify secret",
+  },
+  twilio: {
+    label: "Twilio",
+    algorithm: "HMAC-SHA1",
+    header: "x-twilio-signature",
+    secretPlaceholder: "your auth token",
+  },
+  slack: {
+    label: "Slack",
+    algorithm: "HMAC-SHA256",
+    header: "x-slack-signature",
+    secretPlaceholder: "your signing secret",
+  },
+  paddle: {
+    label: "Paddle",
+    algorithm: "HMAC-SHA256",
+    header: "paddle-signature",
+    secretPlaceholder: "your webhook secret",
+  },
+  linear: {
+    label: "Linear",
+    algorithm: "HMAC-SHA256",
+    header: "linear-signature",
+    secretPlaceholder: "your webhook secret",
+  },
+  vercel: {
+    label: "Vercel",
+    algorithm: "HMAC-SHA1",
+    header: "x-vercel-signature",
+    secretPlaceholder: "your webhook secret",
+  },
+  gitlab: {
+    label: "GitLab",
+    algorithm: "Token",
+    header: "x-gitlab-token",
+    secretPlaceholder: "your secret token",
+  },
+  clerk: {
+    label: "Clerk",
+    algorithm: "HMAC-SHA256",
+    header: "svix-id",
+    secretPlaceholder: "whsec_...",
+  },
+  discord: {
+    label: "Discord",
+    algorithm: "Ed25519",
+    header: "x-signature-ed25519",
+    secretPlaceholder: "your application public key",
+  },
+  "standard-webhooks": {
+    label: "Standard Webhooks",
+    algorithm: "HMAC-SHA256",
+    header: "webhook-signature",
+    secretPlaceholder: "whsec_...",
+  },
+  "generic-hmac": {
+    label: "Generic HMAC",
+    algorithm: "HMAC-SHA256",
+    header: "",
+    secretPlaceholder: "your shared secret",
+  },
 };
 
 /** Auto-detect provider from request headers. */
@@ -68,12 +133,16 @@ function parseSignatureError(error: string | null | undefined): SignatureErrorDa
 /** Provider-specific debugging tips. */
 function getProviderTip(provider: string): string | null {
   const tips: Record<string, string> = {
-    stripe: "Check your signing secret in the Stripe dashboard (Developers → Webhooks → Signing secret). Make sure you're using the endpoint-specific secret, not the global one.",
-    github: "Check Settings → Webhooks → Secret in your GitHub repository. The secret must match exactly.",
+    stripe:
+      "Check your signing secret in the Stripe dashboard (Developers → Webhooks → Signing secret). Make sure you're using the endpoint-specific secret, not the global one.",
+    github:
+      "Check Settings → Webhooks → Secret in your GitHub repository. The secret must match exactly.",
     shopify: "Find the API secret key in your Shopify app settings under App credentials.",
     slack: "Find the Signing Secret in your Slack app's Basic Information page, not the bot token.",
-    paddle: "Check the webhook secret in your Paddle dashboard under Developer Tools → Notifications.",
-    discord: "Use the Application Public Key from the General Information page in the Discord Developer Portal.",
+    paddle:
+      "Check the webhook secret in your Paddle dashboard under Developer Tools → Notifications.",
+    discord:
+      "Use the Application Public Key from the General Information page in the Discord Developer Portal.",
     clerk: "Find the signing secret in your Clerk dashboard under Webhooks.",
   };
   return tips[provider] ?? null;
@@ -85,7 +154,11 @@ interface SignatureTabProps {
 }
 
 export function SignatureTab({ request, onOpenSettings }: SignatureTabProps) {
-  const req = request as DisplayableRequest & { signatureVerified?: boolean | null; signatureError?: string | null; signingProvider?: string | null };
+  const req = request as DisplayableRequest & {
+    signatureVerified?: boolean | null;
+    signatureError?: string | null;
+    signingProvider?: string | null;
+  };
   const signatureVerified = req.signatureVerified;
   const signatureError = req.signatureError;
   const signingProvider = req.signingProvider;
@@ -163,9 +236,7 @@ function ServerSideResult({
             <span className="text-xs font-mono text-muted-foreground">{providerInfo.label}</span>
           )}
         </div>
-        {errorData?.message && (
-          <p className="text-sm text-muted-foreground">{errorData.message}</p>
-        )}
+        {errorData?.message && <p className="text-sm text-muted-foreground">{errorData.message}</p>}
       </div>
     );
   }
@@ -188,12 +259,8 @@ function ServerSideResult({
         <div className="neo-code p-3 text-sm space-y-1">
           <table className="font-mono w-full">
             <tbody>
-              {errorData?.expected && (
-                <CopyableRow label="Expected" value={errorData.expected} />
-              )}
-              {errorData?.received && (
-                <CopyableRow label="Received" value={errorData.received} />
-              )}
+              {errorData?.expected && <CopyableRow label="Expected" value={errorData.expected} />}
+              {errorData?.received && <CopyableRow label="Received" value={errorData.received} />}
               {errorData?.timestamp != null && (
                 <Row
                   label="Timestamp"
@@ -243,9 +310,8 @@ function ClientSideVerification({
     try {
       const { verifySignature } = await import("@webhooks-cc/sdk");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const options: any = provider === "discord"
-        ? { provider: "discord", publicKey: secret }
-        : { provider, secret };
+      const options: any =
+        provider === "discord" ? { provider: "discord", publicKey: secret } : { provider, secret };
       const res = await verifySignature(
         { body: request.body ?? "", headers: request.headers },
         options
@@ -277,15 +343,8 @@ function ClientSideVerification({
   if (result) {
     return (
       <div className="space-y-4">
-        <ServerSideResult
-          verified={result.verified}
-          error={result.error}
-          provider={provider}
-        />
-        <button
-          onClick={() => setResult(null)}
-          className="neo-btn-outline py-1.5! px-3! text-xs"
-        >
+        <ServerSideResult verified={result.verified} error={result.error} provider={provider} />
+        <button onClick={() => setResult(null)} className="neo-btn-outline py-1.5! px-3! text-xs">
           Verify Again
         </button>
       </div>
@@ -297,8 +356,8 @@ function ClientSideVerification({
       <div>
         <p className="font-bold uppercase tracking-wide text-xs mb-1">Verify Signature</p>
         <p className="text-xs text-muted-foreground">
-          Paste your signing secret to verify this request&apos;s signature.
-          Verification runs in your browser — the secret is never sent to our servers.
+          Paste your signing secret to verify this request&apos;s signature. Verification runs in
+          your browser — the secret is never sent to our servers.
         </p>
       </div>
 
@@ -312,10 +371,7 @@ function ClientSideVerification({
 
       <div className="space-y-3">
         <div className="space-y-1">
-          <label
-            htmlFor="sig-provider"
-            className="font-bold uppercase tracking-wide text-xs"
-          >
+          <label htmlFor="sig-provider" className="font-bold uppercase tracking-wide text-xs">
             Provider
           </label>
           <select
@@ -338,10 +394,7 @@ function ClientSideVerification({
 
         {provider && provider !== "sendgrid" && (
           <div className="space-y-1">
-            <label
-              htmlFor="sig-secret"
-              className="font-bold uppercase tracking-wide text-xs"
-            >
+            <label htmlFor="sig-secret" className="font-bold uppercase tracking-wide text-xs">
               {provider === "discord" ? "Public Key" : "Secret"}
             </label>
             <input
@@ -387,10 +440,7 @@ function ClientSideVerification({
             <p className="text-xs text-muted-foreground">
               Want automatic verification on every request?
             </p>
-            <button
-              onClick={onOpenSettings}
-              className="neo-btn-outline py-1.5! px-3! text-xs"
-            >
+            <button onClick={onOpenSettings} className="neo-btn-outline py-1.5! px-3! text-xs">
               Save to Endpoint Settings
             </button>
           </div>

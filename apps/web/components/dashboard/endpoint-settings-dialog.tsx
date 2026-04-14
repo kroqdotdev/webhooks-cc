@@ -246,7 +246,16 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       setConfirmDelete(false);
     }
     prevOpen.current = open;
-  }, [open, endpointName, mockResponse, initialResponseRules, initialNotificationUrl, initialSigningProvider, initialHasSigningSecret, initialSigningHeader]);
+  }, [
+    open,
+    endpointName,
+    mockResponse,
+    initialResponseRules,
+    initialNotificationUrl,
+    initialSigningProvider,
+    initialHasSigningSecret,
+    initialSigningHeader,
+  ]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -543,7 +552,8 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
 
                   {signingProvider === "sendgrid" && (
                     <p className="text-xs text-muted-foreground">
-                      SendGrid uses IP allowlisting, not signatures. Signature verification is not applicable.
+                      SendGrid uses IP allowlisting, not signatures. Signature verification is not
+                      applicable.
                     </p>
                   )}
 
@@ -562,7 +572,13 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
                             type="password"
                             value={signingSecret}
                             onChange={(e) => setSigningSecret(e.target.value)}
-                            placeholder={hasSigningSecret ? "Enter new secret to replace" : signingProvider === "discord" ? "Ed25519 public key" : "Paste secret here"}
+                            placeholder={
+                              hasSigningSecret
+                                ? "Enter new secret to replace"
+                                : signingProvider === "discord"
+                                  ? "Ed25519 public key"
+                                  : "Paste secret here"
+                            }
                             className="neo-input flex-1 text-sm font-mono"
                           />
                           {hasSigningSecret && (

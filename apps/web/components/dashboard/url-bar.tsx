@@ -21,6 +21,9 @@ interface UrlBarProps {
   };
   responseRules?: ResponseRule[];
   notificationUrl?: string | null;
+  signingProvider?: string | null;
+  hasSigningSecret?: boolean;
+  signingHeader?: string | null;
   extra?: React.ReactNode;
 }
 
@@ -31,6 +34,9 @@ export function UrlBar({
   mockResponse,
   responseRules,
   notificationUrl,
+  signingProvider,
+  hasSigningSecret,
+  signingHeader,
   extra,
 }: UrlBarProps) {
   const [copied, setCopied] = useState(false);
@@ -55,6 +61,9 @@ export function UrlBar({
           mockResponse={mockResponse}
           responseRules={responseRules}
           notificationUrl={notificationUrl}
+          signingProvider={signingProvider}
+          hasSigningSecret={hasSigningSecret}
+          signingHeader={signingHeader}
         />
         <span className="font-bold text-sm uppercase tracking-wide shrink-0">{endpointName}</span>
 

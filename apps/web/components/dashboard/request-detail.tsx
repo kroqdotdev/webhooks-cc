@@ -191,7 +191,11 @@ export function RequestDetail({
               <span>{formatBytes(request.size)}</span>
               <span>{fullTime}</span>
               {(() => {
-                const r = request as DisplayableRequest & { signatureVerified?: boolean | null; signatureError?: string | null; signingProvider?: string | null };
+                const r = request as DisplayableRequest & {
+                  signatureVerified?: boolean | null;
+                  signatureError?: string | null;
+                  signingProvider?: string | null;
+                };
                 return r.signatureVerified != null ? (
                   <SignatureVerificationBadge
                     signatureVerified={r.signatureVerified}
@@ -350,9 +354,7 @@ export function RequestDetail({
           </pre>
         )}
 
-        {tab === "signature" && (
-          <SignatureTab request={request} onOpenSettings={onOpenSettings} />
-        )}
+        {tab === "signature" && <SignatureTab request={request} onOpenSettings={onOpenSettings} />}
       </div>
     </div>
   );

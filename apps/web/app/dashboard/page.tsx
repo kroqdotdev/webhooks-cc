@@ -912,6 +912,9 @@ export default function DashboardPage() {
         mockResponse={currentEndpoint.mockResponse}
         responseRules={currentEndpoint.responseRules}
         notificationUrl={currentEndpoint.notificationUrl}
+        signingProvider={currentEndpoint.signingProvider}
+        hasSigningSecret={currentEndpoint.hasSigningSecret}
+        signingHeader={currentEndpoint.signingHeader}
         extra={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
