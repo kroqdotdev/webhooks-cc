@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Label } from "@/components/ui/label";
@@ -78,6 +78,11 @@ interface EndpointSettingsDialogProps {
   hasSigningSecret?: boolean;
   /** Custom header name for generic-hmac. */
   signingHeader?: string | null;
+}
+
+/** Imperative handle for programmatically opening the settings dialog. */
+export interface EndpointSettingsDialogHandle {
+  open: () => void;
 }
 
 function TeamSharingSection({
@@ -195,7 +200,10 @@ function TeamSharingSection({
   );
 }
 
-export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
+export const EndpointSettingsDialog = forwardRef<
+  EndpointSettingsDialogHandle,
+  EndpointSettingsDialogProps
+>(function EndpointSettingsDialog(props, ref) {
   const {
     endpointId,
     endpointName,
@@ -222,6 +230,8 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
   const [signingSecret, setSigningSecret] = useState("");
   const [signingHeader, setSigningHeader] = useState(initialSigningHeader || "");
   const [hasSigningSecret, setHasSigningSecret] = useState(!!initialHasSigningSecret);
+
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }));
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -678,4 +688,4 @@ export function EndpointSettingsDialog(props: EndpointSettingsDialogProps) {
       </DialogContent>
     </Dialog>
   );
-}
+});

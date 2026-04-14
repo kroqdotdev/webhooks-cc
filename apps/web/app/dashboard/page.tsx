@@ -5,6 +5,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { UrlBar } from "@/components/dashboard/url-bar";
+import type { EndpointSettingsDialogHandle } from "@/components/dashboard/endpoint-settings-dialog";
 import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
@@ -801,6 +802,9 @@ export default function DashboardPage() {
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)
   const curlBtnRef = useRef<HTMLButtonElement>(null);
+  // Ref for opening endpoint settings dialog programmatically
+  const settingsDialogRef = useRef<EndpointSettingsDialogHandle>(null);
+  const handleOpenSettings = useCallback(() => settingsDialogRef.current?.open(), []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -924,6 +928,7 @@ export default function DashboardPage() {
         signingProvider={currentEndpoint.signingProvider}
         hasSigningSecret={currentEndpoint.hasSigningSecret}
         signingHeader={currentEndpoint.signingHeader}
+        settingsRef={settingsDialogRef}
         extra={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
@@ -998,6 +1003,7 @@ export default function DashboardPage() {
                     curlBtnRef={curlBtnRef}
                     note={currentNote}
                     onNoteChange={handleNoteChange}
+                    onOpenSettings={handleOpenSettings}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -1024,6 +1030,7 @@ export default function DashboardPage() {
                       onTabChange={setActiveTab}
                       note={currentNote}
                       onNoteChange={handleNoteChange}
+                      onOpenSettings={handleOpenSettings}
                     />
                   </ErrorBoundary>
                 </div>

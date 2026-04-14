@@ -20,6 +20,9 @@ pub struct Config {
     /// AES-256-GCM key for decrypting signing secrets (base64-decoded, 32 bytes).
     /// Optional: when absent, signature verification is silently skipped.
     pub signing_secret_key: Option<[u8; 32]>,
+    /// External webhook base URL (e.g., "https://go.webhooks.cc").
+    /// Used to construct the full URL for Twilio signature verification.
+    pub webhook_base_url: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -41,6 +44,7 @@ impl std::fmt::Debug for Config {
             .field("notification_cooldown_secs", &self.notification_cooldown_secs)
             .field("notification_timeout_secs", &self.notification_timeout_secs)
             .field("signing_secret_key", &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"))
+            .field("webhook_base_url", &self.webhook_base_url)
             .finish()
     }
 }
@@ -98,6 +102,12 @@ impl Config {
                 key
             });
 
+        let webhook_base_url = env::var("WEBHOOK_BASE_URL")
+            .or_else(|_| env::var("NEXT_PUBLIC_WEBHOOK_URL"))
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| v.trim_end_matches('/').to_string());
+
         Self {
             database_url,
             capture_shared_secret,
@@ -115,6 +125,7 @@ impl Config {
             notification_cooldown_secs,
             notification_timeout_secs,
             signing_secret_key,
+            webhook_base_url,
         }
     }
 }

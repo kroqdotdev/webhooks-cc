@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { Copy, Check } from "lucide-react";
-import { EndpointSettingsDialog } from "./endpoint-settings-dialog";
+import {
+  EndpointSettingsDialog,
+  type EndpointSettingsDialogHandle,
+} from "./endpoint-settings-dialog";
 import { SendWebhookDialog } from "./send-webhook-dialog";
 import { DashboardGuideDialog } from "./dashboard-guide-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -24,6 +27,8 @@ interface UrlBarProps {
   signingProvider?: string | null;
   hasSigningSecret?: boolean;
   signingHeader?: string | null;
+  /** Ref to programmatically open the settings dialog. */
+  settingsRef?: React.RefObject<EndpointSettingsDialogHandle | null>;
   extra?: React.ReactNode;
 }
 
@@ -37,6 +42,7 @@ export function UrlBar({
   signingProvider,
   hasSigningSecret,
   signingHeader,
+  settingsRef,
   extra,
 }: UrlBarProps) {
   const [copied, setCopied] = useState(false);
@@ -55,6 +61,7 @@ export function UrlBar({
       <div className="flex items-center gap-3">
         {/* Settings + Name */}
         <EndpointSettingsDialog
+          ref={settingsRef}
           endpointId={endpointId}
           endpointName={endpointName}
           slug={slug}

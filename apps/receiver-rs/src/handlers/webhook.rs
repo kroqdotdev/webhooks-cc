@@ -557,6 +557,10 @@ async fn handle_webhook_inner(
                         let signing_header = capture.signing_header.clone();
                         let verify_headers = filtered_headers.clone();
                         let verify_body = body.to_vec();
+                        // Construct full URL for Twilio verification (signs URL + params)
+                        let request_url = state.config.webhook_base_url.as_ref().map(|base| {
+                            format!("{base}/w/{slug}{}", if req_path == "/" { "".to_string() } else { req_path.clone() })
+                        });
 
                         tokio::spawn(async move {
                             let secret = match crate::crypto::decrypt_secret_b64(&encrypted_b64, &encryption_key) {
@@ -589,7 +593,7 @@ async fn handle_webhook_inner(
                                 &verify_headers,
                                 &verify_body,
                                 signing_header.as_deref(),
-                                None, // TODO: construct URL for Twilio
+                                request_url.as_deref(),
                             );
 
                             let (verified, error_json, error_provider) = match &result {
