@@ -21,7 +21,11 @@ type SelectedRequestRow = Pick<
   | "ip"
   | "size"
   | "received_at"
->;
+> & {
+  signature_verified?: boolean | null;
+  signature_error?: string | null;
+  signing_provider?: string | null;
+};
 type OwnedEndpointRow = Pick<Database["public"]["Tables"]["endpoints"]["Row"], "id" | "slug">;
 type UserPlan = Database["public"]["Tables"]["users"]["Row"]["plan"];
 
@@ -39,6 +43,9 @@ export interface RequestRecord {
   ip: string;
   size: number;
   receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
 }
 
 export interface PaginatedRequestPage {
@@ -93,6 +100,9 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     ip: row.ip,
     size: row.size,
     receivedAt: parseMillis(row.received_at),
+    signatureVerified: row.signature_verified ?? null,
+    signatureError: row.signature_error ?? null,
+    signingProvider: row.signing_provider ?? null,
   };
 }
 
@@ -190,7 +200,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -241,7 +251,7 @@ export async function listRequestsForEndpointByUser(input: {
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
     )
     .eq("endpoint_id", endpoint.id)
     .gte("received_at", new Date(floor).toISOString())
@@ -274,7 +284,7 @@ export async function listNewRequestsForEndpointByUser(input: {
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
     )
     .eq("endpoint_id", endpoint.id)
     .gt("received_at", new Date(floor).toISOString())
@@ -313,7 +323,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
     )
     .eq("endpoint_id", endpoint.id)
     .gte("received_at", new Date(cutoff).toISOString())

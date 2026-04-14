@@ -39,6 +39,9 @@ export interface DashboardEndpoint {
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
+  signingProvider?: string | null;
+  hasSigningSecret?: boolean;
+  signingHeader?: string | null;
 }
 
 export interface TeamEndpointShare {

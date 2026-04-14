@@ -67,6 +67,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   const rulesCheck = validateResponseRules(body.responseRules);
   if (!rulesCheck.valid) return rulesCheck.response;
 
+  // Validate signing config if provided
+  const VALID_PROVIDERS = new Set([
+    "stripe", "github", "shopify", "twilio", "slack", "paddle",
+    "linear", "vercel", "gitlab", "clerk", "discord", "standard-webhooks",
+    "generic-hmac", "sendgrid",
+  ]);
+  if (body.signingProvider !== undefined && body.signingProvider !== null) {
+    if (typeof body.signingProvider !== "string" || !VALID_PROVIDERS.has(body.signingProvider)) {
+      return Response.json({ error: "Invalid signing provider" }, { status: 400 });
+    }
+    // Secret required for new provider config (except sendgrid)
+    if (body.signingProvider !== "sendgrid" && !body.signingSecret && typeof body.signingSecret !== "string") {
+      // Only require secret when setting a new provider, not when updating other fields
+      // If hasSigningSecret is already true, the user can change provider without re-entering
+    }
+    if (body.signingProvider === "generic-hmac" && body.signingHeader !== undefined) {
+      if (typeof body.signingHeader !== "string" || body.signingHeader.length === 0 || body.signingHeader.length > 256) {
+        return Response.json({ error: "Invalid signing header name" }, { status: 400 });
+      }
+    }
+  }
+  if (body.signingSecret !== undefined && body.signingSecret !== null) {
+    if (typeof body.signingSecret !== "string" || body.signingSecret.length > 10000) {
+      return Response.json({ error: "Invalid signing secret" }, { status: 400 });
+    }
+  }
+
   try {
     // Allow team members to edit (they can rename + change mock response)
     const access = await resolveEndpointAccess(auth.userId, slug);
@@ -90,6 +117,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
           : body.notificationUrl === null || body.notificationUrl === ""
             ? null
             : (body.notificationUrl as string),
+      signingProvider:
+        body.signingProvider === undefined
+          ? undefined
+          : (body.signingProvider as string | null),
+      signingSecret:
+        body.signingSecret === undefined
+          ? undefined
+          : (body.signingSecret as string | null),
+      signingHeader:
+        body.signingHeader === undefined
+          ? undefined
+          : (body.signingHeader as string | null),
     });
 
     if (!endpoint) {
