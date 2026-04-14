@@ -309,9 +309,7 @@ const SECTIONS: Section[] = [
     icon: <ShieldCheck className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
-        <p>
-          Verify webhook signatures directly in the dashboard — no code required.
-        </p>
+        <p>Verify webhook signatures directly in the dashboard — no code required.</p>
         <ul className="space-y-1.5 text-sm">
           <li>
             <strong>Signature tab</strong> (press <Kbd>5</Kbd>) — paste your signing secret and
@@ -327,8 +325,8 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <strong>Verification badges</strong> —{" "}
-            <ShieldCheck className="inline h-3 w-3 text-primary" /> (valid) and shield-alert (invalid)
-            icons appear in the request list
+            <ShieldCheck className="inline h-3 w-3 text-primary" /> (valid) and shield-alert
+            (invalid) icons appear in the request list
           </li>
           <li>
             Click the badge in the summary bar to jump to the Signature tab with full error details
