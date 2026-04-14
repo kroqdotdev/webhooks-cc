@@ -57,6 +57,16 @@ export function subscribeToEndpointRequestInserts(endpointId: string, onInsert: 
       },
       () => onInsert()
     )
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "requests",
+        filter: `endpoint_id=eq.${endpointId}`,
+      },
+      () => onInsert()
+    )
     .subscribe();
 
   return () => removeChannel(channel);
