@@ -16,6 +16,8 @@ pub async fn create(
     mock_status: Option<u16>,
     mock_body: Option<String>,
     mock_headers: Vec<String>,
+    signing_provider: Option<String>,
+    signing_secret: Option<String>,
     json: bool,
 ) -> Result<()> {
     let mock_response = build_mock_response(mock_status, mock_body, mock_headers)?;
@@ -37,12 +39,28 @@ pub async fn create(
 
     let endpoint = client.create_endpoint(&req).await?;
 
+    // Configure signing if provided (update after create)
+    if let Some(ref provider) = signing_provider {
+        use crate::types::UpdateEndpointRequest;
+        let update = UpdateEndpointRequest {
+            name: None,
+            mock_response: None,
+            signing_provider: Some(provider.clone()),
+            signing_secret: signing_secret.clone(),
+            signing_header: None,
+        };
+        client.update_endpoint(&endpoint.slug, &update).await?;
+    }
+
     if json {
         println!("{}", serde_json::to_string_pretty(&endpoint)?);
     } else {
         let url = client.webhook_url_for(&endpoint.slug);
         println!("\n  {} Created endpoint {}", green("✓"), bold(&endpoint.slug));
         println!("  {} {}\n", dim("URL:"), url);
+        if signing_provider.is_some() {
+            println!("  {} Signature verification configured\n", green("✓"));
+        }
     }
 
     Ok(())
@@ -120,6 +138,9 @@ pub async fn update_endpoint(
     let req = UpdateEndpointRequest {
         name,
         mock_response,
+        signing_provider: None,
+        signing_secret: None,
+        signing_header: None,
     };
 
     let endpoint = client.update_endpoint(slug, &req).await?;

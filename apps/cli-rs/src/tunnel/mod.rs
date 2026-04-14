@@ -90,6 +90,34 @@ impl Tunnel {
             }
         }
 
+        // Inject signature verification headers when verification was performed
+        if let Some(verified) = req.signature_verified {
+            if let Ok(val) = HeaderValue::from_str(if verified { "true" } else { "false" }) {
+                headers.insert(
+                    HeaderName::from_static("x-signature-verified"),
+                    val,
+                );
+            }
+            if let Some(ref provider) = req.signing_provider
+                && let Ok(val) = HeaderValue::from_str(provider) {
+                    headers.insert(
+                        HeaderName::from_static("x-signature-provider"),
+                        val,
+                    );
+                }
+            if !verified
+                && let Some(ref error) = req.signature_error {
+                    // Truncate error for header safety (max ~200 chars)
+                    let short = if error.len() > 200 { &error[..200] } else { error };
+                    if let Ok(val) = HeaderValue::from_str(short) {
+                        headers.insert(
+                            HeaderName::from_static("x-signature-error"),
+                            val,
+                        );
+                    }
+                }
+        }
+
         let mut builder = self.http.request(method, &target_url).headers(headers);
 
         if let Some(bytes) = resolve_body(req.body_raw.as_deref(), req.body.as_deref()) {
