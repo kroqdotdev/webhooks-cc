@@ -98,12 +98,20 @@ fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
 #[derive(Debug, Deserialize)]
 struct CaptureResult {
     status: String,
+    /// UUID of the inserted request row (for post-capture verification UPDATE).
+    request_id: Option<String>,
     mock_response: Option<MockResponse>,
     /// Raw JSON so that malformed rules don't break mock_response deserialization.
     #[serde(default)]
     response_rules: Option<serde_json::Value>,
     retry_after: Option<i64>,
     notification_url: Option<String>,
+    /// Signing provider configured on the endpoint (e.g., "stripe", "github").
+    signing_provider: Option<String>,
+    /// Base64-encoded AES-256-GCM encrypted signing secret.
+    signing_secret_encrypted: Option<String>,
+    /// Custom header name for generic-hmac provider.
+    signing_header: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -535,6 +543,67 @@ async fn handle_webhook_inner(
 
             match capture.status.as_str() {
                 "ok" => {
+                    // Fire-and-forget signature verification if configured
+                    if let Some(ref provider) = capture.signing_provider
+                        && let Some(ref encrypted_b64) = capture.signing_secret_encrypted
+                        && let Some(ref request_id) = capture.request_id
+                        && let Some(ref encryption_key) = state.config.signing_secret_key
+                    {
+                        let pool = state.pool.clone();
+                        let request_id = request_id.clone();
+                        let provider = provider.clone();
+                        let encryption_key = *encryption_key;
+                        let encrypted_b64 = encrypted_b64.clone();
+                        let signing_header = capture.signing_header.clone();
+                        let verify_headers = filtered_headers.clone();
+                        let verify_body = body.to_vec();
+
+                        tokio::spawn(async move {
+                            let secret = match crate::crypto::decrypt_secret_b64(&encrypted_b64, &encryption_key) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    tracing::error!(request_id, error = %e, "failed to decrypt signing secret");
+                                    return;
+                                }
+                            };
+
+                            let result = crate::verification::verify_signature(
+                                &provider,
+                                &secret,
+                                &verify_headers,
+                                &verify_body,
+                                signing_header.as_deref(),
+                                None, // TODO: construct URL for Twilio
+                            );
+
+                            let (verified, error_json, error_provider) = match &result {
+                                crate::verification::VerificationResult::Valid => {
+                                    (Some(true), None, Some(provider.as_str()))
+                                }
+                                crate::verification::VerificationResult::Invalid(err) => {
+                                    let json = serde_json::to_string(err).ok();
+                                    (Some(false), json, Some(provider.as_str()))
+                                }
+                                crate::verification::VerificationResult::Skipped(err) => {
+                                    let json = serde_json::to_string(err).ok();
+                                    (None, json, Some(provider.as_str()))
+                                }
+                            };
+
+                            if let Err(e) = sqlx::query(
+                                "UPDATE public.requests SET signature_verified = $1, signature_error = $2, signing_provider = $3 WHERE id = $4::uuid"
+                            )
+                            .bind(verified)
+                            .bind(&error_json)
+                            .bind(error_provider)
+                            .bind(&request_id)
+                            .execute(&pool)
+                            .await {
+                                tracing::error!(request_id, error = %e, "failed to update verification result");
+                            }
+                        });
+                    }
+
                     // Fire notification webhook if configured
                     if let Some(ref url) = capture.notification_url
                         && !url.is_empty()

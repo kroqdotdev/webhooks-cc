@@ -17,6 +17,9 @@ pub struct Config {
     pub max_body_size: usize,
     pub notification_cooldown_secs: u64,
     pub notification_timeout_secs: u64,
+    /// AES-256-GCM key for decrypting signing secrets (base64-decoded, 32 bytes).
+    /// Optional: when absent, signature verification is silently skipped.
+    pub signing_secret_key: Option<[u8; 32]>,
 }
 
 impl std::fmt::Debug for Config {
@@ -37,6 +40,7 @@ impl std::fmt::Debug for Config {
             .field("max_body_size", &self.max_body_size)
             .field("notification_cooldown_secs", &self.notification_cooldown_secs)
             .field("notification_timeout_secs", &self.notification_timeout_secs)
+            .field("signing_secret_key", &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }
@@ -83,6 +87,16 @@ impl Config {
         let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
         let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
         let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);
+        let signing_secret_key = env::var("SIGNING_SECRET_KEY")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .and_then(|v| {
+                let key = crate::crypto::parse_signing_key(&v);
+                if key.is_none() {
+                    tracing::warn!("SIGNING_SECRET_KEY is set but not valid base64 or not 32 bytes — signature verification disabled");
+                }
+                key
+            });
 
         Self {
             database_url,
@@ -100,6 +114,7 @@ impl Config {
             max_body_size,
             notification_cooldown_secs,
             notification_timeout_secs,
+            signing_secret_key,
         }
     }
 }
