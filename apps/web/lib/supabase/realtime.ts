@@ -43,7 +43,7 @@ export function subscribeToUserRow(userId: string, onChange: (row: UserRow | nul
   return () => removeChannel(channel);
 }
 
-export function subscribeToEndpointRequestInserts(endpointId: string, onInsert: () => void) {
+export function subscribeToEndpointRequestChanges(endpointId: string, onChange: () => void) {
   const supabase = createClient();
   const channel = supabase
     .channel(nextChannelName(`requests:${endpointId}`))
@@ -55,7 +55,17 @@ export function subscribeToEndpointRequestInserts(endpointId: string, onInsert: 
         table: "requests",
         filter: `endpoint_id=eq.${endpointId}`,
       },
-      () => onInsert()
+      () => onChange()
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "requests",
+        filter: `endpoint_id=eq.${endpointId}`,
+      },
+      () => onChange()
     )
     .subscribe();
 

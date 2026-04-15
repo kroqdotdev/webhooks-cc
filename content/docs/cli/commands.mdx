@@ -59,6 +59,15 @@ Create a new endpoint. An optional name can be provided; the slug is auto-genera
 whk create [name]
 ```
 
+| Flag                 | Description                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
+| `--signing-provider` | Provider for automatic signature verification (e.g., `stripe`, `github`) |
+| `--signing-secret`   | Signing secret (encrypted server-side, never stored locally)             |
+
+```bash
+whk create my-stripe --signing-provider stripe --signing-secret whsec_...
+```
+
 ## list
 
 List all your endpoints with their slugs, names, and URLs.
@@ -93,12 +102,29 @@ whk tunnel <port>
 | `--ephemeral, -e` | Delete the endpoint when the tunnel exits                                   |
 | `--header, -H`    | Add a custom header to forwarded requests (repeatable, format: `Key:Value`) |
 
+When signature verification is configured on the endpoint, tunnel injects verification headers into forwarded requests:
+
+- `X-Signature-Verified: true` or `false`
+- `X-Signature-Provider: stripe` (the provider name)
+- `X-Signature-Error: ...` (when verification fails)
+
+Your local server can use these headers to skip its own verification during development.
+
+> **Warning:** These headers are injected by the local tunnel client and are **not authenticated**. Never trust them in production — any HTTP client can send arbitrary `X-Signature-*` headers. Always perform your own signature verification in production environments.
+
 ## listen
 
 Stream incoming requests for an endpoint to the terminal without forwarding them.
 
 ```bash
 whk listen <slug>
+```
+
+When signature verification is configured, listen shows verification status inline:
+
+```
+14:32:01 POST /webhook ✓ stripe  423 B
+14:32:05 POST /webhook ✗ stripe  423 B
 ```
 
 ## replay

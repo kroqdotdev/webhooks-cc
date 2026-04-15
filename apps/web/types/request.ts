@@ -11,6 +11,12 @@ export interface Request {
   ip: string;
   size: number;
   receivedAt: number;
+  /** Signature verification result: true=valid, false=invalid, null/undefined=not configured */
+  signatureVerified?: boolean | null;
+  /** Structured JSON error when signatureVerified=false */
+  signatureError?: string | null;
+  /** Provider that verified (or attempted to verify) the signature */
+  signingProvider?: string | null;
 }
 
 export interface RequestSummary {
@@ -21,6 +27,9 @@ export interface RequestSummary {
   contentType?: string;
   size: number;
   receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
 }
 
 /** A request from search/pagination (uses string id instead of _id). */
@@ -36,6 +45,9 @@ export interface ClickHouseRequest {
   ip: string;
   size: number;
   receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
 }
 
 /** Summary shape for ClickHouse results displayed in the sidebar list. */
@@ -46,6 +58,9 @@ export interface ClickHouseSummary {
   contentType?: string;
   size: number;
   receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
 }
 
 /** Union type for items in the request list. */

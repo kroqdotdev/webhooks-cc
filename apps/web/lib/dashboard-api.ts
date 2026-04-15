@@ -39,6 +39,9 @@ export interface DashboardEndpoint {
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
+  signingProvider?: string | null;
+  hasSigningSecret?: boolean;
+  signingHeader?: string | null;
 }
 
 export interface TeamEndpointShare {
@@ -96,6 +99,9 @@ function toDashboardRequest(record: {
   ip: string;
   size: number;
   receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
 }): Request {
   return {
     _id: record.id,
@@ -110,6 +116,9 @@ function toDashboardRequest(record: {
     ip: record.ip,
     size: record.size,
     receivedAt: record.receivedAt,
+    signatureVerified: record.signatureVerified ?? null,
+    signatureError: record.signatureError ?? null,
+    signingProvider: record.signingProvider ?? null,
   };
 }
 
@@ -213,6 +222,9 @@ export async function fetchDashboardRequests(
       ip: string;
       size: number;
       receivedAt: number;
+      signatureVerified?: boolean | null;
+      signatureError?: string | null;
+      signingProvider?: string | null;
     }>
   >(response);
 

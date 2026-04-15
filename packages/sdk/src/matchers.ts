@@ -169,3 +169,13 @@ export function matchAny(
   const matchers = [first, ...rest];
   return (request: Request) => matchers.some((m) => m(request));
 }
+
+/** Match requests whose server-side signature verification succeeded. */
+export function matchVerified(): (request: Request) => boolean {
+  return (request: Request) => request.signatureVerified === true;
+}
+
+/** Match requests whose server-side signature verification failed. */
+export function matchUnverified(): (request: Request) => boolean {
+  return (request: Request) => request.signatureVerified === false;
+}

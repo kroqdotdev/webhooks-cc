@@ -33,11 +33,23 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
                             println!("{}", serde_json::to_string(&req).unwrap_or_default());
                         } else {
                             let time = chrono::Local::now().format("%H:%M:%S");
+                            let sig_status = match req.signature_verified {
+                                Some(true) => {
+                                    let provider = req.signing_provider.as_deref().unwrap_or("?");
+                                    format!(" {} {}", green("✓"), provider)
+                                }
+                                Some(false) => {
+                                    let provider = req.signing_provider.as_deref().unwrap_or("?");
+                                    format!(" {} {}", red("✗"), provider)
+                                }
+                                None => String::new(),
+                            };
                             println!(
-                                "  {} {} {} {}",
+                                "  {} {} {}{}  {}",
                                 dim(&time.to_string()),
                                 method_color(&req.method),
                                 req.path,
+                                sig_status,
                                 dim(&format_bytes(req.size)),
                             );
                         }
