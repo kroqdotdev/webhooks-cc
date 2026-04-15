@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { updateBlogPostSchema } from "@/lib/blog-api-schema";
 import { verifyBlogSecret } from "@/lib/blog-api-auth";
 import {
@@ -54,6 +55,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   try {
     const result = await updateBlogPostBySlug(slug, parsed.data);
+    revalidatePath("/blog", "page");
+    revalidatePath(`/blog/${slug}`, "page");
     return Response.json(result);
   } catch (error) {
     if (error instanceof Error && error.message === "not_found") {
@@ -76,6 +79,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
   try {
     const result = await deleteBlogPostBySlug(slug);
+    revalidatePath("/blog", "page");
+    revalidatePath(`/blog/${slug}`, "page");
     return Response.json(result);
   } catch (error) {
     if (error instanceof Error && error.message === "not_found") {
