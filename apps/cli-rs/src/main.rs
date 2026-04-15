@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
             AuthAction::Logout => cli::auth::logout(args.json).await?,
         },
 
-        Some(Command::Create { name, ephemeral, expires_in, mock_status, mock_body, mock_headers }) => {
-            cli::endpoints::create(&client, name, ephemeral, expires_in, mock_status, mock_body, mock_headers, args.json).await?;
+        Some(Command::Create { name, ephemeral, expires_in, mock_status, mock_body, mock_headers, signing_provider, signing_secret }) => {
+            cli::endpoints::create(&client, name, ephemeral, expires_in, mock_status, mock_body, mock_headers, signing_provider, signing_secret, args.json).await?;
         }
 
         Some(Command::List) => {

@@ -100,6 +100,9 @@ async fn test_endpoint_update_mock_response() {
             "body": "{\"ok\":true}",
             "headers": {"X-Test": "yes"}
         })),
+        signing_provider: None,
+        signing_secret: None,
+        signing_header: None,
     };
     let updated = client.update_endpoint(&ep.slug, &update).await.expect("update failed");
     assert_eq!(updated.name.as_deref(), Some("mock-test-updated"));
@@ -320,6 +323,9 @@ fn make_captured_request(
         ip: "127.0.0.1".into(),
         size: 0,
         received_at: 0,
+        signature_verified: None,
+        signature_error: None,
+        signing_provider: None,
     }
 }
 

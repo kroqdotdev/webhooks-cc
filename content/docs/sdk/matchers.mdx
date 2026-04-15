@@ -155,6 +155,40 @@ matchAny(...matchers: Array<(request: Request) => boolean>): (request: Request) 
 matchAny(matchMethod("PUT"), matchMethod("PATCH"));
 ```
 
+### matchVerified
+
+Match requests whose server-side signature verification succeeded.
+
+```ts
+matchVerified(): (request: Request) => boolean
+```
+
+```ts
+const req = await client.requests.waitFor(slug, {
+  match: matchAll(matchMethod("POST"), matchVerified()),
+  timeout: "30s",
+});
+// req.signatureVerified === true
+```
+
+Requires [signature verification](/docs/dashboard-features#signature-verification) to be configured on the endpoint. Returns `false` for requests where verification was not configured (`signatureVerified` is `null`).
+
+### matchUnverified
+
+Match requests whose server-side signature verification failed.
+
+```ts
+matchUnverified(): (request: Request) => boolean
+```
+
+```ts
+const failed = await client.requests.waitFor(slug, {
+  match: matchUnverified(),
+  timeout: "10s",
+});
+console.log(failed.signatureError); // structured error JSON
+```
+
 ### Combining matchers
 
 Compose matchers to build precise filters for `waitFor`:

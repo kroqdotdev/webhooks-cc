@@ -148,6 +148,9 @@ export interface Database {
           expires_at: string | null;
           request_count: number;
           created_at: string;
+          signing_provider: string | null;
+          signing_secret_encrypted: string | null;
+          signing_header: string | null;
         };
         Insert: {
           id?: string;
@@ -161,6 +164,9 @@ export interface Database {
           expires_at?: string | null;
           request_count?: number;
           created_at?: string;
+          signing_provider?: string | null;
+          signing_secret_encrypted?: string | null;
+          signing_header?: string | null;
         };
         Update: {
           id?: string;
@@ -174,6 +180,9 @@ export interface Database {
           expires_at?: string | null;
           request_count?: number;
           created_at?: string;
+          signing_provider?: string | null;
+          signing_secret_encrypted?: string | null;
+          signing_header?: string | null;
         };
         Relationships: [];
       };
@@ -192,6 +201,9 @@ export interface Database {
           ip: string;
           size: number;
           received_at: string;
+          signature_verified: boolean | null;
+          signature_error: string | null;
+          signing_provider: string | null;
         };
         Insert: {
           id?: string;
@@ -207,6 +219,9 @@ export interface Database {
           ip: string;
           size?: number;
           received_at?: string;
+          signature_verified?: boolean | null;
+          signature_error?: string | null;
+          signing_provider?: string | null;
         };
         Update: {
           id?: string;
@@ -222,6 +237,9 @@ export interface Database {
           ip?: string;
           size?: number;
           received_at?: string;
+          signature_verified?: boolean | null;
+          signature_error?: string | null;
+          signing_provider?: string | null;
         };
         Relationships: [];
       };
