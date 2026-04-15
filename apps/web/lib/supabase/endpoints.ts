@@ -21,7 +21,11 @@ type SelectedEndpointRow = Pick<
   | "is_ephemeral"
   | "expires_at"
   | "created_at"
->;
+> & {
+  signing_provider?: string | null;
+  signing_secret_encrypted?: string | null;
+  signing_header?: string | null;
+};
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 export interface EndpointRecord {
@@ -40,6 +44,12 @@ export interface EndpointRecord {
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
+  /** Signing provider (e.g., "stripe", "github"). null = verification disabled. */
+  signingProvider?: string | null;
+  /** Whether a signing secret is configured (never exposes the secret itself). */
+  hasSigningSecret?: boolean;
+  /** Custom header name for generic-hmac provider. */
+  signingHeader?: string | null;
 }
 
 interface CreateEndpointInput {
@@ -59,6 +69,10 @@ interface UpdateEndpointInput {
   mockResponse?: Record<string, unknown> | null;
   responseRules?: unknown[] | null;
   notificationUrl?: string | null;
+  signingProvider?: string | null;
+  /** Plaintext secret — encrypted before storage, never returned. */
+  signingSecret?: string | null;
+  signingHeader?: string | null;
 }
 
 function webhookUrl(slug: string): string | undefined {
@@ -116,6 +130,9 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     isEphemeral: row.is_ephemeral || undefined,
     expiresAt: parseMillis(row.expires_at),
     createdAt: parseMillis(row.created_at) ?? Date.now(),
+    signingProvider: row.signing_provider ?? null,
+    hasSigningSecret: !!row.signing_secret_encrypted,
+    signingHeader: row.signing_header ?? null,
   };
 }
 
@@ -183,7 +200,7 @@ export async function listEndpointsForUser(userId: string): Promise<EndpointReco
   const { data, error } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -204,7 +221,7 @@ export async function getEndpointBySlugForUser(
   const { data, error } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
     )
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
@@ -257,7 +274,7 @@ export async function createEndpointForUser({
     .from("endpoints")
     .insert(insert)
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
     )
     .returns<SelectedEndpointRow>()
     .single();
@@ -316,7 +333,7 @@ export async function claimGuestEndpoint(
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
     )
     .returns<SelectedEndpointRow>()
     .maybeSingle();
@@ -332,6 +349,9 @@ export async function updateEndpointBySlugForUser({
   mockResponse,
   responseRules,
   notificationUrl,
+  signingProvider,
+  signingSecret,
+  signingHeader,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
@@ -348,6 +368,41 @@ export async function updateEndpointBySlugForUser({
   if (notificationUrl !== undefined) {
     updates.notification_url = notificationUrl;
   }
+  // Handle signing config
+  if (signingProvider !== undefined) {
+    if (signingProvider === null) {
+      // Clearing signing config — wipe everything
+      updates.signing_provider = null;
+      updates.signing_secret_encrypted = null;
+      updates.signing_header = null;
+    } else {
+      updates.signing_provider = signingProvider;
+      // Only process secret/header when not clearing
+      if (signingSecret !== undefined && signingSecret !== null && signingSecret !== "") {
+        const { encryptSigningSecret } = await import("@/lib/crypto");
+        const encrypted = encryptSigningSecret(signingSecret);
+        // Supabase PostgREST expects hex-encoded bytea with \\x prefix
+        updates.signing_secret_encrypted = `\\x${encrypted.toString("hex")}`;
+      } else if (signingSecret === null) {
+        updates.signing_secret_encrypted = null;
+      }
+      if (signingHeader !== undefined) {
+        updates.signing_header = signingHeader || null;
+      }
+    }
+  } else {
+    // Provider not being changed — still allow updating secret/header independently
+    if (signingSecret !== undefined && signingSecret !== null && signingSecret !== "") {
+      const { encryptSigningSecret } = await import("@/lib/crypto");
+      const encrypted = encryptSigningSecret(signingSecret);
+      updates.signing_secret_encrypted = `\\x${encrypted.toString("hex")}`;
+    } else if (signingSecret === null) {
+      updates.signing_secret_encrypted = null;
+    }
+    if (signingHeader !== undefined) {
+      updates.signing_header = signingHeader || null;
+    }
+  }
 
   const { data, error } = await admin
     .from("endpoints")
@@ -355,7 +410,7 @@ export async function updateEndpointBySlugForUser({
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
     )
     .returns<SelectedEndpointRow>()
     .maybeSingle();

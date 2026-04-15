@@ -90,6 +90,38 @@ impl Tunnel {
             }
         }
 
+        // Inject signature verification headers when verification was performed
+        if let Some(verified) = req.signature_verified {
+            if let Ok(val) = HeaderValue::from_str(if verified { "true" } else { "false" }) {
+                headers.insert(
+                    HeaderName::from_static("x-signature-verified"),
+                    val,
+                );
+            }
+            if let Some(ref provider) = req.signing_provider
+                && let Ok(val) = HeaderValue::from_str(provider) {
+                    headers.insert(
+                        HeaderName::from_static("x-signature-provider"),
+                        val,
+                    );
+                }
+            if !verified
+                && let Some(ref error) = req.signature_error {
+                    // Extract just the error code from JSON (e.g., "mismatch") since
+                    // full JSON contains chars invalid in HTTP header values
+                    let code = serde_json::from_str::<serde_json::Value>(error)
+                        .ok()
+                        .and_then(|v| v.get("code").and_then(|c| c.as_str().map(String::from)))
+                        .unwrap_or_else(|| "unknown".to_string());
+                    if let Ok(val) = HeaderValue::from_str(&code) {
+                        headers.insert(
+                            HeaderName::from_static("x-signature-error"),
+                            val,
+                        );
+                    }
+                }
+        }
+
         let mut builder = self.http.request(method, &target_url).headers(headers);
 
         if let Some(bytes) = resolve_body(req.body_raw.as_deref(), req.body.as_deref()) {

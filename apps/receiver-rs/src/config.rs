@@ -17,6 +17,12 @@ pub struct Config {
     pub max_body_size: usize,
     pub notification_cooldown_secs: u64,
     pub notification_timeout_secs: u64,
+    /// AES-256-GCM key for decrypting signing secrets (base64-decoded, 32 bytes).
+    /// Optional: when absent, signature verification is silently skipped.
+    pub signing_secret_key: Option<[u8; 32]>,
+    /// External webhook base URL (e.g., "https://go.webhooks.cc").
+    /// Used to construct the full URL for Twilio signature verification.
+    pub webhook_base_url: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -37,6 +43,8 @@ impl std::fmt::Debug for Config {
             .field("max_body_size", &self.max_body_size)
             .field("notification_cooldown_secs", &self.notification_cooldown_secs)
             .field("notification_timeout_secs", &self.notification_timeout_secs)
+            .field("signing_secret_key", &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"))
+            .field("webhook_base_url", &self.webhook_base_url)
             .finish()
     }
 }
@@ -83,6 +91,25 @@ impl Config {
         let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
         let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
         let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);
+        let signing_secret_key = env::var("SIGNING_SECRET_KEY")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| {
+                crate::crypto::parse_signing_key(&v).unwrap_or_else(|| {
+                    panic!("SIGNING_SECRET_KEY is set but not valid base64 or not exactly 32 bytes. Generate a valid key with: openssl rand -base64 32");
+                })
+            });
+
+        let webhook_base_url = env::var("WEBHOOK_BASE_URL")
+            .or_else(|_| env::var("NEXT_PUBLIC_WEBHOOK_URL"))
+            .ok()
+            .map(|v| v.trim().trim_end_matches('/').to_string())
+            .filter(|v| !v.is_empty())
+            .inspect(|v| {
+                if !(v.starts_with("http://") || v.starts_with("https://")) {
+                    panic!("WEBHOOK_BASE_URL must start with http:// or https://");
+                }
+            });
 
         Self {
             database_url,
@@ -100,6 +127,8 @@ impl Config {
             max_body_size,
             notification_cooldown_secs,
             notification_timeout_secs,
+            signing_secret_key,
+            webhook_base_url,
         }
     }
 }

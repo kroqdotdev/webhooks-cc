@@ -75,6 +75,14 @@ pub enum Command {
         /// Mock response header (repeatable, format: Key:Value)
         #[arg(long = "mock-header", value_name = "KEY:VALUE")]
         mock_headers: Vec<String>,
+
+        /// Signing provider for automatic signature verification (e.g. stripe, github)
+        #[arg(long)]
+        signing_provider: Option<String>,
+
+        /// Signing secret (encrypted server-side). Use env var WHK_SIGNING_SECRET or pass via stdin.
+        #[arg(long, env = "WHK_SIGNING_SECRET", hide_env_values = true)]
+        signing_secret: Option<String>,
     },
 
     /// List all endpoints

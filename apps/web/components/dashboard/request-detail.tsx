@@ -22,6 +22,7 @@ import { getHighlightLanguage, highlightBody } from "@/lib/highlight";
 import { trackRequestViewed, trackRequestDetailTabChanged } from "@/lib/analytics";
 import { jsonToTypeScript } from "@/lib/json-to-typescript";
 import { JsonTree } from "./json-tree";
+import { SignatureTab, SignatureVerificationBadge } from "./signature-tab";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -40,6 +41,8 @@ interface RequestDetailProps {
   note?: string | null;
   /** Callback when note changes. */
   onNoteChange?: (note: string) => void;
+  /** Callback to open endpoint settings (for "Save to Endpoint Settings" link). */
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -102,8 +105,8 @@ function generateCurlCommand(request: DisplayableRequest): string {
   return parts.join(" \\\n  ");
 }
 
-export type Tab = "body" | "headers" | "query" | "raw";
-export const TABS: Tab[] = ["body", "headers", "query", "raw"];
+export type Tab = "body" | "headers" | "query" | "raw" | "signature";
+export const TABS: Tab[] = ["body", "headers", "query", "raw", "signature"];
 
 export function RequestDetail({
   request,
@@ -112,6 +115,7 @@ export function RequestDetail({
   curlBtnRef,
   note,
   onNoteChange,
+  onOpenSettings,
 }: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
   const tab = activeTab ?? internalTab;
@@ -186,6 +190,14 @@ export function RequestDetail({
               <span>{request.ip}</span>
               <span>{formatBytes(request.size)}</span>
               <span>{fullTime}</span>
+              {request.signatureVerified != null && (
+                <SignatureVerificationBadge
+                  signatureVerified={request.signatureVerified}
+                  signatureError={request.signatureError}
+                  signingProvider={request.signingProvider}
+                  onClick={() => setTab("signature")}
+                />
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -333,6 +345,8 @@ export function RequestDetail({
             {request.body || "(empty body)"}
           </pre>
         )}
+
+        {tab === "signature" && <SignatureTab request={request} onOpenSettings={onOpenSettings} />}
       </div>
     </div>
   );

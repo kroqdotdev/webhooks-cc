@@ -71,6 +71,12 @@ pub struct UpdateEndpointRequest {
         default
     )]
     pub mock_response: Option<serde_json::Value>,
+    #[serde(rename = "signingProvider", skip_serializing_if = "Option::is_none")]
+    pub signing_provider: Option<String>,
+    #[serde(rename = "signingSecret", skip_serializing_if = "Option::is_none")]
+    pub signing_secret: Option<String>,
+    #[serde(rename = "signingHeader", skip_serializing_if = "Option::is_none")]
+    pub signing_header: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +115,15 @@ pub struct CapturedRequest {
     pub size: usize,
     #[serde(rename = "receivedAt")]
     pub received_at: i64,
+    /// Signature verification result: true=valid, false=invalid, null=not configured
+    #[serde(rename = "signatureVerified", default)]
+    pub signature_verified: Option<bool>,
+    /// Structured JSON error when signature_verified=false
+    #[serde(rename = "signatureError", default)]
+    pub signature_error: Option<String>,
+    /// Provider that verified the signature (e.g., "stripe", "github")
+    #[serde(rename = "signingProvider", default)]
+    pub signing_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
