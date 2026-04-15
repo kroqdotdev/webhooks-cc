@@ -13,6 +13,7 @@ keywords:
     "compare requests",
     "timeline",
     "webhook inspector",
+    "signature verification",
   ]
 seo:
   ogTitle: "Dashboard Features Guide"
@@ -30,17 +31,17 @@ The dashboard packs a lot of power into a simple split-pane layout. This page co
 
 Navigate the entire dashboard without touching the mouse. Press **?** to see the full list at any time.
 
-| Key             | Action                                                        |
-| --------------- | ------------------------------------------------------------- |
-| `j` / `k`       | Move down / up in the request list                            |
-| `1` `2` `3` `4` | Switch to Body / Headers / Query / Raw tab                    |
-| `c`             | Copy cURL command for the selected request                    |
-| `r`             | Open the replay dialog                                        |
-| `n`             | Create a new endpoint                                         |
-| `/`             | Focus the search input                                        |
-| `l`             | Toggle live / paused mode                                     |
-| `[`             | Collapse or expand the sidebar                                |
-| `Esc`           | Close any dialog, exit compare mode, or blur the search input |
+| Key                 | Action                                                        |
+| ------------------- | ------------------------------------------------------------- |
+| `j` / `k`           | Move down / up in the request list                            |
+| `1` `2` `3` `4` `5` | Switch to Body / Headers / Query / Raw / Signature tab        |
+| `c`                 | Copy cURL command for the selected request                    |
+| `r`                 | Open the replay dialog                                        |
+| `n`                 | Create a new endpoint                                         |
+| `/`                 | Focus the search input                                        |
+| `l`                 | Toggle live / paused mode                                     |
+| `[`                 | Collapse or expand the sidebar                                |
+| `Esc`               | Close any dialog, exit compare mode, or blur the search input |
 
 Shortcuts are disabled when you're typing in an input field, and modifier keys (Ctrl, Cmd, Alt) are never intercepted so browser shortcuts work normally.
 
@@ -168,3 +169,36 @@ Click the gear icon in the URL bar to open endpoint settings:
 - **Delete** the endpoint
 
 Mock response and notification changes take effect immediately — there is no caching layer.
+
+## Signature verification
+
+Verify webhook signatures directly in the dashboard without writing code. Two modes are available:
+
+### Signature tab (client-side)
+
+The **Signature** tab (fifth tab in request detail, keyboard shortcut `5`) lets you verify any captured request on the fly:
+
+1. Select a request and click the **Signature** tab
+2. The provider is auto-detected from request headers (e.g., `stripe-signature` maps to Stripe)
+3. Paste your signing secret and click **Verify**
+4. Verification runs entirely in your browser — the secret is never sent to the server
+
+The result panel shows valid (green), invalid (red with expected vs. received signatures), or skipped (amber, when the signature header is missing).
+
+### Server-side verification (endpoint settings)
+
+For automatic verification on every request, configure a signing secret in endpoint settings:
+
+1. Click the gear icon and find the **Signature Verification** section
+2. Select your provider and paste the signing secret
+3. The secret is encrypted at rest (AES-256-GCM) and never visible after saving
+4. Every incoming request is verified automatically by the receiver
+
+**Verification badges** appear in the request list: a shield icon shows verified (cyan) or invalid (red) at a glance. The summary bar also shows a clickable badge that jumps to the Signature tab.
+
+When server-side verification is configured, the Signature tab shows the stored result with detailed error info for failures — including expected vs. received signatures, timestamp analysis, and provider-specific debugging tips.
+
+<Callout type="tip">
+  Start with the client-side Signature tab for quick debugging. If you find yourself pasting the
+  same secret repeatedly, save it to endpoint settings for automatic verification.
+</Callout>

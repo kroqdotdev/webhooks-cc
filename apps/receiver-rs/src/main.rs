@@ -1,5 +1,7 @@
 mod config;
+pub mod crypto;
 mod handlers;
+pub mod verification;
 
 use axum::Router;
 use axum::routing::{any, get};
