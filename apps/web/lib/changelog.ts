@@ -38,6 +38,16 @@ export const CHANGELOG: ChangelogEntry[] = [
     ],
   },
   {
+    version: "0.18.3",
+    date: "2026-04-11",
+    title: "Blog Resilience & Housekeeping",
+    track: "web",
+    items: [
+      "Blog pages gracefully fall back when Supabase is unreachable instead of erroring",
+      "Added SECURITY.md and CODE_OF_CONDUCT.md for open-source governance",
+    ],
+  },
+  {
     version: "0.18.2",
     date: "2026-04-10",
     title: "SDK v1.3.0 & MCP v1.2.0 Release",
