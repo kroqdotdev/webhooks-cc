@@ -22,13 +22,22 @@ alter table public.endpoints
   add column if not exists signing_header text;
 
 -- Provider requires a secret (except sendgrid which uses IP allowlisting)
-alter table public.endpoints
-  add constraint check_signing_config
-    check (
-      signing_provider is null
-      or signing_provider = 'sendgrid'
-      or signing_secret_encrypted is not null
-    );
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'check_signing_config'
+       and conrelid = 'public.endpoints'::regclass
+  ) then
+    alter table public.endpoints
+      add constraint check_signing_config
+        check (
+          signing_provider is null
+          or signing_provider = 'sendgrid'
+          or signing_secret_encrypted is not null
+        );
+  end if;
+end $$;
 
 -- 2. Requests: verification result columns
 alter table public.requests
@@ -188,3 +197,6 @@ begin
   );
 end;
 $$;
+
+-- 5. Reload PostgREST schema cache so new columns are available via REST API
+notify pgrst, 'reload schema';
