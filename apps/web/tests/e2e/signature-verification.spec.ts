@@ -107,18 +107,16 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // Should have None + 14 providers
-  await expect(options).toHaveCount(15);
+  // Should have None + 13 providers (SendGrid removed — uses IP allowlisting)
+  await expect(options).toHaveCount(14);
   await expect(options.nth(1)).toHaveText("Stripe");
 });
 
-test("selecting SendGrid shows IP allowlisting message", async ({ page }) => {
+test("SendGrid IP allowlisting info is shown", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  await page.selectOption("#settings-signing-provider", "sendgrid");
+  // SendGrid is no longer in the dropdown but the info text is always visible
   await expect(page.locator("text=IP allowlisting")).toBeVisible();
-  // Secret input should NOT be visible for SendGrid
-  await expect(page.locator("#settings-signing-secret")).not.toBeVisible();
 });
 
 test("selecting Discord changes label to Public Key", async ({ page }) => {
@@ -139,10 +137,10 @@ test("configure signing secret and save", async ({ page }) => {
   // Dialog should close
   await expect(page.locator("text=Endpoint Settings")).not.toBeVisible({ timeout: 5000 });
 
-  // Wait for endpoint data to refresh after save
-  await page.waitForTimeout(1000);
-
   // Reopen and verify status shows configured
+  await page
+    .locator('[aria-label="Endpoint settings"]')
+    .waitFor({ state: "visible", timeout: 5000 });
   await openSettings(page);
   await expect(page.locator("text=Configured")).toBeVisible({ timeout: 5000 });
 });

@@ -103,8 +103,13 @@ impl Config {
         let webhook_base_url = env::var("WEBHOOK_BASE_URL")
             .or_else(|_| env::var("NEXT_PUBLIC_WEBHOOK_URL"))
             .ok()
+            .map(|v| v.trim().trim_end_matches('/').to_string())
             .filter(|v| !v.is_empty())
-            .map(|v| v.trim_end_matches('/').to_string());
+            .inspect(|v| {
+                if !(v.starts_with("http://") || v.starts_with("https://")) {
+                    panic!("WEBHOOK_BASE_URL must start with http:// or https://");
+                }
+            });
 
         Self {
             database_url,

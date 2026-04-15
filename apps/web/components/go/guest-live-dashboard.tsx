@@ -304,7 +304,7 @@ function GuestLiveDashboardInner() {
       void refreshRequests(endpointSlug);
     });
 
-    // Subscribe to request INSERTs directly for faster updates
+    // Subscribe to request changes (INSERT + UPDATE) for real-time updates
     const unsubscribeRequests = subscribeToEndpointRequestChanges(endpoint.id, () => {
       void refreshRequests(endpointSlug);
       void refreshEndpoint(endpointSlug);

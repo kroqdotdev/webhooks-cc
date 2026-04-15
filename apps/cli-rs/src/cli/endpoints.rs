@@ -44,6 +44,7 @@ pub async fn create(
     let endpoint = client.create_endpoint(&req).await?;
 
     // Configure signing if provided (update after create)
+    let mut signing_configured = false;
     if let Some(ref provider) = signing_provider {
         use crate::types::UpdateEndpointRequest;
         let update = UpdateEndpointRequest {
@@ -53,14 +54,17 @@ pub async fn create(
             signing_secret: signing_secret.clone(),
             signing_header: None,
         };
-        if let Err(e) = client.update_endpoint(&endpoint.slug, &update).await {
-            eprintln!(
-                "  {} Endpoint {} was created but signing setup failed: {}",
-                red("⚠"),
-                bold(&endpoint.slug),
-                e
-            );
-            eprintln!("  Update the endpoint manually to configure signing.");
+        match client.update_endpoint(&endpoint.slug, &update).await {
+            Ok(_) => signing_configured = true,
+            Err(e) => {
+                eprintln!(
+                    "  {} Endpoint {} was created but signing setup failed: {}",
+                    red("⚠"),
+                    bold(&endpoint.slug),
+                    e
+                );
+                eprintln!("  Update the endpoint manually to configure signing.");
+            }
         }
     }
 
@@ -70,7 +74,7 @@ pub async fn create(
         let url = client.webhook_url_for(&endpoint.slug);
         println!("\n  {} Created endpoint {}", green("✓"), bold(&endpoint.slug));
         println!("  {} {}\n", dim("URL:"), url);
-        if signing_provider.is_some() {
+        if signing_configured {
             println!("  {} Signature verification configured\n", green("✓"));
         }
     }

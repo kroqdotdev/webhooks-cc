@@ -23,6 +23,7 @@ Create a new webhook endpoint. Returns the endpoint slug and full URL.
 | `ephemeral`       | `boolean` | no       | Auto-delete after 12 hours                                                   |
 | `expiresIn`       | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`)                                |
 | `mockResponse`    | `object`  | no       | Mock response config (see fields below)                                      |
+| `responseRules`   | `array`   | no       | Conditional response rules (method/path/header/body conditions + responses)  |
 | `notificationUrl` | `string`  | no       | URL to POST a JSON summary on each request                                   |
 | `signingProvider` | `string`  | no       | Provider for automatic signature verification (e.g., `stripe`, `github`)     |
 | `signingSecret`   | `string`  | no       | Signing secret (encrypted server-side). Required when signingProvider is set |
@@ -69,6 +70,7 @@ Update an endpoint's name, mock response, notification webhook, or signing confi
 | `slug`            | `string` | yes      | Endpoint slug                                                    |
 | `name`            | `string` | no       | New display name                                                 |
 | `mockResponse`    | `object` | no       | Mock response config (see fields above), or `null` to clear      |
+| `responseRules`   | `array`  | no       | Conditional response rules, or `null` to clear                   |
 | `notificationUrl` | `string` | no       | Notification webhook URL, or `null` to clear                     |
 | `signingProvider` | `string` | no       | Signing provider (e.g., `stripe`), or `null` to disable          |
 | `signingSecret`   | `string` | no       | New signing secret (encrypted server-side), or `null` to clear   |
@@ -267,7 +269,7 @@ Extract specific JSON fields from a captured request body using dot-notation pat
 Verify the webhook signature on a captured request. Supports two modes:
 
 1. **Stored result** (no provider/secret) — returns the pre-computed server-side verification result when signing is configured on the endpoint
-2. **Client-side** (with provider+secret) — performs verification on demand
+2. **Client-side** (with provider + secret for HMAC providers, or provider + publicKey for Discord) — performs verification on demand
 
 | Parameter   | Type     | Required | Description                                                                       |
 | ----------- | -------- | -------- | --------------------------------------------------------------------------------- |
