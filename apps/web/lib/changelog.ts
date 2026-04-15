@@ -16,9 +16,9 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.19.0";
-export const CLI_VERSION = "1.0.0";
-export const SDK_VERSION = "1.3.0";
-export const MCP_VERSION = "1.2.0";
+export const CLI_VERSION = "1.1.0";
+export const SDK_VERSION = "1.4.0";
+export const MCP_VERSION = "1.3.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
@@ -433,6 +433,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.1.0",
+    date: "2026-04-15",
+    title: "Signature Verification",
+    track: "cli",
+    items: [
+      "Tunnel forwards X-Signature-Verified, X-Signature-Provider, and X-Signature-Error headers",
+      "Listen shows inline verification status (checkmark/cross) per request",
+      "Create supports --signing-provider and --signing-secret flags (or WHK_SIGNING_SECRET env var)",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-04-01",
     title: "Rust Rewrite",
@@ -522,6 +533,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.4.0",
+    date: "2026-04-15",
+    title: "Signature Verification Matchers",
+    track: "sdk",
+    items: [
+      "matchVerified() and matchUnverified() matchers for signature verification assertions",
+      "signatureVerified, signatureError, and signingProvider fields on Request and Endpoint types",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-04-10",
@@ -652,6 +673,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.3.0",
+    date: "2026-04-15",
+    title: "Signature Verification Tools",
+    track: "mcp",
+    items: [
+      "Signing config (provider + secret) on create_endpoint and update_endpoint",
+      "verify_signature tool returns stored server-side results with skipped detection",
+      "Discord publicKey support for Ed25519 verification",
+    ],
+  },
   {
     version: "1.2.0",
     date: "2026-04-10",
