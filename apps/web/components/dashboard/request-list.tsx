@@ -16,6 +16,7 @@ import {
   Clipboard,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { SignatureVerificationBadge } from "./signature-tab";
 import {
   getMethodColor,
   formatTimestamp,
@@ -428,6 +429,13 @@ export function RequestList({
           >
             {request.method}
           </span>
+          {request.signatureVerified != null && (
+            <SignatureVerificationBadge
+              signatureVerified={request.signatureVerified}
+              signatureError={request.signatureError}
+              signingProvider={request.signingProvider}
+            />
+          )}
           <span className="text-xs font-mono truncate flex-1">{request.path}</span>
           {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
           {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
