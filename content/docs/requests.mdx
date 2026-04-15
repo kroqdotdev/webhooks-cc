@@ -22,14 +22,25 @@ The left panel shows captured requests sorted by time. Each entry displays the H
 
 ## Request detail
 
-Click a request to view its details. Four tabs organize the data:
+Click a request to view its details. Five tabs organize the data:
 
 - **Body** — auto-formatted based on content type (JSON, XML, form data, plain text)
 - **Headers** — all request headers in a key-value table
 - **Query** — parsed query string parameters
 - **Raw** — unformatted request body
+- **Signature** — verify the request's webhook signature (client-side or server-side)
 
 A format badge (JSON, XML, FORM, TEXT) appears above the body for quick identification.
+
+### Signature verification
+
+When signature verification is configured on an endpoint, each request includes a verification status:
+
+- `signatureVerified: true` — the signature is valid (shield icon in the request list)
+- `signatureVerified: false` — the signature is invalid, with details in `signatureError`
+- `signatureVerified: null` — verification is not configured for this endpoint
+
+See [Dashboard Features](/docs/dashboard-features#signature-verification) for the full guide.
 
 ## Copy as curl
 

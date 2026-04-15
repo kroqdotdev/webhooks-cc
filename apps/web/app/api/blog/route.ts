@@ -1,3 +1,5 @@
+import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createBlogPostSchema } from "@/lib/blog-api-schema";
 import { verifyBlogSecret } from "@/lib/blog-api-auth";
 import {
@@ -32,6 +34,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await createBlogPost(parsed.data);
+    after(() => revalidatePath("/blog", "page"));
     return Response.json(result, { status: 201 });
   } catch (error) {
     if (isSlugExistsError(error)) {

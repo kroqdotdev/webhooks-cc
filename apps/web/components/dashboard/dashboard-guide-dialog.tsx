@@ -25,6 +25,7 @@ import {
   Users,
   Code2,
   ListOrdered,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -64,7 +65,7 @@ const SECTIONS: Section[] = [
         <ShortcutTable
           shortcuts={[
             ["j / k", "Navigate request list down / up"],
-            ["1 / 2 / 3 / 4", "Switch to Body / Headers / Query / Raw tab"],
+            ["1 / 2 / 3 / 4 / 5", "Switch to Body / Headers / Query / Raw / Signature tab"],
             ["c", "Copy cURL command for selected request"],
             ["r", "Open replay dialog"],
             ["n", "Create new endpoint"],
@@ -288,12 +289,52 @@ const SECTIONS: Section[] = [
             URL when a request arrives
           </li>
           <li>
+            <strong>Signature verification</strong> — configure a provider and signing secret to
+            automatically verify every incoming webhook (see next section)
+          </li>
+          <li>
             <strong>Team sharing</strong> — share the endpoint with your teams (Pro)
           </li>
           <li>
             <strong>Rename</strong> your endpoint for easier identification
           </li>
           <li>Changes take effect immediately (no caching layer)</li>
+        </ul>
+      </div>
+    ),
+  },
+  {
+    id: "signature-verification",
+    title: "Signature Verification",
+    icon: <ShieldCheck className="h-3.5 w-3.5" />,
+    content: (
+      <div className="space-y-3">
+        <p>Verify webhook signatures directly in the dashboard — no code required.</p>
+        <ul className="space-y-1.5 text-sm">
+          <li>
+            <strong>Signature tab</strong> (press <Kbd>5</Kbd>) — paste your signing secret and
+            verify any captured request in your browser. The secret never leaves your machine.
+          </li>
+          <li>
+            The provider is <strong>auto-detected</strong> from request headers (e.g., Stripe from{" "}
+            <code className="text-xs">stripe-signature</code>)
+          </li>
+          <li>
+            <strong>Server-side verification</strong> — configure a signing secret in endpoint
+            settings for automatic verification on every request
+          </li>
+          <li>
+            <strong>Verification badges</strong> —{" "}
+            <ShieldCheck className="inline h-3 w-3 text-primary" /> (valid) and shield-alert
+            (invalid) icons appear in the request list
+          </li>
+          <li>
+            Click the badge in the summary bar to jump to the Signature tab with full error details
+          </li>
+          <li>
+            Supports 13 providers: Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Vercel,
+            GitLab, Clerk, Discord, Standard Webhooks, and Generic HMAC
+          </li>
         </ul>
       </div>
     ),

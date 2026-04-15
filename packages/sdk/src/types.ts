@@ -33,6 +33,12 @@ export interface Endpoint {
   sharedWith?: TeamShare[];
   /** Team this endpoint was shared from (present when shared with you) */
   fromTeam?: TeamShare;
+  /** Signing provider for automatic signature verification (e.g., "stripe", "github") */
+  signingProvider?: string | null;
+  /** Whether a signing secret is configured (the secret itself is never returned) */
+  hasSigningSecret?: boolean;
+  /** Custom header name for generic-hmac provider */
+  signingHeader?: string | null;
 }
 
 /** A single condition within a response rule. */
@@ -106,6 +112,12 @@ export interface Request {
   size: number;
   /** Unix timestamp (ms) when the request arrived */
   receivedAt: number;
+  /** Signature verification result: true=valid, false=invalid, null/undefined=not configured */
+  signatureVerified?: boolean | null;
+  /** Structured JSON error when signatureVerified is false */
+  signatureError?: string | null;
+  /** Provider that verified (or attempted to verify) the signature */
+  signingProvider?: string | null;
 }
 
 /**
@@ -181,6 +193,12 @@ export interface UpdateEndpointOptions {
   notificationUrl?: string | null;
   /** Ordered conditional response rules, or null to clear */
   responseRules?: ResponseRule[] | null;
+  /** Signing provider for automatic verification, or null to disable */
+  signingProvider?: string | null;
+  /** Plaintext signing secret (encrypted server-side, never returned) */
+  signingSecret?: string | null;
+  /** Custom header name for generic-hmac provider */
+  signingHeader?: string | null;
 }
 
 /**

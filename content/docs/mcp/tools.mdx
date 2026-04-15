@@ -17,13 +17,17 @@ seo:
 
 Create a new webhook endpoint. Returns the endpoint slug and full URL.
 
-| Parameter         | Type      | Required | Description                                   |
-| ----------------- | --------- | -------- | --------------------------------------------- |
-| `name`            | `string`  | no       | Display name for the endpoint                 |
-| `ephemeral`       | `boolean` | no       | Auto-delete after 12 hours                    |
-| `expiresIn`       | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`) |
-| `mockResponse`    | `object`  | no       | Mock response config (see fields below)       |
-| `notificationUrl` | `string`  | no       | URL to POST a JSON summary on each request    |
+| Parameter         | Type      | Required | Description                                                                  |
+| ----------------- | --------- | -------- | ---------------------------------------------------------------------------- |
+| `name`            | `string`  | no       | Display name for the endpoint                                                |
+| `ephemeral`       | `boolean` | no       | Auto-delete after 12 hours                                                   |
+| `expiresIn`       | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`)                                |
+| `mockResponse`    | `object`  | no       | Mock response config (see fields below)                                      |
+| `responseRules`   | `array`   | no       | Conditional response rules (method/path/header/body conditions + responses)  |
+| `notificationUrl` | `string`  | no       | URL to POST a JSON summary on each request                                   |
+| `signingProvider` | `string`  | no       | Provider for automatic signature verification (e.g., `stripe`, `github`)     |
+| `signingSecret`   | `string`  | no       | Signing secret (encrypted server-side). Required when signingProvider is set |
+| `signingHeader`   | `string`  | no       | Custom header name (only for `generic-hmac` provider)                        |
 
 **mockResponse fields:**
 
@@ -59,14 +63,18 @@ Get details for an endpoint by slug.
 
 ### update_endpoint
 
-Update an endpoint's name, mock response, or notification webhook.
+Update an endpoint's name, mock response, notification webhook, or signing configuration.
 
-| Parameter         | Type     | Required | Description                                                 |
-| ----------------- | -------- | -------- | ----------------------------------------------------------- |
-| `slug`            | `string` | yes      | Endpoint slug                                               |
-| `name`            | `string` | no       | New display name                                            |
-| `mockResponse`    | `object` | no       | Mock response config (see fields above), or `null` to clear |
-| `notificationUrl` | `string` | no       | Notification webhook URL, or `null` to clear                |
+| Parameter         | Type     | Required | Description                                                      |
+| ----------------- | -------- | -------- | ---------------------------------------------------------------- |
+| `slug`            | `string` | yes      | Endpoint slug                                                    |
+| `name`            | `string` | no       | New display name                                                 |
+| `mockResponse`    | `object` | no       | Mock response config (see fields above), or `null` to clear      |
+| `responseRules`   | `array`  | no       | Conditional response rules, or `null` to clear                   |
+| `notificationUrl` | `string` | no       | Notification webhook URL, or `null` to clear                     |
+| `signingProvider` | `string` | no       | Signing provider (e.g., `stripe`), or `null` to disable          |
+| `signingSecret`   | `string` | no       | New signing secret (encrypted server-side), or `null` to clear   |
+| `signingHeader`   | `string` | no       | Custom header name (only for `generic-hmac`), or `null` to clear |
 
 ### delete_endpoint
 
@@ -258,15 +266,18 @@ Extract specific JSON fields from a captured request body using dot-notation pat
 
 ### verify_signature
 
-Verify the webhook signature on a captured request.
+Verify the webhook signature on a captured request. Supports two modes:
 
-| Parameter   | Type     | Required | Description                                                                                                                                       |
-| ----------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `requestId` | `string` | yes      | Request ID                                                                                                                                        |
-| `provider`  | `string` | yes      | Provider name (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `clerk`, `discord`, `vercel`, `gitlab`, `standard-webhooks`) |
-| `secret`    | `string` | no       | Signing secret (required for HMAC-based providers)                                                                                                |
-| `publicKey` | `string` | no       | Public key (required for Discord Ed25519 verification)                                                                                            |
-| `url`       | `string` | no       | Request URL (required for Twilio signature verification)                                                                                          |
+1. **Stored result** (no provider/secret) — returns the pre-computed server-side verification result when signing is configured on the endpoint
+2. **Client-side** (with provider + secret for HMAC providers, or provider + publicKey for Discord) — performs verification on demand
+
+| Parameter   | Type     | Required | Description                                                                       |
+| ----------- | -------- | -------- | --------------------------------------------------------------------------------- |
+| `requestId` | `string` | yes      | Request ID                                                                        |
+| `provider`  | `string` | no       | Provider name (`stripe`, `github`, `shopify`, etc.). Omit to return stored result |
+| `secret`    | `string` | no       | Signing secret (required for client-side HMAC-based verification)                 |
+| `publicKey` | `string` | no       | Public key (required for Discord Ed25519 verification)                            |
+| `url`       | `string` | no       | Request URL (required for Twilio signature verification)                          |
 
 ## Utilities
 

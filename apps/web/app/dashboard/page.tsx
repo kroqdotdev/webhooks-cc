@@ -5,6 +5,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { UrlBar } from "@/components/dashboard/url-bar";
+import type { EndpointSettingsDialogHandle } from "@/components/dashboard/endpoint-settings-dialog";
 import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
@@ -26,7 +27,7 @@ import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
 import { trackRequestExported } from "@/lib/analytics";
-import { subscribeToEndpointRequestInserts } from "@/lib/supabase/realtime";
+import { subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import {
   fetchDashboardEndpoints,
   fetchDashboardRequests,
@@ -602,7 +603,7 @@ export default function DashboardPage() {
       }, 150);
     };
 
-    const unsubscribe = subscribeToEndpointRequestInserts(currentEndpointId, queueRefresh);
+    const unsubscribe = subscribeToEndpointRequestChanges(currentEndpointId, queueRefresh);
     return () => {
       if (realtimeRefreshTimeoutRef.current) {
         clearTimeout(realtimeRefreshTimeoutRef.current);
@@ -628,6 +629,9 @@ export default function DashboardPage() {
           contentType: r.contentType,
           size: r.size,
           receivedAt: r.receivedAt,
+          signatureVerified: r.signatureVerified,
+          signatureError: r.signatureError,
+          signingProvider: r.signingProvider,
         })
       );
     }
@@ -642,6 +646,9 @@ export default function DashboardPage() {
         contentType: request.contentType,
         size: request.size,
         receivedAt: request.receivedAt,
+        signatureVerified: request.signatureVerified,
+        signatureError: request.signatureError,
+        signingProvider: request.signingProvider,
       }));
 
     const oldestRecent =
@@ -655,6 +662,9 @@ export default function DashboardPage() {
         contentType: r.contentType,
         size: r.size,
         receivedAt: r.receivedAt,
+        signatureVerified: r.signatureVerified,
+        signatureError: r.signatureError,
+        signingProvider: r.signingProvider,
       }));
 
     return [...recentSummaries, ...olderSummaries];
@@ -792,6 +802,9 @@ export default function DashboardPage() {
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)
   const curlBtnRef = useRef<HTMLButtonElement>(null);
+  // Ref for opening endpoint settings dialog programmatically
+  const settingsDialogRef = useRef<EndpointSettingsDialogHandle>(null);
+  const handleOpenSettings = useCallback(() => settingsDialogRef.current?.open(), []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -841,7 +854,8 @@ export default function DashboardPage() {
         case "1":
         case "2":
         case "3":
-        case "4": {
+        case "4":
+        case "5": {
           e.preventDefault();
           const tabIndex = parseInt(e.key) - 1;
           setActiveTab(TABS[tabIndex]);
@@ -912,6 +926,10 @@ export default function DashboardPage() {
         mockResponse={currentEndpoint.mockResponse}
         responseRules={currentEndpoint.responseRules}
         notificationUrl={currentEndpoint.notificationUrl}
+        signingProvider={currentEndpoint.signingProvider}
+        hasSigningSecret={currentEndpoint.hasSigningSecret}
+        signingHeader={currentEndpoint.signingHeader}
+        settingsRef={settingsDialogRef}
         extra={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
@@ -986,6 +1004,7 @@ export default function DashboardPage() {
                     curlBtnRef={curlBtnRef}
                     note={currentNote}
                     onNoteChange={handleNoteChange}
+                    onOpenSettings={handleOpenSettings}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -1012,6 +1031,7 @@ export default function DashboardPage() {
                       onTabChange={setActiveTab}
                       note={currentNote}
                       onNoteChange={handleNoteChange}
+                      onOpenSettings={handleOpenSettings}
                     />
                   </ErrorBoundary>
                 </div>

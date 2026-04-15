@@ -16,6 +16,15 @@ Webhook signatures prove a payload came from the expected sender and was not tam
 
 The webhooks.cc SDK verifies signatures for 13 providers with a single function call. This guide walks through the process for each one.
 
+## Verify in the dashboard (no code)
+
+Before writing verification code, you can verify signatures directly in the dashboard:
+
+1. **Quick check** — open any captured request, click the **Signature** tab, paste your secret, and click Verify. Runs in your browser; the secret never leaves the client.
+2. **Automatic** — configure a signing secret in endpoint settings. Every incoming webhook is verified server-side and the result (valid/invalid) appears as a badge in the request list.
+
+See [Dashboard Features: Signature Verification](/docs/dashboard-features#signature-verification) for the full walkthrough.
+
 ## What you'll build
 
 A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, and Standard Webhooks (Polar, Svix, Resend).
