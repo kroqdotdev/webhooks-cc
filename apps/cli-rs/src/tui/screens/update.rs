@@ -63,30 +63,26 @@ impl Screen for UpdateScreen {
         }
 
         match &self.state {
-            State::Available(release) => {
-                if keys::is_char(key, 'u') {
-                    let release = release.clone();
-                    self.state = State::Applying;
-                    if let Some(ref tx) = self.tx {
-                        let tx = tx.clone();
-                        let handle = tokio::spawn(async move {
-                            match update::apply(&release).await {
-                                Ok(()) => {
-                                    let _ = tx.send(Message::UpdateResult(Ok(release.version)));
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(Message::UpdateResult(Err(e)));
-                                }
+            State::Available(release) if keys::is_char(key, 'u') => {
+                let release = release.clone();
+                self.state = State::Applying;
+                if let Some(ref tx) = self.tx {
+                    let tx = tx.clone();
+                    let handle = tokio::spawn(async move {
+                        match update::apply(&release).await {
+                            Ok(()) => {
+                                let _ = tx.send(Message::UpdateResult(Ok(release.version)));
                             }
-                        });
-                        self.tasks.push(handle);
-                    }
+                            Err(e) => {
+                                let _ = tx.send(Message::UpdateResult(Err(e)));
+                            }
+                        }
+                    });
+                    self.tasks.push(handle);
                 }
             }
-            State::Done(_) | State::Error(_) | State::UpToDate => {
-                if keys::is_enter(key) {
-                    return Some(Action::NavigateBack);
-                }
+            State::Done(_) | State::Error(_) | State::UpToDate if keys::is_enter(key) => {
+                return Some(Action::NavigateBack);
             }
             _ => {}
         }

@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.19.0";
+export const APP_VERSION = "0.19.1";
 export const CLI_VERSION = "1.1.0";
 export const SDK_VERSION = "1.4.0";
 export const MCP_VERSION = "1.3.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.19.1",
+    date: "2026-04-16",
+    title: "Guest Dashboard SEO Overhaul",
+    track: "web",
+    items: [
+      "Fixed layout bug on /go where hero copy rendered above the navbar",
+      "Added feature cards flanking the Send Your First Webhook widget — mock responses, signature verification, CLI tunnel, SDK testing, MCP, and search/replay — visible without scrolling on xl+ screens",
+      "Expanded server-rendered SEO content (14 internal doc links, 12 headings, 751 words, BreadcrumbList + FAQPage schemas, hreflang alternates)",
+      "Promoted the page h1 to a visible subtitle inside the nav on md+ screens",
+    ],
+  },
   {
     version: "0.19.0",
     date: "2026-04-14",
