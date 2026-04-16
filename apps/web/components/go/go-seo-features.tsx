@@ -89,11 +89,7 @@ const ALL_FEATURES: Feature[] = [...LEFT_FEATURES, ...RIGHT_FEATURES];
 
 function SideCard({ feature }: { feature: Feature }) {
   return (
-    <Link
-      href={feature.href}
-      className="neo-card block p-4 no-underline group"
-      aria-label={feature.cta}
-    >
+    <Link href={feature.href} className="neo-card block p-4 no-underline group">
       <div className="flex items-start gap-3">
         <div
           className={`shrink-0 w-9 h-9 border-2 border-foreground ${feature.iconBg} flex items-center justify-center shadow-neo-sm`}
@@ -119,7 +115,7 @@ export function GoSideFeatures({ side }: { side: "left" | "right" }) {
   return (
     <aside
       aria-label={side === "left" ? "Developer tools" : "Testing features"}
-      className="hidden xl:flex flex-col gap-3 w-full max-w-xs"
+      className="flex flex-col gap-3 w-full max-w-xs"
     >
       <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1">
         {side === "left" ? "Build with webhooks.cc" : "Test with webhooks.cc"}

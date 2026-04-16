@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { GuestLiveDashboard } from "@/components/go/guest-live-dashboard";
 import { createPageMetadata } from "@/lib/seo";
@@ -53,7 +54,7 @@ const baseMetadata = createPageMetadata({
   ],
 });
 
-export const metadata = {
+export const metadata: Metadata = {
   ...baseMetadata,
   alternates: {
     ...baseMetadata.alternates,
@@ -75,7 +76,13 @@ export default function GoPage() {
           { name: "Free Webhook Endpoint", path: "/go" },
         ])}
       />
-      <div className="sr-only">
+      <a
+        href="#guest-live-dashboard"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-background focus:border-2 focus:border-foreground focus:px-4 focus:py-2 focus:font-bold"
+      >
+        Skip to webhook dashboard
+      </a>
+      <section aria-label="About webhooks.cc and available features" className="sr-only">
         <p>
           webhooks.cc is a free webhook testing and inspection service. Use this page to create a
           guest webhook endpoint instantly — no signup, no credit card, no configuration. Send any
@@ -209,8 +216,10 @@ export default function GoPage() {
             <p>{item.answer}</p>
           </div>
         ))}
+      </section>
+      <div id="guest-live-dashboard">
+        <GuestLiveDashboard />
       </div>
-      <GuestLiveDashboard />
     </main>
   );
 }
