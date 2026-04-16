@@ -11,6 +11,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import { GoSideFeatures, GoMobileFeatures } from "@/components/go/go-seo-features";
 import {
   createGuestDashboardEndpoint,
   fetchGuestDashboardEndpoint,
@@ -806,12 +807,18 @@ function GoHeader({
 }) {
   return (
     <header className="border-b-2 border-foreground shrink-0 bg-background sticky top-0 z-50">
-      <div className="container mx-auto px-4 h-14 flex items-center justify-between">
-        <Link href="/" className="font-bold text-lg">
-          webhooks.cc
-        </Link>
+      <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/" className="font-bold text-lg shrink-0">
+            webhooks.cc
+          </Link>
+          <span className="hidden md:inline text-muted-foreground shrink-0">·</span>
+          <h1 className="sr-only md:not-sr-only md:text-sm lg:text-base md:font-bold md:truncate md:text-muted-foreground">
+            Free webhook endpoint — ready in one click
+          </h1>
+        </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <ThemeToggle />
           {isLoading ? (
             <span className="neo-btn-outline text-sm py-2 px-4 w-28 text-center opacity-50">
@@ -996,64 +1003,78 @@ function DemoWaitingState({ url, onSent }: { url: string; onSent?: () => void })
   );
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="max-w-lg w-full text-center space-y-6">
-        <div className="flex items-center justify-center gap-3">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
-          </span>
-          <p className="font-bold uppercase tracking-wide">Waiting for first request...</p>
+    <div className="flex-1 overflow-y-auto">
+      <div className="min-h-full px-4 xl:px-8 py-8 grid items-center gap-6 xl:gap-8 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,520px)_minmax(0,1fr)]">
+        <div className="hidden xl:flex justify-end">
+          <GoSideFeatures side="left" />
         </div>
 
-        <button
-          onClick={handleSendTest}
-          disabled={sending}
-          className="neo-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
-        >
-          <Send className="h-5 w-5" />
-          {sending ? "Sending..." : sent ? "Sent!" : "Send your first webhook"}
-        </button>
-
-        <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            Or try a provider payload
-          </p>
-          <div className="flex items-center justify-center gap-2">
-            {["Stripe", "GitHub", "Shopify"].map((provider) => (
-              <button
-                key={provider}
-                onClick={() => handleSendProvider(provider.toLowerCase())}
-                disabled={sending}
-                className="neo-btn-outline text-sm py-2 px-4 cursor-pointer"
-              >
-                {provider}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="text-left">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Or use curl
+        <div className="max-w-lg w-full mx-auto text-center space-y-6">
+          <div className="flex items-center justify-center gap-3">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
             </span>
-            <button
-              onClick={handleCopy}
-              className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-3 w-3" /> Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3" /> Copy
-                </>
-              )}
-            </button>
+            <p className="font-bold uppercase tracking-wide">Waiting for first request...</p>
           </div>
-          <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
+
+          <button
+            onClick={handleSendTest}
+            disabled={sending}
+            className="neo-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
+          >
+            <Send className="h-5 w-5" />
+            {sending ? "Sending..." : sent ? "Sent!" : "Send your first webhook"}
+          </button>
+
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Or try a provider payload
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              {["Stripe", "GitHub", "Shopify"].map((provider) => (
+                <button
+                  key={provider}
+                  onClick={() => handleSendProvider(provider.toLowerCase())}
+                  disabled={sending}
+                  className="neo-btn-outline text-sm py-2 px-4 cursor-pointer"
+                >
+                  {provider}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-left">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Or use curl
+              </span>
+              <button
+                onClick={handleCopy}
+                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3 w-3" /> Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" /> Copy
+                  </>
+                )}
+              </button>
+            </div>
+            <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">
+              {curlCmd}
+            </pre>
+          </div>
+
+          <GoMobileFeatures />
+        </div>
+
+        <div className="hidden xl:flex justify-start">
+          <GoSideFeatures side="right" />
         </div>
       </div>
     </div>

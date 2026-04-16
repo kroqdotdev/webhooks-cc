@@ -18,18 +18,17 @@ pub fn spawn_event_reader(tick_rate: Duration) -> mpsc::UnboundedReceiver<AppEve
     std::thread::spawn(move || {
         loop {
             if event::poll(tick_rate).unwrap_or(false) {
-                match event::read() {
+                let next = match event::read() {
                     Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                        if tx.send(AppEvent::Key(key)).is_err() {
-                            break;
-                        }
+                        Some(AppEvent::Key(key))
                     }
-                    Ok(Event::Resize(_, _)) => {
-                        if tx.send(AppEvent::Resize).is_err() {
-                            break;
-                        }
-                    }
-                    _ => {}
+                    Ok(Event::Resize(_, _)) => Some(AppEvent::Resize),
+                    _ => None,
+                };
+                if let Some(event) = next
+                    && tx.send(event).is_err()
+                {
+                    break;
                 }
             } else {
                 // No event within tick_rate — send a tick for animations
