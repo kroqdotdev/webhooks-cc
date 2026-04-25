@@ -1,20 +1,20 @@
 ---
 title: "How to Verify Webhook Signatures"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 11 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
 section: guides
 order: 5
-lastUpdated: 2026-03-20
+lastUpdated: 2026-04-25
 schema: howto
 keywords:
   ["verify webhook signature", "webhook HMAC", "webhook security", "webhook signature validation"]
 seo:
   ogTitle: "How to Verify Webhook Signatures"
-  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
+  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, and 11 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
 ---
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord is the exception, using Ed25519 public-key cryptography. Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 13 providers with a single function call. This guide walks through the process for each one.
+The webhooks.cc SDK verifies signatures for 14 providers with a single function call. This guide walks through the process for each one.
 
 ## Verify in the dashboard (no code)
 
@@ -27,7 +27,7 @@ See [Dashboard Features: Signature Verification](/docs/dashboard-features#signat
 
 ## What you'll build
 
-A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, and Standard Webhooks (Polar, Svix, Resend).
+A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, and Standard Webhooks (Polar, Svix, Resend).
 
 ## Prerequisites
 
@@ -82,7 +82,7 @@ if (!result.valid) {
 const body = JSON.parse(request.body);
 ```
 
-Replace `"stripe"` with any supported provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"sendgrid"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, or `"standard-webhooks"`.
+Replace `"stripe"` with any supported provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"sendgrid"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, or `"standard-webhooks"`.
 
 </Step>
 <Step title="Or use provider-specific functions">
@@ -103,7 +103,7 @@ if (!valid) {
 }
 ```
 
-Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyStandardWebhookSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
+Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
 
 </Step>
 <Step title="Handle Discord (Ed25519)">
@@ -211,6 +211,18 @@ const result = await verifySignature(request, {
 ```
 
 </Step>
+<Step title="Handle Typeform (HMAC-SHA256)">
+
+Typeform signs the exact raw JSON payload with HMAC-SHA256 and sends the base64 signature in the `typeform-signature` header with a `sha256=` prefix.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "typeform",
+  secret: process.env.TYPEFORM_WEBHOOK_SECRET!,
+});
+```
+
+</Step>
 <Step title="Handle Standard Webhooks (Polar, Svix, Resend)">
 
 Standard Webhooks uses three headers: `webhook-id`, `webhook-timestamp`, and `webhook-signature`. Many services use this spec, including Polar.sh, Svix, Resend, Liveblocks, and Novu.
@@ -244,6 +256,7 @@ Secrets with a `whsec_` prefix are handled automatically. The SDK detects whethe
 | Discord           | `x-signature-ed25519` + `x-signature-timestamp`          | Ed25519          | Uses public key, not shared secret     |
 | Vercel            | `x-vercel-signature`                                     | HMAC-SHA1        | Hex-encoded hash                       |
 | GitLab            | `x-gitlab-token`                                         | Token comparison | Raw secret sent in header              |
+| Typeform          | `typeform-signature`                                     | HMAC-SHA256      | `sha256={base64}` format               |
 | Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256      | Used by Polar, Svix, Resend            |
 
 ## Verifying captured requests

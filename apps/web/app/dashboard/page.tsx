@@ -632,6 +632,8 @@ export default function DashboardPage() {
           signatureVerified: r.signatureVerified,
           signatureError: r.signatureError,
           signingProvider: r.signingProvider,
+          detectedProvider: r.detectedProvider,
+          detectedEvent: r.detectedEvent,
         })
       );
     }
@@ -649,6 +651,8 @@ export default function DashboardPage() {
         signatureVerified: request.signatureVerified,
         signatureError: request.signatureError,
         signingProvider: request.signingProvider,
+        detectedProvider: request.detectedProvider,
+        detectedEvent: request.detectedEvent,
       }));
 
     const oldestRecent =
@@ -665,6 +669,8 @@ export default function DashboardPage() {
         signatureVerified: r.signatureVerified,
         signatureError: r.signatureError,
         signingProvider: r.signingProvider,
+        detectedProvider: r.detectedProvider,
+        detectedEvent: r.detectedEvent,
       }));
 
     return [...recentSummaries, ...olderSummaries];

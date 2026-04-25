@@ -367,6 +367,30 @@ export async function verifyGitLabSignature(
 }
 
 /**
+ * Verify a Typeform webhook signature header against the raw request body.
+ * Typeform signs the exact JSON body with HMAC-SHA256 and sends sha256={base64}.
+ */
+export async function verifyTypeformSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyTypeformSignature");
+  if (!signatureHeader) {
+    return false;
+  }
+
+  const received = signatureHeader.trim();
+  const signature = received.startsWith("sha256=") ? received.slice("sha256=".length) : received;
+  if (!signature) {
+    return false;
+  }
+
+  const expected = toBase64(await hmacSign("SHA-256", secret, normalizeBody(body)));
+  return timingSafeEqual(signature, expected);
+}
+
+/**
  * Verify a Clerk webhook signature using Standard Webhooks (Svix) signing.
  * Delegates to verifyStandardWebhookSignature.
  */
@@ -546,6 +570,14 @@ export async function verifySignature(
     valid = await verifyGitLabSignature(
       request.body,
       getHeader(request.headers, "x-gitlab-token"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "typeform") {
+    valid = await verifyTypeformSignature(
+      request.body,
+      getHeader(request.headers, "typeform-signature"),
       options.secret
     );
   }

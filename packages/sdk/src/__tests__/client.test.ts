@@ -321,6 +321,7 @@ describe("WebhooksCC", () => {
         "discord",
         "vercel",
         "gitlab",
+        "typeform",
         "standard-webhooks",
       ]);
     });

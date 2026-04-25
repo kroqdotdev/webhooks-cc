@@ -24,6 +24,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   discord: "interaction_create",
   vercel: "deployment.created",
   gitlab: "push",
+  typeform: "form_response",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -39,6 +40,7 @@ const PROVIDER_TEMPLATES = {
   discord: ["interaction_create", "message_component", "ping"] as const,
   vercel: ["deployment.created", "deployment.succeeded", "deployment.error"] as const,
   gitlab: ["push", "merge_request"] as const,
+  typeform: ["form_response", "partial_response", "payment"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -54,6 +56,7 @@ export const TEMPLATE_PROVIDERS = [
   "discord",
   "vercel",
   "gitlab",
+  "typeform",
   "standard-webhooks",
 ] as const satisfies readonly TemplateProvider[];
 
@@ -69,6 +72,7 @@ export const VERIFY_PROVIDERS = [
   "discord",
   "vercel",
   "gitlab",
+  "typeform",
   "standard-webhooks",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
@@ -165,6 +169,14 @@ export const TEMPLATE_METADATA = Object.freeze({
     signatureHeader: "x-gitlab-token",
     signatureAlgorithm: "token",
   }),
+  typeform: Object.freeze({
+    provider: "typeform",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.typeform]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.typeform,
+    secretRequired: true,
+    signatureHeader: "typeform-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
   "standard-webhooks": Object.freeze({
     provider: "standard-webhooks",
     templates: Object.freeze([]),
@@ -236,6 +248,9 @@ function ensureTemplate(provider: SignedTemplateProvider, template?: string): st
 function defaultEvent(provider: SignedTemplateProvider, template: string): string {
   if (provider === "github" && template === "pull_request.opened") {
     return "pull_request";
+  }
+  if (provider === "typeform" && template === "payment") {
+    return "form_response";
   }
   return template;
 }
@@ -1023,6 +1038,146 @@ function buildTemplatePayload(
       };
     }
 
+    if (provider === "typeform") {
+      const formId = randomHex(6).toUpperCase();
+      const token = randomToken("token");
+      const eventType = template === "payment" ? "form_response" : event;
+      const payloadByTemplate: Record<string, unknown> = {
+        form_response: {
+          event_id: randomUuid(),
+          event_type: eventType,
+          form_response: {
+            form_id: formId,
+            token,
+            landed_at: nowIso,
+            submitted_at: nowIso,
+            hidden: {
+              source: "webhooks-cc",
+            },
+            definition: {
+              id: formId,
+              title: "Webhook test form",
+              fields: [
+                {
+                  id: "field_name",
+                  ref: "name",
+                  type: "short_text",
+                  title: "What is your name?",
+                },
+                {
+                  id: "field_email",
+                  ref: "email",
+                  type: "email",
+                  title: "What is your email?",
+                },
+              ],
+            },
+            answers: [
+              {
+                type: "text",
+                text: "Ada Lovelace",
+                field: {
+                  id: "field_name",
+                  ref: "name",
+                  type: "short_text",
+                },
+              },
+              {
+                type: "email",
+                email: "ada@example.com",
+                field: {
+                  id: "field_email",
+                  ref: "email",
+                  type: "email",
+                },
+              },
+            ],
+          },
+        },
+        partial_response: {
+          event_id: randomUuid(),
+          event_type: eventType,
+          form_response: {
+            form_id: formId,
+            token,
+            landed_at: nowIso,
+            submitted_at: null,
+            definition: {
+              id: formId,
+              title: "Webhook test form",
+              fields: [
+                {
+                  id: "field_email",
+                  ref: "email",
+                  type: "email",
+                  title: "What is your email?",
+                },
+              ],
+            },
+            answers: [
+              {
+                type: "email",
+                email: "partial@example.com",
+                field: {
+                  id: "field_email",
+                  ref: "email",
+                  type: "email",
+                },
+              },
+            ],
+          },
+        },
+        payment: {
+          event_id: randomUuid(),
+          event_type: eventType,
+          form_response: {
+            form_id: formId,
+            token,
+            landed_at: nowIso,
+            submitted_at: nowIso,
+            definition: {
+              id: formId,
+              title: "Order form",
+              fields: [
+                {
+                  id: "field_payment",
+                  ref: "payment",
+                  type: "payment",
+                  title: "Payment",
+                },
+              ],
+            },
+            answers: [
+              {
+                type: "payment",
+                payment: {
+                  amount: "1999",
+                  last4: "4242",
+                  name: "Ada Lovelace",
+                  success: true,
+                },
+                field: {
+                  id: "field_payment",
+                  ref: "payment",
+                  type: "payment",
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const payload = bodyOverride ?? payloadByTemplate[template];
+      const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return {
+        body,
+        contentType: "application/json",
+        headers: {
+          "user-agent": "Typeform Webhooks",
+        },
+      };
+    }
+
     throw new Error(`Unsupported provider: ${provider}`);
   }
 
@@ -1484,6 +1639,11 @@ export async function buildTemplateSendOptions(
     headers["x-gitlab-token"] = options.secret;
     const gitlabEvent = template === "merge_request" ? "Merge Request Hook" : "Push Hook";
     headers["x-gitlab-event"] = gitlabEvent;
+  }
+
+  if (provider === "typeform") {
+    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    headers["typeform-signature"] = `sha256=${toBase64(signature)}`;
   }
 
   return {

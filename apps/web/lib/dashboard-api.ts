@@ -102,6 +102,8 @@ function toDashboardRequest(record: {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }): Request {
   return {
     _id: record.id,
@@ -119,6 +121,8 @@ function toDashboardRequest(record: {
     signatureVerified: record.signatureVerified ?? null,
     signatureError: record.signatureError ?? null,
     signingProvider: record.signingProvider ?? null,
+    detectedProvider: record.detectedProvider ?? null,
+    detectedEvent: record.detectedEvent ?? null,
   };
 }
 
@@ -225,6 +229,8 @@ export async function fetchDashboardRequests(
       signatureVerified?: boolean | null;
       signatureError?: string | null;
       signingProvider?: string | null;
+      detectedProvider?: string | null;
+      detectedEvent?: string | null;
     }>
   >(response);
 

@@ -17,6 +17,11 @@ import {
 } from "@/lib/dashboard-api";
 import { trackEndpointDeleted, trackEndpointSaved } from "@/lib/analytics";
 import {
+  getWebProviderInfo,
+  getWebProviderLabel,
+  WEB_VERIFICATION_PROVIDER_OPTIONS,
+} from "@/lib/provider-catalog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -230,6 +235,7 @@ export const EndpointSettingsDialog = forwardRef<
   const [signingSecret, setSigningSecret] = useState("");
   const [signingHeader, setSigningHeader] = useState(initialSigningHeader || "");
   const [hasSigningSecret, setHasSigningSecret] = useState(!!initialHasSigningSecret);
+  const signingProviderInfo = getWebProviderInfo(signingProvider);
 
   useImperativeHandle(ref, () => ({ open: () => setOpen(true) }));
   const [isSaving, setIsSaving] = useState(false);
@@ -549,19 +555,11 @@ export const EndpointSettingsDialog = forwardRef<
                       className="neo-input w-full text-sm"
                     >
                       <option value="">None</option>
-                      <option value="stripe">Stripe</option>
-                      <option value="github">GitHub</option>
-                      <option value="shopify">Shopify</option>
-                      <option value="twilio">Twilio</option>
-                      <option value="slack">Slack</option>
-                      <option value="paddle">Paddle</option>
-                      <option value="linear">Linear</option>
-                      <option value="vercel">Vercel</option>
-                      <option value="gitlab">GitLab</option>
-                      <option value="clerk">Clerk</option>
-                      <option value="discord">Discord</option>
-                      <option value="standard-webhooks">Standard Webhooks</option>
-                      <option value="generic-hmac">Generic HMAC</option>
+                      {WEB_VERIFICATION_PROVIDER_OPTIONS.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.label}
+                        </option>
+                      ))}
                     </select>
                     <p className="text-xs text-muted-foreground mt-1">
                       SendGrid uses IP allowlisting and is not supported for signature verification.
@@ -575,7 +573,9 @@ export const EndpointSettingsDialog = forwardRef<
                           htmlFor="settings-signing-secret"
                           className="font-bold uppercase tracking-wide text-xs"
                         >
-                          {signingProvider === "discord" ? "Public Key" : "Signing Secret"}
+                          {signingProviderInfo?.verificationMode === "publicKey"
+                            ? "Public Key"
+                            : "Signing Secret"}
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -586,9 +586,7 @@ export const EndpointSettingsDialog = forwardRef<
                             placeholder={
                               hasSigningSecret
                                 ? "Enter new secret to replace"
-                                : signingProvider === "discord"
-                                  ? "Ed25519 public key"
-                                  : "Paste secret here"
+                                : (signingProviderInfo?.secretPlaceholder ?? "Paste secret here")
                             }
                             className="neo-input flex-1 text-sm font-mono"
                           />
@@ -637,7 +635,8 @@ export const EndpointSettingsDialog = forwardRef<
                     <div className="flex items-center gap-1.5 text-xs text-primary">
                       <ShieldCheck className="h-3.5 w-3.5" />
                       <span className="font-bold uppercase tracking-wide">
-                        Configured &middot; {signingProvider}
+                        Configured &middot;{" "}
+                        {getWebProviderLabel(signingProvider) ?? signingProvider}
                       </span>
                     </div>
                   )}

@@ -1,6 +1,7 @@
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
+import { deriveWebhookDetection } from "@/lib/webhook-detection";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const PRO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -46,6 +47,8 @@ export interface RequestRecord {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }
 
 export interface PaginatedRequestPage {
@@ -87,13 +90,21 @@ export function byteaToBase64(value: string): string {
 }
 
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {
+  const headers = asStringRecord(row.headers);
+  const body = row.body ?? undefined;
+  const detection = deriveWebhookDetection({
+    headers,
+    body,
+    contentType: row.content_type ?? undefined,
+  });
+
   return {
     id: row.id,
     endpointId: row.endpoint_id,
     method: row.method,
     path: row.path,
-    headers: asStringRecord(row.headers),
-    body: row.body ?? undefined,
+    headers,
+    body,
     bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
@@ -103,6 +114,8 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     signatureVerified: row.signature_verified ?? null,
     signatureError: row.signature_error ?? null,
     signingProvider: row.signing_provider ?? null,
+    detectedProvider: detection.detectedProvider,
+    detectedEvent: detection.detectedEvent,
   };
 }
 

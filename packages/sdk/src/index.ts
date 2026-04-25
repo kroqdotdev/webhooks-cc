@@ -12,6 +12,8 @@ export {
   parseFormBody,
   parseBody,
   extractJsonField,
+  detectWebhookInfo,
+  detectWebhookProvider,
   isStripeWebhook,
   isGitHubWebhook,
   isShopifyWebhook,
@@ -24,6 +26,7 @@ export {
   isClerkWebhook,
   isVercelWebhook,
   isGitLabWebhook,
+  isTypeformWebhook,
   isStandardWebhook,
   matchJsonField,
 } from "./helpers";
@@ -78,6 +81,7 @@ export {
   verifyClerkSignature,
   verifyVercelSignature,
   verifyGitLabSignature,
+  verifyTypeformSignature,
   verifyStandardWebhookSignature,
 } from "./verify";
 export type { SSEFrame } from "./sse";
@@ -125,6 +129,7 @@ export type {
   FormBodyValue,
   SearchFilters,
   SignatureVerificationResult,
+  DetectedWebhookInfo,
   WaitForOptions,
   WaitForAllOptions,
   SubscribeOptions,

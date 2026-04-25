@@ -1,4 +1,15 @@
-import type { ParsedBody, ParsedFormBody, Request } from "./types";
+import type {
+  DetectedWebhookInfo,
+  ParsedBody,
+  ParsedFormBody,
+  Request,
+  SearchResult,
+  TemplateProvider,
+} from "./types";
+
+type RequestLike = Pick<Request, "headers" | "body" | "contentType">;
+type SearchLike = Pick<SearchResult, "headers" | "body" | "contentType">;
+type WebhookLike = RequestLike | SearchLike;
 
 function getHeaderValue(headers: Record<string, string>, name: string): string | undefined {
   const target = name.toLowerCase();
@@ -10,7 +21,7 @@ function getHeaderValue(headers: Record<string, string>, name: string): string |
   return undefined;
 }
 
-function getContentType(request: Request): string | undefined {
+function getContentType(request: WebhookLike): string | undefined {
   return request.contentType ?? getHeaderValue(request.headers, "content-type");
 }
 
@@ -57,7 +68,7 @@ function getJsonPathValue(body: unknown, path: string): unknown {
  * Safely parse a JSON request body.
  * Returns undefined if the body is empty or not valid JSON.
  */
-export function parseJsonBody(request: Request): unknown | undefined {
+export function parseJsonBody(request: Pick<WebhookLike, "body">): unknown | undefined {
   if (!request.body) return undefined;
   try {
     return JSON.parse(request.body);
@@ -71,7 +82,7 @@ export function parseJsonBody(request: Request): unknown | undefined {
  * Matches on the `stripe-signature` header being present.
  */
 export function isStripeWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "stripe-signature");
+  return isDetectedProvider(request, "stripe");
 }
 
 /**
@@ -79,7 +90,7 @@ export function isStripeWebhook(request: Request): boolean {
  * Matches on the `x-github-event` header being present.
  */
 export function isGitHubWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-github-event");
+  return isDetectedProvider(request, "github");
 }
 
 /**
@@ -106,7 +117,7 @@ export function matchJsonField(field: string, value: unknown): (request: Request
  * Parse an application/x-www-form-urlencoded request body.
  * Repeated keys are returned as string arrays.
  */
-export function parseFormBody(request: Request): ParsedFormBody | undefined {
+export function parseFormBody(request: WebhookLike): ParsedFormBody | undefined {
   if (!request.body) {
     return undefined;
   }
@@ -137,7 +148,7 @@ export function parseFormBody(request: Request): ParsedFormBody | undefined {
  * Parse the request body based on content-type.
  * JSON and urlencoded bodies are decoded; other bodies are returned as raw text.
  */
-export function parseBody(request: Request): ParsedBody {
+export function parseBody(request: WebhookLike): ParsedBody {
   if (!request.body) {
     return undefined;
   }
@@ -159,7 +170,7 @@ export function parseBody(request: Request): ParsedBody {
  * Extract a nested JSON field from the request body using dot notation.
  * Returns undefined if the body is missing, invalid JSON, or the path is absent.
  */
-export function extractJsonField<T>(request: Request, path: string): T | undefined {
+export function extractJsonField<T>(request: Pick<WebhookLike, "body">, path: string): T | undefined {
   const body = parseJsonBody(request);
   if (body === undefined) {
     return undefined;
@@ -169,33 +180,32 @@ export function extractJsonField<T>(request: Request, path: string): T | undefin
 
 /** Check if a request looks like a Shopify webhook. */
 export function isShopifyWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-shopify-hmac-sha256");
+  return isDetectedProvider(request, "shopify");
 }
 
 /** Check if a request looks like a Slack webhook. */
 export function isSlackWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-slack-signature");
+  return isDetectedProvider(request, "slack");
 }
 
 /** Check if a request looks like a Twilio webhook. */
 export function isTwilioWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-twilio-signature");
+  return isDetectedProvider(request, "twilio");
 }
 
 /** Check if a request looks like a Paddle webhook. */
 export function isPaddleWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "paddle-signature");
+  return isDetectedProvider(request, "paddle");
 }
 
 /** Check if a request looks like a Linear webhook. */
 export function isLinearWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "linear-signature");
+  return isDetectedProvider(request, "linear");
 }
 
 /** Check if a request looks like a Discord interaction webhook. */
 export function isDiscordWebhook(request: Request): boolean {
-  const keys = Object.keys(request.headers).map((k) => k.toLowerCase());
-  return keys.includes("x-signature-ed25519") && keys.includes("x-signature-timestamp");
+  return isDetectedProvider(request, "discord");
 }
 
 /**
@@ -203,19 +213,7 @@ export function isDiscordWebhook(request: Request): boolean {
  * Matches on the body being a JSON array with an sg_event_id field.
  */
 export function isSendGridWebhook(request: Request): boolean {
-  if (!request.body) return false;
-  try {
-    const parsed = JSON.parse(request.body);
-    return (
-      Array.isArray(parsed) &&
-      parsed.length > 0 &&
-      typeof parsed[0] === "object" &&
-      parsed[0] !== null &&
-      "sg_event_id" in parsed[0]
-    );
-  } catch {
-    return false;
-  }
+  return isDetectedProvider(request, "sendgrid");
 }
 
 /**
@@ -223,7 +221,7 @@ export function isSendGridWebhook(request: Request): boolean {
  * Matches on the `svix-id` header being present.
  */
 export function isClerkWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "svix-id");
+  return isDetectedProvider(request, "clerk");
 }
 
 /**
@@ -231,7 +229,7 @@ export function isClerkWebhook(request: Request): boolean {
  * Matches on the `x-vercel-signature` header being present.
  */
 export function isVercelWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some((k) => k.toLowerCase() === "x-vercel-signature");
+  return isDetectedProvider(request, "vercel");
 }
 
 /**
@@ -239,9 +237,12 @@ export function isVercelWebhook(request: Request): boolean {
  * Matches on the `x-gitlab-event` or `x-gitlab-token` header being present.
  */
 export function isGitLabWebhook(request: Request): boolean {
-  return Object.keys(request.headers).some(
-    (k) => k.toLowerCase() === "x-gitlab-event" || k.toLowerCase() === "x-gitlab-token"
-  );
+  return isDetectedProvider(request, "gitlab");
+}
+
+/** Check if a request looks like a Typeform webhook. */
+export function isTypeformWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "typeform");
 }
 
 /**
@@ -250,10 +251,246 @@ export function isGitLabWebhook(request: Request): boolean {
  * webhook-id, webhook-timestamp, and webhook-signature.
  */
 export function isStandardWebhook(request: Request): boolean {
-  const keys = Object.keys(request.headers).map((k) => k.toLowerCase());
-  return (
-    keys.includes("webhook-id") &&
-    keys.includes("webhook-timestamp") &&
-    keys.includes("webhook-signature")
-  );
+  return isDetectedProvider(request, "standard-webhooks");
+}
+
+function getEventString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getJsonObject(request: Pick<WebhookLike, "body">): Record<string, unknown> | null {
+  const parsed = parseJsonBody(request);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
+}
+
+function getJsonArrayFirstObject(request: Pick<WebhookLike, "body">): Record<string, unknown> | null {
+  const parsed = parseJsonBody(request);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return null;
+  }
+
+  const first = parsed[0];
+  return first && typeof first === "object" && !Array.isArray(first)
+    ? (first as Record<string, unknown>)
+    : null;
+}
+
+function getFormFieldValue(request: WebhookLike, field: string): string | null {
+  const parsed = parseFormBody(request);
+  if (!parsed) {
+    return null;
+  }
+
+  const value = parsed[field];
+  if (typeof value === "string") {
+    return getEventString(value);
+  }
+
+  if (Array.isArray(value)) {
+    return getEventString(value[0]);
+  }
+
+  return null;
+}
+
+function normalizeGitLabEvent(event: string | undefined): string | null {
+  if (!event) {
+    return null;
+  }
+
+  const normalized = event.trim().toLowerCase();
+  if (normalized === "push hook") {
+    return "push";
+  }
+  if (normalized === "merge request hook") {
+    return "merge_request";
+  }
+  return normalized.replace(/\s+hook$/, "").replace(/\s+/g, "_");
+}
+
+function extractLinearEvent(request: Pick<WebhookLike, "body">): string | null {
+  const body = getJsonObject(request);
+  const action = getEventString(body?.action);
+  const type = getEventString(body?.type);
+
+  if (!action || !type) {
+    return null;
+  }
+
+  return `${type.toLowerCase()}.${action.toLowerCase()}`;
+}
+
+function extractDiscordEvent(request: Pick<WebhookLike, "body">): string | null {
+  const body = getJsonObject(request);
+  if (!body) {
+    return null;
+  }
+
+  if (typeof body.type === "number") {
+    if (body.type === 1) return "ping";
+    if (body.type === 2) return "interaction_create";
+    if (body.type === 3) return "message_component";
+  }
+
+  return getEventString(body.type);
+}
+
+type Detector = {
+  provider: TemplateProvider;
+  via: "header" | "body";
+  matchedOn?: string;
+  matches: (request: WebhookLike) => boolean;
+  event: (request: WebhookLike) => string | null;
+};
+
+const DETECTORS: readonly Detector[] = [
+  {
+    provider: "stripe",
+    via: "header",
+    matchedOn: "stripe-signature",
+    matches: (request) => getHeaderValue(request.headers, "stripe-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "github",
+    via: "header",
+    matchedOn: "x-github-event",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-github-event") !== undefined ||
+      getHeaderValue(request.headers, "x-hub-signature-256") !== undefined,
+    event: (request) => getEventString(getHeaderValue(request.headers, "x-github-event")),
+  },
+  {
+    provider: "shopify",
+    via: "header",
+    matchedOn: "x-shopify-hmac-sha256",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-shopify-hmac-sha256") !== undefined ||
+      getHeaderValue(request.headers, "x-shopify-topic") !== undefined,
+    event: (request) => getEventString(getHeaderValue(request.headers, "x-shopify-topic")),
+  },
+  {
+    provider: "slack",
+    via: "header",
+    matchedOn: "x-slack-signature",
+    matches: (request) => getHeaderValue(request.headers, "x-slack-signature") !== undefined,
+    event: (request) =>
+      getEventString(extractJsonField(request, "type")) ?? getFormFieldValue(request, "command"),
+  },
+  {
+    provider: "twilio",
+    via: "header",
+    matchedOn: "x-twilio-signature",
+    matches: (request) => getHeaderValue(request.headers, "x-twilio-signature") !== undefined,
+    event: () => null,
+  },
+  {
+    provider: "paddle",
+    via: "header",
+    matchedOn: "paddle-signature",
+    matches: (request) => getHeaderValue(request.headers, "paddle-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event_type")),
+  },
+  {
+    provider: "linear",
+    via: "header",
+    matchedOn: "linear-signature",
+    matches: (request) => getHeaderValue(request.headers, "linear-signature") !== undefined,
+    event: (request) => extractLinearEvent(request),
+  },
+  {
+    provider: "sendgrid",
+    via: "body",
+    matchedOn: "body[].sg_event_id",
+    matches: (request) => getJsonArrayFirstObject(request)?.sg_event_id !== undefined,
+    event: (request) => getEventString(getJsonArrayFirstObject(request)?.event),
+  },
+  {
+    provider: "clerk",
+    via: "header",
+    matchedOn: "svix-id",
+    matches: (request) => getHeaderValue(request.headers, "svix-id") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "discord",
+    via: "header",
+    matchedOn: "x-signature-ed25519",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-signature-ed25519") !== undefined &&
+      getHeaderValue(request.headers, "x-signature-timestamp") !== undefined,
+    event: (request) => extractDiscordEvent(request),
+  },
+  {
+    provider: "vercel",
+    via: "header",
+    matchedOn: "x-vercel-signature",
+    matches: (request) => getHeaderValue(request.headers, "x-vercel-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "gitlab",
+    via: "header",
+    matchedOn: "x-gitlab-event",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-gitlab-event") !== undefined ||
+      getHeaderValue(request.headers, "x-gitlab-token") !== undefined,
+    event: (request) =>
+      normalizeGitLabEvent(getHeaderValue(request.headers, "x-gitlab-event") ?? undefined),
+  },
+  {
+    provider: "typeform",
+    via: "header",
+    matchedOn: "typeform-signature",
+    matches: (request) => getHeaderValue(request.headers, "typeform-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event_type")),
+  },
+  {
+    provider: "standard-webhooks",
+    via: "header",
+    matchedOn: "webhook-signature",
+    matches: (request) =>
+      getHeaderValue(request.headers, "webhook-id") !== undefined &&
+      getHeaderValue(request.headers, "webhook-timestamp") !== undefined &&
+      getHeaderValue(request.headers, "webhook-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+] as const;
+
+function isDetectedProvider(request: WebhookLike, provider: TemplateProvider): boolean {
+  return detectWebhookProvider(request) === provider;
+}
+
+/**
+ * Best-effort provider detection from request headers and body.
+ * Returns only the provider name, or null when the request doesn't match a known provider.
+ */
+export function detectWebhookProvider(request: WebhookLike): TemplateProvider | null {
+  return detectWebhookInfo(request)?.provider ?? null;
+}
+
+/**
+ * Best-effort provider + event detection from request headers and body.
+ * Uses an ordered detector list so more specific providers win over generic matches.
+ */
+export function detectWebhookInfo(request: WebhookLike): DetectedWebhookInfo | null {
+  for (const detector of DETECTORS) {
+    if (detector.matches(request)) {
+      return {
+        provider: detector.provider,
+        event: detector.event(request),
+        via: detector.via,
+        matchedOn: detector.matchedOn,
+      };
+    }
+  }
+
+  return null;
 }

@@ -78,6 +78,30 @@ fn detect_gitlab() {
 }
 
 #[test]
+fn detect_gitlab_unsigned_event_header() {
+    let h = headers(&[("x-gitlab-event", "Push Hook")]);
+    assert_eq!(detect_provider(&h), Some("gitlab"));
+}
+
+#[test]
+fn detect_typeform() {
+    let h = headers(&[("typeform-signature", "sha256=abc")]);
+    assert_eq!(detect_provider(&h), Some("typeform"));
+}
+
+#[test]
+fn detect_github_unsigned_event_header() {
+    let h = headers(&[("x-github-event", "push")]);
+    assert_eq!(detect_provider(&h), Some("github"));
+}
+
+#[test]
+fn detect_shopify_unsigned_topic_header() {
+    let h = headers(&[("x-shopify-topic", "orders/create")]);
+    assert_eq!(detect_provider(&h), Some("shopify"));
+}
+
+#[test]
 fn detect_clerk() {
     let h = headers(&[("svix-id", "msg_123"), ("svix-timestamp", "123"), ("svix-signature", "v1,abc")]);
     assert_eq!(detect_provider(&h), Some("clerk"));
@@ -93,6 +117,12 @@ fn detect_discord() {
 fn detect_standard_webhooks() {
     let h = headers(&[("webhook-id", "msg_123"), ("webhook-signature", "v1,abc"), ("webhook-timestamp", "123")]);
     assert_eq!(detect_provider(&h), Some("standard-webhooks"));
+}
+
+#[test]
+fn does_not_detect_standard_webhooks_without_timestamp() {
+    let h = headers(&[("webhook-id", "msg_123"), ("webhook-signature", "v1,abc")]);
+    assert_eq!(detect_provider(&h), None);
 }
 
 #[test]
@@ -505,6 +535,34 @@ fn discord_wrong_key() {
 
     assert!(matches!(
         verify_discord(wrong_pk_hex.as_bytes(), &h, body),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+// ── Typeform ──
+
+#[test]
+fn typeform_valid() {
+    let secret = "typeform_secret";
+    let body = br#"{"event_type":"form_response","form_response":{"token":"abc"}}"#;
+    let sig = make_hmac_sha256_b64(secret.as_bytes(), std::str::from_utf8(body).unwrap());
+    let h = headers(&[("typeform-signature", &format!("sha256={sig}"))]);
+
+    assert!(matches!(
+        verify_typeform(secret.as_bytes(), &h, body),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn typeform_wrong_secret() {
+    let secret = "typeform_secret";
+    let body = br#"{"event_type":"form_response"}"#;
+    let sig = make_hmac_sha256_b64(secret.as_bytes(), std::str::from_utf8(body).unwrap());
+    let h = headers(&[("typeform-signature", &format!("sha256={sig}"))]);
+
+    assert!(matches!(
+        verify_typeform(b"wrong_secret", &h, body),
         VerificationResult::Invalid(_)
     ));
 }

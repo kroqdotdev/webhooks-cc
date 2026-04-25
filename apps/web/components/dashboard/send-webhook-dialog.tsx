@@ -17,6 +17,7 @@ import { Send } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { trackTestWebhookSent } from "@/lib/analytics";
+import { WEB_TEMPLATE_PROVIDER_OPTIONS } from "@/lib/provider-catalog";
 import {
   buildTemplateRequest,
   getDefaultTemplateId,
@@ -35,21 +36,9 @@ interface SendWebhookDialogProps {
 type TemplateSelectionByProvider = Record<TemplateProvider, string>;
 
 function defaultTemplateSelection(): TemplateSelectionByProvider {
-  return {
-    stripe: getDefaultTemplateId("stripe"),
-    github: getDefaultTemplateId("github"),
-    shopify: getDefaultTemplateId("shopify"),
-    twilio: getDefaultTemplateId("twilio"),
-    slack: getDefaultTemplateId("slack"),
-    paddle: getDefaultTemplateId("paddle"),
-    linear: getDefaultTemplateId("linear"),
-    sendgrid: getDefaultTemplateId("sendgrid"),
-    clerk: getDefaultTemplateId("clerk"),
-    discord: getDefaultTemplateId("discord"),
-    vercel: getDefaultTemplateId("vercel"),
-    gitlab: getDefaultTemplateId("gitlab"),
-    "standard-webhooks": getDefaultTemplateId("standard-webhooks"),
-  };
+  return Object.fromEntries(
+    WEB_TEMPLATE_PROVIDER_OPTIONS.map(({ id }) => [id, getDefaultTemplateId(id)])
+  ) as TemplateSelectionByProvider;
 }
 
 function parseHeaders(raw: string): Record<string, string> {
@@ -241,19 +230,11 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
                 className="neo-input text-sm w-full"
               >
                 <option value="manual">Manual request</option>
-                <option value="stripe">Stripe template (signed)</option>
-                <option value="github">GitHub template (signed)</option>
-                <option value="shopify">Shopify template (signed)</option>
-                <option value="twilio">Twilio template (signed)</option>
-                <option value="slack">Slack template (signed)</option>
-                <option value="paddle">Paddle template (signed)</option>
-                <option value="linear">Linear template (signed)</option>
-                <option value="sendgrid">SendGrid template</option>
-                <option value="clerk">Clerk template (signed)</option>
-                <option value="discord">Discord template</option>
-                <option value="vercel">Vercel template (signed)</option>
-                <option value="gitlab">GitLab template (token)</option>
-                <option value="standard-webhooks">Standard Webhooks (signed)</option>
+                {WEB_TEMPLATE_PROVIDER_OPTIONS.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
               </select>
             </div>
             {isTemplateMode && (

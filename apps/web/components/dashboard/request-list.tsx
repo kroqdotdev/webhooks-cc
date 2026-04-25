@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { SignatureVerificationBadge } from "./signature-tab";
+import { ProviderBadge } from "./provider-badge";
 import {
   getMethodColor,
   formatTimestamp,
@@ -429,6 +430,7 @@ export function RequestList({
           >
             {request.method}
           </span>
+          {request.detectedProvider && <ProviderBadge provider={request.detectedProvider} />}
           {request.signatureVerified != null && (
             <SignatureVerificationBadge
               signatureVerified={request.signatureVerified}
@@ -457,6 +459,14 @@ export function RequestList({
             <>
               <span className="text-[10px] text-muted-foreground">&middot;</span>
               <span className="text-[10px] text-muted-foreground font-mono">{ctLabel}</span>
+            </>
+          )}
+          {request.detectedEvent && (
+            <>
+              <span className="text-[10px] text-muted-foreground">&middot;</span>
+              <span className="text-[10px] text-muted-foreground font-mono truncate">
+                {request.detectedEvent}
+              </span>
             </>
           )}
           {request.size > 0 && (

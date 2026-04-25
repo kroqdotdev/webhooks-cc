@@ -1,115 +1,11 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { ShieldCheck, ShieldAlert, Shield, Copy, Check, Loader2 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { getWebProviderInfo, getWebProviderLabel, WEB_PROVIDER_CATALOG } from "@/lib/provider-catalog";
 import type { DisplayableRequest } from "./request-detail";
-
-/** Provider metadata for display and auto-detection. */
-const PROVIDERS: Record<
-  string,
-  { label: string; algorithm: string; header: string; secretPlaceholder: string }
-> = {
-  stripe: {
-    label: "Stripe",
-    algorithm: "HMAC-SHA256",
-    header: "stripe-signature",
-    secretPlaceholder: "whsec_...",
-  },
-  github: {
-    label: "GitHub",
-    algorithm: "HMAC-SHA256",
-    header: "x-hub-signature-256",
-    secretPlaceholder: "your webhook secret",
-  },
-  shopify: {
-    label: "Shopify",
-    algorithm: "HMAC-SHA256",
-    header: "x-shopify-hmac-sha256",
-    secretPlaceholder: "your Shopify secret",
-  },
-  twilio: {
-    label: "Twilio",
-    algorithm: "HMAC-SHA1",
-    header: "x-twilio-signature",
-    secretPlaceholder: "your auth token",
-  },
-  slack: {
-    label: "Slack",
-    algorithm: "HMAC-SHA256",
-    header: "x-slack-signature",
-    secretPlaceholder: "your signing secret",
-  },
-  paddle: {
-    label: "Paddle",
-    algorithm: "HMAC-SHA256",
-    header: "paddle-signature",
-    secretPlaceholder: "your webhook secret",
-  },
-  linear: {
-    label: "Linear",
-    algorithm: "HMAC-SHA256",
-    header: "linear-signature",
-    secretPlaceholder: "your webhook secret",
-  },
-  vercel: {
-    label: "Vercel",
-    algorithm: "HMAC-SHA1",
-    header: "x-vercel-signature",
-    secretPlaceholder: "your webhook secret",
-  },
-  gitlab: {
-    label: "GitLab",
-    algorithm: "Token",
-    header: "x-gitlab-token",
-    secretPlaceholder: "your secret token",
-  },
-  clerk: {
-    label: "Clerk",
-    algorithm: "HMAC-SHA256",
-    header: "svix-id",
-    secretPlaceholder: "whsec_...",
-  },
-  discord: {
-    label: "Discord",
-    algorithm: "Ed25519",
-    header: "x-signature-ed25519",
-    secretPlaceholder: "your application public key",
-  },
-  "standard-webhooks": {
-    label: "Standard Webhooks",
-    algorithm: "HMAC-SHA256",
-    header: "webhook-signature",
-    secretPlaceholder: "whsec_...",
-  },
-  "generic-hmac": {
-    label: "Generic HMAC",
-    algorithm: "HMAC-SHA256",
-    header: "",
-    secretPlaceholder: "your shared secret",
-  },
-};
-
-/** Auto-detect provider from request headers. */
-function detectProvider(headers: Record<string, string>): string | null {
-  const lowerHeaders = Object.fromEntries(
-    Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])
-  );
-  if (lowerHeaders["stripe-signature"]) return "stripe";
-  if (lowerHeaders["x-hub-signature-256"]) return "github";
-  if (lowerHeaders["x-shopify-hmac-sha256"]) return "shopify";
-  if (lowerHeaders["x-twilio-signature"]) return "twilio";
-  if (lowerHeaders["x-slack-signature"]) return "slack";
-  if (lowerHeaders["paddle-signature"]) return "paddle";
-  if (lowerHeaders["linear-signature"]) return "linear";
-  if (lowerHeaders["x-vercel-signature"]) return "vercel";
-  if (lowerHeaders["x-gitlab-token"]) return "gitlab";
-  if (lowerHeaders["svix-id"]) return "clerk";
-  if (lowerHeaders["x-signature-ed25519"]) return "discord";
-  if (lowerHeaders["webhook-id"] && lowerHeaders["webhook-signature"]) return "standard-webhooks";
-  return null;
-}
 
 /** Parsed structured signature error from JSON string. */
 interface SignatureErrorData {
@@ -193,7 +89,7 @@ function ServerSideResult({
   provider: string | null;
 }) {
   const errorData = parseSignatureError(error);
-  const providerInfo = provider ? PROVIDERS[provider] : null;
+  const providerInfo = getWebProviderInfo(provider);
   const tip = provider ? getProviderTip(provider) : null;
 
   if (verified) {
@@ -298,13 +194,13 @@ function ClientSideVerification({
   request: DisplayableRequest;
   onOpenSettings?: () => void;
 }) {
-  const detectedProvider = useMemo(() => detectProvider(request.headers), [request.headers]);
+  const detectedProvider = request.detectedProvider ?? null;
   const [provider, setProvider] = useState<string>(detectedProvider ?? "");
   const [secret, setSecret] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<{ verified: boolean; error: string | null } | null>(null);
 
-  const providerInfo = provider ? PROVIDERS[provider] : null;
+  const providerInfo = getWebProviderInfo(provider);
 
   const handleVerify = useCallback(async () => {
     if (!provider || !secret) return;
@@ -370,11 +266,10 @@ function ClientSideVerification({
         </p>
       </div>
 
-      {detectedProvider && PROVIDERS[detectedProvider] && (
+      {detectedProvider && (
         <div className="text-xs text-muted-foreground">
           <span className="font-bold uppercase tracking-wide">Detected: </span>
-          {PROVIDERS[detectedProvider].label}{" "}
-          <span className="font-mono">(via {PROVIDERS[detectedProvider].header})</span>
+          {getWebProviderLabel(detectedProvider) ?? detectedProvider}
         </div>
       )}
 
@@ -393,7 +288,7 @@ function ClientSideVerification({
             className="neo-input w-full text-sm"
           >
             <option value="">Select provider...</option>
-            {Object.entries(PROVIDERS).map(([key, info]) => (
+            {Object.entries(WEB_PROVIDER_CATALOG).map(([key, info]) => (
               <option key={key} value={key}>
                 {info.label}
               </option>
@@ -401,10 +296,10 @@ function ClientSideVerification({
           </select>
         </div>
 
-        {provider && provider !== "sendgrid" && (
+        {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
           <div className="space-y-1">
             <label htmlFor="sig-secret" className="font-bold uppercase tracking-wide text-xs">
-              {provider === "discord" ? "Public Key" : "Secret"}
+              {getWebProviderInfo(provider)?.verificationMode === "publicKey" ? "Public Key" : "Secret"}
             </label>
             <input
               id="sig-secret"
@@ -418,13 +313,13 @@ function ClientSideVerification({
           </div>
         )}
 
-        {provider === "sendgrid" && (
+        {provider && getWebProviderInfo(provider)?.verificationMode === "unsupported" && (
           <p className="text-xs text-muted-foreground">
             SendGrid uses IP allowlisting, not signatures. Signature verification is not applicable.
           </p>
         )}
 
-        {provider && provider !== "sendgrid" && (
+        {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
           <button
             onClick={handleVerify}
             disabled={verifying || !secret}
@@ -523,7 +418,7 @@ export function SignatureVerificationBadge({
   if (signatureVerified === null || signatureVerified === undefined) return null;
 
   const errorData = parseSignatureError(signatureError);
-  const providerLabel = signingProvider && PROVIDERS[signingProvider]?.label;
+  const providerLabel = getWebProviderLabel(signingProvider);
 
   const isSkipped =
     !signatureVerified &&

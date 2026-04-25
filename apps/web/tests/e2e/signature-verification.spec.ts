@@ -107,8 +107,8 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // Should have None + 13 providers (SendGrid removed — uses IP allowlisting)
-  await expect(options).toHaveCount(14);
+  // Should have None + 14 providers (SendGrid removed — uses IP allowlisting)
+  await expect(options).toHaveCount(15);
   await expect(options.nth(1)).toHaveText("Stripe");
 });
 
@@ -231,4 +231,28 @@ test("client-side verification form shown when no config", async ({ page }) => {
   await expect(page.locator("text=Verify Signature")).toBeVisible({ timeout: 5000 });
   await expect(page.locator("#sig-provider")).toBeVisible();
   await expect(page.locator("text=never sent to our servers")).toBeVisible();
+});
+
+test("detected provider preselects manual verification when server-side verification is not configured", async ({
+  page,
+}) => {
+  await admin
+    .from("endpoints")
+    .update({
+      signing_provider: null,
+      signing_secret_encrypted: null,
+      signing_header: null,
+    })
+    .eq("slug", endpointSlug);
+
+  await sendSignedWebhook(endpointSlug, true);
+  await new Promise((r) => setTimeout(r, 1000));
+
+  await openDashboard(page);
+  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await page.click("button:has-text('SIGNATURE')");
+
+  await expect(page.locator("text=Detected:")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=Standard Webhooks")).toBeVisible();
+  await expect(page.locator("#sig-provider")).toHaveValue("standard-webhooks");
 });
