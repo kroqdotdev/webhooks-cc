@@ -29,7 +29,7 @@ regex-lite = "0.1"
 gethostname = "1.1.0"
 # Signature verification
 aes-gcm = "0.10"
-hmac = "0.12"
+hmac = "0.13"
 sha2 = "0.10"
 sha1 = "0.10"
 hex = "0.4"
