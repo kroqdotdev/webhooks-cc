@@ -424,7 +424,7 @@ Set `WHK_API_KEY` environment variable to your API key.
 
 ### Supported Providers for Signed Webhooks
 
-Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks
+Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks
 
 Each provider signs payloads with its native algorithm (HMAC-SHA256, Ed25519, etc.) so your handler verification code works identically to production.
 
