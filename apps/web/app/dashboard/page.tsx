@@ -108,8 +108,10 @@ export default function DashboardPage() {
   const [compareRequest, setCompareRequest] = useState<ClickHouseRequest | null>(null);
   const [compareBase, setCompareBase] = useState<ClickHouseRequest | null>(null);
   const compareIdRef = useRef(compareId);
+  // eslint-disable-next-line react-hooks/refs
   compareIdRef.current = compareId;
   const recentRequestsRef = useRef(recentRequests);
+  // eslint-disable-next-line react-hooks/refs
   recentRequestsRef.current = recentRequests;
 
   const handleCompareSelect = useCallback(
@@ -196,6 +198,7 @@ export default function DashboardPage() {
   const isDragging = useRef(false);
   const paneCollapsed = paneWidth === 0;
   const paneWidthRef = useRef(paneWidth);
+  // eslint-disable-next-line react-hooks/refs
   paneWidthRef.current = paneWidth;
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
@@ -800,10 +803,13 @@ export default function DashboardPage() {
   // Keyboard shortcuts — use refs for frequently-changing values so the
   // listener doesn't re-register on every state change (rerender-dependencies).
   const displayedItemsRef = useRef(displayedItems);
+  // eslint-disable-next-line react-hooks/refs
   displayedItemsRef.current = displayedItems;
   const selectedIdRef = useRef(selectedId);
+  // eslint-disable-next-line react-hooks/refs
   selectedIdRef.current = selectedId;
   const displayRequestRef = useRef(displayRequest);
+  // eslint-disable-next-line react-hooks/refs, react-hooks/immutability
   displayRequestRef.current = displayRequest;
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)

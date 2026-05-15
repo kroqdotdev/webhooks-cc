@@ -172,7 +172,7 @@ export default function AccountPage() {
     } catch {
       // silent — non-critical
     }
-  }, [session?.access_token]);
+  }, [session]);
 
   useEffect(() => {
     void refreshApiKeys();
