@@ -1,7 +1,7 @@
 use super::*;
+use aes_gcm::aead::Aead;
 use aes_gcm::aead::OsRng;
 use aes_gcm::{AeadCore, Aes256Gcm, KeyInit};
-use aes_gcm::aead::Aead;
 
 /// Helper: encrypt with AES-256-GCM (mirrors Node.js encryption in web app).
 fn encrypt(plaintext: &[u8], key: &[u8; 32]) -> Vec<u8> {

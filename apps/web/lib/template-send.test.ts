@@ -64,6 +64,7 @@ describe("template-send UI helpers", () => {
       "discord",
       "vercel",
       "gitlab",
+      "typeform",
       "standard-webhooks",
     ];
     for (const provider of providersWithPresets) {
@@ -248,6 +249,16 @@ describe("template-send provider signing", () => {
     });
     expect(req.headers["x-gitlab-token"]).toBe(SECRET);
     expect(req.headers["x-gitlab-event"]).toBe("Push Hook");
+  });
+
+  test("typeform: typeform-signature base64", async () => {
+    const req = await buildTemplateRequest({
+      provider: "typeform",
+      secret: SECRET,
+      targetUrl: TARGET_URL,
+    });
+    expect(req.headers["typeform-signature"]).toMatch(/^sha256=[A-Za-z0-9+/]+=*$/);
+    expect(req.body).toContain('"event_type":"form_response"');
   });
 
   test("standard-webhooks: webhook-id/timestamp/signature headers", async () => {

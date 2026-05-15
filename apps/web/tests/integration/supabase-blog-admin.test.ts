@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
 import { GET as listBlogPosts, POST as createBlogPostRoute } from "@/app/api/blog/route";
@@ -7,6 +7,16 @@ import {
   GET as getBlogPostRoute,
   PATCH as updateBlogPostRoute,
 } from "@/app/api/blog/[slug]/route";
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
+
+vi.mock("next/server", () => ({
+  after: vi.fn((callback: () => void | Promise<void>) => {
+    void callback();
+  }),
+}));
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;

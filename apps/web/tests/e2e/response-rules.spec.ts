@@ -13,6 +13,7 @@ test.describe.configure({ mode: "serial" });
 let testUser: TestUser;
 let endpointSlug: string;
 let endpointId: string;
+const WEBHOOK_URL = process.env.WHK_WEBHOOK_URL ?? "http://localhost:3001";
 
 test.beforeAll(async () => {
   testUser = await createTestUser();
@@ -274,7 +275,7 @@ test("saved rules work in the receiver", async ({ request }) => {
   // Verify the receiver evaluates it
 
   // Send a matching webhook
-  const matchResponse = await request.post(`http://localhost:3001/w/${endpointSlug}`, {
+  const matchResponse = await request.post(`${WEBHOOK_URL}/w/${endpointSlug}`, {
     headers: { "Content-Type": "application/json" },
     data: { type: "invoice.paid" },
   });
@@ -283,7 +284,7 @@ test("saved rules work in the receiver", async ({ request }) => {
   expect(matchBody).toEqual({ received: true });
 
   // Send a non-matching webhook — should get default (200 OK since no default mock set)
-  const noMatchResponse = await request.post(`http://localhost:3001/w/${endpointSlug}`, {
+  const noMatchResponse = await request.post(`${WEBHOOK_URL}/w/${endpointSlug}`, {
     headers: { "Content-Type": "application/json" },
     data: { type: "other.event" },
   });

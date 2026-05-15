@@ -128,11 +128,17 @@ Provider template and signing support includes:
 - `slack`
 - `paddle`
 - `linear`
+- `sendgrid`
+- `clerk`
+- `discord`
+- `vercel`
+- `gitlab`
+- `typeform`
 - `standard-webhooks`
 
 Signature verification also supports:
 
-- `discord`
+- all template providers except `sendgrid`, which uses IP allowlisting instead of cryptographic signatures
 
 Use `list_provider_templates` to inspect templates, default events, signature headers, and signing requirements from the agent.
 

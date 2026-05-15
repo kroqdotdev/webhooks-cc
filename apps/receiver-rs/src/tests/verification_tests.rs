@@ -49,7 +49,10 @@ fn detect_twilio() {
 
 #[test]
 fn detect_slack() {
-    let h = headers(&[("x-slack-signature", "v0=abc"), ("x-slack-request-timestamp", "123")]);
+    let h = headers(&[
+        ("x-slack-signature", "v0=abc"),
+        ("x-slack-request-timestamp", "123"),
+    ]);
     assert_eq!(detect_provider(&h), Some("slack"));
 }
 
@@ -78,21 +81,62 @@ fn detect_gitlab() {
 }
 
 #[test]
+fn detect_gitlab_unsigned_event_header() {
+    let h = headers(&[("x-gitlab-event", "Push Hook")]);
+    assert_eq!(detect_provider(&h), Some("gitlab"));
+}
+
+#[test]
+fn detect_typeform() {
+    let h = headers(&[("typeform-signature", "sha256=abc")]);
+    assert_eq!(detect_provider(&h), Some("typeform"));
+}
+
+#[test]
+fn detect_github_unsigned_event_header() {
+    let h = headers(&[("x-github-event", "push")]);
+    assert_eq!(detect_provider(&h), Some("github"));
+}
+
+#[test]
+fn detect_shopify_unsigned_topic_header() {
+    let h = headers(&[("x-shopify-topic", "orders/create")]);
+    assert_eq!(detect_provider(&h), Some("shopify"));
+}
+
+#[test]
 fn detect_clerk() {
-    let h = headers(&[("svix-id", "msg_123"), ("svix-timestamp", "123"), ("svix-signature", "v1,abc")]);
+    let h = headers(&[
+        ("svix-id", "msg_123"),
+        ("svix-timestamp", "123"),
+        ("svix-signature", "v1,abc"),
+    ]);
     assert_eq!(detect_provider(&h), Some("clerk"));
 }
 
 #[test]
 fn detect_discord() {
-    let h = headers(&[("x-signature-ed25519", "abc"), ("x-signature-timestamp", "123")]);
+    let h = headers(&[
+        ("x-signature-ed25519", "abc"),
+        ("x-signature-timestamp", "123"),
+    ]);
     assert_eq!(detect_provider(&h), Some("discord"));
 }
 
 #[test]
 fn detect_standard_webhooks() {
-    let h = headers(&[("webhook-id", "msg_123"), ("webhook-signature", "v1,abc"), ("webhook-timestamp", "123")]);
+    let h = headers(&[
+        ("webhook-id", "msg_123"),
+        ("webhook-signature", "v1,abc"),
+        ("webhook-timestamp", "123"),
+    ]);
     assert_eq!(detect_provider(&h), Some("standard-webhooks"));
+}
+
+#[test]
+fn does_not_detect_standard_webhooks_without_timestamp() {
+    let h = headers(&[("webhook-id", "msg_123"), ("webhook-signature", "v1,abc")]);
+    assert_eq!(detect_provider(&h), None);
 }
 
 #[test]
@@ -122,7 +166,7 @@ fn stripe_valid() {
 fn stripe_wrong_secret() {
     let body = b"{}";
     let ts = "1712764800";
-    let payload = format!("{ts}.{{}}", );
+    let payload = format!("{ts}.{{}}",);
     let sig = make_hmac_sha256("wrong_secret", &payload);
     let h = headers(&[("stripe-signature", &format!("t={ts},v1={sig}"))]);
 
@@ -230,8 +274,9 @@ fn twilio_valid() {
     let body = b"From=%2B1234&Body=hello";
     // Build expected payload the same way the verification function does:
     // parse form body, sort by key then value, concatenate url+key+value pairs
-    let mut params: Vec<(String, String)> =
-        url::form_urlencoded::parse(body).map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    let mut params: Vec<(String, String)> = url::form_urlencoded::parse(body)
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     params.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     let mut payload = url.to_string();
     for (k, v) in &params {
@@ -352,10 +397,7 @@ fn linear_valid_with_prefix() {
 fn vercel_valid() {
     let secret = "vercel_secret";
     let body = b"{\"type\":\"deployment.created\"}";
-    let sig = hex::encode(hmac_sha1(
-        secret.as_bytes(),
-        body,
-    ));
+    let sig = hex::encode(hmac_sha1(secret.as_bytes(), body));
     let h = headers(&[("x-vercel-signature", &sig)]);
 
     assert!(matches!(
@@ -505,6 +547,34 @@ fn discord_wrong_key() {
 
     assert!(matches!(
         verify_discord(wrong_pk_hex.as_bytes(), &h, body),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+// ── Typeform ──
+
+#[test]
+fn typeform_valid() {
+    let secret = "typeform_secret";
+    let body = br#"{"event_type":"form_response","form_response":{"token":"abc"}}"#;
+    let sig = make_hmac_sha256_b64(secret.as_bytes(), std::str::from_utf8(body).unwrap());
+    let h = headers(&[("typeform-signature", &format!("sha256={sig}"))]);
+
+    assert!(matches!(
+        verify_typeform(secret.as_bytes(), &h, body),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn typeform_wrong_secret() {
+    let secret = "typeform_secret";
+    let body = br#"{"event_type":"form_response"}"#;
+    let sig = make_hmac_sha256_b64(secret.as_bytes(), std::str::from_utf8(body).unwrap());
+    let h = headers(&[("typeform-signature", &format!("sha256={sig}"))]);
+
+    assert!(matches!(
+        verify_typeform(b"wrong_secret", &h, body),
         VerificationResult::Invalid(_)
     ));
 }

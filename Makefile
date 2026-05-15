@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-web dev-receiver dev-cli build build-receiver build-cli test lint clean prod prod-web prod-receiver start
+.PHONY: dev dev-all dev-web dev-receiver dev-cli build build-receiver build-cli test test-full lint clean prod prod-web prod-receiver start
 
 # Ensure user systemd bus is reachable (needed in Proxmox xterm.js / non-login shells)
 export XDG_RUNTIME_DIR ?= /run/user/$(shell id -u)
@@ -84,6 +84,13 @@ test:
 	pnpm test
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo test
 	cd apps/cli-rs && cargo test
+
+test-full:
+	pnpm typecheck
+	pnpm build
+	$(MAKE) test
+	cd apps/web && pnpm test:integration
+	cd apps/web && PLAYWRIGHT_USE_PROD_SERVER=1 pnpm test:e2e
 
 # Lint
 lint:

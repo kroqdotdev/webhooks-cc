@@ -258,7 +258,11 @@ Supported verification providers:
 - `slack`
 - `paddle`
 - `linear`
+- `clerk`
 - `discord`
+- `vercel`
+- `gitlab`
+- `typeform`
 - `standard-webhooks`
 
 ```typescript
@@ -284,9 +288,9 @@ const result = await verifySignature(request, {
 });
 ```
 
-Discord support is verification-only. It is not part of the template generation API.
+SendGrid uses IP allowlisting rather than cryptographic signature verification.
 
-Request detection helpers are exported too: `isStripeWebhook()`, `isGitHubWebhook()`, `isShopifyWebhook()`, `isSlackWebhook()`, `isTwilioWebhook()`, `isPaddleWebhook()`, `isLinearWebhook()`, `isDiscordWebhook()`, and `isStandardWebhook()`.
+Request detection helpers are exported too: `isStripeWebhook()`, `isGitHubWebhook()`, `isShopifyWebhook()`, `isSlackWebhook()`, `isTwilioWebhook()`, `isPaddleWebhook()`, `isLinearWebhook()`, `isSendGridWebhook()`, `isClerkWebhook()`, `isDiscordWebhook()`, `isVercelWebhook()`, `isGitLabWebhook()`, `isTypeformWebhook()`, and `isStandardWebhook()`.
 
 ## Matchers, parsing, and diffing
 

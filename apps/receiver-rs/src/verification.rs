@@ -1,4 +1,4 @@
-//! Webhook signature verification for 13 providers.
+//! Webhook signature verification for 14 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -148,6 +148,7 @@ pub fn verify_signature(
         "linear" => verify_linear(secret, headers, body),
         "vercel" => verify_vercel(secret, headers, body),
         "gitlab" => verify_gitlab(secret, headers),
+        "typeform" => verify_typeform(secret, headers, body),
         "clerk" => verify_clerk(secret, headers, body),
         "discord" => verify_discord(secret, headers, body),
         "standard-webhooks" => verify_standard_webhooks(secret, headers, body),
@@ -182,10 +183,14 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     if get_header(headers, "stripe-signature").is_some() {
         return Some("stripe");
     }
-    if get_header(headers, "x-hub-signature-256").is_some() {
+    if get_header(headers, "x-github-event").is_some()
+        || get_header(headers, "x-hub-signature-256").is_some()
+    {
         return Some("github");
     }
-    if get_header(headers, "x-shopify-hmac-sha256").is_some() {
+    if get_header(headers, "x-shopify-hmac-sha256").is_some()
+        || get_header(headers, "x-shopify-topic").is_some()
+    {
         return Some("shopify");
     }
     if get_header(headers, "x-twilio-signature").is_some() {
@@ -203,18 +208,26 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     if get_header(headers, "x-vercel-signature").is_some() {
         return Some("vercel");
     }
-    if get_header(headers, "x-gitlab-token").is_some() {
+    if get_header(headers, "x-gitlab-event").is_some()
+        || get_header(headers, "x-gitlab-token").is_some()
+    {
         return Some("gitlab");
+    }
+    if get_header(headers, "typeform-signature").is_some() {
+        return Some("typeform");
     }
     // Clerk/Svix: check svix-id first (more specific), then webhook-id
     if get_header(headers, "svix-id").is_some() {
         return Some("clerk");
     }
-    if get_header(headers, "x-signature-ed25519").is_some() {
+    if get_header(headers, "x-signature-ed25519").is_some()
+        && get_header(headers, "x-signature-timestamp").is_some()
+    {
         return Some("discord");
     }
     // Standard Webhooks: webhook-id + webhook-signature (must have both)
     if get_header(headers, "webhook-id").is_some()
+        && get_header(headers, "webhook-timestamp").is_some()
         && get_header(headers, "webhook-signature").is_some()
     {
         return Some("standard-webhooks");
@@ -380,8 +393,8 @@ fn verify_twilio(
         payload.push_str(value);
     }
 
-    let expected = base64::engine::general_purpose::STANDARD
-        .encode(hmac_sha1(secret, payload.as_bytes()));
+    let expected =
+        base64::engine::general_purpose::STANDARD.encode(hmac_sha1(secret, payload.as_bytes()));
     let received = sig_header.trim();
 
     if ct_str_eq(received, &expected) {
@@ -567,6 +580,40 @@ fn verify_gitlab(secret: &[u8], headers: &HashMap<String, String>) -> Verificati
     }
 }
 
+/// Typeform: HMAC-SHA256 over the raw JSON body, base64 encoded with sha256= prefix.
+fn verify_typeform(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    use base64::Engine;
+    let header_name = "typeform-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let received = sig_header
+        .trim()
+        .strip_prefix("sha256=")
+        .unwrap_or(sig_header.trim());
+
+    if received.is_empty() {
+        return VerificationResult::Invalid(SignatureError::invalid_encoding(
+            "Expected sha256={base64} in typeform-signature",
+        ));
+    }
+
+    let expected = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, body));
+
+    if ct_str_eq(received, &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
 /// Clerk: normalize svix-* headers to webhook-*, delegate to Standard Webhooks.
 fn verify_clerk(
     secret: &[u8],
@@ -576,17 +623,20 @@ fn verify_clerk(
     let mut normalized = headers.clone();
     // Map svix-* to webhook-* if webhook-* is not already present
     if let Some(id) = get_header(headers, "svix-id")
-        && get_header(headers, "webhook-id").is_none() {
-            normalized.insert("webhook-id".to_string(), id.to_string());
-        }
+        && get_header(headers, "webhook-id").is_none()
+    {
+        normalized.insert("webhook-id".to_string(), id.to_string());
+    }
     if let Some(ts) = get_header(headers, "svix-timestamp")
-        && get_header(headers, "webhook-timestamp").is_none() {
-            normalized.insert("webhook-timestamp".to_string(), ts.to_string());
-        }
+        && get_header(headers, "webhook-timestamp").is_none()
+    {
+        normalized.insert("webhook-timestamp".to_string(), ts.to_string());
+    }
     if let Some(sig) = get_header(headers, "svix-signature")
-        && get_header(headers, "webhook-signature").is_none() {
-            normalized.insert("webhook-signature".to_string(), sig.to_string());
-        }
+        && get_header(headers, "webhook-signature").is_none()
+    {
+        normalized.insert("webhook-signature".to_string(), sig.to_string());
+    }
     verify_standard_webhooks(secret, &normalized, body)
 }
 
@@ -618,9 +668,10 @@ fn verify_discord(
     let pk_array: [u8; 32] = match pk_bytes.as_slice().try_into() {
         Ok(a) => a,
         Err(_) => {
-            return VerificationResult::Invalid(SignatureError::invalid_encoding(
-                &format!("Ed25519 public key must be 32 bytes, got {}", pk_bytes.len()),
-            ));
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(&format!(
+                "Ed25519 public key must be 32 bytes, got {}",
+                pk_bytes.len()
+            )));
         }
     };
     let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&pk_array) {
@@ -700,12 +751,9 @@ fn verify_standard_webhooks(
         .decode(raw_secret.as_bytes())
         .unwrap_or_else(|_| secret.to_vec());
 
-    let payload = format!(
-        "{msg_id}.{timestamp}.{}",
-        String::from_utf8_lossy(body)
-    );
-    let expected =
-        base64::engine::general_purpose::STANDARD.encode(hmac_sha256(&key_bytes, payload.as_bytes()));
+    let payload = format!("{msg_id}.{timestamp}.{}", String::from_utf8_lossy(body));
+    let expected = base64::engine::general_purpose::STANDARD
+        .encode(hmac_sha256(&key_bytes, payload.as_bytes()));
 
     // Parse signatures: format is "v1,{base64}" possibly repeated with spaces
     let signatures = parse_standard_signatures(sig_header);
@@ -733,9 +781,10 @@ fn parse_standard_signatures(header: &str) -> Vec<String> {
     // Try regex-like pattern: find all `v1,{base64}` occurrences
     for part in header.split_whitespace() {
         if let Some(sig) = part.strip_prefix("v1,")
-            && !sig.is_empty() {
-                signatures.push(sig.to_string());
-            }
+            && !sig.is_empty()
+        {
+            signatures.push(sig.to_string());
+        }
     }
 
     if !signatures.is_empty() {
@@ -785,8 +834,7 @@ fn verify_generic_hmac(
     }
 
     use base64::Engine;
-    let expected_b64 =
-        base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, body));
+    let expected_b64 = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, body));
     if ct_str_eq(received, &expected_b64) {
         return VerificationResult::Valid;
     }

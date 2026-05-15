@@ -23,6 +23,7 @@ import { trackRequestViewed, trackRequestDetailTabChanged } from "@/lib/analytic
 import { jsonToTypeScript } from "@/lib/json-to-typescript";
 import { JsonTree } from "./json-tree";
 import { SignatureTab, SignatureVerificationBadge } from "./signature-tab";
+import { ProviderBadge } from "./provider-badge";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -187,6 +188,8 @@ export function RequestDetail({
               {request.method} {request.path}
             </div>
             <div className="text-xs text-muted-foreground font-mono mt-0.5 flex items-center gap-3 flex-wrap">
+              {request.detectedProvider && <ProviderBadge provider={request.detectedProvider} />}
+              {request.detectedEvent && <span>{request.detectedEvent}</span>}
               <span>{request.ip}</span>
               <span>{formatBytes(request.size)}</span>
               <span>{fullTime}</span>

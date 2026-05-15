@@ -93,12 +93,58 @@ function sendSignedWebhook(slug: string, valid: boolean) {
   });
 }
 
+async function insertServerVerifiedRequest({
+  path,
+  verified,
+}: {
+  path: string;
+  verified: boolean;
+}) {
+  const body = JSON.stringify({ type: "test.e2e", path, verified });
+  const signatureError = verified
+    ? null
+    : JSON.stringify({
+        code: "mismatch",
+        message: "Signature mismatch",
+        expected: "expected-signature",
+        received: "received-signature",
+      });
+
+  const { error } = await admin.from("requests").insert({
+    endpoint_id: endpointId,
+    user_id: testUser.id,
+    method: "POST",
+    path,
+    headers: {
+      "content-type": "application/json",
+      "webhook-id": `msg_e2e_${Date.now()}`,
+      "webhook-timestamp": Math.floor(Date.now() / 1000).toString(),
+      "webhook-signature": "v1,e2e",
+    },
+    body,
+    query_params: {},
+    content_type: "application/json",
+    ip: "127.0.0.1",
+    size: Buffer.byteLength(body),
+    signature_verified: verified,
+    signature_error: signatureError,
+    signing_provider: "standard-webhooks",
+    received_at: new Date().toISOString(),
+  });
+
+  if (error) throw error;
+}
+
+function signatureTabButton(page: import("@playwright/test").Page) {
+  return page.getByRole("button", { name: /^signature$/i }).first();
+}
+
 // ── Endpoint Settings ──
 
 test("signing config section is visible in endpoint settings", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  await expect(page.locator("text=Signature Verification")).toBeVisible();
+  await expect(page.getByText("Signature Verification", { exact: true }).first()).toBeVisible();
   await expect(page.locator("#settings-signing-provider")).toBeVisible();
 });
 
@@ -107,8 +153,8 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // Should have None + 13 providers (SendGrid removed — uses IP allowlisting)
-  await expect(options).toHaveCount(14);
+  // Should have None + 14 providers (SendGrid removed — uses IP allowlisting)
+  await expect(options).toHaveCount(15);
   await expect(options.nth(1)).toHaveText("Stripe");
 });
 
@@ -137,55 +183,74 @@ test("configure signing secret and save", async ({ page }) => {
   // Dialog should close
   await expect(page.locator("text=Endpoint Settings")).not.toBeVisible({ timeout: 5000 });
 
+  await expect
+    .poll(async () => {
+      const { data } = await admin
+        .from("endpoints")
+        .select("signing_provider, signing_secret_encrypted")
+        .eq("id", endpointId)
+        .single();
+
+      return data?.signing_provider === "standard-webhooks" && data.signing_secret_encrypted
+        ? "configured"
+        : "pending";
+    })
+    .toBe("configured");
+
+  // Navigate again so endpoint settings are read back from persisted state.
+  await page.goto(`/dashboard?endpoint=${endpointSlug}`);
+  await expect(page.locator("span.font-bold.uppercase", { hasText: "Sig Verify E2E" })).toBeVisible(
+    { timeout: 10000 }
+  );
+
   // Reopen and verify status shows configured
   await page
     .locator('[aria-label="Endpoint settings"]')
     .waitFor({ state: "visible", timeout: 5000 });
   await openSettings(page);
-  await expect(page.locator("text=Configured")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("#settings-signing-provider")).toHaveValue("standard-webhooks");
+  await expect(page.locator("text=Configured").first()).toBeVisible({ timeout: 5000 });
 });
 
 // ── Signature Tab ──
 
 test("Signature tab is visible in request detail", async ({ page }) => {
-  // Send a webhook first so we have a request to select
-  await sendSignedWebhook(endpointSlug, true);
-  await new Promise((r) => setTimeout(r, 1000));
+  const path = `/signature-visible-${Date.now()}`;
+  await insertServerVerifiedRequest({ path, verified: true });
 
   await openDashboard(page);
 
-  // Click the first request
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
-  await expect(page.locator("button", { hasText: "SIGNATURE" })).toBeVisible();
+  await page.locator("button").filter({ hasText: path }).first().click();
+  await expect(signatureTabButton(page)).toBeVisible();
 });
 
 test("Signature tab shows server-side valid result", async ({ page }) => {
+  const path = `/signature-valid-${Date.now()}`;
+  await insertServerVerifiedRequest({ path, verified: true });
+
   await openDashboard(page);
 
-  // Click the first request (should be the verified one)
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await page.locator("button").filter({ hasText: path }).first().click();
 
   // Click Signature tab
-  await page.click("button:has-text('SIGNATURE')");
+  await signatureTabButton(page).click();
 
   // Should show valid result
-  await expect(page.locator("text=Signature Valid")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("text=Standard Webhooks").first()).toBeVisible();
 });
 
 test("invalid signature shows mismatch details", async ({ page }) => {
-  // Send an invalid webhook
-  await sendSignedWebhook(endpointSlug, false);
-  await new Promise((r) => setTimeout(r, 1000));
+  const path = `/signature-invalid-${Date.now()}`;
+  await insertServerVerifiedRequest({ path, verified: false });
 
   await openDashboard(page);
 
-  // Select the most recent request (the invalid one)
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
-  await page.click("button:has-text('SIGNATURE')");
+  await page.locator("button").filter({ hasText: path }).first().click();
+  await signatureTabButton(page).click();
 
   await expect(
-    page.locator("text=Signature Mismatch").or(page.locator("text=Signature Invalid"))
+    page.locator("text=Signature Mismatch").or(page.locator("text=Signature Invalid")).first()
   ).toBeVisible({ timeout: 5000 });
 });
 
@@ -225,10 +290,34 @@ test("client-side verification form shown when no config", async ({ page }) => {
 
   await openDashboard(page);
   await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
-  await page.click("button:has-text('SIGNATURE')");
+  await signatureTabButton(page).click();
 
   // Should show the client-side verification form
   await expect(page.locator("text=Verify Signature")).toBeVisible({ timeout: 5000 });
-  await expect(page.locator("#sig-provider")).toBeVisible();
+  await expect(page.locator("#sig-provider").first()).toBeVisible();
   await expect(page.locator("text=never sent to our servers")).toBeVisible();
+});
+
+test("detected provider preselects manual verification when server-side verification is not configured", async ({
+  page,
+}) => {
+  await admin
+    .from("endpoints")
+    .update({
+      signing_provider: null,
+      signing_secret_encrypted: null,
+      signing_header: null,
+    })
+    .eq("slug", endpointSlug);
+
+  await sendSignedWebhook(endpointSlug, true);
+  await new Promise((r) => setTimeout(r, 1000));
+
+  await openDashboard(page);
+  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await signatureTabButton(page).click();
+
+  await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=Standard Webhooks").first()).toBeVisible();
+  await expect(page.locator("#sig-provider").first()).toHaveValue("standard-webhooks");
 });

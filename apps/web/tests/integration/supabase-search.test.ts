@@ -107,7 +107,7 @@ describe("Supabase Search Integration", () => {
       path: "/github/webhook",
       method: "PUT",
       body: '{"provider":"github"}',
-      headers: { "x-provider": "github" },
+      headers: { "x-provider": "github", "x-github-event": "push" },
       receivedAt: now - 30_000,
     });
     await insertRequest({
@@ -146,6 +146,8 @@ describe("Supabase Search Integration", () => {
 
     expect(bodyResults).toHaveLength(1);
     expect(bodyResults[0]?.method).toBe("PUT");
+    expect(bodyResults[0]?.detectedProvider).toBe("github");
+    expect(bodyResults[0]?.detectedEvent).toBe("push");
 
     const headerResults = await searchRequestsForUser({
       userId: testUserId,
@@ -222,5 +224,33 @@ describe("Supabase Search Integration", () => {
     });
 
     expect(count).toBe(3);
+  });
+
+  it("derives provider and event metadata for retained search results", async () => {
+    const now = Date.now();
+
+    const { error: cleanupError } = await admin.from("requests").delete().eq("user_id", testUserId);
+    expect(cleanupError).toBeNull();
+
+    await insertRequest({
+      endpointId: primaryEndpointId,
+      path: "/shopify/orders",
+      headers: {
+        "x-shopify-topic": "orders/create",
+      },
+      body: '{"id":123}',
+      receivedAt: now - 1_000,
+    });
+
+    const results = await searchRequestsForUser({
+      userId: testUserId,
+      plan: "free",
+      slug: primaryEndpointSlug,
+      q: "orders/create",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.detectedProvider).toBe("shopify");
+    expect(results[0]?.detectedEvent).toBe("orders/create");
   });
 });

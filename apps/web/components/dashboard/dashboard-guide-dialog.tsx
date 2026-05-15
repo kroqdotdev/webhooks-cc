@@ -28,6 +28,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
+import { WEB_VERIFICATION_PROVIDER_OPTIONS } from "@/lib/provider-catalog";
 
 interface Section {
   id: string;
@@ -35,6 +36,10 @@ interface Section {
   icon: React.ReactNode;
   content: React.ReactNode;
 }
+
+const SIGNATURE_PROVIDER_LIST = WEB_VERIFICATION_PROVIDER_OPTIONS.map(
+  (provider) => provider.label
+).join(", ");
 
 const SECTIONS: Section[] = [
   {
@@ -332,8 +337,7 @@ const SECTIONS: Section[] = [
             Click the badge in the summary bar to jump to the Signature tab with full error details
           </li>
           <li>
-            Supports 13 providers: Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Vercel,
-            GitLab, Clerk, Discord, Standard Webhooks, and Generic HMAC
+            Supports {WEB_VERIFICATION_PROVIDER_OPTIONS.length} providers: {SIGNATURE_PROVIDER_LIST}
           </li>
         </ul>
       </div>

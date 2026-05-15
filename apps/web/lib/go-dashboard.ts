@@ -2,6 +2,7 @@
 
 import type { Database, Json } from "@/lib/supabase/database";
 import type { Request } from "@/types/request";
+import { deriveWebhookDetection } from "@/lib/webhook-detection";
 
 type EndpointRow = Database["public"]["Tables"]["endpoints"]["Row"];
 type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
@@ -59,19 +60,28 @@ function normalizeRequest(
   >
 ): Request {
   const receivedAt = parseMillis(row.received_at) ?? Date.now();
+  const headers = asStringRecord(row.headers);
+  const body = row.body ?? undefined;
+  const detection = deriveWebhookDetection({
+    headers,
+    body,
+    contentType: row.content_type ?? undefined,
+  });
   return {
     _id: row.id,
     _creationTime: receivedAt,
     endpointId: row.endpoint_id,
     method: row.method,
     path: row.path,
-    headers: asStringRecord(row.headers),
-    body: row.body ?? undefined,
+    headers,
+    body,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
     size: row.size,
     receivedAt,
+    detectedProvider: detection.detectedProvider,
+    detectedEvent: detection.detectedEvent,
   };
 }
 

@@ -10,6 +10,7 @@ import {
   getEndpointBySlugForUser,
   updateEndpointBySlugForUser,
 } from "@/lib/supabase/endpoints";
+import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -68,24 +69,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   if (!rulesCheck.valid) return rulesCheck.response;
 
   // Validate signing config if provided
-  const validProviders = new Set([
-    "stripe",
-    "github",
-    "shopify",
-    "twilio",
-    "slack",
-    "paddle",
-    "linear",
-    "vercel",
-    "gitlab",
-    "clerk",
-    "discord",
-    "standard-webhooks",
-    "generic-hmac",
-    "sendgrid",
-  ]);
   if (body.signingProvider !== undefined && body.signingProvider !== null) {
-    if (typeof body.signingProvider !== "string" || !validProviders.has(body.signingProvider)) {
+    if (!isValidSigningProvider(body.signingProvider)) {
       return Response.json({ error: "Invalid signing provider" }, { status: 400 });
     }
   }
@@ -95,12 +80,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     // We need to validate if the effective provider is generic-hmac
     // If body.signingProvider is set, use that; otherwise we'll validate after loading the endpoint
     if (effectiveProvider === "generic-hmac") {
-      if (
-        typeof body.signingHeader !== "string" ||
-        body.signingHeader.length === 0 ||
-        body.signingHeader.length > 256 ||
-        !/^[a-zA-Z0-9\-_]+$/.test(body.signingHeader)
-      ) {
+      if (!isValidSigningHeaderName(body.signingHeader)) {
         return Response.json({ error: "Invalid signing header name" }, { status: 400 });
       }
     }
@@ -112,32 +92,90 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   }
 
   try {
-    // Check encryption key is available before attempting to save a signing secret
-    if (body.signingSecret && typeof body.signingSecret === "string") {
-      const { isSigningKeyConfigured } = await import("@/lib/crypto");
-      if (!isSigningKeyConfigured()) {
-        return Response.json(
-          { error: "Signature verification is not available. Contact support." },
-          { status: 503 }
-        );
-      }
-    }
     // Allow team members to edit (they can rename + change mock response)
     const access = await resolveEndpointAccess(auth.userId, slug);
     if (!access) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
 
+    const signingConfigTouched =
+      body.signingProvider !== undefined ||
+      body.signingSecret !== undefined ||
+      body.signingHeader !== undefined;
+    const ownerOnlyConfigTouched = body.notificationUrl !== undefined || signingConfigTouched;
+
+    if (!access.isOwner && ownerOnlyConfigTouched) {
+      return Response.json(
+        { error: "Only the endpoint owner can update notification or signing settings" },
+        { status: 403 }
+      );
+    }
+
+    const existing = signingConfigTouched
+      ? await getEndpointBySlugForUser(access.ownerId, slug)
+      : null;
+
+    if (signingConfigTouched && !existing) {
+      return Response.json({ error: "Endpoint not found" }, { status: 404 });
+    }
+
+    if (signingConfigTouched && existing) {
+      const requestedProvider =
+        body.signingProvider === undefined ? undefined : (body.signingProvider as string | null);
+      const nextProvider =
+        requestedProvider === undefined ? (existing.signingProvider ?? null) : requestedProvider;
+      const providerChanged =
+        requestedProvider !== undefined && requestedProvider !== (existing.signingProvider ?? null);
+      const hasNewSecret = typeof body.signingSecret === "string" && body.signingSecret.length > 0;
+      const hasStoredSecretForSelectedProvider = !providerChanged && !!existing.hasSigningSecret;
+
+      if (nextProvider && body.signingSecret === null) {
+        return Response.json(
+          { error: "Cannot clear signing secret while signature verification is enabled" },
+          { status: 400 }
+        );
+      }
+
+      if (!nextProvider && hasNewSecret) {
+        return Response.json(
+          { error: "A signing provider is required before saving a signing secret" },
+          { status: 400 }
+        );
+      }
+
+      if (nextProvider && !hasNewSecret && !hasStoredSecretForSelectedProvider) {
+        const secretLabel = nextProvider === "discord" ? "public key" : "signing secret";
+        return Response.json(
+          { error: `A ${secretLabel} is required for ${nextProvider}` },
+          { status: 400 }
+        );
+      }
+
+      if (nextProvider === "generic-hmac") {
+        const nextHeader =
+          body.signingHeader === undefined ? existing.signingHeader : body.signingHeader;
+        if (!isValidSigningHeaderName(nextHeader)) {
+          return Response.json({ error: "Invalid signing header name" }, { status: 400 });
+        }
+      }
+
+      // Check encryption key only after access is confirmed so missing local/prod
+      // config does not leak endpoint existence through a different status code.
+      if (hasNewSecret) {
+        const { isSigningKeyConfigured } = await import("@/lib/crypto");
+        if (!isSigningKeyConfigured()) {
+          return Response.json(
+            { error: "Signature verification is not available. Contact support." },
+            { status: 503 }
+          );
+        }
+      }
+    }
+
     // Validate signingHeader when existing endpoint uses generic-hmac and provider isn't being changed
-    if (body.signingHeader !== undefined && effectiveProvider === undefined) {
-      const existing = await getEndpointBySlugForUser(access.ownerId, slug);
+    if (body.signingHeader !== undefined && effectiveProvider === undefined && existing) {
       if (existing?.signingProvider === "generic-hmac") {
-        if (
-          typeof body.signingHeader !== "string" ||
-          body.signingHeader.length === 0 ||
-          body.signingHeader.length > 256 ||
-          !/^[a-zA-Z0-9\-_]+$/.test(body.signingHeader)
-        ) {
+        if (!isValidSigningHeaderName(body.signingHeader)) {
           return Response.json({ error: "Invalid signing header name" }, { status: 400 });
         }
       }

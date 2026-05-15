@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::AppState;
-use super::rules::{self, ResponseRule, RequestContext}; // ResponseRule needed for deserialization
+use super::rules::{self, RequestContext, ResponseRule};
+use crate::AppState; // ResponseRule needed for deserialization
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
@@ -54,7 +54,10 @@ pub fn is_valid_slug(slug: &str) -> bool {
 /// Sanitizes the value to contain only valid IP characters (digits, dots, colons, hex)
 /// to prevent XSS via spoofed headers stored in the database.
 fn real_ip(headers: &HeaderMap) -> String {
-    let raw = if let Some(ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+    let raw = if let Some(ip) = headers
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+    {
         ip.to_string()
     } else if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
         ip.to_string()
@@ -114,6 +117,12 @@ struct CaptureResult {
     signing_header: Option<String>,
 }
 
+struct WebhookTarget {
+    slug: String,
+    path: String,
+    raw_query: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct MockResponse {
     pub status: i64,
@@ -129,9 +138,33 @@ const MAX_DELAY_MS: u64 = 30_000;
 /// Maximum body preview length in notification payloads (characters, not bytes).
 const NOTIFICATION_PREVIEW_LEN: usize = 200;
 
-
 /// Maximum entries in the rate limiter before a full prune is triggered.
 const NOTIFICATION_LIMITER_MAX: usize = 10_000;
+
+/// Ports that should never be reachable through direct notification delivery.
+const BLOCKED_NOTIFICATION_PORTS: &[u16] = &[
+    22,    // SSH
+    23,    // Telnet
+    25,    // SMTP
+    135,   // MS RPC
+    139,   // NetBIOS
+    389,   // LDAP
+    445,   // SMB
+    636,   // LDAPS
+    3306,  // MySQL
+    3389,  // RDP
+    5432,  // Postgres
+    5672,  // RabbitMQ
+    5900,  // VNC
+    6379,  // Redis
+    9200,  // Elasticsearch
+    9300,  // Elasticsearch transport
+    11211, // Memcached
+    15672, // RabbitMQ management
+    27017, // MongoDB
+    27018, // MongoDB
+    27019, // MongoDB
+];
 
 /// Per-endpoint rate limiter: tracks last notification time per slug.
 /// Wrapped in Arc<Mutex<>> and stored in AppState so it's shared across requests.
@@ -168,7 +201,7 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
             || v4.is_link_local()                      // 169.254.0.0/16 (includes metadata 169.254.169.254)
             || v4.is_broadcast()                       // 255.255.255.255
             || v4.is_unspecified()                     // 0.0.0.0
-            || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64  // 100.64.0.0/10 (CGNAT)
+            || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
         }
         std::net::IpAddr::V6(v6) => {
             let segs = v6.segments();
@@ -239,6 +272,30 @@ async fn resolve_notification_target(url: &str) -> Result<ResolvedTarget, &'stat
     })
 }
 
+fn is_localhost_name(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost") || host.to_ascii_lowercase().ends_with(".localhost")
+}
+
+fn validate_direct_notification_target(target: &ResolvedTarget) -> Result<(), &'static str> {
+    let parsed = url::Url::parse(&target.url).map_err(|_| "invalid URL")?;
+
+    if parsed.scheme() != "https" {
+        return Err("direct notification URL must use HTTPS");
+    }
+
+    let host = parsed.host_str().ok_or("no host in URL")?;
+    if is_localhost_name(host) || host.parse::<std::net::IpAddr>().is_ok() {
+        return Err("direct notification URL host is not allowed");
+    }
+
+    let port = parsed.port_or_known_default().ok_or("invalid URL port")?;
+    if BLOCKED_NOTIFICATION_PORTS.contains(&port) {
+        return Err("blocked port");
+    }
+
+    Ok(())
+}
+
 /// Notification payload for the fire-and-forget POST.
 struct NotificationInfo {
     limiter: NotificationLimiter,
@@ -293,7 +350,7 @@ fn spawn_notification(info: NotificationInfo) {
                         map.retain(|_, last_time| now.duration_since(*last_time) < info.cooldown);
                     }
                 }
-                Ok(Ok(None)) => return,    // cooldown active, skip
+                Ok(Ok(None)) => return, // cooldown active, skip
                 Ok(Err(e)) => {
                     tracing::warn!(error = %e, slug = %info.slug, "Redis notification rate limit failed, falling back to in-memory");
                     use_in_memory = true;
@@ -324,7 +381,8 @@ fn spawn_notification(info: NotificationInfo) {
         // can't keep fire-and-forget tasks alive past the budget.
         let slug_ref = info.slug.clone();
         let outer_timeout = std::time::Duration::from_secs(info.timeout_secs);
-        let inner_timeout = std::time::Duration::from_secs(info.timeout_secs.saturating_sub(1).max(1));
+        let inner_timeout =
+            std::time::Duration::from_secs(info.timeout_secs.saturating_sub(1).max(1));
         let result = tokio::time::timeout(outer_timeout, async {
             let payload = serde_json::json!({
                 "slug": info.slug,
@@ -360,6 +418,7 @@ fn spawn_notification(info: NotificationInfo) {
             } else {
                 // Direct delivery with SSRF protection
                 let target = resolve_notification_target(&info.url).await?;
+                validate_direct_notification_target(&target)?;
 
                 let pinned_client = reqwest::Client::builder()
                     .timeout(inner_timeout)
@@ -368,9 +427,7 @@ fn spawn_notification(info: NotificationInfo) {
                     .build()
                     .map_err(|_| "failed to build client")?;
 
-                let mut req = pinned_client
-                    .post(&target.url)
-                    .json(&payload);
+                let mut req = pinned_client.post(&target.url).json(&payload);
 
                 if !info.ip.is_empty() {
                     req = req.header("X-Sender-IP", &info.ip);
@@ -435,41 +492,81 @@ fn build_mock_response(mock: &MockResponse) -> Response {
         })
 }
 
+fn build_verification_request_url(
+    base: &str,
+    slug: &str,
+    req_path: &str,
+    raw_query: Option<&str>,
+) -> String {
+    let path_part = if req_path == "/" { "" } else { req_path };
+    let mut url = format!("{base}/w/{slug}{path_part}");
+    if let Some(query) = raw_query.filter(|query| !query.is_empty()) {
+        url.push('?');
+        url.push_str(query);
+    }
+    url
+}
+
 /// The main webhook handler: any method at /w/{slug}/{*path}
 pub async fn handle_webhook(
     State(state): State<AppState>,
     method: Method,
+    OriginalUri(uri): OriginalUri,
     Path((slug, path)): Path<(String, String)>,
     headers: HeaderMap,
     query: axum::extract::Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Response {
-    handle_webhook_inner(state, method, slug, path, headers, query, body).await
+    handle_webhook_inner(
+        state,
+        method,
+        WebhookTarget {
+            slug,
+            path,
+            raw_query: uri.query().map(str::to_string),
+        },
+        headers,
+        query,
+        body,
+    )
+    .await
 }
 
 /// Handle the case where no trailing path is provided: /w/{slug}
 pub async fn handle_webhook_no_path(
     State(state): State<AppState>,
     method: Method,
+    OriginalUri(uri): OriginalUri,
     Path(slug): Path<String>,
     headers: HeaderMap,
     query: axum::extract::Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Response {
-    handle_webhook_inner(state, method, slug, String::new(), headers, query, body).await
+    handle_webhook_inner(
+        state,
+        method,
+        WebhookTarget {
+            slug,
+            path: String::new(),
+            raw_query: uri.query().map(str::to_string),
+        },
+        headers,
+        query,
+        body,
+    )
+    .await
 }
 
 async fn handle_webhook_inner(
     state: AppState,
     method: Method,
-    slug: String,
-    path: String,
+    target: WebhookTarget,
     headers: HeaderMap,
     query: axum::extract::Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Response {
     // 1. Validate and normalize slug to lowercase (case-insensitive matching)
-    let slug = slug.to_ascii_lowercase();
+    let slug = target.slug.to_ascii_lowercase();
     if !is_valid_slug(&slug) {
         return (
             StatusCode::BAD_REQUEST,
@@ -479,6 +576,8 @@ async fn handle_webhook_inner(
     }
 
     // 2. Normalize path
+    let path = target.path;
+    let raw_query = target.raw_query;
     let req_path = if path.is_empty() {
         "/".to_string()
     } else if path.starts_with('/') {
@@ -506,29 +605,26 @@ async fn handle_webhook_inner(
     let received_at = Utc::now();
 
     // Serialize headers and query params as JSON values
-    let headers_json = serde_json::to_value(&filtered_headers).unwrap_or(serde_json::Value::Object(
-        serde_json::Map::new(),
-    ));
-    let query_json = serde_json::to_value(&query.0).unwrap_or(serde_json::Value::Object(
-        serde_json::Map::new(),
-    ));
+    let headers_json = serde_json::to_value(&filtered_headers)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+    let query_json =
+        serde_json::to_value(&query.0).unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
     // 4. Call the stored procedure
-    let result: Result<serde_json::Value, sqlx::Error> = sqlx::query_scalar(
-        "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-    )
-    .bind(&slug)
-    .bind(method.as_str())
-    .bind(&req_path)
-    .bind(&headers_json)
-    .bind(&body_str)
-    .bind(&query_json)
-    .bind(&content_type)
-    .bind(&ip)
-    .bind(received_at)
-    .bind(&body_raw)
-    .fetch_one(&state.pool)
-    .await;
+    let result: Result<serde_json::Value, sqlx::Error> =
+        sqlx::query_scalar("SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")
+            .bind(&slug)
+            .bind(method.as_str())
+            .bind(&req_path)
+            .bind(&headers_json)
+            .bind(&body_str)
+            .bind(&query_json)
+            .bind(&content_type)
+            .bind(&ip)
+            .bind(received_at)
+            .bind(&body_raw)
+            .fetch_one(&state.pool)
+            .await;
 
     // 5. Map result to HTTP response
     match result {
@@ -549,41 +645,38 @@ async fn handle_webhook_inner(
                         && let Some(ref request_id) = capture.request_id
                     {
                         if let Some(ref encryption_key) = state.config.signing_secret_key {
-                        let pool = state.pool.clone();
-                        let request_id = request_id.clone();
-                        let provider = provider.clone();
-                        let encryption_key = *encryption_key;
-                        let encrypted_b64 = encrypted_b64.clone();
-                        let signing_header = capture.signing_header.clone();
-                        let verify_headers = filtered_headers.clone();
-                        let verify_body = body.to_vec();
-                        // Construct full URL for Twilio verification (signs URL + params)
-                        let verify_query = query.0.clone();
-                        let request_url = state.config.webhook_base_url.as_ref().map(|base| {
-                            let path_part = if req_path == "/" { "".to_string() } else { req_path.clone() };
-                            if verify_query.is_empty() {
-                                format!("{base}/w/{slug}{path_part}")
-                            } else {
-                                let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-                                for (k, v) in &verify_query {
-                                    serializer.append_pair(k, v);
-                                }
-                                let qs = serializer.finish();
-                                format!("{base}/w/{slug}{path_part}?{qs}")
-                            }
-                        });
+                            let pool = state.pool.clone();
+                            let request_id = request_id.clone();
+                            let provider = provider.clone();
+                            let encryption_key = *encryption_key;
+                            let encrypted_b64 = encrypted_b64.clone();
+                            let signing_header = capture.signing_header.clone();
+                            let verify_headers = filtered_headers.clone();
+                            let verify_body = body.to_vec();
+                            // Construct full URL for Twilio verification (signs URL + params)
+                            let request_url = state.config.webhook_base_url.as_ref().map(|base| {
+                                build_verification_request_url(
+                                    base,
+                                    &slug,
+                                    &req_path,
+                                    raw_query.as_deref(),
+                                )
+                            });
 
-                        tokio::spawn(async move {
-                            let secret = match crate::crypto::decrypt_secret_b64(&encrypted_b64, &encryption_key) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    tracing::error!(request_id, error = %e, "failed to decrypt signing secret");
-                                    // Write the error to the request row so the user sees it in the dashboard
-                                    let error_json = serde_json::json!({
+                            tokio::spawn(async move {
+                                let secret = match crate::crypto::decrypt_secret_b64(
+                                    &encrypted_b64,
+                                    &encryption_key,
+                                ) {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        tracing::error!(request_id, error = %e, "failed to decrypt signing secret");
+                                        // Write the error to the request row so the user sees it in the dashboard
+                                        let error_json = serde_json::json!({
                                         "code": "decryption_failed",
                                         "message": "Failed to decrypt signing secret. The encryption key may have changed."
                                     }).to_string();
-                                    if let Err(db_err) = sqlx::query(
+                                        if let Err(db_err) = sqlx::query(
                                         "UPDATE public.requests SET signature_verified = $1, signature_error = $2, signing_provider = $3 WHERE id = $4::uuid"
                                     )
                                     .bind(Some(false))
@@ -594,38 +687,38 @@ async fn handle_webhook_inner(
                                     .await {
                                         tracing::error!(request_id, error = %db_err, "failed to persist decryption error to request row");
                                     }
-                                    return;
-                                }
-                            };
+                                        return;
+                                    }
+                                };
 
-                            let result = crate::verification::verify_signature(
-                                &provider,
-                                &secret,
-                                &verify_headers,
-                                &verify_body,
-                                signing_header.as_deref(),
-                                request_url.as_deref(),
-                            );
+                                let result = crate::verification::verify_signature(
+                                    &provider,
+                                    &secret,
+                                    &verify_headers,
+                                    &verify_body,
+                                    signing_header.as_deref(),
+                                    request_url.as_deref(),
+                                );
 
-                            let (verified, error_json, error_provider) = match &result {
-                                crate::verification::VerificationResult::Valid => {
-                                    (Some(true), None, Some(provider.as_str()))
-                                }
-                                crate::verification::VerificationResult::Invalid(err) => {
-                                    let json = serde_json::to_string(err).unwrap_or_else(|_| {
+                                let (verified, error_json, error_provider) = match &result {
+                                    crate::verification::VerificationResult::Valid => {
+                                        (Some(true), None, Some(provider.as_str()))
+                                    }
+                                    crate::verification::VerificationResult::Invalid(err) => {
+                                        let json = serde_json::to_string(err).unwrap_or_else(|_| {
                                         r#"{"code":"serialization_error","message":"Verification failed but error details could not be serialized"}"#.to_string()
                                     });
-                                    (Some(false), Some(json), Some(provider.as_str()))
-                                }
-                                crate::verification::VerificationResult::Skipped(err) => {
-                                    let json = serde_json::to_string(err).unwrap_or_else(|_| {
+                                        (Some(false), Some(json), Some(provider.as_str()))
+                                    }
+                                    crate::verification::VerificationResult::Skipped(err) => {
+                                        let json = serde_json::to_string(err).unwrap_or_else(|_| {
                                         r#"{"code":"serialization_error","message":"Verification skipped but error details could not be serialized"}"#.to_string()
                                     });
-                                    (None, Some(json), Some(provider.as_str()))
-                                }
-                            };
+                                        (None, Some(json), Some(provider.as_str()))
+                                    }
+                                };
 
-                            if let Err(e) = sqlx::query(
+                                if let Err(e) = sqlx::query(
                                 "UPDATE public.requests SET signature_verified = $1, signature_error = $2, signing_provider = $3 WHERE id = $4::uuid"
                             )
                             .bind(verified)
@@ -636,7 +729,7 @@ async fn handle_webhook_inner(
                             .await {
                                 tracing::error!(request_id, error = %e, "failed to update verification result");
                             }
-                        });
+                            });
                         } else {
                             // Server missing SIGNING_SECRET_KEY — write error so user sees feedback
                             let pool = state.pool.clone();
@@ -648,8 +741,9 @@ async fn handle_webhook_inner(
                                     "message": "Signature verification is configured but the server encryption key is missing."
                                 }).to_string();
                                 if let Err(e) = sqlx::query(
-                                    "UPDATE public.requests SET signature_error = $1, signing_provider = $2 WHERE id = $3::uuid"
+                                    "UPDATE public.requests SET signature_verified = $1, signature_error = $2, signing_provider = $3 WHERE id = $4::uuid"
                                 )
+                                .bind(Some(false))
                                 .bind(Some(&error_json))
                                 .bind(provider.as_str())
                                 .bind(&request_id)
@@ -678,7 +772,9 @@ async fn handle_webhook_inner(
                             received_at: received_at.to_rfc3339(),
                             proxy_url: state.config.notify_proxy_url.clone(),
                             proxy_secret: state.config.notify_secret.clone(),
-                            cooldown: std::time::Duration::from_secs(state.config.notification_cooldown_secs),
+                            cooldown: std::time::Duration::from_secs(
+                                state.config.notification_cooldown_secs,
+                            ),
                             timeout_secs: state.config.notification_timeout_secs,
                         });
                     }
@@ -715,8 +811,7 @@ async fn handle_webhook_inner(
                             body: &body_str,
                             query: &query.0,
                         };
-                        rules::evaluate_rules(rules, &ctx)
-                            .or(capture.mock_response.clone())
+                        rules::evaluate_rules(rules, &ctx).or(capture.mock_response.clone())
                     } else {
                         capture.mock_response.clone()
                     };
@@ -938,6 +1033,27 @@ mod tests {
     }
 
     #[test]
+    fn verification_url_preserves_raw_query_string() {
+        let url = build_verification_request_url(
+            "https://go.webhooks.cc",
+            "abc123",
+            "/twilio",
+            Some("Digits=1&Digits=2&Body=a%2Bb"),
+        );
+
+        assert_eq!(
+            url,
+            "https://go.webhooks.cc/w/abc123/twilio?Digits=1&Digits=2&Body=a%2Bb"
+        );
+    }
+
+    #[test]
+    fn verification_url_omits_root_path_and_empty_query() {
+        let url = build_verification_request_url("https://go.webhooks.cc", "abc123", "/", Some(""));
+        assert_eq!(url, "https://go.webhooks.cc/w/abc123");
+    }
+
+    #[test]
     fn blocked_ips() {
         use std::net::IpAddr;
 
@@ -965,7 +1081,9 @@ mod tests {
         // IPv6 ULA (fc00::/7)
         assert!(is_blocked_ip("fd00::1".parse::<IpAddr>().unwrap()));
         assert!(is_blocked_ip("fc00::1".parse::<IpAddr>().unwrap()));
-        assert!(is_blocked_ip("fdab:cdef:1234::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip(
+            "fdab:cdef:1234::1".parse::<IpAddr>().unwrap()
+        ));
 
         // IPv6 link-local (fe80::/10)
         assert!(is_blocked_ip("fe80::1".parse::<IpAddr>().unwrap()));
@@ -974,7 +1092,9 @@ mod tests {
         // IPv4-mapped IPv6
         assert!(is_blocked_ip("::ffff:127.0.0.1".parse::<IpAddr>().unwrap()));
         assert!(is_blocked_ip("::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
-        assert!(is_blocked_ip("::ffff:169.254.169.254".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip(
+            "::ffff:169.254.169.254".parse::<IpAddr>().unwrap()
+        ));
 
         // Public IPs — should NOT be blocked
         assert!(!is_blocked_ip("8.8.8.8".parse::<IpAddr>().unwrap()));
@@ -985,11 +1105,65 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_blocks_private_ip_literals() {
-        assert!(resolve_notification_target("http://127.0.0.1:9876/hook").await.is_err());
-        assert!(resolve_notification_target("http://10.0.0.1/hook").await.is_err());
-        assert!(resolve_notification_target("http://169.254.169.254/meta").await.is_err());
-        assert!(resolve_notification_target("http://[::1]/hook").await.is_err());
+        assert!(
+            resolve_notification_target("http://127.0.0.1:9876/hook")
+                .await
+                .is_err()
+        );
+        assert!(
+            resolve_notification_target("http://10.0.0.1/hook")
+                .await
+                .is_err()
+        );
+        assert!(
+            resolve_notification_target("http://169.254.169.254/meta")
+                .await
+                .is_err()
+        );
+        assert!(
+            resolve_notification_target("http://[::1]/hook")
+                .await
+                .is_err()
+        );
         assert!(resolve_notification_target("not-a-url").await.is_err());
+    }
+
+    #[test]
+    fn direct_notification_policy_requires_https_hostname_and_safe_port() {
+        let target = ResolvedTarget {
+            url: "https://example.com/hook".to_string(),
+            host: "example.com".to_string(),
+            addrs: vec!["93.184.216.34:443".parse().unwrap()],
+        };
+        assert!(validate_direct_notification_target(&target).is_ok());
+
+        let http_target = ResolvedTarget {
+            url: "http://example.com/hook".to_string(),
+            host: "example.com".to_string(),
+            addrs: vec!["93.184.216.34:80".parse().unwrap()],
+        };
+        assert!(validate_direct_notification_target(&http_target).is_err());
+
+        let redis_target = ResolvedTarget {
+            url: "https://example.com:6379/hook".to_string(),
+            host: "example.com".to_string(),
+            addrs: vec!["93.184.216.34:6379".parse().unwrap()],
+        };
+        assert!(validate_direct_notification_target(&redis_target).is_err());
+
+        let localhost_target = ResolvedTarget {
+            url: "https://localhost/hook".to_string(),
+            host: "localhost".to_string(),
+            addrs: vec!["127.0.0.1:443".parse().unwrap()],
+        };
+        assert!(validate_direct_notification_target(&localhost_target).is_err());
+
+        let ip_literal_target = ResolvedTarget {
+            url: "https://8.8.8.8/hook".to_string(),
+            host: "8.8.8.8".to_string(),
+            addrs: vec!["8.8.8.8:443".parse().unwrap()],
+        };
+        assert!(validate_direct_notification_target(&ip_literal_target).is_err());
     }
 
     #[tokio::test]

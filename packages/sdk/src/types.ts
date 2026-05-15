@@ -226,6 +226,7 @@ export type TemplateProvider =
   | "discord"
   | "vercel"
   | "gitlab"
+  | "typeform"
   | "standard-webhooks";
 
 /** Static metadata describing a supported template provider. */
@@ -242,6 +243,18 @@ export interface TemplateProviderInfo {
   signatureHeader?: string;
   /** Signature algorithm used for request signing */
   signatureAlgorithm?: string;
+}
+
+/** Structured provider detection result for a captured or retained request. */
+export interface DetectedWebhookInfo {
+  /** Best-effort identified provider */
+  provider: TemplateProvider;
+  /** Best-effort extracted event/topic name, when available */
+  event: string | null;
+  /** Whether detection came from headers or body inspection */
+  via: "header" | "body";
+  /** Header name or body path that matched, when known */
+  matchedOn?: string;
 }
 
 /**

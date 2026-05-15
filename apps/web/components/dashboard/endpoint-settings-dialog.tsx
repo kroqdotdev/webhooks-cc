@@ -10,12 +10,18 @@ import { Settings, ShieldCheck } from "lucide-react";
 import { ResponseRulesEditor } from "./response-rules-editor";
 import type { ResponseRule } from "@/lib/dashboard-api";
 import { parseStatusCode } from "@/lib/http";
+import { isValidSigningHeaderName } from "@/lib/signing-config";
 import {
   deleteDashboardEndpoint,
   emitDashboardEndpointsChanged,
   updateDashboardEndpoint,
 } from "@/lib/dashboard-api";
 import { trackEndpointDeleted, trackEndpointSaved } from "@/lib/analytics";
+import {
+  getWebProviderInfo,
+  getWebProviderLabel,
+  WEB_VERIFICATION_PROVIDER_OPTIONS,
+} from "@/lib/provider-catalog";
 import {
   Dialog,
   DialogContent,
@@ -230,6 +236,8 @@ export const EndpointSettingsDialog = forwardRef<
   const [signingSecret, setSigningSecret] = useState("");
   const [signingHeader, setSigningHeader] = useState(initialSigningHeader || "");
   const [hasSigningSecret, setHasSigningSecret] = useState(!!initialHasSigningSecret);
+  const signingProviderInfo = getWebProviderInfo(signingProvider);
+  const initialSigningProviderValue = initialSigningProvider || "";
 
   useImperativeHandle(ref, () => ({ open: () => setOpen(true) }));
   const [isSaving, setIsSaving] = useState(false);
@@ -298,7 +306,22 @@ export const EndpointSettingsDialog = forwardRef<
       }
       // Signing config — only for owned endpoints
       if (initialNotificationUrl !== undefined) {
-        const providerChanged = signingProvider !== (initialSigningProvider || "");
+        const providerChanged = signingProvider !== initialSigningProviderValue;
+        const hasConfiguredSecretForSelectedProvider =
+          !providerChanged && hasSigningSecret && !signingSecret;
+
+        if (signingProvider && !signingSecret && !hasConfiguredSecretForSelectedProvider) {
+          const label =
+            signingProviderInfo?.verificationMode === "publicKey" ? "public key" : "signing secret";
+          throw new Error(`Enter a ${label} before enabling signature verification.`);
+        }
+
+        if (signingProvider === "generic-hmac" && !isValidSigningHeaderName(signingHeader)) {
+          throw new Error(
+            "Enter a signature header name using only letters, numbers, underscores, or hyphens."
+          );
+        }
+
         // When clearing provider, clear everything
         if (!signingProvider && initialSigningProvider) {
           updates.signingProvider = null;
@@ -307,6 +330,9 @@ export const EndpointSettingsDialog = forwardRef<
         } else {
           if (providerChanged) {
             updates.signingProvider = signingProvider || null;
+            if (signingProvider !== "generic-hmac") {
+              updates.signingHeader = null;
+            }
           }
           // Only send signingSecret when a new value was entered
           if (signingSecret) {
@@ -545,23 +571,29 @@ export const EndpointSettingsDialog = forwardRef<
                     <select
                       id="settings-signing-provider"
                       value={signingProvider}
-                      onChange={(e) => setSigningProvider(e.target.value)}
+                      onChange={(e) => {
+                        const nextProvider = e.target.value;
+                        setSigningProvider(nextProvider);
+                        setSigningSecret("");
+                        setHasSigningSecret(
+                          nextProvider === initialSigningProviderValue && !!initialHasSigningSecret
+                        );
+                        setSigningHeader(
+                          nextProvider === "generic-hmac"
+                            ? initialSigningProviderValue === "generic-hmac"
+                              ? (initialSigningHeader ?? "")
+                              : ""
+                            : ""
+                        );
+                      }}
                       className="neo-input w-full text-sm"
                     >
                       <option value="">None</option>
-                      <option value="stripe">Stripe</option>
-                      <option value="github">GitHub</option>
-                      <option value="shopify">Shopify</option>
-                      <option value="twilio">Twilio</option>
-                      <option value="slack">Slack</option>
-                      <option value="paddle">Paddle</option>
-                      <option value="linear">Linear</option>
-                      <option value="vercel">Vercel</option>
-                      <option value="gitlab">GitLab</option>
-                      <option value="clerk">Clerk</option>
-                      <option value="discord">Discord</option>
-                      <option value="standard-webhooks">Standard Webhooks</option>
-                      <option value="generic-hmac">Generic HMAC</option>
+                      {WEB_VERIFICATION_PROVIDER_OPTIONS.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.label}
+                        </option>
+                      ))}
                     </select>
                     <p className="text-xs text-muted-foreground mt-1">
                       SendGrid uses IP allowlisting and is not supported for signature verification.
@@ -575,7 +607,9 @@ export const EndpointSettingsDialog = forwardRef<
                           htmlFor="settings-signing-secret"
                           className="font-bold uppercase tracking-wide text-xs"
                         >
-                          {signingProvider === "discord" ? "Public Key" : "Signing Secret"}
+                          {signingProviderInfo?.verificationMode === "publicKey"
+                            ? "Public Key"
+                            : "Signing Secret"}
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -586,9 +620,7 @@ export const EndpointSettingsDialog = forwardRef<
                             placeholder={
                               hasSigningSecret
                                 ? "Enter new secret to replace"
-                                : signingProvider === "discord"
-                                  ? "Ed25519 public key"
-                                  : "Paste secret here"
+                                : (signingProviderInfo?.secretPlaceholder ?? "Paste secret here")
                             }
                             className="neo-input flex-1 text-sm font-mono"
                           />
@@ -637,7 +669,8 @@ export const EndpointSettingsDialog = forwardRef<
                     <div className="flex items-center gap-1.5 text-xs text-primary">
                       <ShieldCheck className="h-3.5 w-3.5" />
                       <span className="font-bold uppercase tracking-wide">
-                        Configured &middot; {signingProvider}
+                        Configured &middot;{" "}
+                        {getWebProviderLabel(signingProvider) ?? signingProvider}
                       </span>
                     </div>
                   )}

@@ -329,6 +329,29 @@ const TEMPLATE_PRESETS: Partial<Record<TemplateProvider, readonly TemplatePreset
       contentType: "application/json",
     },
   ],
+  typeform: [
+    {
+      id: "form_response",
+      label: "Form response",
+      description: "Typeform completed form_response webhook payload",
+      event: "form_response",
+      contentType: "application/json",
+    },
+    {
+      id: "partial_response",
+      label: "Partial response",
+      description: "Typeform partial_response webhook payload",
+      event: "partial_response",
+      contentType: "application/json",
+    },
+    {
+      id: "payment",
+      label: "Payment",
+      description: "Typeform form_response webhook payload with payment answer",
+      event: "form_response",
+      contentType: "application/json",
+    },
+  ],
   "standard-webhooks": [
     {
       id: "custom",

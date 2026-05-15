@@ -17,6 +17,10 @@ export interface Request {
   signatureError?: string | null;
   /** Provider that verified (or attempted to verify) the signature */
   signingProvider?: string | null;
+  /** Best-effort detected provider derived from request headers/body */
+  detectedProvider?: string | null;
+  /** Best-effort detected event or topic derived from request headers/body */
+  detectedEvent?: string | null;
 }
 
 export interface RequestSummary {
@@ -30,6 +34,8 @@ export interface RequestSummary {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }
 
 /** A request from search/pagination (uses string id instead of _id). */
@@ -48,6 +54,8 @@ export interface ClickHouseRequest {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }
 
 /** Summary shape for ClickHouse results displayed in the sidebar list. */
@@ -61,6 +69,8 @@ export interface ClickHouseSummary {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }
 
 /** Union type for items in the request list. */

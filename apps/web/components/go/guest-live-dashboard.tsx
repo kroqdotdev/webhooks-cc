@@ -21,6 +21,7 @@ import {
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
 import { subscribeToEndpointRow, subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
+import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
 import { Check, Circle, Copy, Send } from "lucide-react";
 import { trackGuestEndpointCreated } from "@/lib/analytics";
@@ -35,26 +36,7 @@ const EXPIRY_MS = 12 * 60 * 60 * 1000;
 const COPY_FEEDBACK_MS = 2000;
 const SEND_FEEDBACK_MS = 3000;
 const DEMO_ENDPOINT_STORAGE_KEY = "demo_endpoint";
-const PROVIDER_PAYLOADS: Record<string, Record<string, unknown>> = {
-  stripe: {
-    id: "evt_1Example",
-    type: "checkout.session.completed",
-    data: {
-      object: { id: "cs_test_123", amount_total: 4999, currency: "usd", status: "complete" },
-    },
-  },
-  github: {
-    action: "opened",
-    pull_request: { number: 42, title: "Add webhook handler", user: { login: "octocat" } },
-  },
-  shopify: {
-    topic: "orders/create",
-    id: "820982911946154508",
-    total_price: "59.99",
-    currency: "USD",
-    line_items: [{ title: "Widget", quantity: 2, price: "29.99" }],
-  },
-};
+const DEMO_PROVIDER_SECRET = "mock_webhook_secret";
 
 const RequestList = dynamic(
   () => import("@/components/dashboard/request-list").then((module) => module.RequestList),
@@ -399,6 +381,8 @@ function GuestLiveDashboardInner() {
             contentType: r.contentType,
             size: r.size,
             receivedAt: r.receivedAt,
+            detectedProvider: r.detectedProvider,
+            detectedEvent: r.detectedEvent,
           })
         );
     }
@@ -415,6 +399,8 @@ function GuestLiveDashboardInner() {
         contentType: request.contentType,
         size: request.size,
         receivedAt: request.receivedAt,
+        detectedProvider: request.detectedProvider,
+        detectedEvent: request.detectedEvent,
       })
     );
   }, [requests, methodFilter, debouncedSearch]);
@@ -996,10 +982,40 @@ function DemoWaitingState({ url, onSent }: { url: string; onSent?: () => void })
   );
 
   const handleSendProvider = useCallback(
-    (provider: string) => {
-      void sendPayload(provider, PROVIDER_PAYLOADS[provider] ?? { provider, event: "test" });
+    (provider: "stripe" | "github" | "shopify") => {
+      const sendProviderTemplate = async () => {
+        setSending(true);
+        try {
+          const template = await buildTemplateRequest({
+            provider,
+            secret: DEMO_PROVIDER_SECRET,
+            targetUrl: url,
+          });
+
+          await fetch(url, {
+            method: template.method,
+            headers: {
+              ...template.headers,
+              [INTERNAL_TEST_SEND_HEADER]: "1",
+            },
+            body: template.body,
+          });
+          setSent(true);
+        } catch {
+          // CORS may block the response but the request still reaches the receiver.
+          setSent(true);
+        } finally {
+          if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
+          sentTimeoutRef.current = setTimeout(() => setSent(false), SEND_FEEDBACK_MS);
+          setSending(false);
+          setTimeout(() => onSent?.(), 150);
+          setTimeout(() => onSent?.(), 500);
+        }
+      };
+
+      void sendProviderTemplate();
     },
-    [sendPayload]
+    [onSent, url]
   );
 
   return (
@@ -1035,7 +1051,9 @@ function DemoWaitingState({ url, onSent }: { url: string; onSent?: () => void })
               {["Stripe", "GitHub", "Shopify"].map((provider) => (
                 <button
                   key={provider}
-                  onClick={() => handleSendProvider(provider.toLowerCase())}
+                  onClick={() =>
+                    handleSendProvider(provider.toLowerCase() as "stripe" | "github" | "shopify")
+                  }
                   disabled={sending}
                   className="neo-btn-outline text-sm py-2 px-4 cursor-pointer"
                 >

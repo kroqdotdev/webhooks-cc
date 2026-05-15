@@ -4,6 +4,8 @@ import {
   parseFormBody,
   parseBody,
   extractJsonField,
+  detectWebhookInfo,
+  detectWebhookProvider,
   isStripeWebhook,
   isGitHubWebhook,
   isShopifyWebhook,
@@ -16,6 +18,7 @@ import {
   isClerkWebhook,
   isVercelWebhook,
   isGitLabWebhook,
+  isTypeformWebhook,
   isStandardWebhook,
 } from "../helpers";
 import type { Request } from "../types";
@@ -313,6 +316,18 @@ describe("isGitLabWebhook", () => {
   });
 });
 
+describe("isTypeformWebhook", () => {
+  it("returns true when typeform-signature header is present", () => {
+    expect(
+      isTypeformWebhook(makeRequest({ headers: { "typeform-signature": "sha256=abc123" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without typeform-signature header", () => {
+    expect(isTypeformWebhook(makeRequest())).toBe(false);
+  });
+});
+
 describe("isStandardWebhook", () => {
   it("detects all three Standard Webhooks headers", () => {
     expect(
@@ -357,5 +372,150 @@ describe("isStandardWebhook", () => {
 
   it("returns false without headers", () => {
     expect(isStandardWebhook(makeRequest())).toBe(false);
+  });
+});
+
+describe("detectWebhookProvider", () => {
+  it("returns null when no provider matches", () => {
+    expect(detectWebhookProvider(makeRequest())).toBeNull();
+  });
+
+  it("prefers clerk over generic standard-webhooks detection", () => {
+    expect(
+      detectWebhookProvider(
+        makeRequest({
+          headers: {
+            "svix-id": "msg_123",
+            "svix-timestamp": "1700000000",
+            "svix-signature": "v1,abc",
+            "webhook-id": "msg_123",
+            "webhook-timestamp": "1700000000",
+            "webhook-signature": "v1,abc",
+          },
+        })
+      )
+    ).toBe("clerk");
+  });
+
+  it("detects github from the signature header even if the event header is missing", () => {
+    expect(
+      detectWebhookProvider(
+        makeRequest({
+          headers: {
+            "x-hub-signature-256": "sha256=abc123",
+          },
+        })
+      )
+    ).toBe("github");
+  });
+
+  it("detects sendgrid from the request body", () => {
+    expect(
+      detectWebhookProvider(
+        makeRequest({
+          body: '[{"sg_event_id":"abc123","event":"delivered","email":"test@example.com"}]',
+        })
+      )
+    ).toBe("sendgrid");
+  });
+});
+
+describe("detectWebhookInfo", () => {
+  it("extracts header-based event names", () => {
+    expect(
+      detectWebhookInfo(
+        makeRequest({
+          headers: {
+            "x-github-event": "pull_request",
+          },
+          body: '{"action":"opened"}',
+        })
+      )
+    ).toEqual({
+      provider: "github",
+      event: "pull_request",
+      via: "header",
+      matchedOn: "x-github-event",
+    });
+  });
+
+  it("extracts body-based event names", () => {
+    expect(
+      detectWebhookInfo(
+        makeRequest({
+          headers: {
+            "stripe-signature": "t=123,v1=abc",
+          },
+          body: '{"type":"checkout.session.completed"}',
+        })
+      )
+    ).toEqual({
+      provider: "stripe",
+      event: "checkout.session.completed",
+      via: "header",
+      matchedOn: "stripe-signature",
+    });
+  });
+
+  it("normalizes gitlab hook names into event identifiers", () => {
+    expect(
+      detectWebhookInfo(
+        makeRequest({
+          headers: {
+            "x-gitlab-event": "Merge Request Hook",
+            "x-gitlab-token": "secret",
+          },
+        })
+      )
+    ).toEqual({
+      provider: "gitlab",
+      event: "merge_request",
+      via: "header",
+      matchedOn: "x-gitlab-event",
+    });
+  });
+
+  it("extracts sendgrid event names from the first body item", () => {
+    expect(
+      detectWebhookInfo(
+        makeRequest({
+          body: '[{"sg_event_id":"abc123","event":"bounce","email":"test@example.com"}]',
+        })
+      )
+    ).toEqual({
+      provider: "sendgrid",
+      event: "bounce",
+      via: "body",
+      matchedOn: "body[].sg_event_id",
+    });
+  });
+
+  it("extracts Typeform event names from the request body", () => {
+    expect(
+      detectWebhookInfo(
+        makeRequest({
+          headers: {
+            "typeform-signature": "sha256=abc123",
+          },
+          body: '{"event_type":"form_response","form_response":{"token":"abc"}}',
+        })
+      )
+    ).toEqual({
+      provider: "typeform",
+      event: "form_response",
+      via: "header",
+      matchedOn: "typeform-signature",
+    });
+  });
+
+  it("returns null when no provider matches", () => {
+    expect(
+      detectWebhookInfo(
+        makeRequest({
+          headers: { "content-type": "application/json" },
+          body: '{"ok":true}',
+        })
+      )
+    ).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
+import { deriveWebhookDetection } from "@/lib/webhook-detection";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -20,6 +21,8 @@ export interface SearchRequestRecord {
   ip: string;
   size: number;
   receivedAt: number;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }
 
 export interface SearchRequestsInput {
@@ -81,18 +84,28 @@ function normalizeTimestamp(value: number | undefined): number | null {
 }
 
 function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
+  const headers = asStringRecord(row.headers);
+  const body = row.body ?? undefined;
+  const detection = deriveWebhookDetection({
+    headers,
+    body,
+    contentType: row.content_type ?? undefined,
+  });
+
   return {
     id: row.id,
     slug: row.slug,
     method: row.method,
     path: row.path,
-    headers: asStringRecord(row.headers),
-    body: row.body ?? undefined,
+    headers,
+    body,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
     size: row.size,
     receivedAt: row.received_at,
+    detectedProvider: detection.detectedProvider,
+    detectedEvent: detection.detectedEvent,
   };
 }
 

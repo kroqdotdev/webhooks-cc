@@ -5,8 +5,8 @@ pub mod verification;
 
 use axum::Router;
 use axum::routing::{any, get};
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tower_http::cors::{Any, CorsLayer};
@@ -42,14 +42,14 @@ fn init_otel(
     {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("failed to create OTLP span exporter: {e:?} — continuing without tracing export");
+            eprintln!(
+                "failed to create OTLP span exporter: {e:?} — continuing without tracing export"
+            );
             return None;
         }
     };
 
-    let hostname = gethostname::gethostname()
-        .to_string_lossy()
-        .into_owned();
+    let hostname = gethostname::gethostname().to_string_lossy().into_owned();
 
     let mut attrs = vec![
         KeyValue::new("service.name", "webhooks-receiver"),
@@ -59,7 +59,10 @@ fn init_otel(
         KeyValue::new("host.name", hostname),
     ];
     if let Some(key) = push_api_key {
-        attrs.push(KeyValue::new("appsignal.config.push_api_key", key.to_string()));
+        attrs.push(KeyValue::new(
+            "appsignal.config.push_api_key",
+            key.to_string(),
+        ));
     }
 
     let provider = SdkTracerProvider::builder()
@@ -87,9 +90,8 @@ async fn main() {
 
     // Initialize tracing — stdout + rotating log file + optional OTel
     let log_level = if config.debug { "debug" } else { "info" };
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        format!("webhooks_receiver={log_level},tower_http={log_level}").into()
-    });
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| format!("webhooks_receiver={log_level},tower_http={log_level}").into());
 
     let log_dir = std::path::Path::new(&config.log_dir);
     std::fs::create_dir_all(log_dir).expect("failed to create log directory");
@@ -115,7 +117,13 @@ async fn main() {
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         registry.with(otel_layer).init();
     } else {
-        registry.with(Option::<tracing_opentelemetry::OpenTelemetryLayer<_, opentelemetry_sdk::trace::Tracer>>::None).init();
+        registry
+            .with(
+                Option::<
+                    tracing_opentelemetry::OpenTelemetryLayer<_, opentelemetry_sdk::trace::Tracer>,
+                >::None,
+            )
+            .init();
     }
 
     // Connect to Postgres
@@ -156,7 +164,9 @@ async fn main() {
                             None
                         }
                         Err(_) => {
-                            tracing::warn!("Redis connection timed out (2s), using in-memory fallback");
+                            tracing::warn!(
+                                "Redis connection timed out (2s), using in-memory fallback"
+                            );
                             None
                         }
                     }
@@ -185,26 +195,17 @@ async fn main() {
         .allow_headers(Any);
 
     // Public routes: webhook capture + health
-    let app = Router::new()
-        .route("/health", get(handlers::health::health))
-        .route(
-            "/w/{slug}/{*path}",
-            any(handlers::webhook::handle_webhook),
-        )
-        .route(
-            "/w/{slug}",
-            any(handlers::webhook::handle_webhook_no_path),
-        )
-        .layer(public_cors)
-        .layer(RequestBodyLimitLayer::new(config.max_body_size))
-        .layer(
-            TraceLayer::new_for_http()
-                .on_response(
-                    tower_http::trace::DefaultOnResponse::new()
-                        .level(tracing::Level::DEBUG),
-                ),
-        )
-        .with_state(state);
+    let app =
+        Router::new()
+            .route("/health", get(handlers::health::health))
+            .route("/w/{slug}/{*path}", any(handlers::webhook::handle_webhook))
+            .route("/w/{slug}", any(handlers::webhook::handle_webhook_no_path))
+            .layer(public_cors)
+            .layer(RequestBodyLimitLayer::new(config.max_body_size))
+            .layer(TraceLayer::new_for_http().on_response(
+                tower_http::trace::DefaultOnResponse::new().level(tracing::Level::DEBUG),
+            ))
+            .with_state(state);
 
     // Start server
     let addr = format!("0.0.0.0:{}", config.port);

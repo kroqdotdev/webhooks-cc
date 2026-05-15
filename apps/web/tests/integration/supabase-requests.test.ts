@@ -99,10 +99,47 @@ describe("Supabase Requests Integration", () => {
     expect(listed?.[0].id).toBe(recentId);
     expect(listed?.[0].endpointId).toBe(testEndpointId);
     expect(listed?.[0].queryParams).toEqual({ page: "1" });
+    expect(listed?.[0].detectedProvider).toBeNull();
+    expect(listed?.[0].detectedEvent).toBeNull();
 
     const fetched = await getRequestByIdForUser(testUserId, recentId);
     expect(fetched?.path).toBe("/recent");
     expect(fetched?.contentType).toBe("application/json");
+    expect(fetched?.detectedProvider).toBeNull();
+    expect(fetched?.detectedEvent).toBeNull();
+  });
+
+  it("derives detected provider and event from stored request headers/body", async () => {
+    await clearRequestsForEndpointByUser({
+      userId: testUserId,
+      slug: testEndpointSlug,
+    });
+
+    const { data, error } = await admin
+      .from("requests")
+      .insert({
+        endpoint_id: testEndpointId,
+        user_id: testUserId,
+        method: "POST",
+        path: "/stripe",
+        headers: { "stripe-signature": "t=123,v1=abc" },
+        body: '{"type":"checkout.session.completed"}',
+        query_params: {},
+        content_type: "application/json",
+        ip: "127.0.0.1",
+        size: 37,
+        received_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    const request = await getRequestByIdForUser(testUserId, data.id);
+    expect(request?.detectedProvider).toBe("stripe");
+    expect(request?.detectedEvent).toBe("checkout.session.completed");
   });
 
   it("paginates requests with an opaque cursor", async () => {

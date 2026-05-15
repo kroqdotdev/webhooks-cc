@@ -1,6 +1,7 @@
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
+import { deriveWebhookDetection } from "@/lib/webhook-detection";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const PRO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -46,6 +47,8 @@ export interface RequestRecord {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  detectedProvider?: string | null;
+  detectedEvent?: string | null;
 }
 
 export interface PaginatedRequestPage {
@@ -77,23 +80,48 @@ function asStringRecord(value: Json): Record<string, string> {
  * Convert Postgres bytea to base64.
  *
  * PostgREST returns hex with prefix: "\\x808182"
- * Supabase Realtime (via wal2json) returns hex without prefix: "808182"
+ * Supabase Realtime (via wal2json) can return hex without prefix: "808182"
+ * or a double-encoded bytea text representation: "\\x383038313832"
  *
  * Both are normalized to base64.
  */
 export function byteaToBase64(value: string): string {
   const hex = value.startsWith("\\x") ? value.slice(2) : value;
-  return Buffer.from(hex, "hex").toString("base64");
+  const bytes = Buffer.from(hex, "hex");
+
+  // Realtime can serialize bytea as the text representation of the hex value,
+  // then encode that string as bytea again. Since body_raw is only stored for
+  // non-UTF-8 payloads, an all-hex ASCII first decode is safe to unwrap.
+  if (bytes.length > 0 && bytes.length % 2 === 0 && isAsciiHex(bytes)) {
+    return Buffer.from(bytes.toString("ascii"), "hex").toString("base64");
+  }
+
+  return bytes.toString("base64");
+}
+
+function isAsciiHex(bytes: Buffer): boolean {
+  return bytes.every(
+    (byte) =>
+      (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 70) || (byte >= 97 && byte <= 102)
+  );
 }
 
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {
+  const headers = asStringRecord(row.headers);
+  const body = row.body ?? undefined;
+  const detection = deriveWebhookDetection({
+    headers,
+    body,
+    contentType: row.content_type ?? undefined,
+  });
+
   return {
     id: row.id,
     endpointId: row.endpoint_id,
     method: row.method,
     path: row.path,
-    headers: asStringRecord(row.headers),
-    body: row.body ?? undefined,
+    headers,
+    body,
     bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
@@ -103,6 +131,8 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     signatureVerified: row.signature_verified ?? null,
     signatureError: row.signature_error ?? null,
     signingProvider: row.signing_provider ?? null,
+    detectedProvider: detection.detectedProvider,
+    detectedEvent: detection.detectedEvent,
   };
 }
 

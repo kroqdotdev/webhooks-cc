@@ -12,6 +12,7 @@ import {
   verifySlackSignature,
   verifyStandardWebhookSignature,
   verifyStripeSignature,
+  verifyTypeformSignature,
   verifyTwilioSignature,
   verifyVercelSignature,
 } from "../index";
@@ -326,6 +327,39 @@ describe("signature verification", () => {
           headers: { "X-Gitlab-Token": built.headers["x-gitlab-token"] },
         },
         { provider: "gitlab", secret: "gitlab_secret_token" }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("verifies Typeform signatures via HMAC-SHA256 round-trip", async () => {
+    const built = await client.buildRequest("https://example.com/webhooks/typeform", {
+      provider: "typeform",
+      secret: "typeform_secret",
+      body: { event_type: "form_response", form_response: { token: "abc" } },
+    });
+
+    expect(
+      await verifyTypeformSignature(
+        built.body,
+        built.headers["typeform-signature"],
+        "typeform_secret"
+      )
+    ).toBe(true);
+    expect(
+      await verifyTypeformSignature(
+        `${built.body} `,
+        built.headers["typeform-signature"],
+        "typeform_secret"
+      )
+    ).toBe(false);
+
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "Typeform-Signature": built.headers["typeform-signature"] },
+        },
+        { provider: "typeform", secret: "typeform_secret" }
       )
     ).resolves.toEqual({ valid: true });
   });

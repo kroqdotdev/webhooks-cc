@@ -11,6 +11,7 @@ import {
   verifyClerkSignature,
   verifyVercelSignature,
   verifyGitLabSignature,
+  verifyTypeformSignature,
   verifySignature,
 } from "../verify";
 
@@ -911,6 +912,35 @@ describe("GitLab templates", () => {
   });
 });
 
+// ─── Typeform ───────────────────────────────────────────────────────────
+
+describe("Typeform templates", () => {
+  const TYPEFORM_TEMPLATES = ["form_response", "partial_response", "payment"] as const;
+
+  for (const template of TYPEFORM_TEMPLATES) {
+    describe(`template: ${template}`, () => {
+      it("produces a Typeform response payload", async () => {
+        const result = await buildTemplate("typeform", { template });
+        const body = parseBody(result.body) as Record<string, unknown>;
+
+        expect(result.headers["content-type"]).toBe("application/json");
+        expect(body).toHaveProperty("event_id");
+        expect(body).toHaveProperty("event_type");
+        expect(body).toHaveProperty("form_response");
+      });
+
+      it("has a valid typeform-signature header", async () => {
+        const result = await buildTemplate("typeform", { template });
+        const signature = getHeader(result.headers, "typeform-signature");
+
+        expect(signature).toMatch(/^sha256=[A-Za-z0-9+/=]+$/);
+        expect(await verifyTypeformSignature(result.body, signature, TEST_SECRET)).toBe(true);
+        expect(await verifyTypeformSignature(result.body, signature, "wrong_secret")).toBe(false);
+      });
+    });
+  }
+});
+
 // ─── Cross-cutting: verifySignature dispatcher ─────────────────────────
 
 describe("verifySignature dispatcher for all signed providers", () => {
@@ -927,6 +957,7 @@ describe("verifySignature dispatcher for all signed providers", () => {
     { provider: "clerk" as const, secret: CLERK_SECRET },
     { provider: "vercel" as const, secret: TEST_SECRET },
     { provider: "gitlab" as const, secret: TEST_SECRET },
+    { provider: "typeform" as const, secret: TEST_SECRET },
   ] as const;
 
   for (const providerConfig of signedProviders) {
@@ -968,6 +999,7 @@ describe("cross-cutting template properties", () => {
     "discord",
     "vercel",
     "gitlab",
+    "typeform",
   ] as const;
 
   for (const provider of ALL_PROVIDERS) {
@@ -1003,6 +1035,7 @@ describe("cross-cutting template properties", () => {
       expect(getHeader(result.headers, "linear-signature")).toBeUndefined();
       expect(getHeader(result.headers, "x-vercel-signature")).toBeUndefined();
       expect(getHeader(result.headers, "x-gitlab-token")).toBeUndefined();
+      expect(getHeader(result.headers, "typeform-signature")).toBeUndefined();
     }
   });
 });
