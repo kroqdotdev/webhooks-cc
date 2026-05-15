@@ -15,13 +15,26 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.19.1";
+export const APP_VERSION = "0.20.0";
 export const CLI_VERSION = "1.1.0";
 export const SDK_VERSION = "1.5.0";
 export const MCP_VERSION = "1.4.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.20.0",
+    date: "2026-05-15",
+    title: "Provider Auto-Detect & Typeform Support",
+    track: "web",
+    items: [
+      "Dashboard auto-detects the webhook provider from headers and payload and renders a colored provider badge on each request",
+      "Provider icons (Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, and more) across the request list and detail panes",
+      "Typeform added to provider templates and signature verification — configure on any endpoint",
+      "Hardened signing configuration invariants: partial or stale provider state is no longer possible, eliminating a class of silent verification failures",
+      "Refreshed provider docs, ngrok and webhook.site comparison guides, signature verification guide, and MCP tools reference",
+    ],
+  },
   {
     version: "0.19.1",
     date: "2026-04-16",
