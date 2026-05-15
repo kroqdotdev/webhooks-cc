@@ -170,7 +170,10 @@ export function parseBody(request: WebhookLike): ParsedBody {
  * Extract a nested JSON field from the request body using dot notation.
  * Returns undefined if the body is missing, invalid JSON, or the path is absent.
  */
-export function extractJsonField<T>(request: Pick<WebhookLike, "body">, path: string): T | undefined {
+export function extractJsonField<T>(
+  request: Pick<WebhookLike, "body">,
+  path: string
+): T | undefined {
   const body = parseJsonBody(request);
   if (body === undefined) {
     return undefined;
@@ -270,7 +273,9 @@ function getJsonObject(request: Pick<WebhookLike, "body">): Record<string, unkno
     : null;
 }
 
-function getJsonArrayFirstObject(request: Pick<WebhookLike, "body">): Record<string, unknown> | null {
+function getJsonArrayFirstObject(
+  request: Pick<WebhookLike, "body">
+): Record<string, unknown> | null {
   const parsed = parseJsonBody(request);
   if (!Array.isArray(parsed) || parsed.length === 0) {
     return null;

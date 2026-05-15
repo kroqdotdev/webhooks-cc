@@ -2,6 +2,7 @@ import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
 import { serverEnv } from "../env";
 import type { Database, Json } from "./database";
+import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 
 const MAX_SLUG_ATTEMPTS = 5;
 const nanoidSlug = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
@@ -27,6 +28,11 @@ type SelectedEndpointRow = Pick<
   signing_header?: string | null;
 };
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
+interface ExistingSigningConfigRow {
+  signing_provider: string | null;
+  signing_secret_encrypted: string | null;
+  signing_header: string | null;
+}
 
 export interface EndpointRecord {
   id: string;
@@ -355,6 +361,66 @@ export async function updateEndpointBySlugForUser({
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
+  let existingSigningProvider: string | null = null;
+  let existingSigningSecretEncrypted: string | null = null;
+  let existingSigningHeader: string | null = null;
+  const signingConfigTouched =
+    signingProvider !== undefined || signingSecret !== undefined || signingHeader !== undefined;
+  if (signingConfigTouched) {
+    const { data, error } = await admin
+      .from("endpoints")
+      .select("signing_provider, signing_secret_encrypted, signing_header")
+      .eq("user_id", userId)
+      .eq("slug", slug.toLowerCase())
+      .returns<ExistingSigningConfigRow>()
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    const row = data as ExistingSigningConfigRow | null;
+    if (!row) {
+      return null;
+    }
+
+    existingSigningProvider = row.signing_provider;
+    existingSigningSecretEncrypted = row.signing_secret_encrypted;
+    existingSigningHeader = row.signing_header;
+  }
+
+  const nextSigningProvider =
+    signingProvider === undefined ? existingSigningProvider : signingProvider;
+  const signingProviderChanged =
+    signingProvider !== undefined && signingProvider !== existingSigningProvider;
+  const hasNewSigningSecret =
+    signingSecret !== undefined && signingSecret !== null && signingSecret !== "";
+  const hasStoredSecretForSelectedProvider =
+    !signingProviderChanged && !!existingSigningSecretEncrypted;
+
+  if (nextSigningProvider && signingSecret === null) {
+    throw new Error("Cannot clear signing secret while signature verification is enabled");
+  }
+
+  if (nextSigningProvider && !isValidSigningProvider(nextSigningProvider)) {
+    throw new Error("Invalid signing provider");
+  }
+
+  if (!nextSigningProvider && hasNewSigningSecret) {
+    throw new Error("Signing provider is required before saving a signing secret");
+  }
+
+  if (nextSigningProvider && !hasNewSigningSecret && !hasStoredSecretForSelectedProvider) {
+    throw new Error("Signing secret is required when configuring a signing provider");
+  }
+
+  if (nextSigningProvider === "generic-hmac") {
+    const nextSigningHeader = signingHeader === undefined ? existingSigningHeader : signingHeader;
+    if (!isValidSigningHeaderName(nextSigningHeader)) {
+      throw new Error("Generic HMAC requires a signing header");
+    }
+  }
+
   const updates: EndpointUpdate = {};
   if (name !== undefined) {
     updates.name = name;
@@ -387,7 +453,9 @@ export async function updateEndpointBySlugForUser({
         updates.signing_secret_encrypted = null;
       }
       if (signingHeader !== undefined) {
-        updates.signing_header = signingHeader || null;
+        updates.signing_header = signingProvider === "generic-hmac" ? signingHeader || null : null;
+      } else if (signingProvider !== "generic-hmac") {
+        updates.signing_header = null;
       }
     }
   } else {
@@ -399,8 +467,10 @@ export async function updateEndpointBySlugForUser({
     } else if (signingSecret === null) {
       updates.signing_secret_encrypted = null;
     }
-    if (signingHeader !== undefined) {
+    if (signingHeader !== undefined && nextSigningProvider === "generic-hmac") {
       updates.signing_header = signingHeader || null;
+    } else if (signingHeader !== undefined && nextSigningProvider !== "generic-hmac") {
+      updates.signing_header = null;
     }
   }
 

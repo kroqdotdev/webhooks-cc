@@ -49,6 +49,7 @@ describe("provider-catalog", () => {
   test("returns provider-specific UI metadata", () => {
     expect(getWebProviderInfo("discord")).toMatchObject({
       label: "Discord",
+      icon: { glyph: "discord", text: "DC" },
       algorithm: "Ed25519",
       header: "x-signature-ed25519",
       verificationMode: "publicKey",
@@ -60,8 +61,23 @@ describe("provider-catalog", () => {
     });
     expect(getWebProviderInfo("generic-hmac")).toMatchObject({
       label: "Generic HMAC",
+      icon: { glyph: "generic-hmac", text: "HM" },
       verificationMode: "secret",
     });
+  });
+
+  test("assigns drawable glyphs for every visible provider badge", () => {
+    const visibleProviders = [
+      ...WEB_TEMPLATE_PROVIDER_OPTIONS.map((provider) => provider.id),
+      "generic-hmac",
+    ];
+
+    for (const provider of visibleProviders) {
+      const providerInfo = getWebProviderInfo(provider);
+
+      expect(providerInfo?.icon.glyph).toBe(provider);
+      expect(providerInfo?.icon.text).toMatch(/^[A-Z]{2}$/);
+    }
   });
 
   test("returns labels for known providers and null for unknown ones", () => {

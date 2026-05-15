@@ -98,6 +98,7 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
           "discord",
           "vercel",
           "gitlab",
+          "typeform",
           "standard-webhooks",
         ]),
       get: vi.fn((provider: string) => ({ provider, templates: [], secretRequired: true })),
@@ -207,6 +208,15 @@ describe("registerTools", () => {
     expect(parseJsonResult(result)).toEqual([
       { provider: "stripe", templates: [], secretRequired: true },
     ]);
+  });
+
+  it("exposes Typeform in provider template listings", async () => {
+    const tools = getRegisteredTools(createMockClient());
+    const result = await tools.list_provider_templates.handler({});
+
+    expect(
+      parseJsonResult(result).map((provider: { provider: string }) => provider.provider)
+    ).toEqual(expect.arrayContaining(["typeform"]));
   });
 
   it("returns preview_webhook output from buildRequest", async () => {

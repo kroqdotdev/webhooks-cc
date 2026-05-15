@@ -7,8 +7,19 @@ import {
 
 export type WebProviderId = TemplateProvider | "generic-hmac";
 
+export type WebProviderIconGlyph = WebProviderId;
+
+export interface WebProviderIcon {
+  glyph: WebProviderIconGlyph;
+  text: string;
+  background: string;
+  foreground: string;
+  border: string;
+}
+
 export interface WebProviderInfo {
   label: string;
+  icon: WebProviderIcon;
   algorithm: string;
   header: string;
   secretPlaceholder: string;
@@ -49,6 +60,107 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   "standard-webhooks": "whsec_...",
 };
 
+const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
+  stripe: {
+    glyph: "stripe",
+    text: "ST",
+    background: "#635bff",
+    foreground: "#ffffff",
+    border: "#4f46e5",
+  },
+  github: {
+    glyph: "github",
+    text: "GH",
+    background: "#24292f",
+    foreground: "#ffffff",
+    border: "#111827",
+  },
+  shopify: {
+    glyph: "shopify",
+    text: "SH",
+    background: "#95bf47",
+    foreground: "#17210b",
+    border: "#5e8e3e",
+  },
+  twilio: {
+    glyph: "twilio",
+    text: "TW",
+    background: "#f22f46",
+    foreground: "#ffffff",
+    border: "#b91c1c",
+  },
+  slack: {
+    glyph: "slack",
+    text: "SL",
+    background: "#f8fafc",
+    foreground: "#111827",
+    border: "#cbd5e1",
+  },
+  paddle: {
+    glyph: "paddle",
+    text: "PD",
+    background: "#4b28ff",
+    foreground: "#ffffff",
+    border: "#3217b8",
+  },
+  linear: {
+    glyph: "linear",
+    text: "LN",
+    background: "#5e6ad2",
+    foreground: "#ffffff",
+    border: "#4338ca",
+  },
+  sendgrid: {
+    glyph: "sendgrid",
+    text: "SG",
+    background: "#1a82e2",
+    foreground: "#ffffff",
+    border: "#075985",
+  },
+  clerk: {
+    glyph: "clerk",
+    text: "CK",
+    background: "#6c47ff",
+    foreground: "#ffffff",
+    border: "#4c1d95",
+  },
+  discord: {
+    glyph: "discord",
+    text: "DC",
+    background: "#5865f2",
+    foreground: "#ffffff",
+    border: "#3730a3",
+  },
+  vercel: {
+    glyph: "vercel",
+    text: "VC",
+    background: "#111111",
+    foreground: "#ffffff",
+    border: "#000000",
+  },
+  gitlab: {
+    glyph: "gitlab",
+    text: "GL",
+    background: "#fc6d26",
+    foreground: "#111827",
+    border: "#c2410c",
+  },
+  typeform: {
+    glyph: "typeform",
+    text: "TF",
+    background: "#111111",
+    foreground: "#ffffff",
+    border: "#facc15",
+  },
+  "standard-webhooks": {
+    glyph: "standard-webhooks",
+    text: "SW",
+    background: "#f8fafc",
+    foreground: "#0f172a",
+    border: "#64748b",
+  },
+};
+
 function formatAlgorithm(value: string | undefined): string {
   if (!value) {
     return "Not applicable";
@@ -72,8 +184,8 @@ export const WEB_PROVIDER_CATALOG: Record<WebProviderId, WebProviderInfo> = {
         provider,
         {
           label: PROVIDER_LABELS[provider],
-          algorithm:
-            provider === "discord" ? "Ed25519" : formatAlgorithm(signatureAlgorithm),
+          icon: PROVIDER_ICONS[provider],
+          algorithm: provider === "discord" ? "Ed25519" : formatAlgorithm(signatureAlgorithm),
           header: provider === "discord" ? "x-signature-ed25519" : (signatureHeader ?? ""),
           secretPlaceholder: SECRET_PLACEHOLDERS[provider],
           verificationMode:
@@ -88,6 +200,13 @@ export const WEB_PROVIDER_CATALOG: Record<WebProviderId, WebProviderInfo> = {
   ),
   "generic-hmac": {
     label: "Generic HMAC",
+    icon: {
+      glyph: "generic-hmac",
+      text: "HM",
+      background: "#f59e0b",
+      foreground: "#111827",
+      border: "#92400e",
+    },
     algorithm: "HMAC-SHA256",
     header: "",
     secretPlaceholder: "your shared secret",

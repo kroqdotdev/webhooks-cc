@@ -352,6 +352,14 @@ describe("WebhooksCC", () => {
         signatureHeader: "webhook-signature",
         signatureAlgorithm: "hmac-sha256",
       });
+      expect(TEMPLATE_METADATA["typeform"]).toEqual({
+        provider: "typeform",
+        templates: ["form_response", "partial_response", "payment"],
+        defaultTemplate: "form_response",
+        secretRequired: true,
+        signatureHeader: "typeform-signature",
+        signatureAlgorithm: "hmac-sha256",
+      });
     });
   });
 

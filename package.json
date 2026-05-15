@@ -11,6 +11,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "turbo test",
+    "test:full": "pnpm typecheck && pnpm build && make test && pnpm --filter web test:integration && PLAYWRIGHT_USE_PROD_SERVER=1 pnpm --filter web test:e2e",
     "typecheck": "turbo typecheck",
     "cli": "cd apps/cli-rs && cargo run --",
     "start": "mprocs --config mprocs.yaml"

@@ -97,16 +97,45 @@ describe("Signature Verification Integration", () => {
     ).toBeUndefined();
   });
 
-  it("PATCH: update provider without re-entering secret", async () => {
+  it("PATCH: keeps the existing secret when the provider is unchanged", async () => {
     const updated = await updateEndpointBySlugForUser({
       userId: testUserId,
       slug: testEndpointSlug,
-      signingProvider: "github",
+      signingProvider: "stripe",
     });
 
-    expect(updated!.signingProvider).toBe("github");
+    expect(updated!.signingProvider).toBe("stripe");
     // Secret should still be present from previous config
     expect(updated!.hasSigningSecret).toBe(true);
+  });
+
+  it("PATCH: rejects provider changes without a fresh secret", async () => {
+    await expect(
+      updateEndpointBySlugForUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        signingProvider: "github",
+      })
+    ).rejects.toThrow(/Signing secret is required/);
+
+    const endpoint = await getEndpointBySlugForUser(testUserId, testEndpointSlug);
+    expect(endpoint!.signingProvider).toBe("stripe");
+    expect(endpoint!.hasSigningSecret).toBe(true);
+  });
+
+  it("PATCH: rejects providers that do not support receiver verification", async () => {
+    await expect(
+      updateEndpointBySlugForUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        signingProvider: "sendgrid",
+        signingSecret: "sendgrid_has_no_signing_secret",
+      })
+    ).rejects.toThrow(/Invalid signing provider/);
+
+    const endpoint = await getEndpointBySlugForUser(testUserId, testEndpointSlug);
+    expect(endpoint!.signingProvider).toBe("stripe");
+    expect(endpoint!.hasSigningSecret).toBe(true);
   });
 
   it("PATCH: clear signing config with null provider", async () => {
@@ -121,6 +150,17 @@ describe("Signature Verification Integration", () => {
     expect(updated!.signingHeader).toBeNull();
   });
 
+  it("PATCH: rejects generic-hmac without a signing header", async () => {
+    await expect(
+      updateEndpointBySlugForUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        signingProvider: "generic-hmac",
+        signingSecret: "my_custom_secret",
+      })
+    ).rejects.toThrow(/Generic HMAC requires a signing header/);
+  });
+
   it("PATCH: configure generic-hmac with signing header", async () => {
     const updated = await updateEndpointBySlugForUser({
       userId: testUserId,
@@ -133,6 +173,19 @@ describe("Signature Verification Integration", () => {
     expect(updated!.signingProvider).toBe("generic-hmac");
     expect(updated!.hasSigningSecret).toBe(true);
     expect(updated!.signingHeader).toBe("x-my-signature");
+  });
+
+  it("PATCH: clears stale generic header when switching back to a named provider", async () => {
+    const updated = await updateEndpointBySlugForUser({
+      userId: testUserId,
+      slug: testEndpointSlug,
+      signingProvider: "stripe",
+      signingSecret: "whsec_reconfigured_secret",
+    });
+
+    expect(updated!.signingProvider).toBe("stripe");
+    expect(updated!.hasSigningSecret).toBe(true);
+    expect(updated!.signingHeader).toBeNull();
   });
 
   // ── Request verification fields ──

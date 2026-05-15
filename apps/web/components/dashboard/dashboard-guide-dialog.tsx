@@ -37,7 +37,9 @@ interface Section {
   content: React.ReactNode;
 }
 
-const SIGNATURE_PROVIDER_LIST = WEB_VERIFICATION_PROVIDER_OPTIONS.map((provider) => provider.label).join(", ");
+const SIGNATURE_PROVIDER_LIST = WEB_VERIFICATION_PROVIDER_OPTIONS.map(
+  (provider) => provider.label
+).join(", ");
 
 const SECTIONS: Section[] = [
   {

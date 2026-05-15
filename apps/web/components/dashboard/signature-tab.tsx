@@ -4,7 +4,11 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { ShieldCheck, ShieldAlert, Shield, Copy, Check, Loader2 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
-import { getWebProviderInfo, getWebProviderLabel, WEB_PROVIDER_CATALOG } from "@/lib/provider-catalog";
+import {
+  getWebProviderInfo,
+  getWebProviderLabel,
+  WEB_PROVIDER_CATALOG,
+} from "@/lib/provider-catalog";
 import type { DisplayableRequest } from "./request-detail";
 
 /** Parsed structured signature error from JSON string. */
@@ -299,7 +303,9 @@ function ClientSideVerification({
         {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
           <div className="space-y-1">
             <label htmlFor="sig-secret" className="font-bold uppercase tracking-wide text-xs">
-              {getWebProviderInfo(provider)?.verificationMode === "publicKey" ? "Public Key" : "Secret"}
+              {getWebProviderInfo(provider)?.verificationMode === "publicKey"
+                ? "Public Key"
+                : "Secret"}
             </label>
             <input
               id="sig-secret"

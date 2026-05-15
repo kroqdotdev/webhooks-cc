@@ -3,8 +3,8 @@
 //! Storage format: `[12-byte nonce][ciphertext][16-byte auth tag]`
 //! Stored as BYTEA in Postgres. Nonce generated randomly per encryption.
 
-use aes_gcm::aead::{Aead, KeyInit, Nonce};
 use aes_gcm::Aes256Gcm;
+use aes_gcm::aead::{Aead, KeyInit, Nonce};
 
 /// AES-256-GCM nonce size (96 bits).
 const NONCE_SIZE: usize = 12;
@@ -74,9 +74,7 @@ pub fn decrypt_secret_b64(encoded: &str, key: &[u8; 32]) -> Result<Vec<u8>, Cryp
 /// Returns `None` if the value is not valid base64 or not exactly 32 bytes.
 pub fn parse_signing_key(b64: &str) -> Option<[u8; 32]> {
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(b64)
-        .ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
     bytes.try_into().ok()
 }
 

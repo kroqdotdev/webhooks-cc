@@ -10,6 +10,7 @@ import { Settings, ShieldCheck } from "lucide-react";
 import { ResponseRulesEditor } from "./response-rules-editor";
 import type { ResponseRule } from "@/lib/dashboard-api";
 import { parseStatusCode } from "@/lib/http";
+import { isValidSigningHeaderName } from "@/lib/signing-config";
 import {
   deleteDashboardEndpoint,
   emitDashboardEndpointsChanged,
@@ -236,6 +237,7 @@ export const EndpointSettingsDialog = forwardRef<
   const [signingHeader, setSigningHeader] = useState(initialSigningHeader || "");
   const [hasSigningSecret, setHasSigningSecret] = useState(!!initialHasSigningSecret);
   const signingProviderInfo = getWebProviderInfo(signingProvider);
+  const initialSigningProviderValue = initialSigningProvider || "";
 
   useImperativeHandle(ref, () => ({ open: () => setOpen(true) }));
   const [isSaving, setIsSaving] = useState(false);
@@ -304,7 +306,22 @@ export const EndpointSettingsDialog = forwardRef<
       }
       // Signing config — only for owned endpoints
       if (initialNotificationUrl !== undefined) {
-        const providerChanged = signingProvider !== (initialSigningProvider || "");
+        const providerChanged = signingProvider !== initialSigningProviderValue;
+        const hasConfiguredSecretForSelectedProvider =
+          !providerChanged && hasSigningSecret && !signingSecret;
+
+        if (signingProvider && !signingSecret && !hasConfiguredSecretForSelectedProvider) {
+          const label =
+            signingProviderInfo?.verificationMode === "publicKey" ? "public key" : "signing secret";
+          throw new Error(`Enter a ${label} before enabling signature verification.`);
+        }
+
+        if (signingProvider === "generic-hmac" && !isValidSigningHeaderName(signingHeader)) {
+          throw new Error(
+            "Enter a signature header name using only letters, numbers, underscores, or hyphens."
+          );
+        }
+
         // When clearing provider, clear everything
         if (!signingProvider && initialSigningProvider) {
           updates.signingProvider = null;
@@ -313,6 +330,9 @@ export const EndpointSettingsDialog = forwardRef<
         } else {
           if (providerChanged) {
             updates.signingProvider = signingProvider || null;
+            if (signingProvider !== "generic-hmac") {
+              updates.signingHeader = null;
+            }
           }
           // Only send signingSecret when a new value was entered
           if (signingSecret) {
@@ -551,7 +571,21 @@ export const EndpointSettingsDialog = forwardRef<
                     <select
                       id="settings-signing-provider"
                       value={signingProvider}
-                      onChange={(e) => setSigningProvider(e.target.value)}
+                      onChange={(e) => {
+                        const nextProvider = e.target.value;
+                        setSigningProvider(nextProvider);
+                        setSigningSecret("");
+                        setHasSigningSecret(
+                          nextProvider === initialSigningProviderValue && !!initialHasSigningSecret
+                        );
+                        setSigningHeader(
+                          nextProvider === "generic-hmac"
+                            ? initialSigningProviderValue === "generic-hmac"
+                              ? (initialSigningHeader ?? "")
+                              : ""
+                            : ""
+                        );
+                      }}
                       className="neo-input w-full text-sm"
                     >
                       <option value="">None</option>

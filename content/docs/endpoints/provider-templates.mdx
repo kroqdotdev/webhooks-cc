@@ -363,11 +363,11 @@ Templates generate realistic payloads with correct headers and signatures. Use t
 
 **Signature:** HMAC-SHA256 over the raw JSON body, base64-encoded in `typeform-signature` header with a `sha256=` prefix.
 
-| Event              | Description                   |
-| ------------------ | ----------------------------- |
-| `form_response`    | Completed form submission     |
-| `partial_response` | Partial response submission   |
-| `payment`          | Form response with payment    |
+| Event              | Description                 |
+| ------------------ | --------------------------- |
+| `form_response`    | Completed form submission   |
+| `partial_response` | Partial response submission |
+| `payment`          | Form response with payment  |
 
 **Payload shape (form_response):**
 

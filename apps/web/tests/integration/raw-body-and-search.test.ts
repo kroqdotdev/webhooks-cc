@@ -84,6 +84,13 @@ describe("Raw Body Fidelity & Search", () => {
       expect(byteaToBase64("808182")).toBe("gIGC");
     });
 
+    it("converts Realtime double-encoded bytea text format", () => {
+      const original = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x80, 0x81, 0x82, 0xff]);
+      const realtimeValue = "\\x" + Buffer.from(original.toString("hex"), "ascii").toString("hex");
+
+      expect(byteaToBase64(realtimeValue)).toBe(original.toString("base64"));
+    });
+
     it("round-trips correctly", () => {
       const original = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x80, 0xff]);
       const hexWithPrefix = "\\x" + original.toString("hex");

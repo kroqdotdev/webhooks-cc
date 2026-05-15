@@ -80,13 +80,30 @@ function asStringRecord(value: Json): Record<string, string> {
  * Convert Postgres bytea to base64.
  *
  * PostgREST returns hex with prefix: "\\x808182"
- * Supabase Realtime (via wal2json) returns hex without prefix: "808182"
+ * Supabase Realtime (via wal2json) can return hex without prefix: "808182"
+ * or a double-encoded bytea text representation: "\\x383038313832"
  *
  * Both are normalized to base64.
  */
 export function byteaToBase64(value: string): string {
   const hex = value.startsWith("\\x") ? value.slice(2) : value;
-  return Buffer.from(hex, "hex").toString("base64");
+  const bytes = Buffer.from(hex, "hex");
+
+  // Realtime can serialize bytea as the text representation of the hex value,
+  // then encode that string as bytea again. Since body_raw is only stored for
+  // non-UTF-8 payloads, an all-hex ASCII first decode is safe to unwrap.
+  if (bytes.length > 0 && bytes.length % 2 === 0 && isAsciiHex(bytes)) {
+    return Buffer.from(bytes.toString("ascii"), "hex").toString("base64");
+  }
+
+  return bytes.toString("base64");
+}
+
+function isAsciiHex(bytes: Buffer): boolean {
+  return bytes.every(
+    (byte) =>
+      (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 70) || (byte >= 97 && byte <= 102)
+  );
 }
 
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {

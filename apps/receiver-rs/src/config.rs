@@ -35,15 +35,30 @@ impl std::fmt::Debug for Config {
             .field("log_dir", &self.log_dir)
             .field("pool_min", &self.pool_min)
             .field("pool_max", &self.pool_max)
-            .field("otel_collector_url", &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"))
-            .field("appsignal_push_api_key", &self.appsignal_push_api_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "otel_collector_url",
+                &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "appsignal_push_api_key",
+                &self.appsignal_push_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("notify_proxy_url", &self.notify_proxy_url)
-            .field("notify_secret", &self.notify_secret.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "notify_secret",
+                &self.notify_secret.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("redis_url", &self.redis_url.as_ref().map(|_| "[REDACTED]"))
             .field("max_body_size", &self.max_body_size)
-            .field("notification_cooldown_secs", &self.notification_cooldown_secs)
+            .field(
+                "notification_cooldown_secs",
+                &self.notification_cooldown_secs,
+            )
             .field("notification_timeout_secs", &self.notification_timeout_secs)
-            .field("signing_secret_key", &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "signing_secret_key",
+                &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("webhook_base_url", &self.webhook_base_url)
             .finish()
     }
@@ -79,15 +94,9 @@ impl Config {
         let appsignal_push_api_key = env::var("APPSIGNAL_PUSH_API_KEY")
             .ok()
             .filter(|v| !v.is_empty());
-        let notify_proxy_url = env::var("NOTIFY_PROXY_URL")
-            .ok()
-            .filter(|v| !v.is_empty());
-        let notify_secret = env::var("NOTIFY_SECRET")
-            .ok()
-            .filter(|v| !v.is_empty());
-        let redis_url = env::var("REDIS_URL")
-            .ok()
-            .filter(|v| !v.is_empty());
+        let notify_proxy_url = env::var("NOTIFY_PROXY_URL").ok().filter(|v| !v.is_empty());
+        let notify_secret = env::var("NOTIFY_SECRET").ok().filter(|v| !v.is_empty());
+        let redis_url = env::var("REDIS_URL").ok().filter(|v| !v.is_empty());
         let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
         let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
         let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);

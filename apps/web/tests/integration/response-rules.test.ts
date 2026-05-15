@@ -21,8 +21,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 if (!SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required");
 
-const API_KEY = process.env.WHK_API_KEY;
-if (!API_KEY) throw new Error("WHK_API_KEY env var required");
+const API_KEY = process.env.WHK_API_KEY ?? "";
 
 const RECEIVER_URL = "http://localhost:3001";
 const API_URL = "http://localhost:3000";
@@ -112,7 +111,7 @@ const SAMPLE_RULES = [
 
 const DEFAULT_MOCK = { status: 200, body: "default-fallback", headers: {} };
 
-describe("Conditional Response Rules", () => {
+describe.skipIf(!API_KEY)("Conditional Response Rules", () => {
   beforeAll(async () => {
     const { data, error } = await admin.auth.admin.createUser({
       email: TEST_EMAIL,

@@ -284,7 +284,11 @@ const MAX_GLOB_PATTERN_LEN: usize = 500;
 /// Supports `*` (any characters except `/`) and `**` (any characters including `/`).
 fn glob_match(pattern: &str, input: &str) -> bool {
     if pattern.len() > MAX_GLOB_PATTERN_LEN {
-        tracing::warn!(len = pattern.len(), max = MAX_GLOB_PATTERN_LEN, "glob pattern exceeds max length, skipping");
+        tracing::warn!(
+            len = pattern.len(),
+            max = MAX_GLOB_PATTERN_LEN,
+            "glob pattern exceeds max length, skipping"
+        );
         return false;
     }
     let regex_str = glob_to_regex(pattern);
@@ -408,7 +412,12 @@ mod tests {
         let query = HashMap::new();
         let ctx = make_ctx("POST", "/", &headers, "", &query);
 
-        let rules = vec![make_rule(vec![cond("method", "eq", Some("POST"))], 201, "matched", "and")];
+        let rules = vec![make_rule(
+            vec![cond("method", "eq", Some("POST"))],
+            201,
+            "matched",
+            "and",
+        )];
         let result = evaluate_rules(&rules, &ctx);
         assert!(result.is_some());
         assert_eq!(result.unwrap().status, 201);
@@ -420,7 +429,12 @@ mod tests {
         let query = HashMap::new();
         let ctx = make_ctx("post", "/", &headers, "", &query);
 
-        let rules = vec![make_rule(vec![cond("method", "eq", Some("POST"))], 201, "matched", "and")];
+        let rules = vec![make_rule(
+            vec![cond("method", "eq", Some("POST"))],
+            201,
+            "matched",
+            "and",
+        )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
 
@@ -430,7 +444,12 @@ mod tests {
         let query = HashMap::new();
         let ctx = make_ctx("GET", "/", &headers, "", &query);
 
-        let rules = vec![make_rule(vec![cond("method", "eq", Some("POST"))], 201, "matched", "and")];
+        let rules = vec![make_rule(
+            vec![cond("method", "eq", Some("POST"))],
+            201,
+            "matched",
+            "and",
+        )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
 
@@ -444,7 +463,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("path", "eq", Some("/webhooks/stripe"))],
-            200, "stripe", "and",
+            200,
+            "stripe",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -457,7 +478,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("path", "contains", Some("/stripe"))],
-            200, "stripe", "and",
+            200,
+            "stripe",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -470,7 +493,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("path", "starts_with", Some("/api/v2"))],
-            200, "v2", "and",
+            200,
+            "v2",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -483,7 +508,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("path", "matches", Some("/webhooks/*/events"))],
-            200, "events", "and",
+            200,
+            "events",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -492,11 +519,19 @@ mod tests {
     fn path_glob_double_star() {
         let headers = HashMap::new();
         let query = HashMap::new();
-        let ctx = make_ctx("POST", "/api/v1/webhooks/stripe/events", &headers, "", &query);
+        let ctx = make_ctx(
+            "POST",
+            "/api/v1/webhooks/stripe/events",
+            &headers,
+            "",
+            &query,
+        );
 
         let rules = vec![make_rule(
             vec![cond("path", "matches", Some("/api/**/events"))],
-            200, "deep", "and",
+            200,
+            "deep",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -511,7 +546,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_with_name("header", "exists", "stripe-signature", None)],
-            200, "stripe", "and",
+            200,
+            "stripe",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -524,15 +561,16 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_with_name("header", "exists", "stripe-signature", None)],
-            200, "stripe", "and",
+            200,
+            "stripe",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
 
     #[test]
     fn header_eq() {
-        let headers =
-            HashMap::from([("content-type".to_string(), "application/json".to_string())]);
+        let headers = HashMap::from([("content-type".to_string(), "application/json".to_string())]);
         let query = HashMap::new();
         let ctx = make_ctx("POST", "/", &headers, "", &query);
 
@@ -543,7 +581,9 @@ mod tests {
                 "Content-Type",
                 Some("application/json"),
             )],
-            200, "json", "and",
+            200,
+            "json",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -558,8 +598,15 @@ mod tests {
         let ctx = make_ctx("POST", "/", &headers, "", &query);
 
         let rules = vec![make_rule(
-            vec![cond_with_name("header", "contains", "user-agent", Some("GitHub"))],
-            200, "github", "and",
+            vec![cond_with_name(
+                "header",
+                "contains",
+                "user-agent",
+                Some("GitHub"),
+            )],
+            200,
+            "github",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -575,7 +622,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("body_contains", "contains", Some("invoice.paid"))],
-            200, "invoice", "and",
+            200,
+            "invoice",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -589,7 +638,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("body_contains", "contains", Some("invoice.paid"))],
-            200, "invoice", "and",
+            200,
+            "invoice",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -605,7 +656,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("eq", "type", Some("invoice.paid"))],
-            200, "invoice", "and",
+            200,
+            "invoice",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -619,7 +672,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("eq", "data.object.status", Some("active"))],
-            200, "active", "and",
+            200,
+            "active",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -633,7 +688,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("eq", "items.1.sku", Some("def"))],
-            200, "second", "and",
+            200,
+            "second",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -647,7 +704,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("exists", "metadata.key", None)],
-            200, "exists", "and",
+            200,
+            "exists",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -661,7 +720,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("exists", "metadata.key", None)],
-            200, "exists", "and",
+            200,
+            "exists",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -675,7 +736,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("contains", "message", Some("Stripe"))],
-            200, "stripe", "and",
+            200,
+            "stripe",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -689,7 +752,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("eq", "amount", Some("1500"))],
-            200, "amount", "and",
+            200,
+            "amount",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -703,7 +768,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("eq", "paid", Some("true"))],
-            200, "paid", "and",
+            200,
+            "paid",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -717,7 +784,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_body_path("eq", "type", Some("test"))],
-            200, "fail", "and",
+            200,
+            "fail",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -732,7 +801,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_with_name("query", "exists", "source", None)],
-            200, "has source", "and",
+            200,
+            "has source",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -745,7 +816,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_with_name("query", "eq", "source", Some("stripe"))],
-            200, "stripe source", "and",
+            200,
+            "stripe source",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -758,7 +831,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond_with_name("query", "eq", "source", Some("stripe"))],
-            200, "stripe", "and",
+            200,
+            "stripe",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -767,8 +842,7 @@ mod tests {
 
     #[test]
     fn and_logic_all_match() {
-        let headers =
-            HashMap::from([("content-type".to_string(), "application/json".to_string())]);
+        let headers = HashMap::from([("content-type".to_string(), "application/json".to_string())]);
         let query = HashMap::new();
         let body = r#"{"type": "invoice.paid"}"#;
         let ctx = make_ctx("POST", "/webhooks", &headers, body, &query);
@@ -779,7 +853,9 @@ mod tests {
                 cond("path", "eq", Some("/webhooks")),
                 cond_body_path("eq", "type", Some("invoice.paid")),
             ],
-            201, "all match", "and",
+            201,
+            "all match",
+            "and",
         )];
         assert_eq!(evaluate_rules(&rules, &ctx).unwrap().status, 201);
     }
@@ -796,7 +872,9 @@ mod tests {
                 cond("method", "eq", Some("POST")),
                 cond_body_path("eq", "type", Some("invoice.paid")),
             ],
-            201, "no match", "and",
+            201,
+            "no match",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -812,7 +890,9 @@ mod tests {
                 cond("method", "eq", Some("POST")),
                 cond("method", "eq", Some("GET")),
             ],
-            200, "either", "or",
+            200,
+            "either",
+            "or",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_some());
     }
@@ -828,7 +908,9 @@ mod tests {
                 cond("method", "eq", Some("POST")),
                 cond("method", "eq", Some("GET")),
             ],
-            200, "neither", "or",
+            200,
+            "neither",
+            "or",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -842,8 +924,18 @@ mod tests {
         let ctx = make_ctx("POST", "/", &headers, "", &query);
 
         let rules = vec![
-            make_rule(vec![cond("method", "eq", Some("POST"))], 201, "first", "and"),
-            make_rule(vec![cond("method", "eq", Some("POST"))], 202, "second", "and"),
+            make_rule(
+                vec![cond("method", "eq", Some("POST"))],
+                201,
+                "first",
+                "and",
+            ),
+            make_rule(
+                vec![cond("method", "eq", Some("POST"))],
+                202,
+                "second",
+                "and",
+            ),
         ];
         assert_eq!(evaluate_rules(&rules, &ctx).unwrap().status, 201);
     }
@@ -854,9 +946,19 @@ mod tests {
         let query = HashMap::new();
         let ctx = make_ctx("POST", "/", &headers, "", &query);
 
-        let mut rule1 = make_rule(vec![cond("method", "eq", Some("POST"))], 201, "disabled", "and");
+        let mut rule1 = make_rule(
+            vec![cond("method", "eq", Some("POST"))],
+            201,
+            "disabled",
+            "and",
+        );
         rule1.enabled = false;
-        let rule2 = make_rule(vec![cond("method", "eq", Some("POST"))], 202, "enabled", "and");
+        let rule2 = make_rule(
+            vec![cond("method", "eq", Some("POST"))],
+            202,
+            "enabled",
+            "and",
+        );
 
         let rules = vec![rule1, rule2];
         assert_eq!(evaluate_rules(&rules, &ctx).unwrap().status, 202);
@@ -892,7 +994,9 @@ mod tests {
 
         let rules = vec![make_rule(
             vec![cond("unknown_field", "eq", Some("test"))],
-            200, "nope", "and",
+            200,
+            "nope",
+            "and",
         )];
         assert!(evaluate_rules(&rules, &ctx).is_none());
     }
@@ -1006,10 +1110,17 @@ mod tests {
         let ctx = make_ctx("PUT", "/other", &headers, body, &query);
 
         let rules = vec![
-            make_rule(vec![cond("method", "eq", Some("POST"))], 200, "post only", "and"),
+            make_rule(
+                vec![cond("method", "eq", Some("POST"))],
+                200,
+                "post only",
+                "and",
+            ),
             make_rule(
                 vec![cond_with_name("header", "exists", "stripe-signature", None)],
-                200, "stripe", "and",
+                200,
+                "stripe",
+                "and",
             ),
         ];
 
