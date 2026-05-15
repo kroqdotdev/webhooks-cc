@@ -3,7 +3,7 @@ title: "REST API"
 description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-03-28
+lastUpdated: 2026-05-15
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -147,9 +147,16 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
   "contentType": "application/json",
   "ip": "203.0.113.1",
   "size": 18,
-  "receivedAt": 1234567890000
+  "receivedAt": 1234567890000,
+  "detectedProvider": "stripe",
+  "detectedEvent": "checkout.session.completed",
+  "signatureVerified": true,
+  "signatureError": null,
+  "signingProvider": "stripe"
 }
 ```
+
+`detectedProvider` and `detectedEvent` are best-effort metadata derived from headers and body shape. They power the provider icon and event badge in the dashboard. Signature fields are present when endpoint-level verification is configured.
 
 ### Clear requests
 

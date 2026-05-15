@@ -3,7 +3,7 @@ title: "MCP Server"
 description: "The @webhooks-cc/mcp package lets AI coding agents create endpoints, inspect webhooks, send test payloads, and replay captured requests — all through natural language."
 section: mcp
 order: 1
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: faq
 keywords: ["MCP server", "AI webhook testing", "Claude Code webhooks", "Cursor webhooks"]
 seo:
@@ -18,6 +18,19 @@ seo:
 The MCP server exposes 25 tools your AI agent can call:
 
 For provider templates in `send_webhook`, **secret is required**. The MCP server does not inject a default secret.
+
+## Provider-aware testing
+
+Agents can inspect provider metadata, send realistic templates, then read the captured request with the provider and event visible in the dashboard.
+
+```text
+You: "List the Typeform webhook templates and send a form_response to my endpoint"
+Agent: [calls list_provider_templates with provider: "typeform"]
+Agent: [calls send_webhook with provider: "typeform", template: "form_response", secret: "..."]
+Agent: Captured POST request detected as Typeform / form_response
+```
+
+The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, and Standard Webhooks.
 
 ### Endpoint management
 

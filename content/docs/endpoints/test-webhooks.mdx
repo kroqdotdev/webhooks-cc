@@ -3,7 +3,7 @@ title: "Dashboard Test Webhooks"
 description: "Use the dashboard Send button to fire manual requests or realistic provider webhook templates with correct signatures. Verify your handler end-to-end without deploying or configuring an external service."
 section: dashboard
 order: 2
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: none
 keywords: ["test webhook", "webhook template", "provider webhook", "stripe webhook test"]
 seo:
@@ -33,7 +33,7 @@ Body:
 
 ## Provider template mode
 
-Provider templates generate realistic payload structure and signature headers so you can test verification logic, not just transport.
+Provider templates generate realistic payload structure and signature headers so you can test verification logic, not just transport. Captured template requests are also auto-detected in the request list, so you can immediately see the provider icon and event/topic badge.
 
 | Provider              | Presets                                                            | Content-Type                        | Signature header                                                                                             |
 | --------------------- | ------------------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -49,7 +49,32 @@ Provider templates generate realistic payload structure and signature headers so
 | **Discord**           | interaction_create, message_component, ping                        | `application/json`                  | None (unsigned template; Ed25519 verification available separately)                                          |
 | **Vercel**            | deployment.created, deployment.succeeded, deployment.error         | `application/json`                  | `x-vercel-signature` (HMAC SHA-1 over raw body)                                                              |
 | **GitLab**            | push, merge_request                                                | `application/json`                  | `x-gitlab-token` (raw token comparison)                                                                      |
+| **Typeform**          | form_response, partial_response, payment                           | `application/json`                  | `typeform-signature` (`sha256=` Base64 HMAC SHA-256 over raw body)                                           |
 | **Standard Webhooks** | No presets — user-provided body                                    | `application/json`                  | `webhook-id` + `webhook-timestamp` + `webhook-signature` (v1, Base64 HMAC SHA-256 over msgId.timestamp.body) |
+
+### Send the same template from code
+
+Use the SDK when you want the same provider-shaped request in tests:
+
+```ts
+import { WebhooksCC, matchHeader } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const endpoint = await client.endpoints.create({ name: "typeform-demo" });
+
+await client.endpoints.sendTemplate(endpoint.slug, {
+  provider: "typeform",
+  template: "form_response",
+  secret: "typeform_test_secret",
+});
+
+const request = await client.requests.waitFor(endpoint.slug, {
+  timeout: "10s",
+  match: matchHeader("typeform-signature"),
+});
+
+console.log(request.headers["typeform-signature"]);
+```
 
 ## Mock webhook secret and event override
 
