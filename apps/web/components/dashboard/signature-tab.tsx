@@ -246,7 +246,7 @@ function ClientSideVerification({
     } finally {
       setVerifying(false);
     }
-  }, [provider, secret, request.body, request.headers, providerInfo?.header]);
+  }, [provider, secret, request.body, request.headers, providerInfo]);
 
   // Show result if verification was performed
   if (result) {

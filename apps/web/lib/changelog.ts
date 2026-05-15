@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.20.0";
+export const APP_VERSION = "0.20.1";
 export const CLI_VERSION = "1.1.0";
 export const SDK_VERSION = "1.5.0";
 export const MCP_VERSION = "1.4.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.20.1",
+    date: "2026-05-15",
+    title: "CI hardening & lint cleanup",
+    track: "web",
+    items: [
+      "CI: Build Web App job now uses placeholder env values when Supabase secrets aren't available (e.g. Dependabot PRs), so dependency-update PRs get a meaningful build signal",
+      "Resolved new strict react-hooks lint errors surfaced by an upcoming plugin bump, keeping the workspace lint-clean across plugin versions",
+    ],
+  },
   {
     version: "0.20.0",
     date: "2026-05-15",

@@ -77,14 +77,14 @@ jobs:
       - name: Build
         run: pnpm build
         env:
-          NEXT_PUBLIC_WEBHOOK_URL: ${{ vars.NEXT_PUBLIC_WEBHOOK_URL }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          RECEIVER_INTERNAL_URL: ${{ vars.RECEIVER_INTERNAL_URL }}
-          CAPTURE_SHARED_SECRET: ${{ secrets.CAPTURE_SHARED_SECRET }}
+          NEXT_PUBLIC_WEBHOOK_URL: ${{ vars.NEXT_PUBLIC_WEBHOOK_URL || 'https://go.example.test' }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL || 'https://example.test' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://ci-placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'ci-placeholder-anon-key' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-placeholder.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci-placeholder-service-role-key' }}
+          RECEIVER_INTERNAL_URL: ${{ vars.RECEIVER_INTERNAL_URL || 'http://localhost:3001' }}
+          CAPTURE_SHARED_SECRET: ${{ secrets.CAPTURE_SHARED_SECRET || 'ci-placeholder-capture-shared-secret' }}
 
   build-cli:
     name: Build Rust CLI
