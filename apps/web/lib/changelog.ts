@@ -17,8 +17,8 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 
 export const APP_VERSION = "0.19.1";
 export const CLI_VERSION = "1.1.0";
-export const SDK_VERSION = "1.4.0";
-export const MCP_VERSION = "1.3.0";
+export const SDK_VERSION = "1.5.0";
+export const MCP_VERSION = "1.4.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
@@ -546,6 +546,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.5.0",
+    date: "2026-05-15",
+    title: "Typeform Provider & Webhook Auto-Detect",
+    track: "sdk",
+    items: [
+      "Typeform provider templates (form_response, partial_response, payment) and verifyTypeformSignature",
+      "detectWebhookInfo() and detectWebhookProvider() helpers for provider auto-detection from headers and body",
+      "DetectedWebhookInfo type and isTypeformWebhook detection helper",
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-04-15",
     title: "Signature Verification Matchers",
@@ -685,6 +696,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.4.0",
+    date: "2026-05-15",
+    title: "Typeform Provider Support",
+    track: "mcp",
+    items: [
+      "Typeform exposed in list_provider_templates with templates, default event, and signature metadata",
+      "Typeform usable in create_endpoint and update_endpoint signing config",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-04-15",
