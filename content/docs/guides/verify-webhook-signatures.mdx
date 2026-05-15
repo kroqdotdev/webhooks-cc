@@ -1,20 +1,20 @@
 ---
 title: "How to Verify Webhook Signatures"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 11 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more signed providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
 section: guides
 order: 5
-lastUpdated: 2026-04-25
+lastUpdated: 2026-05-15
 schema: howto
 keywords:
   ["verify webhook signature", "webhook HMAC", "webhook security", "webhook signature validation"]
 seo:
   ogTitle: "How to Verify Webhook Signatures"
-  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, and 11 more providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
+  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more signed providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
 ---
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord is the exception, using Ed25519 public-key cryptography. Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 14 providers with a single function call. This guide walks through the process for each one.
+The webhooks.cc SDK verifies signatures for 13 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures.
 
 ## Verify in the dashboard (no code)
 
@@ -82,7 +82,29 @@ if (!result.valid) {
 const body = JSON.parse(request.body);
 ```
 
-Replace `"stripe"` with any supported provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"sendgrid"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, or `"standard-webhooks"`.
+Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, or `"standard-webhooks"`.
+
+</Step>
+<Step title="Auto-detect the provider first">
+
+When a handler receives traffic from several providers, use `detectWebhookInfo` to pick the right verification branch. Detection is based on headers first, then body shape for providers like SendGrid.
+
+```ts
+import { detectWebhookInfo, verifySignature } from "@webhooks-cc/sdk";
+
+const info = detectWebhookInfo(request);
+
+if (info?.provider === "typeform") {
+  const result = await verifySignature(request, {
+    provider: "typeform",
+    secret: process.env.TYPEFORM_WEBHOOK_SECRET!,
+  });
+
+  if (!result.valid) {
+    return new Response("Invalid signature", { status: 401 });
+  }
+}
+```
 
 </Step>
 <Step title="Or use provider-specific functions">

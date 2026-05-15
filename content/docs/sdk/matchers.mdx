@@ -3,7 +3,7 @@ title: "Matchers & Helpers"
 description: "Filter, detect, and parse webhook requests with built-in matchers for method, header, and body matching. Includes provider detection helpers and JSON body parsing."
 section: sdk
 order: 4
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: none
 keywords: ["webhook matchers", "request matching", "webhook body parsing", "provider detection"]
 seo:
@@ -218,10 +218,12 @@ const req = await client.requests.waitFor(slug, {
 
 ## Provider detection
 
-Detector functions return `true` or `false` based on the presence of provider-specific headers. Use them to route captured requests by provider.
+Detector functions identify common providers from headers and, for SendGrid, body shape. Use `detectWebhookInfo` when you want the provider and event/topic, or the boolean helpers when you only need to route one provider.
 
 ```ts
 import {
+  detectWebhookInfo,
+  detectWebhookProvider,
   isStripeWebhook,
   isGitHubWebhook,
   isShopifyWebhook,
@@ -229,24 +231,46 @@ import {
   isTwilioWebhook,
   isPaddleWebhook,
   isLinearWebhook,
+  isSendGridWebhook,
+  isClerkWebhook,
   isDiscordWebhook,
+  isVercelWebhook,
+  isGitLabWebhook,
+  isTypeformWebhook,
   isStandardWebhook,
 } from "@webhooks-cc/sdk";
 ```
 
-| Function                     | Header(s) checked                                            |
-| ---------------------------- | ------------------------------------------------------------ |
-| `isStripeWebhook(request)`   | `stripe-signature`                                           |
-| `isGitHubWebhook(request)`   | `x-github-event`                                             |
-| `isShopifyWebhook(request)`  | `x-shopify-hmac-sha256`                                      |
-| `isSlackWebhook(request)`    | `x-slack-signature`                                          |
-| `isTwilioWebhook(request)`   | `x-twilio-signature`                                         |
-| `isPaddleWebhook(request)`   | `paddle-signature`                                           |
-| `isLinearWebhook(request)`   | `linear-signature`                                           |
-| `isDiscordWebhook(request)`  | `x-signature-ed25519` AND `x-signature-timestamp`            |
-| `isStandardWebhook(request)` | `webhook-id` AND `webhook-timestamp` AND `webhook-signature` |
+| Function                     | Match source                                                 | Event source                  |
+| ---------------------------- | ------------------------------------------------------------ | ----------------------------- |
+| `isStripeWebhook(request)`   | `stripe-signature`                                           | JSON `type`                   |
+| `isGitHubWebhook(request)`   | `x-github-event` or `x-hub-signature-256`                    | `x-github-event`              |
+| `isShopifyWebhook(request)`  | `x-shopify-hmac-sha256` or `x-shopify-topic`                 | `x-shopify-topic`             |
+| `isSlackWebhook(request)`    | `x-slack-signature`                                          | JSON `type` or form `command` |
+| `isTwilioWebhook(request)`   | `x-twilio-signature`                                         | none                          |
+| `isPaddleWebhook(request)`   | `paddle-signature`                                           | JSON `event_type`             |
+| `isLinearWebhook(request)`   | `linear-signature`                                           | JSON `action` + `type`        |
+| `isSendGridWebhook(request)` | JSON array with `sg_event_id`                                | first array item's `event`    |
+| `isClerkWebhook(request)`    | `svix-id`                                                    | JSON `type`                   |
+| `isDiscordWebhook(request)`  | `x-signature-ed25519` AND `x-signature-timestamp`            | Discord interaction `type`    |
+| `isVercelWebhook(request)`   | `x-vercel-signature`                                         | JSON `type`                   |
+| `isGitLabWebhook(request)`   | `x-gitlab-event` or `x-gitlab-token`                         | normalized `x-gitlab-event`   |
+| `isTypeformWebhook(request)` | `typeform-signature`                                         | JSON `event_type`             |
+| `isStandardWebhook(request)` | `webhook-id` AND `webhook-timestamp` AND `webhook-signature` | JSON `type`                   |
 
 All header comparisons are case-insensitive. Discord and Standard Webhooks require multiple headers to be present simultaneously.
+
+### Provider + event example
+
+```ts
+const info = detectWebhookInfo(request);
+
+if (info?.provider === "typeform") {
+  console.log(info.event); // "form_response"
+}
+
+console.log(detectWebhookProvider(request)); // "typeform"
+```
 
 ### Router example
 
@@ -351,7 +375,7 @@ const req = await client.requests.waitFor(slug, {
 <LinkCard
   href="/docs/sdk/signatures"
   title="Signature Verification"
-  description="Verify webhook signatures for 14 providers."
+  description="Verify webhook signatures for 13 signed providers."
 />
 
 <LinkCard

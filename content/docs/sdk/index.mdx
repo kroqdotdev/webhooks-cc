@@ -3,7 +3,7 @@ title: "SDK"
 description: "The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks in real-time, and integrate webhooks.cc into your test suite programmatically."
 section: sdk
 order: 1
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: faq
 keywords: ["webhook SDK", "TypeScript SDK", "webhook testing SDK", "@webhooks-cc/sdk"]
 seo:
@@ -62,7 +62,7 @@ await client.endpoints.sendTemplate(endpoint.slug, {
 });
 ```
 
-Supports **Standard Webhooks** (Polar.sh, Svix, Clerk, Resend) alongside Stripe, GitHub, Shopify, and Twilio:
+Supports **Typeform** and **Standard Webhooks** (Polar.sh, Svix, Clerk, Resend) alongside Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Vercel, GitLab, SendGrid templates, and Discord templates:
 
 ```ts
 await client.endpoints.sendTemplate(endpoint.slug, {
@@ -152,22 +152,17 @@ expect(res.status, `Server responded: ${text}`).toBe(200);
 ## Detect webhook providers
 
 ```ts
-import {
-  isStripeWebhook,
-  isGitHubWebhook,
-  isShopifyWebhook,
-  isSlackWebhook,
-  isStandardWebhook,
-} from "@webhooks-cc/sdk";
+import { detectWebhookInfo } from "@webhooks-cc/sdk";
 
-if (isStandardWebhook(request)) {
-  console.log("Standard Webhooks request (Polar, Svix, Clerk, Resend)");
-}
+const info = detectWebhookInfo(request);
 
-if (isStripeWebhook(request)) {
-  console.log("Stripe webhook received");
+if (info) {
+  console.log(info.provider, info.event);
+  // "typeform", "form_response"
 }
 ```
+
+The helper detects providers from headers first, then body shape for providers like SendGrid. Use the boolean helpers (`isStripeWebhook`, `isGitHubWebhook`, `isTypeformWebhook`, etc.) when you only need one branch.
 
 ## Learn more
 

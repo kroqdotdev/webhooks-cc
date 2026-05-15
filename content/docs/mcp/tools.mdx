@@ -1,14 +1,14 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 24 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
+description: "Complete reference for all 25 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 24 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
+  ogDescription: "Complete reference for all 25 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
 ---
 
 ## Endpoint management
@@ -96,18 +96,29 @@ Delete 1--100 endpoints in a single call.
 
 ### send_webhook
 
-Send a test webhook to a hosted webhooks.cc endpoint. Supports manual payloads and provider-signed templates.
+Send a test webhook to a hosted webhooks.cc endpoint. Supports manual payloads and provider templates, including signed templates for providers that support shared-secret or token-style signing.
 
-| Parameter  | Type     | Required                | Description                                                                                                                                                          |
-| ---------- | -------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `slug`     | `string` | yes                     | Endpoint slug                                                                                                                                                        |
-| `method`   | `string` | no                      | HTTP method (default: `"POST"`)                                                                                                                                      |
-| `headers`  | `object` | no                      | HTTP headers to include                                                                                                                                              |
-| `body`     | `any`    | no                      | Request body                                                                                                                                                         |
-| `provider` | `string` | no                      | Provider for signing (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `sendgrid`, `clerk`, `discord`, `vercel`, `gitlab`, `standard-webhooks`) |
-| `template` | `string` | no                      | Template name (e.g., `checkout.session.completed`)                                                                                                                   |
-| `event`    | `string` | no                      | Event type override                                                                                                                                                  |
-| `secret`   | `string` | yes (if `provider` set) | Signing secret                                                                                                                                                       |
+| Parameter  | Type     | Required                | Description                                                                                                                                                                   |
+| ---------- | -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `slug`     | `string` | yes                     | Endpoint slug                                                                                                                                                                 |
+| `method`   | `string` | no                      | HTTP method (default: `"POST"`)                                                                                                                                               |
+| `headers`  | `object` | no                      | HTTP headers to include                                                                                                                                                       |
+| `body`     | `any`    | no                      | Request body                                                                                                                                                                  |
+| `provider` | `string` | no                      | Provider template (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `sendgrid`, `clerk`, `discord`, `vercel`, `gitlab`, `typeform`, `standard-webhooks`) |
+| `template` | `string` | no                      | Template name (e.g., `checkout.session.completed` or `form_response`)                                                                                                         |
+| `event`    | `string` | no                      | Event type override                                                                                                                                                           |
+| `secret`   | `string` | yes (if `provider` set) | Template signing input. Required by the tool when a provider template is used.                                                                                                |
+
+Example provider-template call:
+
+```json
+{
+  "slug": "abc123",
+  "provider": "typeform",
+  "template": "form_response",
+  "secret": "typeform_test_secret"
+}
+```
 
 ### send_to
 
@@ -283,11 +294,19 @@ Verify the webhook signature on a captured request. Supports two modes:
 
 ### list_provider_templates
 
-List supported webhook providers and their available templates.
+List supported webhook providers, available templates, and signing metadata. Use this before `send_webhook` when an agent needs to pick a realistic provider payload.
 
 | Parameter  | Type     | Required | Description                 |
 | ---------- | -------- | -------- | --------------------------- |
 | `provider` | `string` | no       | Filter to a single provider |
+
+Example:
+
+```json
+{
+  "provider": "typeform"
+}
+```
 
 ### describe
 

@@ -3,7 +3,7 @@ title: "ngrok vs webhooks.cc"
 description: "Compare ngrok and webhooks.cc for webhook testing. Side-by-side feature comparison covering tunneling, inspection, SDK support, pricing, and when to use each tool."
 section: guides
 order: 7
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: faq
 keywords:
   ["ngrok vs webhooks.cc", "ngrok alternative", "webhook testing tools", "ngrok webhook testing"]
@@ -18,22 +18,22 @@ This comparison covers where each tool fits, where they overlap, and when you sh
 
 ## Feature comparison
 
-| Feature                        | webhooks.cc                                        | ngrok                                 |
-| ------------------------------ | -------------------------------------------------- | ------------------------------------- |
-| Expose localhost to internet   | Yes (CLI tunnel)                                   | Yes (core feature)                    |
-| Webhook capture and inspection | Yes (full request details, split-pane dashboard)   | Limited (ngrok inspect, general HTTP) |
-| Mock responses                 | Yes (configurable per endpoint)                    | No                                    |
-| Provider signature signing     | Yes (14 providers: Stripe, GitHub, Typeform, etc.) | No                                    |
-| Signature verification         | Yes (SDK, 14 providers)                            | No                                    |
-| Request replay                 | Yes (to any URL, from dashboard or SDK)            | Yes (ngrok inspect)                   |
-| Real-time dashboard            | Yes                                                | Yes (ngrok inspect)                   |
-| CI/CD integration              | Yes (SDK + testing utilities, no tunnel needed)    | Limited (requires running tunnel)     |
-| MCP server for AI agents       | Yes                                                | No                                    |
-| TypeScript SDK                 | Yes (typed client, matchers, test helpers)         | No (REST API only)                    |
-| Ephemeral endpoints            | Yes (12hr, no signup required)                     | No (requires account)                 |
-| Custom domains                 | No                                                 | Yes (paid plans)                      |
-| TCP/TLS tunneling              | No (HTTP webhooks only)                            | Yes                                   |
-| WebSocket support              | No                                                 | Yes                                   |
+| Feature                        | webhooks.cc                                      | ngrok                                 |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------- |
+| Expose localhost to internet   | Yes (CLI tunnel)                                 | Yes (core feature)                    |
+| Webhook capture and inspection | Yes (full request details, split-pane dashboard) | Limited (ngrok inspect, general HTTP) |
+| Mock responses                 | Yes (configurable per endpoint)                  | No                                    |
+| Provider templates/signing     | Yes (14 templates, 13 verification providers)    | No                                    |
+| Signature verification         | Yes (SDK, 13 signed providers)                   | No                                    |
+| Request replay                 | Yes (to any URL, from dashboard or SDK)          | Yes (ngrok inspect)                   |
+| Real-time dashboard            | Yes                                              | Yes (ngrok inspect)                   |
+| CI/CD integration              | Yes (SDK + testing utilities, no tunnel needed)  | Limited (requires running tunnel)     |
+| MCP server for AI agents       | Yes                                              | No                                    |
+| TypeScript SDK                 | Yes (typed client, matchers, test helpers)       | No (REST API only)                    |
+| Ephemeral endpoints            | Yes (12hr, no signup required)                   | No (requires account)                 |
+| Custom domains                 | No                                               | Yes (paid plans)                      |
+| TCP/TLS tunneling              | No (HTTP webhooks only)                          | Yes                                   |
+| WebSocket support              | No                                               | Yes                                   |
 
 ## Webhook capture and inspection
 
@@ -85,7 +85,7 @@ ngrok does not offer programmatic testing tools. To test webhooks with ngrok, yo
 
 ## Signing and verification
 
-webhooks.cc includes 14 provider templates so your handler's signature verification works during testing without modification. The signing happens locally in the SDK -- no request to external servers.
+webhooks.cc includes 14 provider templates so your handler can test realistic provider traffic. For providers with shared-secret or token-style verification, signing happens locally in the SDK -- no request to external servers.
 
 Supported providers and their signing algorithms:
 
@@ -103,6 +103,7 @@ Supported providers and their signing algorithms:
 | Discord           | Ed25519              | `x-signature-ed25519` (verification only, unsigned template) |
 | Vercel            | HMAC-SHA1            | `x-vercel-signature`                                         |
 | GitLab            | Token comparison     | `x-gitlab-token`                                             |
+| Typeform          | HMAC-SHA256          | `typeform-signature`                                         |
 | Standard Webhooks | HMAC-SHA256          | `webhook-signature` (Polar, Svix, Resend)                    |
 
 With ngrok, you need the real provider to send webhooks -- or you disable signature verification in your test environment. Disabling verification is common but risky: it means your tests do not cover the verification code path, and you might deploy a handler that fails signature checks in production.

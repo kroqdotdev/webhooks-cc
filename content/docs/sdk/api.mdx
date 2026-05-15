@@ -3,7 +3,7 @@ title: "API Reference"
 description: "Complete method reference for the TypeScript SDK. Endpoints, requests, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-03-10
+lastUpdated: 2026-05-15
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -398,7 +398,7 @@ List all supported webhook provider templates. No API call made.
 
 ```ts
 listProviders(): TemplateProvider[]
-// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "standard-webhooks"]
+// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "typeform", "standard-webhooks"]
 ```
 
 </ApiMethod>
@@ -492,24 +492,46 @@ matchAny(matchMethod("GET"), matchMethod("POST"));
 
 ## Provider Detection
 
-Each helper checks for a provider-specific header (case-insensitive).
+Use `detectWebhookInfo` when you want the provider plus an event/topic label, or the `is*Webhook` helpers when you only need a boolean branch.
 
 ```ts
-import {
-  isStripeWebhook, // stripe-signature
-  isGitHubWebhook, // x-github-event
-  isShopifyWebhook, // x-shopify-hmac-sha256
-  isSlackWebhook, // x-slack-signature
-  isTwilioWebhook, // x-twilio-signature
-  isPaddleWebhook, // paddle-signature
-  isLinearWebhook, // linear-signature
-  isSendGridWebhook, // user-agent: SendGrid + JSON array body
-  isClerkWebhook, // webhook-id + webhook-timestamp + svix-id
-  isDiscordWebhook, // x-signature-ed25519 + x-signature-timestamp
-  isVercelWebhook, // x-vercel-signature
-  isGitLabWebhook, // x-gitlab-event or x-gitlab-token
-  isStandardWebhook, // webhook-id + webhook-timestamp + webhook-signature
-} from "@webhooks-cc/sdk";
+import { detectWebhookInfo, detectWebhookProvider, isTypeformWebhook } from "@webhooks-cc/sdk";
+
+const info = detectWebhookInfo(request);
+console.log(info?.provider, info?.event);
+// "typeform", "form_response"
+
+console.log(detectWebhookProvider(request));
+// "typeform"
+
+if (isTypeformWebhook(request)) {
+  // Handle Typeform-specific fields
+}
+```
+
+`detectWebhookInfo` returns:
+
+```ts
+type DetectedWebhookInfo = {
+  provider:
+    | "stripe"
+    | "github"
+    | "shopify"
+    | "twilio"
+    | "slack"
+    | "paddle"
+    | "linear"
+    | "sendgrid"
+    | "clerk"
+    | "discord"
+    | "vercel"
+    | "gitlab"
+    | "typeform"
+    | "standard-webhooks";
+  event: string | null;
+  via: "header" | "body";
+  matchedOn?: string;
+};
 ```
 
 ## Body Parsing
@@ -608,6 +630,9 @@ interface Request {
   ip: string;
   size: number;
   receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
 }
 
 interface MockResponse {
@@ -644,6 +669,7 @@ type TemplateProvider =
   | "discord"
   | "vercel"
   | "gitlab"
+  | "typeform"
   | "standard-webhooks";
 
 type VerifyProvider = TemplateProvider;

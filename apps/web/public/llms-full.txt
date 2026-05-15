@@ -118,11 +118,11 @@ const response = await client.endpoints.send("my-slug", {
   body?: unknown,             // JSON-serialized if object
 });
 
-// Send signed provider webhook template
+// Send provider webhook template
 await client.endpoints.sendTemplate("my-slug", {
-  provider: "stripe",        // stripe|github|shopify|twilio|slack|paddle|linear|sendgrid|clerk|discord|vercel|gitlab|standard-webhooks
+  provider: "stripe",        // stripe|github|shopify|twilio|slack|paddle|linear|sendgrid|clerk|discord|vercel|gitlab|typeform|standard-webhooks
   template?: string,         // Provider-specific preset
-  secret: "whsec_test",      // Signing secret
+  secret: "whsec_test",      // Template signing input
   event?: string,            // Event type override
   timestamp?: number,        // For deterministic signatures
 });
