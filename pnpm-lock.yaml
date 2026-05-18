@@ -172,8 +172,8 @@ importers:
         specifier: ^4.0.2
         version: 4.0.2
       simple-icons:
-        specifier: ^16.19.0
-        version: 16.19.0
+        specifier: ^16.20.0
+        version: 16.20.0
       source-map-support:
         specifier: ^0.5.21
         version: 0.5.21
@@ -5303,8 +5303,8 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
-  simple-icons@16.19.0:
-    resolution: {integrity: sha512-muxcz/FDvWFPrKJdsjaz79qsBjtZeVKUVIFl7wLVOwb+yqAag8FPe8+hFlMVRnmAXYQIm4eUDDm2+dhOj0cFgQ==}
+  simple-icons@16.20.0:
+    resolution: {integrity: sha512-2b7Xu+Zy+iwLiuLSAcWuxnM1ETNFy7JmxWSjh0Y/A8P3KGjFFcokbpWbUf/IivMNbR9WuZ/QQlirh5bGh3Q2vA==}
     engines: {node: '>=0.12.18'}
 
   smart-buffer@4.2.0:
@@ -11956,7 +11956,7 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  simple-icons@16.19.0: {}
+  simple-icons@16.20.0: {}
 
   smart-buffer@4.2.0: {}
 
