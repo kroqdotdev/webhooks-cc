@@ -25,7 +25,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@scalar/api-reference-react": "^0.9.37",
+    "@scalar/api-reference-react": "^0.9.38",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
     "@webhooks-cc/sdk": "workspace:*",
