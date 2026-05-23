@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.20.1";
-export const CLI_VERSION = "1.1.0";
+export const APP_VERSION = "0.20.2";
+export const CLI_VERSION = "1.1.1";
 export const SDK_VERSION = "1.5.0";
-export const MCP_VERSION = "1.4.0";
+export const MCP_VERSION = "1.4.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.20.2",
+    date: "2026-05-23",
+    title: "MCP v1.4.1 & CLI v1.1.1 Release",
+    track: "web",
+    items: [
+      "MCP and CLI version bumps ship transitive dependency upgrades — zod 4 in MCP, tokio 1.52 and rustls-webpki refresh in the CLI",
+    ],
+  },
   {
     version: "0.20.1",
     date: "2026-05-15",
@@ -468,6 +477,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.1.1",
+    date: "2026-05-23",
+    title: "Dependency Maintenance",
+    track: "cli",
+    items: [
+      "tokio 1.51 → 1.52, rustls-webpki refresh, axum 0.8.9, rand 0.8.6, clap 4.6.1, clap_complete 4.6.5, open 5.3.5 — picks up upstream security fixes",
+      "Internal clippy 1.95 cleanups in the TUI event loop and update screen (no behavior change)",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-04-15",
     title: "Signature Verification",
@@ -719,6 +738,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.4.1",
+    date: "2026-05-23",
+    title: "zod 4 Upgrade",
+    track: "mcp",
+    items: [
+      "Upgrades the zod dependency from 3.x to 4.x with the matching tool-schema adaptation in src/tools.ts",
+    ],
+  },
   {
     version: "1.4.0",
     date: "2026-05-15",
