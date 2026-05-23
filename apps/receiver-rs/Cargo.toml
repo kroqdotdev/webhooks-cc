@@ -35,7 +35,7 @@ sha1 = "0.10"
 hex = "0.4"
 base64 = "0.22"
 ed25519-dalek = { version = "2", features = ["std"] }
-constant_time_eq = "0.3"
+constant_time_eq = "0.4"
 
 [profile.release]
 opt-level = 3
