@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.20.2";
-export const CLI_VERSION = "1.1.1";
+export const APP_VERSION = "0.20.3";
+export const CLI_VERSION = "1.1.2";
 export const SDK_VERSION = "1.5.0";
 export const MCP_VERSION = "1.4.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.20.3",
+    date: "2026-05-24",
+    title: "CLI v1.1.2 Release",
+    track: "web",
+    items: [
+      "Ships the CLI v1.1.2 polish — correct version display in `whk update` and a clear, actionable message when the install directory isn't writable",
+    ],
+  },
   {
     version: "0.20.2",
     date: "2026-05-23",
@@ -476,6 +485,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.1.2",
+    date: "2026-05-24",
+    title: "Update Command Polish",
+    track: "cli",
+    items: [
+      "`whk update` now displays the current version correctly (was rendering as `vv1.0.0` due to a double `v` prefix)",
+      "When the install directory isn't user-writable, `whk update` fails fast with a clear message naming the path and suggesting `sudo whk update` or a user-writable reinstall — instead of the cryptic `Permission denied (os error 13)` after a multi-MB download",
+    ],
+  },
   {
     version: "1.1.1",
     date: "2026-05-23",
