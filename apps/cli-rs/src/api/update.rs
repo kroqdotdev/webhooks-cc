@@ -82,8 +82,51 @@ pub async fn check(current_version: &str) -> Result<Option<Release>> {
     }))
 }
 
+/// Probe whether the directory containing the current binary is writable.
+/// Returns the resolved path to the current executable on success.
+///
+/// We do this before downloading so a user whose binary is in a system
+/// directory (e.g. /usr/local/bin owned by root) gets a clear, actionable
+/// message instead of `Permission denied (os error 13)` after a 5–10 MB
+/// download.
+pub fn check_install_writability() -> Result<std::path::PathBuf> {
+    let current_exe = std::env::current_exe().context("failed to find current executable")?;
+    let parent = current_exe
+        .parent()
+        .context("current executable has no parent directory")?;
+
+    let probe = parent.join(".whk-update-probe");
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            Ok(current_exe)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            anyhow::bail!(
+                "cannot install update: {} is not writable.\n  \
+                 whk is installed at {}.\n  \
+                 Try `sudo whk update`, or reinstall whk to a user-writable \
+                 location (e.g. ~/.local/bin).",
+                parent.display(),
+                current_exe.display()
+            )
+        }
+        Err(e) => Err(anyhow::Error::new(e)
+            .context(format!("cannot check {} writability", parent.display()))),
+    }
+}
+
 /// Download, verify, and install the update.
 pub async fn apply(release: &Release) -> Result<()> {
+    // Fail fast if we can't write to the install directory, before spending
+    // time and bandwidth on the download.
+    let current_exe = check_install_writability()?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
         .build()?;
@@ -135,9 +178,7 @@ pub async fn apply(release: &Release) -> Result<()> {
     // Extract binary
     let binary_bytes = extract_binary(&archive_bytes, &release.archive_name)?;
 
-    // Replace current binary
-    let current_exe = std::env::current_exe().context("failed to find current executable")?;
-
+    // Replace current binary (current_exe was resolved via check_install_writability above)
     let tmp_path = current_exe.with_extension("update-tmp");
     std::fs::write(&tmp_path, &binary_bytes).context("failed to write update binary")?;
 
