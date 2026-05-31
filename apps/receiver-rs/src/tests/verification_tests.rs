@@ -21,6 +21,10 @@ fn make_hmac_sha1_b64(secret: &str, payload: &str) -> String {
         .encode(hmac_sha1(secret.as_bytes(), payload.as_bytes()))
 }
 
+fn make_hmac_sha1(secret: &str, payload: &str) -> String {
+    hex::encode(hmac_sha1(secret.as_bytes(), payload.as_bytes()))
+}
+
 // ── Auto-detection ──
 
 #[test]
@@ -701,4 +705,257 @@ fn signature_error_serializes_to_json() {
     assert!(json.contains("\"code\":\"mismatch\""));
     assert!(json.contains("\"expected\":\"expected_abc\""));
     assert!(json.contains("\"received\":\"received_xyz\""));
+}
+
+// ── Tier-1 providers ──
+
+#[test]
+fn detect_coinbase_commerce() {
+    let h = headers(&[("x-cc-webhook-signature", "abc")]);
+    assert_eq!(detect_provider(&h), Some("coinbase-commerce"));
+}
+
+#[test]
+fn detect_razorpay() {
+    let h = headers(&[("x-razorpay-signature", "abc")]);
+    assert_eq!(detect_provider(&h), Some("razorpay"));
+}
+
+#[test]
+fn detect_cal() {
+    let h = headers(&[("x-cal-signature-256", "abc")]);
+    assert_eq!(detect_provider(&h), Some("cal"));
+}
+
+#[test]
+fn detect_telegram() {
+    let h = headers(&[("x-telegram-bot-api-secret-token", "secret")]);
+    assert_eq!(detect_provider(&h), Some("telegram"));
+}
+
+#[test]
+fn detect_intercom_sha1() {
+    let h = headers(&[("x-hub-signature", "sha1=deadbeef")]);
+    assert_eq!(detect_provider(&h), Some("intercom"));
+}
+
+#[test]
+fn github_with_legacy_sha1_still_detects_as_github_not_intercom() {
+    // GitHub sends x-hub-signature (sha1) alongside x-hub-signature-256 + x-github-event.
+    // GitHub must win — Intercom is checked only after GitHub.
+    let h = headers(&[
+        ("x-github-event", "push"),
+        ("x-hub-signature", "sha1=deadbeef"),
+        ("x-hub-signature-256", "sha256=cafef00d"),
+    ]);
+    assert_eq!(detect_provider(&h), Some("github"));
+}
+
+#[test]
+fn verify_meta_reuses_github() {
+    let secret = "app_secret";
+    let body = br#"{"object":"whatsapp_business_account"}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-hub-signature-256", &sig)]);
+    assert!(matches!(
+        verify_signature("meta", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_meta_wrong_secret() {
+    let body = br#"{"object":"page"}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-hub-signature-256", &sig)]);
+    assert!(matches!(
+        verify_signature("meta", b"app_secret", &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_lemonsqueezy_valid() {
+    let secret = "ls_secret";
+    let body = br#"{"meta":{"event_name":"order_created"}}"#;
+    let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("lemonsqueezy", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_lemonsqueezy_wrong_secret() {
+    let body = br#"{"meta":{"event_name":"order_created"}}"#;
+    let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("lemonsqueezy", b"ls_secret", &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_coinbase_commerce_valid() {
+    let secret = "cb_secret";
+    let body = br#"{"event":{"type":"charge:confirmed"}}"#;
+    let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-cc-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("coinbase-commerce", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_coinbase_commerce_wrong_secret() {
+    let body = br#"{"event":{"type":"charge:confirmed"}}"#;
+    let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-cc-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("coinbase-commerce", b"cb_secret", &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_razorpay_valid() {
+    let secret = "rp_secret";
+    let body = br#"{"event":"payment.captured"}"#;
+    let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-razorpay-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_razorpay_wrong_secret() {
+    let body = br#"{"event":"payment.captured"}"#;
+    let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-razorpay-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("razorpay", b"rp_secret", &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_cal_valid() {
+    let secret = "cal_secret";
+    let body = br#"{"triggerEvent":"BOOKING_CREATED"}"#;
+    let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-cal-signature-256", &sig)]);
+    assert!(matches!(
+        verify_signature("cal", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_cal_wrong_secret() {
+    let body = br#"{"triggerEvent":"BOOKING_CREATED"}"#;
+    let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-cal-signature-256", &sig)]);
+    assert!(matches!(
+        verify_signature("cal", b"cal_secret", &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_hex_provider_accepts_optional_prefix() {
+    // The shared hex verifier also accepts a `sha256=` prefixed form.
+    let secret = "rp_secret";
+    let body = br#"{"event":"payment.captured"}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-razorpay-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_intercom_valid() {
+    let secret = "ic_secret";
+    let body = br#"{"type":"notification_event","topic":"conversation.user.created"}"#;
+    let sig = format!(
+        "sha1={}",
+        make_hmac_sha1(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("intercom", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_intercom_wrong_secret() {
+    let body = br#"{"type":"notification_event"}"#;
+    let sig = format!(
+        "sha1={}",
+        make_hmac_sha1("wrong", std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("intercom", b"ic_secret", &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_intercom_rejects_sha256_prefix() {
+    // Intercom uses sha1=; a sha256= prefixed signature must be rejected.
+    let secret = "ic_secret";
+    let body = br#"{"type":"notification_event"}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("intercom", secret.as_bytes(), &h, body, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_telegram_valid() {
+    let secret = "tg_secret_token";
+    let h = headers(&[("x-telegram-bot-api-secret-token", secret)]);
+    assert!(matches!(
+        verify_signature("telegram", secret.as_bytes(), &h, b"{}", None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_telegram_wrong_token() {
+    let h = headers(&[("x-telegram-bot-api-secret-token", "wrong_token")]);
+    assert!(matches!(
+        verify_signature("telegram", b"correct_token", &h, b"{}", None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_telegram_missing_header() {
+    assert!(matches!(
+        verify_signature("telegram", b"secret", &headers(&[]), b"{}", None, None),
+        VerificationResult::Skipped(_)
+    ));
 }

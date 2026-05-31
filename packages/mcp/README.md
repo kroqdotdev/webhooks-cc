@@ -135,6 +135,13 @@ Provider template and signing support includes:
 - `gitlab`
 - `typeform`
 - `standard-webhooks`
+- `meta`
+- `lemonsqueezy`
+- `coinbase-commerce`
+- `razorpay`
+- `cal`
+- `intercom`
+- `telegram`
 
 Signature verification also supports:
 

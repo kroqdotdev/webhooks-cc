@@ -15,7 +15,15 @@ import {
   verifyTypeformSignature,
   verifyTwilioSignature,
   verifyVercelSignature,
+  verifyMetaSignature,
+  verifyLemonSqueezySignature,
+  verifyCoinbaseCommerceSignature,
+  verifyRazorpaySignature,
+  verifyCalSignature,
+  verifyIntercomSignature,
+  verifyTelegramSignature,
 } from "../index";
+import type { TemplateProvider } from "../index";
 
 const client = new WebhooksCC({
   apiKey: "whcc_testkey123",
@@ -381,5 +389,125 @@ describe("signature verification", () => {
         { provider: "stripe", secret: "whsec_test_123" }
       )
     ).resolves.toEqual({ valid: true });
+  });
+});
+
+describe("tier-1 provider verification round-trips", () => {
+  const tier1: ReadonlyArray<{
+    provider: TemplateProvider;
+    header: string;
+    verify: (
+      body: string | undefined,
+      header: string | null | undefined,
+      secret: string
+    ) => Promise<boolean>;
+    secret: string;
+    body: Record<string, unknown>;
+    tamperable: boolean;
+  }> = [
+    {
+      provider: "meta",
+      header: "x-hub-signature-256",
+      verify: verifyMetaSignature,
+      secret: "app_secret",
+      body: { object: "whatsapp_business_account", entry: [] },
+      tamperable: true,
+    },
+    {
+      provider: "lemonsqueezy",
+      header: "x-signature",
+      verify: verifyLemonSqueezySignature,
+      secret: "ls_secret",
+      body: { meta: { event_name: "order_created" }, data: {} },
+      tamperable: true,
+    },
+    {
+      provider: "coinbase-commerce",
+      header: "x-cc-webhook-signature",
+      verify: verifyCoinbaseCommerceSignature,
+      secret: "cb_secret",
+      body: { event: { type: "charge:confirmed" } },
+      tamperable: true,
+    },
+    {
+      provider: "razorpay",
+      header: "x-razorpay-signature",
+      verify: verifyRazorpaySignature,
+      secret: "rp_secret",
+      body: { event: "payment.captured" },
+      tamperable: true,
+    },
+    {
+      provider: "cal",
+      header: "x-cal-signature-256",
+      verify: verifyCalSignature,
+      secret: "cal_secret",
+      body: { triggerEvent: "BOOKING_CREATED" },
+      tamperable: true,
+    },
+    {
+      provider: "intercom",
+      header: "x-hub-signature",
+      verify: verifyIntercomSignature,
+      secret: "ic_secret",
+      body: { type: "notification_event", topic: "conversation.user.created" },
+      tamperable: true,
+    },
+    {
+      provider: "telegram",
+      header: "x-telegram-bot-api-secret-token",
+      verify: verifyTelegramSignature,
+      secret: "tg_secret",
+      body: { update_id: 1, message: { text: "hi" } },
+      tamperable: false,
+    },
+  ];
+
+  for (const { provider, header, verify, secret, body, tamperable } of tier1) {
+    it(`verifies ${provider} via buildRequest round-trip + dispatcher`, async () => {
+      const built = await client.buildRequest(`https://example.com/${provider}`, {
+        provider,
+        secret,
+        body,
+      });
+      const sig = built.headers[header];
+      expect(sig).toBeDefined();
+
+      expect(await verify(built.body, sig, secret)).toBe(true);
+      expect(await verify(built.body, sig, "the_wrong_secret")).toBe(false);
+      if (tamperable) {
+        expect(await verify(`${built.body} `, sig, secret)).toBe(false);
+      }
+
+      await expect(
+        verifySignature({ body: built.body, headers: { [header]: sig! } }, {
+          provider,
+          secret,
+        } as Parameters<typeof verifySignature>[1])
+      ).resolves.toEqual({ valid: true });
+    });
+  }
+
+  it("verifyIntercomSignature rejects a sha256= signature (wrong prefix/algorithm)", async () => {
+    const built = await client.buildRequest("https://example.com/intercom", {
+      provider: "intercom",
+      secret: "ic_secret",
+      body: { type: "notification_event", topic: "conversation.user.created" },
+    });
+    const tampered = built.headers["x-hub-signature"].replace(/^sha1=/, "sha256=");
+    expect(await verifyIntercomSignature(built.body, tampered, "ic_secret")).toBe(false);
+  });
+
+  it("verifyTelegramSignature matches the raw secret token independent of body", async () => {
+    const built = await client.buildRequest("https://example.com/telegram", {
+      provider: "telegram",
+      secret: "tg_token_value",
+      body: { update_id: 7 },
+    });
+    expect(built.headers["x-telegram-bot-api-secret-token"]).toBe("tg_token_value");
+    expect(await verifyTelegramSignature(built.body, "tg_token_value", "tg_token_value")).toBe(
+      true
+    );
+    expect(await verifyTelegramSignature(built.body, "tg_token_value", "different")).toBe(false);
   });
 });

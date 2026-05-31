@@ -332,6 +332,127 @@ export async function verifyLinearSignature(
 }
 
 /**
+ * Shared verifier for providers that send a raw hex HMAC-SHA256 of the body,
+ * optionally with a `prefix=` form (e.g. `sha256=...`). Used by Lemon Squeezy,
+ * Coinbase Commerce, Razorpay, and Cal.com.
+ */
+async function hmacSha256HexMatches(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string,
+  functionName: string
+): Promise<boolean> {
+  requireSecret(secret, functionName);
+  if (!signatureHeader) return false;
+  const received = signatureHeader.trim();
+  const hex = received.includes("=") ? received.slice(received.indexOf("=") + 1) : received;
+  if (!hex) return false;
+  const expected = toHex(await hmacSign("SHA-256", secret, normalizeBody(body))).toLowerCase();
+  return timingSafeEqual(hex.toLowerCase(), expected);
+}
+
+/**
+ * Verify a Meta (WhatsApp/Messenger/Instagram) webhook — identical scheme to GitHub
+ * (`sha256=` hex HMAC-SHA256 over the raw body, keyed by the Meta app secret).
+ */
+export function verifyMetaSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  appSecret: string
+): Promise<boolean> {
+  return verifyGitHubSignature(body, signatureHeader, appSecret);
+}
+
+/**
+ * Verify a Lemon Squeezy webhook signature (raw hex HMAC-SHA256 over the body,
+ * sent in the `X-Signature` header).
+ */
+export function verifyLemonSqueezySignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return hmacSha256HexMatches(body, signatureHeader, secret, "verifyLemonSqueezySignature");
+}
+
+/**
+ * Verify a Coinbase Commerce webhook signature (raw hex HMAC-SHA256 over the body,
+ * sent in the `X-CC-Webhook-Signature` header).
+ */
+export function verifyCoinbaseCommerceSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return hmacSha256HexMatches(body, signatureHeader, secret, "verifyCoinbaseCommerceSignature");
+}
+
+/**
+ * Verify a Razorpay webhook signature (raw hex HMAC-SHA256 over the body,
+ * sent in the `X-Razorpay-Signature` header).
+ */
+export function verifyRazorpaySignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return hmacSha256HexMatches(body, signatureHeader, secret, "verifyRazorpaySignature");
+}
+
+/**
+ * Verify a Cal.com webhook signature (raw hex HMAC-SHA256 over the body,
+ * sent in the `X-Cal-Signature-256` header).
+ */
+export function verifyCalSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return hmacSha256HexMatches(body, signatureHeader, secret, "verifyCalSignature");
+}
+
+/**
+ * Verify an Intercom webhook signature (HMAC-**SHA1** hex with a `sha1=` prefix,
+ * sent in the `X-Hub-Signature` header, keyed by the Intercom app secret).
+ */
+export async function verifyIntercomSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyIntercomSignature");
+  if (!signatureHeader) {
+    return false;
+  }
+
+  const match = signatureHeader.trim().match(/^sha1=(.+)$/i);
+  if (!match) {
+    return false;
+  }
+
+  const expected = toHex(await hmacSign("SHA-1", secret, normalizeBody(body))).toLowerCase();
+  return timingSafeEqual(match[1].toLowerCase(), expected);
+}
+
+/**
+ * Verify a Telegram webhook secret token against the
+ * `X-Telegram-Bot-Api-Secret-Token` header. Telegram sends the raw secret in
+ * the header — no HMAC involved (same scheme as GitLab).
+ */
+export async function verifyTelegramSignature(
+  _body: string | undefined,
+  tokenHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyTelegramSignature");
+  if (!tokenHeader) {
+    return false;
+  }
+
+  return timingSafeEqual(tokenHeader, secret);
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -594,6 +715,62 @@ export async function verifySignature(
 
   if (options.provider === "standard-webhooks") {
     valid = await verifyStandardWebhookSignature(request.body, request.headers, options.secret);
+  }
+
+  if (options.provider === "meta") {
+    valid = await verifyMetaSignature(
+      request.body,
+      getHeader(request.headers, "x-hub-signature-256"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "lemonsqueezy") {
+    valid = await verifyLemonSqueezySignature(
+      request.body,
+      getHeader(request.headers, "x-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "coinbase-commerce") {
+    valid = await verifyCoinbaseCommerceSignature(
+      request.body,
+      getHeader(request.headers, "x-cc-webhook-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "razorpay") {
+    valid = await verifyRazorpaySignature(
+      request.body,
+      getHeader(request.headers, "x-razorpay-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "cal") {
+    valid = await verifyCalSignature(
+      request.body,
+      getHeader(request.headers, "x-cal-signature-256"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "intercom") {
+    valid = await verifyIntercomSignature(
+      request.body,
+      getHeader(request.headers, "x-hub-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "telegram") {
+    valid = await verifyTelegramSignature(
+      request.body,
+      getHeader(request.headers, "x-telegram-bot-api-secret-token"),
+      options.secret
+    );
   }
 
   return { valid };

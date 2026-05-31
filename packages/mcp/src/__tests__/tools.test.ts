@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { createHmac } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NotFoundError, RateLimitError, type Request, type WebhooksCC } from "@webhooks-cc/sdk";
 import { registerTools } from "../tools";
@@ -100,6 +101,13 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
           "gitlab",
           "typeform",
           "standard-webhooks",
+          "meta",
+          "lemonsqueezy",
+          "coinbase-commerce",
+          "razorpay",
+          "cal",
+          "intercom",
+          "telegram",
         ]),
       get: vi.fn((provider: string) => ({ provider, templates: [], secretRequired: true })),
       ...(overrides.templates ?? {}),
@@ -217,6 +225,108 @@ describe("registerTools", () => {
     expect(
       parseJsonResult(result).map((provider: { provider: string }) => provider.provider)
     ).toEqual(expect.arrayContaining(["typeform"]));
+  });
+
+  it("exposes tier-1 providers in provider template listings", async () => {
+    const tools = getRegisteredTools(createMockClient());
+    const result = await tools.list_provider_templates.handler({});
+
+    expect(
+      parseJsonResult(result).map((provider: { provider: string }) => provider.provider)
+    ).toEqual(
+      expect.arrayContaining([
+        "meta",
+        "lemonsqueezy",
+        "coinbase-commerce",
+        "razorpay",
+        "cal",
+        "intercom",
+        "telegram",
+      ])
+    );
+  });
+
+  // verify_signature exercises the real SDK verification path through the MCP
+  // tool — one case per tier-1 signature scheme family.
+  describe("verify_signature for tier-1 providers", () => {
+    const hmacCases = [
+      {
+        provider: "meta",
+        header: "x-hub-signature-256",
+        sign: (body: string, secret: string) =>
+          `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      },
+      {
+        provider: "coinbase-commerce",
+        header: "x-cc-webhook-signature",
+        sign: (body: string, secret: string) =>
+          createHmac("sha256", secret).update(body).digest("hex"),
+      },
+      {
+        provider: "intercom",
+        header: "x-hub-signature",
+        sign: (body: string, secret: string) =>
+          `sha1=${createHmac("sha1", secret).update(body).digest("hex")}`,
+      },
+    ] as const;
+
+    for (const { provider, header, sign } of hmacCases) {
+      it(`verifies a valid ${provider} signature and rejects a wrong secret`, async () => {
+        const body = '{"hello":"world"}';
+        const secret = "tier1_secret";
+        const request = makeRequest({ body, headers: { [header]: sign(body, secret) } });
+        const tools = getRegisteredTools(
+          createMockClient({
+            requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+          })
+        );
+
+        const ok = parseJsonResult(
+          await tools.verify_signature.handler({ requestId: request.id, provider, secret })
+        );
+        expect(ok.valid).toBe(true);
+
+        const bad = parseJsonResult(
+          await tools.verify_signature.handler({
+            requestId: request.id,
+            provider,
+            secret: "wrong_secret",
+          })
+        );
+        expect(bad.valid).toBe(false);
+      });
+    }
+
+    it("verifies a Telegram secret token (token-compare scheme)", async () => {
+      const secret = "tg_token";
+      const request = makeRequest({
+        body: "{}",
+        headers: { "x-telegram-bot-api-secret-token": secret },
+      });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "telegram",
+          secret,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      const bad = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "telegram",
+          secret: "nope",
+        })
+      );
+      expect(bad.valid).toBe(false);
+    });
   });
 
   it("returns preview_webhook output from buildRequest", async () => {

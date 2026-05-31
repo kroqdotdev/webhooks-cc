@@ -1,13 +1,20 @@
 import type { SimpleIcon } from "simple-icons";
 import {
+  siCaldotcom,
   siClerk,
+  siCoinbase,
   siDiscord,
   siGithub,
   siGitlab,
+  siIntercom,
+  siLemonsqueezy,
   siLinear,
+  siMeta,
   siPaddle,
+  siRazorpay,
   siShopify,
   siStripe,
+  siTelegram,
   siTypeform,
   siVercel,
 } from "simple-icons";
@@ -26,6 +33,13 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   vercel: siVercel,
   gitlab: siGitlab,
   typeform: siTypeform,
+  meta: siMeta,
+  lemonsqueezy: siLemonsqueezy,
+  "coinbase-commerce": siCoinbase,
+  razorpay: siRazorpay,
+  cal: siCaldotcom,
+  intercom: siIntercom,
+  telegram: siTelegram,
 };
 
 export function ProviderIcon({

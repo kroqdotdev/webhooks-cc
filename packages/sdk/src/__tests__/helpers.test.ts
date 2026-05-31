@@ -20,6 +20,13 @@ import {
   isGitLabWebhook,
   isTypeformWebhook,
   isStandardWebhook,
+  isMetaWebhook,
+  isLemonSqueezyWebhook,
+  isCoinbaseCommerceWebhook,
+  isRazorpayWebhook,
+  isCalWebhook,
+  isIntercomWebhook,
+  isTelegramWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -517,5 +524,142 @@ describe("detectWebhookInfo", () => {
         })
       )
     ).toBeNull();
+  });
+});
+
+describe("tier-1 provider detection", () => {
+  it("detects Meta webhooks from body object + entry, not as GitHub", () => {
+    const req = makeRequest({
+      headers: { "x-hub-signature-256": "sha256=deadbeef" },
+      body: JSON.stringify({ object: "whatsapp_business_account", entry: [{ id: "1" }] }),
+      contentType: "application/json",
+    });
+    expect(detectWebhookProvider(req)).toBe("meta");
+    expect(isMetaWebhook(req)).toBe(true);
+  });
+
+  it("detects Meta page and instagram objects", () => {
+    expect(
+      detectWebhookProvider(makeRequest({ body: JSON.stringify({ object: "page", entry: [{}] }) }))
+    ).toBe("meta");
+    expect(
+      detectWebhookProvider(
+        makeRequest({ body: JSON.stringify({ object: "instagram", entry: [{}] }) })
+      )
+    ).toBe("meta");
+  });
+
+  it("does not treat a GitHub-shaped body as Meta (falls back to github)", () => {
+    const req = makeRequest({
+      headers: { "x-hub-signature-256": "sha256=abc" },
+      body: JSON.stringify({ ref: "refs/heads/main", repository: {} }),
+    });
+    expect(detectWebhookProvider(req)).toBe("github");
+  });
+
+  it("detects Lemon Squeezy from body.meta.event_name", () => {
+    const req = makeRequest({
+      headers: { "x-signature": "abc" },
+      body: JSON.stringify({ meta: { event_name: "order_created" }, data: {} }),
+    });
+    expect(detectWebhookProvider(req)).toBe("lemonsqueezy");
+    expect(isLemonSqueezyWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("order_created");
+  });
+
+  it("detects Coinbase Commerce from x-cc-webhook-signature + event.type", () => {
+    const req = makeRequest({
+      headers: { "x-cc-webhook-signature": "abc" },
+      body: '{"event":{"type":"charge:confirmed"}}',
+    });
+    expect(detectWebhookProvider(req)).toBe("coinbase-commerce");
+    expect(isCoinbaseCommerceWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("charge:confirmed");
+  });
+
+  it("detects Razorpay from x-razorpay-signature + event", () => {
+    const req = makeRequest({
+      headers: { "x-razorpay-signature": "abc" },
+      body: '{"event":"payment.captured"}',
+    });
+    expect(detectWebhookProvider(req)).toBe("razorpay");
+    expect(isRazorpayWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("payment.captured");
+  });
+
+  it("detects Cal.com from x-cal-signature-256 + triggerEvent", () => {
+    const req = makeRequest({
+      headers: { "x-cal-signature-256": "abc" },
+      body: '{"triggerEvent":"BOOKING_CREATED"}',
+    });
+    expect(detectWebhookProvider(req)).toBe("cal");
+    expect(isCalWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("BOOKING_CREATED");
+  });
+
+  it("detects Intercom from sha1= x-hub-signature + topic", () => {
+    const req = makeRequest({
+      headers: { "x-hub-signature": "sha1=deadbeef" },
+      body: '{"type":"notification_event","topic":"conversation.user.created"}',
+    });
+    expect(detectWebhookProvider(req)).toBe("intercom");
+    expect(isIntercomWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("conversation.user.created");
+  });
+
+  it("detects Telegram from x-telegram-bot-api-secret-token", () => {
+    const req = makeRequest({
+      headers: { "x-telegram-bot-api-secret-token": "secret" },
+      body: '{"update_id":1,"message":{"text":"hi"}}',
+    });
+    expect(detectWebhookProvider(req)).toBe("telegram");
+    expect(isTelegramWebhook(req)).toBe(true);
+  });
+
+  // ── Ordering regressions: tier-1 additions must not break existing providers ──
+
+  it("a real GitHub push (with legacy sha1 x-hub-signature) still detects as github, not intercom", () => {
+    const req = makeRequest({
+      headers: {
+        "x-github-event": "push",
+        "x-hub-signature": "sha1=deadbeef",
+        "x-hub-signature-256": "sha256=cafef00d",
+      },
+      body: JSON.stringify({ ref: "refs/heads/main" }),
+    });
+    expect(detectWebhookProvider(req)).toBe("github");
+  });
+
+  it("Intercom (sha1=) stays intercom and does not collide with GitHub", () => {
+    expect(
+      detectWebhookProvider(makeRequest({ headers: { "x-hub-signature": "sha1=abc" }, body: "{}" }))
+    ).toBe("intercom");
+  });
+
+  it("does not classify a Telegram request as Intercom even if the body has type=notification_event", () => {
+    // Intercom detection requires its x-hub-signature header; a body field
+    // alone must not shadow Telegram (which carries no x-hub-signature).
+    const req = makeRequest({
+      headers: { "x-telegram-bot-api-secret-token": "secret" },
+      body: '{"type":"notification_event","update_id":1}',
+    });
+    expect(detectWebhookProvider(req)).toBe("telegram");
+  });
+
+  it("does not classify a header-less notification_event body as Intercom", () => {
+    expect(
+      detectWebhookProvider(makeRequest({ body: '{"type":"notification_event"}' }))
+    ).toBeNull();
+  });
+
+  it("no tier-1 body shape mis-detects as standard-webhooks", () => {
+    const bodies = [
+      JSON.stringify({ object: "whatsapp_business_account", entry: [{}] }),
+      JSON.stringify({ meta: { event_name: "order_created" } }),
+      '{"event":{"type":"charge:confirmed"}}',
+    ];
+    for (const body of bodies) {
+      expect(detectWebhookProvider(makeRequest({ body }))).not.toBe("standard-webhooks");
+    }
   });
 });

@@ -119,7 +119,10 @@ const mockResponseSchema = z.object({
     .max(MOCK_RESPONSE_STATUS_MAX)
     .describe(`HTTP status code (${MOCK_RESPONSE_STATUS_MIN}-${MOCK_RESPONSE_STATUS_MAX})`),
   body: z.string().default("").describe("Response body string (default: empty)"),
-  headers: z.record(z.string(), z.string()).default({}).describe("Response headers (default: none)"),
+  headers: z
+    .record(z.string(), z.string())
+    .default({})
+    .describe("Response headers (default: none)"),
   delay: z
     .number()
     .int()
