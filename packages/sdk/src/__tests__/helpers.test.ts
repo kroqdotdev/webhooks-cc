@@ -27,6 +27,7 @@ import {
   isCalWebhook,
   isIntercomWebhook,
   isTelegramWebhook,
+  isSquareWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -379,6 +380,42 @@ describe("isStandardWebhook", () => {
 
   it("returns false without headers", () => {
     expect(isStandardWebhook(makeRequest())).toBe(false);
+  });
+});
+
+describe("isSquareWebhook", () => {
+  it("detects Square by the x-square-hmacsha256-signature header", () => {
+    expect(
+      isSquareWebhook(
+        makeRequest({
+          headers: { "x-square-hmacsha256-signature": "abc123" },
+          body: JSON.stringify({ type: "payment.created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isSquareWebhook(makeRequest({ headers: { "X-Square-HmacSha256-Signature": "abc123" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isSquareWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the body via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "x-square-hmacsha256-signature": "abc123" },
+        body: JSON.stringify({ type: "payment.updated" }),
+      })
+    );
+    expect(info?.provider).toBe("square");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("x-square-hmacsha256-signature");
+    expect(info?.event).toBe("payment.updated");
   });
 });
 

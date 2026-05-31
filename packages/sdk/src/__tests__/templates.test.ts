@@ -24,6 +24,7 @@ import {
   verifyCalSignature,
   verifyIntercomSignature,
   verifyTelegramSignature,
+  verifySquareSignature,
   verifySignature,
 } from "../verify";
 
@@ -1202,4 +1203,44 @@ describe("tier-1 provider templates produce verifiable signed requests", () => {
     const result = await buildTemplate("telegram");
     expect(getHeader(result.headers, "x-telegram-bot-api-secret-token")).toBe(TEST_SECRET);
   });
+});
+
+// ─── Tier-2: Square (URL + body HMAC scheme) ────────────────────────────
+
+describe("tier-2 Square provider metadata", () => {
+  it("square is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("square");
+    expect(VERIFY_PROVIDERS).toContain("square");
+
+    const meta = TEMPLATE_METADATA.square;
+    expect(meta.provider).toBe("square");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-square-hmacsha256-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("payment.created");
+    expect(meta.templates).toContain("payment.created");
+  });
+});
+
+describe("tier-2 Square templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.square.templates) {
+    it(`square/${template} is valid JSON and the signature verifies over URL + body`, async () => {
+      const result = await buildTemplate("square", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "x-square-hmacsha256-signature");
+      expect(sig).toBeDefined();
+      expect(await verifySquareSignature(ENDPOINT_URL, result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifySquareSignature(ENDPOINT_URL, result.body, sig!, "wrong_secret")).toBe(
+        false
+      );
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "square", secret: TEST_SECRET, url: ENDPOINT_URL }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
 });

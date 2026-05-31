@@ -32,6 +32,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   cal: "BOOKING_CREATED",
   intercom: "conversation.user.created",
   telegram: "message",
+  square: "payment.created",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -55,6 +56,7 @@ const PROVIDER_TEMPLATES = {
   cal: ["BOOKING_CREATED", "BOOKING_CANCELLED", "BOOKING_RESCHEDULED"] as const,
   intercom: ["conversation.user.created", "conversation.admin.replied", "contact.created"] as const,
   telegram: ["message", "callback_query", "edited_message"] as const,
+  square: ["payment.created", "payment.updated", "refund.created"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -79,6 +81,7 @@ export const TEMPLATE_PROVIDERS = [
   "cal",
   "intercom",
   "telegram",
+  "square",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -102,6 +105,7 @@ export const VERIFY_PROVIDERS = [
   "cal",
   "intercom",
   "telegram",
+  "square",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -267,6 +271,14 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: true,
     signatureHeader: "x-telegram-bot-api-secret-token",
     signatureAlgorithm: "token",
+  }),
+  square: Object.freeze({
+    provider: "square",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.square]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.square,
+    secretRequired: true,
+    signatureHeader: "x-square-hmacsha256-signature",
+    signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
 
@@ -948,6 +960,63 @@ function buildTemplatePayload(
     const payload = bodyOverride ?? payloadByTemplate[template];
     const body = typeof payload === "string" ? payload : JSON.stringify(payload);
     return { body, contentType: "application/json", headers: {} };
+  }
+
+  if (provider === "square") {
+    const payloadByTemplate: Record<string, unknown> = {
+      "payment.created": {
+        merchant_id: randomHex(13).toUpperCase(),
+        type: "payment.created",
+        event_id: randomUuid(),
+        created_at: nowIso,
+        data: {
+          type: "payment",
+          id: randomHex(22),
+          object: {
+            payment: {
+              id: randomHex(22),
+              amount_money: { amount: 2000, currency: "USD" },
+              status: "APPROVED",
+            },
+          },
+        },
+      },
+      "payment.updated": {
+        merchant_id: randomHex(13).toUpperCase(),
+        type: "payment.updated",
+        event_id: randomUuid(),
+        created_at: nowIso,
+        data: {
+          type: "payment",
+          id: randomHex(22),
+          object: { payment: { id: randomHex(22), status: "COMPLETED" } },
+        },
+      },
+      "refund.created": {
+        merchant_id: randomHex(13).toUpperCase(),
+        type: "refund.created",
+        event_id: randomUuid(),
+        created_at: nowIso,
+        data: {
+          type: "refund",
+          id: randomHex(22),
+          object: {
+            refund: {
+              id: randomHex(22),
+              amount_money: { amount: 500, currency: "USD" },
+              status: "PENDING",
+            },
+          },
+        },
+      },
+    };
+    const payload = bodyOverride ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Square-Webhooks/1.0" },
+    };
   }
 
   if (provider !== "twilio") {
@@ -2002,6 +2071,12 @@ export async function buildTemplateSendOptions(
 
   if (provider === "telegram") {
     headers["x-telegram-bot-api-secret-token"] = options.secret;
+  }
+
+  if (provider === "square") {
+    // Square signs the notification URL concatenated with the raw body.
+    const signature = await hmacSign("SHA-256", options.secret, `${endpointUrl}${built.body}`);
+    headers["x-square-hmacsha256-signature"] = toBase64(signature);
   }
 
   return {

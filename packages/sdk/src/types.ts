@@ -234,7 +234,8 @@ export type TemplateProvider =
   | "razorpay"
   | "cal"
   | "intercom"
-  | "telegram";
+  | "telegram"
+  | "square";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

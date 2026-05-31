@@ -292,6 +292,11 @@ export function isTelegramWebhook(request: Request): boolean {
   return isDetectedProvider(request, "telegram");
 }
 
+/** Check if a request looks like a Square webhook. */
+export function isSquareWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "square");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -396,6 +401,14 @@ const DETECTORS: readonly Detector[] = [
     via: "header",
     matchedOn: "stripe-signature",
     matches: (request) => getHeaderValue(request.headers, "stripe-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "square",
+    via: "header",
+    matchedOn: "x-square-hmacsha256-signature",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-square-hmacsha256-signature") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "type")),
   },
   {

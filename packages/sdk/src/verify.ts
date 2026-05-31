@@ -453,6 +453,32 @@ export async function verifyTelegramSignature(
 }
 
 /**
+ * Verify a Square webhook signature. Square computes
+ * `base64(HMAC-SHA256(signatureKey, notificationUrl + rawBody))` and sends it in
+ * the `x-square-hmacsha256-signature` header. The signature is bound to the exact
+ * notification URL Square delivered to, so the caller must supply it.
+ */
+export async function verifySquareSignature(
+  url: string,
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  signatureKey: string
+): Promise<boolean> {
+  requireSecret(signatureKey, "verifySquareSignature");
+  if (!url) {
+    throw new Error("verifySquareSignature requires the notification URL");
+  }
+  if (!signatureHeader) {
+    return false;
+  }
+
+  const expected = toBase64(
+    await hmacSign("SHA-256", signatureKey, `${url}${normalizeBody(body)}`)
+  );
+  return timingSafeEqual(signatureHeader.trim(), expected);
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -769,6 +795,18 @@ export async function verifySignature(
     valid = await verifyTelegramSignature(
       request.body,
       getHeader(request.headers, "x-telegram-bot-api-secret-token"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "square") {
+    if (!options.url) {
+      throw new Error('verifySignature for provider "square" requires options.url');
+    }
+    valid = await verifySquareSignature(
+      options.url,
+      request.body,
+      getHeader(request.headers, "x-square-hmacsha256-signature"),
       options.secret
     );
   }

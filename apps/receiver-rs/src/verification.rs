@@ -1,4 +1,4 @@
-//! Webhook signature verification for 21 providers.
+//! Webhook signature verification for 22 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -161,6 +161,8 @@ pub fn verify_signature(
         "cal" => verify_hex_sha256(secret, headers, body, "x-cal-signature-256"),
         "intercom" => verify_intercom(secret, headers, body),
         "telegram" => verify_telegram(secret, headers),
+        // ── Tier-2 ──
+        "square" => verify_square(secret, headers, body, request_url),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -253,6 +255,10 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     }
     if get_header(headers, "x-telegram-bot-api-secret-token").is_some() {
         return Some("telegram");
+    }
+    // ── Tier-2 providers with distinctive headers ──
+    if get_header(headers, "x-square-hmacsha256-signature").is_some() {
+        return Some("square");
     }
     // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
     // GitHub (which sends the same header alongside x-hub-signature-256 +
@@ -973,6 +979,48 @@ fn verify_telegram(secret: &[u8], headers: &HashMap<String, String>) -> Verifica
             header: Some(header_name.to_string()),
             message: Some("Token does not match".to_string()),
         };
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Square: HMAC-SHA256 over `notificationURL + rawBody`, base64 encoded, sent in
+/// `x-square-hmacsha256-signature`. The signature is bound to the exact
+/// notification URL, so the request URL must be available.
+fn verify_square(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    request_url: Option<&str>,
+) -> VerificationResult {
+    use base64::Engine;
+    let header_name = "x-square-hmacsha256-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let Some(url) = request_url else {
+        return VerificationResult::Skipped(SignatureError {
+            code: "missing_header",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: None,
+            message: Some("Square verification requires the request URL".to_string()),
+        });
+    };
+
+    // Payload is the notification URL concatenated with the raw body bytes.
+    let mut payload = url.as_bytes().to_vec();
+    payload.extend_from_slice(body);
+
+    let expected = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, &payload));
+    let received = sig_header.trim();
+
+    if ct_str_eq(received, &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
 }

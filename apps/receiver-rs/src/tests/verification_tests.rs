@@ -959,3 +959,82 @@ fn verify_telegram_missing_header() {
         VerificationResult::Skipped(_)
     ));
 }
+
+// ── Tier-2: Square (URL + body HMAC, base64) ──
+
+#[test]
+fn detect_square() {
+    let h = headers(&[("x-square-hmacsha256-signature", "abc")]);
+    assert_eq!(detect_provider(&h), Some("square"));
+}
+
+#[test]
+fn verify_square_url_plus_body() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"{"type":"payment.created"}"#;
+    let payload = format!("{url}{}", std::str::from_utf8(body).unwrap());
+    let sig = make_hmac_sha256_b64(b"sq_key", &payload);
+    let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("square", b"sq_key", &h, body, None, Some(url)),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_square_wrong_secret() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"{"type":"payment.created"}"#;
+    let payload = format!("{url}{}", std::str::from_utf8(body).unwrap());
+    let sig = make_hmac_sha256_b64(b"sq_key", &payload);
+    let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("square", b"wrong_key", &h, body, None, Some(url)),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_square_wrong_url() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"{"type":"payment.created"}"#;
+    // Sign over the real URL, but verify against a different URL → mismatch.
+    let payload = format!("{url}{}", std::str::from_utf8(body).unwrap());
+    let sig = make_hmac_sha256_b64(b"sq_key", &payload);
+    let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "square",
+            b"sq_key",
+            &h,
+            body,
+            None,
+            Some("https://go.webhooks.cc/w/other"),
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_square_missing_header() {
+    assert!(matches!(
+        verify_signature(
+            "square",
+            b"sq_key",
+            &headers(&[]),
+            b"{}",
+            None,
+            Some("https://go.webhooks.cc/w/demo"),
+        ),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_square_missing_url() {
+    let h = headers(&[("x-square-hmacsha256-signature", "abc")]);
+    assert!(matches!(
+        verify_signature("square", b"sq_key", &h, b"{}", None, None),
+        VerificationResult::Skipped(_)
+    ));
+}

@@ -330,6 +330,7 @@ describe("WebhooksCC", () => {
         "cal",
         "intercom",
         "telegram",
+        "square",
       ]);
     });
 

@@ -13,6 +13,7 @@ import {
   siPaddle,
   siRazorpay,
   siShopify,
+  siSquare,
   siStripe,
   siTelegram,
   siTypeform,
@@ -40,6 +41,7 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   cal: siCaldotcom,
   intercom: siIntercom,
   telegram: siTelegram,
+  square: siSquare,
 };
 
 export function ProviderIcon({

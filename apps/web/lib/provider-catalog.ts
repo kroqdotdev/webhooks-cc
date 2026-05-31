@@ -48,6 +48,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   cal: "Cal.com",
   intercom: "Intercom",
   telegram: "Telegram",
+  square: "Square",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -72,6 +73,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   cal: "your webhook secret",
   intercom: "your Intercom client secret",
   telegram: "your secret token",
+  square: "your signature key",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -221,6 +223,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#229ed9",
     foreground: "#ffffff",
     border: "#1a7fb0",
+  },
+  square: {
+    glyph: "square",
+    text: "SQ",
+    background: "#000000",
+    foreground: "#ffffff",
+    border: "#3d3d3d",
   },
 };
 

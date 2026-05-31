@@ -22,6 +22,7 @@ import {
   verifyCalSignature,
   verifyIntercomSignature,
   verifyTelegramSignature,
+  verifySquareSignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -387,6 +388,63 @@ describe("signature verification", () => {
           headers: { "Stripe-Signature": built.headers["stripe-signature"] },
         },
         { provider: "stripe", secret: "whsec_test_123" }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+});
+
+describe("tier-2 Square verification (URL + body scheme)", () => {
+  it("verifies Square signatures over notificationURL + body via round-trip + dispatcher", async () => {
+    const url = "https://go.webhooks.cc/w/demo";
+    const built = await client.buildRequest(url, {
+      provider: "square",
+      secret: "sq_signature_key",
+      body: { type: "payment.created", data: {} },
+    });
+    const sig = built.headers["x-square-hmacsha256-signature"];
+    expect(sig).toBeDefined();
+
+    expect(await verifySquareSignature(url, built.body, sig, "sq_signature_key")).toBe(true);
+    // Wrong secret → false
+    expect(await verifySquareSignature(url, built.body, sig, "the_wrong_key")).toBe(false);
+    // Wrong URL → false (Square binds the signature to the notification URL)
+    expect(
+      await verifySquareSignature(
+        "https://go.webhooks.cc/w/other",
+        built.body,
+        sig,
+        "sq_signature_key"
+      )
+    ).toBe(false);
+    // Tampered body → false
+    expect(await verifySquareSignature(url, `${built.body} `, sig, "sq_signature_key")).toBe(false);
+
+    await expect(verifySquareSignature(url, built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    await expect(verifySquareSignature("", built.body, sig, "sq_signature_key")).rejects.toThrow(
+      "requires the notification URL"
+    );
+
+    // Dispatcher requires options.url
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-Square-HmacSha256-Signature": sig },
+        },
+        { provider: "square", secret: "sq_signature_key" }
+      )
+    ).rejects.toThrow("requires options.url");
+
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-Square-HmacSha256-Signature": sig },
+        },
+        { provider: "square", secret: "sq_signature_key", url }
       )
     ).resolves.toEqual({ valid: true });
   });
