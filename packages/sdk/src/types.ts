@@ -240,7 +240,8 @@ export type TemplateProvider =
   | "mailgun"
   | "calendly"
   | "mux"
-  | "sentry";
+  | "sentry"
+  | "bitbucket";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

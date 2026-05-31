@@ -30,6 +30,7 @@ import {
   verifyCalendlySignature,
   verifyMuxSignature,
   verifySentrySignature,
+  verifyBitbucketSignature,
   verifySignature,
 } from "../verify";
 
@@ -1480,6 +1481,49 @@ describe("tier-2 Sentry templates produce verifiable signed requests", () => {
       const verification = await verifySignature(
         { body: result.body, headers: result.headers },
         { provider: "sentry", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Bitbucket (GitHub-style sha256= hex over body) ─────────────
+
+describe("tier-2 Bitbucket provider metadata", () => {
+  it("bitbucket is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("bitbucket");
+    expect(VERIFY_PROVIDERS).toContain("bitbucket");
+
+    const meta = TEMPLATE_METADATA.bitbucket;
+    expect(meta.provider).toBe("bitbucket");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-hub-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("repo:push");
+    expect(meta.templates).toContain("repo:push");
+  });
+});
+
+describe("tier-2 Bitbucket templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.bitbucket.templates) {
+    it(`bitbucket/${template} is valid JSON and the sha256= signature verifies over the body`, async () => {
+      const result = await buildTemplate("bitbucket", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "x-hub-signature");
+      expect(sig).toBeDefined();
+      // GitHub-style sha256= hex prefix (not sha1=, which is Intercom).
+      expect(sig).toMatch(/^sha256=[0-9a-f]+$/);
+      // Bitbucket carries the event in the x-event-key header for detection.
+      expect(getHeader(result.headers, "x-event-key")).toBe(template);
+
+      expect(await verifyBitbucketSignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyBitbucketSignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "bitbucket", secret: TEST_SECRET }
       );
       expect(verification.valid).toBe(true);
     });

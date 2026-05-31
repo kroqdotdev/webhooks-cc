@@ -33,6 +33,7 @@ import {
   isCalendlyWebhook,
   isMuxWebhook,
   isSentryWebhook,
+  isBitbucketWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -614,6 +615,42 @@ describe("isSentryWebhook", () => {
   });
 });
 
+describe("isBitbucketWebhook", () => {
+  it("detects Bitbucket by the x-event-key header", () => {
+    expect(
+      isBitbucketWebhook(
+        makeRequest({
+          headers: { "x-event-key": "repo:push", "x-hub-signature": "sha256=deadbeef" },
+          body: JSON.stringify({ push: { changes: [] } }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isBitbucketWebhook(makeRequest({ headers: { "X-Event-Key": "pullrequest:created" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the x-event-key header", () => {
+    expect(isBitbucketWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event from the x-event-key header", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "x-event-key": "repo:push", "x-hub-signature": "sha256=deadbeef" },
+        body: JSON.stringify({ push: { changes: [] } }),
+      })
+    );
+    expect(info?.provider).toBe("bitbucket");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("x-event-key");
+    expect(info?.event).toBe("repo:push");
+  });
+});
+
 describe("detectWebhookProvider", () => {
   it("returns null when no provider matches", () => {
     expect(detectWebhookProvider(makeRequest())).toBeNull();
@@ -846,6 +883,43 @@ describe("tier-1 provider detection", () => {
     });
     expect(detectWebhookProvider(req)).toBe("telegram");
     expect(isTelegramWebhook(req)).toBe(true);
+  });
+
+  it("detects Bitbucket from x-event-key + sha256= x-hub-signature", () => {
+    const req = makeRequest({
+      headers: { "x-event-key": "repo:push", "x-hub-signature": "sha256=deadbeef" },
+      body: '{"push":{"changes":[]}}',
+    });
+    expect(detectWebhookProvider(req)).toBe("bitbucket");
+    expect(isBitbucketWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("repo:push");
+  });
+
+  // ── x-hub-signature collision regression: Bitbucket (sha256=) vs Intercom (sha1=) ──
+
+  it("Bitbucket (x-event-key + sha256=) detects bitbucket, not intercom", () => {
+    // Both providers send x-hub-signature; Bitbucket's unique x-event-key + the
+    // bitbucket-before-intercom ordering must win.
+    const req = makeRequest({
+      headers: {
+        "x-event-key": "repo:push",
+        "x-hub-signature": "sha256=cafef00d",
+      },
+      body: JSON.stringify({ push: { changes: [] } }),
+    });
+    expect(detectWebhookProvider(req)).toBe("bitbucket");
+    expect(isBitbucketWebhook(req)).toBe(true);
+    expect(isIntercomWebhook(req)).toBe(false);
+  });
+
+  it("Intercom (sha1=, no x-event-key) detects intercom, not bitbucket", () => {
+    const req = makeRequest({
+      headers: { "x-hub-signature": "sha1=deadbeef" },
+      body: '{"type":"notification_event","topic":"conversation.user.created"}',
+    });
+    expect(detectWebhookProvider(req)).toBe("intercom");
+    expect(isIntercomWebhook(req)).toBe(true);
+    expect(isBitbucketWebhook(req)).toBe(false);
   });
 
   // ── Ordering regressions: tier-1 additions must not break existing providers ──

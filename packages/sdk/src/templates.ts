@@ -38,6 +38,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   calendly: "invitee.created",
   mux: "video.asset.created",
   sentry: "issue.created",
+  bitbucket: "repo:push",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -67,6 +68,7 @@ const PROVIDER_TEMPLATES = {
   calendly: ["invitee.created", "invitee.canceled", "routing_form_submission.created"] as const,
   mux: ["video.asset.created", "video.asset.ready", "video.upload.asset_created"] as const,
   sentry: ["issue.created", "issue.resolved", "error.created"] as const,
+  bitbucket: ["repo:push", "pullrequest:created", "pullrequest:fulfilled"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -97,6 +99,7 @@ export const TEMPLATE_PROVIDERS = [
   "calendly",
   "mux",
   "sentry",
+  "bitbucket",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -126,6 +129,7 @@ export const VERIFY_PROVIDERS = [
   "calendly",
   "mux",
   "sentry",
+  "bitbucket",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -339,6 +343,14 @@ export const TEMPLATE_METADATA = Object.freeze({
     defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.sentry,
     secretRequired: true,
     signatureHeader: "sentry-hook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  bitbucket: Object.freeze({
+    provider: "bitbucket",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.bitbucket]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.bitbucket,
+    secretRequired: true,
+    signatureHeader: "x-hub-signature",
     signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
@@ -1184,6 +1196,25 @@ function buildTemplatePayload(
       body,
       contentType: "application/json",
       headers: { "user-agent": "Sentry-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "bitbucket") {
+    const payload = bodyOverride ?? {
+      push: {
+        changes: [{ new: { name: "main", type: "branch" } }],
+      },
+      repository: {
+        name: "demo-repo",
+        full_name: "webhooks-cc/demo-repo",
+      },
+      actor: { display_name: "webhooks-cc-bot" },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Bitbucket-Webhooks/1.0" },
     };
   }
 
@@ -2292,6 +2323,14 @@ export async function buildTemplateSendOptions(
     // and carries the event resource (e.g. `issue`) in `sentry-hook-resource`.
     headers["sentry-hook-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
     headers["sentry-hook-resource"] = event.split(".")[0];
+  }
+
+  if (provider === "bitbucket") {
+    // Bitbucket uses the GitHub-style `sha256=<hex>` scheme over the raw body in
+    // `x-hub-signature`, and carries the event in the unique `x-event-key` header
+    // (which is what auto-detection keys on to avoid the Intercom `sha1=` collision).
+    headers["x-event-key"] = event;
+    headers["x-hub-signature"] = `sha256=${toHex(await hmacSign("SHA-256", options.secret, built.body))}`;
   }
 
   return {

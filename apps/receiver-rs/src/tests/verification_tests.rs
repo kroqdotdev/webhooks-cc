@@ -1464,3 +1464,117 @@ fn verify_sentry_missing_header() {
         VerificationResult::Skipped(_)
     ));
 }
+
+// ── Tier-2: Bitbucket (GitHub-style sha256= hex over body, x-hub-signature) ──
+
+#[test]
+fn detect_bitbucket() {
+    // Bitbucket is detected on its unique x-event-key header.
+    let h = headers(&[
+        ("x-event-key", "repo:push"),
+        ("x-hub-signature", "sha256=deadbeef"),
+    ]);
+    assert_eq!(detect_provider(&h), Some("bitbucket"));
+}
+
+#[test]
+fn bitbucket_with_sha256_detects_bitbucket_not_intercom() {
+    // Both providers send x-hub-signature; Bitbucket's unique x-event-key + the
+    // bitbucket-before-intercom ordering must win.
+    let h = headers(&[
+        ("x-event-key", "repo:push"),
+        ("x-hub-signature", "sha256=cafef00d"),
+    ]);
+    assert_eq!(detect_provider(&h), Some("bitbucket"));
+}
+
+#[test]
+fn intercom_sha1_without_event_key_detects_intercom_not_bitbucket() {
+    // Intercom (sha1=, no x-event-key) must stay intercom.
+    let h = headers(&[("x-hub-signature", "sha1=deadbeef")]);
+    assert_eq!(detect_provider(&h), Some("intercom"));
+}
+
+#[test]
+fn verify_bitbucket_valid() {
+    let secret = "bitbucket_webhook_secret";
+    let body = br#"{"push":{"changes":[]},"repository":{"name":"demo-repo"}}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("bitbucket", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_bitbucket_wrong_secret() {
+    let body = br#"{"push":{"changes":[]}}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("bitbucket", b"bitbucket_webhook_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_bitbucket_tampered_body() {
+    let secret = "bitbucket_webhook_secret";
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, r#"{"push":{"changes":[]}}"#)
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "bitbucket",
+            secret.as_bytes(),
+            &h,
+            br#"{"push":{"changes":[{}]}}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_bitbucket_rejects_sha1_prefix() {
+    // Bitbucket uses sha256=; a sha1= prefixed signature (Intercom-style) must be rejected.
+    let secret = "bitbucket_webhook_secret";
+    let body = br#"{"push":{"changes":[]}}"#;
+    let sig = format!(
+        "sha1={}",
+        make_hmac_sha1(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("bitbucket", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_bitbucket_missing_header() {
+    let body = br#"{"push":{"changes":[]}}"#;
+    assert!(matches!(
+        verify_signature(
+            "bitbucket",
+            b"bitbucket_webhook_secret",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Skipped(_)
+    ));
+}

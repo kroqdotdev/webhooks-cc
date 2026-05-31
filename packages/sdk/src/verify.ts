@@ -614,6 +614,20 @@ export function verifySentrySignature(
 }
 
 /**
+ * Verify a Bitbucket webhook signature. Bitbucket uses the GitHub-style
+ * `sha256=<hex>` scheme over the raw body, sent in the `x-hub-signature` header.
+ * Reuses the GitHub verifier (which requires the `sha256=` prefix and therefore
+ * rejects Intercom's `sha1=` signatures on the same header name).
+ */
+export function verifyBitbucketSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return verifyGitHubSignature(body, signatureHeader, secret);
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -984,6 +998,14 @@ export async function verifySignature(
     valid = await verifySentrySignature(
       request.body,
       getHeader(request.headers, "sentry-hook-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "bitbucket") {
+    valid = await verifyBitbucketSignature(
+      request.body,
+      getHeader(request.headers, "x-hub-signature"),
       options.secret
     );
   }

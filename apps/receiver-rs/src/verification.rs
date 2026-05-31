@@ -1,4 +1,4 @@
-//! Webhook signature verification for 27 providers.
+//! Webhook signature verification for 28 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -174,6 +174,10 @@ pub fn verify_signature(
         "mux" => verify_mux(secret, headers, body),
         // Sentry: HMAC-SHA256 hex over the raw body in `sentry-hook-signature`.
         "sentry" => verify_hex_sha256(secret, headers, body, "sentry-hook-signature"),
+        // Bitbucket: GitHub-style `sha256=` HMAC-SHA256 over the body, but on the
+        // legacy `x-hub-signature` header (Intercom uses the same header with
+        // `sha1=`; detection keys on the unique `x-event-key` header instead).
+        "bitbucket" => verify_github_with_header(secret, headers, body, "x-hub-signature"),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -283,10 +287,18 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     if get_header(headers, "sentry-hook-signature").is_some() {
         return Some("sentry");
     }
+    // Bitbucket: shares the legacy `x-hub-signature` header with Intercom but
+    // uses the GitHub-style `sha256=` scheme. It carries a unique `x-event-key`
+    // header, so we detect on that and MUST check it BEFORE Intercom to avoid the
+    // shared-header collision.
+    if get_header(headers, "x-event-key").is_some() {
+        return Some("bitbucket");
+    }
     // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
     // GitHub (which sends the same header alongside x-hub-signature-256 +
-    // x-github-event) so GitHub webhooks never mis-detect as Intercom, and the
-    // sha1= prefix disambiguates from Bitbucket's sha256= form.
+    // x-github-event) so GitHub webhooks never mis-detect as Intercom, and after
+    // Bitbucket (x-event-key + sha256=); the sha1= prefix disambiguates from
+    // Bitbucket's sha256= form.
     if get_header(headers, "x-hub-signature")
         .map(|v| v.trim().to_lowercase().starts_with("sha1="))
         .unwrap_or(false)
@@ -371,7 +383,19 @@ fn verify_github(
     headers: &HashMap<String, String>,
     body: &[u8],
 ) -> VerificationResult {
-    let header_name = "x-hub-signature-256";
+    verify_github_with_header(secret, headers, body, "x-hub-signature-256")
+}
+
+/// GitHub-style `sha256={hex}` HMAC-SHA256 over the raw body, reading an
+/// arbitrary header. GitHub/Meta use `x-hub-signature-256`; Bitbucket uses the
+/// legacy `x-hub-signature` header with the same `sha256=` scheme (a `sha1=`
+/// Intercom signature on the same header lacks the prefix and is rejected).
+fn verify_github_with_header(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    header_name: &str,
+) -> VerificationResult {
     let Some(sig_header) = get_header(headers, header_name) else {
         return VerificationResult::Skipped(SignatureError::missing_header(header_name));
     };
@@ -380,9 +404,9 @@ fn verify_github(
     let hex_sig = match received.strip_prefix("sha256=") {
         Some(h) => h,
         None => {
-            return VerificationResult::Invalid(SignatureError::invalid_encoding(
-                "Expected sha256= prefix on x-hub-signature-256",
-            ));
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(&format!(
+                "Expected sha256= prefix on {header_name}"
+            )));
         }
     };
 

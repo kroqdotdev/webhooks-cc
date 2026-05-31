@@ -336,6 +336,7 @@ describe("WebhooksCC", () => {
         "calendly",
         "mux",
         "sentry",
+        "bitbucket",
       ]);
     });
 

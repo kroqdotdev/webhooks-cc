@@ -322,6 +322,11 @@ export function isSentryWebhook(request: Request): boolean {
   return isDetectedProvider(request, "sentry");
 }
 
+/** Check if a request looks like a Bitbucket webhook. */
+export function isBitbucketWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "bitbucket");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -630,10 +635,22 @@ const DETECTORS: readonly Detector[] = [
     event: (request) => getEventString(extractJsonField(request, "triggerEvent")),
   },
   {
+    // Bitbucket reuses the legacy `x-hub-signature` header (with the GitHub-style
+    // `sha256=` scheme), so it MUST be ordered BEFORE Intercom (which uses the
+    // same header with `sha1=`). Bitbucket carries a unique `x-event-key` header,
+    // so we detect on that to avoid the collision entirely.
+    provider: "bitbucket",
+    via: "header",
+    matchedOn: "x-event-key",
+    matches: (request) => getHeaderValue(request.headers, "x-event-key") !== undefined,
+    event: (request) => getEventString(getHeaderValue(request.headers, "x-event-key")),
+  },
+  {
     // Intercom reuses the legacy `x-hub-signature` (sha1=) header. It MUST be
     // ordered after GitHub (which sends the same header alongside
-    // x-hub-signature-256 + x-github-event) and is disambiguated from
-    // Bitbucket (sha256=) by requiring the sha1= prefix or the Intercom body.
+    // x-hub-signature-256 + x-github-event) and after Bitbucket (sha256= +
+    // x-event-key), and is disambiguated from Bitbucket by requiring the sha1=
+    // prefix or the Intercom body.
     provider: "intercom",
     via: "header",
     matchedOn: "x-hub-signature",

@@ -28,6 +28,7 @@ import {
   verifyCalendlySignature,
   verifyMuxSignature,
   verifySentrySignature,
+  verifyBitbucketSignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -760,6 +761,58 @@ describe("tier-2 Sentry verification (hex HMAC-SHA256 over body)", () => {
       verifySignature(
         { body: built.body, headers: { "sentry-hook-signature": sig } },
         { provider: "sentry", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Bitbucket verification (sha256= hex over body)", () => {
+  it("verifies Bitbucket signatures over the raw body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "bitbucket",
+      secret: "bitbucket_webhook_secret",
+    });
+    const sig = built.headers["x-hub-signature"];
+    expect(sig).toBeDefined();
+    // GitHub-style sha256= hex prefix.
+    expect(sig).toMatch(/^sha256=[0-9a-f]+$/);
+    // Bitbucket carries the event in the x-event-key header.
+    expect(built.headers["x-event-key"]).toBe("repo:push");
+
+    expect(await verifyBitbucketSignature(built.body, sig, "bitbucket_webhook_secret")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyBitbucketSignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(
+      await verifyBitbucketSignature(`${built.body} `, sig, "bitbucket_webhook_secret")
+    ).toBe(false);
+    // Missing header → false (no throw)
+    expect(await verifyBitbucketSignature(built.body, undefined, "bitbucket_webhook_secret")).toBe(
+      false
+    );
+    // A sha1= header (Intercom-style) must not validate as Bitbucket sha256=.
+    expect(
+      await verifyBitbucketSignature(built.body, "sha1=deadbeef", "bitbucket_webhook_secret")
+    ).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifyBitbucketSignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "X-Hub-Signature": sig, "x-event-key": "repo:push" } },
+        { provider: "bitbucket", secret: "bitbucket_webhook_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "x-hub-signature": sig } },
+        { provider: "bitbucket", secret: "the_wrong_key" }
       )
     ).resolves.toEqual({ valid: false });
   });

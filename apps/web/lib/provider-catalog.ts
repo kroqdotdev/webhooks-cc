@@ -54,6 +54,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   calendly: "Calendly",
   mux: "Mux",
   sentry: "Sentry",
+  bitbucket: "Bitbucket",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -84,6 +85,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   calendly: "your webhook signing key",
   mux: "your webhook signing secret",
   sentry: "your client secret",
+  bitbucket: "your webhook secret",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -275,6 +277,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#362d59",
     foreground: "#ffffff",
     border: "#1f1a36",
+  },
+  bitbucket: {
+    glyph: "bitbucket",
+    text: "BB",
+    background: "#0052cc",
+    foreground: "#ffffff",
+    border: "#003d99",
   },
 };
 

@@ -1,5 +1,6 @@
 import type { SimpleIcon } from "simple-icons";
 import {
+  siBitbucket,
   siCaldotcom,
   siClerk,
   siCoinbase,
@@ -48,6 +49,7 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   hubspot: siHubspot,
   mailgun: siMailgun,
   sentry: siSentry,
+  bitbucket: siBitbucket,
 };
 
 export function ProviderIcon({
