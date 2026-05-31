@@ -332,6 +332,7 @@ describe("WebhooksCC", () => {
         "telegram",
         "square",
         "hubspot",
+        "mailgun",
       ]);
     });
 

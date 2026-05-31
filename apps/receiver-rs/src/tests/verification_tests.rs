@@ -1165,3 +1165,88 @@ fn verify_hubspot_missing_header() {
         VerificationResult::Skipped(_)
     ));
 }
+
+// ── Tier-2: Mailgun (body-embedded HMAC-SHA256 over timestamp + token) ──
+
+/// Build a Mailgun-style JSON body whose `signature.signature` is the hex
+/// HMAC-SHA256 of `timestamp + token` keyed by `secret`.
+fn make_mailgun_body(secret: &str, timestamp: &str, token: &str, event: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{timestamp}{token}"));
+    format!(
+        r#"{{"signature":{{"timestamp":"{timestamp}","token":"{token}","signature":"{sig}"}},"event-data":{{"event":"{event}"}}}}"#
+    )
+}
+
+#[test]
+fn verify_mailgun_valid() {
+    let secret = "mg_signing_key";
+    let body = make_mailgun_body(secret, "1700000000", "deadbeefcafe", "delivered");
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), body.as_bytes(), None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_mailgun_wrong_secret() {
+    let body = make_mailgun_body("mg_signing_key", "1700000000", "deadbeefcafe", "delivered");
+    assert!(matches!(
+        verify_signature("mailgun", b"wrong_secret", &headers(&[]), body.as_bytes(), None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mailgun_tampered_token() {
+    let secret = "mg_signing_key";
+    // Signature computed for one token, but the body carries a different token.
+    let sig = make_hmac_sha256(secret, "1700000000deadbeefcafe");
+    let body = format!(
+        r#"{{"signature":{{"timestamp":"1700000000","token":"OTHERTOKEN","signature":"{sig}"}},"event-data":{{"event":"delivered"}}}}"#
+    );
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), body.as_bytes(), None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mailgun_malformed_body_is_skipped_not_panic() {
+    let secret = "mg_signing_key";
+    // Non-JSON body → Skipped (never panics).
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"not json at all", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+    // Truncated JSON → Skipped.
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"{", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+    // Missing signature fields → Skipped.
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), br#"{"event-data":{}}"#, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+    // Empty body → Skipped.
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn mailgun_is_not_auto_detected() {
+    // Mailgun has no distinctive header, so detect_provider must not key on the
+    // body — owner-selected only.
+    let body = make_mailgun_body("mg_signing_key", "1700000000", "deadbeefcafe", "delivered");
+    let h = headers(&[]);
+    // No header present means detection returns None even though the body is a
+    // valid Mailgun payload.
+    assert_eq!(detect_provider(&h), None);
+    // Sanity: the body itself still verifies via the explicit provider path.
+    assert!(matches!(
+        verify_signature("mailgun", b"mg_signing_key", &h, body.as_bytes(), None, None, None),
+        VerificationResult::Valid
+    ));
+}

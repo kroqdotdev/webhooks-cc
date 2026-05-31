@@ -26,6 +26,7 @@ import {
   verifyTelegramSignature,
   verifySquareSignature,
   verifyHubSpotSignature,
+  verifyMailgunSignature,
   verifySignature,
 } from "../verify";
 
@@ -1305,6 +1306,55 @@ describe("tier-2 HubSpot templates produce verifiable signed requests", () => {
       const verification = await verifySignature(
         { body, headers },
         { provider: "hubspot", secret: TEST_SECRET, url: ENDPOINT_URL, method: "POST" }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Mailgun (body-embedded HMAC scheme) ─────────────────────────
+
+describe("tier-2 Mailgun provider metadata", () => {
+  it("mailgun is listed and has correct metadata (no signature header — body-embedded)", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("mailgun");
+    expect(VERIFY_PROVIDERS).toContain("mailgun");
+
+    const meta: { signatureHeader?: string } & typeof TEMPLATE_METADATA.mailgun =
+      TEMPLATE_METADATA.mailgun;
+    expect(meta.provider).toBe("mailgun");
+    expect(meta.secretRequired).toBe(true);
+    // Mailgun signs body fields, not a header — signatureHeader is omitted.
+    expect(meta.signatureHeader).toBeUndefined();
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("delivered");
+    expect(meta.templates).toContain("delivered");
+  });
+});
+
+describe("tier-2 Mailgun templates produce verifiable body-embedded signatures", () => {
+  for (const template of TEMPLATE_METADATA.mailgun.templates) {
+    it(`mailgun/${template} is valid JSON and the embedded signature verifies over timestamp+token`, async () => {
+      const result = await buildTemplate("mailgun", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      // There is no signature header for Mailgun.
+      expect(getHeader(result.headers, "x-mailgun-signature")).toBeUndefined();
+
+      // The body must carry signature.{timestamp,token,signature}.
+      const parsed = parseBody(result.body) as {
+        signature: { timestamp: string; token: string; signature: string };
+      };
+      expect(typeof parsed.signature.timestamp).toBe("string");
+      expect(typeof parsed.signature.token).toBe("string");
+      expect(parsed.signature.signature).toMatch(/^[a-f0-9]{64}$/);
+
+      expect(await verifyMailgunSignature(result.body, TEST_SECRET)).toBe(true);
+      expect(await verifyMailgunSignature(result.body, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "mailgun", secret: TEST_SECRET }
       );
       expect(verification.valid).toBe(true);
     });

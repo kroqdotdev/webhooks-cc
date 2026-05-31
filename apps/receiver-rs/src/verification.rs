@@ -1,4 +1,4 @@
-//! Webhook signature verification for 23 providers.
+//! Webhook signature verification for 24 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -165,6 +165,9 @@ pub fn verify_signature(
         // ── Tier-2 ──
         "square" => verify_square(secret, headers, body, request_url),
         "hubspot" => verify_hubspot(secret, headers, body, request_url, method),
+        // Mailgun signs body fields (no header); it is owner-selected only and
+        // is intentionally NOT auto-detected (no distinctive header to key on).
+        "mailgun" => verify_mailgun(secret, headers, body),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -1112,6 +1115,66 @@ fn verify_hubspot(
         let mut err = SignatureError::mismatch(&expected, received);
         err.timestamp = Some(ts_ms);
         err.header = Some(sig_header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Mailgun: HMAC-SHA256 hex over `timestamp + token`. Unlike every other
+/// provider, Mailgun does not send a signature header — the `timestamp`,
+/// `token`, and `signature` fields live inside the JSON body under `signature`.
+/// Malformed/non-JSON bodies, or bodies missing the signature fields, are
+/// `Skipped` (this function never panics on bad input).
+fn verify_mailgun(
+    secret: &[u8],
+    _headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    let parsed: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => {
+            return VerificationResult::Skipped(SignatureError {
+                code: "missing_header",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: None,
+                message: Some("Mailgun body is not valid JSON".to_string()),
+            });
+        }
+    };
+
+    let sig = &parsed["signature"];
+    let (timestamp, token, signature) = match (
+        sig["timestamp"].as_str(),
+        sig["token"].as_str(),
+        sig["signature"].as_str(),
+    ) {
+        (Some(ts), Some(tok), Some(s)) if !ts.is_empty() && !tok.is_empty() && !s.is_empty() => {
+            (ts, tok, s)
+        }
+        _ => {
+            return VerificationResult::Skipped(SignatureError {
+                code: "missing_header",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: Some("signature".to_string()),
+                message: Some(
+                    "Mailgun body is missing signature.{timestamp,token,signature}".to_string(),
+                ),
+            });
+        }
+    };
+
+    let payload = format!("{timestamp}{token}");
+    let expected = hex::encode(hmac_sha256(secret, payload.as_bytes()));
+
+    if ct_str_eq(&signature.to_lowercase(), &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, &signature.to_lowercase());
+        err.timestamp = timestamp.parse::<i64>().ok();
+        err.header = Some("signature".to_string());
         VerificationResult::Invalid(err)
     }
 }

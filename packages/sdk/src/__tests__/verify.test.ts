@@ -24,6 +24,7 @@ import {
   verifyTelegramSignature,
   verifySquareSignature,
   verifyHubSpotSignature,
+  verifyMailgunSignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -577,6 +578,57 @@ describe("tier-2 HubSpot verification (method + URI + body + timestamp scheme)",
         60 * 60 * 1000
       )
     ).toBe(true);
+  });
+});
+
+describe("tier-2 Mailgun verification (body-embedded signature scheme)", () => {
+  it("verifies Mailgun signatures over the body signature fields via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "mailgun",
+      secret: "mg_signing_key",
+    });
+    // Mailgun embeds the signature in the body; there is no signature header.
+    expect(built.headers["x-mailgun-signature"]).toBeUndefined();
+    expect(built.body).toBeDefined();
+    const builtBody = built.body as string;
+
+    expect(await verifyMailgunSignature(builtBody, "mg_signing_key")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyMailgunSignature(builtBody, "the_wrong_key")).toBe(false);
+    // Tampered body (token altered) → false
+    const parsed = JSON.parse(builtBody) as {
+      signature: { timestamp: string; token: string; signature: string };
+    };
+    const tampered = JSON.stringify({
+      ...parsed,
+      signature: { ...parsed.signature, token: `${parsed.signature.token}0` },
+    });
+    expect(await verifyMailgunSignature(tampered, "mg_signing_key")).toBe(false);
+
+    // Malformed / non-JSON body → false (NEVER throws)
+    expect(await verifyMailgunSignature("not json at all", "mg_signing_key")).toBe(false);
+    expect(await verifyMailgunSignature("{", "mg_signing_key")).toBe(false);
+    expect(await verifyMailgunSignature("{}", "mg_signing_key")).toBe(false);
+    expect(await verifyMailgunSignature(undefined, "mg_signing_key")).toBe(false);
+    // Missing signature sub-fields → false (no throw)
+    expect(
+      await verifyMailgunSignature(JSON.stringify({ signature: { timestamp: "1" } }), "mg_signing_key")
+    ).toBe(false);
+
+    // Empty secret still throws (consistent with other verifiers).
+    await expect(verifyMailgunSignature(builtBody, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path (no headers, body-only).
+    await expect(
+      verifySignature({ body: builtBody, headers: {} }, { provider: "mailgun", secret: "mg_signing_key" })
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with malformed body resolves to false without throwing.
+    await expect(
+      verifySignature({ body: "not json", headers: {} }, { provider: "mailgun", secret: "mg_signing_key" })
+    ).resolves.toEqual({ valid: false });
   });
 });
 

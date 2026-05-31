@@ -34,6 +34,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   telegram: "message",
   square: "payment.created",
   hubspot: "contact.creation",
+  mailgun: "delivered",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -59,6 +60,7 @@ const PROVIDER_TEMPLATES = {
   telegram: ["message", "callback_query", "edited_message"] as const,
   square: ["payment.created", "payment.updated", "refund.created"] as const,
   hubspot: ["contact.creation", "contact.propertyChange", "deal.creation"] as const,
+  mailgun: ["delivered", "failed", "opened"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -85,6 +87,7 @@ export const TEMPLATE_PROVIDERS = [
   "telegram",
   "square",
   "hubspot",
+  "mailgun",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -110,6 +113,7 @@ export const VERIFY_PROVIDERS = [
   "telegram",
   "square",
   "hubspot",
+  "mailgun",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -290,6 +294,15 @@ export const TEMPLATE_METADATA = Object.freeze({
     defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.hubspot,
     secretRequired: true,
     signatureHeader: "x-hubspot-signature-v3",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  mailgun: Object.freeze({
+    provider: "mailgun",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.mailgun]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.mailgun,
+    secretRequired: true,
+    // Mailgun signs body fields (signature.{timestamp,token,signature}); there
+    // is no signature header, so signatureHeader is intentionally omitted.
     signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
@@ -1051,6 +1064,30 @@ function buildTemplatePayload(
       body,
       contentType: "application/json",
       headers: { "user-agent": "HubSpot-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "mailgun") {
+    // Mailgun signs body fields rather than a header. The signature value here
+    // is a placeholder; buildTemplateSendOptions recomputes it over
+    // `timestamp + token` and patches the body before sending.
+    const timestamp = String(nowSec);
+    const token = randomHex(50);
+    const payload = bodyOverride ?? {
+      signature: { timestamp, token, signature: "" },
+      "event-data": {
+        event,
+        id: randomHex(22),
+        timestamp: nowSec,
+        recipient: "user@example.com",
+        message: { headers: { "message-id": `${randomHex(20)}@example.com` } },
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Mailgun-Webhooks/1.0" },
     };
   }
 
@@ -2121,6 +2158,21 @@ export async function buildTemplateSendOptions(
     const signature = await hmacSign("SHA-256", options.secret, base);
     headers["x-hubspot-request-timestamp"] = String(timestamp);
     headers["x-hubspot-signature-v3"] = toBase64(signature);
+  }
+
+  if (provider === "mailgun") {
+    // Mailgun's signature lives in the body, not a header. Recompute the hex
+    // HMAC-SHA256 over `timestamp + token` and patch it into the body's
+    // signature object before sending.
+    const parsed = JSON.parse(built.body) as {
+      signature?: { timestamp?: string; token?: string; signature?: string };
+      [key: string]: unknown;
+    };
+    const timestamp = parsed.signature?.timestamp ?? String(options.timestamp ?? Math.floor(Date.now() / 1000));
+    const token = parsed.signature?.token ?? randomHex(50);
+    const sig = toHex(await hmacSign("SHA-256", options.secret, `${timestamp}${token}`));
+    parsed.signature = { timestamp, token, signature: sig };
+    built.body = JSON.stringify(parsed);
   }
 
   return {

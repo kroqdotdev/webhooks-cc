@@ -10,6 +10,7 @@ import {
   siIntercom,
   siLemonsqueezy,
   siLinear,
+  siMailgun,
   siMeta,
   siPaddle,
   siRazorpay,
@@ -44,6 +45,7 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   telegram: siTelegram,
   square: siSquare,
   hubspot: siHubspot,
+  mailgun: siMailgun,
 };
 
 export function ProviderIcon({

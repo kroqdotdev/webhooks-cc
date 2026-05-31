@@ -302,6 +302,11 @@ export function isHubSpotWebhook(request: Request): boolean {
   return isDetectedProvider(request, "hubspot");
 }
 
+/** Check if a request looks like a Mailgun webhook. */
+export function isMailgunWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "mailgun");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -423,6 +428,18 @@ const DETECTORS: readonly Detector[] = [
     matches: (request) =>
       getHeaderValue(request.headers, "x-hubspot-signature-v3") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "0.subscriptionType")),
+  },
+  {
+    // Mailgun has no signature header — the signature fields live in the body.
+    // Detection is body-based on the presence of both signature.token and
+    // signature.timestamp. extractJsonField never throws on non-JSON bodies.
+    provider: "mailgun",
+    via: "body",
+    matchedOn: "signature.token",
+    matches: (request) =>
+      extractJsonField(request, "signature.token") !== undefined &&
+      extractJsonField(request, "signature.timestamp") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event-data.event")),
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`

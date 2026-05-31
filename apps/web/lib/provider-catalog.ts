@@ -50,6 +50,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   telegram: "Telegram",
   square: "Square",
   hubspot: "HubSpot",
+  mailgun: "Mailgun",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -76,6 +77,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   telegram: "your secret token",
   square: "your signature key",
   hubspot: "your app client secret",
+  mailgun: "your HTTP webhook signing key",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -239,6 +241,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#ff7a59",
     foreground: "#ffffff",
     border: "#e35c3a",
+  },
+  mailgun: {
+    glyph: "mailgun",
+    text: "MG",
+    background: "#c02126",
+    foreground: "#ffffff",
+    border: "#8f1419",
   },
 };
 

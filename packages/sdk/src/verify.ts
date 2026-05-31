@@ -510,6 +510,54 @@ export async function verifyHubSpotSignature(
 }
 
 /**
+ * Verify a Mailgun webhook signature. Mailgun does not send a signature header —
+ * the `timestamp`, `token`, and `signature` fields live inside the JSON body
+ * under `signature`. The signature is the hex HMAC-SHA256 of `timestamp + token`
+ * keyed by the HTTP webhook signing key. Malformed or non-JSON bodies, or bodies
+ * missing the signature fields, return `false` (this function never throws on
+ * bad input).
+ */
+export async function verifyMailgunSignature(
+  body: string | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyMailgunSignature");
+  if (!body) {
+    return false;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return false;
+  }
+  const sig = (parsed as { signature?: unknown }).signature;
+  if (!sig || typeof sig !== "object") {
+    return false;
+  }
+  const { timestamp, token, signature } = sig as {
+    timestamp?: unknown;
+    token?: unknown;
+    signature?: unknown;
+  };
+  if (
+    typeof timestamp !== "string" ||
+    typeof token !== "string" ||
+    typeof signature !== "string" ||
+    !timestamp ||
+    !token ||
+    !signature
+  ) {
+    return false;
+  }
+  const expected = toHex(await hmacSign("SHA-256", secret, `${timestamp}${token}`)).toLowerCase();
+  return timingSafeEqual(signature.toLowerCase(), expected);
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -854,6 +902,10 @@ export async function verifySignature(
       getHeader(request.headers, "x-hubspot-request-timestamp"),
       options.secret
     );
+  }
+
+  if (options.provider === "mailgun") {
+    valid = await verifyMailgunSignature(request.body, options.secret);
   }
 
   return { valid };

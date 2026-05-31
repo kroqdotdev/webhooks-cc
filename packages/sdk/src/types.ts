@@ -236,7 +236,8 @@ export type TemplateProvider =
   | "intercom"
   | "telegram"
   | "square"
-  | "hubspot";
+  | "hubspot"
+  | "mailgun";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

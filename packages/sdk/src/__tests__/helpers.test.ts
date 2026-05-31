@@ -29,6 +29,7 @@ import {
   isTelegramWebhook,
   isSquareWebhook,
   isHubSpotWebhook,
+  isMailgunWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -453,6 +454,50 @@ describe("isHubSpotWebhook", () => {
     expect(info?.via).toBe("header");
     expect(info?.matchedOn).toBe("x-hubspot-signature-v3");
     expect(info?.event).toBe("deal.creation");
+  });
+});
+
+describe("isMailgunWebhook", () => {
+  it("detects Mailgun by the body signature fields (no signature header)", () => {
+    expect(
+      isMailgunWebhook(
+        makeRequest({
+          body: JSON.stringify({
+            signature: { timestamp: "1700000000", token: "abc", signature: "deadbeef" },
+            "event-data": { event: "delivered" },
+          }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("returns false when the body lacks both signature.token and signature.timestamp", () => {
+    expect(isMailgunWebhook(makeRequest({ body: JSON.stringify({ "event-data": {} }) }))).toBe(
+      false
+    );
+    // Only one of the two required fields present → not detected.
+    expect(
+      isMailgunWebhook(makeRequest({ body: JSON.stringify({ signature: { token: "abc" } }) }))
+    ).toBe(false);
+  });
+
+  it("does not throw on non-JSON bodies", () => {
+    expect(isMailgunWebhook(makeRequest({ body: "not json" }))).toBe(false);
+    expect(isMailgunWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from event-data.event via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        body: JSON.stringify({
+          signature: { timestamp: "1700000000", token: "abc", signature: "deadbeef" },
+          "event-data": { event: "failed" },
+        }),
+      })
+    );
+    expect(info?.provider).toBe("mailgun");
+    expect(info?.via).toBe("body");
+    expect(info?.event).toBe("failed");
   });
 });
 
