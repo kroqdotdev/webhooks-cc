@@ -1,3 +1,4 @@
+import { TEMPLATE_PROVIDERS, VERIFY_PROVIDERS } from "@webhooks-cc/sdk";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -9,39 +10,18 @@ import {
 
 describe("provider-catalog", () => {
   test("keeps template providers in the shared SDK order", () => {
+    // Source of truth is the SDK's TEMPLATE_PROVIDERS array; the web option list
+    // must be a faithful 1:1 projection of it (same members, same order).
     expect(WEB_TEMPLATE_PROVIDER_OPTIONS.map((provider) => provider.id)).toEqual([
-      "stripe",
-      "github",
-      "shopify",
-      "twilio",
-      "slack",
-      "paddle",
-      "linear",
-      "sendgrid",
-      "clerk",
-      "discord",
-      "vercel",
-      "gitlab",
-      "typeform",
-      "standard-webhooks",
+      ...TEMPLATE_PROVIDERS,
     ]);
   });
 
   test("lists only verification-capable providers plus generic hmac", () => {
+    // Verification options mirror the SDK's VERIFY_PROVIDERS (which omits
+    // unsupported providers like SendGrid) with generic-hmac appended.
     expect(WEB_VERIFICATION_PROVIDER_OPTIONS.map((provider) => provider.id)).toEqual([
-      "stripe",
-      "github",
-      "shopify",
-      "twilio",
-      "slack",
-      "paddle",
-      "linear",
-      "clerk",
-      "discord",
-      "vercel",
-      "gitlab",
-      "typeform",
-      "standard-webhooks",
+      ...VERIFY_PROVIDERS,
       "generic-hmac",
     ]);
   });
@@ -76,7 +56,8 @@ describe("provider-catalog", () => {
       const providerInfo = getWebProviderInfo(provider);
 
       expect(providerInfo?.icon.glyph).toBe(provider);
-      expect(providerInfo?.icon.text).toMatch(/^[A-Z]{2}$/);
+      // Glyph badges use 2-3 uppercase letters (e.g. "ST", "CAL", "MUX").
+      expect(providerInfo?.icon.text).toMatch(/^[A-Z]{2,3}$/);
     }
   });
 
