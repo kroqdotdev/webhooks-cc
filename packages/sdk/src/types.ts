@@ -482,6 +482,7 @@ export type VerifyProvider = TemplateProvider;
 /**
  * Options for verifying a captured webhook signature.
  * For Twilio, `url` is required because the signature covers the full webhook URL.
+ * Square and HubSpot also require `url`; HubSpot additionally requires `method`.
  */
 export type VerifySignatureOptions =
   | {
@@ -489,8 +490,10 @@ export type VerifySignatureOptions =
       provider: Exclude<VerifyProvider, "discord">;
       /** Shared secret used by the provider when signing the webhook */
       secret: string;
-      /** Full signed URL (required for Twilio verification) */
+      /** Full signed URL (required for Twilio, Square, and HubSpot verification) */
       url?: string;
+      /** HTTP method covered by the signature (required for HubSpot v3) */
+      method?: string;
     }
   | {
       /** Discord interaction verification */

@@ -23,7 +23,7 @@ import {
   verifyIntercomSignature,
   verifyTelegramSignature,
 } from "../index";
-import type { TemplateProvider } from "../index";
+import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
 const client = new WebhooksCC({
   apiKey: "whcc_testkey123",
@@ -509,5 +509,28 @@ describe("tier-1 provider verification round-trips", () => {
       true
     );
     expect(await verifyTelegramSignature(built.body, "tg_token_value", "different")).toBe(false);
+  });
+});
+
+describe("VerifySignatureOptions type surface (tier-2)", () => {
+  it("accepts an optional method field on the non-discord branch", () => {
+    // Type-only assertion: tier-2 providers like HubSpot sign
+    // method + URI + body + timestamp, so the options carry an HTTP method.
+    const options: VerifySignatureOptions = {
+      provider: "stripe",
+      secret: "whsec_test",
+      url: "https://go.webhooks.cc/w/demo",
+      method: "POST",
+    };
+    expect(options.provider).toBe("stripe");
+    expect("method" in options && options.method).toBe("POST");
+  });
+
+  it("keeps method optional", () => {
+    const options: VerifySignatureOptions = {
+      provider: "stripe",
+      secret: "whsec_test",
+    };
+    expect(options.provider).toBe("stripe");
   });
 });
