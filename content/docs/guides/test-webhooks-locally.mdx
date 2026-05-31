@@ -162,7 +162,7 @@ const res = await client.sendTo("http://localhost:3000/api/webhooks/stripe", {
 });
 ```
 
-Supported providers: `stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `standard-webhooks` (Polar, Svix, Clerk, Resend).
+Supported providers (28): `stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `sendgrid`, `clerk`, `discord`, `vercel`, `gitlab`, `typeform`, `standard-webhooks` (Polar, Svix, Resend), `meta`, `lemonsqueezy`, `coinbase-commerce`, `razorpay`, `cal`, `intercom`, `telegram`, `square`, `hubspot`, `mailgun`, `calendly`, `mux`, `sentry`, `bitbucket`.
 
 </Step>
 </Steps>
@@ -287,5 +287,5 @@ Use **sendTo** for automated tests -- it is deterministic, fast, and requires no
 <LinkCard
   href="/docs/sdk/signatures"
   title="Signature Verification"
-  description="Verify webhook signatures for Stripe, GitHub, Shopify, and 6 more providers."
+  description="Verify webhook signatures for Stripe, GitHub, Shopify, and 24 more providers."
 />

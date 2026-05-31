@@ -653,6 +653,8 @@ async fn handle_webhook_inner(
                             let signing_header = capture.signing_header.clone();
                             let verify_headers = filtered_headers.clone();
                             let verify_body = body.to_vec();
+                            // HTTP method is needed by HubSpot (signs method + uri + body + ts).
+                            let verify_method = method.as_str().to_string();
                             // Construct full URL for Twilio verification (signs URL + params)
                             let request_url = state.config.webhook_base_url.as_ref().map(|base| {
                                 build_verification_request_url(
@@ -698,6 +700,7 @@ async fn handle_webhook_inner(
                                     &verify_body,
                                     signing_header.as_deref(),
                                     request_url.as_deref(),
+                                    Some(verify_method.as_str()),
                                 );
 
                                 let (verified, error_json, error_provider) = match &result {

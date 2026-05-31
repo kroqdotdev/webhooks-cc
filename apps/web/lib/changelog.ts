@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.20.4";
+export const APP_VERSION = "0.21.0";
 export const CLI_VERSION = "1.1.2";
-export const SDK_VERSION = "1.6.0";
-export const MCP_VERSION = "1.4.2";
+export const SDK_VERSION = "1.7.0";
+export const MCP_VERSION = "1.5.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.21.0",
+    date: "2026-05-31",
+    title: "7 New Providers — Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket",
+    track: "web",
+    items: [
+      "Provider catalog grows from 21 to 28: added Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket across templates, auto-detection, and signature verification",
+      "Three new signing schemes are now supported server-side: URL + body (Square), HTTP method + URI + body + timestamp (HubSpot), and body-embedded signature fields (Mailgun)",
+      "Endpoint settings, the send-webhook dialog, and the Signature tab list all 28 named providers; automatic server-side verification works for every one except SendGrid (IP allowlisting)",
+      "Refreshed provider template and signature-verification docs with payload shapes, headers, and algorithms for each new provider",
+    ],
+  },
   {
     version: "0.20.4",
     date: "2026-05-31",
@@ -619,6 +631,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.7.0",
+    date: "2026-05-31",
+    title: "7 New Providers — Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket",
+    track: "sdk",
+    items: [
+      "Added Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket to templates, detection, and verification — the catalog now covers 28 named providers",
+      "New verifiers: verifySquareSignature, verifyHubSpotSignature, verifyMailgunSignature, verifyCalendlySignature, verifyMuxSignature, verifySentrySignature, verifyBitbucketSignature",
+      "New detection helpers: isSquareWebhook, isHubSpotWebhook, isMailgunWebhook, isCalendlyWebhook, isMuxWebhook, isSentryWebhook, isBitbucketWebhook",
+      "VerifySignatureOptions gains an optional method field; Square and HubSpot verification require the request url (HubSpot also uses the method and rejects timestamps older than 5 minutes)",
+      "Bitbucket is detected on x-event-key before Intercom to avoid the shared x-hub-signature collision (Bitbucket sha256=, Intercom sha1=)",
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-05-31",
     title: "7 New Providers",
@@ -781,6 +806,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.5.0",
+    date: "2026-05-31",
+    title: "7 New Providers — Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket",
+    track: "mcp",
+    items: [
+      "Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket are now available in send_webhook, send_to, preview_webhook, list_provider_templates, and verify_signature — wired automatically through the SDK provider lists, bringing the catalog to 28 named providers",
+    ],
+  },
   {
     version: "1.4.2",
     date: "2026-05-31",

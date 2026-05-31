@@ -9,7 +9,29 @@ import {
   getWebProviderLabel,
   WEB_PROVIDER_CATALOG,
 } from "@/lib/provider-catalog";
+import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import type { DisplayableRequest } from "./request-detail";
+
+/**
+ * Providers whose signature is computed over the request URL (and, for HubSpot,
+ * the HTTP method). For these, verifySignature() requires `options.url`, so the
+ * manual-verify UI must expose a URL field (and a method field for HubSpot).
+ */
+const URL_BOUND_PROVIDERS = new Set(["twilio", "square", "hubspot"]);
+const METHOD_BOUND_PROVIDERS = new Set(["hubspot"]);
+
+/**
+ * Reconstruct the capture URL the receiver signs against:
+ * `${WEBHOOK_BASE_URL}/w/${slug}${path === "/" ? "" : path}` plus the query
+ * string, mirroring the receiver's build_verification_request_url().
+ */
+function buildVerificationUrl(slug: string | undefined, request: DisplayableRequest): string {
+  if (!slug) return "";
+  const path = request.path === "/" ? "" : request.path;
+  const params = request.queryParams ?? {};
+  const query = new URLSearchParams(params).toString();
+  return `${WEBHOOK_BASE_URL}/w/${slug}${path}${query ? `?${query}` : ""}`;
+}
 
 /** Parsed structured signature error from JSON string. */
 interface SignatureErrorData {
@@ -51,9 +73,10 @@ function getProviderTip(provider: string): string | null {
 interface SignatureTabProps {
   request: DisplayableRequest;
   onOpenSettings?: () => void;
+  endpointSlug?: string;
 }
 
-export function SignatureTab({ request, onOpenSettings }: SignatureTabProps) {
+export function SignatureTab({ request, onOpenSettings, endpointSlug }: SignatureTabProps) {
   const signatureVerified = request.signatureVerified;
   const signatureError = request.signatureError;
   const signingProvider = request.signingProvider;
@@ -78,7 +101,12 @@ export function SignatureTab({ request, onOpenSettings }: SignatureTabProps) {
         ? (request as { _id: string })._id
         : "";
   return (
-    <ClientSideVerification key={requestId} request={request} onOpenSettings={onOpenSettings} />
+    <ClientSideVerification
+      key={requestId}
+      request={request}
+      onOpenSettings={onOpenSettings}
+      endpointSlug={endpointSlug}
+    />
   );
 }
 
@@ -194,20 +222,27 @@ function ServerSideResult({
 function ClientSideVerification({
   request,
   onOpenSettings,
+  endpointSlug,
 }: {
   request: DisplayableRequest;
   onOpenSettings?: () => void;
+  endpointSlug?: string;
 }) {
   const detectedProvider = request.detectedProvider ?? null;
   const [provider, setProvider] = useState<string>(detectedProvider ?? "");
   const [secret, setSecret] = useState("");
+  const [url, setUrl] = useState(() => buildVerificationUrl(endpointSlug, request));
+  const [method, setMethod] = useState(request.method || "POST");
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<{ verified: boolean; error: string | null } | null>(null);
 
   const providerInfo = getWebProviderInfo(provider);
+  const needsUrl = URL_BOUND_PROVIDERS.has(provider);
+  const needsMethod = METHOD_BOUND_PROVIDERS.has(provider);
 
   const handleVerify = useCallback(async () => {
     if (!provider || !secret) return;
+    if (needsUrl && !url) return;
     setVerifying(true);
     setResult(null);
 
@@ -216,6 +251,8 @@ function ClientSideVerification({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const options: any =
         provider === "discord" ? { provider: "discord", publicKey: secret } : { provider, secret };
+      if (needsUrl) options.url = url;
+      if (needsMethod) options.method = method;
       const res = await verifySignature(
         { body: request.body ?? "", headers: request.headers },
         options
@@ -246,7 +283,17 @@ function ClientSideVerification({
     } finally {
       setVerifying(false);
     }
-  }, [provider, secret, request.body, request.headers, providerInfo]);
+  }, [
+    provider,
+    secret,
+    needsUrl,
+    needsMethod,
+    url,
+    method,
+    request.body,
+    request.headers,
+    providerInfo,
+  ]);
 
   // Show result if verification was performed
   if (result) {
@@ -319,6 +366,43 @@ function ClientSideVerification({
           </div>
         )}
 
+        {needsUrl && (
+          <div className="space-y-1">
+            <label htmlFor="sig-url" className="font-bold uppercase tracking-wide text-xs">
+              Request URL
+            </label>
+            <input
+              id="sig-url"
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://go.webhooks.cc/w/your-slug"
+              className="neo-input w-full text-sm font-mono"
+              disabled={verifying}
+            />
+            <p className="text-xs text-muted-foreground">
+              {getWebProviderInfo(provider)?.label} signs the request URL, so it must match exactly.
+            </p>
+          </div>
+        )}
+
+        {needsMethod && (
+          <div className="space-y-1">
+            <label htmlFor="sig-method" className="font-bold uppercase tracking-wide text-xs">
+              HTTP Method
+            </label>
+            <input
+              id="sig-method"
+              type="text"
+              value={method}
+              onChange={(e) => setMethod(e.target.value.toUpperCase())}
+              placeholder="POST"
+              className="neo-input w-full text-sm font-mono"
+              disabled={verifying}
+            />
+          </div>
+        )}
+
         {provider && getWebProviderInfo(provider)?.verificationMode === "unsupported" && (
           <p className="text-xs text-muted-foreground">
             SendGrid uses IP allowlisting, not signatures. Signature verification is not applicable.
@@ -328,7 +412,7 @@ function ClientSideVerification({
         {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
           <button
             onClick={handleVerify}
-            disabled={verifying || !secret}
+            disabled={verifying || !secret || (needsUrl && !url)}
             className="neo-btn-primary py-1.5! px-4! text-xs flex items-center gap-1.5"
           >
             {verifying ? (

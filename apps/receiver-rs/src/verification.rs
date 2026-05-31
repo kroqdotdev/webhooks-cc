@@ -1,4 +1,4 @@
-//! Webhook signature verification for 21 providers.
+//! Webhook signature verification for 28 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -129,7 +129,9 @@ fn hmac_sha1(secret: &[u8], payload: &[u8]) -> Vec<u8> {
 /// - `headers`: the filtered request headers (lowercase keys from the webhook handler).
 /// - `body`: the raw request body bytes.
 /// - `signing_header`: custom header name (only used for "generic-hmac" provider).
-/// - `request_url`: the full URL (only used for Twilio which signs the URL).
+/// - `request_url`: the full request URL (used by Twilio, Square, and HubSpot, which bind the
+///   signature to the URL the webhook was delivered to).
+/// - `method`: the HTTP method (used by HubSpot v3, which signs `method + uri + body + timestamp`).
 pub fn verify_signature(
     provider: &str,
     secret: &[u8],
@@ -137,6 +139,7 @@ pub fn verify_signature(
     body: &[u8],
     signing_header: Option<&str>,
     request_url: Option<&str>,
+    method: Option<&str>,
 ) -> VerificationResult {
     match provider {
         "stripe" => verify_stripe(secret, headers, body),
@@ -161,6 +164,22 @@ pub fn verify_signature(
         "cal" => verify_hex_sha256(secret, headers, body, "x-cal-signature-256"),
         "intercom" => verify_intercom(secret, headers, body),
         "telegram" => verify_telegram(secret, headers),
+        // ── Tier-2 ──
+        "square" => verify_square(secret, headers, body, request_url),
+        "hubspot" => verify_hubspot(secret, headers, body, request_url, method),
+        // Mailgun signs body fields (no header); it is owner-selected only and
+        // is intentionally NOT auto-detected (no distinctive header to key on).
+        "mailgun" => verify_mailgun(secret, headers, body),
+        // Calendly: Stripe-style `t=,v1=` header, HMAC-SHA256 hex over `{t}.{body}`.
+        "calendly" => verify_calendly(secret, headers, body),
+        // Mux: same Stripe-style scheme as Calendly with the `mux-signature` header.
+        "mux" => verify_mux(secret, headers, body),
+        // Sentry: HMAC-SHA256 hex over the raw body in `sentry-hook-signature`.
+        "sentry" => verify_hex_sha256(secret, headers, body, "sentry-hook-signature"),
+        // Bitbucket: GitHub-style `sha256=` HMAC-SHA256 over the body, but on the
+        // legacy `x-hub-signature` header (Intercom uses the same header with
+        // `sha1=`; detection keys on the unique `x-event-key` header instead).
+        "bitbucket" => verify_github_with_header(secret, headers, body, "x-hub-signature"),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -254,10 +273,34 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     if get_header(headers, "x-telegram-bot-api-secret-token").is_some() {
         return Some("telegram");
     }
+    // ── Tier-2 providers with distinctive headers ──
+    if get_header(headers, "x-square-hmacsha256-signature").is_some() {
+        return Some("square");
+    }
+    if get_header(headers, "x-hubspot-signature-v3").is_some() {
+        return Some("hubspot");
+    }
+    if get_header(headers, "calendly-webhook-signature").is_some() {
+        return Some("calendly");
+    }
+    if get_header(headers, "mux-signature").is_some() {
+        return Some("mux");
+    }
+    if get_header(headers, "sentry-hook-signature").is_some() {
+        return Some("sentry");
+    }
+    // Bitbucket: shares the legacy `x-hub-signature` header with Intercom but
+    // uses the GitHub-style `sha256=` scheme. It carries a unique `x-event-key`
+    // header, so we detect on that and MUST check it BEFORE Intercom to avoid the
+    // shared-header collision.
+    if get_header(headers, "x-event-key").is_some() {
+        return Some("bitbucket");
+    }
     // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
     // GitHub (which sends the same header alongside x-hub-signature-256 +
-    // x-github-event) so GitHub webhooks never mis-detect as Intercom, and the
-    // sha1= prefix disambiguates from Bitbucket's sha256= form.
+    // x-github-event) so GitHub webhooks never mis-detect as Intercom, and after
+    // Bitbucket (x-event-key + sha256=); the sha1= prefix disambiguates from
+    // Bitbucket's sha256= form.
     if get_header(headers, "x-hub-signature")
         .map(|v| v.trim().to_lowercase().starts_with("sha1="))
         .unwrap_or(false)
@@ -342,7 +385,19 @@ fn verify_github(
     headers: &HashMap<String, String>,
     body: &[u8],
 ) -> VerificationResult {
-    let header_name = "x-hub-signature-256";
+    verify_github_with_header(secret, headers, body, "x-hub-signature-256")
+}
+
+/// GitHub-style `sha256={hex}` HMAC-SHA256 over the raw body, reading an
+/// arbitrary header. GitHub/Meta use `x-hub-signature-256`; Bitbucket uses the
+/// legacy `x-hub-signature` header with the same `sha256=` scheme (a `sha1=`
+/// Intercom signature on the same header lacks the prefix and is rejected).
+fn verify_github_with_header(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    header_name: &str,
+) -> VerificationResult {
     let Some(sig_header) = get_header(headers, header_name) else {
         return VerificationResult::Skipped(SignatureError::missing_header(header_name));
     };
@@ -351,9 +406,9 @@ fn verify_github(
     let hex_sig = match received.strip_prefix("sha256=") {
         Some(h) => h,
         None => {
-            return VerificationResult::Invalid(SignatureError::invalid_encoding(
-                "Expected sha256= prefix on x-hub-signature-256",
-            ));
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(&format!(
+                "Expected sha256= prefix on {header_name}"
+            )));
         }
     };
 
@@ -967,12 +1022,307 @@ fn verify_telegram(secret: &[u8], headers: &HashMap<String, String>) -> Verifica
     } else {
         let err = SignatureError {
             code: "mismatch",
-            expected: None, // Don't leak the expected token
+            expected: None,                     // Don't leak the expected token
             received: Some(truncate(token, 8)), // Show first 8 chars only
             timestamp: None,
             header: Some(header_name.to_string()),
             message: Some("Token does not match".to_string()),
         };
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Square: HMAC-SHA256 over `notificationURL + rawBody`, base64 encoded, sent in
+/// `x-square-hmacsha256-signature`. The signature is bound to the exact
+/// notification URL, so the request URL must be available.
+fn verify_square(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    request_url: Option<&str>,
+) -> VerificationResult {
+    use base64::Engine;
+    let header_name = "x-square-hmacsha256-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let Some(url) = request_url else {
+        return VerificationResult::Skipped(SignatureError {
+            code: "missing_header",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: None,
+            message: Some("Square verification requires the request URL".to_string()),
+        });
+    };
+
+    // Payload is the notification URL concatenated with the raw body bytes.
+    let mut payload = url.as_bytes().to_vec();
+    payload.extend_from_slice(body);
+
+    let expected = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, &payload));
+    let received = sig_header.trim();
+
+    if ct_str_eq(received, &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Maximum age of a HubSpot v3 timestamp before the request is rejected (replay
+/// protection). HubSpot recommends 5 minutes.
+const HUBSPOT_MAX_AGE_MS: i64 = 5 * 60 * 1000;
+
+/// HubSpot v3: base64 HMAC-SHA256 over `requestMethod + requestUri + rawBody +
+/// timestamp`, sent in `x-hubspot-signature-v3` with the request timestamp (in
+/// milliseconds) in `x-hubspot-request-timestamp`. The signature is bound to the
+/// exact method and URI, so both must be available. Timestamps older than
+/// `HUBSPOT_MAX_AGE_MS` are rejected to defeat replay attacks.
+fn verify_hubspot(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    request_url: Option<&str>,
+    method: Option<&str>,
+) -> VerificationResult {
+    use base64::Engine;
+    let sig_header_name = "x-hubspot-signature-v3";
+    let ts_header_name = "x-hubspot-request-timestamp";
+
+    let Some(sig_header) = get_header(headers, sig_header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(sig_header_name));
+    };
+    let Some(timestamp) = get_header(headers, ts_header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(ts_header_name));
+    };
+    let Some(url) = request_url else {
+        return VerificationResult::Skipped(SignatureError {
+            code: "missing_header",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: None,
+            message: Some("HubSpot verification requires the request URL".to_string()),
+        });
+    };
+    let method = method.unwrap_or("POST").to_uppercase();
+
+    // Timestamp must be a valid integer (epoch milliseconds).
+    let ts_ms = match timestamp.trim().parse::<i64>() {
+        Ok(v) => v,
+        Err(_) => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                "x-hubspot-request-timestamp is not a valid integer",
+            ));
+        }
+    };
+
+    // Reject stale timestamps (replay protection).
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    if (now_ms - ts_ms).abs() > HUBSPOT_MAX_AGE_MS {
+        let mut err = SignatureError {
+            code: "timestamp_expired",
+            expected: None,
+            received: None,
+            timestamp: Some(ts_ms),
+            header: Some(ts_header_name.to_string()),
+            message: Some("HubSpot timestamp is outside the 5-minute freshness window".to_string()),
+        };
+        err.received = Some(truncate(sig_header.trim(), 64));
+        return VerificationResult::Invalid(err);
+    }
+
+    // Signed payload: method + uri + raw body + timestamp. HubSpot decodes a
+    // documented set of reserved percent-encoded characters in the URI before
+    // signing, so apply the same map to match signatures for URLs containing them.
+    let decoded_uri = decode_hubspot_uri(url);
+    let mut payload = Vec::new();
+    payload.extend_from_slice(method.as_bytes());
+    payload.extend_from_slice(decoded_uri.as_bytes());
+    payload.extend_from_slice(body);
+    payload.extend_from_slice(timestamp.as_bytes());
+
+    let expected = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, &payload));
+    let received = sig_header.trim();
+
+    if ct_str_eq(received, &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.timestamp = Some(ts_ms);
+        err.header = Some(sig_header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Decode the reserved percent-encoded characters that HubSpot v3 normalizes in
+/// the request URI before signing (`method + uri + body + timestamp`). The `?`
+/// query separator is intentionally left untouched, and none of the decoded
+/// characters is `%`, so a single left-to-right replacement pass cannot create a
+/// new escape sequence. Matching is case-sensitive on the uppercase encodings
+/// HubSpot emits (RFC 3986 recommends uppercase hex).
+///
+/// See: https://developers.hubspot.com/docs/apps/legacy-apps/authentication/validating-requests
+fn decode_hubspot_uri(uri: &str) -> String {
+    const REPLACEMENTS: &[(&str, &str)] = &[
+        ("%3A", ":"),
+        ("%2F", "/"),
+        ("%3F", "?"),
+        ("%40", "@"),
+        ("%21", "!"),
+        ("%24", "$"),
+        ("%27", "'"),
+        ("%28", "("),
+        ("%29", ")"),
+        ("%2A", "*"),
+        ("%2C", ","),
+        ("%3B", ";"),
+    ];
+    let mut decoded = uri.to_string();
+    for (encoded, plain) in REPLACEMENTS {
+        if decoded.contains(encoded) {
+            decoded = decoded.replace(encoded, plain);
+        }
+    }
+    decoded
+}
+
+/// Mailgun: HMAC-SHA256 hex over `timestamp + token`. Unlike every other
+/// provider, Mailgun does not send a signature header — the `timestamp`,
+/// `token`, and `signature` fields live inside the JSON body under `signature`.
+/// Malformed/non-JSON bodies, or bodies missing the signature fields, are
+/// `Skipped` (this function never panics on bad input).
+fn verify_mailgun(
+    secret: &[u8],
+    _headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    let parsed: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => {
+            return VerificationResult::Skipped(SignatureError {
+                code: "missing_header",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: None,
+                message: Some("Mailgun body is not valid JSON".to_string()),
+            });
+        }
+    };
+
+    let sig = &parsed["signature"];
+    let (timestamp, token, signature) = match (
+        sig["timestamp"].as_str(),
+        sig["token"].as_str(),
+        sig["signature"].as_str(),
+    ) {
+        (Some(ts), Some(tok), Some(s)) if !ts.is_empty() && !tok.is_empty() && !s.is_empty() => {
+            (ts, tok, s)
+        }
+        _ => {
+            return VerificationResult::Skipped(SignatureError {
+                code: "missing_header",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: Some("signature".to_string()),
+                message: Some(
+                    "Mailgun body is missing signature.{timestamp,token,signature}".to_string(),
+                ),
+            });
+        }
+    };
+
+    let payload = format!("{timestamp}{token}");
+    let expected = hex::encode(hmac_sha256(secret, payload.as_bytes()));
+
+    if ct_str_eq(&signature.to_lowercase(), &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, &signature.to_lowercase());
+        err.timestamp = timestamp.parse::<i64>().ok();
+        err.header = Some("signature".to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Calendly: Stripe-style `calendly-webhook-signature` header (`t=...,v1=...`),
+/// HMAC-SHA256 hex over `{timestamp}.{body}`. Reuses the shared Stripe parser.
+fn verify_calendly(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    let header_name = "calendly-webhook-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let (timestamp, signatures) = match parse_stripe_header(sig_header) {
+        Some(v) => v,
+        None => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                "Could not parse calendly-webhook-signature header (expected t=...,v1=...)",
+            ));
+        }
+    };
+
+    let payload = format!("{timestamp}.{}", String::from_utf8_lossy(body));
+    let expected = hex::encode(hmac_sha256(secret, payload.as_bytes()));
+
+    if signatures
+        .iter()
+        .any(|sig| ct_str_eq(&sig.to_lowercase(), &expected))
+    {
+        VerificationResult::Valid
+    } else {
+        let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.timestamp = timestamp.parse::<i64>().ok();
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Mux: same Stripe-style scheme as Calendly (`t=...,v1=...`), HMAC-SHA256 hex
+/// over `{timestamp}.{body}`, carried in the `mux-signature` header.
+fn verify_mux(secret: &[u8], headers: &HashMap<String, String>, body: &[u8]) -> VerificationResult {
+    let header_name = "mux-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let (timestamp, signatures) = match parse_stripe_header(sig_header) {
+        Some(v) => v,
+        None => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                "Could not parse mux-signature header (expected t=...,v1=...)",
+            ));
+        }
+    };
+
+    let payload = format!("{timestamp}.{}", String::from_utf8_lossy(body));
+    let expected = hex::encode(hmac_sha256(secret, payload.as_bytes()));
+
+    if signatures
+        .iter()
+        .any(|sig| ct_str_eq(&sig.to_lowercase(), &expected))
+    {
+        VerificationResult::Valid
+    } else {
+        let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.timestamp = timestamp.parse::<i64>().ok();
+        err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
 }

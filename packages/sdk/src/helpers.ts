@@ -292,6 +292,41 @@ export function isTelegramWebhook(request: Request): boolean {
   return isDetectedProvider(request, "telegram");
 }
 
+/** Check if a request looks like a Square webhook. */
+export function isSquareWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "square");
+}
+
+/** Check if a request looks like a HubSpot webhook. */
+export function isHubSpotWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "hubspot");
+}
+
+/** Check if a request looks like a Mailgun webhook. */
+export function isMailgunWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "mailgun");
+}
+
+/** Check if a request looks like a Calendly webhook. */
+export function isCalendlyWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "calendly");
+}
+
+/** Check if a request looks like a Mux webhook. */
+export function isMuxWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "mux");
+}
+
+/** Check if a request looks like a Sentry webhook. */
+export function isSentryWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "sentry");
+}
+
+/** Check if a request looks like a Bitbucket webhook. */
+export function isBitbucketWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "bitbucket");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -397,6 +432,66 @@ const DETECTORS: readonly Detector[] = [
     matchedOn: "stripe-signature",
     matches: (request) => getHeaderValue(request.headers, "stripe-signature") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "square",
+    via: "header",
+    matchedOn: "x-square-hmacsha256-signature",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-square-hmacsha256-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "hubspot",
+    via: "header",
+    matchedOn: "x-hubspot-signature-v3",
+    matches: (request) => getHeaderValue(request.headers, "x-hubspot-signature-v3") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "0.subscriptionType")),
+  },
+  {
+    // Mailgun has no signature header — the signature fields live in the body.
+    // Detection is body-based on the presence of both signature.token and
+    // signature.timestamp. extractJsonField never throws on non-JSON bodies.
+    provider: "mailgun",
+    via: "body",
+    matchedOn: "signature.token",
+    matches: (request) =>
+      extractJsonField(request, "signature.token") !== undefined &&
+      extractJsonField(request, "signature.timestamp") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event-data.event")),
+  },
+  {
+    provider: "calendly",
+    via: "header",
+    matchedOn: "calendly-webhook-signature",
+    matches: (request) =>
+      getHeaderValue(request.headers, "calendly-webhook-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event")),
+  },
+  {
+    provider: "mux",
+    via: "header",
+    matchedOn: "mux-signature",
+    matches: (request) => getHeaderValue(request.headers, "mux-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "sentry",
+    via: "header",
+    matchedOn: "sentry-hook-signature",
+    matches: (request) => getHeaderValue(request.headers, "sentry-hook-signature") !== undefined,
+    // The `sentry-hook-resource` header carries only the resource (e.g. `issue`);
+    // the action (`created`/`resolved`) lives in the body. Combine them into the
+    // full event (`issue.created`) when the action is present, else fall back to
+    // the bare resource.
+    event: (request) => {
+      const resource = getHeaderValue(request.headers, "sentry-hook-resource");
+      const action = extractJsonField<string>(request, "action");
+      if (resource && typeof action === "string" && action.length > 0) {
+        return getEventString(`${resource}.${action}`);
+      }
+      return getEventString(resource);
+    },
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`
@@ -549,10 +644,22 @@ const DETECTORS: readonly Detector[] = [
     event: (request) => getEventString(extractJsonField(request, "triggerEvent")),
   },
   {
+    // Bitbucket reuses the legacy `x-hub-signature` header (with the GitHub-style
+    // `sha256=` scheme), so it MUST be ordered BEFORE Intercom (which uses the
+    // same header with `sha1=`). Bitbucket carries a unique `x-event-key` header,
+    // so we detect on that to avoid the collision entirely.
+    provider: "bitbucket",
+    via: "header",
+    matchedOn: "x-event-key",
+    matches: (request) => getHeaderValue(request.headers, "x-event-key") !== undefined,
+    event: (request) => getEventString(getHeaderValue(request.headers, "x-event-key")),
+  },
+  {
     // Intercom reuses the legacy `x-hub-signature` (sha1=) header. It MUST be
     // ordered after GitHub (which sends the same header alongside
-    // x-hub-signature-256 + x-github-event) and is disambiguated from
-    // Bitbucket (sha256=) by requiring the sha1= prefix or the Intercom body.
+    // x-hub-signature-256 + x-github-event) and after Bitbucket (sha256= +
+    // x-event-key), and is disambiguated from Bitbucket by requiring the sha1=
+    // prefix or the Intercom body.
     provider: "intercom",
     via: "header",
     matchedOn: "x-hub-signature",

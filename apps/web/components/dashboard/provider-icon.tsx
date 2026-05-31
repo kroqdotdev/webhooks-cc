@@ -1,18 +1,23 @@
 import type { SimpleIcon } from "simple-icons";
 import {
+  siBitbucket,
   siCaldotcom,
   siClerk,
   siCoinbase,
   siDiscord,
   siGithub,
   siGitlab,
+  siHubspot,
   siIntercom,
   siLemonsqueezy,
   siLinear,
+  siMailgun,
   siMeta,
   siPaddle,
   siRazorpay,
+  siSentry,
   siShopify,
+  siSquare,
   siStripe,
   siTelegram,
   siTypeform,
@@ -40,6 +45,11 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   cal: siCaldotcom,
   intercom: siIntercom,
   telegram: siTelegram,
+  square: siSquare,
+  hubspot: siHubspot,
+  mailgun: siMailgun,
+  sentry: siSentry,
+  bitbucket: siBitbucket,
 };
 
 export function ProviderIcon({

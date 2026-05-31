@@ -398,7 +398,7 @@ List all supported webhook provider templates. No API call made.
 
 ```ts
 listProviders(): TemplateProvider[]
-// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "typeform", "standard-webhooks"]
+// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "typeform", "standard-webhooks", "meta", "lemonsqueezy", "coinbase-commerce", "razorpay", "cal", "intercom", "telegram", "square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"]
 ```
 
 </ApiMethod>
@@ -527,7 +527,21 @@ type DetectedWebhookInfo = {
     | "vercel"
     | "gitlab"
     | "typeform"
-    | "standard-webhooks";
+    | "standard-webhooks"
+    | "meta"
+    | "lemonsqueezy"
+    | "coinbase-commerce"
+    | "razorpay"
+    | "cal"
+    | "intercom"
+    | "telegram"
+    | "square"
+    | "hubspot"
+    | "mailgun"
+    | "calendly"
+    | "mux"
+    | "sentry"
+    | "bitbucket";
   event: string | null;
   via: "header" | "body";
   matchedOn?: string;
@@ -570,15 +584,30 @@ import {
   verifyStripeSignature,
   verifyGitHubSignature,
   verifyShopifySignature,
-  verifySlackSignature,
   verifyTwilioSignature,
+  verifySlackSignature,
   verifyPaddleSignature,
   verifyLinearSignature,
-  verifyClerkSignature,
   verifyDiscordSignature,
+  verifyClerkSignature,
   verifyVercelSignature,
   verifyGitLabSignature,
+  verifyTypeformSignature,
   verifyStandardWebhookSignature,
+  verifyMetaSignature,
+  verifyLemonSqueezySignature,
+  verifyCoinbaseCommerceSignature,
+  verifyRazorpaySignature,
+  verifyCalSignature,
+  verifyIntercomSignature,
+  verifyTelegramSignature,
+  verifySquareSignature,
+  verifyHubSpotSignature,
+  verifyMailgunSignature,
+  verifyCalendlySignature,
+  verifyMuxSignature,
+  verifySentrySignature,
+  verifyBitbucketSignature,
 } from "@webhooks-cc/sdk";
 
 // Universal verifier (dispatches by provider)
@@ -670,7 +699,21 @@ type TemplateProvider =
   | "vercel"
   | "gitlab"
   | "typeform"
-  | "standard-webhooks";
+  | "standard-webhooks"
+  | "meta"
+  | "lemonsqueezy"
+  | "coinbase-commerce"
+  | "razorpay"
+  | "cal"
+  | "intercom"
+  | "telegram"
+  | "square"
+  | "hubspot"
+  | "mailgun"
+  | "calendly"
+  | "mux"
+  | "sentry"
+  | "bitbucket";
 
 type VerifyProvider = TemplateProvider;
 ```

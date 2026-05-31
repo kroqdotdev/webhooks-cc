@@ -22,8 +22,15 @@ import {
   verifyCalSignature,
   verifyIntercomSignature,
   verifyTelegramSignature,
+  verifySquareSignature,
+  verifyHubSpotSignature,
+  verifyMailgunSignature,
+  verifyCalendlySignature,
+  verifyMuxSignature,
+  verifySentrySignature,
+  verifyBitbucketSignature,
 } from "../index";
-import type { TemplateProvider } from "../index";
+import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
 const client = new WebhooksCC({
   apiKey: "whcc_testkey123",
@@ -392,6 +399,490 @@ describe("signature verification", () => {
   });
 });
 
+describe("tier-2 Square verification (URL + body scheme)", () => {
+  it("verifies Square signatures over notificationURL + body via round-trip + dispatcher", async () => {
+    const url = "https://go.webhooks.cc/w/demo";
+    const built = await client.buildRequest(url, {
+      provider: "square",
+      secret: "sq_signature_key",
+      body: { type: "payment.created", data: {} },
+    });
+    const sig = built.headers["x-square-hmacsha256-signature"];
+    expect(sig).toBeDefined();
+
+    expect(await verifySquareSignature(url, built.body, sig, "sq_signature_key")).toBe(true);
+    // Wrong secret → false
+    expect(await verifySquareSignature(url, built.body, sig, "the_wrong_key")).toBe(false);
+    // Wrong URL → false (Square binds the signature to the notification URL)
+    expect(
+      await verifySquareSignature(
+        "https://go.webhooks.cc/w/other",
+        built.body,
+        sig,
+        "sq_signature_key"
+      )
+    ).toBe(false);
+    // Tampered body → false
+    expect(await verifySquareSignature(url, `${built.body} `, sig, "sq_signature_key")).toBe(false);
+
+    await expect(verifySquareSignature(url, built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    await expect(verifySquareSignature("", built.body, sig, "sq_signature_key")).rejects.toThrow(
+      "requires the notification URL"
+    );
+
+    // Dispatcher requires options.url
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-Square-HmacSha256-Signature": sig },
+        },
+        { provider: "square", secret: "sq_signature_key" }
+      )
+    ).rejects.toThrow("requires options.url");
+
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-Square-HmacSha256-Signature": sig },
+        },
+        { provider: "square", secret: "sq_signature_key", url }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+});
+
+describe("tier-2 HubSpot verification (method + URI + body + timestamp scheme)", () => {
+  it("verifies HubSpot v3 signatures via round-trip + dispatcher", async () => {
+    const url = "https://go.webhooks.cc/w/demo";
+    const nowSec = Math.floor(Date.now() / 1000);
+    const built = await client.buildRequest(url, {
+      provider: "hubspot",
+      secret: "hs_app_client_secret",
+      body: [{ subscriptionType: "contact.creation", objectId: 1 }],
+      timestamp: nowSec,
+    });
+    const sig = built.headers["x-hubspot-signature-v3"];
+    const ts = built.headers["x-hubspot-request-timestamp"];
+    expect(sig).toBeDefined();
+    expect(ts).toBe(String(nowSec * 1000));
+
+    // Use a wide maxAgeMs window so the test is never time-flaky.
+    const wide = 60 * 60 * 1000;
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, ts, "hs_app_client_secret", wide)
+    ).toBe(true);
+    // Wrong secret → false
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, ts, "the_wrong_secret", wide)
+    ).toBe(false);
+    // Wrong method → false (HubSpot binds the signature to the HTTP method)
+    expect(
+      await verifyHubSpotSignature("GET", url, built.body, sig, ts, "hs_app_client_secret", wide)
+    ).toBe(false);
+    // Wrong URL → false (HubSpot binds the signature to the request URI)
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        "https://go.webhooks.cc/w/other",
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(false);
+    // Tampered body → false
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        url,
+        `${built.body} `,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(false);
+    // Missing signature header / timestamp → false (does not throw)
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, null, ts, "hs_app_client_secret", wide)
+    ).toBe(false);
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, null, "hs_app_client_secret", wide)
+    ).toBe(false);
+
+    // Empty secret throws.
+    await expect(
+      verifyHubSpotSignature("POST", url, built.body, sig, ts, "", wide)
+    ).rejects.toThrow("requires a non-empty secret");
+
+    // Dispatcher requires options.url
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-HubSpot-Signature-V3": sig, "X-HubSpot-Request-Timestamp": ts },
+        },
+        { provider: "hubspot", secret: "hs_app_client_secret" }
+      )
+    ).rejects.toThrow("requires options.url");
+
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-HubSpot-Signature-V3": sig, "X-HubSpot-Request-Timestamp": ts },
+        },
+        { provider: "hubspot", secret: "hs_app_client_secret", url, method: "POST" }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("decodes HubSpot's reserved-character map in the signed URI", async () => {
+    // HubSpot decodes a documented set of percent-encoded chars before signing.
+    // The signer normalizes the URI, so a request signed for an encoded URL must
+    // verify against both the encoded and the decoded form of that same URL.
+    const encodedUrl = "https://go.webhooks.cc/w/demo%2Fteam%40acme?ids=1%2C2%3B3";
+    const decodedUrl = "https://go.webhooks.cc/w/demo/team@acme?ids=1,2;3";
+    const nowSec = Math.floor(Date.now() / 1000);
+    const built = await client.buildRequest(encodedUrl, {
+      provider: "hubspot",
+      secret: "hs_app_client_secret",
+      body: [{ subscriptionType: "contact.creation", objectId: 1 }],
+      timestamp: nowSec,
+    });
+    const sig = built.headers["x-hubspot-signature-v3"];
+    const ts = built.headers["x-hubspot-request-timestamp"];
+    const wide = 60 * 60 * 1000;
+
+    // Encoded URL verifies (verifier applies the same decode as the signer).
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        encodedUrl,
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(true);
+    // Pre-decoded URL also verifies — proving the signature was computed over the
+    // decoded URI, matching what real HubSpot produces.
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        decodedUrl,
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(true);
+    // A genuinely different URL still fails.
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        "https://go.webhooks.cc/w/demo/other@acme?ids=1,2;3",
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(false);
+  });
+
+  it("rejects a stale timestamp (older than the freshness window)", async () => {
+    const url = "https://go.webhooks.cc/w/demo";
+    // Sign with a deterministic timestamp ~10 minutes in the past.
+    const staleSec = Math.floor(Date.now() / 1000) - 10 * 60;
+    const built = await client.buildRequest(url, {
+      provider: "hubspot",
+      secret: "hs_app_client_secret",
+      body: [{ subscriptionType: "contact.creation" }],
+      timestamp: staleSec,
+    });
+    const sig = built.headers["x-hubspot-signature-v3"];
+    const ts = built.headers["x-hubspot-request-timestamp"];
+
+    // Default 5-minute window: stale → false (signature is otherwise correct).
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, ts, "hs_app_client_secret")
+    ).toBe(false);
+    // Dispatcher uses the default window, so it must also reject.
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "x-hubspot-signature-v3": sig, "x-hubspot-request-timestamp": ts },
+        },
+        { provider: "hubspot", secret: "hs_app_client_secret", url, method: "POST" }
+      )
+    ).resolves.toEqual({ valid: false });
+    // But widening the window proves the signature itself is valid.
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        url,
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        60 * 60 * 1000
+      )
+    ).toBe(true);
+  });
+});
+
+describe("tier-2 Mailgun verification (body-embedded signature scheme)", () => {
+  it("verifies Mailgun signatures over the body signature fields via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "mailgun",
+      secret: "mg_signing_key",
+    });
+    // Mailgun embeds the signature in the body; there is no signature header.
+    expect(built.headers["x-mailgun-signature"]).toBeUndefined();
+    expect(built.body).toBeDefined();
+    const builtBody = built.body as string;
+
+    expect(await verifyMailgunSignature(builtBody, "mg_signing_key")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyMailgunSignature(builtBody, "the_wrong_key")).toBe(false);
+    // Tampered body (token altered) → false
+    const parsed = JSON.parse(builtBody) as {
+      signature: { timestamp: string; token: string; signature: string };
+    };
+    const tampered = JSON.stringify({
+      ...parsed,
+      signature: { ...parsed.signature, token: `${parsed.signature.token}0` },
+    });
+    expect(await verifyMailgunSignature(tampered, "mg_signing_key")).toBe(false);
+
+    // Malformed / non-JSON body → false (NEVER throws)
+    expect(await verifyMailgunSignature("not json at all", "mg_signing_key")).toBe(false);
+    expect(await verifyMailgunSignature("{", "mg_signing_key")).toBe(false);
+    expect(await verifyMailgunSignature("{}", "mg_signing_key")).toBe(false);
+    expect(await verifyMailgunSignature(undefined, "mg_signing_key")).toBe(false);
+    // Missing signature sub-fields → false (no throw)
+    expect(
+      await verifyMailgunSignature(
+        JSON.stringify({ signature: { timestamp: "1" } }),
+        "mg_signing_key"
+      )
+    ).toBe(false);
+
+    // Empty secret still throws (consistent with other verifiers).
+    await expect(verifyMailgunSignature(builtBody, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path (no headers, body-only).
+    await expect(
+      verifySignature(
+        { body: builtBody, headers: {} },
+        { provider: "mailgun", secret: "mg_signing_key" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with malformed body resolves to false without throwing.
+    await expect(
+      verifySignature(
+        { body: "not json", headers: {} },
+        { provider: "mailgun", secret: "mg_signing_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Calendly verification (Stripe-style t=,v1= scheme)", () => {
+  it("verifies Calendly signatures over t.body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "calendly",
+      secret: "cal_signing_key",
+    });
+    const sig = built.headers["calendly-webhook-signature"];
+    expect(sig).toBeDefined();
+    // Stripe-style header shape: t=<unix>,v1=<hex>
+    expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+    expect(await verifyCalendlySignature(built.body, sig, "cal_signing_key")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyCalendlySignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifyCalendlySignature(`${built.body} `, sig, "cal_signing_key")).toBe(false);
+    // Missing / malformed header → false (no throw)
+    expect(await verifyCalendlySignature(built.body, undefined, "cal_signing_key")).toBe(false);
+    expect(await verifyCalendlySignature(built.body, "garbage", "cal_signing_key")).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifyCalendlySignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "Calendly-Webhook-Signature": sig } },
+        { provider: "calendly", secret: "cal_signing_key" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "calendly-webhook-signature": sig } },
+        { provider: "calendly", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Mux verification (Stripe-style t=,v1= scheme)", () => {
+  it("verifies Mux signatures over t.body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "mux",
+      secret: "mux_signing_secret",
+    });
+    const sig = built.headers["mux-signature"];
+    expect(sig).toBeDefined();
+    // Stripe-style header shape: t=<unix>,v1=<hex>
+    expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+    expect(await verifyMuxSignature(built.body, sig, "mux_signing_secret")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyMuxSignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifyMuxSignature(`${built.body} `, sig, "mux_signing_secret")).toBe(false);
+    // Missing / malformed header → false (no throw)
+    expect(await verifyMuxSignature(built.body, undefined, "mux_signing_secret")).toBe(false);
+    expect(await verifyMuxSignature(built.body, "garbage", "mux_signing_secret")).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifyMuxSignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "Mux-Signature": sig } },
+        { provider: "mux", secret: "mux_signing_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "mux-signature": sig } },
+        { provider: "mux", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Sentry verification (hex HMAC-SHA256 over body)", () => {
+  it("verifies Sentry signatures over the raw body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "sentry",
+      secret: "sentry_client_secret",
+    });
+    const sig = built.headers["sentry-hook-signature"];
+    expect(sig).toBeDefined();
+    // Raw hex HMAC-SHA256, no prefix.
+    expect(sig).toMatch(/^[0-9a-f]+$/);
+    // Sentry also carries the event resource header.
+    expect(built.headers["sentry-hook-resource"]).toBe("issue");
+
+    expect(await verifySentrySignature(built.body, sig, "sentry_client_secret")).toBe(true);
+    // Wrong secret → false
+    expect(await verifySentrySignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifySentrySignature(`${built.body} `, sig, "sentry_client_secret")).toBe(false);
+    // Missing header → false (no throw)
+    expect(await verifySentrySignature(built.body, undefined, "sentry_client_secret")).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifySentrySignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "Sentry-Hook-Signature": sig } },
+        { provider: "sentry", secret: "sentry_client_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "sentry-hook-signature": sig } },
+        { provider: "sentry", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Bitbucket verification (sha256= hex over body)", () => {
+  it("verifies Bitbucket signatures over the raw body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "bitbucket",
+      secret: "bitbucket_webhook_secret",
+    });
+    const sig = built.headers["x-hub-signature"];
+    expect(sig).toBeDefined();
+    // GitHub-style sha256= hex prefix.
+    expect(sig).toMatch(/^sha256=[0-9a-f]+$/);
+    // Bitbucket carries the event in the x-event-key header.
+    expect(built.headers["x-event-key"]).toBe("repo:push");
+
+    expect(await verifyBitbucketSignature(built.body, sig, "bitbucket_webhook_secret")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyBitbucketSignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifyBitbucketSignature(`${built.body} `, sig, "bitbucket_webhook_secret")).toBe(
+      false
+    );
+    // Missing header → false (no throw)
+    expect(await verifyBitbucketSignature(built.body, undefined, "bitbucket_webhook_secret")).toBe(
+      false
+    );
+    // A sha1= header (Intercom-style) must not validate as Bitbucket sha256=.
+    expect(
+      await verifyBitbucketSignature(built.body, "sha1=deadbeef", "bitbucket_webhook_secret")
+    ).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifyBitbucketSignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "X-Hub-Signature": sig, "x-event-key": "repo:push" } },
+        { provider: "bitbucket", secret: "bitbucket_webhook_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "x-hub-signature": sig } },
+        { provider: "bitbucket", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
 describe("tier-1 provider verification round-trips", () => {
   const tier1: ReadonlyArray<{
     provider: TemplateProvider;
@@ -509,5 +1000,28 @@ describe("tier-1 provider verification round-trips", () => {
       true
     );
     expect(await verifyTelegramSignature(built.body, "tg_token_value", "different")).toBe(false);
+  });
+});
+
+describe("VerifySignatureOptions type surface (tier-2)", () => {
+  it("accepts an optional method field on the non-discord branch", () => {
+    // Type-only assertion: tier-2 providers like HubSpot sign
+    // method + URI + body + timestamp, so the options carry an HTTP method.
+    const options: VerifySignatureOptions = {
+      provider: "stripe",
+      secret: "whsec_test",
+      url: "https://go.webhooks.cc/w/demo",
+      method: "POST",
+    };
+    expect(options.provider).toBe("stripe");
+    expect("method" in options && options.method).toBe("POST");
+  });
+
+  it("keeps method optional", () => {
+    const options: VerifySignatureOptions = {
+      provider: "stripe",
+      secret: "whsec_test",
+    };
+    expect(options.provider).toBe("stripe");
   });
 });

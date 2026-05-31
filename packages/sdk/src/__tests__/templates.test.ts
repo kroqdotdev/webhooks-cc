@@ -24,6 +24,13 @@ import {
   verifyCalSignature,
   verifyIntercomSignature,
   verifyTelegramSignature,
+  verifySquareSignature,
+  verifyHubSpotSignature,
+  verifyMailgunSignature,
+  verifyCalendlySignature,
+  verifyMuxSignature,
+  verifySentrySignature,
+  verifyBitbucketSignature,
   verifySignature,
 } from "../verify";
 
@@ -1201,5 +1208,407 @@ describe("tier-1 provider templates produce verifiable signed requests", () => {
   it("telegram sends the raw secret token (no HMAC)", async () => {
     const result = await buildTemplate("telegram");
     expect(getHeader(result.headers, "x-telegram-bot-api-secret-token")).toBe(TEST_SECRET);
+  });
+});
+
+// ─── Tier-2: Square (URL + body HMAC scheme) ────────────────────────────
+
+describe("tier-2 Square provider metadata", () => {
+  it("square is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("square");
+    expect(VERIFY_PROVIDERS).toContain("square");
+
+    const meta = TEMPLATE_METADATA.square;
+    expect(meta.provider).toBe("square");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-square-hmacsha256-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("payment.created");
+    expect(meta.templates).toContain("payment.created");
+  });
+});
+
+describe("tier-2 Square templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.square.templates) {
+    it(`square/${template} is valid JSON and the signature verifies over URL + body`, async () => {
+      const result = await buildTemplate("square", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "x-square-hmacsha256-signature");
+      expect(sig).toBeDefined();
+      expect(await verifySquareSignature(ENDPOINT_URL, result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifySquareSignature(ENDPOINT_URL, result.body, sig!, "wrong_secret")).toBe(
+        false
+      );
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "square", secret: TEST_SECRET, url: ENDPOINT_URL }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: HubSpot (method + URI + body + timestamp HMAC scheme) ───────
+
+describe("tier-2 HubSpot provider metadata", () => {
+  it("hubspot is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("hubspot");
+    expect(VERIFY_PROVIDERS).toContain("hubspot");
+
+    const meta = TEMPLATE_METADATA.hubspot;
+    expect(meta.provider).toBe("hubspot");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-hubspot-signature-v3");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("contact.creation");
+    expect(meta.templates).toContain("contact.creation");
+  });
+});
+
+describe("tier-2 HubSpot templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.hubspot.templates) {
+    it(`hubspot/${template} is valid JSON and the signature verifies over method+url+body+timestamp`, async () => {
+      // Pass a fresh timestamp (seconds) for determinism without time-flakiness.
+      const nowSec = Math.floor(Date.now() / 1000);
+      const result = await buildTemplateSendOptions(ENDPOINT_URL, {
+        provider: "hubspot",
+        secret: TEST_SECRET,
+        template,
+        timestamp: nowSec,
+      });
+      const headers = result.headers!;
+      const body = result.body as string;
+
+      expect(headers["content-type"]).toBe("application/json");
+      // HubSpot sends an array payload.
+      expect(Array.isArray(JSON.parse(body))).toBe(true);
+
+      const sig = getHeader(headers, "x-hubspot-signature-v3");
+      const ts = getHeader(headers, "x-hubspot-request-timestamp");
+      expect(sig).toBeDefined();
+      expect(ts).toBe(String(nowSec * 1000));
+
+      // Round-trip with a generously wide window so it is never time-flaky.
+      expect(
+        await verifyHubSpotSignature(
+          "POST",
+          ENDPOINT_URL,
+          body,
+          sig!,
+          ts!,
+          TEST_SECRET,
+          60 * 60 * 1000
+        )
+      ).toBe(true);
+      expect(
+        await verifyHubSpotSignature(
+          "POST",
+          ENDPOINT_URL,
+          body,
+          sig!,
+          ts!,
+          "wrong_secret",
+          60 * 60 * 1000
+        )
+      ).toBe(false);
+
+      const verification = await verifySignature(
+        { body, headers },
+        { provider: "hubspot", secret: TEST_SECRET, url: ENDPOINT_URL, method: "POST" }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Mailgun (body-embedded HMAC scheme) ─────────────────────────
+
+describe("tier-2 Mailgun provider metadata", () => {
+  it("mailgun is listed and has correct metadata (no signature header — body-embedded)", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("mailgun");
+    expect(VERIFY_PROVIDERS).toContain("mailgun");
+
+    const meta = TEMPLATE_METADATA.mailgun;
+    expect(meta.provider).toBe("mailgun");
+    expect(meta.secretRequired).toBe(true);
+    // Mailgun signs body fields, not a header — signatureHeader is omitted.
+    expect("signatureHeader" in meta).toBe(false);
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("delivered");
+    expect(meta.templates).toContain("delivered");
+  });
+});
+
+describe("tier-2 Mailgun templates produce verifiable body-embedded signatures", () => {
+  for (const template of TEMPLATE_METADATA.mailgun.templates) {
+    it(`mailgun/${template} is valid JSON and the embedded signature verifies over timestamp+token`, async () => {
+      const result = await buildTemplate("mailgun", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      // There is no signature header for Mailgun.
+      expect(getHeader(result.headers, "x-mailgun-signature")).toBeUndefined();
+
+      // The body must carry signature.{timestamp,token,signature}.
+      const parsed = parseBody(result.body) as {
+        signature: { timestamp: string; token: string; signature: string };
+      };
+      expect(typeof parsed.signature.timestamp).toBe("string");
+      expect(typeof parsed.signature.token).toBe("string");
+      expect(parsed.signature.signature).toMatch(/^[a-f0-9]{64}$/);
+
+      expect(await verifyMailgunSignature(result.body, TEST_SECRET)).toBe(true);
+      expect(await verifyMailgunSignature(result.body, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "mailgun", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+describe("tier-2 Sentry templates reflect the selected event", () => {
+  it("derives the action and resource from the chosen template", async () => {
+    const issueCreated = await buildTemplate("sentry", { template: "issue.created" });
+    expect((parseBody(issueCreated.body) as { action: string }).action).toBe("created");
+    expect(getHeader(issueCreated.headers, "sentry-hook-resource")).toBe("issue");
+
+    const issueResolved = await buildTemplate("sentry", { template: "issue.resolved" });
+    const resolved = parseBody(issueResolved.body) as { action: string; data: unknown };
+    expect(resolved.action).toBe("resolved");
+    expect(getHeader(issueResolved.headers, "sentry-hook-resource")).toBe("issue");
+
+    const errorCreated = await buildTemplate("sentry", { template: "error.created" });
+    const error = parseBody(errorCreated.body) as { action: string; data: { error?: unknown } };
+    expect(error.action).toBe("created");
+    expect(error.data.error).toBeDefined();
+    expect(getHeader(errorCreated.headers, "sentry-hook-resource")).toBe("error");
+  });
+});
+
+describe("tier-2 Bitbucket templates emit the right payload shape", () => {
+  it("repo:push produces a push body; pullrequest:* produce a pullrequest body", async () => {
+    const push = await buildTemplate("bitbucket", { template: "repo:push" });
+    const pushBody = parseBody(push.body) as { push?: unknown; pullrequest?: unknown };
+    expect(pushBody.push).toBeDefined();
+    expect(pushBody.pullrequest).toBeUndefined();
+    expect(getHeader(push.headers, "x-event-key")).toBe("repo:push");
+
+    const created = await buildTemplate("bitbucket", { template: "pullrequest:created" });
+    const createdBody = created.body;
+    const prCreated = parseBody(createdBody) as {
+      push?: unknown;
+      pullrequest?: { state: string };
+    };
+    expect(prCreated.push).toBeUndefined();
+    expect(prCreated.pullrequest?.state).toBe("OPEN");
+    expect(getHeader(created.headers, "x-event-key")).toBe("pullrequest:created");
+
+    const fulfilled = await buildTemplate("bitbucket", { template: "pullrequest:fulfilled" });
+    const prFulfilled = parseBody(fulfilled.body) as { pullrequest?: { state: string } };
+    expect(prFulfilled.pullrequest?.state).toBe("MERGED");
+    expect(getHeader(fulfilled.headers, "x-event-key")).toBe("pullrequest:fulfilled");
+  });
+});
+
+// ─── Tier-2: Calendly (Stripe-style t=,v1= scheme) ──────────────────────
+
+describe("tier-2 Calendly provider metadata", () => {
+  it("calendly is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("calendly");
+    expect(VERIFY_PROVIDERS).toContain("calendly");
+
+    const meta = TEMPLATE_METADATA.calendly;
+    expect(meta.provider).toBe("calendly");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("calendly-webhook-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("invitee.created");
+    expect(meta.templates).toContain("invitee.created");
+  });
+});
+
+describe("tier-2 Calendly templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.calendly.templates) {
+    it(`calendly/${template} is valid JSON and the t=,v1= signature verifies over timestamp.body`, async () => {
+      const result = await buildTemplate("calendly", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "calendly-webhook-signature");
+      expect(sig).toBeDefined();
+      expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+      expect(await verifyCalendlySignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyCalendlySignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "calendly", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Mux (Stripe-style t=,v1= scheme) ──────────────────────────
+
+describe("tier-2 Mux provider metadata", () => {
+  it("mux is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("mux");
+    expect(VERIFY_PROVIDERS).toContain("mux");
+
+    const meta = TEMPLATE_METADATA.mux;
+    expect(meta.provider).toBe("mux");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("mux-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("video.asset.created");
+    expect(meta.templates).toContain("video.asset.created");
+  });
+});
+
+describe("tier-2 Mux templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.mux.templates) {
+    it(`mux/${template} is valid JSON and the t=,v1= signature verifies over timestamp.body`, async () => {
+      const result = await buildTemplate("mux", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "mux-signature");
+      expect(sig).toBeDefined();
+      expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+      expect(await verifyMuxSignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyMuxSignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "mux", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Sentry (hex HMAC-SHA256 over body) ────────────────────────
+
+describe("tier-2 Sentry provider metadata", () => {
+  it("sentry is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("sentry");
+    expect(VERIFY_PROVIDERS).toContain("sentry");
+
+    const meta = TEMPLATE_METADATA.sentry;
+    expect(meta.provider).toBe("sentry");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("sentry-hook-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("issue.created");
+    expect(meta.templates).toContain("issue.created");
+  });
+});
+
+describe("tier-2 Sentry templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.sentry.templates) {
+    it(`sentry/${template} is valid JSON and the hex signature verifies over the body`, async () => {
+      const result = await buildTemplate("sentry", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "sentry-hook-signature");
+      expect(sig).toBeDefined();
+      expect(sig).toMatch(/^[0-9a-f]+$/);
+      // Sentry carries the resource (the first segment of the event) in its own header.
+      expect(getHeader(result.headers, "sentry-hook-resource")).toBe(template.split(".")[0]);
+
+      expect(await verifySentrySignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifySentrySignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "sentry", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Bitbucket (GitHub-style sha256= hex over body) ─────────────
+
+describe("tier-2 Bitbucket provider metadata", () => {
+  it("bitbucket is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("bitbucket");
+    expect(VERIFY_PROVIDERS).toContain("bitbucket");
+
+    const meta = TEMPLATE_METADATA.bitbucket;
+    expect(meta.provider).toBe("bitbucket");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-hub-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("repo:push");
+    expect(meta.templates).toContain("repo:push");
+  });
+});
+
+describe("tier-2 Bitbucket templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.bitbucket.templates) {
+    it(`bitbucket/${template} is valid JSON and the sha256= signature verifies over the body`, async () => {
+      const result = await buildTemplate("bitbucket", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "x-hub-signature");
+      expect(sig).toBeDefined();
+      // GitHub-style sha256= hex prefix (not sha1=, which is Intercom).
+      expect(sig).toMatch(/^sha256=[0-9a-f]+$/);
+      // Bitbucket carries the event in the x-event-key header for detection.
+      expect(getHeader(result.headers, "x-event-key")).toBe(template);
+
+      expect(await verifyBitbucketSignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyBitbucketSignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "bitbucket", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Catalog size guard (tier-2 took the catalog from 21 → 28) ────────────
+
+describe("provider catalog size after tier-2", () => {
+  const TIER2 = ["square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"] as const;
+
+  it("lists 28 template providers (21 tier-1 + 7 tier-2)", () => {
+    expect(TEMPLATE_PROVIDERS).toHaveLength(28);
+    for (const provider of TIER2) {
+      expect(TEMPLATE_PROVIDERS).toContain(provider);
+    }
+  });
+
+  it("lists 27 verifiable providers (SendGrid is template-only, uses IP allowlisting)", () => {
+    expect(VERIFY_PROVIDERS).toHaveLength(27);
+    expect(VERIFY_PROVIDERS).not.toContain("sendgrid");
+    for (const provider of TIER2) {
+      expect(VERIFY_PROVIDERS).toContain(provider);
+    }
+  });
+
+  it("has frozen metadata for every tier-2 provider", () => {
+    for (const provider of TIER2) {
+      const meta = TEMPLATE_METADATA[provider];
+      expect(meta.provider).toBe(provider);
+      expect(meta.secretRequired).toBe(true);
+      expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+      expect(meta.templates.length).toBeGreaterThan(0);
+      expect(meta.templates).toContain(meta.defaultTemplate);
+    }
   });
 });

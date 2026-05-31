@@ -215,6 +215,13 @@ The SDK can generate signed webhook payloads for:
 - `cal`
 - `intercom`
 - `telegram`
+- `square`
+- `hubspot`
+- `mailgun`
+- `calendly`
+- `mux`
+- `sentry`
+- `bitbucket`
 
 (`sendgrid` and `discord` templates are also available but are intentionally unsigned.)
 
@@ -284,6 +291,13 @@ Supported verification providers:
 - `cal`
 - `intercom`
 - `telegram`
+- `square`
+- `hubspot`
+- `mailgun`
+- `calendly`
+- `mux`
+- `sentry`
+- `bitbucket`
 
 ```typescript
 import { isDiscordWebhook, verifySignature } from "@webhooks-cc/sdk";
@@ -298,7 +312,7 @@ if (isDiscordWebhook(request)) {
 }
 ```
 
-For Twilio, pass the original signed URL:
+For Twilio, Square, and HubSpot, pass the original signed URL. HubSpot v3 also signs the HTTP method, so pass `method` too:
 
 ```typescript
 const result = await verifySignature(request, {
@@ -306,7 +320,17 @@ const result = await verifySignature(request, {
   secret: process.env.TWILIO_AUTH_TOKEN!,
   url: "https://example.com/webhooks/twilio",
 });
+
+// HubSpot v3 signs `method + url + body + timestamp` and rejects stale timestamps
+const hubspot = await verifySignature(request, {
+  provider: "hubspot",
+  secret: process.env.HUBSPOT_CLIENT_SECRET!,
+  url: "https://example.com/webhooks/hubspot",
+  method: "POST",
+});
 ```
+
+Mailgun is the exception with no signature header — it embeds `signature.{timestamp,token,signature}` in the request body, so `verifyMailgunSignature` reads the body directly and never throws on malformed input.
 
 SendGrid uses IP allowlisting rather than cryptographic signature verification.
 
@@ -318,7 +342,8 @@ isTwilioWebhook        isPaddleWebhook         isLinearWebhook      isSendGridWe
 isClerkWebhook         isDiscordWebhook        isVercelWebhook      isGitLabWebhook
 isTypeformWebhook      isStandardWebhook       isMetaWebhook        isLemonSqueezyWebhook
 isCoinbaseCommerceWebhook  isRazorpayWebhook   isCalWebhook         isIntercomWebhook
-isTelegramWebhook
+isTelegramWebhook      isSquareWebhook         isHubSpotWebhook     isMailgunWebhook
+isCalendlyWebhook      isMuxWebhook            isSentryWebhook      isBitbucketWebhook
 ```
 
 ## Matchers, parsing, and diffing

@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import {
   buildTwilioSignaturePayload,
+  decodeHubSpotUri,
   decodeStandardWebhookSecret,
   hmacSign,
   hmacSignRaw,
@@ -453,6 +454,183 @@ export async function verifyTelegramSignature(
 }
 
 /**
+ * Verify a Square webhook signature. Square computes
+ * `base64(HMAC-SHA256(signatureKey, notificationUrl + rawBody))` and sends it in
+ * the `x-square-hmacsha256-signature` header. The signature is bound to the exact
+ * notification URL Square delivered to, so the caller must supply it.
+ */
+export async function verifySquareSignature(
+  url: string,
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  signatureKey: string
+): Promise<boolean> {
+  requireSecret(signatureKey, "verifySquareSignature");
+  if (!url) {
+    throw new Error("verifySquareSignature requires the notification URL");
+  }
+  if (!signatureHeader) {
+    return false;
+  }
+
+  const expected = toBase64(
+    await hmacSign("SHA-256", signatureKey, `${url}${normalizeBody(body)}`)
+  );
+  return timingSafeEqual(signatureHeader.trim(), expected);
+}
+
+/**
+ * Verify a HubSpot v3 webhook signature. HubSpot computes
+ * `base64(HMAC-SHA256(clientSecret, requestMethod + requestUri + rawBody + timestamp))`
+ * and sends it in `x-hubspot-signature-v3`, alongside the request timestamp (in
+ * milliseconds) in `x-hubspot-request-timestamp`. Because the signature is bound
+ * to the exact method and URI, the caller must supply both. The URI is decoded
+ * with HubSpot's reserved-character map (see {@link decodeHubSpotUri}) before
+ * signing, so URLs containing characters like `%2F`/`%40` verify correctly.
+ * Signatures with a timestamp older than `maxAgeMs` (5 minutes by default) are
+ * rejected to defeat replay attacks.
+ */
+export async function verifyHubSpotSignature(
+  method: string,
+  url: string,
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  timestamp: string | null | undefined,
+  secret: string,
+  maxAgeMs = 5 * 60 * 1000
+): Promise<boolean> {
+  requireSecret(secret, "verifyHubSpotSignature");
+  if (!signatureHeader || !timestamp) {
+    return false;
+  }
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > maxAgeMs) {
+    return false;
+  }
+  const base = `${method.toUpperCase()}${decodeHubSpotUri(url)}${normalizeBody(body)}${timestamp}`;
+  const expected = toBase64(await hmacSign("SHA-256", secret, base));
+  return timingSafeEqual(signatureHeader.trim(), expected);
+}
+
+/**
+ * Verify a Mailgun webhook signature. Mailgun does not send a signature header —
+ * the `timestamp`, `token`, and `signature` fields live inside the JSON body
+ * under `signature`. The signature is the hex HMAC-SHA256 of `timestamp + token`
+ * keyed by the HTTP webhook signing key. Malformed or non-JSON bodies, or bodies
+ * missing the signature fields, return `false` (this function never throws on
+ * bad input).
+ */
+export async function verifyMailgunSignature(
+  body: string | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyMailgunSignature");
+  if (!body) {
+    return false;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return false;
+  }
+  const sig = (parsed as { signature?: unknown }).signature;
+  if (!sig || typeof sig !== "object") {
+    return false;
+  }
+  const { timestamp, token, signature } = sig as {
+    timestamp?: unknown;
+    token?: unknown;
+    signature?: unknown;
+  };
+  if (
+    typeof timestamp !== "string" ||
+    typeof token !== "string" ||
+    typeof signature !== "string" ||
+    !timestamp ||
+    !token ||
+    !signature
+  ) {
+    return false;
+  }
+  const expected = toHex(await hmacSign("SHA-256", secret, `${timestamp}${token}`)).toLowerCase();
+  return timingSafeEqual(signature.toLowerCase(), expected);
+}
+
+/**
+ * Verify a Calendly webhook signature. Calendly uses the Stripe-style header
+ * format `t=<timestamp>,v1=<signature>` in `calendly-webhook-signature`, where
+ * the signature is the hex HMAC-SHA256 of `${timestamp}.${body}` keyed by the
+ * webhook signing key. Reuses the shared Stripe header parser.
+ */
+export async function verifyCalendlySignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyCalendlySignature");
+  const parsed = parseStripeHeader(signatureHeader);
+  if (!parsed) {
+    return false;
+  }
+  const expected = toHex(
+    await hmacSign("SHA-256", secret, `${parsed.timestamp}.${normalizeBody(body)}`)
+  ).toLowerCase();
+  return parsed.signatures.some((signature) => timingSafeEqual(signature, expected));
+}
+
+/**
+ * Verify a Mux webhook signature. Mux uses the same Stripe-style header format
+ * `t=<timestamp>,v1=<signature>` as Calendly, this time in `mux-signature`,
+ * where the signature is the hex HMAC-SHA256 of `${timestamp}.${body}` keyed by
+ * the webhook signing secret. Reuses the shared Stripe header parser.
+ */
+export async function verifyMuxSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyMuxSignature");
+  const parsed = parseStripeHeader(signatureHeader);
+  if (!parsed) {
+    return false;
+  }
+  const expected = toHex(
+    await hmacSign("SHA-256", secret, `${parsed.timestamp}.${normalizeBody(body)}`)
+  ).toLowerCase();
+  return parsed.signatures.some((signature) => timingSafeEqual(signature, expected));
+}
+
+/**
+ * Verify a Sentry webhook signature (raw hex HMAC-SHA256 over the body, sent in
+ * the `sentry-hook-signature` header). Reuses the shared hex HMAC helper.
+ */
+export function verifySentrySignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return hmacSha256HexMatches(body, signatureHeader, secret, "verifySentrySignature");
+}
+
+/**
+ * Verify a Bitbucket webhook signature. Bitbucket uses the GitHub-style
+ * `sha256=<hex>` scheme over the raw body, sent in the `x-hub-signature` header.
+ * Reuses the GitHub verifier (which requires the `sha256=` prefix and therefore
+ * rejects Intercom's `sha1=` signatures on the same header name).
+ */
+export function verifyBitbucketSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return verifyGitHubSignature(body, signatureHeader, secret);
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -769,6 +947,68 @@ export async function verifySignature(
     valid = await verifyTelegramSignature(
       request.body,
       getHeader(request.headers, "x-telegram-bot-api-secret-token"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "square") {
+    if (!options.url) {
+      throw new Error('verifySignature for provider "square" requires options.url');
+    }
+    valid = await verifySquareSignature(
+      options.url,
+      request.body,
+      getHeader(request.headers, "x-square-hmacsha256-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "hubspot") {
+    if (!options.url) {
+      throw new Error('verifySignature for provider "hubspot" requires options.url');
+    }
+    valid = await verifyHubSpotSignature(
+      options.method ?? "POST",
+      options.url,
+      request.body,
+      getHeader(request.headers, "x-hubspot-signature-v3"),
+      getHeader(request.headers, "x-hubspot-request-timestamp"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "mailgun") {
+    valid = await verifyMailgunSignature(request.body, options.secret);
+  }
+
+  if (options.provider === "calendly") {
+    valid = await verifyCalendlySignature(
+      request.body,
+      getHeader(request.headers, "calendly-webhook-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "mux") {
+    valid = await verifyMuxSignature(
+      request.body,
+      getHeader(request.headers, "mux-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "sentry") {
+    valid = await verifySentrySignature(
+      request.body,
+      getHeader(request.headers, "sentry-hook-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "bitbucket") {
+    valid = await verifyBitbucketSignature(
+      request.body,
+      getHeader(request.headers, "x-hub-signature"),
       options.secret
     );
   }

@@ -1017,6 +1017,7 @@ export default function DashboardPage() {
                     note={currentNote}
                     onNoteChange={handleNoteChange}
                     onOpenSettings={handleOpenSettings}
+                    endpointSlug={currentEndpoint.slug}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -1044,6 +1045,7 @@ export default function DashboardPage() {
                       note={currentNote}
                       onNoteChange={handleNoteChange}
                       onOpenSettings={handleOpenSettings}
+                      endpointSlug={currentEndpoint.slug}
                     />
                   </ErrorBoundary>
                 </div>

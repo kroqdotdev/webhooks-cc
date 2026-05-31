@@ -142,6 +142,13 @@ Provider template and signing support includes:
 - `cal`
 - `intercom`
 - `telegram`
+- `square`
+- `hubspot`
+- `mailgun`
+- `calendly`
+- `mux`
+- `sentry`
+- `bitbucket`
 
 Signature verification also supports:
 

@@ -44,6 +44,8 @@ interface RequestDetailProps {
   onNoteChange?: (note: string) => void;
   /** Callback to open endpoint settings (for "Save to Endpoint Settings" link). */
   onOpenSettings?: () => void;
+  /** Slug of the endpoint this request belongs to (used to prefill the manual-verify URL). */
+  endpointSlug?: string;
 }
 
 /**
@@ -117,6 +119,7 @@ export function RequestDetail({
   note,
   onNoteChange,
   onOpenSettings,
+  endpointSlug,
 }: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
   const tab = activeTab ?? internalTab;
@@ -349,7 +352,13 @@ export function RequestDetail({
           </pre>
         )}
 
-        {tab === "signature" && <SignatureTab request={request} onOpenSettings={onOpenSettings} />}
+        {tab === "signature" && (
+          <SignatureTab
+            request={request}
+            onOpenSettings={onOpenSettings}
+            endpointSlug={endpointSlug}
+          />
+        )}
       </div>
     </div>
   );

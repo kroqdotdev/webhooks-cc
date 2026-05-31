@@ -27,6 +27,13 @@ import {
   isCalWebhook,
   isIntercomWebhook,
   isTelegramWebhook,
+  isSquareWebhook,
+  isHubSpotWebhook,
+  isMailgunWebhook,
+  isCalendlyWebhook,
+  isMuxWebhook,
+  isSentryWebhook,
+  isBitbucketWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -382,6 +389,274 @@ describe("isStandardWebhook", () => {
   });
 });
 
+describe("isSquareWebhook", () => {
+  it("detects Square by the x-square-hmacsha256-signature header", () => {
+    expect(
+      isSquareWebhook(
+        makeRequest({
+          headers: { "x-square-hmacsha256-signature": "abc123" },
+          body: JSON.stringify({ type: "payment.created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isSquareWebhook(makeRequest({ headers: { "X-Square-HmacSha256-Signature": "abc123" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isSquareWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the body via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "x-square-hmacsha256-signature": "abc123" },
+        body: JSON.stringify({ type: "payment.updated" }),
+      })
+    );
+    expect(info?.provider).toBe("square");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("x-square-hmacsha256-signature");
+    expect(info?.event).toBe("payment.updated");
+  });
+});
+
+describe("isHubSpotWebhook", () => {
+  it("detects HubSpot by the x-hubspot-signature-v3 header", () => {
+    expect(
+      isHubSpotWebhook(
+        makeRequest({
+          headers: { "x-hubspot-signature-v3": "abc123" },
+          body: JSON.stringify([{ subscriptionType: "contact.creation" }]),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(isHubSpotWebhook(makeRequest({ headers: { "X-HubSpot-Signature-V3": "abc123" } }))).toBe(
+      true
+    );
+  });
+
+  it("returns false without the header", () => {
+    expect(isHubSpotWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the first array element's subscriptionType", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "x-hubspot-signature-v3": "abc123" },
+        body: JSON.stringify([{ subscriptionType: "deal.creation", objectId: 1 }]),
+      })
+    );
+    expect(info?.provider).toBe("hubspot");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("x-hubspot-signature-v3");
+    expect(info?.event).toBe("deal.creation");
+  });
+});
+
+describe("isMailgunWebhook", () => {
+  it("detects Mailgun by the body signature fields (no signature header)", () => {
+    expect(
+      isMailgunWebhook(
+        makeRequest({
+          body: JSON.stringify({
+            signature: { timestamp: "1700000000", token: "abc", signature: "deadbeef" },
+            "event-data": { event: "delivered" },
+          }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("returns false when the body lacks both signature.token and signature.timestamp", () => {
+    expect(isMailgunWebhook(makeRequest({ body: JSON.stringify({ "event-data": {} }) }))).toBe(
+      false
+    );
+    // Only one of the two required fields present → not detected.
+    expect(
+      isMailgunWebhook(makeRequest({ body: JSON.stringify({ signature: { token: "abc" } }) }))
+    ).toBe(false);
+  });
+
+  it("does not throw on non-JSON bodies", () => {
+    expect(isMailgunWebhook(makeRequest({ body: "not json" }))).toBe(false);
+    expect(isMailgunWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from event-data.event via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        body: JSON.stringify({
+          signature: { timestamp: "1700000000", token: "abc", signature: "deadbeef" },
+          "event-data": { event: "failed" },
+        }),
+      })
+    );
+    expect(info?.provider).toBe("mailgun");
+    expect(info?.via).toBe("body");
+    expect(info?.event).toBe("failed");
+  });
+});
+
+describe("isCalendlyWebhook", () => {
+  it("detects Calendly by the calendly-webhook-signature header", () => {
+    expect(
+      isCalendlyWebhook(
+        makeRequest({
+          headers: { "calendly-webhook-signature": "t=1700000000,v1=deadbeef" },
+          body: JSON.stringify({ event: "invitee.created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isCalendlyWebhook(makeRequest({ headers: { "Calendly-Webhook-Signature": "t=1,v1=ab" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isCalendlyWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the body event field via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "calendly-webhook-signature": "t=1700000000,v1=deadbeef" },
+        body: JSON.stringify({ event: "invitee.canceled" }),
+      })
+    );
+    expect(info?.provider).toBe("calendly");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("calendly-webhook-signature");
+    expect(info?.event).toBe("invitee.canceled");
+  });
+});
+
+describe("isMuxWebhook", () => {
+  it("detects Mux by the mux-signature header", () => {
+    expect(
+      isMuxWebhook(
+        makeRequest({
+          headers: { "mux-signature": "t=1700000000,v1=deadbeef" },
+          body: JSON.stringify({ type: "video.asset.created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(isMuxWebhook(makeRequest({ headers: { "Mux-Signature": "t=1,v1=ab" } }))).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isMuxWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the body type field via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "mux-signature": "t=1700000000,v1=deadbeef" },
+        body: JSON.stringify({ type: "video.asset.ready" }),
+      })
+    );
+    expect(info?.provider).toBe("mux");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("mux-signature");
+    expect(info?.event).toBe("video.asset.ready");
+  });
+});
+
+describe("isSentryWebhook", () => {
+  it("detects Sentry by the sentry-hook-signature header", () => {
+    expect(
+      isSentryWebhook(
+        makeRequest({
+          headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
+          body: JSON.stringify({ action: "created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(isSentryWebhook(makeRequest({ headers: { "Sentry-Hook-Signature": "abc123" } }))).toBe(
+      true
+    );
+  });
+
+  it("returns false without the header", () => {
+    expect(isSentryWebhook(makeRequest())).toBe(false);
+  });
+
+  it("builds the full event from the resource header + body action", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
+        body: JSON.stringify({ action: "created" }),
+      })
+    );
+    expect(info?.provider).toBe("sentry");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("sentry-hook-signature");
+    expect(info?.event).toBe("issue.created");
+  });
+
+  it("falls back to the bare resource when the body has no action", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
+        body: JSON.stringify({ data: {} }),
+      })
+    );
+    expect(info?.event).toBe("issue");
+  });
+});
+
+describe("isBitbucketWebhook", () => {
+  it("detects Bitbucket by the x-event-key header", () => {
+    expect(
+      isBitbucketWebhook(
+        makeRequest({
+          headers: { "x-event-key": "repo:push", "x-hub-signature": "sha256=deadbeef" },
+          body: JSON.stringify({ push: { changes: [] } }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isBitbucketWebhook(makeRequest({ headers: { "X-Event-Key": "pullrequest:created" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the x-event-key header", () => {
+    expect(isBitbucketWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event from the x-event-key header", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "x-event-key": "repo:push", "x-hub-signature": "sha256=deadbeef" },
+        body: JSON.stringify({ push: { changes: [] } }),
+      })
+    );
+    expect(info?.provider).toBe("bitbucket");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("x-event-key");
+    expect(info?.event).toBe("repo:push");
+  });
+});
+
 describe("detectWebhookProvider", () => {
   it("returns null when no provider matches", () => {
     expect(detectWebhookProvider(makeRequest())).toBeNull();
@@ -614,6 +889,43 @@ describe("tier-1 provider detection", () => {
     });
     expect(detectWebhookProvider(req)).toBe("telegram");
     expect(isTelegramWebhook(req)).toBe(true);
+  });
+
+  it("detects Bitbucket from x-event-key + sha256= x-hub-signature", () => {
+    const req = makeRequest({
+      headers: { "x-event-key": "repo:push", "x-hub-signature": "sha256=deadbeef" },
+      body: '{"push":{"changes":[]}}',
+    });
+    expect(detectWebhookProvider(req)).toBe("bitbucket");
+    expect(isBitbucketWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)?.event).toBe("repo:push");
+  });
+
+  // ── x-hub-signature collision regression: Bitbucket (sha256=) vs Intercom (sha1=) ──
+
+  it("Bitbucket (x-event-key + sha256=) detects bitbucket, not intercom", () => {
+    // Both providers send x-hub-signature; Bitbucket's unique x-event-key + the
+    // bitbucket-before-intercom ordering must win.
+    const req = makeRequest({
+      headers: {
+        "x-event-key": "repo:push",
+        "x-hub-signature": "sha256=cafef00d",
+      },
+      body: JSON.stringify({ push: { changes: [] } }),
+    });
+    expect(detectWebhookProvider(req)).toBe("bitbucket");
+    expect(isBitbucketWebhook(req)).toBe(true);
+    expect(isIntercomWebhook(req)).toBe(false);
+  });
+
+  it("Intercom (sha1=, no x-event-key) detects intercom, not bitbucket", () => {
+    const req = makeRequest({
+      headers: { "x-hub-signature": "sha1=deadbeef" },
+      body: '{"type":"notification_event","topic":"conversation.user.created"}',
+    });
+    expect(detectWebhookProvider(req)).toBe("intercom");
+    expect(isIntercomWebhook(req)).toBe(true);
+    expect(isBitbucketWebhook(req)).toBe(false);
   });
 
   // ── Ordering regressions: tier-1 additions must not break existing providers ──

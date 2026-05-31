@@ -330,6 +330,13 @@ describe("WebhooksCC", () => {
         "cal",
         "intercom",
         "telegram",
+        "square",
+        "hubspot",
+        "mailgun",
+        "calendly",
+        "mux",
+        "sentry",
+        "bitbucket",
       ]);
     });
 
@@ -1298,7 +1305,7 @@ describe("WebhooksCC", () => {
     it("includes flow, export, waitForAll, and retained search operations", () => {
       const description = createClient().describe();
 
-      expect(description.version).toBe("1.6.0");
+      expect(description.version).toBe("1.7.0");
       expect(description.usage).toBeDefined();
       expect(description.flow).toBeDefined();
       expect(description.templates.listProviders).toBeDefined();

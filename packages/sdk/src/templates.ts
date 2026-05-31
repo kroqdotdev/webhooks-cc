@@ -32,6 +32,13 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   cal: "BOOKING_CREATED",
   intercom: "conversation.user.created",
   telegram: "message",
+  square: "payment.created",
+  hubspot: "contact.creation",
+  mailgun: "delivered",
+  calendly: "invitee.created",
+  mux: "video.asset.created",
+  sentry: "issue.created",
+  bitbucket: "repo:push",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -55,6 +62,13 @@ const PROVIDER_TEMPLATES = {
   cal: ["BOOKING_CREATED", "BOOKING_CANCELLED", "BOOKING_RESCHEDULED"] as const,
   intercom: ["conversation.user.created", "conversation.admin.replied", "contact.created"] as const,
   telegram: ["message", "callback_query", "edited_message"] as const,
+  square: ["payment.created", "payment.updated", "refund.created"] as const,
+  hubspot: ["contact.creation", "contact.propertyChange", "deal.creation"] as const,
+  mailgun: ["delivered", "failed", "opened"] as const,
+  calendly: ["invitee.created", "invitee.canceled", "routing_form_submission.created"] as const,
+  mux: ["video.asset.created", "video.asset.ready", "video.upload.asset_created"] as const,
+  sentry: ["issue.created", "issue.resolved", "error.created"] as const,
+  bitbucket: ["repo:push", "pullrequest:created", "pullrequest:fulfilled"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -79,6 +93,13 @@ export const TEMPLATE_PROVIDERS = [
   "cal",
   "intercom",
   "telegram",
+  "square",
+  "hubspot",
+  "mailgun",
+  "calendly",
+  "mux",
+  "sentry",
+  "bitbucket",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -102,6 +123,13 @@ export const VERIFY_PROVIDERS = [
   "cal",
   "intercom",
   "telegram",
+  "square",
+  "hubspot",
+  "mailgun",
+  "calendly",
+  "mux",
+  "sentry",
+  "bitbucket",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -267,6 +295,63 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: true,
     signatureHeader: "x-telegram-bot-api-secret-token",
     signatureAlgorithm: "token",
+  }),
+  square: Object.freeze({
+    provider: "square",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.square]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.square,
+    secretRequired: true,
+    signatureHeader: "x-square-hmacsha256-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  hubspot: Object.freeze({
+    provider: "hubspot",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.hubspot]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.hubspot,
+    secretRequired: true,
+    signatureHeader: "x-hubspot-signature-v3",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  mailgun: Object.freeze({
+    provider: "mailgun",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.mailgun]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.mailgun,
+    secretRequired: true,
+    // Mailgun signs body fields (signature.{timestamp,token,signature}); there
+    // is no signature header, so signatureHeader is intentionally omitted.
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  calendly: Object.freeze({
+    provider: "calendly",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.calendly]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.calendly,
+    secretRequired: true,
+    signatureHeader: "calendly-webhook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  mux: Object.freeze({
+    provider: "mux",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.mux]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.mux,
+    secretRequired: true,
+    signatureHeader: "mux-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  sentry: Object.freeze({
+    provider: "sentry",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.sentry]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.sentry,
+    secretRequired: true,
+    signatureHeader: "sentry-hook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  bitbucket: Object.freeze({
+    provider: "bitbucket",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.bitbucket]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.bitbucket,
+    secretRequired: true,
+    signatureHeader: "x-hub-signature",
+    signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
 
@@ -950,6 +1035,232 @@ function buildTemplatePayload(
     return { body, contentType: "application/json", headers: {} };
   }
 
+  if (provider === "square") {
+    const payloadByTemplate: Record<string, unknown> = {
+      "payment.created": {
+        merchant_id: randomHex(13).toUpperCase(),
+        type: "payment.created",
+        event_id: randomUuid(),
+        created_at: nowIso,
+        data: {
+          type: "payment",
+          id: randomHex(22),
+          object: {
+            payment: {
+              id: randomHex(22),
+              amount_money: { amount: 2000, currency: "USD" },
+              status: "APPROVED",
+            },
+          },
+        },
+      },
+      "payment.updated": {
+        merchant_id: randomHex(13).toUpperCase(),
+        type: "payment.updated",
+        event_id: randomUuid(),
+        created_at: nowIso,
+        data: {
+          type: "payment",
+          id: randomHex(22),
+          object: { payment: { id: randomHex(22), status: "COMPLETED" } },
+        },
+      },
+      "refund.created": {
+        merchant_id: randomHex(13).toUpperCase(),
+        type: "refund.created",
+        event_id: randomUuid(),
+        created_at: nowIso,
+        data: {
+          type: "refund",
+          id: randomHex(22),
+          object: {
+            refund: {
+              id: randomHex(22),
+              amount_money: { amount: 500, currency: "USD" },
+              status: "PENDING",
+            },
+          },
+        },
+      },
+    };
+    const payload = bodyOverride ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Square-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "hubspot") {
+    // HubSpot delivers an array of subscription notifications.
+    const payload = bodyOverride ?? [
+      {
+        eventId: Number(randomDigits(9)),
+        subscriptionId: 1,
+        portalId: 123,
+        occurredAt: nowSec * 1000,
+        subscriptionType: event,
+        attemptNumber: 0,
+        objectId: 1,
+        propertyName: null,
+        propertyValue: null,
+      },
+    ];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "HubSpot-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "mailgun") {
+    // Mailgun signs body fields rather than a header. The signature value here
+    // is a placeholder; buildTemplateSendOptions recomputes it over
+    // `timestamp + token` and patches the body before sending.
+    const timestamp = String(nowSec);
+    const token = randomHex(50);
+    const payload = bodyOverride ?? {
+      signature: { timestamp, token, signature: "" },
+      "event-data": {
+        event,
+        id: randomHex(22),
+        timestamp: nowSec,
+        recipient: "user@example.com",
+        message: { headers: { "message-id": `${randomHex(20)}@example.com` } },
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Mailgun-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "calendly") {
+    const payload = bodyOverride ?? {
+      event,
+      created_at: nowIso,
+      payload: {
+        email: "ada@example.com",
+        name: "Ada",
+        scheduled_event: {
+          start_time: nowIso,
+          end_time: nowIso,
+          name: "30 Minute Meeting",
+        },
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Calendly-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "mux") {
+    const payload = bodyOverride ?? {
+      type: event,
+      object: { type: "asset", id: randomHex(20) },
+      id: randomUuid(),
+      created_at: nowIso,
+      data: { status: "preparing", id: randomHex(20) },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Mux-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "sentry") {
+    // Sentry's resource (issue vs error) and action vary by event, and the body
+    // must agree with the `sentry-hook-resource` header + selected template.
+    const issueData = {
+      issue: {
+        id: randomDigits(10),
+        title: "TypeError: undefined is not a function",
+        culprit: "app/main",
+        level: "error",
+      },
+    };
+    const payloadByTemplate: Record<string, unknown> = {
+      "issue.created": {
+        action: "created",
+        installation: { uuid: randomUuid() },
+        data: issueData,
+        actor: { type: "application", id: "sentry" },
+      },
+      "issue.resolved": {
+        action: "resolved",
+        installation: { uuid: randomUuid() },
+        data: issueData,
+        actor: { type: "user", id: randomDigits(7), name: "webhooks-cc-bot" },
+      },
+      "error.created": {
+        action: "created",
+        installation: { uuid: randomUuid() },
+        data: {
+          error: {
+            event_id: randomHex(32),
+            title: "TypeError: undefined is not a function",
+            level: "error",
+            culprit: "app/main",
+          },
+        },
+        actor: { type: "application", id: "sentry" },
+      },
+    };
+    const payload =
+      bodyOverride ?? payloadByTemplate[template] ?? payloadByTemplate["issue.created"];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Sentry-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "bitbucket") {
+    // `repo:push` and `pullrequest:*` events have entirely different payload
+    // shapes; emit the one matching the selected template so PR consumers get a
+    // `pullrequest` object rather than a misleading `push.changes` body.
+    const repository = { name: "demo-repo", full_name: "webhooks-cc/demo-repo" };
+    const actor = { display_name: "webhooks-cc-bot" };
+    const pullRequest = (state: string) => ({
+      pullrequest: {
+        id: Number(randomDigits(4)),
+        title: "Add tier-2 webhook providers",
+        state,
+        source: { branch: { name: "feature/tier-2" } },
+        destination: { branch: { name: "main" } },
+        author: actor,
+      },
+      repository,
+      actor,
+    });
+    const payloadByTemplate: Record<string, unknown> = {
+      "repo:push": {
+        push: { changes: [{ new: { name: "main", type: "branch" } }] },
+        repository,
+        actor,
+      },
+      "pullrequest:created": pullRequest("OPEN"),
+      "pullrequest:fulfilled": pullRequest("MERGED"),
+    };
+    const payload = bodyOverride ?? payloadByTemplate[template] ?? payloadByTemplate["repo:push"];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Bitbucket-Webhooks/1.0" },
+    };
+  }
+
   if (provider !== "twilio") {
     if (provider === "slack") {
       const eventCallbackPayload = {
@@ -1630,6 +1941,37 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * HubSpot v3 signs over `method + requestUri + body + timestamp`, where the URI
+ * has a documented set of reserved percent-encoded characters decoded first.
+ * Apply the exact same map on both the signing and verifying sides so the HMAC
+ * input matches what HubSpot produces for URLs containing these characters.
+ *
+ * Matching is case-sensitive on the uppercase encodings HubSpot emits (RFC 3986
+ * recommends uppercase hex); the `?` query separator is left untouched. None of
+ * the decoded characters is `%`, so a single left-to-right pass cannot create a
+ * new escape sequence.
+ *
+ * @see https://developers.hubspot.com/docs/apps/legacy-apps/authentication/validating-requests
+ */
+export function decodeHubSpotUri(uri: string): string {
+  const DECODE_MAP: Record<string, string> = {
+    "%3A": ":",
+    "%2F": "/",
+    "%3F": "?",
+    "%40": "@",
+    "%21": "!",
+    "%24": "$",
+    "%27": "'",
+    "%28": "(",
+    "%29": ")",
+    "%2A": "*",
+    "%2C": ",",
+    "%3B": ";",
+  };
+  return uri.replace(/%(?:3A|2F|3F|40|21|24|27|28|29|2A|2C|3B)/g, (match) => DECODE_MAP[match]);
+}
+
 function fromBase64(str: string): Uint8Array {
   if (typeof atob !== "function") {
     return new Uint8Array(Buffer.from(str, "base64"));
@@ -2002,6 +2344,71 @@ export async function buildTemplateSendOptions(
 
   if (provider === "telegram") {
     headers["x-telegram-bot-api-secret-token"] = options.secret;
+  }
+
+  if (provider === "square") {
+    // Square signs the notification URL concatenated with the raw body.
+    const signature = await hmacSign("SHA-256", options.secret, `${endpointUrl}${built.body}`);
+    headers["x-square-hmacsha256-signature"] = toBase64(signature);
+  }
+
+  if (provider === "hubspot") {
+    // HubSpot v3 signs method + request URI + raw body + timestamp (in ms). The
+    // URI is decoded with HubSpot's reserved-character map before signing, so
+    // the generated signature matches HubSpot for URLs containing those chars.
+    const timestamp = (options.timestamp ?? Math.floor(Date.now() / 1000)) * 1000;
+    const base = `${method}${decodeHubSpotUri(endpointUrl)}${built.body}${timestamp}`;
+    const signature = await hmacSign("SHA-256", options.secret, base);
+    headers["x-hubspot-request-timestamp"] = String(timestamp);
+    headers["x-hubspot-signature-v3"] = toBase64(signature);
+  }
+
+  if (provider === "mailgun") {
+    // Mailgun's signature lives in the body, not a header. Recompute the hex
+    // HMAC-SHA256 over `timestamp + token` and patch it into the body's
+    // signature object before sending.
+    const parsed = JSON.parse(built.body) as {
+      signature?: { timestamp?: string; token?: string; signature?: string };
+      [key: string]: unknown;
+    };
+    const timestamp =
+      parsed.signature?.timestamp ?? String(options.timestamp ?? Math.floor(Date.now() / 1000));
+    const token = parsed.signature?.token ?? randomHex(50);
+    const sig = toHex(await hmacSign("SHA-256", options.secret, `${timestamp}${token}`));
+    parsed.signature = { timestamp, token, signature: sig };
+    built.body = JSON.stringify(parsed);
+  }
+
+  if (provider === "calendly") {
+    // Calendly uses the Stripe-style `t=<unix>,v1=<hex>` header, signing
+    // `${timestamp}.${body}` with HMAC-SHA256 (hex).
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    headers["calendly-webhook-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
+  }
+
+  if (provider === "mux") {
+    // Mux uses the same Stripe-style `t=<unix>,v1=<hex>` header as Calendly,
+    // signing `${timestamp}.${body}` with HMAC-SHA256 (hex).
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    headers["mux-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
+  }
+
+  if (provider === "sentry") {
+    // Sentry signs the raw body with HMAC-SHA256 (hex) in `sentry-hook-signature`
+    // and carries the event resource (e.g. `issue`) in `sentry-hook-resource`.
+    headers["sentry-hook-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+    headers["sentry-hook-resource"] = event.split(".")[0];
+  }
+
+  if (provider === "bitbucket") {
+    // Bitbucket uses the GitHub-style `sha256=<hex>` scheme over the raw body in
+    // `x-hub-signature`, and carries the event in the unique `x-event-key` header
+    // (which is what auto-detection keys on to avoid the Intercom `sha1=` collision).
+    headers["x-event-key"] = event;
+    headers["x-hub-signature"] =
+      `sha256=${toHex(await hmacSign("SHA-256", options.secret, built.body))}`;
   }
 
   return {

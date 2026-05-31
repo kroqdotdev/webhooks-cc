@@ -637,7 +637,7 @@ fn generic_hmac_no_header_name() {
 #[test]
 fn sendgrid_skipped() {
     assert!(matches!(
-        verify_signature("sendgrid", b"", &headers(&[]), b"", None, None),
+        verify_signature("sendgrid", b"", &headers(&[]), b"", None, None, None),
         VerificationResult::Skipped(_)
     ));
 }
@@ -647,7 +647,7 @@ fn sendgrid_skipped() {
 #[test]
 fn unknown_provider_skipped() {
     assert!(matches!(
-        verify_signature("unknown_provider", b"", &headers(&[]), b"", None, None),
+        verify_signature("unknown_provider", b"", &headers(&[]), b"", None, None, None),
         VerificationResult::Skipped(_)
     ));
 }
@@ -761,7 +761,7 @@ fn verify_meta_reuses_github() {
     );
     let h = headers(&[("x-hub-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("meta", secret.as_bytes(), &h, body, None, None),
+        verify_signature("meta", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -775,7 +775,7 @@ fn verify_meta_wrong_secret() {
     );
     let h = headers(&[("x-hub-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("meta", b"app_secret", &h, body, None, None),
+        verify_signature("meta", b"app_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -787,7 +787,7 @@ fn verify_lemonsqueezy_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-signature", &sig)]);
     assert!(matches!(
-        verify_signature("lemonsqueezy", secret.as_bytes(), &h, body, None, None),
+        verify_signature("lemonsqueezy", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -798,7 +798,7 @@ fn verify_lemonsqueezy_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-signature", &sig)]);
     assert!(matches!(
-        verify_signature("lemonsqueezy", b"ls_secret", &h, body, None, None),
+        verify_signature("lemonsqueezy", b"ls_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -810,7 +810,7 @@ fn verify_coinbase_commerce_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cc-webhook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("coinbase-commerce", secret.as_bytes(), &h, body, None, None),
+        verify_signature("coinbase-commerce", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -821,7 +821,7 @@ fn verify_coinbase_commerce_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cc-webhook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("coinbase-commerce", b"cb_secret", &h, body, None, None),
+        verify_signature("coinbase-commerce", b"cb_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -833,7 +833,7 @@ fn verify_razorpay_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-razorpay-signature", &sig)]);
     assert!(matches!(
-        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None),
+        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -844,7 +844,7 @@ fn verify_razorpay_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-razorpay-signature", &sig)]);
     assert!(matches!(
-        verify_signature("razorpay", b"rp_secret", &h, body, None, None),
+        verify_signature("razorpay", b"rp_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -856,7 +856,7 @@ fn verify_cal_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cal-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("cal", secret.as_bytes(), &h, body, None, None),
+        verify_signature("cal", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -867,7 +867,7 @@ fn verify_cal_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cal-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("cal", b"cal_secret", &h, body, None, None),
+        verify_signature("cal", b"cal_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -883,7 +883,7 @@ fn verify_hex_provider_accepts_optional_prefix() {
     );
     let h = headers(&[("x-razorpay-signature", &sig)]);
     assert!(matches!(
-        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None),
+        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -898,7 +898,7 @@ fn verify_intercom_valid() {
     );
     let h = headers(&[("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("intercom", secret.as_bytes(), &h, body, None, None),
+        verify_signature("intercom", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -912,7 +912,7 @@ fn verify_intercom_wrong_secret() {
     );
     let h = headers(&[("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("intercom", b"ic_secret", &h, body, None, None),
+        verify_signature("intercom", b"ic_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -928,7 +928,7 @@ fn verify_intercom_rejects_sha256_prefix() {
     );
     let h = headers(&[("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("intercom", secret.as_bytes(), &h, body, None, None),
+        verify_signature("intercom", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -938,7 +938,7 @@ fn verify_telegram_valid() {
     let secret = "tg_secret_token";
     let h = headers(&[("x-telegram-bot-api-secret-token", secret)]);
     assert!(matches!(
-        verify_signature("telegram", secret.as_bytes(), &h, b"{}", None, None),
+        verify_signature("telegram", secret.as_bytes(), &h, b"{}", None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -947,7 +947,7 @@ fn verify_telegram_valid() {
 fn verify_telegram_wrong_token() {
     let h = headers(&[("x-telegram-bot-api-secret-token", "wrong_token")]);
     assert!(matches!(
-        verify_signature("telegram", b"correct_token", &h, b"{}", None, None),
+        verify_signature("telegram", b"correct_token", &h, b"{}", None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -955,7 +955,646 @@ fn verify_telegram_wrong_token() {
 #[test]
 fn verify_telegram_missing_header() {
     assert!(matches!(
-        verify_signature("telegram", b"secret", &headers(&[]), b"{}", None, None),
+        verify_signature("telegram", b"secret", &headers(&[]), b"{}", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+// ── Tier-2: Square (URL + body HMAC, base64) ──
+
+#[test]
+fn detect_square() {
+    let h = headers(&[("x-square-hmacsha256-signature", "abc")]);
+    assert_eq!(detect_provider(&h), Some("square"));
+}
+
+#[test]
+fn verify_square_url_plus_body() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"{"type":"payment.created"}"#;
+    let payload = format!("{url}{}", std::str::from_utf8(body).unwrap());
+    let sig = make_hmac_sha256_b64(b"sq_key", &payload);
+    let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("square", b"sq_key", &h, body, None, Some(url), None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_square_wrong_secret() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"{"type":"payment.created"}"#;
+    let payload = format!("{url}{}", std::str::from_utf8(body).unwrap());
+    let sig = make_hmac_sha256_b64(b"sq_key", &payload);
+    let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("square", b"wrong_key", &h, body, None, Some(url), None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_square_wrong_url() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"{"type":"payment.created"}"#;
+    // Sign over the real URL, but verify against a different URL → mismatch.
+    let payload = format!("{url}{}", std::str::from_utf8(body).unwrap());
+    let sig = make_hmac_sha256_b64(b"sq_key", &payload);
+    let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "square",
+            b"sq_key",
+            &h,
+            body,
+            None,
+            Some("https://go.webhooks.cc/w/other"),
+            None,
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_square_missing_header() {
+    assert!(matches!(
+        verify_signature(
+            "square",
+            b"sq_key",
+            &headers(&[]),
+            b"{}",
+            None,
+            Some("https://go.webhooks.cc/w/demo"),
+            None,
+        ),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_square_missing_url() {
+    let h = headers(&[("x-square-hmacsha256-signature", "abc")]);
+    assert!(matches!(
+        verify_signature("square", b"sq_key", &h, b"{}", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+// ── Tier-2: HubSpot (method + URI + body + timestamp HMAC, base64) ──
+
+/// Current epoch milliseconds, for building fresh HubSpot timestamps in tests.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+/// Build a valid HubSpot v3 signature over `method + url + body + timestamp(ms)`.
+fn make_hubspot_sig(secret: &[u8], method: &str, url: &str, body: &[u8], ts_ms: i64) -> String {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(method.as_bytes());
+    payload.extend_from_slice(url.as_bytes());
+    payload.extend_from_slice(body);
+    payload.extend_from_slice(ts_ms.to_string().as_bytes());
+    base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, &payload))
+}
+
+#[test]
+fn detect_hubspot() {
+    let h = headers(&[("x-hubspot-signature-v3", "abc")]);
+    assert_eq!(detect_provider(&h), Some("hubspot"));
+}
+
+#[test]
+fn verify_hubspot_valid() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("POST")),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_hubspot_decodes_reserved_uri_chars() {
+    // HubSpot signs over the URI with its reserved percent-encoded chars decoded.
+    // Sign over the DECODED url, but deliver the request to the ENCODED url: the
+    // verifier must normalize it back and still match.
+    let encoded_url = "https://go.webhooks.cc/w/demo%2Fteam%40acme?ids=1%2C2%3B3";
+    let decoded_url = "https://go.webhooks.cc/w/demo/team@acme?ids=1,2;3";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", decoded_url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(encoded_url), Some("POST")),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_hubspot_wrong_secret() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"wrong_secret", &h, body, None, Some(url), Some("POST")),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_hubspot_wrong_method() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    // Signature computed for POST, but the request was a GET → mismatch.
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("GET")),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_hubspot_expired_timestamp() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    // Timestamp 10 minutes in the past — outside the 5-minute window.
+    let ts = now_ms() - 10 * 60 * 1000;
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    // Even though the signature itself is correct, the stale timestamp is rejected.
+    match verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("POST")) {
+        VerificationResult::Invalid(err) => assert_eq!(err.code, "timestamp_expired"),
+        other => panic!("expected Invalid(timestamp_expired), got {other:?}"),
+    }
+}
+
+#[test]
+fn verify_hubspot_missing_url() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, None, Some("POST")),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_hubspot_missing_header() {
+    assert!(matches!(
+        verify_signature(
+            "hubspot",
+            b"hs_secret",
+            &headers(&[]),
+            b"[]",
+            None,
+            Some("https://go.webhooks.cc/w/demo"),
+            Some("POST"),
+        ),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+// ── Tier-2: Mailgun (body-embedded HMAC-SHA256 over timestamp + token) ──
+
+/// Build a Mailgun-style JSON body whose `signature.signature` is the hex
+/// HMAC-SHA256 of `timestamp + token` keyed by `secret`.
+fn make_mailgun_body(secret: &str, timestamp: &str, token: &str, event: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{timestamp}{token}"));
+    format!(
+        r#"{{"signature":{{"timestamp":"{timestamp}","token":"{token}","signature":"{sig}"}},"event-data":{{"event":"{event}"}}}}"#
+    )
+}
+
+#[test]
+fn verify_mailgun_valid() {
+    let secret = "mg_signing_key";
+    let body = make_mailgun_body(secret, "1700000000", "deadbeefcafe", "delivered");
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), body.as_bytes(), None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_mailgun_wrong_secret() {
+    let body = make_mailgun_body("mg_signing_key", "1700000000", "deadbeefcafe", "delivered");
+    assert!(matches!(
+        verify_signature("mailgun", b"wrong_secret", &headers(&[]), body.as_bytes(), None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mailgun_tampered_token() {
+    let secret = "mg_signing_key";
+    // Signature computed for one token, but the body carries a different token.
+    let sig = make_hmac_sha256(secret, "1700000000deadbeefcafe");
+    let body = format!(
+        r#"{{"signature":{{"timestamp":"1700000000","token":"OTHERTOKEN","signature":"{sig}"}},"event-data":{{"event":"delivered"}}}}"#
+    );
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), body.as_bytes(), None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mailgun_malformed_body_is_skipped_not_panic() {
+    let secret = "mg_signing_key";
+    // Non-JSON body → Skipped (never panics).
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"not json at all", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+    // Truncated JSON → Skipped.
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"{", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+    // Missing signature fields → Skipped.
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), br#"{"event-data":{}}"#, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+    // Empty body → Skipped.
+    assert!(matches!(
+        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn mailgun_is_not_auto_detected() {
+    // Mailgun has no distinctive header, so detect_provider must not key on the
+    // body — owner-selected only.
+    let body = make_mailgun_body("mg_signing_key", "1700000000", "deadbeefcafe", "delivered");
+    let h = headers(&[]);
+    // No header present means detection returns None even though the body is a
+    // valid Mailgun payload.
+    assert_eq!(detect_provider(&h), None);
+    // Sanity: the body itself still verifies via the explicit provider path.
+    assert!(matches!(
+        verify_signature("mailgun", b"mg_signing_key", &h, body.as_bytes(), None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+// ── Tier-2: Calendly (Stripe-style t=,v1= HMAC-SHA256 hex) ──
+
+/// Build a Calendly-style `t=<ts>,v1=<hex>` header signing `{ts}.{body}`.
+fn make_calendly_header(secret: &str, ts: &str, body: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{ts}.{body}"));
+    format!("t={ts},v1={sig}")
+}
+
+#[test]
+fn detect_calendly() {
+    let h = headers(&[("calendly-webhook-signature", "t=123,v1=abc")]);
+    assert_eq!(detect_provider(&h), Some("calendly"));
+}
+
+#[test]
+fn verify_calendly_valid() {
+    let secret = "cal_signing_key";
+    let body = br#"{"event":"invitee.created"}"#;
+    let sig = make_calendly_header(secret, "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("calendly-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("calendly", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_calendly_wrong_secret() {
+    let body = br#"{"event":"invitee.created"}"#;
+    let sig = make_calendly_header("cal_signing_key", "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("calendly-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("calendly", b"wrong_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_calendly_tampered_body() {
+    let secret = "cal_signing_key";
+    // Sign over one body, verify against a tampered body → mismatch.
+    let sig = make_calendly_header(secret, "1700000000", r#"{"event":"invitee.created"}"#);
+    let h = headers(&[("calendly-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "calendly",
+            secret.as_bytes(),
+            &h,
+            br#"{"event":"invitee.canceled"}"#,
+            None,
+            None,
+            None,
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_calendly_missing_header() {
+    let body = br#"{"event":"invitee.created"}"#;
+    assert!(matches!(
+        verify_signature("calendly", b"cal_signing_key", &headers(&[]), body, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_calendly_malformed_header() {
+    let body = br#"{"event":"invitee.created"}"#;
+    let h = headers(&[("calendly-webhook-signature", "garbage")]);
+    assert!(matches!(
+        verify_signature("calendly", b"cal_signing_key", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+// ── Tier-2: Mux (Stripe-style t=,v1= HMAC-SHA256 hex, mux-signature) ──
+
+/// Build a Mux-style `t=<ts>,v1=<hex>` header signing `{ts}.{body}`.
+fn make_mux_header(secret: &str, ts: &str, body: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{ts}.{body}"));
+    format!("t={ts},v1={sig}")
+}
+
+#[test]
+fn detect_mux() {
+    let h = headers(&[("mux-signature", "t=123,v1=abc")]);
+    assert_eq!(detect_provider(&h), Some("mux"));
+}
+
+#[test]
+fn verify_mux_valid() {
+    let secret = "mux_signing_secret";
+    let body = br#"{"type":"video.asset.created"}"#;
+    let sig = make_mux_header(secret, "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("mux-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("mux", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_mux_wrong_secret() {
+    let body = br#"{"type":"video.asset.created"}"#;
+    let sig = make_mux_header("mux_signing_secret", "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("mux-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("mux", b"wrong_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mux_tampered_body() {
+    let secret = "mux_signing_secret";
+    // Sign over one body, verify against a tampered body → mismatch.
+    let sig = make_mux_header(secret, "1700000000", r#"{"type":"video.asset.created"}"#);
+    let h = headers(&[("mux-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "mux",
+            secret.as_bytes(),
+            &h,
+            br#"{"type":"video.asset.ready"}"#,
+            None,
+            None,
+            None,
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mux_missing_header() {
+    let body = br#"{"type":"video.asset.created"}"#;
+    assert!(matches!(
+        verify_signature("mux", b"mux_signing_secret", &headers(&[]), body, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_mux_malformed_header() {
+    let body = br#"{"type":"video.asset.created"}"#;
+    let h = headers(&[("mux-signature", "garbage")]);
+    assert!(matches!(
+        verify_signature("mux", b"mux_signing_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+// ── Tier-2: Sentry (HMAC-SHA256 hex over body, sentry-hook-signature) ──
+
+#[test]
+fn detect_sentry() {
+    let h = headers(&[("sentry-hook-signature", "deadbeef")]);
+    assert_eq!(detect_provider(&h), Some("sentry"));
+}
+
+#[test]
+fn verify_sentry_valid() {
+    let secret = "sentry_client_secret";
+    let body = br#"{"action":"created","data":{"issue":{"id":"1"}}}"#;
+    let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[
+        ("sentry-hook-signature", &sig),
+        ("sentry-hook-resource", "issue"),
+    ]);
+    assert!(matches!(
+        verify_signature("sentry", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_sentry_wrong_secret() {
+    let body = br#"{"action":"created","data":{"issue":{"id":"1"}}}"#;
+    let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("sentry-hook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("sentry", b"sentry_client_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_sentry_tampered_body() {
+    let secret = "sentry_client_secret";
+    let sig = make_hmac_sha256(secret, r#"{"action":"created"}"#);
+    let h = headers(&[("sentry-hook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "sentry",
+            secret.as_bytes(),
+            &h,
+            br#"{"action":"resolved"}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_sentry_missing_header() {
+    let body = br#"{"action":"created"}"#;
+    assert!(matches!(
+        verify_signature("sentry", b"sentry_client_secret", &headers(&[]), body, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+// ── Tier-2: Bitbucket (GitHub-style sha256= hex over body, x-hub-signature) ──
+
+#[test]
+fn detect_bitbucket() {
+    // Bitbucket is detected on its unique x-event-key header.
+    let h = headers(&[
+        ("x-event-key", "repo:push"),
+        ("x-hub-signature", "sha256=deadbeef"),
+    ]);
+    assert_eq!(detect_provider(&h), Some("bitbucket"));
+}
+
+#[test]
+fn bitbucket_with_sha256_detects_bitbucket_not_intercom() {
+    // Both providers send x-hub-signature; Bitbucket's unique x-event-key + the
+    // bitbucket-before-intercom ordering must win.
+    let h = headers(&[
+        ("x-event-key", "repo:push"),
+        ("x-hub-signature", "sha256=cafef00d"),
+    ]);
+    assert_eq!(detect_provider(&h), Some("bitbucket"));
+}
+
+#[test]
+fn intercom_sha1_without_event_key_detects_intercom_not_bitbucket() {
+    // Intercom (sha1=, no x-event-key) must stay intercom.
+    let h = headers(&[("x-hub-signature", "sha1=deadbeef")]);
+    assert_eq!(detect_provider(&h), Some("intercom"));
+}
+
+#[test]
+fn verify_bitbucket_valid() {
+    let secret = "bitbucket_webhook_secret";
+    let body = br#"{"push":{"changes":[]},"repository":{"name":"demo-repo"}}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("bitbucket", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_bitbucket_wrong_secret() {
+    let body = br#"{"push":{"changes":[]}}"#;
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("bitbucket", b"bitbucket_webhook_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_bitbucket_tampered_body() {
+    let secret = "bitbucket_webhook_secret";
+    let sig = format!(
+        "sha256={}",
+        make_hmac_sha256(secret, r#"{"push":{"changes":[]}}"#)
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "bitbucket",
+            secret.as_bytes(),
+            &h,
+            br#"{"push":{"changes":[{}]}}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_bitbucket_rejects_sha1_prefix() {
+    // Bitbucket uses sha256=; a sha1= prefixed signature (Intercom-style) must be rejected.
+    let secret = "bitbucket_webhook_secret";
+    let body = br#"{"push":{"changes":[]}}"#;
+    let sig = format!(
+        "sha1={}",
+        make_hmac_sha1(secret, std::str::from_utf8(body).unwrap())
+    );
+    let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("bitbucket", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_bitbucket_missing_header() {
+    let body = br#"{"push":{"changes":[]}}"#;
+    assert!(matches!(
+        verify_signature(
+            "bitbucket",
+            b"bitbucket_webhook_secret",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }

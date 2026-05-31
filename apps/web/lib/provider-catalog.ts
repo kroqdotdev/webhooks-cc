@@ -48,6 +48,13 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   cal: "Cal.com",
   intercom: "Intercom",
   telegram: "Telegram",
+  square: "Square",
+  hubspot: "HubSpot",
+  mailgun: "Mailgun",
+  calendly: "Calendly",
+  mux: "Mux",
+  sentry: "Sentry",
+  bitbucket: "Bitbucket",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -72,6 +79,13 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   cal: "your webhook secret",
   intercom: "your Intercom client secret",
   telegram: "your secret token",
+  square: "your signature key",
+  hubspot: "your app client secret",
+  mailgun: "your HTTP webhook signing key",
+  calendly: "your webhook signing key",
+  mux: "your webhook signing secret",
+  sentry: "your client secret",
+  bitbucket: "your webhook secret",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -221,6 +235,55 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#229ed9",
     foreground: "#ffffff",
     border: "#1a7fb0",
+  },
+  square: {
+    glyph: "square",
+    text: "SQ",
+    background: "#000000",
+    foreground: "#ffffff",
+    border: "#3d3d3d",
+  },
+  hubspot: {
+    glyph: "hubspot",
+    text: "HS",
+    background: "#ff7a59",
+    foreground: "#ffffff",
+    border: "#e35c3a",
+  },
+  mailgun: {
+    glyph: "mailgun",
+    text: "MG",
+    background: "#c02126",
+    foreground: "#ffffff",
+    border: "#8f1419",
+  },
+  calendly: {
+    glyph: "calendly",
+    text: "CY",
+    background: "#006bff",
+    foreground: "#ffffff",
+    border: "#0050c2",
+  },
+  mux: {
+    glyph: "mux",
+    text: "MUX",
+    background: "#fb2491",
+    foreground: "#ffffff",
+    border: "#c4156f",
+  },
+  sentry: {
+    glyph: "sentry",
+    text: "SN",
+    background: "#362d59",
+    foreground: "#ffffff",
+    border: "#1f1a36",
+  },
+  bitbucket: {
+    glyph: "bitbucket",
+    text: "BB",
+    background: "#0052cc",
+    foreground: "#ffffff",
+    border: "#003d99",
   },
 };
 
