@@ -25,6 +25,13 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   vercel: "deployment.created",
   gitlab: "push",
   typeform: "form_response",
+  meta: "whatsapp.messages",
+  lemonsqueezy: "order_created",
+  "coinbase-commerce": "charge:confirmed",
+  razorpay: "payment.captured",
+  cal: "BOOKING_CREATED",
+  intercom: "conversation.user.created",
+  telegram: "message",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -41,6 +48,13 @@ const PROVIDER_TEMPLATES = {
   vercel: ["deployment.created", "deployment.succeeded", "deployment.error"] as const,
   gitlab: ["push", "merge_request"] as const,
   typeform: ["form_response", "partial_response", "payment"] as const,
+  meta: ["whatsapp.messages", "page.messages", "instagram.comments"] as const,
+  lemonsqueezy: ["order_created", "subscription_created", "subscription_payment_success"] as const,
+  "coinbase-commerce": ["charge:confirmed", "charge:failed", "charge:pending"] as const,
+  razorpay: ["payment.captured", "payment.failed", "order.paid"] as const,
+  cal: ["BOOKING_CREATED", "BOOKING_CANCELLED", "BOOKING_RESCHEDULED"] as const,
+  intercom: ["conversation.user.created", "conversation.admin.replied", "contact.created"] as const,
+  telegram: ["message", "callback_query", "edited_message"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -58,6 +72,13 @@ export const TEMPLATE_PROVIDERS = [
   "gitlab",
   "typeform",
   "standard-webhooks",
+  "meta",
+  "lemonsqueezy",
+  "coinbase-commerce",
+  "razorpay",
+  "cal",
+  "intercom",
+  "telegram",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -74,6 +95,13 @@ export const VERIFY_PROVIDERS = [
   "gitlab",
   "typeform",
   "standard-webhooks",
+  "meta",
+  "lemonsqueezy",
+  "coinbase-commerce",
+  "razorpay",
+  "cal",
+  "intercom",
+  "telegram",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -183,6 +211,62 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: true,
     signatureHeader: "webhook-signature",
     signatureAlgorithm: "hmac-sha256",
+  }),
+  meta: Object.freeze({
+    provider: "meta",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.meta]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.meta,
+    secretRequired: true,
+    signatureHeader: "x-hub-signature-256",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  lemonsqueezy: Object.freeze({
+    provider: "lemonsqueezy",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.lemonsqueezy]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.lemonsqueezy,
+    secretRequired: true,
+    signatureHeader: "x-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  "coinbase-commerce": Object.freeze({
+    provider: "coinbase-commerce",
+    templates: Object.freeze([...PROVIDER_TEMPLATES["coinbase-commerce"]]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER["coinbase-commerce"],
+    secretRequired: true,
+    signatureHeader: "x-cc-webhook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  razorpay: Object.freeze({
+    provider: "razorpay",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.razorpay]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.razorpay,
+    secretRequired: true,
+    signatureHeader: "x-razorpay-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  cal: Object.freeze({
+    provider: "cal",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.cal]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.cal,
+    secretRequired: true,
+    signatureHeader: "x-cal-signature-256",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  intercom: Object.freeze({
+    provider: "intercom",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.intercom]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.intercom,
+    secretRequired: true,
+    signatureHeader: "x-hub-signature",
+    signatureAlgorithm: "hmac-sha1",
+  }),
+  telegram: Object.freeze({
+    provider: "telegram",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.telegram]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.telegram,
+    secretRequired: true,
+    signatureHeader: "x-telegram-bot-api-secret-token",
+    signatureAlgorithm: "token",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
 
@@ -622,6 +706,248 @@ function buildTemplatePayload(
         "x-shopify-triggered-at": nowIso,
       },
     };
+  }
+
+  if (provider === "meta") {
+    const payloadByTemplate: Record<string, unknown> = {
+      "whatsapp.messages": {
+        object: "whatsapp_business_account",
+        entry: [
+          {
+            id: randomDigits(15),
+            changes: [
+              {
+                field: "messages",
+                value: {
+                  messaging_product: "whatsapp",
+                  metadata: {
+                    display_phone_number: "15550100",
+                    phone_number_id: randomDigits(15),
+                  },
+                  contacts: [{ profile: { name: "Ada" }, wa_id: "15551234567" }],
+                  messages: [
+                    {
+                      from: "15551234567",
+                      id: `wamid.${randomHex(20)}`,
+                      timestamp: String(nowSec),
+                      type: "text",
+                      text: { body: "Hello from webhooks.cc" },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      "page.messages": {
+        object: "page",
+        entry: [
+          {
+            id: randomDigits(15),
+            time: nowSec,
+            messaging: [
+              {
+                sender: { id: randomDigits(15) },
+                recipient: { id: randomDigits(15) },
+                timestamp: nowSec * 1000,
+                message: { mid: `m_${randomHex(20)}`, text: "hi" },
+              },
+            ],
+          },
+        ],
+      },
+      "instagram.comments": {
+        object: "instagram",
+        entry: [
+          {
+            id: randomDigits(15),
+            time: nowSec,
+            changes: [{ field: "comments", value: { id: randomDigits(15), text: "nice!" } }],
+          },
+        ],
+      },
+    };
+    const payload = bodyOverride ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "facebookplatform/1.0 (+http://www.facebook.com/platform)" },
+    };
+  }
+
+  if (provider === "lemonsqueezy") {
+    const dataByTemplate: Record<string, Record<string, unknown>> = {
+      order_created: {
+        type: "orders",
+        id: randomDigits(6),
+        attributes: {
+          status: "paid",
+          total: 1999,
+          currency: "USD",
+          user_email: "customer@example.com",
+          product_name: "Pro Plan",
+        },
+      },
+      subscription_created: {
+        type: "subscriptions",
+        id: randomDigits(6),
+        attributes: {
+          status: "active",
+          product_name: "Pro Plan",
+          variant_name: "Monthly",
+          user_email: "customer@example.com",
+        },
+      },
+      subscription_payment_success: {
+        type: "subscription-invoices",
+        id: randomDigits(6),
+        attributes: { status: "paid", total: 1999, currency: "USD", billing_reason: "renewal" },
+      },
+    };
+    const payload = bodyOverride ?? {
+      meta: { event_name: event, custom_data: {} },
+      data: dataByTemplate[template] ?? dataByTemplate.order_created,
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Lemon Squeezy Webhooks" },
+    };
+  }
+
+  if (provider === "coinbase-commerce") {
+    const payload = bodyOverride ?? {
+      event: {
+        id: randomUuid(),
+        type: event,
+        api_version: "2018-03-22",
+        created_at: nowIso,
+        data: {
+          code: randomHex(8).toUpperCase(),
+          name: "Order",
+          description: "webhooks.cc test charge",
+          pricing: { local: { amount: "19.99", currency: "USD" } },
+          metadata: {},
+          timeline: [{ time: nowIso, status: "NEW" }],
+        },
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "weipay-webhooks" },
+    };
+  }
+
+  if (provider === "razorpay") {
+    const payload = bodyOverride ?? {
+      entity: "event",
+      account_id: `acc_${randomHex(14)}`,
+      event,
+      contains: ["payment"],
+      payload: {
+        payment: {
+          entity: {
+            id: `pay_${randomHex(14)}`,
+            entity: "payment",
+            amount: 5000,
+            currency: "INR",
+            status: "captured",
+            order_id: `order_${randomHex(14)}`,
+            method: "card",
+            email: "customer@example.com",
+          },
+        },
+      },
+      created_at: nowSec,
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Razorpay-Webhook/1.0" },
+    };
+  }
+
+  if (provider === "cal") {
+    const payload = bodyOverride ?? {
+      triggerEvent: event,
+      createdAt: nowIso,
+      payload: {
+        type: "30min",
+        title: "30min between Ada and webhooks.cc",
+        startTime: nowIso,
+        endTime: nowIso,
+        organizer: { email: "ada@example.com", name: "Ada", timeZone: "UTC" },
+        attendees: [{ email: "guest@example.com", name: "Guest", timeZone: "UTC" }],
+        uid: randomHex(16),
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Cal.com Webhook" },
+    };
+  }
+
+  if (provider === "intercom") {
+    const payload = bodyOverride ?? {
+      type: "notification_event",
+      id: `notif_${randomHex(12)}`,
+      topic: event,
+      app_id: randomHex(8),
+      created_at: nowSec,
+      data: {
+        type: "notification_event_data",
+        item: { type: "conversation", id: randomDigits(10), created_at: nowSec },
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Intercom-Webhook/1.1" },
+    };
+  }
+
+  if (provider === "telegram") {
+    const updateId = Number(randomDigits(9));
+    const fromUser = { id: 42, is_bot: false, first_name: "Ada", username: "ada" };
+    const chat = { id: 42, type: "private", first_name: "Ada", username: "ada" };
+    const payloadByTemplate: Record<string, unknown> = {
+      message: {
+        update_id: updateId,
+        message: { message_id: 1, from: fromUser, chat, date: nowSec, text: "hi" },
+      },
+      callback_query: {
+        update_id: updateId,
+        callback_query: {
+          id: randomDigits(12),
+          from: fromUser,
+          chat_instance: randomDigits(18),
+          data: "button_1",
+        },
+      },
+      edited_message: {
+        update_id: updateId,
+        edited_message: {
+          message_id: 1,
+          from: fromUser,
+          chat,
+          date: nowSec,
+          edit_date: nowSec,
+          text: "edited",
+        },
+      },
+    };
+    const payload = bodyOverride ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return { body, contentType: "application/json", headers: {} };
   }
 
   if (provider !== "twilio") {
@@ -1644,6 +1970,38 @@ export async function buildTemplateSendOptions(
   if (provider === "typeform") {
     const signature = await hmacSign("SHA-256", options.secret, built.body);
     headers["typeform-signature"] = `sha256=${toBase64(signature)}`;
+  }
+
+  if (provider === "meta") {
+    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    headers["x-hub-signature-256"] = `sha256=${toHex(signature)}`;
+  }
+
+  if (provider === "lemonsqueezy") {
+    headers["x-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+  }
+
+  if (provider === "coinbase-commerce") {
+    headers["x-cc-webhook-signature"] = toHex(
+      await hmacSign("SHA-256", options.secret, built.body)
+    );
+  }
+
+  if (provider === "razorpay") {
+    headers["x-razorpay-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+  }
+
+  if (provider === "cal") {
+    headers["x-cal-signature-256"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+  }
+
+  if (provider === "intercom") {
+    headers["x-hub-signature"] =
+      `sha1=${toHex(await hmacSign("SHA-1", options.secret, built.body))}`;
+  }
+
+  if (provider === "telegram") {
+    headers["x-telegram-bot-api-secret-token"] = options.secret;
   }
 
   return {

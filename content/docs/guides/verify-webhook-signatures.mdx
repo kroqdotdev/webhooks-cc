@@ -1,20 +1,20 @@
 ---
 title: "How to Verify Webhook Signatures"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more signed providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 16 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
 section: guides
 order: 5
-lastUpdated: 2026-05-15
+lastUpdated: 2026-05-31
 schema: howto
 keywords:
   ["verify webhook signature", "webhook HMAC", "webhook security", "webhook signature validation"]
 seo:
   ogTitle: "How to Verify Webhook Signatures"
-  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, and 10 more signed providers using HMAC-SHA256 and asymmetric algorithms. Protect handlers from forged payloads."
+  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 16 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
 ---
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord is the exception, using Ed25519 public-key cryptography. Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 13 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures.
+The webhooks.cc SDK verifies signatures for 20 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures.
 
 ## Verify in the dashboard (no code)
 
@@ -27,7 +27,7 @@ See [Dashboard Features: Signature Verification](/docs/dashboard-features#signat
 
 ## What you'll build
 
-A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, and Standard Webhooks (Polar, Svix, Resend).
+A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar, Svix, Resend), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram.
 
 ## Prerequisites
 
@@ -82,7 +82,7 @@ if (!result.valid) {
 const body = JSON.parse(request.body);
 ```
 
-Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, or `"standard-webhooks"`.
+Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, or `"telegram"`.
 
 </Step>
 <Step title="Auto-detect the provider first">
@@ -125,7 +125,7 @@ if (!valid) {
 }
 ```
 
-Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
+Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
 
 </Step>
 <Step title="Handle Discord (Ed25519)">
@@ -261,6 +261,54 @@ const result = await verifySignature(request, {
 Secrets with a `whsec_` prefix are handled automatically. The SDK detects whether the key after the prefix is base64-encoded (Svix) or raw UTF-8 (Polar.sh).
 
 </Step>
+<Step title="Handle Meta (WhatsApp / Messenger / Instagram)">
+
+Meta signs the raw body with HMAC-SHA256 and sends `sha256={hex}` in `x-hub-signature-256` — the same scheme as GitHub — keyed by your **app secret**. Because Meta shares GitHub's header, configure `meta` explicitly rather than relying on header auto-detection.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "meta",
+  secret: process.env.META_APP_SECRET!,
+});
+```
+
+</Step>
+<Step title="Handle hex HMAC-SHA256 providers (Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com)">
+
+These providers each send a raw hex HMAC-SHA256 of the body in their own header — `x-signature` (Lemon Squeezy), `x-cc-webhook-signature` (Coinbase Commerce), `x-razorpay-signature` (Razorpay), and `x-cal-signature-256` (Cal.com). Pass the matching provider id:
+
+```ts
+const result = await verifySignature(request, {
+  provider: "coinbase-commerce",
+  secret: process.env.COINBASE_COMMERCE_WEBHOOK_SECRET!,
+});
+```
+
+</Step>
+<Step title="Handle Intercom (HMAC-SHA1)">
+
+Intercom signs the raw body with HMAC-**SHA1** and sends `sha1={hex}` in the `x-hub-signature` header, keyed by your app's client secret. The `sha1=` prefix distinguishes it from GitHub (`x-hub-signature-256`) and Bitbucket (`sha256=`).
+
+```ts
+const result = await verifySignature(request, {
+  provider: "intercom",
+  secret: process.env.INTERCOM_CLIENT_SECRET!,
+});
+```
+
+</Step>
+<Step title="Handle Telegram (secret token)">
+
+Telegram does not use HMAC. It echoes the `secret_token` you registered with `setWebhook` verbatim in the `x-telegram-bot-api-secret-token` header. The SDK performs a constant-time comparison against your secret.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "telegram",
+  secret: process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN!,
+});
+```
+
+</Step>
 </Steps>
 
 ## Provider reference
@@ -280,6 +328,13 @@ Secrets with a `whsec_` prefix are handled automatically. The SDK detects whethe
 | GitLab            | `x-gitlab-token`                                         | Token comparison | Raw secret sent in header              |
 | Typeform          | `typeform-signature`                                     | HMAC-SHA256      | `sha256={base64}` format               |
 | Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256      | Used by Polar, Svix, Resend            |
+| Meta              | `x-hub-signature-256`                                    | HMAC-SHA256      | `sha256=hash`, keyed by app secret     |
+| Lemon Squeezy     | `x-signature`                                            | HMAC-SHA256      | Raw hex hash                           |
+| Coinbase Commerce | `x-cc-webhook-signature`                                 | HMAC-SHA256      | Raw hex hash                           |
+| Razorpay          | `x-razorpay-signature`                                   | HMAC-SHA256      | Raw hex hash                           |
+| Cal.com           | `x-cal-signature-256`                                    | HMAC-SHA256      | Raw hex hash                           |
+| Intercom          | `x-hub-signature`                                        | HMAC-SHA1        | `sha1=hash` hex-encoded                |
+| Telegram          | `x-telegram-bot-api-secret-token`                        | Token comparison | Raw secret token sent in header        |
 
 ## Verifying captured requests
 

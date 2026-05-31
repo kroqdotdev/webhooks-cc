@@ -203,7 +203,20 @@ The SDK can generate signed webhook payloads for:
 - `slack`
 - `paddle`
 - `linear`
+- `clerk`
+- `vercel`
+- `gitlab`
+- `typeform`
 - `standard-webhooks`
+- `meta`
+- `lemonsqueezy`
+- `coinbase-commerce`
+- `razorpay`
+- `cal`
+- `intercom`
+- `telegram`
+
+(`sendgrid` and `discord` templates are also available but are intentionally unsigned.)
 
 Inspect the static provider metadata:
 
@@ -264,6 +277,13 @@ Supported verification providers:
 - `gitlab`
 - `typeform`
 - `standard-webhooks`
+- `meta`
+- `lemonsqueezy`
+- `coinbase-commerce`
+- `razorpay`
+- `cal`
+- `intercom`
+- `telegram`
 
 ```typescript
 import { isDiscordWebhook, verifySignature } from "@webhooks-cc/sdk";
@@ -290,7 +310,7 @@ const result = await verifySignature(request, {
 
 SendGrid uses IP allowlisting rather than cryptographic signature verification.
 
-Request detection helpers are exported too: `isStripeWebhook()`, `isGitHubWebhook()`, `isShopifyWebhook()`, `isSlackWebhook()`, `isTwilioWebhook()`, `isPaddleWebhook()`, `isLinearWebhook()`, `isSendGridWebhook()`, `isClerkWebhook()`, `isDiscordWebhook()`, `isVercelWebhook()`, `isGitLabWebhook()`, `isTypeformWebhook()`, and `isStandardWebhook()`.
+Request detection helpers are exported too: `isStripeWebhook()`, `isGitHubWebhook()`, `isShopifyWebhook()`, `isSlackWebhook()`, `isTwilioWebhook()`, `isPaddleWebhook()`, `isLinearWebhook()`, `isSendGridWebhook()`, `isClerkWebhook()`, `isDiscordWebhook()`, `isVercelWebhook()`, `isGitLabWebhook()`, `isTypeformWebhook()`, `isStandardWebhook()`, `isMetaWebhook()`, `isLemonSqueezyWebhook()`, `isCoinbaseCommerceWebhook()`, `isRazorpayWebhook()`, `isCalWebhook()`, `isIntercomWebhook()`, and `isTelegramWebhook()`.
 
 ## Matchers, parsing, and diffing
 

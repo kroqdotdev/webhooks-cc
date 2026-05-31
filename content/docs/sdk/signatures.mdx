@@ -1,20 +1,20 @@
 ---
 title: "Signature Verification"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, and Standard Webhooks using the SDK."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram using the SDK."
 section: sdk
 order: 5
-lastUpdated: 2026-05-15
+lastUpdated: 2026-05-31
 schema: faq
 keywords:
   ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
 seo:
   ogTitle: "Webhook Signature Verification"
-  ogDescription: "Verify webhook signatures for 13 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, and token comparison."
+  ogDescription: "Verify webhook signatures for 20 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, and token comparison."
 ---
 
 ## Overview
 
-Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 13 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting.
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 20 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting.
 
 Generic verifier (works with any supported provider):
 
@@ -39,6 +39,13 @@ import {
   verifyGitLabSignature,
   verifyTypeformSignature,
   verifyStandardWebhookSignature,
+  verifyMetaSignature,
+  verifyLemonSqueezySignature,
+  verifyCoinbaseCommerceSignature,
+  verifyRazorpaySignature,
+  verifyCalSignature,
+  verifyIntercomSignature,
+  verifyTelegramSignature,
 } from "@webhooks-cc/sdk";
 ```
 
@@ -104,6 +111,13 @@ The SDK also includes client-side verification functions that work without serve
 | GitLab            | `x-gitlab-token`                                         | Token comparison     | Raw secret token    |
 | Typeform          | `typeform-signature`                                     | HMAC-SHA256          | Raw secret          |
 | Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256          | `whsec_...` or raw  |
+| Meta              | `x-hub-signature-256`                                    | HMAC-SHA256          | App secret          |
+| Lemon Squeezy     | `x-signature`                                            | HMAC-SHA256          | Signing secret      |
+| Coinbase Commerce | `x-cc-webhook-signature`                                 | HMAC-SHA256          | Shared secret       |
+| Razorpay          | `x-razorpay-signature`                                   | HMAC-SHA256          | Webhook secret      |
+| Cal.com           | `x-cal-signature-256`                                    | HMAC-SHA256          | Webhook secret      |
+| Intercom          | `x-hub-signature`                                        | HMAC-SHA1            | Client secret       |
+| Telegram          | `x-telegram-bot-api-secret-token`                        | Token comparison     | Raw secret token    |
 
 ### Stripe
 
@@ -265,6 +279,50 @@ const result = await verifySignature(request, {
 });
 ```
 
+### Meta (WhatsApp / Messenger / Instagram)
+
+Meta signs the raw body with HMAC-SHA256 and sends `sha256=hash` in `x-hub-signature-256` — the same scheme as GitHub — keyed by your **app secret**. Because Meta shares GitHub's header, configure `meta` explicitly rather than relying on header auto-detection (the SDK auto-detects Meta by body shape).
+
+```ts
+const result = await verifySignature(request, {
+  provider: "meta",
+  secret: process.env.META_APP_SECRET!,
+});
+```
+
+### Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com
+
+These four providers each send a raw hex HMAC-SHA256 of the body in their own header: `x-signature` (Lemon Squeezy), `x-cc-webhook-signature` (Coinbase Commerce), `x-razorpay-signature` (Razorpay), and `x-cal-signature-256` (Cal.com).
+
+```ts
+const result = await verifySignature(request, {
+  provider: "coinbase-commerce",
+  secret: process.env.COINBASE_COMMERCE_WEBHOOK_SECRET!,
+});
+```
+
+### Intercom
+
+Intercom signs the raw body with HMAC-**SHA1** and sends `sha1=hash` in the `x-hub-signature` header, keyed by your app's client secret. The `sha1=` prefix distinguishes it from GitHub (`x-hub-signature-256`) and Bitbucket (`sha256=`).
+
+```ts
+const result = await verifySignature(request, {
+  provider: "intercom",
+  secret: process.env.INTERCOM_CLIENT_SECRET!,
+});
+```
+
+### Telegram
+
+Telegram does not use HMAC. It echoes the `secret_token` you registered with `setWebhook` verbatim in the `x-telegram-bot-api-secret-token` header. The SDK compares it against your secret using constant-time comparison.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "telegram",
+  secret: process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN!,
+});
+```
+
 ## Generic verifier
 
 `verifySignature` accepts a captured request and dispatches to the correct provider-specific function. It returns `{ valid: boolean }`.
@@ -287,7 +345,7 @@ The options type is a discriminated union:
 ```ts
 // HMAC/token-based providers
 {
-  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "clerk" | "vercel" | "gitlab" | "typeform" | "standard-webhooks";
+  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "clerk" | "vercel" | "gitlab" | "typeform" | "standard-webhooks" | "meta" | "lemonsqueezy" | "coinbase-commerce" | "razorpay" | "cal" | "intercom" | "telegram";
   secret: string;
   url?: string;    // Required for twilio
 }

@@ -227,7 +227,14 @@ export type TemplateProvider =
   | "vercel"
   | "gitlab"
   | "typeform"
-  | "standard-webhooks";
+  | "standard-webhooks"
+  | "meta"
+  | "lemonsqueezy"
+  | "coinbase-commerce"
+  | "razorpay"
+  | "cal"
+  | "intercom"
+  | "telegram";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

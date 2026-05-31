@@ -1,4 +1,4 @@
-//! Webhook signature verification for 14 providers.
+//! Webhook signature verification for 21 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -152,6 +152,15 @@ pub fn verify_signature(
         "clerk" => verify_clerk(secret, headers, body),
         "discord" => verify_discord(secret, headers, body),
         "standard-webhooks" => verify_standard_webhooks(secret, headers, body),
+        // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `sha256=` HMAC-SHA256
+        // scheme, keyed by the Meta app secret.
+        "meta" => verify_github(secret, headers, body),
+        "lemonsqueezy" => verify_hex_sha256(secret, headers, body, "x-signature"),
+        "coinbase-commerce" => verify_hex_sha256(secret, headers, body, "x-cc-webhook-signature"),
+        "razorpay" => verify_hex_sha256(secret, headers, body, "x-razorpay-signature"),
+        "cal" => verify_hex_sha256(secret, headers, body, "x-cal-signature-256"),
+        "intercom" => verify_intercom(secret, headers, body),
+        "telegram" => verify_telegram(secret, headers),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -232,6 +241,32 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     {
         return Some("standard-webhooks");
     }
+    // ── Tier-1 providers with distinctive headers ──
+    if get_header(headers, "x-cc-webhook-signature").is_some() {
+        return Some("coinbase-commerce");
+    }
+    if get_header(headers, "x-razorpay-signature").is_some() {
+        return Some("razorpay");
+    }
+    if get_header(headers, "x-cal-signature-256").is_some() {
+        return Some("cal");
+    }
+    if get_header(headers, "x-telegram-bot-api-secret-token").is_some() {
+        return Some("telegram");
+    }
+    // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
+    // GitHub (which sends the same header alongside x-hub-signature-256 +
+    // x-github-event) so GitHub webhooks never mis-detect as Intercom, and the
+    // sha1= prefix disambiguates from Bitbucket's sha256= form.
+    if get_header(headers, "x-hub-signature")
+        .map(|v| v.trim().to_lowercase().starts_with("sha1="))
+        .unwrap_or(false)
+    {
+        return Some("intercom");
+    }
+    // Note: Meta (shares x-hub-signature-256 with GitHub) and Lemon Squeezy
+    // (generic x-signature) are owner-selected only — they are intentionally
+    // not auto-detected here to avoid colliding with GitHub / other providers.
     None
 }
 
@@ -851,6 +886,95 @@ fn verify_generic_hmac(
     let mut err = SignatureError::mismatch(&expected_hex, &received.to_lowercase());
     err.header = Some(header_name.to_string());
     VerificationResult::Invalid(err)
+}
+
+/// Raw hex HMAC-SHA256 over the body, sent in a provider-specific header.
+/// Accepts an optional `prefix=` form (e.g. `sha256=...`) for parity with the
+/// SDK helper. Shared by Lemon Squeezy, Coinbase Commerce, Razorpay, and Cal.com.
+fn verify_hex_sha256(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    header_name: &'static str,
+) -> VerificationResult {
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let received = sig_header.trim();
+    // Take the part after the first `=` when a `prefix=` form is used; otherwise
+    // treat the entire value as the hex signature.
+    let hex_sig = match received.split_once('=') {
+        Some((_, rest)) => rest,
+        None => received,
+    };
+    if hex_sig.is_empty() {
+        return VerificationResult::Invalid(SignatureError::invalid_encoding(&format!(
+            "Empty signature in {header_name}"
+        )));
+    }
+
+    let expected = hex::encode(hmac_sha256(secret, body));
+    if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Intercom: HMAC-SHA1 over the body, header is `sha1={hex}`.
+fn verify_intercom(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    let header_name = "x-hub-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let received = sig_header.trim();
+    let hex_sig = match received.strip_prefix("sha1=") {
+        Some(h) => h,
+        None => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                "Expected sha1= prefix on x-hub-signature",
+            ));
+        }
+    };
+
+    let expected = hex::encode(hmac_sha1(secret, body));
+    if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Telegram: constant-time comparison of the secret token (no HMAC).
+fn verify_telegram(secret: &[u8], headers: &HashMap<String, String>) -> VerificationResult {
+    let header_name = "x-telegram-bot-api-secret-token";
+    let Some(token) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    if ct_eq(token.as_bytes(), secret) {
+        VerificationResult::Valid
+    } else {
+        let err = SignatureError {
+            code: "mismatch",
+            expected: None, // Don't leak the expected token
+            received: Some(truncate(token, 8)), // Show first 8 chars only
+            timestamp: None,
+            header: Some(header_name.to_string()),
+            message: Some("Token does not match".to_string()),
+        };
+        VerificationResult::Invalid(err)
+    }
 }
 
 #[cfg(test)]

@@ -257,6 +257,41 @@ export function isStandardWebhook(request: Request): boolean {
   return isDetectedProvider(request, "standard-webhooks");
 }
 
+/** Check if a request looks like a Meta (WhatsApp/Messenger/Instagram) webhook. */
+export function isMetaWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "meta");
+}
+
+/** Check if a request looks like a Lemon Squeezy webhook. */
+export function isLemonSqueezyWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "lemonsqueezy");
+}
+
+/** Check if a request looks like a Coinbase Commerce webhook. */
+export function isCoinbaseCommerceWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "coinbase-commerce");
+}
+
+/** Check if a request looks like a Razorpay webhook. */
+export function isRazorpayWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "razorpay");
+}
+
+/** Check if a request looks like a Cal.com webhook. */
+export function isCalWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "cal");
+}
+
+/** Check if a request looks like an Intercom webhook. */
+export function isIntercomWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "intercom");
+}
+
+/** Check if a request looks like a Telegram webhook. */
+export function isTelegramWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "telegram");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -364,6 +399,24 @@ const DETECTORS: readonly Detector[] = [
     event: (request) => getEventString(extractJsonField(request, "type")),
   },
   {
+    // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`
+    // header, so it must be detected by body shape BEFORE GitHub's signature
+    // fallback or every Meta webhook would mis-detect as GitHub.
+    provider: "meta",
+    via: "body",
+    matchedOn: "body.object",
+    matches: (request) => {
+      const body = getJsonObject(request);
+      const object = getEventString(body?.object);
+      return (
+        object !== null &&
+        Array.isArray(body?.entry) &&
+        ["whatsapp_business_account", "page", "instagram", "user", "permissions"].includes(object)
+      );
+    },
+    event: (request) => getEventString(getJsonObject(request)?.object),
+  },
+  {
     provider: "github",
     via: "header",
     matchedOn: "x-github-event",
@@ -466,6 +519,67 @@ const DETECTORS: readonly Detector[] = [
       getHeaderValue(request.headers, "webhook-timestamp") !== undefined &&
       getHeaderValue(request.headers, "webhook-signature") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "lemonsqueezy",
+    via: "body",
+    matchedOn: "body.meta.event_name",
+    matches: (request) => extractJsonField(request, "meta.event_name") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "meta.event_name")),
+  },
+  {
+    provider: "coinbase-commerce",
+    via: "header",
+    matchedOn: "x-cc-webhook-signature",
+    matches: (request) => getHeaderValue(request.headers, "x-cc-webhook-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event.type")),
+  },
+  {
+    provider: "razorpay",
+    via: "header",
+    matchedOn: "x-razorpay-signature",
+    matches: (request) => getHeaderValue(request.headers, "x-razorpay-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event")),
+  },
+  {
+    provider: "cal",
+    via: "header",
+    matchedOn: "x-cal-signature-256",
+    matches: (request) => getHeaderValue(request.headers, "x-cal-signature-256") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "triggerEvent")),
+  },
+  {
+    // Intercom reuses the legacy `x-hub-signature` (sha1=) header. It MUST be
+    // ordered after GitHub (which sends the same header alongside
+    // x-hub-signature-256 + x-github-event) and is disambiguated from
+    // Bitbucket (sha256=) by requiring the sha1= prefix or the Intercom body.
+    provider: "intercom",
+    via: "header",
+    matchedOn: "x-hub-signature",
+    matches: (request) => {
+      // Require the Intercom header. Without it we'd shadow other providers
+      // (e.g. a Telegram body that happens to carry type=notification_event).
+      // This also keeps SDK detection aligned with the header-only receiver.
+      const sig = getHeaderValue(request.headers, "x-hub-signature");
+      if (sig === undefined) {
+        return false;
+      }
+      // sha1= is the Intercom scheme; the body check disambiguates from
+      // Bitbucket (sha256=), which carries the same header.
+      return (
+        sig.trim().toLowerCase().startsWith("sha1=") ||
+        extractJsonField(request, "type") === "notification_event"
+      );
+    },
+    event: (request) => getEventString(extractJsonField(request, "topic")),
+  },
+  {
+    provider: "telegram",
+    via: "header",
+    matchedOn: "x-telegram-bot-api-secret-token",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-telegram-bot-api-secret-token") !== undefined,
+    event: () => null,
   },
 ] as const;
 

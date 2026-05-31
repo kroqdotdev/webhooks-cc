@@ -153,9 +153,11 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // Should have None + 14 providers (SendGrid removed — uses IP allowlisting)
-  await expect(options).toHaveCount(15);
+  // Should have None + 21 providers (20 verifiable named providers + generic-hmac;
+  // SendGrid is excluded — it uses IP allowlisting, not signatures).
+  await expect(options).toHaveCount(22);
   await expect(options.nth(1)).toHaveText("Stripe");
+  await expect(options.filter({ hasText: "Telegram" })).toHaveCount(1);
 });
 
 test("SendGrid IP allowlisting info is shown", async ({ page }) => {
@@ -320,4 +322,61 @@ test("detected provider preselects manual verification when server-side verifica
   await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("text=Standard Webhooks").first()).toBeVisible();
   await expect(page.locator("#sig-provider").first()).toHaveValue("standard-webhooks");
+});
+
+// ── Tier-1 providers: client-side detection + manual-verify preselect ──
+
+test("Meta webhook is detected and preselects manual verification to meta", async ({ page }) => {
+  await admin
+    .from("endpoints")
+    .update({ signing_provider: null, signing_secret_encrypted: null, signing_header: null })
+    .eq("slug", endpointSlug);
+
+  const marker = `meta-${Date.now()}`;
+  const body = JSON.stringify({
+    object: "whatsapp_business_account",
+    entry: [{ id: "1", changes: [{ field: "messages" }] }],
+  });
+  const sig = createHmac("sha256", "meta_app_secret").update(body).digest("hex");
+  await fetch(`${WEBHOOK_URL}/w/${endpointSlug}/${marker}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-hub-signature-256": `sha256=${sig}` },
+    body,
+  });
+  await new Promise((r) => setTimeout(r, 1000));
+
+  await openDashboard(page);
+  await page.locator("button").filter({ hasText: marker }).first().click();
+  await signatureTabButton(page).click();
+
+  await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("#sig-provider").first()).toHaveValue("meta");
+});
+
+test("Coinbase Commerce webhook is detected and preselects manual verification", async ({
+  page,
+}) => {
+  await admin
+    .from("endpoints")
+    .update({ signing_provider: null, signing_secret_encrypted: null, signing_header: null })
+    .eq("slug", endpointSlug);
+
+  const marker = `cbc-${Date.now()}`;
+  const body = JSON.stringify({
+    event: { type: "charge:confirmed", data: { code: "ABC123" } },
+  });
+  const sig = createHmac("sha256", "cb_secret").update(body).digest("hex");
+  await fetch(`${WEBHOOK_URL}/w/${endpointSlug}/${marker}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-cc-webhook-signature": sig },
+    body,
+  });
+  await new Promise((r) => setTimeout(r, 1000));
+
+  await openDashboard(page);
+  await page.locator("button").filter({ hasText: marker }).first().click();
+  await signatureTabButton(page).click();
+
+  await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("#sig-provider").first()).toHaveValue("coinbase-commerce");
 });

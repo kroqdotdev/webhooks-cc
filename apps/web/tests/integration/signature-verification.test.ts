@@ -138,6 +138,31 @@ describe("Signature Verification Integration", () => {
     expect(endpoint!.hasSigningSecret).toBe(true);
   });
 
+  it("PATCH: accepts every tier-1 signing provider", async () => {
+    const tier1 = [
+      "meta",
+      "lemonsqueezy",
+      "coinbase-commerce",
+      "razorpay",
+      "cal",
+      "intercom",
+      "telegram",
+    ];
+
+    for (const provider of tier1) {
+      const updated = await updateEndpointBySlugForUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        signingProvider: provider,
+        signingSecret: `secret_for_${provider}`,
+      });
+
+      expect(updated).not.toBeNull();
+      expect(updated!.signingProvider).toBe(provider);
+      expect(updated!.hasSigningSecret).toBe(true);
+    }
+  });
+
   it("PATCH: clear signing config with null provider", async () => {
     const updated = await updateEndpointBySlugForUser({
       userId: testUserId,

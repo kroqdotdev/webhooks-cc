@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.20.3";
+export const APP_VERSION = "0.20.4";
 export const CLI_VERSION = "1.1.2";
-export const SDK_VERSION = "1.5.0";
-export const MCP_VERSION = "1.4.1";
+export const SDK_VERSION = "1.6.0";
+export const MCP_VERSION = "1.4.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.20.4",
+    date: "2026-05-31",
+    title:
+      "7 New Providers — Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram",
+    track: "web",
+    items: [
+      "Provider catalog grows from 14 to 21: added Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram across templates, auto-detection, and signature verification",
+      "Endpoint settings, the send-webhook dialog, and the Signature tab now list all new providers; server-side automatic verification works for every one",
+      "Refreshed provider template and signature-verification docs with payload shapes, headers, and algorithms for each new provider",
+    ],
+  },
   {
     version: "0.20.3",
     date: "2026-05-24",
@@ -607,6 +619,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.6.0",
+    date: "2026-05-31",
+    title: "7 New Providers",
+    track: "sdk",
+    items: [
+      "Added Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram to templates, detection, and verification",
+      "New verifiers: verifyMetaSignature, verifyLemonSqueezySignature, verifyCoinbaseCommerceSignature, verifyRazorpaySignature, verifyCalSignature, verifyIntercomSignature, verifyTelegramSignature",
+      "New detection helpers: isMetaWebhook, isLemonSqueezyWebhook, isCoinbaseCommerceWebhook, isRazorpayWebhook, isCalWebhook, isIntercomWebhook, isTelegramWebhook",
+      "Meta is detected by body shape (ordered before GitHub); Intercom (sha1=) is disambiguated from GitHub's x-hub-signature-256 and Bitbucket's sha256=",
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-05-15",
     title: "Typeform Provider & Webhook Auto-Detect",
@@ -757,6 +781,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.4.2",
+    date: "2026-05-31",
+    title: "7 New Providers",
+    track: "mcp",
+    items: [
+      "Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram are now available in send_webhook, send_to, preview_webhook, list_provider_templates, and verify_signature — wired automatically through the SDK provider lists",
+    ],
+  },
   {
     version: "1.4.1",
     date: "2026-05-23",

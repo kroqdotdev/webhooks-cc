@@ -41,6 +41,13 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   gitlab: "GitLab",
   typeform: "Typeform",
   "standard-webhooks": "Standard Webhooks",
+  meta: "Meta",
+  lemonsqueezy: "Lemon Squeezy",
+  "coinbase-commerce": "Coinbase Commerce",
+  razorpay: "Razorpay",
+  cal: "Cal.com",
+  intercom: "Intercom",
+  telegram: "Telegram",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -58,6 +65,13 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   gitlab: "your secret token",
   typeform: "your webhook secret",
   "standard-webhooks": "whsec_...",
+  meta: "your app secret",
+  lemonsqueezy: "your signing secret",
+  "coinbase-commerce": "your shared webhook secret",
+  razorpay: "your webhook secret",
+  cal: "your webhook secret",
+  intercom: "your app secret",
+  telegram: "your secret token",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -158,6 +172,55 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#f8fafc",
     foreground: "#0f172a",
     border: "#64748b",
+  },
+  meta: {
+    glyph: "meta",
+    text: "MA",
+    background: "#0866ff",
+    foreground: "#ffffff",
+    border: "#0a4fc2",
+  },
+  lemonsqueezy: {
+    glyph: "lemonsqueezy",
+    text: "LS",
+    background: "#ffc233",
+    foreground: "#0b0b0b",
+    border: "#d9a400",
+  },
+  "coinbase-commerce": {
+    glyph: "coinbase-commerce",
+    text: "CB",
+    background: "#0052ff",
+    foreground: "#ffffff",
+    border: "#003bb3",
+  },
+  razorpay: {
+    glyph: "razorpay",
+    text: "RP",
+    background: "#0c2451",
+    foreground: "#ffffff",
+    border: "#3395ff",
+  },
+  cal: {
+    glyph: "cal",
+    text: "CAL",
+    background: "#111827",
+    foreground: "#ffffff",
+    border: "#000000",
+  },
+  intercom: {
+    glyph: "intercom",
+    text: "IC",
+    background: "#1f8ded",
+    foreground: "#ffffff",
+    border: "#0b5cad",
+  },
+  telegram: {
+    glyph: "telegram",
+    text: "TG",
+    background: "#229ed9",
+    foreground: "#ffffff",
+    border: "#1a7fb0",
   },
 };
 

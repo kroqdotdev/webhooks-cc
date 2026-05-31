@@ -323,6 +323,13 @@ describe("WebhooksCC", () => {
         "gitlab",
         "typeform",
         "standard-webhooks",
+        "meta",
+        "lemonsqueezy",
+        "coinbase-commerce",
+        "razorpay",
+        "cal",
+        "intercom",
+        "telegram",
       ]);
     });
 
@@ -1291,7 +1298,7 @@ describe("WebhooksCC", () => {
     it("includes flow, export, waitForAll, and retained search operations", () => {
       const description = createClient().describe();
 
-      expect(description.version).toBe("1.5.0");
+      expect(description.version).toBe("1.6.0");
       expect(description.usage).toBeDefined();
       expect(description.flow).toBeDefined();
       expect(description.templates.listProviders).toBeDefined();

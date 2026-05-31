@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildTemplateSendOptions } from "../templates";
+import {
+  buildTemplateSendOptions,
+  TEMPLATE_METADATA,
+  TEMPLATE_PROVIDERS,
+  VERIFY_PROVIDERS,
+} from "../templates";
 import {
   verifyStripeSignature,
   verifyGitHubSignature,
@@ -12,6 +17,13 @@ import {
   verifyVercelSignature,
   verifyGitLabSignature,
   verifyTypeformSignature,
+  verifyMetaSignature,
+  verifyLemonSqueezySignature,
+  verifyCoinbaseCommerceSignature,
+  verifyRazorpaySignature,
+  verifyCalSignature,
+  verifyIntercomSignature,
+  verifyTelegramSignature,
   verifySignature,
 } from "../verify";
 
@@ -958,6 +970,13 @@ describe("verifySignature dispatcher for all signed providers", () => {
     { provider: "vercel" as const, secret: TEST_SECRET },
     { provider: "gitlab" as const, secret: TEST_SECRET },
     { provider: "typeform" as const, secret: TEST_SECRET },
+    { provider: "meta" as const, secret: TEST_SECRET },
+    { provider: "lemonsqueezy" as const, secret: TEST_SECRET },
+    { provider: "coinbase-commerce" as const, secret: TEST_SECRET },
+    { provider: "razorpay" as const, secret: TEST_SECRET },
+    { provider: "cal" as const, secret: TEST_SECRET },
+    { provider: "intercom" as const, secret: TEST_SECRET },
+    { provider: "telegram" as const, secret: TEST_SECRET },
   ] as const;
 
   for (const providerConfig of signedProviders) {
@@ -1000,6 +1019,13 @@ describe("cross-cutting template properties", () => {
     "vercel",
     "gitlab",
     "typeform",
+    "meta",
+    "lemonsqueezy",
+    "coinbase-commerce",
+    "razorpay",
+    "cal",
+    "intercom",
+    "telegram",
   ] as const;
 
   for (const provider of ALL_PROVIDERS) {
@@ -1059,5 +1085,121 @@ describe("template error handling", () => {
     await expect(buildTemplate("discord", { template: "nonexistent" })).rejects.toThrow(
       /Unsupported template/
     );
+  });
+});
+
+// ─── Tier-1 providers (Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram) ─
+
+describe("tier-1 provider metadata", () => {
+  const CASES = [
+    {
+      provider: "meta",
+      header: "x-hub-signature-256",
+      algorithm: "hmac-sha256",
+      defaultTemplate: "whatsapp.messages",
+    },
+    {
+      provider: "lemonsqueezy",
+      header: "x-signature",
+      algorithm: "hmac-sha256",
+      defaultTemplate: "order_created",
+    },
+    {
+      provider: "coinbase-commerce",
+      header: "x-cc-webhook-signature",
+      algorithm: "hmac-sha256",
+      defaultTemplate: "charge:confirmed",
+    },
+    {
+      provider: "razorpay",
+      header: "x-razorpay-signature",
+      algorithm: "hmac-sha256",
+      defaultTemplate: "payment.captured",
+    },
+    {
+      provider: "cal",
+      header: "x-cal-signature-256",
+      algorithm: "hmac-sha256",
+      defaultTemplate: "BOOKING_CREATED",
+    },
+    {
+      provider: "intercom",
+      header: "x-hub-signature",
+      algorithm: "hmac-sha1",
+      defaultTemplate: "conversation.user.created",
+    },
+    {
+      provider: "telegram",
+      header: "x-telegram-bot-api-secret-token",
+      algorithm: "token",
+      defaultTemplate: "message",
+    },
+  ] as const;
+
+  for (const { provider, header, algorithm, defaultTemplate } of CASES) {
+    it(`${provider} is listed and has correct metadata`, () => {
+      expect(TEMPLATE_PROVIDERS).toContain(provider);
+      expect(VERIFY_PROVIDERS).toContain(provider);
+
+      const meta = TEMPLATE_METADATA[provider];
+      expect(meta.provider).toBe(provider);
+      expect(meta.secretRequired).toBe(true);
+      expect(meta.signatureHeader).toBe(header);
+      expect(meta.signatureAlgorithm).toBe(algorithm);
+      expect(meta.defaultTemplate).toBe(defaultTemplate);
+      expect(meta.templates).toContain(defaultTemplate);
+    });
+  }
+});
+
+describe("tier-1 provider templates produce verifiable signed requests", () => {
+  const PROVIDERS = [
+    { provider: "meta", header: "x-hub-signature-256", verify: verifyMetaSignature },
+    { provider: "lemonsqueezy", header: "x-signature", verify: verifyLemonSqueezySignature },
+    {
+      provider: "coinbase-commerce",
+      header: "x-cc-webhook-signature",
+      verify: verifyCoinbaseCommerceSignature,
+    },
+    { provider: "razorpay", header: "x-razorpay-signature", verify: verifyRazorpaySignature },
+    { provider: "cal", header: "x-cal-signature-256", verify: verifyCalSignature },
+    { provider: "intercom", header: "x-hub-signature", verify: verifyIntercomSignature },
+    {
+      provider: "telegram",
+      header: "x-telegram-bot-api-secret-token",
+      verify: verifyTelegramSignature,
+    },
+  ] as const;
+
+  for (const { provider, header, verify } of PROVIDERS) {
+    for (const template of TEMPLATE_METADATA[provider].templates) {
+      it(`${provider}/${template} is valid JSON and the signature verifies`, async () => {
+        const result = await buildTemplate(provider, { template });
+        expect(result.headers["content-type"]).toBe("application/json");
+        expect(() => JSON.parse(result.body)).not.toThrow();
+
+        const sig = getHeader(result.headers, header);
+        expect(sig).toBeDefined();
+        expect(await verify(result.body, sig!, TEST_SECRET)).toBe(true);
+        expect(await verify(result.body, sig!, "wrong_secret")).toBe(false);
+
+        const verification = await verifySignature(
+          { body: result.body, headers: result.headers },
+          { provider, secret: TEST_SECRET }
+        );
+        expect(verification.valid).toBe(true);
+      });
+    }
+  }
+
+  it("intercom signature uses sha1= prefix (not sha256=)", async () => {
+    const result = await buildTemplate("intercom");
+    const sig = getHeader(result.headers, "x-hub-signature")!;
+    expect(sig).toMatch(/^sha1=[a-f0-9]+$/);
+  });
+
+  it("telegram sends the raw secret token (no HMAC)", async () => {
+    const result = await buildTemplate("telegram");
+    expect(getHeader(result.headers, "x-telegram-bot-api-secret-token")).toBe(TEST_SECRET);
   });
 });
