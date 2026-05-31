@@ -367,9 +367,7 @@ describe("registerTools", () => {
       const url = "https://go.webhooks.cc/w/demo";
       const body = '{"type":"payment.created"}';
       const secret = "sq_signature_key";
-      const sig = createHmac("sha256", secret)
-        .update(`${url}${body}`)
-        .digest("base64");
+      const sig = createHmac("sha256", secret).update(`${url}${body}`).digest("base64");
       const request = makeRequest({
         body,
         headers: { "x-square-hmacsha256-signature": sig },
@@ -455,9 +453,7 @@ describe("registerTools", () => {
       const body = '{"event":"invitee.created"}';
       const secret = "cal_signing_key";
       const t = Math.floor(Date.now() / 1000);
-      const hex = createHmac("sha256", secret)
-        .update(`${t}.${body}`)
-        .digest("hex");
+      const hex = createHmac("sha256", secret).update(`${t}.${body}`).digest("hex");
       const request = makeRequest({
         body,
         headers: { "calendly-webhook-signature": `t=${t},v1=${hex}` },
@@ -493,9 +489,7 @@ describe("registerTools", () => {
       const secret = "mg_signing_key";
       const timestamp = String(Math.floor(Date.now() / 1000));
       const token = "abc123token";
-      const signature = createHmac("sha256", secret)
-        .update(`${timestamp}${token}`)
-        .digest("hex");
+      const signature = createHmac("sha256", secret).update(`${timestamp}${token}`).digest("hex");
       const body = JSON.stringify({
         signature: { timestamp, token, signature },
         "event-data": { event: "delivered" },

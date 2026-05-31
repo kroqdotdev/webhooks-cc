@@ -1,6 +1,6 @@
 ---
 title: "How to Verify Webhook Signatures"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 16 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 23 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
 section: guides
 order: 5
 lastUpdated: 2026-05-31
@@ -9,12 +9,12 @@ keywords:
   ["verify webhook signature", "webhook HMAC", "webhook security", "webhook signature validation"]
 seo:
   ogTitle: "How to Verify Webhook Signatures"
-  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 16 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
+  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 23 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
 ---
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord is the exception, using Ed25519 public-key cryptography. Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 20 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures.
+The webhooks.cc SDK verifies signatures for 27 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures.
 
 ## Verify in the dashboard (no code)
 
@@ -27,7 +27,7 @@ See [Dashboard Features: Signature Verification](/docs/dashboard-features#signat
 
 ## What you'll build
 
-A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar, Svix, Resend), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram.
+A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar, Svix, Resend), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket.
 
 ## Prerequisites
 
@@ -82,7 +82,7 @@ if (!result.valid) {
 const body = JSON.parse(request.body);
 ```
 
-Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, or `"telegram"`.
+Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, `"telegram"`, `"square"`, `"hubspot"`, `"mailgun"`, `"calendly"`, `"mux"`, `"sentry"`, or `"bitbucket"`.
 
 </Step>
 <Step title="Auto-detect the provider first">
@@ -125,7 +125,7 @@ if (!valid) {
 }
 ```
 
-Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
+Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`, `verifySquareSignature`, `verifyHubSpotSignature`, `verifyMailgunSignature`, `verifyCalendlySignature`, `verifyMuxSignature`, `verifySentrySignature`, `verifyBitbucketSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
 
 </Step>
 <Step title="Handle Discord (Ed25519)">
@@ -309,32 +309,120 @@ const result = await verifySignature(request, {
 ```
 
 </Step>
+<Step title="Handle Square and HubSpot (URL and method)">
+
+Square and HubSpot mix request context into the signed payload, so verification needs more than the body and secret.
+
+**Square** signs the **notification URL concatenated with the raw body** (base64 HMAC-SHA256 in `x-square-hmacsha256-signature`). Pass the exact URL Square delivers to via the `url` option:
+
+```ts
+const result = await verifySignature(request, {
+  provider: "square",
+  secret: process.env.SQUARE_SIGNATURE_KEY!,
+  url: "https://your-app.com/api/webhooks/square",
+});
+```
+
+**HubSpot** v3 signs `{method}{url}{body}{timestamp}` (base64 HMAC-SHA256 in `x-hubspot-signature-v3`, with the millisecond timestamp in `x-hubspot-request-timestamp`). Pass both `url` and `method`. HubSpot also rejects signatures whose timestamp is more than 5 minutes old, so verify promptly after capture:
+
+```ts
+const result = await verifySignature(request, {
+  provider: "hubspot",
+  secret: process.env.HUBSPOT_CLIENT_SECRET!,
+  url: "https://your-app.com/api/webhooks/hubspot",
+  method: "POST",
+});
+```
+
+Without the required `url` option, verification throws an error for both providers. `method` defaults to `"POST"` when omitted for HubSpot.
+
+</Step>
+<Step title="Handle Mailgun (body-embedded signature)">
+
+Mailgun is the only supported provider with **no signature header**. It embeds the signature in the request body under `signature.{timestamp,token,signature}` and signs `{timestamp}{token}` with HMAC-SHA256 (hex). The SDK reads the body directly and returns `false` (never throws) on malformed input:
+
+```ts
+const result = await verifySignature(request, {
+  provider: "mailgun",
+  secret: process.env.MAILGUN_SIGNING_KEY!,
+});
+```
+
+</Step>
+<Step title="Handle Calendly and Mux (Stripe-style header)">
+
+Calendly and Mux both use the Stripe-style `t=<timestamp>,v1=<hash>` header format — `calendly-webhook-signature` and `mux-signature` respectively — computing HMAC-SHA256 over `{timestamp}.{body}` (hex):
+
+```ts
+const calendly = await verifySignature(request, {
+  provider: "calendly",
+  secret: process.env.CALENDLY_SIGNING_KEY!,
+});
+
+const mux = await verifySignature(request, {
+  provider: "mux",
+  secret: process.env.MUX_SIGNING_SECRET!,
+});
+```
+
+</Step>
+<Step title="Handle Sentry (hex HMAC-SHA256)">
+
+Sentry signs the raw body with HMAC-SHA256 and sends the hex digest in `sentry-hook-signature`. The resource type travels in `sentry-hook-resource`:
+
+```ts
+const result = await verifySignature(request, {
+  provider: "sentry",
+  secret: process.env.SENTRY_CLIENT_SECRET!,
+});
+```
+
+</Step>
+<Step title="Handle Bitbucket (GitHub-style sha256=)">
+
+Bitbucket signs the raw body with HMAC-SHA256 and sends `sha256={hex}` in the `x-hub-signature` header — the same scheme as GitHub. Auto-detection distinguishes it from Intercom (which also uses `x-hub-signature`, but with `sha1=`) by Bitbucket's unique `x-event-key` header:
+
+```ts
+const result = await verifySignature(request, {
+  provider: "bitbucket",
+  secret: process.env.BITBUCKET_WEBHOOK_SECRET!,
+});
+```
+
+</Step>
 </Steps>
 
 ## Provider reference
 
-| Provider          | Header                                                   | Algorithm        | Notes                                  |
-| ----------------- | -------------------------------------------------------- | ---------------- | -------------------------------------- |
-| Stripe            | `stripe-signature`                                       | HMAC-SHA256      | `t=timestamp,v1=hash` format           |
-| GitHub            | `x-hub-signature-256`                                    | HMAC-SHA256      | `sha256=hash` hex-encoded              |
-| Shopify           | `x-shopify-hmac-sha256`                                  | HMAC-SHA256      | Base64-encoded hash                    |
-| Twilio            | `x-twilio-signature`                                     | HMAC-SHA1        | Requires full callback URL             |
-| Slack             | `x-slack-signature` + `x-slack-request-timestamp`        | HMAC-SHA256      | 5-minute timestamp window              |
-| Paddle            | `paddle-signature`                                       | HMAC-SHA256      | `ts=timestamp;h1=hash` format          |
-| Linear            | `linear-signature`                                       | HMAC-SHA256      | Hex-encoded, optional `sha256=` prefix |
-| Clerk             | `webhook-signature` (Standard Webhooks / Svix)           | HMAC-SHA256      | Delegates to Standard Webhooks signing |
-| Discord           | `x-signature-ed25519` + `x-signature-timestamp`          | Ed25519          | Uses public key, not shared secret     |
-| Vercel            | `x-vercel-signature`                                     | HMAC-SHA1        | Hex-encoded hash                       |
-| GitLab            | `x-gitlab-token`                                         | Token comparison | Raw secret sent in header              |
-| Typeform          | `typeform-signature`                                     | HMAC-SHA256      | `sha256={base64}` format               |
-| Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256      | Used by Polar, Svix, Resend            |
-| Meta              | `x-hub-signature-256`                                    | HMAC-SHA256      | `sha256=hash`, keyed by app secret     |
-| Lemon Squeezy     | `x-signature`                                            | HMAC-SHA256      | Raw hex hash                           |
-| Coinbase Commerce | `x-cc-webhook-signature`                                 | HMAC-SHA256      | Raw hex hash                           |
-| Razorpay          | `x-razorpay-signature`                                   | HMAC-SHA256      | Raw hex hash                           |
-| Cal.com           | `x-cal-signature-256`                                    | HMAC-SHA256      | Raw hex hash                           |
-| Intercom          | `x-hub-signature`                                        | HMAC-SHA1        | `sha1=hash` hex-encoded                |
-| Telegram          | `x-telegram-bot-api-secret-token`                        | Token comparison | Raw secret token sent in header        |
+| Provider          | Header                                                   | Algorithm        | Notes                                                               |
+| ----------------- | -------------------------------------------------------- | ---------------- | ------------------------------------------------------------------- |
+| Stripe            | `stripe-signature`                                       | HMAC-SHA256      | `t=timestamp,v1=hash` format                                        |
+| GitHub            | `x-hub-signature-256`                                    | HMAC-SHA256      | `sha256=hash` hex-encoded                                           |
+| Shopify           | `x-shopify-hmac-sha256`                                  | HMAC-SHA256      | Base64-encoded hash                                                 |
+| Twilio            | `x-twilio-signature`                                     | HMAC-SHA1        | Requires full callback URL                                          |
+| Slack             | `x-slack-signature` + `x-slack-request-timestamp`        | HMAC-SHA256      | 5-minute timestamp window                                           |
+| Paddle            | `paddle-signature`                                       | HMAC-SHA256      | `ts=timestamp;h1=hash` format                                       |
+| Linear            | `linear-signature`                                       | HMAC-SHA256      | Hex-encoded, optional `sha256=` prefix                              |
+| Clerk             | `webhook-signature` (Standard Webhooks / Svix)           | HMAC-SHA256      | Delegates to Standard Webhooks signing                              |
+| Discord           | `x-signature-ed25519` + `x-signature-timestamp`          | Ed25519          | Uses public key, not shared secret                                  |
+| Vercel            | `x-vercel-signature`                                     | HMAC-SHA1        | Hex-encoded hash                                                    |
+| GitLab            | `x-gitlab-token`                                         | Token comparison | Raw secret sent in header                                           |
+| Typeform          | `typeform-signature`                                     | HMAC-SHA256      | `sha256={base64}` format                                            |
+| Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256      | Used by Polar, Svix, Resend                                         |
+| Meta              | `x-hub-signature-256`                                    | HMAC-SHA256      | `sha256=hash`, keyed by app secret                                  |
+| Lemon Squeezy     | `x-signature`                                            | HMAC-SHA256      | Raw hex hash                                                        |
+| Coinbase Commerce | `x-cc-webhook-signature`                                 | HMAC-SHA256      | Raw hex hash                                                        |
+| Razorpay          | `x-razorpay-signature`                                   | HMAC-SHA256      | Raw hex hash                                                        |
+| Cal.com           | `x-cal-signature-256`                                    | HMAC-SHA256      | Raw hex hash                                                        |
+| Intercom          | `x-hub-signature`                                        | HMAC-SHA1        | `sha1=hash` hex-encoded                                             |
+| Telegram          | `x-telegram-bot-api-secret-token`                        | Token comparison | Raw secret token sent in header                                     |
+| Square            | `x-square-hmacsha256-signature`                          | HMAC-SHA256      | base64 over URL + body; needs `url`                                 |
+| HubSpot           | `x-hubspot-signature-v3` + `x-hubspot-request-timestamp` | HMAC-SHA256      | base64 over method+url+body+ts; needs `url`, `method`; 5-min window |
+| Mailgun           | _(body fields)_ `signature.{timestamp,token,signature}`  | HMAC-SHA256      | hex over timestamp+token; no header                                 |
+| Calendly          | `calendly-webhook-signature`                             | HMAC-SHA256      | Stripe-style `t=,v1=` hex                                           |
+| Mux               | `mux-signature`                                          | HMAC-SHA256      | Stripe-style `t=,v1=` hex                                           |
+| Sentry            | `sentry-hook-signature`                                  | HMAC-SHA256      | Raw hex hash over body                                              |
+| Bitbucket         | `x-hub-signature`                                        | HMAC-SHA256      | `sha256=hash`; detected via `x-event-key`                           |
 
 ## Verifying captured requests
 

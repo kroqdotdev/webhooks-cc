@@ -2295,7 +2295,8 @@ export async function buildTemplateSendOptions(
       signature?: { timestamp?: string; token?: string; signature?: string };
       [key: string]: unknown;
     };
-    const timestamp = parsed.signature?.timestamp ?? String(options.timestamp ?? Math.floor(Date.now() / 1000));
+    const timestamp =
+      parsed.signature?.timestamp ?? String(options.timestamp ?? Math.floor(Date.now() / 1000));
     const token = parsed.signature?.token ?? randomHex(50);
     const sig = toHex(await hmacSign("SHA-256", options.secret, `${timestamp}${token}`));
     parsed.signature = { timestamp, token, signature: sig };
@@ -2330,7 +2331,8 @@ export async function buildTemplateSendOptions(
     // `x-hub-signature`, and carries the event in the unique `x-event-key` header
     // (which is what auto-detection keys on to avoid the Intercom `sha1=` collision).
     headers["x-event-key"] = event;
-    headers["x-hub-signature"] = `sha256=${toHex(await hmacSign("SHA-256", options.secret, built.body))}`;
+    headers["x-hub-signature"] =
+      `sha256=${toHex(await hmacSign("SHA-256", options.secret, built.body))}`;
   }
 
   return {

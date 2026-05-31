@@ -1293,7 +1293,15 @@ describe("tier-2 HubSpot templates produce verifiable signed requests", () => {
 
       // Round-trip with a generously wide window so it is never time-flaky.
       expect(
-        await verifyHubSpotSignature("POST", ENDPOINT_URL, body, sig!, ts!, TEST_SECRET, 60 * 60 * 1000)
+        await verifyHubSpotSignature(
+          "POST",
+          ENDPOINT_URL,
+          body,
+          sig!,
+          ts!,
+          TEST_SECRET,
+          60 * 60 * 1000
+        )
       ).toBe(true);
       expect(
         await verifyHubSpotSignature(

@@ -445,8 +445,7 @@ const DETECTORS: readonly Detector[] = [
     provider: "hubspot",
     via: "header",
     matchedOn: "x-hubspot-signature-v3",
-    matches: (request) =>
-      getHeaderValue(request.headers, "x-hubspot-signature-v3") !== undefined,
+    matches: (request) => getHeaderValue(request.headers, "x-hubspot-signature-v3") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "0.subscriptionType")),
   },
   {
@@ -480,8 +479,7 @@ const DETECTORS: readonly Detector[] = [
     provider: "sentry",
     via: "header",
     matchedOn: "sentry-hook-signature",
-    matches: (request) =>
-      getHeaderValue(request.headers, "sentry-hook-signature") !== undefined,
+    matches: (request) => getHeaderValue(request.headers, "sentry-hook-signature") !== undefined,
     event: (request) => getEventString(getHeaderValue(request.headers, "sentry-hook-resource")),
   },
   {

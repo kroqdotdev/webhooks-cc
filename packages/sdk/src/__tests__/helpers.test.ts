@@ -438,9 +438,9 @@ describe("isHubSpotWebhook", () => {
   });
 
   it("is case-insensitive on the header", () => {
-    expect(
-      isHubSpotWebhook(makeRequest({ headers: { "X-HubSpot-Signature-V3": "abc123" } }))
-    ).toBe(true);
+    expect(isHubSpotWebhook(makeRequest({ headers: { "X-HubSpot-Signature-V3": "abc123" } }))).toBe(
+      true
+    );
   });
 
   it("returns false without the header", () => {
@@ -519,9 +519,7 @@ describe("isCalendlyWebhook", () => {
 
   it("is case-insensitive on the header", () => {
     expect(
-      isCalendlyWebhook(
-        makeRequest({ headers: { "Calendly-Webhook-Signature": "t=1,v1=ab" } })
-      )
+      isCalendlyWebhook(makeRequest({ headers: { "Calendly-Webhook-Signature": "t=1,v1=ab" } }))
     ).toBe(true);
   });
 
@@ -556,9 +554,7 @@ describe("isMuxWebhook", () => {
   });
 
   it("is case-insensitive on the header", () => {
-    expect(
-      isMuxWebhook(makeRequest({ headers: { "Mux-Signature": "t=1,v1=ab" } }))
-    ).toBe(true);
+    expect(isMuxWebhook(makeRequest({ headers: { "Mux-Signature": "t=1,v1=ab" } }))).toBe(true);
   });
 
   it("returns false without the header", () => {
@@ -592,9 +588,9 @@ describe("isSentryWebhook", () => {
   });
 
   it("is case-insensitive on the header", () => {
-    expect(
-      isSentryWebhook(makeRequest({ headers: { "Sentry-Hook-Signature": "abc123" } }))
-    ).toBe(true);
+    expect(isSentryWebhook(makeRequest({ headers: { "Sentry-Hook-Signature": "abc123" } }))).toBe(
+      true
+    );
   });
 
   it("returns false without the header", () => {

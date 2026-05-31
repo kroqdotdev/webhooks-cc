@@ -1,6 +1,6 @@
 ---
 title: "Provider Template Reference"
-description: "Detailed reference for all 21 webhook provider templates. Payload shapes, signature methods, headers, and event types for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, and Telegram."
+description: "Detailed reference for all 28 webhook provider templates. Payload shapes, signature methods, headers, and event types for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket."
 section: dashboard
 order: 3
 lastUpdated: 2026-05-31
@@ -28,12 +28,19 @@ keywords:
     "cal.com webhook",
     "intercom webhook",
     "telegram webhook",
+    "square webhook",
+    "hubspot webhook",
+    "mailgun webhook",
+    "calendly webhook",
+    "mux webhook",
+    "sentry webhook",
+    "bitbucket webhook",
     "webhook signature",
     "webhook payload",
   ]
 seo:
   ogTitle: "Webhook Provider Template Reference"
-  ogDescription: "Payload shapes, signature methods, headers, and event types for all 21 supported webhook provider templates. Covers Stripe, GitHub, Shopify, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, and more."
+  ogDescription: "Payload shapes, signature methods, headers, and event types for all 28 supported webhook provider templates. Covers Stripe, GitHub, Shopify, Meta, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, and more."
 ---
 
 Templates generate realistic payloads with correct provider headers. Providers with shared-secret or token-style signing also get matching signature headers. Use templates from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
@@ -701,3 +708,239 @@ console.log(detected);
 ```
 
 **Headers:** `x-telegram-bot-api-secret-token`
+
+---
+
+## Square
+
+**Signature:** HMAC-SHA256 over the **notification URL concatenated with the raw body**, base64-encoded in the `x-square-hmacsha256-signature` header.
+
+<Callout type="info">
+  Square mixes the destination URL into the signed payload, so verification needs the exact URL
+  Square delivers to. When verifying with the SDK, pass the `url` option (see the [signature
+  guide](/docs/guides/verify-webhook-signatures#handle-square-and-hubspot-url-and-method)).
+</Callout>
+
+| Template          | Description     |
+| ----------------- | --------------- |
+| `payment.created` | Payment created |
+| `payment.updated` | Payment updated |
+| `refund.created`  | Refund created  |
+
+**Payload shape (payment.created):**
+
+```json
+{
+  "merchant_id": "...",
+  "type": "payment.created",
+  "event_id": "uuid",
+  "created_at": "2026-05-31T12:00:00.000Z",
+  "data": {
+    "type": "payment",
+    "id": "...",
+    "object": {
+      "payment": {
+        "id": "...",
+        "amount_money": { "amount": 2000, "currency": "USD" },
+        "status": "APPROVED"
+      }
+    }
+  }
+}
+```
+
+**Headers:** `x-square-hmacsha256-signature`, `user-agent: Square-Webhooks/1.0`
+
+---
+
+## HubSpot
+
+**Signature:** HMAC-SHA256 (v3) over `{method}{requestUri}{body}{timestamp}`, base64-encoded in the `x-hubspot-signature-v3` header. The timestamp (in **milliseconds**) is sent in `x-hubspot-request-timestamp`.
+
+<Callout type="info">
+  HubSpot v3 signs the HTTP method and request URI alongside the body, and rejects signatures whose
+  timestamp is more than 5 minutes old. When verifying with the SDK, pass both the `url` and
+  `method` options (see the [signature
+  guide](/docs/guides/verify-webhook-signatures#handle-square-and-hubspot-url-and-method)).
+</Callout>
+
+| Template                 | Description              |
+| ------------------------ | ------------------------ |
+| `contact.creation`       | Contact created          |
+| `contact.propertyChange` | Contact property changed |
+| `deal.creation`          | Deal created             |
+
+**Payload shape:** HubSpot delivers a JSON **array** of subscription notifications:
+
+```json
+[
+  {
+    "eventId": 123456789,
+    "subscriptionId": 1,
+    "portalId": 123,
+    "occurredAt": 1700000000000,
+    "subscriptionType": "contact.creation",
+    "attemptNumber": 0,
+    "objectId": 1,
+    "propertyName": null,
+    "propertyValue": null
+  }
+]
+```
+
+**Headers:** `x-hubspot-signature-v3`, `x-hubspot-request-timestamp`, `user-agent: HubSpot-Webhooks/1.0`
+
+---
+
+## Mailgun
+
+**Signature:** HMAC-SHA256 over `{timestamp}{token}`, hex-encoded. Mailgun has **no signature header** — the values live in the request body under `signature.{timestamp,token,signature}`.
+
+<Callout type="info">
+  Because Mailgun signs body fields rather than a header, auto-detection keys on the presence of
+  `signature.token` and `signature.timestamp` in the body. The SDK's `verifyMailgunSignature` reads
+  the body directly and returns `false` (never throws) on malformed input.
+</Callout>
+
+| Template    | Description       |
+| ----------- | ----------------- |
+| `delivered` | Message delivered |
+| `failed`    | Delivery failed   |
+| `opened`    | Message opened    |
+
+**Payload shape (delivered):**
+
+```json
+{
+  "signature": { "timestamp": "1700000000", "token": "...", "signature": "..." },
+  "event-data": {
+    "event": "delivered",
+    "id": "...",
+    "timestamp": 1700000000,
+    "recipient": "user@example.com",
+    "message": { "headers": { "message-id": "...@example.com" } }
+  }
+}
+```
+
+**Headers:** `user-agent: Mailgun-Webhooks/1.0` (no signature header)
+
+---
+
+## Calendly
+
+**Signature:** HMAC-SHA256 over `{timestamp}.{body}`, hex-encoded in the `calendly-webhook-signature` header using the Stripe-style `t=<unix>,v1=<hex>` format.
+
+| Template                          | Description            |
+| --------------------------------- | ---------------------- |
+| `invitee.created`                 | Invitee scheduled      |
+| `invitee.canceled`                | Invitee canceled       |
+| `routing_form_submission.created` | Routing form submitted |
+
+**Payload shape (invitee.created):**
+
+```json
+{
+  "event": "invitee.created",
+  "created_at": "2026-05-31T12:00:00.000Z",
+  "payload": {
+    "email": "ada@example.com",
+    "name": "Ada",
+    "scheduled_event": {
+      "start_time": "2026-05-31T12:00:00.000Z",
+      "end_time": "2026-05-31T12:30:00.000Z",
+      "name": "30 Minute Meeting"
+    }
+  }
+}
+```
+
+**Headers:** `calendly-webhook-signature` (`t=...,v1=...`), `user-agent: Calendly-Webhooks/1.0`
+
+---
+
+## Mux
+
+**Signature:** HMAC-SHA256 over `{timestamp}.{body}`, hex-encoded in the `mux-signature` header using the Stripe-style `t=<unix>,v1=<hex>` format (identical scheme to Calendly).
+
+| Template                     | Description              |
+| ---------------------------- | ------------------------ |
+| `video.asset.created`        | Asset created            |
+| `video.asset.ready`          | Asset ready for playback |
+| `video.upload.asset_created` | Upload produced an asset |
+
+**Payload shape (video.asset.created):**
+
+```json
+{
+  "type": "video.asset.created",
+  "object": { "type": "asset", "id": "..." },
+  "id": "uuid",
+  "created_at": "2026-05-31T12:00:00.000Z",
+  "data": { "status": "preparing", "id": "..." }
+}
+```
+
+**Headers:** `mux-signature` (`t=...,v1=...`), `user-agent: Mux-Webhooks/1.0`
+
+---
+
+## Sentry
+
+**Signature:** HMAC-SHA256 over the raw body, hex-encoded in the `sentry-hook-signature` header. The resource type (e.g. `issue`, `error`) is sent in `sentry-hook-resource`, which auto-detection uses for the event name.
+
+| Template         | Description    |
+| ---------------- | -------------- |
+| `issue.created`  | Issue created  |
+| `issue.resolved` | Issue resolved |
+| `error.created`  | Error captured |
+
+**Payload shape (issue.created):**
+
+```json
+{
+  "action": "created",
+  "installation": { "uuid": "uuid" },
+  "data": {
+    "issue": {
+      "id": "...",
+      "title": "TypeError: undefined is not a function",
+      "culprit": "app/main",
+      "level": "error"
+    }
+  },
+  "actor": { "type": "application", "id": "sentry" }
+}
+```
+
+**Headers:** `sentry-hook-signature`, `sentry-hook-resource`, `user-agent: Sentry-Webhooks/1.0`
+
+---
+
+## Bitbucket
+
+**Signature:** HMAC-SHA256 over the raw body, hex-encoded in the `x-hub-signature` header with a `sha256=` prefix — the same scheme as GitHub. The event key is sent in the unique `x-event-key` header.
+
+<Callout type="info">
+  Bitbucket and Intercom both send `x-hub-signature`. Auto-detection keys on Bitbucket's unique
+  `x-event-key` header (and is ordered before Intercom) so the `sha256=` Bitbucket scheme is never
+  confused with Intercom's `sha1=` scheme.
+</Callout>
+
+| Template                | Description         |
+| ----------------------- | ------------------- |
+| `repo:push`             | Code pushed         |
+| `pullrequest:created`   | Pull request opened |
+| `pullrequest:fulfilled` | Pull request merged |
+
+**Payload shape (repo:push):**
+
+```json
+{
+  "push": { "changes": [{ "new": { "name": "main", "type": "branch" } }] },
+  "repository": { "name": "demo-repo", "full_name": "webhooks-cc/demo-repo" },
+  "actor": { "display_name": "webhooks-cc-bot" }
+}
+```
+
+**Headers:** `x-hub-signature` (`sha256=...`), `x-event-key`, `user-agent: Bitbucket-Webhooks/1.0`

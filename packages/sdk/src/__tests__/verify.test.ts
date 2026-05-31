@@ -616,7 +616,10 @@ describe("tier-2 Mailgun verification (body-embedded signature scheme)", () => {
     expect(await verifyMailgunSignature(undefined, "mg_signing_key")).toBe(false);
     // Missing signature sub-fields → false (no throw)
     expect(
-      await verifyMailgunSignature(JSON.stringify({ signature: { timestamp: "1" } }), "mg_signing_key")
+      await verifyMailgunSignature(
+        JSON.stringify({ signature: { timestamp: "1" } }),
+        "mg_signing_key"
+      )
     ).toBe(false);
 
     // Empty secret still throws (consistent with other verifiers).
@@ -626,12 +629,18 @@ describe("tier-2 Mailgun verification (body-embedded signature scheme)", () => {
 
     // Dispatcher path (no headers, body-only).
     await expect(
-      verifySignature({ body: builtBody, headers: {} }, { provider: "mailgun", secret: "mg_signing_key" })
+      verifySignature(
+        { body: builtBody, headers: {} },
+        { provider: "mailgun", secret: "mg_signing_key" }
+      )
     ).resolves.toEqual({ valid: true });
 
     // Dispatcher with malformed body resolves to false without throwing.
     await expect(
-      verifySignature({ body: "not json", headers: {} }, { provider: "mailgun", secret: "mg_signing_key" })
+      verifySignature(
+        { body: "not json", headers: {} },
+        { provider: "mailgun", secret: "mg_signing_key" }
+      )
     ).resolves.toEqual({ valid: false });
   });
 });
@@ -783,9 +792,9 @@ describe("tier-2 Bitbucket verification (sha256= hex over body)", () => {
     // Wrong secret → false
     expect(await verifyBitbucketSignature(built.body, sig, "the_wrong_key")).toBe(false);
     // Tampered body → false (signature is bound to the exact body)
-    expect(
-      await verifyBitbucketSignature(`${built.body} `, sig, "bitbucket_webhook_secret")
-    ).toBe(false);
+    expect(await verifyBitbucketSignature(`${built.body} `, sig, "bitbucket_webhook_secret")).toBe(
+      false
+    );
     // Missing header → false (no throw)
     expect(await verifyBitbucketSignature(built.body, undefined, "bitbucket_webhook_secret")).toBe(
       false
