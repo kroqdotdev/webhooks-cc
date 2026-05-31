@@ -190,6 +190,43 @@ async function sendTier2Webhook(provider: string, secret: string) {
   }
 }
 
+/**
+ * Build a fully-signed tier-2 webhook with the SDK and POST it to a marker path.
+ * Signs against the URL the manual-verify UI reconstructs from
+ * NEXT_PUBLIC_WEBHOOK_URL (its base + /w/{slug}/{marker}), so URL/method-bound
+ * providers (Square, HubSpot) line up with what the browser will prefill.
+ * Returns the URL the UI is expected to prefill for verification.
+ */
+async function sendTier2WebhookToPath(
+  provider: string,
+  secret: string,
+  marker: string
+): Promise<string> {
+  const signingUrl = `${RECEIVER_BASE_URL}/w/${endpointSlug}/${marker}`;
+  const postUrl = `${WEBHOOK_URL}/w/${endpointSlug}/${marker}`;
+  const signed = await buildTemplateSendOptions(signingUrl, {
+    provider: provider as Parameters<typeof buildTemplateSendOptions>[1]["provider"],
+    secret,
+    method: "POST",
+  });
+  const resp = await fetch(postUrl, {
+    method: signed.method ?? "POST",
+    headers: signed.headers as Record<string, string>,
+    body: signed.body as string,
+  });
+  if (resp.status !== 200) {
+    throw new Error(`receiver returned ${resp.status} for ${provider}`);
+  }
+  return signingUrl;
+}
+
+async function clearServerSigning() {
+  await admin
+    .from("endpoints")
+    .update({ signing_provider: null, signing_secret_encrypted: null, signing_header: null })
+    .eq("slug", endpointSlug);
+}
+
 // ── Endpoint Settings ──
 
 test("signing config section is visible in endpoint settings", async ({ page }) => {
@@ -497,4 +534,67 @@ test("Calendly webhook verifies server-side end-to-end (Stripe-style t=,v1= sche
 
   await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("text=Calendly").first()).toBeVisible();
+});
+
+// ── Tier-2 request-context providers: in-browser manual verification ──
+// Square/HubSpot sign the request URL (HubSpot also the method), so the
+// manual-verify UI must expose a URL (and method) field and thread them into
+// verifySignature(). Without it, selecting these providers throws
+// "...requires options.url" instead of producing a real result.
+
+test("Square manual verification (client-side) verifies with the prefilled URL", async ({
+  page,
+}) => {
+  await clearServerSigning();
+  const marker = `sq-manual-${Date.now()}`;
+  const signingUrl = await sendTier2WebhookToPath("square", "sq_signature_key", marker);
+  await new Promise((r) => setTimeout(r, 1000));
+
+  await openDashboard(page);
+  await page.locator("button").filter({ hasText: marker }).first().click();
+  await signatureTabButton(page).click();
+
+  // Manual-verify form is shown (no server-side config).
+  await expect(page.locator("text=Verify Signature").first()).toBeVisible({ timeout: 5000 });
+  await page.locator("#sig-provider").first().selectOption("square");
+
+  // The URL field should be present and prefilled to the receiver's capture URL.
+  await expect(page.locator("#sig-url").first()).toBeVisible();
+  await expect(page.locator("#sig-url").first()).toHaveValue(signingUrl);
+
+  await page.locator("#sig-secret").first().fill("sq_signature_key");
+  await page
+    .getByRole("button", { name: /^verify$/i })
+    .first()
+    .click();
+
+  await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
+});
+
+test("HubSpot manual verification (client-side) verifies with the URL + method", async ({
+  page,
+}) => {
+  await clearServerSigning();
+  const marker = `hs-manual-${Date.now()}`;
+  const signingUrl = await sendTier2WebhookToPath("hubspot", "hs_client_secret", marker);
+  await new Promise((r) => setTimeout(r, 1000));
+
+  await openDashboard(page);
+  await page.locator("button").filter({ hasText: marker }).first().click();
+  await signatureTabButton(page).click();
+
+  await expect(page.locator("text=Verify Signature").first()).toBeVisible({ timeout: 5000 });
+  await page.locator("#sig-provider").first().selectOption("hubspot");
+
+  // HubSpot exposes both a URL field (prefilled) and a method field (default POST).
+  await expect(page.locator("#sig-url").first()).toHaveValue(signingUrl);
+  await expect(page.locator("#sig-method").first()).toHaveValue("POST");
+
+  await page.locator("#sig-secret").first().fill("hs_client_secret");
+  await page
+    .getByRole("button", { name: /^verify$/i })
+    .first()
+    .click();
+
+  await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
 });

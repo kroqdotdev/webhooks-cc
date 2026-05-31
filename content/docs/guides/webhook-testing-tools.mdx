@@ -50,7 +50,7 @@ Webhook-specific development and testing platform.
 
 **What it does well:**
 
-- Signs test payloads for 20 verification providers, plus realistic SendGrid templates, which use IP allowlisting instead of signatures
+- Signs test payloads for 27 verification providers, plus realistic SendGrid templates, which use IP allowlisting instead of signatures
 - `sendTo` sends signed webhooks directly to localhost — no tunnel needed in CI
 - SDK testing utilities: `withEndpoint`, `captureDuring`, `assertRequest`, matchers
 - MCP server for AI agent integration
@@ -242,7 +242,7 @@ Mock API server with webhook capture.
 
 Each tool on this list solves a different problem. Pick based on what you need:
 
-- **Webhook capture, signing, and CI/CD testing** — webhooks.cc. Captures inbound webhooks, signs test payloads for 20 verification providers, and provides SDK utilities for automated testing.
+- **Webhook capture, signing, and CI/CD testing** — webhooks.cc. Captures inbound webhooks, signs test payloads for 27 verification providers, and provides SDK utilities for automated testing.
 - **General TCP/TLS tunneling** — ngrok. Handles any protocol, not just HTTP webhooks. Use it to expose WebSocket servers, databases, or non-HTTP services.
 - **Visual webhook automation** — Webhook.site. 40+ Custom Actions for transforming, forwarding, and routing webhooks without code. Also handles email and DNS.
 - **Production webhook routing** — Hookdeck. High-volume inbound delivery with retries, transformations, and dead letter queues. Operational infrastructure, not development tooling.
