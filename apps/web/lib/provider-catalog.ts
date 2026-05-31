@@ -70,7 +70,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   "coinbase-commerce": "your shared webhook secret",
   razorpay: "your webhook secret",
   cal: "your webhook secret",
-  intercom: "your app secret",
+  intercom: "your Intercom client secret",
   telegram: "your secret token",
 };
 

@@ -105,6 +105,13 @@ Supported providers and their signing algorithms:
 | GitLab            | Token comparison     | `x-gitlab-token`                                             |
 | Typeform          | HMAC-SHA256          | `typeform-signature`                                         |
 | Standard Webhooks | HMAC-SHA256          | `webhook-signature` (Polar, Svix, Resend)                    |
+| Meta              | HMAC-SHA256          | `x-hub-signature-256` (app secret)                           |
+| Lemon Squeezy     | HMAC-SHA256          | `x-signature`                                                |
+| Coinbase Commerce | HMAC-SHA256          | `x-cc-webhook-signature`                                     |
+| Razorpay          | HMAC-SHA256          | `x-razorpay-signature`                                       |
+| Cal.com           | HMAC-SHA256          | `x-cal-signature-256`                                        |
+| Intercom          | HMAC-SHA1            | `x-hub-signature` (`sha1=`)                                  |
+| Telegram          | Token comparison     | `x-telegram-bot-api-secret-token`                            |
 
 With ngrok, you need the real provider to send webhooks -- or you disable signature verification in your test environment. Disabling verification is common but risky: it means your tests do not cover the verification code path, and you might deploy a handler that fails signature checks in production.
 

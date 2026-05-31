@@ -310,7 +310,16 @@ const result = await verifySignature(request, {
 
 SendGrid uses IP allowlisting rather than cryptographic signature verification.
 
-Request detection helpers are exported too: `isStripeWebhook()`, `isGitHubWebhook()`, `isShopifyWebhook()`, `isSlackWebhook()`, `isTwilioWebhook()`, `isPaddleWebhook()`, `isLinearWebhook()`, `isSendGridWebhook()`, `isClerkWebhook()`, `isDiscordWebhook()`, `isVercelWebhook()`, `isGitLabWebhook()`, `isTypeformWebhook()`, `isStandardWebhook()`, `isMetaWebhook()`, `isLemonSqueezyWebhook()`, `isCoinbaseCommerceWebhook()`, `isRazorpayWebhook()`, `isCalWebhook()`, `isIntercomWebhook()`, and `isTelegramWebhook()`.
+Request detection helpers are exported for every supported provider:
+
+```text
+isStripeWebhook        isGitHubWebhook         isShopifyWebhook     isSlackWebhook
+isTwilioWebhook        isPaddleWebhook         isLinearWebhook      isSendGridWebhook
+isClerkWebhook         isDiscordWebhook        isVercelWebhook      isGitLabWebhook
+isTypeformWebhook      isStandardWebhook       isMetaWebhook        isLemonSqueezyWebhook
+isCoinbaseCommerceWebhook  isRazorpayWebhook   isCalWebhook         isIntercomWebhook
+isTelegramWebhook
+```
 
 ## Matchers, parsing, and diffing
 
