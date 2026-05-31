@@ -31,6 +31,7 @@ import {
   isHubSpotWebhook,
   isMailgunWebhook,
   isCalendlyWebhook,
+  isMuxWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -537,6 +538,42 @@ describe("isCalendlyWebhook", () => {
     expect(info?.via).toBe("header");
     expect(info?.matchedOn).toBe("calendly-webhook-signature");
     expect(info?.event).toBe("invitee.canceled");
+  });
+});
+
+describe("isMuxWebhook", () => {
+  it("detects Mux by the mux-signature header", () => {
+    expect(
+      isMuxWebhook(
+        makeRequest({
+          headers: { "mux-signature": "t=1700000000,v1=deadbeef" },
+          body: JSON.stringify({ type: "video.asset.created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isMuxWebhook(makeRequest({ headers: { "Mux-Signature": "t=1,v1=ab" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isMuxWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the body type field via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "mux-signature": "t=1700000000,v1=deadbeef" },
+        body: JSON.stringify({ type: "video.asset.ready" }),
+      })
+    );
+    expect(info?.provider).toBe("mux");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("mux-signature");
+    expect(info?.event).toBe("video.asset.ready");
   });
 });
 

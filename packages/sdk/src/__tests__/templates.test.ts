@@ -28,6 +28,7 @@ import {
   verifyHubSpotSignature,
   verifyMailgunSignature,
   verifyCalendlySignature,
+  verifyMuxSignature,
   verifySignature,
 } from "../verify";
 
@@ -1396,6 +1397,46 @@ describe("tier-2 Calendly templates produce verifiable signed requests", () => {
       const verification = await verifySignature(
         { body: result.body, headers: result.headers },
         { provider: "calendly", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Mux (Stripe-style t=,v1= scheme) ──────────────────────────
+
+describe("tier-2 Mux provider metadata", () => {
+  it("mux is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("mux");
+    expect(VERIFY_PROVIDERS).toContain("mux");
+
+    const meta = TEMPLATE_METADATA.mux;
+    expect(meta.provider).toBe("mux");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("mux-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("video.asset.created");
+    expect(meta.templates).toContain("video.asset.created");
+  });
+});
+
+describe("tier-2 Mux templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.mux.templates) {
+    it(`mux/${template} is valid JSON and the t=,v1= signature verifies over timestamp.body`, async () => {
+      const result = await buildTemplate("mux", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "mux-signature");
+      expect(sig).toBeDefined();
+      expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+      expect(await verifyMuxSignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyMuxSignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "mux", secret: TEST_SECRET }
       );
       expect(verification.valid).toBe(true);
     });

@@ -580,6 +580,28 @@ export async function verifyCalendlySignature(
 }
 
 /**
+ * Verify a Mux webhook signature. Mux uses the same Stripe-style header format
+ * `t=<timestamp>,v1=<signature>` as Calendly, this time in `mux-signature`,
+ * where the signature is the hex HMAC-SHA256 of `${timestamp}.${body}` keyed by
+ * the webhook signing secret. Reuses the shared Stripe header parser.
+ */
+export async function verifyMuxSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyMuxSignature");
+  const parsed = parseStripeHeader(signatureHeader);
+  if (!parsed) {
+    return false;
+  }
+  const expected = toHex(
+    await hmacSign("SHA-256", secret, `${parsed.timestamp}.${normalizeBody(body)}`)
+  ).toLowerCase();
+  return parsed.signatures.some((signature) => timingSafeEqual(signature, expected));
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -934,6 +956,14 @@ export async function verifySignature(
     valid = await verifyCalendlySignature(
       request.body,
       getHeader(request.headers, "calendly-webhook-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "mux") {
+    valid = await verifyMuxSignature(
+      request.body,
+      getHeader(request.headers, "mux-signature"),
       options.secret
     );
   }

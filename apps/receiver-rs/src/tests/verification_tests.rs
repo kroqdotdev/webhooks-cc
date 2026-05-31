@@ -1326,3 +1326,79 @@ fn verify_calendly_malformed_header() {
         VerificationResult::Invalid(_)
     ));
 }
+
+// ── Tier-2: Mux (Stripe-style t=,v1= HMAC-SHA256 hex, mux-signature) ──
+
+/// Build a Mux-style `t=<ts>,v1=<hex>` header signing `{ts}.{body}`.
+fn make_mux_header(secret: &str, ts: &str, body: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{ts}.{body}"));
+    format!("t={ts},v1={sig}")
+}
+
+#[test]
+fn detect_mux() {
+    let h = headers(&[("mux-signature", "t=123,v1=abc")]);
+    assert_eq!(detect_provider(&h), Some("mux"));
+}
+
+#[test]
+fn verify_mux_valid() {
+    let secret = "mux_signing_secret";
+    let body = br#"{"type":"video.asset.created"}"#;
+    let sig = make_mux_header(secret, "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("mux-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("mux", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_mux_wrong_secret() {
+    let body = br#"{"type":"video.asset.created"}"#;
+    let sig = make_mux_header("mux_signing_secret", "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("mux-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("mux", b"wrong_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mux_tampered_body() {
+    let secret = "mux_signing_secret";
+    // Sign over one body, verify against a tampered body → mismatch.
+    let sig = make_mux_header(secret, "1700000000", r#"{"type":"video.asset.created"}"#);
+    let h = headers(&[("mux-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "mux",
+            secret.as_bytes(),
+            &h,
+            br#"{"type":"video.asset.ready"}"#,
+            None,
+            None,
+            None,
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_mux_missing_header() {
+    let body = br#"{"type":"video.asset.created"}"#;
+    assert!(matches!(
+        verify_signature("mux", b"mux_signing_secret", &headers(&[]), body, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_mux_malformed_header() {
+    let body = br#"{"type":"video.asset.created"}"#;
+    let h = headers(&[("mux-signature", "garbage")]);
+    assert!(matches!(
+        verify_signature("mux", b"mux_signing_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}

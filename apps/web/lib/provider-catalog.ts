@@ -52,6 +52,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   hubspot: "HubSpot",
   mailgun: "Mailgun",
   calendly: "Calendly",
+  mux: "Mux",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -80,6 +81,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   hubspot: "your app client secret",
   mailgun: "your HTTP webhook signing key",
   calendly: "your webhook signing key",
+  mux: "your webhook signing secret",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -257,6 +259,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#006bff",
     foreground: "#ffffff",
     border: "#0050c2",
+  },
+  mux: {
+    glyph: "mux",
+    text: "MUX",
+    background: "#fb2491",
+    foreground: "#ffffff",
+    border: "#c4156f",
   },
 };
 

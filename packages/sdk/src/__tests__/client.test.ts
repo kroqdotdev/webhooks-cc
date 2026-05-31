@@ -334,6 +334,7 @@ describe("WebhooksCC", () => {
         "hubspot",
         "mailgun",
         "calendly",
+        "mux",
       ]);
     });
 

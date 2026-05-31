@@ -36,6 +36,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   hubspot: "contact.creation",
   mailgun: "delivered",
   calendly: "invitee.created",
+  mux: "video.asset.created",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -63,6 +64,7 @@ const PROVIDER_TEMPLATES = {
   hubspot: ["contact.creation", "contact.propertyChange", "deal.creation"] as const,
   mailgun: ["delivered", "failed", "opened"] as const,
   calendly: ["invitee.created", "invitee.canceled", "routing_form_submission.created"] as const,
+  mux: ["video.asset.created", "video.asset.ready", "video.upload.asset_created"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -91,6 +93,7 @@ export const TEMPLATE_PROVIDERS = [
   "hubspot",
   "mailgun",
   "calendly",
+  "mux",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -118,6 +121,7 @@ export const VERIFY_PROVIDERS = [
   "hubspot",
   "mailgun",
   "calendly",
+  "mux",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -315,6 +319,14 @@ export const TEMPLATE_METADATA = Object.freeze({
     defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.calendly,
     secretRequired: true,
     signatureHeader: "calendly-webhook-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  mux: Object.freeze({
+    provider: "mux",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.mux]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.mux,
+    secretRequired: true,
+    signatureHeader: "mux-signature",
     signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
@@ -1122,6 +1134,22 @@ function buildTemplatePayload(
       body,
       contentType: "application/json",
       headers: { "user-agent": "Calendly-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "mux") {
+    const payload = bodyOverride ?? {
+      type: event,
+      object: { type: "asset", id: randomHex(20) },
+      id: randomUuid(),
+      created_at: nowIso,
+      data: { status: "preparing", id: randomHex(20) },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Mux-Webhooks/1.0" },
     };
   }
 
@@ -2215,6 +2243,14 @@ export async function buildTemplateSendOptions(
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
     headers["calendly-webhook-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
+  }
+
+  if (provider === "mux") {
+    // Mux uses the same Stripe-style `t=<unix>,v1=<hex>` header as Calendly,
+    // signing `${timestamp}.${body}` with HMAC-SHA256 (hex).
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    headers["mux-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
   }
 
   return {

@@ -39,6 +39,7 @@ export {
   isHubSpotWebhook,
   isMailgunWebhook,
   isCalendlyWebhook,
+  isMuxWebhook,
   matchJsonField,
 } from "./helpers";
 export {
@@ -105,6 +106,7 @@ export {
   verifyHubSpotSignature,
   verifyMailgunSignature,
   verifyCalendlySignature,
+  verifyMuxSignature,
 } from "./verify";
 export type { SSEFrame } from "./sse";
 export type {

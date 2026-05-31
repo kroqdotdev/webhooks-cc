@@ -1,4 +1,4 @@
-//! Webhook signature verification for 24 providers.
+//! Webhook signature verification for 26 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -170,6 +170,8 @@ pub fn verify_signature(
         "mailgun" => verify_mailgun(secret, headers, body),
         // Calendly: Stripe-style `t=,v1=` header, HMAC-SHA256 hex over `{t}.{body}`.
         "calendly" => verify_calendly(secret, headers, body),
+        // Mux: same Stripe-style scheme as Calendly with the `mux-signature` header.
+        "mux" => verify_mux(secret, headers, body),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -272,6 +274,9 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     }
     if get_header(headers, "calendly-webhook-signature").is_some() {
         return Some("calendly");
+    }
+    if get_header(headers, "mux-signature").is_some() {
+        return Some("mux");
     }
     // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
     // GitHub (which sends the same header alongside x-hub-signature-256 +
@@ -1201,6 +1206,44 @@ fn verify_calendly(
         None => {
             return VerificationResult::Invalid(SignatureError::invalid_encoding(
                 "Could not parse calendly-webhook-signature header (expected t=...,v1=...)",
+            ));
+        }
+    };
+
+    let payload = format!("{timestamp}.{}", String::from_utf8_lossy(body));
+    let expected = hex::encode(hmac_sha256(secret, payload.as_bytes()));
+
+    if signatures
+        .iter()
+        .any(|sig| ct_str_eq(&sig.to_lowercase(), &expected))
+    {
+        VerificationResult::Valid
+    } else {
+        let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.timestamp = timestamp.parse::<i64>().ok();
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Mux: same Stripe-style scheme as Calendly (`t=...,v1=...`), HMAC-SHA256 hex
+/// over `{timestamp}.{body}`, carried in the `mux-signature` header.
+fn verify_mux(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    let header_name = "mux-signature";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+
+    let (timestamp, signatures) = match parse_stripe_header(sig_header) {
+        Some(v) => v,
+        None => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                "Could not parse mux-signature header (expected t=...,v1=...)",
             ));
         }
     };

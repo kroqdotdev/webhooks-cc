@@ -312,6 +312,11 @@ export function isCalendlyWebhook(request: Request): boolean {
   return isDetectedProvider(request, "calendly");
 }
 
+/** Check if a request looks like a Mux webhook. */
+export function isMuxWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "mux");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -453,6 +458,13 @@ const DETECTORS: readonly Detector[] = [
     matches: (request) =>
       getHeaderValue(request.headers, "calendly-webhook-signature") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "event")),
+  },
+  {
+    provider: "mux",
+    via: "header",
+    matchedOn: "mux-signature",
+    matches: (request) => getHeaderValue(request.headers, "mux-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "type")),
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`

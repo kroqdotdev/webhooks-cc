@@ -26,6 +26,7 @@ import {
   verifyHubSpotSignature,
   verifyMailgunSignature,
   verifyCalendlySignature,
+  verifyMuxSignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -671,6 +672,49 @@ describe("tier-2 Calendly verification (Stripe-style t=,v1= scheme)", () => {
       verifySignature(
         { body: built.body, headers: { "calendly-webhook-signature": sig } },
         { provider: "calendly", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Mux verification (Stripe-style t=,v1= scheme)", () => {
+  it("verifies Mux signatures over t.body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "mux",
+      secret: "mux_signing_secret",
+    });
+    const sig = built.headers["mux-signature"];
+    expect(sig).toBeDefined();
+    // Stripe-style header shape: t=<unix>,v1=<hex>
+    expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+    expect(await verifyMuxSignature(built.body, sig, "mux_signing_secret")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyMuxSignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifyMuxSignature(`${built.body} `, sig, "mux_signing_secret")).toBe(false);
+    // Missing / malformed header → false (no throw)
+    expect(await verifyMuxSignature(built.body, undefined, "mux_signing_secret")).toBe(false);
+    expect(await verifyMuxSignature(built.body, "garbage", "mux_signing_secret")).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifyMuxSignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "Mux-Signature": sig } },
+        { provider: "mux", secret: "mux_signing_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "mux-signature": sig } },
+        { provider: "mux", secret: "the_wrong_key" }
       )
     ).resolves.toEqual({ valid: false });
   });
