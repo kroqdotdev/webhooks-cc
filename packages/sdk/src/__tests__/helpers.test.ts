@@ -30,6 +30,7 @@ import {
   isSquareWebhook,
   isHubSpotWebhook,
   isMailgunWebhook,
+  isCalendlyWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -498,6 +499,44 @@ describe("isMailgunWebhook", () => {
     expect(info?.provider).toBe("mailgun");
     expect(info?.via).toBe("body");
     expect(info?.event).toBe("failed");
+  });
+});
+
+describe("isCalendlyWebhook", () => {
+  it("detects Calendly by the calendly-webhook-signature header", () => {
+    expect(
+      isCalendlyWebhook(
+        makeRequest({
+          headers: { "calendly-webhook-signature": "t=1700000000,v1=deadbeef" },
+          body: JSON.stringify({ event: "invitee.created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isCalendlyWebhook(
+        makeRequest({ headers: { "Calendly-Webhook-Signature": "t=1,v1=ab" } })
+      )
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isCalendlyWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the body event field via detectWebhookInfo", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "calendly-webhook-signature": "t=1700000000,v1=deadbeef" },
+        body: JSON.stringify({ event: "invitee.canceled" }),
+      })
+    );
+    expect(info?.provider).toBe("calendly");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("calendly-webhook-signature");
+    expect(info?.event).toBe("invitee.canceled");
   });
 });
 

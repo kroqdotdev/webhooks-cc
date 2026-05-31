@@ -27,6 +27,7 @@ import {
   verifySquareSignature,
   verifyHubSpotSignature,
   verifyMailgunSignature,
+  verifyCalendlySignature,
   verifySignature,
 } from "../verify";
 
@@ -1355,6 +1356,46 @@ describe("tier-2 Mailgun templates produce verifiable body-embedded signatures",
       const verification = await verifySignature(
         { body: result.body, headers: result.headers },
         { provider: "mailgun", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Calendly (Stripe-style t=,v1= scheme) ──────────────────────
+
+describe("tier-2 Calendly provider metadata", () => {
+  it("calendly is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("calendly");
+    expect(VERIFY_PROVIDERS).toContain("calendly");
+
+    const meta = TEMPLATE_METADATA.calendly;
+    expect(meta.provider).toBe("calendly");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("calendly-webhook-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("invitee.created");
+    expect(meta.templates).toContain("invitee.created");
+  });
+});
+
+describe("tier-2 Calendly templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.calendly.templates) {
+    it(`calendly/${template} is valid JSON and the t=,v1= signature verifies over timestamp.body`, async () => {
+      const result = await buildTemplate("calendly", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "calendly-webhook-signature");
+      expect(sig).toBeDefined();
+      expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+      expect(await verifyCalendlySignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyCalendlySignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "calendly", secret: TEST_SECRET }
       );
       expect(verification.valid).toBe(true);
     });

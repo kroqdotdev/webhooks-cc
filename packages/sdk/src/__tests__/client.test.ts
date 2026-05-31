@@ -333,6 +333,7 @@ describe("WebhooksCC", () => {
         "square",
         "hubspot",
         "mailgun",
+        "calendly",
       ]);
     });
 

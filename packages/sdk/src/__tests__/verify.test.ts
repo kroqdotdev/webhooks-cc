@@ -25,6 +25,7 @@ import {
   verifySquareSignature,
   verifyHubSpotSignature,
   verifyMailgunSignature,
+  verifyCalendlySignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -628,6 +629,49 @@ describe("tier-2 Mailgun verification (body-embedded signature scheme)", () => {
     // Dispatcher with malformed body resolves to false without throwing.
     await expect(
       verifySignature({ body: "not json", headers: {} }, { provider: "mailgun", secret: "mg_signing_key" })
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Calendly verification (Stripe-style t=,v1= scheme)", () => {
+  it("verifies Calendly signatures over t.body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "calendly",
+      secret: "cal_signing_key",
+    });
+    const sig = built.headers["calendly-webhook-signature"];
+    expect(sig).toBeDefined();
+    // Stripe-style header shape: t=<unix>,v1=<hex>
+    expect(sig).toMatch(/^t=\d+,v1=[0-9a-f]+$/);
+
+    expect(await verifyCalendlySignature(built.body, sig, "cal_signing_key")).toBe(true);
+    // Wrong secret → false
+    expect(await verifyCalendlySignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifyCalendlySignature(`${built.body} `, sig, "cal_signing_key")).toBe(false);
+    // Missing / malformed header → false (no throw)
+    expect(await verifyCalendlySignature(built.body, undefined, "cal_signing_key")).toBe(false);
+    expect(await verifyCalendlySignature(built.body, "garbage", "cal_signing_key")).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifyCalendlySignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "Calendly-Webhook-Signature": sig } },
+        { provider: "calendly", secret: "cal_signing_key" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "calendly-webhook-signature": sig } },
+        { provider: "calendly", secret: "the_wrong_key" }
+      )
     ).resolves.toEqual({ valid: false });
   });
 });

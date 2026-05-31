@@ -51,6 +51,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   square: "Square",
   hubspot: "HubSpot",
   mailgun: "Mailgun",
+  calendly: "Calendly",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -78,6 +79,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   square: "your signature key",
   hubspot: "your app client secret",
   mailgun: "your HTTP webhook signing key",
+  calendly: "your webhook signing key",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -248,6 +250,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#c02126",
     foreground: "#ffffff",
     border: "#8f1419",
+  },
+  calendly: {
+    glyph: "calendly",
+    text: "CY",
+    background: "#006bff",
+    foreground: "#ffffff",
+    border: "#0050c2",
   },
 };
 

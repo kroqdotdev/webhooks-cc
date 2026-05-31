@@ -558,6 +558,28 @@ export async function verifyMailgunSignature(
 }
 
 /**
+ * Verify a Calendly webhook signature. Calendly uses the Stripe-style header
+ * format `t=<timestamp>,v1=<signature>` in `calendly-webhook-signature`, where
+ * the signature is the hex HMAC-SHA256 of `${timestamp}.${body}` keyed by the
+ * webhook signing key. Reuses the shared Stripe header parser.
+ */
+export async function verifyCalendlySignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyCalendlySignature");
+  const parsed = parseStripeHeader(signatureHeader);
+  if (!parsed) {
+    return false;
+  }
+  const expected = toHex(
+    await hmacSign("SHA-256", secret, `${parsed.timestamp}.${normalizeBody(body)}`)
+  ).toLowerCase();
+  return parsed.signatures.some((signature) => timingSafeEqual(signature, expected));
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -906,6 +928,14 @@ export async function verifySignature(
 
   if (options.provider === "mailgun") {
     valid = await verifyMailgunSignature(request.body, options.secret);
+  }
+
+  if (options.provider === "calendly") {
+    valid = await verifyCalendlySignature(
+      request.body,
+      getHeader(request.headers, "calendly-webhook-signature"),
+      options.secret
+    );
   }
 
   return { valid };

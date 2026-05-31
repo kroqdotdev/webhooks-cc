@@ -307,6 +307,11 @@ export function isMailgunWebhook(request: Request): boolean {
   return isDetectedProvider(request, "mailgun");
 }
 
+/** Check if a request looks like a Calendly webhook. */
+export function isCalendlyWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "calendly");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -440,6 +445,14 @@ const DETECTORS: readonly Detector[] = [
       extractJsonField(request, "signature.token") !== undefined &&
       extractJsonField(request, "signature.timestamp") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "event-data.event")),
+  },
+  {
+    provider: "calendly",
+    via: "header",
+    matchedOn: "calendly-webhook-signature",
+    matches: (request) =>
+      getHeaderValue(request.headers, "calendly-webhook-signature") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event")),
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`

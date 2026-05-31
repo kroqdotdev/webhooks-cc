@@ -1250,3 +1250,79 @@ fn mailgun_is_not_auto_detected() {
         VerificationResult::Valid
     ));
 }
+
+// ── Tier-2: Calendly (Stripe-style t=,v1= HMAC-SHA256 hex) ──
+
+/// Build a Calendly-style `t=<ts>,v1=<hex>` header signing `{ts}.{body}`.
+fn make_calendly_header(secret: &str, ts: &str, body: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{ts}.{body}"));
+    format!("t={ts},v1={sig}")
+}
+
+#[test]
+fn detect_calendly() {
+    let h = headers(&[("calendly-webhook-signature", "t=123,v1=abc")]);
+    assert_eq!(detect_provider(&h), Some("calendly"));
+}
+
+#[test]
+fn verify_calendly_valid() {
+    let secret = "cal_signing_key";
+    let body = br#"{"event":"invitee.created"}"#;
+    let sig = make_calendly_header(secret, "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("calendly-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("calendly", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_calendly_wrong_secret() {
+    let body = br#"{"event":"invitee.created"}"#;
+    let sig = make_calendly_header("cal_signing_key", "1700000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("calendly-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("calendly", b"wrong_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_calendly_tampered_body() {
+    let secret = "cal_signing_key";
+    // Sign over one body, verify against a tampered body → mismatch.
+    let sig = make_calendly_header(secret, "1700000000", r#"{"event":"invitee.created"}"#);
+    let h = headers(&[("calendly-webhook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "calendly",
+            secret.as_bytes(),
+            &h,
+            br#"{"event":"invitee.canceled"}"#,
+            None,
+            None,
+            None,
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_calendly_missing_header() {
+    let body = br#"{"event":"invitee.created"}"#;
+    assert!(matches!(
+        verify_signature("calendly", b"cal_signing_key", &headers(&[]), body, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_calendly_malformed_header() {
+    let body = br#"{"event":"invitee.created"}"#;
+    let h = headers(&[("calendly-webhook-signature", "garbage")]);
+    assert!(matches!(
+        verify_signature("calendly", b"cal_signing_key", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}

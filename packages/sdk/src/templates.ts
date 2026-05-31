@@ -35,6 +35,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   square: "payment.created",
   hubspot: "contact.creation",
   mailgun: "delivered",
+  calendly: "invitee.created",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -61,6 +62,7 @@ const PROVIDER_TEMPLATES = {
   square: ["payment.created", "payment.updated", "refund.created"] as const,
   hubspot: ["contact.creation", "contact.propertyChange", "deal.creation"] as const,
   mailgun: ["delivered", "failed", "opened"] as const,
+  calendly: ["invitee.created", "invitee.canceled", "routing_form_submission.created"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -88,6 +90,7 @@ export const TEMPLATE_PROVIDERS = [
   "square",
   "hubspot",
   "mailgun",
+  "calendly",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -114,6 +117,7 @@ export const VERIFY_PROVIDERS = [
   "square",
   "hubspot",
   "mailgun",
+  "calendly",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -303,6 +307,14 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: true,
     // Mailgun signs body fields (signature.{timestamp,token,signature}); there
     // is no signature header, so signatureHeader is intentionally omitted.
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  calendly: Object.freeze({
+    provider: "calendly",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.calendly]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.calendly,
+    secretRequired: true,
+    signatureHeader: "calendly-webhook-signature",
     signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
@@ -1088,6 +1100,28 @@ function buildTemplatePayload(
       body,
       contentType: "application/json",
       headers: { "user-agent": "Mailgun-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "calendly") {
+    const payload = bodyOverride ?? {
+      event,
+      created_at: nowIso,
+      payload: {
+        email: "ada@example.com",
+        name: "Ada",
+        scheduled_event: {
+          start_time: nowIso,
+          end_time: nowIso,
+          name: "30 Minute Meeting",
+        },
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Calendly-Webhooks/1.0" },
     };
   }
 
@@ -2173,6 +2207,14 @@ export async function buildTemplateSendOptions(
     const sig = toHex(await hmacSign("SHA-256", options.secret, `${timestamp}${token}`));
     parsed.signature = { timestamp, token, signature: sig };
     built.body = JSON.stringify(parsed);
+  }
+
+  if (provider === "calendly") {
+    // Calendly uses the Stripe-style `t=<unix>,v1=<hex>` header, signing
+    // `${timestamp}.${body}` with HMAC-SHA256 (hex).
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    headers["calendly-webhook-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
   }
 
   return {
