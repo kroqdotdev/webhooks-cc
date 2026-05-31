@@ -926,7 +926,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       method: z
         .string()
         .optional()
-        .describe("Original HTTP method. Required for HubSpot v3 verification (defaults to POST)."),
+        .describe(
+          "Original HTTP method used when the signature was generated. Used by HubSpot v3 verification; the SDK assumes POST when omitted."
+        ),
     },
     withErrorHandling(async ({ requestId, provider, secret, publicKey, url, method }) => {
       const request = await client.requests.get(requestId);

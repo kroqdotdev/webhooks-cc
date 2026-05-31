@@ -480,7 +480,18 @@ const DETECTORS: readonly Detector[] = [
     via: "header",
     matchedOn: "sentry-hook-signature",
     matches: (request) => getHeaderValue(request.headers, "sentry-hook-signature") !== undefined,
-    event: (request) => getEventString(getHeaderValue(request.headers, "sentry-hook-resource")),
+    // The `sentry-hook-resource` header carries only the resource (e.g. `issue`);
+    // the action (`created`/`resolved`) lives in the body. Combine them into the
+    // full event (`issue.created`) when the action is present, else fall back to
+    // the bare resource.
+    event: (request) => {
+      const resource = getHeaderValue(request.headers, "sentry-hook-resource");
+      const action = extractJsonField<string>(request, "action");
+      if (resource && typeof action === "string" && action.length > 0) {
+        return getEventString(`${resource}.${action}`);
+      }
+      return getEventString(resource);
+    },
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`

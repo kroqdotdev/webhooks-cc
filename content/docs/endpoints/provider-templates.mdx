@@ -43,7 +43,7 @@ seo:
   ogDescription: "Payload shapes, signature methods, headers, and event types for all 28 supported webhook provider templates. Covers Stripe, GitHub, Shopify, Meta, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, and more."
 ---
 
-Templates generate realistic payloads with correct provider headers. Providers with shared-secret or token-style signing also get matching signature headers. Use templates from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
+Templates generate realistic payloads with correct provider headers. Providers with shared-secret or token-style signing also get matching signature material — usually a signature header, except Mailgun, which embeds its signature fields in the request body. Use templates from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
 
 ## Use templates from code
 

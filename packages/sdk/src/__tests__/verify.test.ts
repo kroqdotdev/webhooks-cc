@@ -543,6 +543,62 @@ describe("tier-2 HubSpot verification (method + URI + body + timestamp scheme)",
     ).resolves.toEqual({ valid: true });
   });
 
+  it("decodes HubSpot's reserved-character map in the signed URI", async () => {
+    // HubSpot decodes a documented set of percent-encoded chars before signing.
+    // The signer normalizes the URI, so a request signed for an encoded URL must
+    // verify against both the encoded and the decoded form of that same URL.
+    const encodedUrl = "https://go.webhooks.cc/w/demo%2Fteam%40acme?ids=1%2C2%3B3";
+    const decodedUrl = "https://go.webhooks.cc/w/demo/team@acme?ids=1,2;3";
+    const nowSec = Math.floor(Date.now() / 1000);
+    const built = await client.buildRequest(encodedUrl, {
+      provider: "hubspot",
+      secret: "hs_app_client_secret",
+      body: [{ subscriptionType: "contact.creation", objectId: 1 }],
+      timestamp: nowSec,
+    });
+    const sig = built.headers["x-hubspot-signature-v3"];
+    const ts = built.headers["x-hubspot-request-timestamp"];
+    const wide = 60 * 60 * 1000;
+
+    // Encoded URL verifies (verifier applies the same decode as the signer).
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        encodedUrl,
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(true);
+    // Pre-decoded URL also verifies — proving the signature was computed over the
+    // decoded URI, matching what real HubSpot produces.
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        decodedUrl,
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(true);
+    // A genuinely different URL still fails.
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        "https://go.webhooks.cc/w/demo/other@acme?ids=1,2;3",
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(false);
+  });
+
   it("rejects a stale timestamp (older than the freshness window)", async () => {
     const url = "https://go.webhooks.cc/w/demo";
     // Sign with a deterministic timestamp ~10 minutes in the past.

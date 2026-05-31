@@ -129,7 +129,9 @@ fn hmac_sha1(secret: &[u8], payload: &[u8]) -> Vec<u8> {
 /// - `headers`: the filtered request headers (lowercase keys from the webhook handler).
 /// - `body`: the raw request body bytes.
 /// - `signing_header`: custom header name (only used for "generic-hmac" provider).
-/// - `request_url`: the full URL (only used for Twilio which signs the URL).
+/// - `request_url`: the full request URL (used by Twilio, Square, and HubSpot, which bind the
+///   signature to the URL the webhook was delivered to).
+/// - `method`: the HTTP method (used by HubSpot v3, which signs `method + uri + body + timestamp`).
 pub fn verify_signature(
     provider: &str,
     secret: &[u8],
@@ -1020,7 +1022,7 @@ fn verify_telegram(secret: &[u8], headers: &HashMap<String, String>) -> Verifica
     } else {
         let err = SignatureError {
             code: "mismatch",
-            expected: None, // Don't leak the expected token
+            expected: None,                     // Don't leak the expected token
             received: Some(truncate(token, 8)), // Show first 8 chars only
             timestamp: None,
             header: Some(header_name.to_string()),
@@ -1138,10 +1140,13 @@ fn verify_hubspot(
         return VerificationResult::Invalid(err);
     }
 
-    // Signed payload: method + uri + raw body + timestamp.
+    // Signed payload: method + uri + raw body + timestamp. HubSpot decodes a
+    // documented set of reserved percent-encoded characters in the URI before
+    // signing, so apply the same map to match signatures for URLs containing them.
+    let decoded_uri = decode_hubspot_uri(url);
     let mut payload = Vec::new();
     payload.extend_from_slice(method.as_bytes());
-    payload.extend_from_slice(url.as_bytes());
+    payload.extend_from_slice(decoded_uri.as_bytes());
     payload.extend_from_slice(body);
     payload.extend_from_slice(timestamp.as_bytes());
 
@@ -1156,6 +1161,38 @@ fn verify_hubspot(
         err.header = Some(sig_header_name.to_string());
         VerificationResult::Invalid(err)
     }
+}
+
+/// Decode the reserved percent-encoded characters that HubSpot v3 normalizes in
+/// the request URI before signing (`method + uri + body + timestamp`). The `?`
+/// query separator is intentionally left untouched, and none of the decoded
+/// characters is `%`, so a single left-to-right replacement pass cannot create a
+/// new escape sequence. Matching is case-sensitive on the uppercase encodings
+/// HubSpot emits (RFC 3986 recommends uppercase hex).
+///
+/// See: https://developers.hubspot.com/docs/apps/legacy-apps/authentication/validating-requests
+fn decode_hubspot_uri(uri: &str) -> String {
+    const REPLACEMENTS: &[(&str, &str)] = &[
+        ("%3A", ":"),
+        ("%2F", "/"),
+        ("%3F", "?"),
+        ("%40", "@"),
+        ("%21", "!"),
+        ("%24", "$"),
+        ("%27", "'"),
+        ("%28", "("),
+        ("%29", ")"),
+        ("%2A", "*"),
+        ("%2C", ","),
+        ("%3B", ";"),
+    ];
+    let mut decoded = uri.to_string();
+    for (encoded, plain) in REPLACEMENTS {
+        if decoded.contains(encoded) {
+            decoded = decoded.replace(encoded, plain);
+        }
+    }
+    decoded
 }
 
 /// Mailgun: HMAC-SHA256 hex over `timestamp + token`. Unlike every other
@@ -1258,11 +1295,7 @@ fn verify_calendly(
 
 /// Mux: same Stripe-style scheme as Calendly (`t=...,v1=...`), HMAC-SHA256 hex
 /// over `{timestamp}.{body}`, carried in the `mux-signature` header.
-fn verify_mux(
-    secret: &[u8],
-    headers: &HashMap<String, String>,
-    body: &[u8],
-) -> VerificationResult {
+fn verify_mux(secret: &[u8], headers: &HashMap<String, String>, body: &[u8]) -> VerificationResult {
     let header_name = "mux-signature";
     let Some(sig_header) = get_header(headers, header_name) else {
         return VerificationResult::Skipped(SignatureError::missing_header(header_name));

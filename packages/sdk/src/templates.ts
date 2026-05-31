@@ -1178,19 +1178,45 @@ function buildTemplatePayload(
   }
 
   if (provider === "sentry") {
-    const payload = bodyOverride ?? {
-      action: "created",
-      installation: { uuid: randomUuid() },
-      data: {
-        issue: {
-          id: randomDigits(10),
-          title: "TypeError: undefined is not a function",
-          culprit: "app/main",
-          level: "error",
-        },
+    // Sentry's resource (issue vs error) and action vary by event, and the body
+    // must agree with the `sentry-hook-resource` header + selected template.
+    const issueData = {
+      issue: {
+        id: randomDigits(10),
+        title: "TypeError: undefined is not a function",
+        culprit: "app/main",
+        level: "error",
       },
-      actor: { type: "application", id: "sentry" },
     };
+    const payloadByTemplate: Record<string, unknown> = {
+      "issue.created": {
+        action: "created",
+        installation: { uuid: randomUuid() },
+        data: issueData,
+        actor: { type: "application", id: "sentry" },
+      },
+      "issue.resolved": {
+        action: "resolved",
+        installation: { uuid: randomUuid() },
+        data: issueData,
+        actor: { type: "user", id: randomDigits(7), name: "webhooks-cc-bot" },
+      },
+      "error.created": {
+        action: "created",
+        installation: { uuid: randomUuid() },
+        data: {
+          error: {
+            event_id: randomHex(32),
+            title: "TypeError: undefined is not a function",
+            level: "error",
+            culprit: "app/main",
+          },
+        },
+        actor: { type: "application", id: "sentry" },
+      },
+    };
+    const payload =
+      bodyOverride ?? payloadByTemplate[template] ?? payloadByTemplate["issue.created"];
     const body = typeof payload === "string" ? payload : JSON.stringify(payload);
     return {
       body,
@@ -1200,16 +1226,33 @@ function buildTemplatePayload(
   }
 
   if (provider === "bitbucket") {
-    const payload = bodyOverride ?? {
-      push: {
-        changes: [{ new: { name: "main", type: "branch" } }],
+    // `repo:push` and `pullrequest:*` events have entirely different payload
+    // shapes; emit the one matching the selected template so PR consumers get a
+    // `pullrequest` object rather than a misleading `push.changes` body.
+    const repository = { name: "demo-repo", full_name: "webhooks-cc/demo-repo" };
+    const actor = { display_name: "webhooks-cc-bot" };
+    const pullRequest = (state: string) => ({
+      pullrequest: {
+        id: Number(randomDigits(4)),
+        title: "Add tier-2 webhook providers",
+        state,
+        source: { branch: { name: "feature/tier-2" } },
+        destination: { branch: { name: "main" } },
+        author: actor,
       },
-      repository: {
-        name: "demo-repo",
-        full_name: "webhooks-cc/demo-repo",
+      repository,
+      actor,
+    });
+    const payloadByTemplate: Record<string, unknown> = {
+      "repo:push": {
+        push: { changes: [{ new: { name: "main", type: "branch" } }] },
+        repository,
+        actor,
       },
-      actor: { display_name: "webhooks-cc-bot" },
+      "pullrequest:created": pullRequest("OPEN"),
+      "pullrequest:fulfilled": pullRequest("MERGED"),
     };
+    const payload = bodyOverride ?? payloadByTemplate[template] ?? payloadByTemplate["repo:push"];
     const body = typeof payload === "string" ? payload : JSON.stringify(payload);
     return {
       body,
@@ -1898,6 +1941,37 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * HubSpot v3 signs over `method + requestUri + body + timestamp`, where the URI
+ * has a documented set of reserved percent-encoded characters decoded first.
+ * Apply the exact same map on both the signing and verifying sides so the HMAC
+ * input matches what HubSpot produces for URLs containing these characters.
+ *
+ * Matching is case-sensitive on the uppercase encodings HubSpot emits (RFC 3986
+ * recommends uppercase hex); the `?` query separator is left untouched. None of
+ * the decoded characters is `%`, so a single left-to-right pass cannot create a
+ * new escape sequence.
+ *
+ * @see https://developers.hubspot.com/docs/apps/legacy-apps/authentication/validating-requests
+ */
+export function decodeHubSpotUri(uri: string): string {
+  const DECODE_MAP: Record<string, string> = {
+    "%3A": ":",
+    "%2F": "/",
+    "%3F": "?",
+    "%40": "@",
+    "%21": "!",
+    "%24": "$",
+    "%27": "'",
+    "%28": "(",
+    "%29": ")",
+    "%2A": "*",
+    "%2C": ",",
+    "%3B": ";",
+  };
+  return uri.replace(/%(?:3A|2F|3F|40|21|24|27|28|29|2A|2C|3B)/g, (match) => DECODE_MAP[match]);
+}
+
 function fromBase64(str: string): Uint8Array {
   if (typeof atob !== "function") {
     return new Uint8Array(Buffer.from(str, "base64"));
@@ -2279,9 +2353,11 @@ export async function buildTemplateSendOptions(
   }
 
   if (provider === "hubspot") {
-    // HubSpot v3 signs method + request URI + raw body + timestamp (in ms).
+    // HubSpot v3 signs method + request URI + raw body + timestamp (in ms). The
+    // URI is decoded with HubSpot's reserved-character map before signing, so
+    // the generated signature matches HubSpot for URLs containing those chars.
     const timestamp = (options.timestamp ?? Math.floor(Date.now() / 1000)) * 1000;
-    const base = `${method}${endpointUrl}${built.body}${timestamp}`;
+    const base = `${method}${decodeHubSpotUri(endpointUrl)}${built.body}${timestamp}`;
     const signature = await hmacSign("SHA-256", options.secret, base);
     headers["x-hubspot-request-timestamp"] = String(timestamp);
     headers["x-hubspot-signature-v3"] = toBase64(signature);

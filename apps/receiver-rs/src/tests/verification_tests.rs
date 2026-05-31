@@ -1084,6 +1084,26 @@ fn verify_hubspot_valid() {
 }
 
 #[test]
+fn verify_hubspot_decodes_reserved_uri_chars() {
+    // HubSpot signs over the URI with its reserved percent-encoded chars decoded.
+    // Sign over the DECODED url, but deliver the request to the ENCODED url: the
+    // verifier must normalize it back and still match.
+    let encoded_url = "https://go.webhooks.cc/w/demo%2Fteam%40acme?ids=1%2C2%3B3";
+    let decoded_url = "https://go.webhooks.cc/w/demo/team@acme?ids=1,2;3";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", decoded_url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(encoded_url), Some("POST")),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
 fn verify_hubspot_wrong_secret() {
     let url = "https://go.webhooks.cc/w/demo";
     let body = br#"[{"subscriptionType":"contact.creation"}]"#;

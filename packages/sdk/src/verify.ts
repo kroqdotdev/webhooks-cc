@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import {
   buildTwilioSignaturePayload,
+  decodeHubSpotUri,
   decodeStandardWebhookSecret,
   hmacSign,
   hmacSignRaw,
@@ -483,9 +484,11 @@ export async function verifySquareSignature(
  * `base64(HMAC-SHA256(clientSecret, requestMethod + requestUri + rawBody + timestamp))`
  * and sends it in `x-hubspot-signature-v3`, alongside the request timestamp (in
  * milliseconds) in `x-hubspot-request-timestamp`. Because the signature is bound
- * to the exact method and URI, the caller must supply both. Signatures with a
- * timestamp older than `maxAgeMs` (5 minutes by default) are rejected to defeat
- * replay attacks.
+ * to the exact method and URI, the caller must supply both. The URI is decoded
+ * with HubSpot's reserved-character map (see {@link decodeHubSpotUri}) before
+ * signing, so URLs containing characters like `%2F`/`%40` verify correctly.
+ * Signatures with a timestamp older than `maxAgeMs` (5 minutes by default) are
+ * rejected to defeat replay attacks.
  */
 export async function verifyHubSpotSignature(
   method: string,
@@ -504,7 +507,7 @@ export async function verifyHubSpotSignature(
   if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > maxAgeMs) {
     return false;
   }
-  const base = `${method.toUpperCase()}${url}${normalizeBody(body)}${timestamp}`;
+  const base = `${method.toUpperCase()}${decodeHubSpotUri(url)}${normalizeBody(body)}${timestamp}`;
   const expected = toBase64(await hmacSign("SHA-256", secret, base));
   return timingSafeEqual(signatureHeader.trim(), expected);
 }

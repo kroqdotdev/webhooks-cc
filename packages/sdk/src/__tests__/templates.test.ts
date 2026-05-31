@@ -1331,12 +1331,11 @@ describe("tier-2 Mailgun provider metadata", () => {
     expect(TEMPLATE_PROVIDERS).toContain("mailgun");
     expect(VERIFY_PROVIDERS).toContain("mailgun");
 
-    const meta: { signatureHeader?: string } & typeof TEMPLATE_METADATA.mailgun =
-      TEMPLATE_METADATA.mailgun;
+    const meta = TEMPLATE_METADATA.mailgun;
     expect(meta.provider).toBe("mailgun");
     expect(meta.secretRequired).toBe(true);
     // Mailgun signs body fields, not a header — signatureHeader is omitted.
-    expect(meta.signatureHeader).toBeUndefined();
+    expect("signatureHeader" in meta).toBe(false);
     expect(meta.signatureAlgorithm).toBe("hmac-sha256");
     expect(meta.defaultTemplate).toBe("delivered");
     expect(meta.templates).toContain("delivered");
@@ -1371,6 +1370,50 @@ describe("tier-2 Mailgun templates produce verifiable body-embedded signatures",
       expect(verification.valid).toBe(true);
     });
   }
+});
+
+describe("tier-2 Sentry templates reflect the selected event", () => {
+  it("derives the action and resource from the chosen template", async () => {
+    const issueCreated = await buildTemplate("sentry", { template: "issue.created" });
+    expect((parseBody(issueCreated.body) as { action: string }).action).toBe("created");
+    expect(getHeader(issueCreated.headers, "sentry-hook-resource")).toBe("issue");
+
+    const issueResolved = await buildTemplate("sentry", { template: "issue.resolved" });
+    const resolved = parseBody(issueResolved.body) as { action: string; data: unknown };
+    expect(resolved.action).toBe("resolved");
+    expect(getHeader(issueResolved.headers, "sentry-hook-resource")).toBe("issue");
+
+    const errorCreated = await buildTemplate("sentry", { template: "error.created" });
+    const error = parseBody(errorCreated.body) as { action: string; data: { error?: unknown } };
+    expect(error.action).toBe("created");
+    expect(error.data.error).toBeDefined();
+    expect(getHeader(errorCreated.headers, "sentry-hook-resource")).toBe("error");
+  });
+});
+
+describe("tier-2 Bitbucket templates emit the right payload shape", () => {
+  it("repo:push produces a push body; pullrequest:* produce a pullrequest body", async () => {
+    const push = await buildTemplate("bitbucket", { template: "repo:push" });
+    const pushBody = parseBody(push.body) as { push?: unknown; pullrequest?: unknown };
+    expect(pushBody.push).toBeDefined();
+    expect(pushBody.pullrequest).toBeUndefined();
+    expect(getHeader(push.headers, "x-event-key")).toBe("repo:push");
+
+    const created = await buildTemplate("bitbucket", { template: "pullrequest:created" });
+    const createdBody = created.body;
+    const prCreated = parseBody(createdBody) as {
+      push?: unknown;
+      pullrequest?: { state: string };
+    };
+    expect(prCreated.push).toBeUndefined();
+    expect(prCreated.pullrequest?.state).toBe("OPEN");
+    expect(getHeader(created.headers, "x-event-key")).toBe("pullrequest:created");
+
+    const fulfilled = await buildTemplate("bitbucket", { template: "pullrequest:fulfilled" });
+    const prFulfilled = parseBody(fulfilled.body) as { pullrequest?: { state: string } };
+    expect(prFulfilled.pullrequest?.state).toBe("MERGED");
+    expect(getHeader(fulfilled.headers, "x-event-key")).toBe("pullrequest:fulfilled");
+  });
 });
 
 // ─── Tier-2: Calendly (Stripe-style t=,v1= scheme) ──────────────────────

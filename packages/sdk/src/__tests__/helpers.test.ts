@@ -597,7 +597,7 @@ describe("isSentryWebhook", () => {
     expect(isSentryWebhook(makeRequest())).toBe(false);
   });
 
-  it("extracts the event resource from the sentry-hook-resource header", () => {
+  it("builds the full event from the resource header + body action", () => {
     const info = detectWebhookInfo(
       makeRequest({
         headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
@@ -607,6 +607,16 @@ describe("isSentryWebhook", () => {
     expect(info?.provider).toBe("sentry");
     expect(info?.via).toBe("header");
     expect(info?.matchedOn).toBe("sentry-hook-signature");
+    expect(info?.event).toBe("issue.created");
+  });
+
+  it("falls back to the bare resource when the body has no action", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
+        body: JSON.stringify({ data: {} }),
+      })
+    );
     expect(info?.event).toBe("issue");
   });
 });
