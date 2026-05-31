@@ -6,6 +6,7 @@ import {
   siDiscord,
   siGithub,
   siGitlab,
+  siHubspot,
   siIntercom,
   siLemonsqueezy,
   siLinear,
@@ -42,6 +43,7 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   intercom: siIntercom,
   telegram: siTelegram,
   square: siSquare,
+  hubspot: siHubspot,
 };
 
 export function ProviderIcon({

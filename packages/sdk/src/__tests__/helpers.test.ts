@@ -28,6 +28,7 @@ import {
   isIntercomWebhook,
   isTelegramWebhook,
   isSquareWebhook,
+  isHubSpotWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -416,6 +417,42 @@ describe("isSquareWebhook", () => {
     expect(info?.via).toBe("header");
     expect(info?.matchedOn).toBe("x-square-hmacsha256-signature");
     expect(info?.event).toBe("payment.updated");
+  });
+});
+
+describe("isHubSpotWebhook", () => {
+  it("detects HubSpot by the x-hubspot-signature-v3 header", () => {
+    expect(
+      isHubSpotWebhook(
+        makeRequest({
+          headers: { "x-hubspot-signature-v3": "abc123" },
+          body: JSON.stringify([{ subscriptionType: "contact.creation" }]),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isHubSpotWebhook(makeRequest({ headers: { "X-HubSpot-Signature-V3": "abc123" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isHubSpotWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event type from the first array element's subscriptionType", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "x-hubspot-signature-v3": "abc123" },
+        body: JSON.stringify([{ subscriptionType: "deal.creation", objectId: 1 }]),
+      })
+    );
+    expect(info?.provider).toBe("hubspot");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("x-hubspot-signature-v3");
+    expect(info?.event).toBe("deal.creation");
   });
 });
 

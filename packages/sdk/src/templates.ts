@@ -33,6 +33,7 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   intercom: "conversation.user.created",
   telegram: "message",
   square: "payment.created",
+  hubspot: "contact.creation",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -57,6 +58,7 @@ const PROVIDER_TEMPLATES = {
   intercom: ["conversation.user.created", "conversation.admin.replied", "contact.created"] as const,
   telegram: ["message", "callback_query", "edited_message"] as const,
   square: ["payment.created", "payment.updated", "refund.created"] as const,
+  hubspot: ["contact.creation", "contact.propertyChange", "deal.creation"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -82,6 +84,7 @@ export const TEMPLATE_PROVIDERS = [
   "intercom",
   "telegram",
   "square",
+  "hubspot",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -106,6 +109,7 @@ export const VERIFY_PROVIDERS = [
   "intercom",
   "telegram",
   "square",
+  "hubspot",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -278,6 +282,14 @@ export const TEMPLATE_METADATA = Object.freeze({
     defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.square,
     secretRequired: true,
     signatureHeader: "x-square-hmacsha256-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  hubspot: Object.freeze({
+    provider: "hubspot",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.hubspot]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.hubspot,
+    secretRequired: true,
+    signatureHeader: "x-hubspot-signature-v3",
     signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
@@ -1016,6 +1028,29 @@ function buildTemplatePayload(
       body,
       contentType: "application/json",
       headers: { "user-agent": "Square-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "hubspot") {
+    // HubSpot delivers an array of subscription notifications.
+    const payload = bodyOverride ?? [
+      {
+        eventId: Number(randomDigits(9)),
+        subscriptionId: 1,
+        portalId: 123,
+        occurredAt: nowSec * 1000,
+        subscriptionType: event,
+        attemptNumber: 0,
+        objectId: 1,
+        propertyName: null,
+        propertyValue: null,
+      },
+    ];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "HubSpot-Webhooks/1.0" },
     };
   }
 
@@ -2077,6 +2112,15 @@ export async function buildTemplateSendOptions(
     // Square signs the notification URL concatenated with the raw body.
     const signature = await hmacSign("SHA-256", options.secret, `${endpointUrl}${built.body}`);
     headers["x-square-hmacsha256-signature"] = toBase64(signature);
+  }
+
+  if (provider === "hubspot") {
+    // HubSpot v3 signs method + request URI + raw body + timestamp (in ms).
+    const timestamp = (options.timestamp ?? Math.floor(Date.now() / 1000)) * 1000;
+    const base = `${method}${endpointUrl}${built.body}${timestamp}`;
+    const signature = await hmacSign("SHA-256", options.secret, base);
+    headers["x-hubspot-request-timestamp"] = String(timestamp);
+    headers["x-hubspot-signature-v3"] = toBase64(signature);
   }
 
   return {

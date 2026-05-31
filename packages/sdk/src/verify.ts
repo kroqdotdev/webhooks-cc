@@ -479,6 +479,37 @@ export async function verifySquareSignature(
 }
 
 /**
+ * Verify a HubSpot v3 webhook signature. HubSpot computes
+ * `base64(HMAC-SHA256(clientSecret, requestMethod + requestUri + rawBody + timestamp))`
+ * and sends it in `x-hubspot-signature-v3`, alongside the request timestamp (in
+ * milliseconds) in `x-hubspot-request-timestamp`. Because the signature is bound
+ * to the exact method and URI, the caller must supply both. Signatures with a
+ * timestamp older than `maxAgeMs` (5 minutes by default) are rejected to defeat
+ * replay attacks.
+ */
+export async function verifyHubSpotSignature(
+  method: string,
+  url: string,
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  timestamp: string | null | undefined,
+  secret: string,
+  maxAgeMs = 5 * 60 * 1000
+): Promise<boolean> {
+  requireSecret(secret, "verifyHubSpotSignature");
+  if (!signatureHeader || !timestamp) {
+    return false;
+  }
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > maxAgeMs) {
+    return false;
+  }
+  const base = `${method.toUpperCase()}${url}${normalizeBody(body)}${timestamp}`;
+  const expected = toBase64(await hmacSign("SHA-256", secret, base));
+  return timingSafeEqual(signatureHeader.trim(), expected);
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -807,6 +838,20 @@ export async function verifySignature(
       options.url,
       request.body,
       getHeader(request.headers, "x-square-hmacsha256-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "hubspot") {
+    if (!options.url) {
+      throw new Error('verifySignature for provider "hubspot" requires options.url');
+    }
+    valid = await verifyHubSpotSignature(
+      options.method ?? "POST",
+      options.url,
+      request.body,
+      getHeader(request.headers, "x-hubspot-signature-v3"),
+      getHeader(request.headers, "x-hubspot-request-timestamp"),
       options.secret
     );
   }

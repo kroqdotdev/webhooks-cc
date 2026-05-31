@@ -25,6 +25,7 @@ import {
   verifyIntercomSignature,
   verifyTelegramSignature,
   verifySquareSignature,
+  verifyHubSpotSignature,
   verifySignature,
 } from "../verify";
 
@@ -1239,6 +1240,71 @@ describe("tier-2 Square templates produce verifiable signed requests", () => {
       const verification = await verifySignature(
         { body: result.body, headers: result.headers },
         { provider: "square", secret: TEST_SECRET, url: ENDPOINT_URL }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: HubSpot (method + URI + body + timestamp HMAC scheme) ───────
+
+describe("tier-2 HubSpot provider metadata", () => {
+  it("hubspot is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("hubspot");
+    expect(VERIFY_PROVIDERS).toContain("hubspot");
+
+    const meta = TEMPLATE_METADATA.hubspot;
+    expect(meta.provider).toBe("hubspot");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-hubspot-signature-v3");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("contact.creation");
+    expect(meta.templates).toContain("contact.creation");
+  });
+});
+
+describe("tier-2 HubSpot templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.hubspot.templates) {
+    it(`hubspot/${template} is valid JSON and the signature verifies over method+url+body+timestamp`, async () => {
+      // Pass a fresh timestamp (seconds) for determinism without time-flakiness.
+      const nowSec = Math.floor(Date.now() / 1000);
+      const result = await buildTemplateSendOptions(ENDPOINT_URL, {
+        provider: "hubspot",
+        secret: TEST_SECRET,
+        template,
+        timestamp: nowSec,
+      });
+      const headers = result.headers!;
+      const body = result.body as string;
+
+      expect(headers["content-type"]).toBe("application/json");
+      // HubSpot sends an array payload.
+      expect(Array.isArray(JSON.parse(body))).toBe(true);
+
+      const sig = getHeader(headers, "x-hubspot-signature-v3");
+      const ts = getHeader(headers, "x-hubspot-request-timestamp");
+      expect(sig).toBeDefined();
+      expect(ts).toBe(String(nowSec * 1000));
+
+      // Round-trip with a generously wide window so it is never time-flaky.
+      expect(
+        await verifyHubSpotSignature("POST", ENDPOINT_URL, body, sig!, ts!, TEST_SECRET, 60 * 60 * 1000)
+      ).toBe(true);
+      expect(
+        await verifyHubSpotSignature(
+          "POST",
+          ENDPOINT_URL,
+          body,
+          sig!,
+          ts!,
+          "wrong_secret",
+          60 * 60 * 1000
+        )
+      ).toBe(false);
+
+      const verification = await verifySignature(
+        { body, headers },
+        { provider: "hubspot", secret: TEST_SECRET, url: ENDPOINT_URL, method: "POST" }
       );
       expect(verification.valid).toBe(true);
     });

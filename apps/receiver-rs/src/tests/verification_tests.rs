@@ -637,7 +637,7 @@ fn generic_hmac_no_header_name() {
 #[test]
 fn sendgrid_skipped() {
     assert!(matches!(
-        verify_signature("sendgrid", b"", &headers(&[]), b"", None, None),
+        verify_signature("sendgrid", b"", &headers(&[]), b"", None, None, None),
         VerificationResult::Skipped(_)
     ));
 }
@@ -647,7 +647,7 @@ fn sendgrid_skipped() {
 #[test]
 fn unknown_provider_skipped() {
     assert!(matches!(
-        verify_signature("unknown_provider", b"", &headers(&[]), b"", None, None),
+        verify_signature("unknown_provider", b"", &headers(&[]), b"", None, None, None),
         VerificationResult::Skipped(_)
     ));
 }
@@ -761,7 +761,7 @@ fn verify_meta_reuses_github() {
     );
     let h = headers(&[("x-hub-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("meta", secret.as_bytes(), &h, body, None, None),
+        verify_signature("meta", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -775,7 +775,7 @@ fn verify_meta_wrong_secret() {
     );
     let h = headers(&[("x-hub-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("meta", b"app_secret", &h, body, None, None),
+        verify_signature("meta", b"app_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -787,7 +787,7 @@ fn verify_lemonsqueezy_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-signature", &sig)]);
     assert!(matches!(
-        verify_signature("lemonsqueezy", secret.as_bytes(), &h, body, None, None),
+        verify_signature("lemonsqueezy", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -798,7 +798,7 @@ fn verify_lemonsqueezy_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-signature", &sig)]);
     assert!(matches!(
-        verify_signature("lemonsqueezy", b"ls_secret", &h, body, None, None),
+        verify_signature("lemonsqueezy", b"ls_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -810,7 +810,7 @@ fn verify_coinbase_commerce_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cc-webhook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("coinbase-commerce", secret.as_bytes(), &h, body, None, None),
+        verify_signature("coinbase-commerce", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -821,7 +821,7 @@ fn verify_coinbase_commerce_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cc-webhook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("coinbase-commerce", b"cb_secret", &h, body, None, None),
+        verify_signature("coinbase-commerce", b"cb_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -833,7 +833,7 @@ fn verify_razorpay_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-razorpay-signature", &sig)]);
     assert!(matches!(
-        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None),
+        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -844,7 +844,7 @@ fn verify_razorpay_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-razorpay-signature", &sig)]);
     assert!(matches!(
-        verify_signature("razorpay", b"rp_secret", &h, body, None, None),
+        verify_signature("razorpay", b"rp_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -856,7 +856,7 @@ fn verify_cal_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cal-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("cal", secret.as_bytes(), &h, body, None, None),
+        verify_signature("cal", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -867,7 +867,7 @@ fn verify_cal_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cal-signature-256", &sig)]);
     assert!(matches!(
-        verify_signature("cal", b"cal_secret", &h, body, None, None),
+        verify_signature("cal", b"cal_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -883,7 +883,7 @@ fn verify_hex_provider_accepts_optional_prefix() {
     );
     let h = headers(&[("x-razorpay-signature", &sig)]);
     assert!(matches!(
-        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None),
+        verify_signature("razorpay", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -898,7 +898,7 @@ fn verify_intercom_valid() {
     );
     let h = headers(&[("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("intercom", secret.as_bytes(), &h, body, None, None),
+        verify_signature("intercom", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -912,7 +912,7 @@ fn verify_intercom_wrong_secret() {
     );
     let h = headers(&[("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("intercom", b"ic_secret", &h, body, None, None),
+        verify_signature("intercom", b"ic_secret", &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -928,7 +928,7 @@ fn verify_intercom_rejects_sha256_prefix() {
     );
     let h = headers(&[("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("intercom", secret.as_bytes(), &h, body, None, None),
+        verify_signature("intercom", secret.as_bytes(), &h, body, None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -938,7 +938,7 @@ fn verify_telegram_valid() {
     let secret = "tg_secret_token";
     let h = headers(&[("x-telegram-bot-api-secret-token", secret)]);
     assert!(matches!(
-        verify_signature("telegram", secret.as_bytes(), &h, b"{}", None, None),
+        verify_signature("telegram", secret.as_bytes(), &h, b"{}", None, None, None),
         VerificationResult::Valid
     ));
 }
@@ -947,7 +947,7 @@ fn verify_telegram_valid() {
 fn verify_telegram_wrong_token() {
     let h = headers(&[("x-telegram-bot-api-secret-token", "wrong_token")]);
     assert!(matches!(
-        verify_signature("telegram", b"correct_token", &h, b"{}", None, None),
+        verify_signature("telegram", b"correct_token", &h, b"{}", None, None, None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -955,7 +955,7 @@ fn verify_telegram_wrong_token() {
 #[test]
 fn verify_telegram_missing_header() {
     assert!(matches!(
-        verify_signature("telegram", b"secret", &headers(&[]), b"{}", None, None),
+        verify_signature("telegram", b"secret", &headers(&[]), b"{}", None, None, None),
         VerificationResult::Skipped(_)
     ));
 }
@@ -976,7 +976,7 @@ fn verify_square_url_plus_body() {
     let sig = make_hmac_sha256_b64(b"sq_key", &payload);
     let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
     assert!(matches!(
-        verify_signature("square", b"sq_key", &h, body, None, Some(url)),
+        verify_signature("square", b"sq_key", &h, body, None, Some(url), None),
         VerificationResult::Valid
     ));
 }
@@ -989,7 +989,7 @@ fn verify_square_wrong_secret() {
     let sig = make_hmac_sha256_b64(b"sq_key", &payload);
     let h = headers(&[("x-square-hmacsha256-signature", &sig)]);
     assert!(matches!(
-        verify_signature("square", b"wrong_key", &h, body, None, Some(url)),
+        verify_signature("square", b"wrong_key", &h, body, None, Some(url), None),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1010,6 +1010,7 @@ fn verify_square_wrong_url() {
             body,
             None,
             Some("https://go.webhooks.cc/w/other"),
+            None,
         ),
         VerificationResult::Invalid(_)
     ));
@@ -1025,6 +1026,7 @@ fn verify_square_missing_header() {
             b"{}",
             None,
             Some("https://go.webhooks.cc/w/demo"),
+            None,
         ),
         VerificationResult::Skipped(_)
     ));
@@ -1034,7 +1036,132 @@ fn verify_square_missing_header() {
 fn verify_square_missing_url() {
     let h = headers(&[("x-square-hmacsha256-signature", "abc")]);
     assert!(matches!(
-        verify_signature("square", b"sq_key", &h, b"{}", None, None),
+        verify_signature("square", b"sq_key", &h, b"{}", None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+// ── Tier-2: HubSpot (method + URI + body + timestamp HMAC, base64) ──
+
+/// Current epoch milliseconds, for building fresh HubSpot timestamps in tests.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+/// Build a valid HubSpot v3 signature over `method + url + body + timestamp(ms)`.
+fn make_hubspot_sig(secret: &[u8], method: &str, url: &str, body: &[u8], ts_ms: i64) -> String {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(method.as_bytes());
+    payload.extend_from_slice(url.as_bytes());
+    payload.extend_from_slice(body);
+    payload.extend_from_slice(ts_ms.to_string().as_bytes());
+    base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, &payload))
+}
+
+#[test]
+fn detect_hubspot() {
+    let h = headers(&[("x-hubspot-signature-v3", "abc")]);
+    assert_eq!(detect_provider(&h), Some("hubspot"));
+}
+
+#[test]
+fn verify_hubspot_valid() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("POST")),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_hubspot_wrong_secret() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"wrong_secret", &h, body, None, Some(url), Some("POST")),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_hubspot_wrong_method() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    // Signature computed for POST, but the request was a GET → mismatch.
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("GET")),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_hubspot_expired_timestamp() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    // Timestamp 10 minutes in the past — outside the 5-minute window.
+    let ts = now_ms() - 10 * 60 * 1000;
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    // Even though the signature itself is correct, the stale timestamp is rejected.
+    match verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("POST")) {
+        VerificationResult::Invalid(err) => assert_eq!(err.code, "timestamp_expired"),
+        other => panic!("expected Invalid(timestamp_expired), got {other:?}"),
+    }
+}
+
+#[test]
+fn verify_hubspot_missing_url() {
+    let url = "https://go.webhooks.cc/w/demo";
+    let body = br#"[{"subscriptionType":"contact.creation"}]"#;
+    let ts = now_ms();
+    let sig = make_hubspot_sig(b"hs_secret", "POST", url, body, ts);
+    let h = headers(&[
+        ("x-hubspot-signature-v3", &sig),
+        ("x-hubspot-request-timestamp", &ts.to_string()),
+    ]);
+    assert!(matches!(
+        verify_signature("hubspot", b"hs_secret", &h, body, None, None, Some("POST")),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_hubspot_missing_header() {
+    assert!(matches!(
+        verify_signature(
+            "hubspot",
+            b"hs_secret",
+            &headers(&[]),
+            b"[]",
+            None,
+            Some("https://go.webhooks.cc/w/demo"),
+            Some("POST"),
+        ),
         VerificationResult::Skipped(_)
     ));
 }

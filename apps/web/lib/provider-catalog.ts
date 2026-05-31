@@ -49,6 +49,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   intercom: "Intercom",
   telegram: "Telegram",
   square: "Square",
+  hubspot: "HubSpot",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -74,6 +75,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   intercom: "your Intercom client secret",
   telegram: "your secret token",
   square: "your signature key",
+  hubspot: "your app client secret",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -230,6 +232,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#000000",
     foreground: "#ffffff",
     border: "#3d3d3d",
+  },
+  hubspot: {
+    glyph: "hubspot",
+    text: "HS",
+    background: "#ff7a59",
+    foreground: "#ffffff",
+    border: "#e35c3a",
   },
 };
 

@@ -297,6 +297,11 @@ export function isSquareWebhook(request: Request): boolean {
   return isDetectedProvider(request, "square");
 }
 
+/** Check if a request looks like a HubSpot webhook. */
+export function isHubSpotWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "hubspot");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -410,6 +415,14 @@ const DETECTORS: readonly Detector[] = [
     matches: (request) =>
       getHeaderValue(request.headers, "x-square-hmacsha256-signature") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "hubspot",
+    via: "header",
+    matchedOn: "x-hubspot-signature-v3",
+    matches: (request) =>
+      getHeaderValue(request.headers, "x-hubspot-signature-v3") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "0.subscriptionType")),
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`

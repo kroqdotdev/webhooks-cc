@@ -153,9 +153,9 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // Should have None + 21 providers (20 verifiable named providers + generic-hmac;
+  // Should have None + 23 providers (22 verifiable named providers + generic-hmac;
   // SendGrid is excluded — it uses IP allowlisting, not signatures).
-  await expect(options).toHaveCount(22);
+  await expect(options).toHaveCount(24);
   await expect(options.nth(1)).toHaveText("Stripe");
   await expect(options.filter({ hasText: "Telegram" })).toHaveCount(1);
 });

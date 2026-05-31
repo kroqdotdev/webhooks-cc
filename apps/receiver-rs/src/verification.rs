@@ -1,4 +1,4 @@
-//! Webhook signature verification for 22 providers.
+//! Webhook signature verification for 23 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -137,6 +137,7 @@ pub fn verify_signature(
     body: &[u8],
     signing_header: Option<&str>,
     request_url: Option<&str>,
+    method: Option<&str>,
 ) -> VerificationResult {
     match provider {
         "stripe" => verify_stripe(secret, headers, body),
@@ -163,6 +164,7 @@ pub fn verify_signature(
         "telegram" => verify_telegram(secret, headers),
         // ── Tier-2 ──
         "square" => verify_square(secret, headers, body, request_url),
+        "hubspot" => verify_hubspot(secret, headers, body, request_url, method),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -259,6 +261,9 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     // ── Tier-2 providers with distinctive headers ──
     if get_header(headers, "x-square-hmacsha256-signature").is_some() {
         return Some("square");
+    }
+    if get_header(headers, "x-hubspot-signature-v3").is_some() {
+        return Some("hubspot");
     }
     // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
     // GitHub (which sends the same header alongside x-hub-signature-256 +
@@ -1021,6 +1026,92 @@ fn verify_square(
     } else {
         let mut err = SignatureError::mismatch(&expected, received);
         err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Maximum age of a HubSpot v3 timestamp before the request is rejected (replay
+/// protection). HubSpot recommends 5 minutes.
+const HUBSPOT_MAX_AGE_MS: i64 = 5 * 60 * 1000;
+
+/// HubSpot v3: base64 HMAC-SHA256 over `requestMethod + requestUri + rawBody +
+/// timestamp`, sent in `x-hubspot-signature-v3` with the request timestamp (in
+/// milliseconds) in `x-hubspot-request-timestamp`. The signature is bound to the
+/// exact method and URI, so both must be available. Timestamps older than
+/// `HUBSPOT_MAX_AGE_MS` are rejected to defeat replay attacks.
+fn verify_hubspot(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    request_url: Option<&str>,
+    method: Option<&str>,
+) -> VerificationResult {
+    use base64::Engine;
+    let sig_header_name = "x-hubspot-signature-v3";
+    let ts_header_name = "x-hubspot-request-timestamp";
+
+    let Some(sig_header) = get_header(headers, sig_header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(sig_header_name));
+    };
+    let Some(timestamp) = get_header(headers, ts_header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(ts_header_name));
+    };
+    let Some(url) = request_url else {
+        return VerificationResult::Skipped(SignatureError {
+            code: "missing_header",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: None,
+            message: Some("HubSpot verification requires the request URL".to_string()),
+        });
+    };
+    let method = method.unwrap_or("POST").to_uppercase();
+
+    // Timestamp must be a valid integer (epoch milliseconds).
+    let ts_ms = match timestamp.trim().parse::<i64>() {
+        Ok(v) => v,
+        Err(_) => {
+            return VerificationResult::Invalid(SignatureError::invalid_encoding(
+                "x-hubspot-request-timestamp is not a valid integer",
+            ));
+        }
+    };
+
+    // Reject stale timestamps (replay protection).
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    if (now_ms - ts_ms).abs() > HUBSPOT_MAX_AGE_MS {
+        let mut err = SignatureError {
+            code: "timestamp_expired",
+            expected: None,
+            received: None,
+            timestamp: Some(ts_ms),
+            header: Some(ts_header_name.to_string()),
+            message: Some("HubSpot timestamp is outside the 5-minute freshness window".to_string()),
+        };
+        err.received = Some(truncate(sig_header.trim(), 64));
+        return VerificationResult::Invalid(err);
+    }
+
+    // Signed payload: method + uri + raw body + timestamp.
+    let mut payload = Vec::new();
+    payload.extend_from_slice(method.as_bytes());
+    payload.extend_from_slice(url.as_bytes());
+    payload.extend_from_slice(body);
+    payload.extend_from_slice(timestamp.as_bytes());
+
+    let expected = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, &payload));
+    let received = sig_header.trim();
+
+    if ct_str_eq(received, &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, received);
+        err.timestamp = Some(ts_ms);
+        err.header = Some(sig_header_name.to_string());
         VerificationResult::Invalid(err)
     }
 }

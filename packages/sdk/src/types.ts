@@ -235,7 +235,8 @@ export type TemplateProvider =
   | "cal"
   | "intercom"
   | "telegram"
-  | "square";
+  | "square"
+  | "hubspot";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

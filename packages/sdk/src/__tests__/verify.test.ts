@@ -23,6 +23,7 @@ import {
   verifyIntercomSignature,
   verifyTelegramSignature,
   verifySquareSignature,
+  verifyHubSpotSignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -447,6 +448,135 @@ describe("tier-2 Square verification (URL + body scheme)", () => {
         { provider: "square", secret: "sq_signature_key", url }
       )
     ).resolves.toEqual({ valid: true });
+  });
+});
+
+describe("tier-2 HubSpot verification (method + URI + body + timestamp scheme)", () => {
+  it("verifies HubSpot v3 signatures via round-trip + dispatcher", async () => {
+    const url = "https://go.webhooks.cc/w/demo";
+    const nowSec = Math.floor(Date.now() / 1000);
+    const built = await client.buildRequest(url, {
+      provider: "hubspot",
+      secret: "hs_app_client_secret",
+      body: [{ subscriptionType: "contact.creation", objectId: 1 }],
+      timestamp: nowSec,
+    });
+    const sig = built.headers["x-hubspot-signature-v3"];
+    const ts = built.headers["x-hubspot-request-timestamp"];
+    expect(sig).toBeDefined();
+    expect(ts).toBe(String(nowSec * 1000));
+
+    // Use a wide maxAgeMs window so the test is never time-flaky.
+    const wide = 60 * 60 * 1000;
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, ts, "hs_app_client_secret", wide)
+    ).toBe(true);
+    // Wrong secret → false
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, ts, "the_wrong_secret", wide)
+    ).toBe(false);
+    // Wrong method → false (HubSpot binds the signature to the HTTP method)
+    expect(
+      await verifyHubSpotSignature("GET", url, built.body, sig, ts, "hs_app_client_secret", wide)
+    ).toBe(false);
+    // Wrong URL → false (HubSpot binds the signature to the request URI)
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        "https://go.webhooks.cc/w/other",
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(false);
+    // Tampered body → false
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        url,
+        `${built.body} `,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        wide
+      )
+    ).toBe(false);
+    // Missing signature header / timestamp → false (does not throw)
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, null, ts, "hs_app_client_secret", wide)
+    ).toBe(false);
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, null, "hs_app_client_secret", wide)
+    ).toBe(false);
+
+    // Empty secret throws.
+    await expect(
+      verifyHubSpotSignature("POST", url, built.body, sig, ts, "", wide)
+    ).rejects.toThrow("requires a non-empty secret");
+
+    // Dispatcher requires options.url
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-HubSpot-Signature-V3": sig, "X-HubSpot-Request-Timestamp": ts },
+        },
+        { provider: "hubspot", secret: "hs_app_client_secret" }
+      )
+    ).rejects.toThrow("requires options.url");
+
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-HubSpot-Signature-V3": sig, "X-HubSpot-Request-Timestamp": ts },
+        },
+        { provider: "hubspot", secret: "hs_app_client_secret", url, method: "POST" }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("rejects a stale timestamp (older than the freshness window)", async () => {
+    const url = "https://go.webhooks.cc/w/demo";
+    // Sign with a deterministic timestamp ~10 minutes in the past.
+    const staleSec = Math.floor(Date.now() / 1000) - 10 * 60;
+    const built = await client.buildRequest(url, {
+      provider: "hubspot",
+      secret: "hs_app_client_secret",
+      body: [{ subscriptionType: "contact.creation" }],
+      timestamp: staleSec,
+    });
+    const sig = built.headers["x-hubspot-signature-v3"];
+    const ts = built.headers["x-hubspot-request-timestamp"];
+
+    // Default 5-minute window: stale → false (signature is otherwise correct).
+    expect(
+      await verifyHubSpotSignature("POST", url, built.body, sig, ts, "hs_app_client_secret")
+    ).toBe(false);
+    // Dispatcher uses the default window, so it must also reject.
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "x-hubspot-signature-v3": sig, "x-hubspot-request-timestamp": ts },
+        },
+        { provider: "hubspot", secret: "hs_app_client_secret", url, method: "POST" }
+      )
+    ).resolves.toEqual({ valid: false });
+    // But widening the window proves the signature itself is valid.
+    expect(
+      await verifyHubSpotSignature(
+        "POST",
+        url,
+        built.body,
+        sig,
+        ts,
+        "hs_app_client_secret",
+        60 * 60 * 1000
+      )
+    ).toBe(true);
   });
 });
 

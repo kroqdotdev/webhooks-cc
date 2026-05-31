@@ -36,6 +36,7 @@ export {
   isIntercomWebhook,
   isTelegramWebhook,
   isSquareWebhook,
+  isHubSpotWebhook,
   matchJsonField,
 } from "./helpers";
 export {
@@ -99,6 +100,7 @@ export {
   verifyIntercomSignature,
   verifyTelegramSignature,
   verifySquareSignature,
+  verifyHubSpotSignature,
 } from "./verify";
 export type { SSEFrame } from "./sse";
 export type {
