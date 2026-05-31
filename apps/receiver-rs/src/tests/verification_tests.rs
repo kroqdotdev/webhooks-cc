@@ -1402,3 +1402,65 @@ fn verify_mux_malformed_header() {
         VerificationResult::Invalid(_)
     ));
 }
+
+// ── Tier-2: Sentry (HMAC-SHA256 hex over body, sentry-hook-signature) ──
+
+#[test]
+fn detect_sentry() {
+    let h = headers(&[("sentry-hook-signature", "deadbeef")]);
+    assert_eq!(detect_provider(&h), Some("sentry"));
+}
+
+#[test]
+fn verify_sentry_valid() {
+    let secret = "sentry_client_secret";
+    let body = br#"{"action":"created","data":{"issue":{"id":"1"}}}"#;
+    let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[
+        ("sentry-hook-signature", &sig),
+        ("sentry-hook-resource", "issue"),
+    ]);
+    assert!(matches!(
+        verify_signature("sentry", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_sentry_wrong_secret() {
+    let body = br#"{"action":"created","data":{"issue":{"id":"1"}}}"#;
+    let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("sentry-hook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("sentry", b"sentry_client_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_sentry_tampered_body() {
+    let secret = "sentry_client_secret";
+    let sig = make_hmac_sha256(secret, r#"{"action":"created"}"#);
+    let h = headers(&[("sentry-hook-signature", &sig)]);
+    assert!(matches!(
+        verify_signature(
+            "sentry",
+            secret.as_bytes(),
+            &h,
+            br#"{"action":"resolved"}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_sentry_missing_header() {
+    let body = br#"{"action":"created"}"#;
+    assert!(matches!(
+        verify_signature("sentry", b"sentry_client_secret", &headers(&[]), body, None, None, None),
+        VerificationResult::Skipped(_)
+    ));
+}

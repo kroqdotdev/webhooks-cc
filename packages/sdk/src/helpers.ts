@@ -317,6 +317,11 @@ export function isMuxWebhook(request: Request): boolean {
   return isDetectedProvider(request, "mux");
 }
 
+/** Check if a request looks like a Sentry webhook. */
+export function isSentryWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "sentry");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -465,6 +470,14 @@ const DETECTORS: readonly Detector[] = [
     matchedOn: "mux-signature",
     matches: (request) => getHeaderValue(request.headers, "mux-signature") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "type")),
+  },
+  {
+    provider: "sentry",
+    via: "header",
+    matchedOn: "sentry-hook-signature",
+    matches: (request) =>
+      getHeaderValue(request.headers, "sentry-hook-signature") !== undefined,
+    event: (request) => getEventString(getHeaderValue(request.headers, "sentry-hook-resource")),
   },
   {
     // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `x-hub-signature-256`

@@ -40,6 +40,7 @@ export {
   isMailgunWebhook,
   isCalendlyWebhook,
   isMuxWebhook,
+  isSentryWebhook,
   matchJsonField,
 } from "./helpers";
 export {
@@ -107,6 +108,7 @@ export {
   verifyMailgunSignature,
   verifyCalendlySignature,
   verifyMuxSignature,
+  verifySentrySignature,
 } from "./verify";
 export type { SSEFrame } from "./sse";
 export type {

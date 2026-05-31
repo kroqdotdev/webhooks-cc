@@ -602,6 +602,18 @@ export async function verifyMuxSignature(
 }
 
 /**
+ * Verify a Sentry webhook signature (raw hex HMAC-SHA256 over the body, sent in
+ * the `sentry-hook-signature` header). Reuses the shared hex HMAC helper.
+ */
+export function verifySentrySignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  return hmacSha256HexMatches(body, signatureHeader, secret, "verifySentrySignature");
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -964,6 +976,14 @@ export async function verifySignature(
     valid = await verifyMuxSignature(
       request.body,
       getHeader(request.headers, "mux-signature"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "sentry") {
+    valid = await verifySentrySignature(
+      request.body,
+      getHeader(request.headers, "sentry-hook-signature"),
       options.secret
     );
   }

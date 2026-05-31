@@ -239,7 +239,8 @@ export type TemplateProvider =
   | "hubspot"
   | "mailgun"
   | "calendly"
-  | "mux";
+  | "mux"
+  | "sentry";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

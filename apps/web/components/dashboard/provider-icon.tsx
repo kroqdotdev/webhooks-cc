@@ -14,6 +14,7 @@ import {
   siMeta,
   siPaddle,
   siRazorpay,
+  siSentry,
   siShopify,
   siSquare,
   siStripe,
@@ -46,6 +47,7 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   square: siSquare,
   hubspot: siHubspot,
   mailgun: siMailgun,
+  sentry: siSentry,
 };
 
 export function ProviderIcon({

@@ -29,6 +29,7 @@ import {
   verifyMailgunSignature,
   verifyCalendlySignature,
   verifyMuxSignature,
+  verifySentrySignature,
   verifySignature,
 } from "../verify";
 
@@ -1437,6 +1438,48 @@ describe("tier-2 Mux templates produce verifiable signed requests", () => {
       const verification = await verifySignature(
         { body: result.body, headers: result.headers },
         { provider: "mux", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+// ─── Tier-2: Sentry (hex HMAC-SHA256 over body) ────────────────────────
+
+describe("tier-2 Sentry provider metadata", () => {
+  it("sentry is listed and has correct metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("sentry");
+    expect(VERIFY_PROVIDERS).toContain("sentry");
+
+    const meta = TEMPLATE_METADATA.sentry;
+    expect(meta.provider).toBe("sentry");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("sentry-hook-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("issue.created");
+    expect(meta.templates).toContain("issue.created");
+  });
+});
+
+describe("tier-2 Sentry templates produce verifiable signed requests", () => {
+  for (const template of TEMPLATE_METADATA.sentry.templates) {
+    it(`sentry/${template} is valid JSON and the hex signature verifies over the body`, async () => {
+      const result = await buildTemplate("sentry", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "sentry-hook-signature");
+      expect(sig).toBeDefined();
+      expect(sig).toMatch(/^[0-9a-f]+$/);
+      // Sentry carries the resource (the first segment of the event) in its own header.
+      expect(getHeader(result.headers, "sentry-hook-resource")).toBe(template.split(".")[0]);
+
+      expect(await verifySentrySignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifySentrySignature(result.body, sig!, "wrong_secret")).toBe(false);
+
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "sentry", secret: TEST_SECRET }
       );
       expect(verification.valid).toBe(true);
     });

@@ -27,6 +27,7 @@ import {
   verifyMailgunSignature,
   verifyCalendlySignature,
   verifyMuxSignature,
+  verifySentrySignature,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -715,6 +716,50 @@ describe("tier-2 Mux verification (Stripe-style t=,v1= scheme)", () => {
       verifySignature(
         { body: built.body, headers: { "mux-signature": sig } },
         { provider: "mux", secret: "the_wrong_key" }
+      )
+    ).resolves.toEqual({ valid: false });
+  });
+});
+
+describe("tier-2 Sentry verification (hex HMAC-SHA256 over body)", () => {
+  it("verifies Sentry signatures over the raw body via round-trip + dispatcher", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "sentry",
+      secret: "sentry_client_secret",
+    });
+    const sig = built.headers["sentry-hook-signature"];
+    expect(sig).toBeDefined();
+    // Raw hex HMAC-SHA256, no prefix.
+    expect(sig).toMatch(/^[0-9a-f]+$/);
+    // Sentry also carries the event resource header.
+    expect(built.headers["sentry-hook-resource"]).toBe("issue");
+
+    expect(await verifySentrySignature(built.body, sig, "sentry_client_secret")).toBe(true);
+    // Wrong secret → false
+    expect(await verifySentrySignature(built.body, sig, "the_wrong_key")).toBe(false);
+    // Tampered body → false (signature is bound to the exact body)
+    expect(await verifySentrySignature(`${built.body} `, sig, "sentry_client_secret")).toBe(false);
+    // Missing header → false (no throw)
+    expect(await verifySentrySignature(built.body, undefined, "sentry_client_secret")).toBe(false);
+
+    // Empty secret throws (consistent with other verifiers).
+    await expect(verifySentrySignature(built.body, sig, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+
+    // Dispatcher path with a mixed-case header (case-insensitive lookup).
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "Sentry-Hook-Signature": sig } },
+        { provider: "sentry", secret: "sentry_client_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+
+    // Dispatcher with wrong secret resolves to false.
+    await expect(
+      verifySignature(
+        { body: built.body, headers: { "sentry-hook-signature": sig } },
+        { provider: "sentry", secret: "the_wrong_key" }
       )
     ).resolves.toEqual({ valid: false });
   });

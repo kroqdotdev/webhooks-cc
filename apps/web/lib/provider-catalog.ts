@@ -53,6 +53,7 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   mailgun: "Mailgun",
   calendly: "Calendly",
   mux: "Mux",
+  sentry: "Sentry",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -82,6 +83,7 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   mailgun: "your HTTP webhook signing key",
   calendly: "your webhook signing key",
   mux: "your webhook signing secret",
+  sentry: "your client secret",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -266,6 +268,13 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#fb2491",
     foreground: "#ffffff",
     border: "#c4156f",
+  },
+  sentry: {
+    glyph: "sentry",
+    text: "SN",
+    background: "#362d59",
+    foreground: "#ffffff",
+    border: "#1f1a36",
   },
 };
 

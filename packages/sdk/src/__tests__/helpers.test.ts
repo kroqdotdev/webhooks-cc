@@ -32,6 +32,7 @@ import {
   isMailgunWebhook,
   isCalendlyWebhook,
   isMuxWebhook,
+  isSentryWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -574,6 +575,42 @@ describe("isMuxWebhook", () => {
     expect(info?.via).toBe("header");
     expect(info?.matchedOn).toBe("mux-signature");
     expect(info?.event).toBe("video.asset.ready");
+  });
+});
+
+describe("isSentryWebhook", () => {
+  it("detects Sentry by the sentry-hook-signature header", () => {
+    expect(
+      isSentryWebhook(
+        makeRequest({
+          headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
+          body: JSON.stringify({ action: "created" }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive on the header", () => {
+    expect(
+      isSentryWebhook(makeRequest({ headers: { "Sentry-Hook-Signature": "abc123" } }))
+    ).toBe(true);
+  });
+
+  it("returns false without the header", () => {
+    expect(isSentryWebhook(makeRequest())).toBe(false);
+  });
+
+  it("extracts the event resource from the sentry-hook-resource header", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "sentry-hook-signature": "deadbeef", "sentry-hook-resource": "issue" },
+        body: JSON.stringify({ action: "created" }),
+      })
+    );
+    expect(info?.provider).toBe("sentry");
+    expect(info?.via).toBe("header");
+    expect(info?.matchedOn).toBe("sentry-hook-signature");
+    expect(info?.event).toBe("issue");
   });
 });
 

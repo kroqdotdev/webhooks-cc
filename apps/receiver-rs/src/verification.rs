@@ -1,4 +1,4 @@
-//! Webhook signature verification for 26 providers.
+//! Webhook signature verification for 27 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
@@ -172,6 +172,8 @@ pub fn verify_signature(
         "calendly" => verify_calendly(secret, headers, body),
         // Mux: same Stripe-style scheme as Calendly with the `mux-signature` header.
         "mux" => verify_mux(secret, headers, body),
+        // Sentry: HMAC-SHA256 hex over the raw body in `sentry-hook-signature`.
+        "sentry" => verify_hex_sha256(secret, headers, body, "sentry-hook-signature"),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -277,6 +279,9 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     }
     if get_header(headers, "mux-signature").is_some() {
         return Some("mux");
+    }
+    if get_header(headers, "sentry-hook-signature").is_some() {
+        return Some("sentry");
     }
     // Intercom: legacy `x-hub-signature` with a `sha1=` prefix. Checked AFTER
     // GitHub (which sends the same header alongside x-hub-signature-256 +
