@@ -108,6 +108,13 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
           "cal",
           "intercom",
           "telegram",
+          "square",
+          "hubspot",
+          "mailgun",
+          "calendly",
+          "mux",
+          "sentry",
+          "bitbucket",
         ]),
       get: vi.fn((provider: string) => ({ provider, templates: [], secretRequired: true })),
       ...(overrides.templates ?? {}),
@@ -246,6 +253,28 @@ describe("registerTools", () => {
     );
   });
 
+  it("exposes all 7 tier-2 providers in provider template listings", async () => {
+    const tools = getRegisteredTools(createMockClient());
+    const result = await tools.list_provider_templates.handler({});
+
+    const providers = parseJsonResult(result).map(
+      (provider: { provider: string }) => provider.provider
+    );
+    expect(providers).toEqual(
+      expect.arrayContaining([
+        "square",
+        "hubspot",
+        "mailgun",
+        "calendly",
+        "mux",
+        "sentry",
+        "bitbucket",
+      ])
+    );
+    // 21 tier-1 + 7 tier-2 = 28 named providers in the catalog.
+    expect(providers).toHaveLength(28);
+  });
+
   // verify_signature exercises the real SDK verification path through the MCP
   // tool — one case per tier-1 signature scheme family.
   describe("verify_signature for tier-1 providers", () => {
@@ -323,6 +352,175 @@ describe("registerTools", () => {
           requestId: request.id,
           provider: "telegram",
           secret: "nope",
+        })
+      );
+      expect(bad.valid).toBe(false);
+    });
+  });
+
+  // verify_signature for tier-2 — one provider per new scheme family, exercising
+  // the real SDK verification path through the MCP tool (including url/method
+  // plumbing for the request-context providers).
+  describe("verify_signature for tier-2 providers", () => {
+    // URL + body scheme (Square): base64(HMAC-SHA256(secret, url + body)).
+    it("verifies a Square signature using the url option (URL+body scheme)", async () => {
+      const url = "https://go.webhooks.cc/w/demo";
+      const body = '{"type":"payment.created"}';
+      const secret = "sq_signature_key";
+      const sig = createHmac("sha256", secret)
+        .update(`${url}${body}`)
+        .digest("base64");
+      const request = makeRequest({
+        body,
+        headers: { "x-square-hmacsha256-signature": sig },
+      });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "square",
+          secret,
+          url,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      // Wrong url → false (Square binds the signature to the notification URL).
+      const wrongUrl = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "square",
+          secret,
+          url: "https://go.webhooks.cc/w/other",
+        })
+      );
+      expect(wrongUrl.valid).toBe(false);
+    });
+
+    // method + uri + body + timestamp scheme (HubSpot v3): base64 HMAC-SHA256.
+    it("verifies a HubSpot v3 signature using url+method options", async () => {
+      const url = "https://go.webhooks.cc/w/demo";
+      const method = "POST";
+      const body = '[{"subscriptionType":"contact.creation"}]';
+      const secret = "hs_app_client_secret";
+      // HubSpot timestamps are milliseconds; keep it fresh so the 5-min window passes.
+      const timestamp = String(Date.now());
+      const sig = createHmac("sha256", secret)
+        .update(`${method}${url}${body}${timestamp}`)
+        .digest("base64");
+      const request = makeRequest({
+        body,
+        headers: {
+          "x-hubspot-signature-v3": sig,
+          "x-hubspot-request-timestamp": timestamp,
+        },
+      });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "hubspot",
+          secret,
+          url,
+          method,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      // Wrong method → false (HubSpot binds the signature to the HTTP method).
+      const wrongMethod = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "hubspot",
+          secret,
+          url,
+          method: "GET",
+        })
+      );
+      expect(wrongMethod.valid).toBe(false);
+    });
+
+    // Stripe-style t=,v1= scheme (Calendly): hex HMAC-SHA256 over "<t>.<body>".
+    it("verifies a Calendly signature (Stripe-style t=,v1= scheme)", async () => {
+      const body = '{"event":"invitee.created"}';
+      const secret = "cal_signing_key";
+      const t = Math.floor(Date.now() / 1000);
+      const hex = createHmac("sha256", secret)
+        .update(`${t}.${body}`)
+        .digest("hex");
+      const request = makeRequest({
+        body,
+        headers: { "calendly-webhook-signature": `t=${t},v1=${hex}` },
+      });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "calendly",
+          secret,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      const bad = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "calendly",
+          secret: "wrong_secret",
+        })
+      );
+      expect(bad.valid).toBe(false);
+    });
+
+    // Body-embedded signature scheme (Mailgun): hex HMAC-SHA256 over timestamp+token,
+    // with the signature carried in the body (no signature header, no url).
+    it("verifies a Mailgun signature from the body fields (no header)", async () => {
+      const secret = "mg_signing_key";
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const token = "abc123token";
+      const signature = createHmac("sha256", secret)
+        .update(`${timestamp}${token}`)
+        .digest("hex");
+      const body = JSON.stringify({
+        signature: { timestamp, token, signature },
+        "event-data": { event: "delivered" },
+      });
+      const request = makeRequest({ body, headers: { "content-type": "application/json" } });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "mailgun",
+          secret,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      const bad = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "mailgun",
+          secret: "wrong_secret",
         })
       );
       expect(bad.valid).toBe(false);

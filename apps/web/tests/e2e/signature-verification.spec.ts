@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { createHmac } from "crypto";
+import { buildTemplateSendOptions } from "@webhooks-cc/sdk";
+import { encryptSigningSecret } from "@/lib/crypto";
 import {
   createTestUser,
   deleteTestUser,
@@ -16,6 +18,12 @@ let endpointSlug: string;
 let endpointId: string;
 
 const WEBHOOK_URL = process.env.WHK_WEBHOOK_URL ?? "http://localhost:3001";
+// The receiver reconstructs the URL it signs against from its own
+// webhook_base_url (NEXT_PUBLIC_WEBHOOK_URL / WEBHOOK_BASE_URL), which may differ
+// from the port we POST to (the Playwright-managed receiver listens on 3101 but
+// loads base http://localhost:3001 from .env.local). URL-bound providers (Square,
+// HubSpot) must be signed against the receiver's base, not the listen port.
+const RECEIVER_BASE_URL = process.env.NEXT_PUBLIC_WEBHOOK_URL ?? WEBHOOK_URL;
 const TEST_SECRET = "whsec_gK8z2xRvPqN7mT4jL9wYcE5bA1dF6hU3";
 
 test.beforeAll(async () => {
@@ -137,6 +145,49 @@ async function insertServerVerifiedRequest({
 
 function signatureTabButton(page: import("@playwright/test").Page) {
   return page.getByRole("button", { name: /^signature$/i }).first();
+}
+
+/**
+ * Configure the endpoint's server-side signing provider + secret. The secret is
+ * encrypted with the same SIGNING_SECRET_KEY the Playwright-managed receiver uses
+ * (set in playwright.config.ts), so the receiver can decrypt and verify it.
+ */
+async function configureServerSigning(provider: string, secret: string) {
+  const encrypted = encryptSigningSecret(secret);
+  const { error } = await admin
+    .from("endpoints")
+    .update({
+      signing_provider: provider,
+      signing_secret_encrypted: `\\x${encrypted.toString("hex")}`,
+      signing_header: null,
+    })
+    .eq("id", endpointId);
+  if (error) throw error;
+}
+
+/**
+ * Build a fully-signed tier-2 webhook with the SDK and POST it to the receiver.
+ * Signs against the exact capture URL so URL/method-bound providers (Square,
+ * HubSpot) line up with what the receiver reconstructs.
+ */
+async function sendTier2Webhook(provider: string, secret: string) {
+  // Sign against the URL the RECEIVER reconstructs (its base + /w/{slug}),
+  // but POST to the port the receiver actually listens on.
+  const signingUrl = `${RECEIVER_BASE_URL}/w/${endpointSlug}`;
+  const postUrl = `${WEBHOOK_URL}/w/${endpointSlug}`;
+  const signed = await buildTemplateSendOptions(signingUrl, {
+    provider: provider as Parameters<typeof buildTemplateSendOptions>[1]["provider"],
+    secret,
+    method: "POST",
+  });
+  const resp = await fetch(postUrl, {
+    method: signed.method ?? "POST",
+    headers: signed.headers as Record<string, string>,
+    body: signed.body as string,
+  });
+  if (resp.status !== 200) {
+    throw new Error(`receiver returned ${resp.status} for ${provider}`);
+  }
 }
 
 // ── Endpoint Settings ──
@@ -380,4 +431,70 @@ test("Coinbase Commerce webhook is detected and preselects manual verification",
 
   await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("#sig-provider").first()).toHaveValue("coinbase-commerce");
+});
+
+// ── Tier-2 providers: end-to-end server-side verification through the receiver ──
+
+test("Square webhook verifies server-side end-to-end (URL-aware scheme)", async ({ page }) => {
+  // Square signs notificationURL + body, so the receiver must supply the capture
+  // URL for verification. Configure server-side signing, then POST a signed
+  // template and confirm the dashboard shows a valid result + the Square badge.
+  await configureServerSigning("square", "sq_signature_key");
+  await sendTier2Webhook("square", "sq_signature_key");
+
+  // The receiver verifies asynchronously; the request row gets the result shortly.
+  await expect
+    .poll(
+      async () => {
+        const { data } = await admin
+          .from("requests")
+          .select("signature_verified, signing_provider")
+          .eq("endpoint_id", endpointId)
+          .eq("signing_provider", "square")
+          .order("received_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data?.signature_verified === true ? "valid" : "pending";
+      },
+      { timeout: 10000 }
+    )
+    .toBe("valid");
+
+  await openDashboard(page);
+  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await signatureTabButton(page).click();
+
+  await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=Square").first()).toBeVisible();
+});
+
+test("Calendly webhook verifies server-side end-to-end (Stripe-style t=,v1= scheme)", async ({
+  page,
+}) => {
+  await configureServerSigning("calendly", "cal_signing_key");
+  await sendTier2Webhook("calendly", "cal_signing_key");
+
+  await expect
+    .poll(
+      async () => {
+        const { data } = await admin
+          .from("requests")
+          .select("signature_verified, signing_provider")
+          .eq("endpoint_id", endpointId)
+          .eq("signing_provider", "calendly")
+          .order("received_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data?.signature_verified === true ? "valid" : "pending";
+      },
+      { timeout: 10000 }
+    )
+    .toBe("valid");
+
+  await openDashboard(page);
+  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await signatureTabButton(page).click();
+
+  await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=Calendly").first()).toBeVisible();
 });

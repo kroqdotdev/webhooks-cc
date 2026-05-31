@@ -382,9 +382,15 @@ function ensureVerifyArgs(args: {
   secret?: string;
   publicKey?: string;
   url?: string;
+  method?: string;
 }):
   | { provider: "discord"; publicKey: string }
-  | { provider: Exclude<VerifyProvider, "discord">; secret: string; url?: string } {
+  | {
+      provider: Exclude<VerifyProvider, "discord">;
+      secret: string;
+      url?: string;
+      method?: string;
+    } {
   if (args.provider === "discord") {
     const publicKey = args.publicKey?.trim();
     if (!publicKey) {
@@ -406,6 +412,7 @@ function ensureVerifyArgs(args: {
     provider: args.provider,
     secret,
     ...(args.url ? { url: args.url } : {}),
+    ...(args.method ? { method: args.method } : {}),
   };
 }
 
@@ -915,9 +922,13 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .describe("Discord application public key. Required for provider=discord."),
       url: httpUrlSchema
         .optional()
-        .describe("Original signed URL. Required for Twilio verification."),
+        .describe("Original signed URL. Required for Twilio, Square, and HubSpot verification."),
+      method: z
+        .string()
+        .optional()
+        .describe("Original HTTP method. Required for HubSpot v3 verification (defaults to POST)."),
     },
-    withErrorHandling(async ({ requestId, provider, secret, publicKey, url }) => {
+    withErrorHandling(async ({ requestId, provider, secret, publicKey, url, method }) => {
       const request = await client.requests.get(requestId);
 
       // If no provider/secret given, return the stored server-side result
@@ -958,7 +969,13 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       }
 
       // Client-side verification with explicit provider/secret
-      const verificationOptions = ensureVerifyArgs({ provider: provider!, secret, publicKey, url });
+      const verificationOptions = ensureVerifyArgs({
+        provider: provider!,
+        secret,
+        publicKey,
+        url,
+        method,
+      });
       const result = await verifySignature(request, verificationOptions);
       return jsonContent({
         valid: result.valid,

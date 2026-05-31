@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import { buildTemplateSendOptions } from "@webhooks-cc/sdk";
 import type { Database } from "@/lib/supabase/database";
 import {
   createEndpointForUser,
@@ -7,6 +8,8 @@ import {
   updateEndpointBySlugForUser,
 } from "@/lib/supabase/endpoints";
 import { getRequestByIdForUser, listRequestsForEndpointByUser } from "@/lib/supabase/requests";
+
+const RECEIVER_URL = process.env.WHK_RECEIVER_URL ?? "http://localhost:3001";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -357,4 +360,232 @@ describe("Signature Verification Integration", () => {
     expect(data.signing_secret_encrypted).toBeTruthy();
     expect(data.signing_secret_encrypted).not.toContain("plaintext_secret_value");
   });
+
+  it("PATCH: accepts every tier-2 signing provider", async () => {
+    const tier2 = ["square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"];
+
+    for (const provider of tier2) {
+      const updated = await updateEndpointBySlugForUser({
+        userId: testUserId,
+        slug: testEndpointSlug,
+        signingProvider: provider,
+        signingSecret: `secret_for_${provider}`,
+      });
+
+      expect(updated, `provider ${provider} should be accepted`).not.toBeNull();
+      expect(updated!.signingProvider).toBe(provider);
+      expect(updated!.hasSigningSecret).toBe(true);
+    }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// End-to-end automatic verification through the Rust receiver (tier-2).
+//
+// For each tier-2 provider we configure the endpoint's signing provider+secret,
+// build a fully-signed template request with the SDK (signed against the exact
+// receiver capture URL so the request-context providers — Square (URL+body) and
+// HubSpot (method+URI+body+timestamp) — line up), POST it to the receiver, then
+// poll the captured request until the receiver's async verification has run and
+// assert signature_verified === true with the correct signing_provider.
+//
+// Requires the Rust receiver (port 3001) to be running with the same
+// SIGNING_SECRET_KEY the web app uses to encrypt the stored secret. If the
+// receiver is not reachable the whole block is skipped.
+// ───────────────────────────────────────────────────────────────────────────
+
+type Tier2Case = {
+  provider: string;
+  secret: string;
+  /** Provider needs the request URL/method threaded by the receiver. */
+  requestContext?: "url" | "url+method";
+  /** Provider has no signature header — signature lives in the body. */
+  bodyEmbedded?: boolean;
+};
+
+const TIER2_CASES: Tier2Case[] = [
+  { provider: "square", secret: "sq_signature_key", requestContext: "url" },
+  { provider: "hubspot", secret: "hs_app_client_secret", requestContext: "url+method" },
+  { provider: "mailgun", secret: "mg_signing_key", bodyEmbedded: true },
+  { provider: "calendly", secret: "cal_signing_key" },
+  { provider: "mux", secret: "mux_signing_secret" },
+  { provider: "sentry", secret: "sentry_client_secret" },
+  { provider: "bitbucket", secret: "bitbucket_webhook_secret" },
+];
+
+async function receiverReachable(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${RECEIVER_URL}/w/__healthcheck-nonexistent__/`, {
+      method: "GET",
+    });
+    // 404 (unknown slug) still proves the receiver is answering on this port.
+    return resp.status === 404 || resp.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+/** Poll the captured request until the async verification result is written. */
+async function pollForVerification(
+  userId: string,
+  slug: string,
+  path: string,
+  timeoutMs = 8000
+): Promise<{ signatureVerified: boolean | null; signingProvider: string | null } | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const requests = await listRequestsForEndpointByUser({ userId, slug, limit: 25 });
+    const match = requests?.find((r) => r.path === path);
+    if (match && match.signatureVerified !== null && match.signatureVerified !== undefined) {
+      return {
+        signatureVerified: match.signatureVerified,
+        signingProvider: match.signingProvider ?? null,
+      };
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return null;
+}
+
+describe("Tier-2 automatic verification through the receiver", () => {
+  const SUITE_EMAIL = `test-tier2-recv-${Date.now()}@webhooks-test.local`;
+  let userId: string;
+  let endpointId: string;
+  let slug: string;
+  let skipSuite = false;
+
+  beforeAll(async () => {
+    if (!(await receiverReachable())) {
+      skipSuite = true;
+      return;
+    }
+
+    const { data: authData, error: authError } = await admin.auth.admin.createUser({
+      email: SUITE_EMAIL,
+      password: TEST_PASSWORD,
+      email_confirm: true,
+    });
+    if (authError) throw authError;
+    userId = authData.user.id;
+
+    await admin
+      .from("users")
+      .update({
+        plan: "pro",
+        request_limit: 10000,
+        requests_used: 0,
+        period_end: new Date(Date.now() + 86400000).toISOString(),
+      })
+      .eq("id", userId);
+
+    const endpoint = await createEndpointForUser({ userId, name: "Tier-2 Receiver Verify" });
+    endpointId = endpoint.id;
+    slug = endpoint.slug;
+  }, 20000);
+
+  afterAll(async () => {
+    if (endpointId) {
+      await admin.from("requests").delete().eq("endpoint_id", endpointId);
+      await admin.from("endpoints").delete().eq("id", endpointId);
+    }
+    if (userId) {
+      await admin.auth.admin.deleteUser(userId);
+    }
+  }, 20000);
+
+  for (const tc of TIER2_CASES) {
+    it(`verifies a valid ${tc.provider} webhook end-to-end (signature_verified === true)`, async () => {
+      if (skipSuite) {
+        // Receiver not running — covered by the Verify gate which starts it.
+        return;
+      }
+
+      // Configure the endpoint's signing provider + secret (encrypted at rest).
+      await updateEndpointBySlugForUser({
+        userId,
+        slug,
+        signingProvider: tc.provider,
+        signingSecret: tc.secret,
+      });
+
+      // The receiver verifies against `${RECEIVER_URL}/w/${slug}` (root path "/").
+      // Sign the template against that exact URL so URL/method-bound providers match.
+      const captureUrl = `${RECEIVER_URL}/w/${slug}`;
+      const signed = await buildTemplateSendOptions(captureUrl, {
+        provider: tc.provider as Parameters<typeof buildTemplateSendOptions>[1]["provider"],
+        secret: tc.secret,
+        method: "POST",
+      });
+
+      const resp = await fetch(captureUrl, {
+        method: signed.method ?? "POST",
+        headers: signed.headers as Record<string, string>,
+        body: signed.body as string,
+      });
+      expect(resp.status).toBe(200);
+
+      const result = await pollForVerification(userId, slug, "/");
+      expect(result, `no verification result written for ${tc.provider}`).not.toBeNull();
+      expect(result!.signatureVerified, `${tc.provider} should verify`).toBe(true);
+      expect(result!.signingProvider).toBe(tc.provider);
+    }, 15000);
+  }
+
+  // Representative tampered-body false cases across the scheme families:
+  // body-bound hex (sentry), URL+body (square), and body-embedded (mailgun).
+  for (const tc of TIER2_CASES.filter((c) =>
+    ["sentry", "square", "mailgun"].includes(c.provider)
+  )) {
+    it(`rejects a tampered ${tc.provider} body (signature_verified === false)`, async () => {
+      if (skipSuite) return;
+
+      await updateEndpointBySlugForUser({
+        userId,
+        slug,
+        signingProvider: tc.provider,
+        signingSecret: tc.secret,
+      });
+
+      const captureUrl = `${RECEIVER_URL}/w/${slug}`;
+      const signed = await buildTemplateSendOptions(captureUrl, {
+        provider: tc.provider as Parameters<typeof buildTemplateSendOptions>[1]["provider"],
+        secret: tc.secret,
+        method: "POST",
+      });
+
+      // Tamper with the body after signing — the signature no longer matches.
+      // For the body-embedded scheme (Mailgun) we must corrupt the embedded
+      // signature field, since whitespace outside the JSON does not change the
+      // signed `timestamp + token`. For body-bound/URL-bound schemes a trailing
+      // byte is enough to break the HMAC over the raw body.
+      let tamperedBody: string;
+      if (tc.bodyEmbedded) {
+        const parsed = JSON.parse(signed.body as string) as {
+          signature?: { signature?: string };
+          [key: string]: unknown;
+        };
+        parsed.signature = {
+          ...parsed.signature,
+          signature: "0".repeat((parsed.signature?.signature ?? "deadbeef").length),
+        };
+        tamperedBody = JSON.stringify(parsed);
+      } else {
+        tamperedBody = `${signed.body as string} `;
+      }
+      const tamperPath = `/tamper-${tc.provider}-${Date.now()}`;
+      const resp = await fetch(`${captureUrl}${tamperPath}`, {
+        method: "POST",
+        headers: signed.headers as Record<string, string>,
+        body: tamperedBody,
+      });
+      expect(resp.status).toBe(200);
+
+      const result = await pollForVerification(userId, slug, tamperPath);
+      expect(result, `no verification result written for tampered ${tc.provider}`).not.toBeNull();
+      // For URL-bound providers the path change ALSO breaks the signature, which
+      // is still a correct "tampered → not verified" outcome.
+      expect(result!.signatureVerified, `tampered ${tc.provider} must not verify`).toBe(false);
+      expect(result!.signingProvider).toBe(tc.provider);
+    }, 15000);
+  }
 });

@@ -1529,3 +1529,35 @@ describe("tier-2 Bitbucket templates produce verifiable signed requests", () => 
     });
   }
 });
+
+// ─── Catalog size guard (tier-2 took the catalog from 21 → 28) ────────────
+
+describe("provider catalog size after tier-2", () => {
+  const TIER2 = ["square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"] as const;
+
+  it("lists 28 template providers (21 tier-1 + 7 tier-2)", () => {
+    expect(TEMPLATE_PROVIDERS).toHaveLength(28);
+    for (const provider of TIER2) {
+      expect(TEMPLATE_PROVIDERS).toContain(provider);
+    }
+  });
+
+  it("lists 27 verifiable providers (SendGrid is template-only, uses IP allowlisting)", () => {
+    expect(VERIFY_PROVIDERS).toHaveLength(27);
+    expect(VERIFY_PROVIDERS).not.toContain("sendgrid");
+    for (const provider of TIER2) {
+      expect(VERIFY_PROVIDERS).toContain(provider);
+    }
+  });
+
+  it("has frozen metadata for every tier-2 provider", () => {
+    for (const provider of TIER2) {
+      const meta = TEMPLATE_METADATA[provider];
+      expect(meta.provider).toBe(provider);
+      expect(meta.secretRequired).toBe(true);
+      expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+      expect(meta.templates.length).toBeGreaterThan(0);
+      expect(meta.templates).toContain(meta.defaultTemplate);
+    }
+  });
+});
