@@ -234,12 +234,7 @@ export async function createAnonymousRegistration(args: {
 // In-app claim ceremony (anonymous flow)
 // ---------------------------------------------------------------------------
 
-export type ClaimPollStatus =
-  | "pending"
-  | "claimed"
-  | "expired"
-  | "invalid"
-  | "previously_claimed";
+export type ClaimPollStatus = "pending" | "claimed" | "expired" | "invalid" | "previously_claimed";
 
 export interface ClaimPollResult {
   status: ClaimPollStatus;
@@ -456,9 +451,7 @@ export async function claimAnonymousByUserCode(
  * Coarse status of an anonymous claim looked up by its human-typed user_code,
  * for the in-app code-entry page to preview before the user confirms.
  */
-export async function lookupAnonymousClaimByUserCode(
-  userCode: string
-): Promise<ClaimPollResult> {
+export async function lookupAnonymousClaimByUserCode(userCode: string): Promise<ClaimPollResult> {
   const claim = await findAnonymousClaimByUserCode(userCode);
 
   if (!claim || claim.flow !== "anonymous") {
@@ -710,9 +703,7 @@ export type IssueIdJagResult =
  * by verified email or JIT-provisions one, then mints a whcc_ key bound to that
  * user with client_name encoding the issuer+sub (for revocation).
  */
-export async function issueIdJagCredential(
-  verified: IdJagSuccess
-): Promise<IssueIdJagResult> {
+export async function issueIdJagCredential(verified: IdJagSuccess): Promise<IssueIdJagResult> {
   const admin = db();
   const scopes = defaultAgentScopes();
 
@@ -821,10 +812,7 @@ export async function revokeForIssuerSubject(iss: string, sub: string): Promise<
  * JIT-provision via Supabase Auth (which fires handle_new_user to upsert
  * public.users). The auth user id equals public.users.id.
  */
-async function resolveOrProvisionUser(
-  email: string,
-  fullName: string | null
-): Promise<string> {
+async function resolveOrProvisionUser(email: string, fullName: string | null): Promise<string> {
   const admin = db();
   const normalized = email.toLowerCase();
 

@@ -610,7 +610,8 @@ export class WebhooksCC {
         description:
           "Agent self-registration (auth.md) for obtaining a credential before you have one. Use the STATIC WebhooksCC.register.* methods (no client instance needed). See WebhooksCC.describeRegistration() for the flows.",
         params: {
-          anonymous: "WebhooksCC.register.anonymous(opts?) -> mint an unowned key + user_code for in-app claim",
+          anonymous:
+            "WebhooksCC.register.anonymous(opts?) -> mint an unowned key + user_code for in-app claim",
           verified_email:
             "WebhooksCC.register.withEmail(email) then confirmEmailOtp({ claimToken, otp })",
           identity_assertion: "WebhooksCC.register.withIdJag(assertion)",

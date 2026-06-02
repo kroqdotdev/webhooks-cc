@@ -94,8 +94,7 @@ export async function POST(request: Request) {
   // IP rate limit. identity_assertion is verified and gets a higher limit;
   // anonymous/verified_email share the lower registration limit. Same window.
   const isIdJagFlow =
-    flowType === "identity_assertion" &&
-    body.assertion_type === ID_JAG_ASSERTION_TYPE;
+    flowType === "identity_assertion" && body.assertion_type === ID_JAG_ASSERTION_TYPE;
 
   const rateLimit = await checkRateLimitWithInfo(
     request,
@@ -122,8 +121,7 @@ export async function POST(request: Request) {
     // identity_assertion whose assertion_type selects the email flow.
     const isVerifiedEmailFlow =
       flowType === "verified_email" ||
-      (flowType === "identity_assertion" &&
-        body.assertion_type === VERIFIED_EMAIL_ASSERTION_TYPE);
+      (flowType === "identity_assertion" && body.assertion_type === VERIFIED_EMAIL_ASSERTION_TYPE);
 
     if (isVerifiedEmailFlow) {
       const emailValue = isString(body.assertion)
@@ -132,11 +130,7 @@ export async function POST(request: Request) {
           ? body.email
           : null;
       // Bound length before the regex so worst-case backtracking is capped (ReDoS guard).
-      if (
-        !emailValue ||
-        emailValue.length > MAX_EMAIL_LENGTH ||
-        !EMAIL_REGEX.test(emailValue)
-      ) {
+      if (!emailValue || emailValue.length > MAX_EMAIL_LENGTH || !EMAIL_REGEX.test(emailValue)) {
         return Response.json({ error: "invalid_email" }, { status: 400 });
       }
       const claim = await issueVerifiedEmailClaim({

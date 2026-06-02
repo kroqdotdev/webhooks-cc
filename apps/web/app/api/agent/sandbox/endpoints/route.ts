@@ -123,9 +123,7 @@ async function authenticateSandboxKey(
  * exact name marker plus is_ephemeral = true. The lib helpers key on user_id
  * (null for every unclaimed key — useless for isolation), so we query directly.
  */
-async function listSandboxEndpointIds(
-  keyId: string
-): Promise<{ id: string; slug: string }[]> {
+async function listSandboxEndpointIds(keyId: string): Promise<{ id: string; slug: string }[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("endpoints")

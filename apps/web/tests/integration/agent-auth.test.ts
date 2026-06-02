@@ -241,13 +241,22 @@ describe("Agent Auth (auth.md) Integration", () => {
     // Delete created api_keys (by key_hash), agent_claims (by token hash), and
     // jti rows, then any JIT-provisioned + explicit test users (by email).
     if (createdApiKeyHashes.size > 0) {
-      await admin.from("api_keys").delete().in("key_hash", [...createdApiKeyHashes]);
+      await admin
+        .from("api_keys")
+        .delete()
+        .in("key_hash", [...createdApiKeyHashes]);
     }
     if (createdClaimTokenHashes.size > 0) {
-      await admin.from("agent_claims").delete().in("claim_token_hash", [...createdClaimTokenHashes]);
+      await admin
+        .from("agent_claims")
+        .delete()
+        .in("claim_token_hash", [...createdClaimTokenHashes]);
     }
     if (createdJtis.size > 0) {
-      await admin.from("agent_idjag_jti").delete().in("jti", [...createdJtis]);
+      await admin
+        .from("agent_idjag_jti")
+        .delete()
+        .in("jti", [...createdJtis]);
     }
 
     // Resolve JIT-provisioned users by email (OTP + ID-JAG flows) for deletion.
@@ -288,7 +297,9 @@ describe("Agent Auth (auth.md) Integration", () => {
     expect(body.claim_token).toMatch(/^clm_/);
     // A short human-friendly claim code (XXXX-XXXX, unambiguous alphabet) is
     // surfaced alongside the token for the code-entry claim path.
-    expect(body.user_code).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/);
+    expect(body.user_code).toMatch(
+      /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/
+    );
     // claim_url is the in-app claim page (mirrors /cli/verify) — a browser URL.
     expect(typeof body.claim_url).toBe("string");
     expect(body.claim_url).toBe(`${h.appUrl}/agent/claim`);
@@ -742,8 +753,7 @@ describe("Agent Auth (auth.md) Integration", () => {
       "verified_email",
       "identity_assertion",
     ]);
-    const assertionTypes: string[] =
-      as.agent_auth.identity_assertion.assertion_types_supported;
+    const assertionTypes: string[] = as.agent_auth.identity_assertion.assertion_types_supported;
     expect(assertionTypes).toContain("urn:ietf:params:oauth:token-type:id-jag");
     // verified_email is an identity TYPE (asserted in identity_types_supported
     // above), NOT an assertion token format, so it must not appear here.

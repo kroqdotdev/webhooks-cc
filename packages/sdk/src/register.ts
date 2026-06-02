@@ -167,9 +167,7 @@ function requireString(json: Record<string, unknown>, key: string, status: numbe
  * Hand the returned `userCode` (or `claimUrl?token=claimToken`) to a human to
  * bind it to a webhooks.cc account; poll with `pollClaim`.
  */
-export async function registerAnonymous(
-  opts?: RegisterOptions
-): Promise<AnonymousRegistration> {
+export async function registerAnonymous(opts?: RegisterOptions): Promise<AnonymousRegistration> {
   const { baseUrl, clientName, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,
@@ -199,10 +197,7 @@ export async function registerAnonymous(
  * Poll an anonymous claim by its `claimToken` to discover whether a human has
  * bound the key to an account yet. Returns coarse status only (no credential).
  */
-export async function pollClaim(
-  claimToken: string,
-  opts?: RegisterOptions
-): Promise<ClaimPoll> {
+export async function pollClaim(claimToken: string, opts?: RegisterOptions): Promise<ClaimPoll> {
   const { baseUrl, timeout } = resolve(opts);
   const { status, json } = await postJson(
     baseUrl,

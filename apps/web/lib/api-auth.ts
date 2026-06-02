@@ -167,9 +167,7 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
  * is where the api-auth boundary enforces the "claim before you write" rule
  * documented on {@link AuthResult}.
  */
-export async function authenticateRequestRequireUser(
-  request: Request
-): Promise<SessionAuthResult> {
+export async function authenticateRequestRequireUser(request: Request): Promise<SessionAuthResult> {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth;
 
@@ -194,9 +192,7 @@ export async function authenticateRequestRequireUser(
  * Rejects API keys — use this for sensitive routes (account deletion, billing mutations)
  * where long-lived API keys should not have access.
  */
-export async function authenticateSessionRequest(
-  request: Request
-): Promise<SessionAuthResult> {
+export async function authenticateSessionRequest(request: Request): Promise<SessionAuthResult> {
   const token = extractBearerToken(request);
   if (!token) {
     return {

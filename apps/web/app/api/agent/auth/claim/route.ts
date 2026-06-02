@@ -22,7 +22,8 @@ export async function POST(request: Request) {
 
   // Echo back the caller's registration_id when supplied (pollClaim does not
   // expose it; the agent already holds it from registration).
-  const registrationId = typeof body.registration_id === "string" ? body.registration_id : undefined;
+  const registrationId =
+    typeof body.registration_id === "string" ? body.registration_id : undefined;
 
   try {
     const result = await pollClaim(body.claim_token);

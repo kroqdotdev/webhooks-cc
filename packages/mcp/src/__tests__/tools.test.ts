@@ -824,9 +824,7 @@ describe("agent registration tools", () => {
   });
 
   it("check_claim polls via the static SDK helper", async () => {
-    const spy = vi
-      .spyOn(WebhooksCC.register, "pollClaim")
-      .mockResolvedValue({ status: "claimed" });
+    const spy = vi.spyOn(WebhooksCC.register, "pollClaim").mockResolvedValue({ status: "claimed" });
     try {
       const tools = getRegistrationTools();
       const result = await tools.check_claim.handler({ claimToken: "clm_abc" });

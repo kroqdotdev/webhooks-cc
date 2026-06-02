@@ -205,14 +205,26 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
   afterAll(async () => {
     if (createdEndpointIds.size > 0) {
       // Remove requests first (FK), then the sandbox endpoints themselves.
-      await admin.from("requests").delete().in("endpoint_id", [...createdEndpointIds]);
-      await admin.from("endpoints").delete().in("id", [...createdEndpointIds]);
+      await admin
+        .from("requests")
+        .delete()
+        .in("endpoint_id", [...createdEndpointIds]);
+      await admin
+        .from("endpoints")
+        .delete()
+        .in("id", [...createdEndpointIds]);
     }
     if (createdApiKeyHashes.size > 0) {
-      await admin.from("api_keys").delete().in("key_hash", [...createdApiKeyHashes]);
+      await admin
+        .from("api_keys")
+        .delete()
+        .in("key_hash", [...createdApiKeyHashes]);
     }
     if (createdClaimTokenHashes.size > 0) {
-      await admin.from("agent_claims").delete().in("claim_token_hash", [...createdClaimTokenHashes]);
+      await admin
+        .from("agent_claims")
+        .delete()
+        .in("claim_token_hash", [...createdClaimTokenHashes]);
     }
     for (const id of createdUserIds) {
       await admin.auth.admin.deleteUser(id).catch(() => {});
@@ -248,7 +260,9 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
   it("creates an ephemeral sandbox endpoint for an unclaimed key", async () => {
     const { credential } = await mintAnonymousKey("sandbox-create-agent");
 
-    const res = await h.sandboxPost(jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` }));
+    const res = await h.sandboxPost(
+      jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` })
+    );
     expect(res.status).toBe(201);
     const body = await res.json();
 
@@ -405,7 +419,9 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
 
   it("404s a slug that does not exist at all", async () => {
     const { credential } = await mintAnonymousKey("sandbox-unknown-slug");
-    const res = await h.sandboxGet(bearerGet(`${SANDBOX_URL}?slug=this-slug-never-existed`, credential));
+    const res = await h.sandboxGet(
+      bearerGet(`${SANDBOX_URL}?slug=this-slug-never-existed`, credential)
+    );
     expect(res.status).toBe(404);
   });
 
@@ -417,13 +433,17 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
 
     // MAX_SANDBOX_ENDPOINTS_PER_KEY is 5: the first 5 succeed.
     for (let i = 0; i < 5; i++) {
-      const res = await h.sandboxPost(jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` }));
+      const res = await h.sandboxPost(
+        jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` })
+      );
       expect(res.status).toBe(201);
       createdEndpointIds.add((await res.json()).id);
     }
 
     // The 6th is rejected with 429 (cap reached) rather than 201.
-    const over = await h.sandboxPost(jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` }));
+    const over = await h.sandboxPost(
+      jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` })
+    );
     expect(over.status).toBe(429);
     expect((await over.json()).error).toMatch(/limit reached/i);
   });
@@ -435,7 +455,9 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
     const { credential, claimToken } = await mintAnonymousKey("sandbox-claim-agent");
 
     // While unclaimed, the sandbox works.
-    const before = await h.sandboxPost(jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` }));
+    const before = await h.sandboxPost(
+      jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` })
+    );
     expect(before.status).toBe(201);
     createdEndpointIds.add((await before.json()).id);
 
@@ -452,7 +474,9 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
 
     // The key is now owned -> the sandbox must reject it (403) on BOTH verbs;
     // it should use /api/endpoints instead.
-    const postAfter = await h.sandboxPost(jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` }));
+    const postAfter = await h.sandboxPost(
+      jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` })
+    );
     expect(postAfter.status).toBe(403);
 
     const getAfter = await h.sandboxGet(bearerGet(SANDBOX_URL, credential));

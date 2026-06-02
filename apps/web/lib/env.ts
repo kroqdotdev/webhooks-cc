@@ -20,44 +20,45 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
 });
 
-const serverEnvSchema = z.object({
-  CAPTURE_SHARED_SECRET: z.string().min(1),
-  BLOG_API_SECRET: z.string().min(1).optional(),
-  APPSIGNAL_PUSH_API_KEY: z.string().optional(),
-  APPSIGNAL_APP_NAME: z.string().default("webhooks-cc-web"),
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  RECEIVER_INTERNAL_URL: z.string().url(),
-  ENDPOINT_CREATE_RATE_LIMIT: z.coerce.number().int().min(1).default(30),
-  ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
-  MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
-  EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
-  // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
-  RESEND_API_KEY: z.string().optional(),
-  // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
-  // selection order: SMTP -> Resend -> dev-capture). Non-production always uses the
-  // dev-capture transport regardless of these values.
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
-  // STARTTLS on 587 -> false; implicit TLS on 465 -> true.
-  SMTP_SECURE: z
-    .union([z.boolean(), z.string()])
-    .transform((v) => (typeof v === "string" ? v === "true" || v === "1" : v))
-    .default(false),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  AGENT_EMAIL_FROM: z.string().default("webhooks.cc <noreply@webhooks.cc>"),
-  AGENT_REGISTER_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
-  AGENT_REGISTER_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(3_600_000),
-  AGENT_IDJAG_RATE_LIMIT: z.coerce.number().int().min(1).default(60),
-  AGENT_IDJAG_PROVIDERS: z.string().default("[]"),
-  // Global cap on outstanding unclaimed anonymous agent keys (DoS backstop,
-  // analogous to MAX_PENDING_CODES for device auth).
-  AGENT_MAX_PENDING_ANONYMOUS: z.coerce.number().int().min(1).default(2000),
-  // Per-email cap on concurrent pending verified_email OTP claims (anti-spam /
-  // brute-force throttle).
-  AGENT_MAX_PENDING_OTP_PER_EMAIL: z.coerce.number().int().min(1).default(3),
-})
+const serverEnvSchema = z
+  .object({
+    CAPTURE_SHARED_SECRET: z.string().min(1),
+    BLOG_API_SECRET: z.string().min(1).optional(),
+    APPSIGNAL_PUSH_API_KEY: z.string().optional(),
+    APPSIGNAL_APP_NAME: z.string().default("webhooks-cc-web"),
+    SUPABASE_URL: z.string().url(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    RECEIVER_INTERNAL_URL: z.string().url(),
+    ENDPOINT_CREATE_RATE_LIMIT: z.coerce.number().int().min(1).default(30),
+    ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
+    MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
+    EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
+    // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
+    RESEND_API_KEY: z.string().optional(),
+    // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
+    // selection order: SMTP -> Resend -> dev-capture). Non-production always uses the
+    // dev-capture transport regardless of these values.
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
+    // STARTTLS on 587 -> false; implicit TLS on 465 -> true.
+    SMTP_SECURE: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => (typeof v === "string" ? v === "true" || v === "1" : v))
+      .default(false),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    AGENT_EMAIL_FROM: z.string().default("webhooks.cc <noreply@webhooks.cc>"),
+    AGENT_REGISTER_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
+    AGENT_REGISTER_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(3_600_000),
+    AGENT_IDJAG_RATE_LIMIT: z.coerce.number().int().min(1).default(60),
+    AGENT_IDJAG_PROVIDERS: z.string().default("[]"),
+    // Global cap on outstanding unclaimed anonymous agent keys (DoS backstop,
+    // analogous to MAX_PENDING_CODES for device auth).
+    AGENT_MAX_PENDING_ANONYMOUS: z.coerce.number().int().min(1).default(2000),
+    // Per-email cap on concurrent pending verified_email OTP claims (anti-spam /
+    // brute-force throttle).
+    AGENT_MAX_PENDING_OTP_PER_EMAIL: z.coerce.number().int().min(1).default(3),
+  })
   .superRefine((env, ctx) => {
     // Fail closed in production: a real email transport MUST be configured.
     // Otherwise sendEmail() silently falls back to the dev-capture transport

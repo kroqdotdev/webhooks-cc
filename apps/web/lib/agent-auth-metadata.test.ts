@@ -41,8 +41,7 @@ describe("agent auth.md — Protected Resource Metadata (RFC 9728)", () => {
       ("resource_name" in prm &&
         typeof (prm as Record<string, unknown>).resource_name === "string" &&
         ((prm as Record<string, unknown>).resource_name as string).length > 0) ||
-      (typeof prm.resource_documentation === "string" &&
-        prm.resource_documentation.length > 0);
+      (typeof prm.resource_documentation === "string" && prm.resource_documentation.length > 0);
     expect(named).toBe(true);
   });
 
@@ -92,9 +91,9 @@ describe("agent auth.md — Authorization Server Metadata", () => {
   test("identity_assertion advertises only the ID-JAG assertion type", () => {
     // verified_email is an identity TYPE, not an assertion token format, so it
     // belongs in identity_types_supported (asserted below) — not here.
-    expect(
-      as.agent_auth.identity_assertion.assertion_types_supported,
-    ).toEqual(["urn:ietf:params:oauth:token-type:id-jag"]);
+    expect(as.agent_auth.identity_assertion.assertion_types_supported).toEqual([
+      "urn:ietf:params:oauth:token-type:id-jag",
+    ]);
   });
 
   test("identity_types_supported still includes verified_email", () => {
@@ -102,9 +101,7 @@ describe("agent auth.md — Authorization Server Metadata", () => {
   });
 
   test("anonymous flow advertises the api_key credential", () => {
-    expect(
-      as.agent_auth.anonymous.credential_types_supported,
-    ).toContain("api_key");
+    expect(as.agent_auth.anonymous.credential_types_supported).toContain("api_key");
   });
 
   test("events_supported is a non-empty array carrying the revoked event schema", () => {
@@ -155,8 +152,7 @@ describe("agent auth.md — hosted /auth.md document", () => {
 
   test("documents the in-app claim ceremony path", () => {
     // Either the bare claim path or the full claim_uri must appear.
-    const hasClaimPath =
-      md.includes("/agent/claim") || md.includes(as.agent_auth.claim_uri);
+    const hasClaimPath = md.includes("/agent/claim") || md.includes(as.agent_auth.claim_uri);
     expect(hasClaimPath).toBe(true);
   });
 

@@ -58,7 +58,9 @@ describe("agent registration on-ramp", () => {
   });
 
   it("throws AgentRegisterError with the auth.md code on non-200", async () => {
-    globalThis.fetch = mockJson(400, { error: "invalid_email" }) as unknown as typeof globalThis.fetch;
+    globalThis.fetch = mockJson(400, {
+      error: "invalid_email",
+    }) as unknown as typeof globalThis.fetch;
     await expect(registerWithEmail("bad", { baseUrl: BASE_URL })).rejects.toMatchObject({
       name: "AgentRegisterError",
       code: "invalid_email",
@@ -107,16 +109,23 @@ describe("agent registration on-ramp", () => {
   });
 
   it("pollClaim maps terminal statuses without throwing", async () => {
-    globalThis.fetch = mockJson(200, { status: "pending", user_code: "ABCD-EFGH" }) as unknown as typeof globalThis.fetch;
+    globalThis.fetch = mockJson(200, {
+      status: "pending",
+      user_code: "ABCD-EFGH",
+    }) as unknown as typeof globalThis.fetch;
     expect(await pollClaim("clm_x", { baseUrl: BASE_URL })).toEqual({
       status: "pending",
       userCode: "ABCD-EFGH",
     });
 
-    globalThis.fetch = mockJson(409, { error: "previously_claimed" }) as unknown as typeof globalThis.fetch;
+    globalThis.fetch = mockJson(409, {
+      error: "previously_claimed",
+    }) as unknown as typeof globalThis.fetch;
     expect((await pollClaim("clm_x", { baseUrl: BASE_URL })).status).toBe("previously_claimed");
 
-    globalThis.fetch = mockJson(410, { error: "claim_expired" }) as unknown as typeof globalThis.fetch;
+    globalThis.fetch = mockJson(410, {
+      error: "claim_expired",
+    }) as unknown as typeof globalThis.fetch;
     expect((await pollClaim("clm_x", { baseUrl: BASE_URL })).status).toBe("expired");
   });
 
@@ -143,6 +152,6 @@ describe("agent registration on-ramp", () => {
     const client = new WebhooksCC({ apiKey: "whcc_test", baseUrl: BASE_URL });
     const described = client.describe();
     expect(described.registration).toBeDefined();
-    expect(described.registration.params.anonymous).toContain("anonymous");
+    expect(described.registration?.params.anonymous).toContain("anonymous");
   });
 });

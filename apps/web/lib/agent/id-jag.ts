@@ -107,9 +107,7 @@ interface VerifyOptions {
 async function verifyTrusted(
   jwt: string,
   opts: VerifyOptions
-): Promise<
-  { ok: true; payload: jose.JWTPayload; iss: string } | { ok: false; error: IdJagError }
-> {
+): Promise<{ ok: true; payload: jose.JWTPayload; iss: string } | { ok: false; error: IdJagError }> {
   // 1. Decode the (untrusted) header to read typ + alg + the claimed issuer.
   let header: jose.ProtectedHeaderParameters;
   let unverified: jose.JWTPayload;
