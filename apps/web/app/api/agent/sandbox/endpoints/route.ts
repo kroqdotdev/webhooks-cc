@@ -267,6 +267,26 @@ export async function POST(request: Request) {
       name: sandboxMarker(authed.keyId),
     });
 
+    // Best-effort guard for the inherent TOCTOU in the list-count-then-create cap
+    // above: concurrent POSTs can each pass the pre-check and collectively exceed
+    // MAX_SANDBOX_ENDPOINTS_PER_KEY. Re-count this key's sandbox endpoints (same
+    // marker filter); if we are now over the cap, roll back the row we just
+    // created and return the same 429. This is not perfectly race-free, but the
+    // global MAX_EPHEMERAL_ENDPOINTS cap (enforced in createEndpointForUser)
+    // remains the hard backstop.
+    const afterCreate = await listSandboxEndpointIds(authed.keyId);
+    if (afterCreate.length > MAX_SANDBOX_ENDPOINTS_PER_KEY) {
+      const admin = createAdminClient();
+      await admin.from("endpoints").delete().eq("id", created.id);
+      return applyRateLimitHeaders(
+        jsonError(
+          `Sandbox endpoint limit reached (${MAX_SANDBOX_ENDPOINTS_PER_KEY}). Claim your agent key for unlimited endpoints, or wait for existing ones to expire.`,
+          429
+        ),
+        rateLimit
+      );
+    }
+
     return applyRateLimitHeaders(
       Response.json(
         {

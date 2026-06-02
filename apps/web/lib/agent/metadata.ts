@@ -130,10 +130,7 @@ export function buildAuthorizationServerMetadata(): AuthorizationServerMetadata 
     agent_auth: {
       identity_types_supported: ["anonymous", "verified_email", "identity_assertion"],
       identity_assertion: {
-        assertion_types_supported: [
-          "urn:ietf:params:oauth:token-type:id-jag",
-          "verified_email",
-        ],
+        assertion_types_supported: ["urn:ietf:params:oauth:token-type:id-jag"],
         credential_types_supported: ["api_key", "access_token"],
       },
       anonymous: {
@@ -285,7 +282,9 @@ ID-JAG. The assertion MUST:
 - come from a trusted issuer,
 - target audience \`${resource}\`,
 - be unexpired (with a jti for replay protection),
-- carry a verified email (\`email_verified: true\`) or verified phone.
+- carry a verified email (\`email_verified: true\`) — REQUIRED; the credential is
+  bound to the account matched by (or provisioned from) that verified email, so a
+  phone-only assertion is not sufficient.
 
 Response on success:
 
@@ -354,7 +353,7 @@ status:
 | \`invalid_signature\` | ID-JAG signature/claims failed verification |
 | \`credential_expired\` | ID-JAG is expired |
 | \`replay_detected\` | ID-JAG/logout \`jti\` was already used |
-| \`missing_verified_email\` | No verified email or phone in the assertion |
+| \`missing_verified_email\` | The assertion is missing a verified email (a verified email is required) |
 | \`invalid_claim_token\` | Unknown or malformed claim token |
 | \`claim_expired\` | Claim/OTP window elapsed |
 | \`previously_claimed\` | Claim/OTP already completed |
@@ -397,8 +396,10 @@ at the same \`jwks_uri\`. Inline static keys are supported for testing via a
 Your assertion MUST: use header \`typ: "oauth-id-jag+jwt"\` with an \`alg\` in the
 allow-list, set \`iss\` to a trusted issuer, target audience \`${resource}\`, carry
 a unique \`jti\` (single-use; replays are rejected forever), be unexpired, and
-include a verified email (\`email_verified: true\`) or verified phone. An
-unverified email never resolves or provisions an account.
+include a verified email (\`email_verified: true\`). A verified email is REQUIRED:
+the credential is bound to the account matched by (or provisioned from) that
+email, so a phone-only assertion is not sufficient. An unverified email never
+resolves or provisions an account.
 
 ## Revocation (providers only)
 

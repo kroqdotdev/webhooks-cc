@@ -22,6 +22,9 @@ export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, 30);
   if (rateLimited) return rateLimited;
 
+  // Body size cap (matches parseJsonBody's cap on the JSON branch).
+  const MAX_BODY_SIZE = 16 * 1024;
+
   try {
     // The token may arrive as the raw JWT (application/logout+jwt) or wrapped
     // in JSON. Read it from whichever the provider used.
@@ -29,10 +32,30 @@ export async function POST(request: Request) {
     let jwt: string | null = null;
 
     if (contentType.includes("application/logout+jwt")) {
-      // The body IS the JWT.
-      jwt = (await request.text()).trim();
+      // The body IS the JWT. Enforce the same size cap as the JSON branch
+      // (parseJsonBody only guards the JSON path). Check Content-Length first
+      // (fast path), then the actual byte size to defend against a missing or
+      // spoofed Content-Length.
+      const contentLength = request.headers.get("Content-Length");
+      if (contentLength) {
+        const size = parseInt(contentLength, 10);
+        if (!isNaN(size) && size > MAX_BODY_SIZE) {
+          return Response.json(
+            { error: `Request body too large (max ${MAX_BODY_SIZE} bytes)` },
+            { status: 413 }
+          );
+        }
+      }
+      const buffer = await request.arrayBuffer();
+      if (buffer.byteLength > MAX_BODY_SIZE) {
+        return Response.json(
+          { error: `Request body too large (max ${MAX_BODY_SIZE} bytes)` },
+          { status: 413 }
+        );
+      }
+      jwt = new TextDecoder().decode(buffer).trim();
     } else {
-      const parsed = await parseJsonBody(request, 16 * 1024);
+      const parsed = await parseJsonBody(request, MAX_BODY_SIZE);
       if ("error" in parsed) return parsed.error;
       const body = parsed.data as Record<string, unknown>;
       if (typeof body.logout_token === "string") {

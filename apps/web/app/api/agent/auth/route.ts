@@ -29,6 +29,12 @@ import { sendError } from "@appsignal/nodejs";
 const ID_JAG_ASSERTION_TYPE = "urn:ietf:params:oauth:token-type:id-jag";
 const VERIFIED_EMAIL_ASSERTION_TYPE = "verified_email";
 
+/** Request body size cap (matches parseJsonBody usage below). */
+const MAX_BODY_BYTES = 16 * 1024;
+
+/** RFC 5321 maximum email length; guards the regex against ReDoS-style backtracking. */
+const MAX_EMAIL_LENGTH = 254;
+
 /** Loose RFC 5322-ish email check: a single @ with non-empty, dot-bearing host. */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -47,14 +53,32 @@ export async function POST(request: Request) {
   let body: Record<string, unknown>;
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/jwt")) {
-    const assertion = (await request.text()).trim();
+    // Reject oversized bodies before reading, using the declared length when present.
+    const contentLength = request.headers.get("content-length");
+    if (contentLength) {
+      const declared = parseInt(contentLength, 10);
+      if (!isNaN(declared) && declared > MAX_BODY_BYTES) {
+        return Response.json(
+          { error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` },
+          { status: 413 }
+        );
+      }
+    }
+    // Bound the read even when Content-Length is absent or spoofed.
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return Response.json(
+        { error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` },
+        { status: 413 }
+      );
+    }
     body = {
       type: "identity_assertion",
       assertion_type: ID_JAG_ASSERTION_TYPE,
-      assertion,
+      assertion: raw.trim(),
     };
   } else {
-    const parsed = await parseJsonBody(request);
+    const parsed = await parseJsonBody(request, MAX_BODY_BYTES);
     if ("error" in parsed) return parsed.error;
     body = parsed.data as Record<string, unknown>;
   }
@@ -107,7 +131,12 @@ export async function POST(request: Request) {
         : isString(body.email)
           ? body.email
           : null;
-      if (!emailValue || !EMAIL_REGEX.test(emailValue)) {
+      // Bound length before the regex so worst-case backtracking is capped (ReDoS guard).
+      if (
+        !emailValue ||
+        emailValue.length > MAX_EMAIL_LENGTH ||
+        !EMAIL_REGEX.test(emailValue)
+      ) {
         return Response.json({ error: "invalid_email" }, { status: 400 });
       }
       const claim = await issueVerifiedEmailClaim({

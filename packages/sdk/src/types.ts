@@ -611,7 +611,7 @@ export type RequestsExport = HarExport | CurlExport;
 export interface SDKDescription {
   version: string;
   /** How an agent self-registers for a credential (auth.md on-ramp). */
-  registration: OperationDescription;
+  registration?: OperationDescription;
   endpoints: Record<string, OperationDescription>;
   templates: Record<string, OperationDescription>;
   usage: OperationDescription;

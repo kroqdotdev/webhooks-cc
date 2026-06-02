@@ -1301,7 +1301,10 @@ export function registerAgentRegistrationTools(server: McpServer): void {
     "register_agent_with_email",
     "Self-register via the verified_email auth.md flow: webhooks.cc emails a one-time code to the address. The credential is WITHHELD until the code is confirmed with verify_agent_otp. Returns a claimToken to pass to verify_agent_otp. No authentication required.",
     {
-      email: z.string().describe("The email address to verify and bind the credential to"),
+      email: z
+        .string()
+        .email({ message: "Invalid email address" })
+        .describe("The email address to verify and bind the credential to"),
       clientName: z
         .string()
         .optional()

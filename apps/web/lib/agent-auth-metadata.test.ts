@@ -89,10 +89,16 @@ describe("agent auth.md — Authorization Server Metadata", () => {
     ]);
   });
 
-  test("identity_assertion advertises ID-JAG and verified_email", () => {
+  test("identity_assertion advertises only the ID-JAG assertion type", () => {
+    // verified_email is an identity TYPE, not an assertion token format, so it
+    // belongs in identity_types_supported (asserted below) — not here.
     expect(
       as.agent_auth.identity_assertion.assertion_types_supported,
-    ).toEqual(["urn:ietf:params:oauth:token-type:id-jag", "verified_email"]);
+    ).toEqual(["urn:ietf:params:oauth:token-type:id-jag"]);
+  });
+
+  test("identity_types_supported still includes verified_email", () => {
+    expect(as.agent_auth.identity_types_supported).toContain("verified_email");
   });
 
   test("anonymous flow advertises the api_key credential", () => {

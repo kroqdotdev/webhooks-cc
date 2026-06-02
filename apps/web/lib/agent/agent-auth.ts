@@ -137,7 +137,10 @@ export async function createAnonymousRegistration(args: {
     .from("agent_claims")
     .select("id", { count: "exact", head: true })
     .eq("flow", "anonymous")
-    .eq("status", "pending");
+    .eq("status", "pending")
+    // Only live (non-expired) claims count toward the backstop; expired-but-not-
+    // yet-cleaned rows would otherwise inflate the total and falsely trip 503.
+    .gt("expires_at", new Date().toISOString());
   if (pendingError) throw pendingError;
   if ((pending ?? 0) >= serverEnv().AGENT_MAX_PENDING_ANONYMOUS) {
     throw new AgentRequestError(503, "temporarily_unavailable");
@@ -201,6 +204,14 @@ export async function createAnonymousRegistration(args: {
   }
 
   if (!claimRow) {
+    // The api_keys row was already inserted but no claim references it. Clean it
+    // up so it does not leak as an orphaned, unclaimable key (best-effort; ignore
+    // delete errors), then surface the original failure.
+    try {
+      await admin.from("api_keys").delete().eq("id", keyRow.id);
+    } catch {
+      // best-effort cleanup
+    }
     throw lastError ?? new Error("Failed to allocate a unique claim code");
   }
 
@@ -283,7 +294,9 @@ export async function pollClaim(claimToken: string): Promise<ClaimPollResult> {
     return { status: "invalid" };
   }
   if (claim.status === "claimed") {
-    return { status: "previously_claimed", client_name: claim.client_name };
+    // Terminal poll status is "claimed" — the SDK's waitForClaim() waits for it.
+    // (previously_claimed is the CLAIM/confirm result, not the poll status.)
+    return { status: "claimed", client_name: claim.client_name };
   }
   if (isExpired(claim.expires_at)) {
     return { status: "expired" };
@@ -385,6 +398,30 @@ async function bindAnonymousClaim(
       .update({ status: "pending", claimed_by_user_id: null })
       .eq("id", claim.id);
     throw keyUpdateError;
+  }
+
+  // Compensating best-effort guard around the inherent TOCTOU between the count
+  // check above and the rebind: two concurrent claims can both pass the
+  // MAX_KEYS_PER_USER check and rebind, pushing the user over the cap. Re-count
+  // AFTER rebinding; if we now exceed the limit, undo this rebind (return the key
+  // to its unowned pre-claim state and reopen the claim) so the cap holds. This
+  // is not race-free, but it converges the common concurrent case.
+  const { count: postCount, error: postCountError } = await admin
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  if (postCountError) throw postCountError;
+  if ((postCount ?? 0) > MAX_KEYS_PER_USER) {
+    await admin
+      .from("api_keys")
+      .update({ user_id: null, claimed_at: null, scopes: claim.pre_claim_scopes })
+      .eq("id", claim.api_key_id);
+    await admin
+      .from("agent_claims")
+      .update({ status: "pending", claimed_by_user_id: null })
+      .eq("id", claim.id);
+    return { ok: false, error: "too_many_keys" };
   }
 
   return { ok: true, clientName: claim.client_name, scopes: claim.post_claim_scopes };
@@ -509,11 +546,19 @@ export async function issueVerifiedEmailClaim(args: {
 
   if (claimError) throw claimError;
 
-  await sendEmail({
-    to: email,
-    subject: "Your webhooks.cc verification code",
-    text: `Your webhooks.cc verification code is ${otp}. It expires in 10 minutes.`,
-  });
+  // If the email never sends, the pending row would keep counting against the
+  // per-email OTP throttle (and the agent could never receive the code), so
+  // delete it on failure before rethrowing.
+  try {
+    await sendEmail({
+      to: email,
+      subject: "Your webhooks.cc verification code",
+      text: `Your webhooks.cc verification code is ${otp}. It expires in 10 minutes.`,
+    });
+  } catch (sendError) {
+    await admin.from("agent_claims").delete().eq("id", claimRow.id);
+    throw sendError;
+  }
 
   return {
     registration_id: claimRow.id,
@@ -571,19 +616,16 @@ export async function verifyVerifiedEmailOtp(args: {
   }
 
   if (!digestsEqual(hashOtp(args.otp), claim.otp_hash)) {
-    // Atomic compare-and-set increment: the `.eq("attempts", claim.attempts)`
-    // guard means the bump only lands if the counter is unchanged since we read
-    // it. This closes the lost-update race where concurrent wrong guesses all
-    // read the same value and only one increment survives — which would let an
-    // attacker get more than max_attempts tries before the lock engages. If a
-    // concurrent request already bumped it, the counter still advanced, so the
-    // protection holds without us retrying.
-    const { error: bumpError } = await admin
-      .from("agent_claims")
-      .update({ attempts: claim.attempts + 1 })
-      .eq("id", claim.id)
-      .eq("status", "pending")
-      .eq("attempts", claim.attempts);
+    // Atomic server-side increment so EVERY wrong guess counts. A compare-and-set
+    // bump (`.eq("attempts", claim.attempts)`) loses the CAS under concurrent
+    // wrong guesses that read the same value — those losers would return
+    // otp_invalid WITHOUT incrementing, letting a client batch parallel guesses
+    // to exceed max_attempts. The RPC runs a single `set attempts = attempts + 1
+    // ... where status = 'pending'`, so each guess advances the counter and the
+    // top-of-function max_attempts lock engages reliably.
+    const { error: bumpError } = await admin.rpc("increment_agent_claim_attempts", {
+      p_claim_id: claim.id,
+    });
     if (bumpError) throw bumpError;
     return { ok: false, error: "otp_invalid" };
   }

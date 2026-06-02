@@ -1,6 +1,7 @@
 import { extractBearerToken, validateBearerTokenWithPlan } from "@/lib/api-auth";
 import {
   checkRateLimitByKeyWithInfo,
+  checkRateLimitWithInfo,
   applyRateLimitHeaders,
   type RateLimitInfo,
 } from "@/lib/rate-limit";
@@ -37,8 +38,12 @@ export async function GET(request: Request) {
       return Response.json({ error: "Invalid token" }, { status: 401 });
     }
     // Unowned, agent-issued keys (auth.md anonymous flow) have no user to scope
-    // the search to. Reject until the key is claimed.
+    // the search to. Rate-limit by IP BEFORE rejecting — the per-user limiter
+    // below never runs for them, so without this an unclaimed key could hammer
+    // this endpoint (and its bearer validation) unthrottled.
     if (validated.userId === null) {
+      const agentLimit = await checkRateLimitWithInfo(request, 60, 10 * 60_000);
+      if (agentLimit.response) return agentLimit.response;
       return Response.json(
         { error: "This operation requires a claimed account." },
         { status: 403 }

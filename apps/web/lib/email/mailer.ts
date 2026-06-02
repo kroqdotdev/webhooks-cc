@@ -4,12 +4,15 @@ import { serverEnv } from "@/lib/env";
  * Minimal email abstraction for the verified_email OTP flow.
  *
  * Transport is selected at call time, and real delivery only happens in
- * production. The selection order in production is:
+ * production. Production fails closed — it never falls back to the dev/test
+ * transport. The selection order in production is:
  *   - SMTP (real delivery) when `SMTP_HOST` is set. The `nodemailer` dependency
- *     is dynamic-imported so it only loads when used.
- *   - Resend (real delivery) when `RESEND_API_KEY` is set. The `resend`
- *     dependency is dynamic-imported so it only loads when used.
- *   - Dev/test transport as the fallback.
+ *     is dynamic-imported so it only loads when used. If an SMTP send fails and
+ *     `RESEND_API_KEY` is set, it falls back to Resend; otherwise it throws.
+ *   - Resend (real delivery) when `RESEND_API_KEY` is set (and SMTP_HOST is
+ *     unset). The `resend` dependency is dynamic-imported so it only loads when
+ *     used.
+ *   - When neither is configured (or both fail), it throws.
  *
  * In non-production (NODE_ENV !== "production", i.e. tests and local dev) the
  * dev/test transport is ALWAYS used even when SMTP_HOST / RESEND_API_KEY are
@@ -30,10 +33,21 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
   const { SMTP_HOST, RESEND_API_KEY } = serverEnv();
 
   if (process.env.NODE_ENV === "production") {
+    // Production never falls back to the dev transport: it fails closed.
     if (SMTP_HOST) {
       const { sendViaSmtp } = await import("./smtp-transport");
-      await sendViaSmtp(message);
-      return;
+      try {
+        await sendViaSmtp(message);
+        return;
+      } catch (error) {
+        // SMTP is primary; fall back to Resend if available, otherwise rethrow.
+        if (!RESEND_API_KEY) {
+          throw error;
+        }
+        const { sendViaResend } = await import("./resend-transport");
+        await sendViaResend(message, RESEND_API_KEY);
+        return;
+      }
     }
 
     if (RESEND_API_KEY) {
@@ -41,6 +55,10 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
       await sendViaResend(message, RESEND_API_KEY);
       return;
     }
+
+    throw new Error(
+      "Email delivery is not configured: set SMTP_HOST or RESEND_API_KEY in production"
+    );
   }
 
   const { sendViaDevTransport } = await import("./dev-transport");

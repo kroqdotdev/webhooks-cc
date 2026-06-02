@@ -21,7 +21,9 @@
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 
 function stripTrailingSlashes(url: string): string {
-  return url.replace(/\/+$/, "");
+  let end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return url.slice(0, end);
 }
 
 /** Shared options accepted by every register helper. */
@@ -149,6 +151,17 @@ function fail(json: Record<string, unknown>, status: number): never {
 }
 
 /**
+ * Extract a required string field from a success response. A malformed response
+ * (missing field, wrong type) is treated as a failure via `fail` rather than
+ * silently coerced to "undefined".
+ */
+function requireString(json: Record<string, unknown>, key: string, status: number): string {
+  const value = json[key];
+  if (typeof value !== "string") fail(json, status);
+  return value;
+}
+
+/**
  * Anonymous flow: mint an unowned API key immediately. The key works right away
  * in the bounded sandbox (create ephemeral endpoints, read its own requests).
  * Hand the returned `userCode` (or `claimUrl?token=claimToken`) to a human to
@@ -171,13 +184,13 @@ export async function registerAnonymous(
   if (status !== 200 || typeof json.credential !== "string") fail(json, status);
 
   return {
-    registrationId: String(json.registration_id),
+    registrationId: requireString(json, "registration_id", status),
     credential: json.credential as string,
     scopes: (json.scopes as string[]) ?? [],
-    claimUrl: String(json.claim_url),
-    claimToken: String(json.claim_token),
-    userCode: String(json.user_code),
-    claimTokenExpires: String(json.claim_token_expires),
+    claimUrl: requireString(json, "claim_url", status),
+    claimToken: requireString(json, "claim_token", status),
+    userCode: requireString(json, "user_code", status),
+    claimTokenExpires: requireString(json, "claim_token_expires", status),
     postClaimScopes: (json.post_claim_scopes as string[]) ?? [],
   };
 }
@@ -254,10 +267,10 @@ export async function registerWithEmail(
   if (status !== 200 || typeof json.claim_token !== "string") fail(json, status);
 
   return {
-    registrationId: String(json.registration_id),
+    registrationId: requireString(json, "registration_id", status),
     claimToken: json.claim_token as string,
-    claimUrl: String(json.claim_url),
-    claimTokenExpires: String(json.claim_token_expires),
+    claimUrl: requireString(json, "claim_url", status),
+    claimTokenExpires: requireString(json, "claim_token_expires", status),
     postClaimScopes: (json.post_claim_scopes as string[]) ?? [],
   };
 }

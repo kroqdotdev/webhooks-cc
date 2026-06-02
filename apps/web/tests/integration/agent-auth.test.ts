@@ -420,13 +420,16 @@ describe("Agent Auth (auth.md) Integration", () => {
     );
     expect(stillWorks.status).toBe(200);
 
-    // Subsequent poll -> previously_claimed (409).
+    // Subsequent poll -> terminal "claimed" status (200). The poll endpoint
+    // reports "claimed" once the key is bound; this is the terminal state the
+    // SDK's waitForClaim() waits for (previously_claimed is the confirm result,
+    // not the poll status).
     const poll = await h.claimPost(
       jsonRequest("https://webhooks.cc/api/agent/auth/claim", { claim_token: anonClaimToken })
     );
-    expect(poll.status).toBe(409);
+    expect(poll.status).toBe(200);
     const pollBody = await poll.json();
-    expect(pollBody.error).toBe("previously_claimed");
+    expect(pollBody.status).toBe("claimed");
   });
 
   // -------------------------------------------------------------------------
@@ -742,7 +745,9 @@ describe("Agent Auth (auth.md) Integration", () => {
     const assertionTypes: string[] =
       as.agent_auth.identity_assertion.assertion_types_supported;
     expect(assertionTypes).toContain("urn:ietf:params:oauth:token-type:id-jag");
-    expect(assertionTypes).toContain("verified_email");
+    // verified_email is an identity TYPE (asserted in identity_types_supported
+    // above), NOT an assertion token format, so it must not appear here.
+    expect(assertionTypes).not.toContain("verified_email");
 
     const mdRes = await h.authMdGet();
     expect(mdRes.status).toBe(200);

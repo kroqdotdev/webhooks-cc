@@ -18,11 +18,17 @@ import { serverEnv } from "@/lib/env";
  * providers are trusted, so any assertion resolves to `invalid_issuer`.
  */
 
+/** Reject non-https URLs — issuer and JWKS endpoints must never use plaintext. */
+const httpsUrl = z
+  .string()
+  .url()
+  .refine((s) => s.startsWith("https://"), { message: "must use https://" });
+
 const trustedProviderSchema = z.object({
   /** Issuer identifier — must be an absolute https URL matching the JWT `iss`. */
-  iss: z.string().url(),
+  iss: httpsUrl,
   /** Optional explicit JWKS endpoint. Defaults to `${iss}/.well-known/jwks.json`. */
-  jwks_uri: z.string().url().optional(),
+  jwks_uri: httpsUrl.optional(),
   /** Optional inline JWK Set (for hermetic tests / static keys). */
   jwks: z.unknown().optional(),
   /** Permitted signing algorithms for this provider. */
@@ -80,6 +86,11 @@ export function getJwksResolver(provider: TrustedProvider): JwksResolver {
     ) as unknown as JwksResolver;
   } else {
     const url = new URL(provider.jwks_uri ?? `${provider.iss}/.well-known/jwks.json`);
+    // Defense-in-depth: the schema already pins iss/jwks_uri to https, but never
+    // fetch a JWKS over plaintext even if a provider slips through unvalidated.
+    if (url.protocol !== "https:") {
+      throw new Error(`JWKS URL must use https:// (got ${url.protocol})`);
+    }
     resolver = jose.createRemoteJWKSet(url);
   }
 
