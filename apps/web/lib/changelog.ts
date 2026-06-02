@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.23.0";
+export const APP_VERSION = "0.23.1";
 export const CLI_VERSION = "1.1.2";
 export const SDK_VERSION = "1.8.0";
 export const MCP_VERSION = "1.6.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.23.1",
+    date: "2026-06-02",
+    title: "Fix: send-webhook templates for newer providers",
+    track: "web",
+    items: [
+      'Fixed the dashboard send-webhook dialog failing with “Unsupported template "custom"” for 14 providers (HubSpot, Square, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Mailgun, Calendly, Mux, Sentry, Bitbucket) — their template presets now derive from the SDK provider metadata so every listed provider can send a signed test webhook',
+    ],
+  },
   {
     version: "0.23.0",
     date: "2026-06-02",

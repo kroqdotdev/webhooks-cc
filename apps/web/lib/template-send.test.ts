@@ -1,3 +1,4 @@
+import { TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -43,6 +44,45 @@ describe("template-send error handling", () => {
         targetUrl: TARGET_URL,
       })
     ).rejects.toThrow("Unsupported template");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider coverage — guards against TEMPLATE_PRESETS drifting behind the SDK
+// provider list (the cause of "Unsupported template \"custom\"" send failures).
+// ---------------------------------------------------------------------------
+describe("template-send provider coverage", () => {
+  test("every SDK provider has selectable presets with a valid default template", () => {
+    for (const provider of TEMPLATE_PROVIDERS) {
+      const presets = getTemplatePresets(provider);
+      expect(presets.length, `expected presets for "${provider}"`).toBeGreaterThan(0);
+
+      const defaultId = getDefaultTemplateId(provider);
+      const supported = TEMPLATE_METADATA[provider].templates;
+      if (supported.length > 0) {
+        // "custom" is only valid for standard-webhooks (which has no named
+        // templates); every other provider must default to a real template id.
+        expect(supported, `default "${defaultId}" must be a real "${provider}" template`).toContain(
+          defaultId
+        );
+      } else {
+        expect(defaultId).toBe("custom");
+      }
+    }
+  });
+
+  test("the default template builds a request for every provider", async () => {
+    for (const provider of TEMPLATE_PROVIDERS) {
+      await expect(
+        buildTemplateRequest({
+          provider,
+          template: getDefaultTemplateId(provider),
+          secret: "whsec_dGVzdF9zZWNyZXQ=",
+          targetUrl: TARGET_URL,
+        }),
+        `building default "${provider}" template`
+      ).resolves.toMatchObject({ method: "POST" });
+    }
   });
 });
 

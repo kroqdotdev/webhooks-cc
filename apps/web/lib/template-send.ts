@@ -364,14 +364,48 @@ const TEMPLATE_PRESETS: Partial<Record<TemplateProvider, readonly TemplatePreset
   ],
 };
 
+/**
+ * Derive presets for providers that have no hand-written UI metadata above.
+ *
+ * The SDK's TEMPLATE_METADATA is the single source of truth for the provider
+ * and template list, so providers added there automatically get selectable
+ * presets here — and never fall back to the "custom" template, which only
+ * standard-webhooks accepts (every other provider's SDK template builder
+ * rejects it with "Unsupported template").
+ */
+function synthesizeTemplatePresets(provider: TemplateProvider): readonly TemplatePreset[] {
+  const metadata = TEMPLATE_METADATA[provider];
+  const { templates } = metadata;
+
+  // standard-webhooks has no named templates (only the hand-written "custom"
+  // preset above); nothing to synthesize for it.
+  const first =
+    ("defaultTemplate" in metadata ? metadata.defaultTemplate : undefined) ?? templates[0];
+  if (!first) return [];
+
+  const ordered = [first, ...templates.filter((id) => id !== first)];
+
+  return ordered.map((id) => ({
+    id,
+    label: id,
+    description: `${provider} ${id} event payload`,
+    event: id,
+    // Display-only metadata: buildTemplateRequest takes the real content-type
+    // from the SDK result, not from here. Every provider reaching this path
+    // emits JSON today; the only form-encoded providers (Twilio, Slack
+    // slash_command) have hand-written presets above and never get synthesized.
+    contentType: "application/json",
+  }));
+}
+
 export function getTemplatePresets(provider: TemplateProvider): readonly TemplatePreset[] {
-  return TEMPLATE_PRESETS[provider] ?? [];
+  const handwritten = TEMPLATE_PRESETS[provider];
+  if (handwritten && handwritten.length > 0) return handwritten;
+  return synthesizeTemplatePresets(provider);
 }
 
 export function getDefaultTemplateId(provider: TemplateProvider): string {
-  const presets = TEMPLATE_PRESETS[provider];
-  if (presets && presets.length > 0) return presets[0].id;
-  return "custom";
+  return getTemplatePresets(provider)[0]?.id ?? "custom";
 }
 
 export function isSecretRequired(provider: TemplateProvider): boolean {
