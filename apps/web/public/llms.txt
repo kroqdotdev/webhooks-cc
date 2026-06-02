@@ -37,6 +37,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - SDK API reference: https://webhooks.cc/docs/sdk/api
 - SDK testing patterns: https://webhooks.cc/docs/sdk/testing
 - MCP server docs: https://webhooks.cc/docs/mcp
+- Agent registration (auth.md): https://webhooks.cc/auth.md — how AI agents register for an API credential
 - GitHub: https://github.com/kroqdotdev/webhooks-cc
 - npm (SDK): https://www.npmjs.com/package/@webhooks-cc/sdk
 - npm (MCP): https://www.npmjs.com/package/@webhooks-cc/mcp

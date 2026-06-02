@@ -1305,7 +1305,11 @@ describe("WebhooksCC", () => {
     it("includes flow, export, waitForAll, and retained search operations", () => {
       const description = createClient().describe();
 
-      expect(description.version).toBe("1.7.0");
+      // The build embeds the package.json version via the PKG_VERSION define;
+      // assert it is a semver-shaped string rather than a hardcoded value so the
+      // test does not need touching on every release.
+      expect(description.version).toMatch(/^\d+\.\d+\.\d+(-dev)?$/);
+      expect(description.registration).toBeDefined();
       expect(description.usage).toBeDefined();
       expect(description.flow).toBeDefined();
       expect(description.templates.listProviders).toBeDefined();

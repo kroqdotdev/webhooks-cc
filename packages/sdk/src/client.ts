@@ -54,6 +54,16 @@ import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from 
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
 import { validateMockResponse, validateResponseRules } from "./validation";
+import {
+  registerAnonymous,
+  registerWithEmail,
+  confirmEmailOtp,
+  registerWithIdJag,
+  pollClaim as pollAgentClaim,
+  waitForClaim as waitForAgentClaim,
+  describeRegistration,
+  type RegistrationDescription,
+} from "./register";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
@@ -437,6 +447,40 @@ export class WebhooksCC {
     this.hooks = options.hooks ?? {};
   }
 
+  /**
+   * Agent self-registration on-ramp (auth.md). STATIC because an agent uses
+   * these BEFORE it has a credential — no client instance is required. Obtain a
+   * key via the anonymous, verified_email, or identity_assertion flow, then
+   * `new WebhooksCC({ apiKey })` with the returned `credential`.
+   *
+   * @example
+   * ```ts
+   * const reg = await WebhooksCC.register.anonymous({ clientName: "my-agent" });
+   * console.log(`Ask a human to claim code ${reg.userCode} at ${reg.claimUrl}`);
+   * const claimed = await WebhooksCC.register.waitForClaim(reg.claimToken);
+   * if (claimed.status === "claimed") {
+   *   const client = new WebhooksCC({ apiKey: reg.credential });
+   * }
+   * ```
+   */
+  static register = {
+    anonymous: registerAnonymous,
+    withEmail: registerWithEmail,
+    confirmEmailOtp,
+    withIdJag: registerWithIdJag,
+    pollClaim: pollAgentClaim,
+    waitForClaim: waitForAgentClaim,
+  };
+
+  /**
+   * Static discovery of the registration on-ramp — how an UNAUTHENTICATED agent
+   * obtains a credential. No network call. Mirrors the per-instance
+   * `describe().registration` block.
+   */
+  static describeRegistration(baseUrl?: string): RegistrationDescription {
+    return describeRegistration(baseUrl ?? DEFAULT_BASE_URL);
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
@@ -562,6 +606,18 @@ export class WebhooksCC {
   describe(): SDKDescription {
     return {
       version: SDK_VERSION,
+      registration: {
+        description:
+          "Agent self-registration (auth.md) for obtaining a credential before you have one. Use the STATIC WebhooksCC.register.* methods (no client instance needed). See WebhooksCC.describeRegistration() for the flows.",
+        params: {
+          anonymous:
+            "WebhooksCC.register.anonymous(opts?) -> mint an unowned key + user_code for in-app claim",
+          verified_email:
+            "WebhooksCC.register.withEmail(email) then confirmEmailOtp({ claimToken, otp })",
+          identity_assertion: "WebhooksCC.register.withIdJag(assertion)",
+          pollClaim: "WebhooksCC.register.pollClaim(claimToken) / waitForClaim(claimToken)",
+        },
+      },
       endpoints: {
         create: {
           description: "Create a webhook endpoint",

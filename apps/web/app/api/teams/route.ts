@@ -1,4 +1,4 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createTeam, listTeamsForUser } from "@/lib/supabase/teams";
 
@@ -6,7 +6,7 @@ const TEAM_CREATE_RATE_LIMIT_MAX = 10;
 const TEAM_CREATE_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 
 export async function GET(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   try {
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const rateLimit = await checkRateLimitByKeyWithInfo(

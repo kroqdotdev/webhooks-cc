@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebhooksCC } from "@webhooks-cc/sdk";
 import { registerPrompts } from "./prompts";
 import { registerResources } from "./resources";
-import { registerTools } from "./tools";
+import { registerTools, registerAgentRegistrationTools } from "./tools";
 
 declare const PKG_VERSION: string | undefined;
 
@@ -31,19 +31,25 @@ export interface CreateServerOptions {
  */
 export function createServer(options: CreateServerOptions = {}): McpServer {
   const apiKey = options.apiKey ?? process.env.WHK_API_KEY;
+
+  const server = new McpServer({
+    name: "webhooks-cc",
+    version: VERSION,
+  });
+
+  // No API key yet: boot a minimal server exposing ONLY the unauthenticated
+  // agent self-registration on-ramp (auth.md). This lets an agent learn how to
+  // register and obtain a credential, instead of failing to start. Once it has
+  // a key (WHK_API_KEY), the full tool surface is registered below.
   if (!apiKey) {
-    throw new Error("Missing API key. Set WHK_API_KEY environment variable or pass apiKey option.");
+    registerAgentRegistrationTools(server);
+    return server;
   }
 
   const client = new WebhooksCC({
     apiKey,
     webhookUrl: options.webhookUrl ?? process.env.WHK_WEBHOOK_URL,
     baseUrl: options.baseUrl ?? process.env.WHK_BASE_URL,
-  });
-
-  const server = new McpServer({
-    name: "webhooks-cc",
-    version: VERSION,
   });
 
   registerTools(server, client);
@@ -53,6 +59,6 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   return server;
 }
 
-export { registerTools } from "./tools";
+export { registerTools, registerAgentRegistrationTools } from "./tools";
 export { registerPrompts } from "./prompts";
 export { registerResources } from "./resources";

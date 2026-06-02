@@ -1,11 +1,11 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   clearRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { slug } = await params;
@@ -43,7 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { slug } = await params;

@@ -6,33 +6,131 @@ export interface Database {
       api_keys: {
         Row: {
           id: string;
-          user_id: string;
+          // NULLABLE since migration 00029: unowned agent-issued keys are not
+          // bound to a user until claimed (auth.md anonymous flow).
+          user_id: string | null;
           key_hash: string;
           key_prefix: string;
           name: string;
           last_used_at: string | null;
           expires_at: string | null;
           created_at: string;
+          // Agent self-registration (auth.md) metadata — migration 00029.
+          scopes: string[];
+          is_agent_issued: boolean;
+          client_name: string | null;
+          claimed_at: string | null;
         };
         Insert: {
           id?: string;
-          user_id: string;
+          user_id?: string | null;
           key_hash: string;
           key_prefix: string;
           name: string;
           last_used_at?: string | null;
           expires_at?: string | null;
           created_at?: string;
+          scopes?: string[];
+          is_agent_issued?: boolean;
+          client_name?: string | null;
+          claimed_at?: string | null;
         };
         Update: {
           id?: string;
-          user_id?: string;
+          user_id?: string | null;
           key_hash?: string;
           key_prefix?: string;
           name?: string;
           last_used_at?: string | null;
           expires_at?: string | null;
           created_at?: string;
+          scopes?: string[];
+          is_agent_issued?: boolean;
+          client_name?: string | null;
+          claimed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      agent_claims: {
+        Row: {
+          id: string;
+          flow: "anonymous" | "verified_email";
+          claim_token_hash: string;
+          // NULLABLE (migration 00030): short human claim code (XXXX-XXXX) for
+          // the anonymous in-app claim-by-code path.
+          user_code: string | null;
+          api_key_id: string | null;
+          email: string | null;
+          otp_hash: string | null;
+          attempts: number;
+          max_attempts: number;
+          post_claim_scopes: string[];
+          pre_claim_scopes: string[];
+          client_name: string | null;
+          status: "pending" | "claimed";
+          claimed_by_user_id: string | null;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          flow: "anonymous" | "verified_email";
+          claim_token_hash: string;
+          user_code?: string | null;
+          api_key_id?: string | null;
+          email?: string | null;
+          otp_hash?: string | null;
+          attempts?: number;
+          max_attempts?: number;
+          post_claim_scopes?: string[];
+          pre_claim_scopes?: string[];
+          client_name?: string | null;
+          status?: "pending" | "claimed";
+          claimed_by_user_id?: string | null;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          flow?: "anonymous" | "verified_email";
+          claim_token_hash?: string;
+          user_code?: string | null;
+          api_key_id?: string | null;
+          email?: string | null;
+          otp_hash?: string | null;
+          attempts?: number;
+          max_attempts?: number;
+          post_claim_scopes?: string[];
+          pre_claim_scopes?: string[];
+          client_name?: string | null;
+          status?: "pending" | "claimed";
+          claimed_by_user_id?: string | null;
+          expires_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      agent_idjag_jti: {
+        Row: {
+          jti: string;
+          issuer: string;
+          purpose: "id-jag" | "logout";
+          expires_at: string;
+          seen_at: string;
+        };
+        Insert: {
+          jti: string;
+          issuer: string;
+          purpose?: "id-jag" | "logout";
+          expires_at: string;
+          seen_at?: string;
+        };
+        Update: {
+          jti?: string;
+          issuer?: string;
+          purpose?: "id-jag" | "logout";
+          expires_at?: string;
+          seen_at?: string;
         };
         Relationships: [];
       };

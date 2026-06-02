@@ -1,8 +1,8 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { getUsageForUser } from "@/lib/supabase/usage";
 
 export async function GET(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   try {

@@ -15,13 +15,37 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.21.0";
+export const APP_VERSION = "0.23.0";
 export const CLI_VERSION = "1.1.2";
-export const SDK_VERSION = "1.7.0";
-export const MCP_VERSION = "1.5.0";
+export const SDK_VERSION = "1.8.0";
+export const MCP_VERSION = "1.6.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.23.0",
+    date: "2026-06-02",
+    title: "Agent Registration — sandbox, claim codes, SMTP email",
+    track: "web",
+    items: [
+      "Unclaimed agent credentials now work immediately in a bounded sandbox: an anonymous key can create ephemeral endpoints and read only its own captured requests, with strict cross-tenant isolation, before a human claims it",
+      "Anonymous registrations get a short human-friendly claim code (e.g. ABCD-EFGH) alongside the claim link — a signed-in user can claim by typing the code at /agent/claim",
+      "Verification emails (OTP) now send over SMTP in production (SMTP → Resend → dev fallback); local dev and tests keep using the in-process capture transport",
+      "Documented the ID-JAG trusted-provider config format and added an identity-provider onboarding section to the hosted /auth.md",
+    ],
+  },
+  {
+    version: "0.22.0",
+    date: "2026-06-01",
+    title: "Agent Registration — auth.md (anonymous, verified email, ID-JAG)",
+    track: "web",
+    items: [
+      "Implements the WorkOS auth.md agent-registration protocol: agents self-register a credential anonymously, via a verified-email one-time code, or by presenting a provider-signed ID-JAG identity assertion",
+      "Adds RFC 9728 discovery (/.well-known/oauth-protected-resource and /.well-known/oauth-authorization-server), a hosted /auth.md, and a WWW-Authenticate hint on 401s so agents can discover how to authenticate",
+      "Anonymous credentials can be claimed by a signed-in user from an in-app claim page, permanently attaching the key to their account",
+      "Supports provider-driven revocation (logout token) for ID-JAG-issued credentials",
+    ],
+  },
   {
     version: "0.21.0",
     date: "2026-05-31",
@@ -631,6 +655,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.8.0",
+    date: "2026-06-02",
+    title: "Agent self-registration on-ramp",
+    track: "sdk",
+    items: [
+      "New static WebhooksCC.register helpers let an agent obtain its own credential before it has one: anonymous (with claim code + poll/waitForClaim), verified_email (withEmail + confirmEmailOtp), and identity_assertion (withIdJag)",
+      "WebhooksCC.describeRegistration() and client.describe().registration surface the auth.md on-ramp so an unauthenticated agent can discover how to register",
+      "Standalone exports (registerAnonymous, registerWithEmail, confirmEmailOtp, registerWithIdJag, pollClaim, waitForClaim) plus an AgentRegisterError carrying the auth.md error code",
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-05-31",
     title: "7 New Providers — Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket",
@@ -806,6 +841,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.6.0",
+    date: "2026-06-02",
+    title: "Agent self-registration on-ramp",
+    track: "mcp",
+    items: [
+      "New unauthenticated tools — how_to_register, register_agent, and check_claim — let an agent with no API key learn the auth.md flows and drive the anonymous register + claim handshake",
+      "The MCP server now boots without WHK_API_KEY, exposing only the registration on-ramp so an agent can obtain a credential instead of failing to start",
+      "describe now includes the registration on-ramp block from the SDK",
+    ],
+  },
   {
     version: "1.5.0",
     date: "2026-05-31",
