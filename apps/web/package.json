@@ -33,7 +33,7 @@
     "clsx": "^2.1.1",
     "gray-matter": "^4.0.3",
     "hast-util-to-string": "^3.0.1",
-    "ioredis": "^5.10.1",
+    "ioredis": "^5.11.0",
     "jose": "^5.9.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.7",
