@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { claimGuestEndpoint } from "@/lib/supabase/endpoints";
 
 /**
@@ -8,7 +8,7 @@ import { claimGuestEndpoint } from "@/lib/supabase/endpoints";
  * Body: { slug: string }
  */
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   let body: { slug?: string };

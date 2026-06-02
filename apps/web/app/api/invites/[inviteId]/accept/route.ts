@@ -1,11 +1,11 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { acceptInvite } from "@/lib/supabase/teams";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ inviteId: string }> }
 ) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { inviteId } = await params;

@@ -1,4 +1,4 @@
-import { authenticateSessionRequest, type AuthResult } from "@/lib/api-auth";
+import { authenticateSessionRequest, type SessionAuthResult } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
 
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const auth: AuthResult = await authenticateSessionRequest(request);
+  const auth: SessionAuthResult = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
 
   const url = new URL(request.url);

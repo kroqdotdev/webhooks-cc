@@ -1,5 +1,24 @@
 export { WebhooksCC, ApiError } from "./client";
 export {
+  registerAnonymous,
+  registerWithEmail,
+  confirmEmailOtp,
+  registerWithIdJag,
+  pollClaim,
+  waitForClaim,
+  describeRegistration,
+  AgentRegisterError,
+} from "./register";
+export type {
+  RegisterOptions,
+  AnonymousRegistration,
+  VerifiedEmailChallenge,
+  IssuedCredential,
+  ClaimStatus,
+  ClaimPoll,
+  RegistrationDescription,
+} from "./register";
+export {
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,

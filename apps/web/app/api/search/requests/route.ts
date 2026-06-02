@@ -36,6 +36,14 @@ export async function GET(request: Request) {
     if (!validated) {
       return Response.json({ error: "Invalid token" }, { status: 401 });
     }
+    // Unowned, agent-issued keys (auth.md anonymous flow) have no user to scope
+    // the search to. Reject until the key is claimed.
+    if (validated.userId === null) {
+      return Response.json(
+        { error: "This operation requires a claimed account." },
+        { status: 403 }
+      );
+    }
 
     const userId = validated.userId;
     const plan = validated.plan;

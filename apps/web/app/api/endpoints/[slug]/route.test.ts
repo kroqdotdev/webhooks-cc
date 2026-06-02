@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mockFns = vi.hoisted(() => ({
-  authenticateRequest: vi.fn(),
+  authenticateRequestRequireUser: vi.fn(),
   validateNotificationUrl: vi.fn(),
   validateMockResponseField: vi.fn(),
   validateResponseRules: vi.fn(),
@@ -13,7 +13,7 @@ const mockFns = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api-auth", () => ({
-  authenticateRequest: mockFns.authenticateRequest,
+  authenticateRequestRequireUser: mockFns.authenticateRequestRequireUser,
 }));
 
 vi.mock("@/lib/request-validation", async (importOriginal) => {
@@ -54,7 +54,7 @@ describe("PATCH /api/endpoints/[slug]", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mockFns.authenticateRequest.mockResolvedValue({ success: true, userId: "user_123" });
+    mockFns.authenticateRequestRequireUser.mockResolvedValue({ success: true, userId: "user_123" });
     mockFns.validateNotificationUrl.mockReturnValue({ valid: true });
     mockFns.validateMockResponseField.mockReturnValue({ valid: true });
     mockFns.validateResponseRules.mockReturnValue({ valid: true });

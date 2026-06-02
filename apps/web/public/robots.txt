@@ -9,4 +9,6 @@ Disallow: /api/
 Disallow: /cli/verify
 Disallow: /blog/preview
 
+# Agent registration (auth.md): https://webhooks.cc/auth.md — how AI agents obtain an API credential
+
 Sitemap: https://webhooks.cc/sitemap-index.xml

@@ -1,4 +1,4 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
   validateNotificationUrl,
@@ -14,7 +14,7 @@ import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { slug } = await params;
@@ -45,7 +45,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { slug } = await params;
@@ -217,7 +217,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { slug } = await params;

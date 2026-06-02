@@ -14,6 +14,7 @@ import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { ANNOUNCEMENTS } from "@/lib/announcements";
+import { buildAuthMdUrl } from "@/lib/agent/metadata";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -93,6 +94,15 @@ export default function RootLayout({
           type="application/rss+xml"
           title="webhooks.cc Blog"
           href="/feed.xml"
+        />
+        {/* Proactive auth.md discovery (WorkOS agent-registration protocol). No
+            registered IANA relation exists, so we use the self-descriptive
+            rel="auth.md" mirroring the spec's canonical filename. */}
+        <link
+          rel="auth.md"
+          type="text/markdown"
+          title="Agent registration (auth.md)"
+          href={buildAuthMdUrl()}
         />
         <script
           dangerouslySetInnerHTML={{

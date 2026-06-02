@@ -19,10 +19,10 @@ import {
   UnauthorizedError,
   VERIFY_PROVIDERS,
   verifySignature,
+  WebhooksCC,
   WebhooksCCError,
   type Request,
   type VerifyProvider,
-  type WebhooksCC,
 } from "@webhooks-cc/sdk";
 
 const MAX_BODY_SIZE = 32_768;
@@ -1217,6 +1217,139 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     withErrorHandling(async () => {
       const description = client.describe();
       return jsonContent(description);
+    })
+  );
+
+  registerAgentRegistrationTools(server);
+}
+
+/**
+ * Resolve the webhooks.cc app base URL the SAME way the client/server does, so
+ * the unauthenticated registration tools hit the right deployment. The
+ * registration on-ramp is unauthenticated by design (an agent uses it BEFORE it
+ * has a key), so these tools never touch the authenticated client.
+ */
+function resolveBaseUrl(): string {
+  return process.env.WHK_BASE_URL ?? "https://webhooks.cc";
+}
+
+/**
+ * Agent self-registration tools (auth.md). These are UNAUTHENTICATED — they let
+ * an agent that does NOT yet have a webhooks.cc credential obtain one, then
+ * configure the MCP server with the returned key (WHK_API_KEY). Registered on
+ * every server so a probing agent can always discover the on-ramp via
+ * `describe` / `how_to_register`.
+ */
+export function registerAgentRegistrationTools(server: McpServer): void {
+  const baseUrl = resolveBaseUrl();
+
+  server.tool(
+    "how_to_register",
+    "Explain how an agent self-registers for a webhooks.cc API credential (auth.md). Call this FIRST when you have no API key. Returns the three registration flows and the auth.md documentation URL. No authentication required.",
+    {},
+    withErrorHandling(async () => {
+      return jsonContent({
+        ...WebhooksCC.describeRegistration(baseUrl),
+        next_steps: [
+          "Easiest: call register_agent (anonymous) to get a key immediately, then have a human run claim_agent with the returned userCode while logged in to webhooks.cc.",
+          "Or set WHK_API_KEY to an existing whcc_ key and use the authenticated tools.",
+        ],
+      });
+    })
+  );
+
+  server.tool(
+    "register_agent",
+    "Self-register for a webhooks.cc API credential via the anonymous auth.md flow. Returns a whcc_ API key that works immediately in a bounded sandbox, plus a short userCode and claimUrl a human uses to bind the key to their account. No authentication required. After registering, set WHK_API_KEY to the returned credential.",
+    {
+      clientName: z
+        .string()
+        .optional()
+        .describe("A human-readable name for this agent, recorded on the issued key"),
+    },
+    withErrorHandling(async ({ clientName }) => {
+      const reg = await WebhooksCC.register.anonymous({ baseUrl, clientName });
+      return jsonContent({
+        credential: reg.credential,
+        scopes: reg.scopes,
+        claim: {
+          userCode: reg.userCode,
+          claimUrl: reg.claimUrl,
+          claimToken: reg.claimToken,
+          expiresAt: reg.claimTokenExpires,
+          instructions: `Ask a human to open ${reg.claimUrl} while logged in to webhooks.cc and either enter the code ${reg.userCode} or open ${reg.claimUrl}?token=${reg.claimToken}. Then call check_claim with the claimToken.`,
+        },
+        usage:
+          "Set WHK_API_KEY to `credential` to use the authenticated tools. Before it is claimed the key can create ephemeral endpoints and read its own captured requests in the sandbox.",
+      });
+    })
+  );
+
+  server.tool(
+    "check_claim",
+    "Check whether an anonymous registration's API key has been claimed by a human yet. Poll this after register_agent until status is 'claimed'. No authentication required.",
+    {
+      claimToken: z.string().describe("The claimToken returned by register_agent"),
+    },
+    withErrorHandling(async ({ claimToken }) => {
+      const poll = await WebhooksCC.register.pollClaim(claimToken, { baseUrl });
+      return jsonContent(poll);
+    })
+  );
+
+  server.tool(
+    "register_agent_with_email",
+    "Self-register via the verified_email auth.md flow: webhooks.cc emails a one-time code to the address. The credential is WITHHELD until the code is confirmed with verify_agent_otp. Returns a claimToken to pass to verify_agent_otp. No authentication required.",
+    {
+      email: z.string().describe("The email address to verify and bind the credential to"),
+      clientName: z
+        .string()
+        .optional()
+        .describe("A human-readable name for this agent, recorded on the issued key"),
+    },
+    withErrorHandling(async ({ email, clientName }) => {
+      const challenge = await WebhooksCC.register.withEmail(email, { baseUrl, clientName });
+      return jsonContent({
+        claimToken: challenge.claimToken,
+        expiresAt: challenge.claimTokenExpires,
+        postClaimScopes: challenge.postClaimScopes,
+        next_step: `A one-time code was emailed to ${email}. Ask the human for it, then call verify_agent_otp with this claimToken and the code.`,
+      });
+    })
+  );
+
+  server.tool(
+    "verify_agent_otp",
+    "Complete the verified_email flow: submit the emailed OTP with the claimToken from register_agent_with_email. On success returns the whcc_ API key (bound to the verified email). Set WHK_API_KEY to it. No authentication required.",
+    {
+      claimToken: z.string().describe("The claimToken returned by register_agent_with_email"),
+      otp: z.string().describe("The one-time code the human received by email"),
+    },
+    withErrorHandling(async ({ claimToken, otp }) => {
+      const issued = await WebhooksCC.register.confirmEmailOtp({ claimToken, otp }, { baseUrl });
+      return jsonContent({
+        credential: issued.credential,
+        scopes: issued.scopes,
+        usage: "Set WHK_API_KEY to `credential` to use the authenticated tools.",
+      });
+    })
+  );
+
+  server.tool(
+    "register_agent_with_idjag",
+    "Self-register via the identity_assertion (ID-JAG) auth.md flow: present a verified identity-assertion JWT (urn:ietf:params:oauth:token-type:id-jag) from a trusted provider. The credential is returned synchronously — no human claim step. No webhooks.cc authentication required, but only works if webhooks.cc trusts your provider.",
+    {
+      assertion: z
+        .string()
+        .describe("The ID-JAG assertion JWT (typ oauth-id-jag+jwt) from a trusted provider"),
+    },
+    withErrorHandling(async ({ assertion }) => {
+      const issued = await WebhooksCC.register.withIdJag(assertion, { baseUrl });
+      return jsonContent({
+        credential: issued.credential,
+        scopes: issued.scopes,
+        usage: "Set WHK_API_KEY to `credential` to use the authenticated tools.",
+      });
     })
   );
 }

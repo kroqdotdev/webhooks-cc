@@ -1,11 +1,11 @@
-import { authenticateRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { removeTeamMember } from "@/lib/supabase/teams";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ teamId: string; userId: string }> }
 ) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId, userId } = await params;

@@ -1,5 +1,5 @@
 import {
-  authenticateRequest,
+  authenticateRequestRequireUser,
   extractBearerToken,
   validateBearerTokenWithPlan,
 } from "@/lib/api-auth";
@@ -15,7 +15,7 @@ import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/
 import { serverEnv } from "@/lib/env";
 
 export async function GET(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   try {
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const rateLimit = await checkRateLimitByKeyWithInfo(
