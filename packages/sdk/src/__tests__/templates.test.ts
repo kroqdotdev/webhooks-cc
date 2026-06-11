@@ -42,11 +42,15 @@ const ENDPOINT_URL = "https://go.webhooks.cc/w/test-slug";
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 /** Wrapper that asserts headers and body are always present (they always are from buildTemplateSendOptions). */
-async function buildTemplate(provider: string, options?: { template?: string; secret?: string }) {
+async function buildTemplate(
+  provider: string,
+  options?: { template?: string; secret?: string; body?: unknown }
+) {
   const result = await buildTemplateSendOptions(ENDPOINT_URL, {
     provider: provider as Parameters<typeof buildTemplateSendOptions>[1]["provider"],
     secret: options?.secret ?? TEST_SECRET,
     template: options?.template,
+    body: options?.body,
   });
   return {
     ...result,
@@ -1674,6 +1678,40 @@ describe("tier-3 templates produce provider-shaped requests", () => {
       ).toBe(true);
     });
   }
+
+  it("adyen signs every notification item in a multi-item body override", async () => {
+    const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    const makeItem = (merchantReference: string) => ({
+      NotificationRequestItem: {
+        amount: { value: 1130, currency: "EUR" },
+        pspReference: "7914073381342284",
+        eventCode: "AUTHORISATION",
+        merchantAccountCode: "TestMerchant",
+        merchantReference,
+        success: "true",
+      },
+    });
+    const result = await buildTemplate("adyen", {
+      secret: hmacKey,
+      body: {
+        live: "false",
+        notificationItems: [makeItem("Item-1"), makeItem("Item-2")],
+      },
+    });
+
+    const parsed = parseBody(result.body) as {
+      notificationItems: Array<{
+        NotificationRequestItem: { additionalData?: { hmacSignature?: string } };
+      }>;
+    };
+    expect(parsed.notificationItems).toHaveLength(2);
+    for (const wrapper of parsed.notificationItems) {
+      expect(wrapper.NotificationRequestItem.additionalData?.hmacSignature).toMatch(
+        /^[A-Za-z0-9+/=]+$/
+      );
+    }
+    expect(await verifyAdyenSignature(result.body, hmacKey)).toBe(true);
+  });
 
   it("paypal emits the transmission headers and event payload", async () => {
     const result = await buildTemplate("paypal", {

@@ -259,40 +259,40 @@ import {
 } from "@webhooks-cc/sdk";
 ```
 
-| Function                             | Match source                                                 | Event source                  |
-| ------------------------------------ | ------------------------------------------------------------ | ----------------------------- |
-| `isStripeWebhook(request)`           | `stripe-signature`                                           | JSON `type`                   |
-| `isGitHubWebhook(request)`           | `x-github-event` or `x-hub-signature-256`                    | `x-github-event`              |
-| `isShopifyWebhook(request)`          | `x-shopify-hmac-sha256` or `x-shopify-topic`                 | `x-shopify-topic`             |
-| `isSlackWebhook(request)`            | `x-slack-signature`                                          | JSON `type` or form `command` |
-| `isTwilioWebhook(request)`           | `x-twilio-signature`                                         | none                          |
-| `isPaddleWebhook(request)`           | `paddle-signature`                                           | JSON `event_type`             |
-| `isLinearWebhook(request)`           | `linear-signature`                                           | JSON `action` + `type`        |
-| `isSendGridWebhook(request)`         | JSON array with `sg_event_id`                                | first array item's `event`    |
-| `isClerkWebhook(request)`            | `svix-id`                                                    | JSON `type`                   |
-| `isDiscordWebhook(request)`          | `x-signature-ed25519` AND `x-signature-timestamp`            | Discord interaction `type`    |
-| `isVercelWebhook(request)`           | `x-vercel-signature`                                         | JSON `type`                   |
-| `isGitLabWebhook(request)`           | `x-gitlab-event` or `x-gitlab-token`                         | normalized `x-gitlab-event`   |
-| `isTypeformWebhook(request)`         | `typeform-signature`                                         | JSON `event_type`             |
-| `isStandardWebhook(request)`         | `webhook-id` AND `webhook-timestamp` AND `webhook-signature` | JSON `type`                   |
-| `isMetaWebhook(request)`             | JSON `object` field                                          | JSON `object`                 |
-| `isLemonSqueezyWebhook(request)`     | JSON `meta.event_name`                                       | JSON `meta.event_name`        |
-| `isCoinbaseCommerceWebhook(request)` | `x-cc-webhook-signature`                                     | JSON `event.type`             |
-| `isRazorpayWebhook(request)`         | `x-razorpay-signature`                                       | JSON `event`                  |
-| `isCalWebhook(request)`              | `x-cal-signature-256`                                        | JSON `triggerEvent`           |
-| `isIntercomWebhook(request)`         | `x-hub-signature` (`sha1=`)                                  | JSON `topic`                  |
-| `isTelegramWebhook(request)`         | `x-telegram-bot-api-secret-token`                            | none                          |
-| `isSquareWebhook(request)`           | `x-square-hmacsha256-signature`                              | JSON `type`                   |
-| `isHubSpotWebhook(request)`          | `x-hubspot-signature-v3`                                     | JSON `0.subscriptionType`     |
-| `isMailgunWebhook(request)`          | JSON `signature.token`                                       | JSON `event-data.event`       |
-| `isCalendlyWebhook(request)`         | `calendly-webhook-signature`                                 | JSON `event`                  |
-| `isMuxWebhook(request)`              | `mux-signature`                                              | JSON `type`                   |
-| `isSentryWebhook(request)`           | `sentry-hook-signature`                                      | `sentry-hook-resource`        |
-| `isBitbucketWebhook(request)`        | `x-event-key`                                                | `x-event-key`                 |
-| `isDocuSignWebhook(request)`         | `x-docusign-signature-1`                                     | JSON `event`                  |
-| `isAdyenWebhook(request)`            | JSON `notificationItems.0.NotificationRequestItem.eventCode` | JSON `eventCode`              |
-| `isPayPalWebhook(request)`           | `paypal-transmission-sig`                                    | JSON `event_type`             |
-| `isPlaidWebhook(request)`            | `plaid-verification`                                         | JSON `webhook_code`           |
+| Function                             | Match source                                                 | Event source                                                 |
+| ------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `isStripeWebhook(request)`           | `stripe-signature`                                           | JSON `type`                                                  |
+| `isGitHubWebhook(request)`           | `x-github-event` or `x-hub-signature-256`                    | `x-github-event`                                             |
+| `isShopifyWebhook(request)`          | `x-shopify-hmac-sha256` or `x-shopify-topic`                 | `x-shopify-topic`                                            |
+| `isSlackWebhook(request)`            | `x-slack-signature`                                          | JSON `type` or form `command`                                |
+| `isTwilioWebhook(request)`           | `x-twilio-signature`                                         | none                                                         |
+| `isPaddleWebhook(request)`           | `paddle-signature`                                           | JSON `event_type`                                            |
+| `isLinearWebhook(request)`           | `linear-signature`                                           | JSON `action` + `type`                                       |
+| `isSendGridWebhook(request)`         | JSON array with `sg_event_id`                                | first array item's `event`                                   |
+| `isClerkWebhook(request)`            | `svix-id`                                                    | JSON `type`                                                  |
+| `isDiscordWebhook(request)`          | `x-signature-ed25519` AND `x-signature-timestamp`            | Discord interaction `type`                                   |
+| `isVercelWebhook(request)`           | `x-vercel-signature`                                         | JSON `type`                                                  |
+| `isGitLabWebhook(request)`           | `x-gitlab-event` or `x-gitlab-token`                         | normalized `x-gitlab-event`                                  |
+| `isTypeformWebhook(request)`         | `typeform-signature`                                         | JSON `event_type`                                            |
+| `isStandardWebhook(request)`         | `webhook-id` AND `webhook-timestamp` AND `webhook-signature` | JSON `type`                                                  |
+| `isMetaWebhook(request)`             | JSON `object` field                                          | JSON `object`                                                |
+| `isLemonSqueezyWebhook(request)`     | JSON `meta.event_name`                                       | JSON `meta.event_name`                                       |
+| `isCoinbaseCommerceWebhook(request)` | `x-cc-webhook-signature`                                     | JSON `event.type`                                            |
+| `isRazorpayWebhook(request)`         | `x-razorpay-signature`                                       | JSON `event`                                                 |
+| `isCalWebhook(request)`              | `x-cal-signature-256`                                        | JSON `triggerEvent`                                          |
+| `isIntercomWebhook(request)`         | `x-hub-signature` (`sha1=`)                                  | JSON `topic`                                                 |
+| `isTelegramWebhook(request)`         | `x-telegram-bot-api-secret-token`                            | none                                                         |
+| `isSquareWebhook(request)`           | `x-square-hmacsha256-signature`                              | JSON `type`                                                  |
+| `isHubSpotWebhook(request)`          | `x-hubspot-signature-v3`                                     | JSON `0.subscriptionType`                                    |
+| `isMailgunWebhook(request)`          | JSON `signature.token`                                       | JSON `event-data.event`                                      |
+| `isCalendlyWebhook(request)`         | `calendly-webhook-signature`                                 | JSON `event`                                                 |
+| `isMuxWebhook(request)`              | `mux-signature`                                              | JSON `type`                                                  |
+| `isSentryWebhook(request)`           | `sentry-hook-signature`                                      | `sentry-hook-resource`                                       |
+| `isBitbucketWebhook(request)`        | `x-event-key`                                                | `x-event-key`                                                |
+| `isDocuSignWebhook(request)`         | `x-docusign-signature-1`                                     | JSON `event`                                                 |
+| `isAdyenWebhook(request)`            | JSON `notificationItems.0.NotificationRequestItem.eventCode` | JSON `notificationItems.0.NotificationRequestItem.eventCode` |
+| `isPayPalWebhook(request)`           | `paypal-transmission-sig`                                    | JSON `event_type`                                            |
+| `isPlaidWebhook(request)`            | `plaid-verification`                                         | JSON `webhook_code`                                          |
 
 All header comparisons are case-insensitive. Discord and Standard Webhooks require multiple headers to be present simultaneously.
 

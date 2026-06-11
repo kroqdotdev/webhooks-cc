@@ -27,6 +27,8 @@ const PAYPAL_CERTIFICATE_CACHE = new Map<string, string>();
 // PayPal rotates through very few live certificates; the URL path suffix is
 // sender-controlled, so the cache must be bounded.
 const PAYPAL_CERTIFICATE_CACHE_MAX = 16;
+// Abort a stalled certificate download instead of hanging verification.
+const PAYPAL_CERTIFICATE_FETCH_TIMEOUT_MS = 10_000;
 const PAYPAL_CERTIFICATE_HOSTS = new Set([
   "api.paypal.com",
   "api-m.paypal.com",
@@ -257,8 +259,10 @@ async function fetchPayPalCertificate(
   }
 
   let cert: string;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PAYPAL_CERTIFICATE_FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(certUrl);
+    const response = await fetch(certUrl, { signal: controller.signal });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -268,6 +272,8 @@ async function fetchPayPalCertificate(
       `Unable to download the PayPal certificate from ${certUrl}: ${describeError(error)}. ` +
         "Browsers may block cross-origin certificate downloads; verify server-side or pass options.fetchCertificate."
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   // Only parseable certificates enter the bounded cache: an error page must

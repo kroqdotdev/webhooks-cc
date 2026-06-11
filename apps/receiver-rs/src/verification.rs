@@ -24,8 +24,13 @@ fn paypal_http_client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
+            // No redirects: the allowlist check applies to the original
+            // cert URL only, and a redirect must not escape PayPal's hosts.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+            // Build only fails when TLS or DNS setup is broken — an
+            // unrecoverable environment problem, so fail loudly.
+            .expect("failed to build PayPal HTTP client")
     })
 }
 

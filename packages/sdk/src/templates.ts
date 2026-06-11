@@ -2687,12 +2687,21 @@ export async function buildTemplateSendOptions(
     const parsed = JSON.parse(built.body) as {
       notificationItems?: Array<{ NotificationRequestItem?: AdyenNotificationRequestItem }>;
     };
-    const item = parsed.notificationItems?.[0]?.NotificationRequestItem;
-    if (item) {
+    // Sign every item — verification requires each item in the batch to carry
+    // its own valid signature, including items from multi-item body overrides.
+    let signedAny = false;
+    for (const wrapper of parsed.notificationItems ?? []) {
+      const item = wrapper?.NotificationRequestItem;
+      if (!item || typeof item !== "object") {
+        continue;
+      }
       item.additionalData = {
         ...(item.additionalData ?? {}),
         hmacSignature: await calculateAdyenHmac(item, secret),
       };
+      signedAny = true;
+    }
+    if (signedAny) {
       built.body = JSON.stringify(parsed);
     }
   }

@@ -100,6 +100,9 @@ describe("signature verification", () => {
   });
 
   it("verifies Adyen standard notification HMAC signatures from the body", async () => {
+    // Adyen's official documented HMAC test vector — public, not a secret
+    // (https://docs.adyen.com webhook HMAC examples). Kept verbatim so the
+    // precomputed signature in the fixture verifies.
     const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
     const body = JSON.stringify({
       live: "false",
@@ -135,6 +138,9 @@ describe("signature verification", () => {
   });
 
   it("rejects Adyen batches where any item is forged or unsigned", async () => {
+    // Adyen's official documented HMAC test vector — public, not a secret
+    // (https://docs.adyen.com webhook HMAC examples). Kept verbatim so the
+    // precomputed signature in the fixture verifies.
     const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
     const validItem = {
       NotificationRequestItem: {
@@ -282,6 +288,38 @@ describe("signature verification", () => {
     });
     expect(firstCalls).toBe(1);
     expect(secondCalls).toBe(1);
+  });
+
+  it("aborts the default PayPal certificate download via an AbortSignal timeout", async () => {
+    const headers = {
+      "paypal-transmission-id": "db49fb10-1343-11ef-ac58-e32457403f67",
+      "paypal-transmission-time": "2024-05-16T05:19:23Z",
+      "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-signal",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-transmission-sig": "c2ln",
+    };
+    const originalFetch = globalThis.fetch;
+    let receivedSignal: AbortSignal | undefined;
+    globalThis.fetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      receivedSignal = init?.signal;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => "not a certificate",
+      };
+    }) as unknown as typeof fetch;
+    try {
+      await verifyPayPalSignature("{}", headers, "WEBHOOK_ID");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("verifySignature throws for plaid (verification unsupported)", async () => {
+    await expect(
+      verifySignature({ body: "{}", headers: {} }, { provider: "plaid", secret: "anything" })
+    ).rejects.toThrow(/Plaid/);
   });
 
   it("rejects PayPal certificate URLs outside PayPal hosts before fetching", async () => {

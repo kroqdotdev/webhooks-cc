@@ -403,7 +403,7 @@ export const WEB_TEMPLATE_PROVIDER_OPTIONS: readonly WebProviderOption<TemplateP
           ? `${PROVIDER_LABELS[provider]} template`
           : provider === "plaid"
             ? `${PROVIDER_LABELS[provider]} template`
-            : provider === "gitlab"
+            : provider === "gitlab" || provider === "telegram"
               ? `${PROVIDER_LABELS[provider]} template (token)`
               : provider === "paypal"
                 ? `${PROVIDER_LABELS[provider]} template`
