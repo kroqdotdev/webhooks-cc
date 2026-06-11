@@ -1,6 +1,6 @@
 ---
 title: "How to Verify Webhook Signatures"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 23 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
+description: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 26 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
 section: guides
 order: 5
 lastUpdated: 2026-05-31
@@ -9,12 +9,12 @@ keywords:
   ["verify webhook signature", "webhook HMAC", "webhook security", "webhook signature validation"]
 seo:
   ogTitle: "How to Verify Webhook Signatures"
-  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 23 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
+  ogDescription: "Verify webhook signatures for Stripe, GitHub, Shopify, Meta, and 26 more signed providers using HMAC-SHA256, HMAC-SHA1, and asymmetric algorithms. Protect handlers from forged payloads."
 ---
 
-Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord is the exception, using Ed25519 public-key cryptography. Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
+Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord uses Ed25519 public-key cryptography, PayPal uses RSA-SHA256 with provider certificates, and Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 27 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures.
+The webhooks.cc SDK verifies signatures for 30 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures. Plaid is supported for templates and detection, but JWT/JWK verification requires Plaid API credentials and is not available in the SDK yet.
 
 ## Verify in the dashboard (no code)
 
@@ -27,7 +27,7 @@ See [Dashboard Features: Signature Verification](/docs/dashboard-features#signat
 
 ## What you'll build
 
-A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar, Svix, Resend), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket.
+A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar, Svix, Resend), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, and PayPal.
 
 ## Prerequisites
 
@@ -44,7 +44,7 @@ Every HMAC-based webhook signature follows the same four-step process:
 3. Your handler computes the same hash over the raw body using the same secret.
 4. If the two hashes match, the payload is authentic and unmodified. If they do not match, the payload was either tampered with or signed with a different secret.
 
-Discord works differently. Instead of a shared secret, Discord uses Ed25519 public-key cryptography. You verify using your application's public key (available in the Discord developer portal), not a shared secret.
+Discord and PayPal work differently. Discord uses your application's Ed25519 public key from the Discord developer portal. PayPal uses PayPal's certificate URL plus your webhook ID; the webhook ID is the configured credential, not a signing secret.
 
 <Callout type="warning">
   Always verify signatures before processing webhook payloads. Unverified webhooks can be forged by
@@ -82,7 +82,7 @@ if (!result.valid) {
 const body = JSON.parse(request.body);
 ```
 
-Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, `"telegram"`, `"square"`, `"hubspot"`, `"mailgun"`, `"calendly"`, `"mux"`, `"sentry"`, or `"bitbucket"`.
+Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, `"telegram"`, `"square"`, `"hubspot"`, `"mailgun"`, `"calendly"`, `"mux"`, `"sentry"`, `"bitbucket"`, `"docusign"`, `"adyen"`, or `"paypal"`.
 
 </Step>
 <Step title="Auto-detect the provider first">
@@ -125,7 +125,7 @@ if (!valid) {
 }
 ```
 
-Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`, `verifySquareSignature`, `verifyHubSpotSignature`, `verifyMailgunSignature`, `verifyCalendlySignature`, `verifyMuxSignature`, `verifySentrySignature`, `verifyBitbucketSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures.
+Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`, `verifySquareSignature`, `verifyHubSpotSignature`, `verifyMailgunSignature`, `verifyCalendlySignature`, `verifyMuxSignature`, `verifySentrySignature`, `verifyBitbucketSignature`, `verifyDocuSignSignature`, `verifyAdyenSignature`, `verifyPayPalSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures. Plaid is excluded because it requires Plaid JWT/JWK lookup credentials.
 
 </Step>
 <Step title="Handle Discord (Ed25519)">
@@ -390,6 +390,28 @@ const result = await verifySignature(request, {
 ```
 
 </Step>
+<Step title="Handle DocuSign, Adyen, or PayPal">
+
+DocuSign signs the raw body with Base64 HMAC-SHA256 in `x-docusign-signature-1`. Adyen signs a fixed set of standard-notification fields and stores the signature inside the body. PayPal uses RSA-SHA256 with PayPal's certificate URL and your webhook ID:
+
+```ts
+const docusign = await verifySignature(request, {
+  provider: "docusign",
+  secret: process.env.DOCUSIGN_HMAC_SECRET!,
+});
+
+const adyen = await verifySignature(request, {
+  provider: "adyen",
+  secret: process.env.ADYEN_HMAC_KEY!,
+});
+
+const paypal = await verifySignature(request, {
+  provider: "paypal",
+  secret: process.env.PAYPAL_WEBHOOK_ID!,
+});
+```
+
+</Step>
 </Steps>
 
 ## Provider reference
@@ -423,6 +445,9 @@ const result = await verifySignature(request, {
 | Mux               | `mux-signature`                                          | HMAC-SHA256      | Stripe-style `t=,v1=` hex                                           |
 | Sentry            | `sentry-hook-signature`                                  | HMAC-SHA256      | Raw hex hash over body                                              |
 | Bitbucket         | `x-hub-signature`                                        | HMAC-SHA256      | `sha256=hash`; detected via `x-event-key`                           |
+| DocuSign          | `x-docusign-signature-1`                                 | HMAC-SHA256      | Base64 raw-body HMAC                                                |
+| Adyen             | _(body field)_ `additionalData.hmacSignature`            | HMAC-SHA256      | Base64 HMAC over Adyen standard notification fields                 |
+| PayPal            | `paypal-transmission-sig` + `paypal-cert-url`            | RSA-SHA256       | Uses PayPal certificate URL and configured webhook ID               |
 
 ## Verifying captured requests
 

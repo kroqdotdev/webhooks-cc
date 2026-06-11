@@ -55,6 +55,10 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   mux: "Mux",
   sentry: "Sentry",
   bitbucket: "Bitbucket",
+  docusign: "DocuSign",
+  adyen: "Adyen",
+  paypal: "PayPal",
+  plaid: "Plaid",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -86,6 +90,10 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   mux: "your webhook signing secret",
   sentry: "your client secret",
   bitbucket: "your webhook secret",
+  docusign: "your HMAC secret key",
+  adyen: "your hex HMAC key",
+  paypal: "WEBHOOK_ID",
+  plaid: "",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -285,6 +293,34 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     foreground: "#ffffff",
     border: "#003d99",
   },
+  docusign: {
+    glyph: "docusign",
+    text: "DS",
+    background: "#4c00ff",
+    foreground: "#ffffff",
+    border: "#2f0099",
+  },
+  adyen: {
+    glyph: "adyen",
+    text: "AD",
+    background: "#0abf53",
+    foreground: "#05140a",
+    border: "#07873b",
+  },
+  paypal: {
+    glyph: "paypal",
+    text: "PP",
+    background: "#003087",
+    foreground: "#ffffff",
+    border: "#001c64",
+  },
+  plaid: {
+    glyph: "plaid",
+    text: "PL",
+    background: "#111111",
+    foreground: "#ffffff",
+    border: "#2d2d2d",
+  },
 };
 
 function formatAlgorithm(value: string | undefined): string {
@@ -294,8 +330,20 @@ function formatAlgorithm(value: string | undefined): string {
 
   if (value === "hmac-sha256") return "HMAC-SHA256";
   if (value === "hmac-sha1") return "HMAC-SHA1";
+  if (value === "rsa-sha256") return "RSA-SHA256";
+  if (value === "jwt-es256") return "JWT ES256";
   if (value === "token") return "Token";
   return value;
+}
+
+export function getWebProviderCredentialLabel(provider: string | null | undefined): string {
+  if (provider === "discord") return "Public Key";
+  if (provider === "paypal") return "Webhook ID";
+  if (provider === "adyen") return "HMAC Key";
+  if (provider === "docusign") return "HMAC Secret";
+  if (provider === "gitlab" || provider === "telegram") return "Secret Token";
+  if (provider === "generic-hmac") return "Shared Secret";
+  return "Signing Secret";
 }
 
 export const WEB_PROVIDER_CATALOG: Record<WebProviderId, WebProviderInfo> = {
@@ -315,7 +363,7 @@ export const WEB_PROVIDER_CATALOG: Record<WebProviderId, WebProviderInfo> = {
           header: provider === "discord" ? "x-signature-ed25519" : (signatureHeader ?? ""),
           secretPlaceholder: SECRET_PLACEHOLDERS[provider],
           verificationMode:
-            provider === "sendgrid"
+            provider === "sendgrid" || provider === "plaid"
               ? "unsupported"
               : provider === "discord"
                 ? "publicKey"
@@ -353,9 +401,13 @@ export const WEB_TEMPLATE_PROVIDER_OPTIONS: readonly WebProviderOption<TemplateP
         ? `${PROVIDER_LABELS[provider]} template`
         : provider === "discord"
           ? `${PROVIDER_LABELS[provider]} template`
-          : provider === "gitlab"
-            ? `${PROVIDER_LABELS[provider]} template (token)`
-            : `${PROVIDER_LABELS[provider]} template (signed)`,
+          : provider === "plaid"
+            ? `${PROVIDER_LABELS[provider]} template`
+            : provider === "gitlab" || provider === "telegram"
+              ? `${PROVIDER_LABELS[provider]} template (token)`
+              : provider === "paypal"
+                ? `${PROVIDER_LABELS[provider]} template`
+                : `${PROVIDER_LABELS[provider]} template (signed)`,
   }));
 
 export const WEB_VERIFICATION_PROVIDER_OPTIONS: readonly WebProviderOption<WebProviderId>[] = [

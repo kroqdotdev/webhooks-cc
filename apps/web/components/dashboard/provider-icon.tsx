@@ -1,5 +1,6 @@
 import type { SimpleIcon } from "simple-icons";
 import {
+  siAdyen,
   siBitbucket,
   siCaldotcom,
   siClerk,
@@ -14,6 +15,7 @@ import {
   siMailgun,
   siMeta,
   siPaddle,
+  siPaypal,
   siRazorpay,
   siSentry,
   siShopify,
@@ -50,6 +52,8 @@ const SIMPLE_PROVIDER_ICONS: Partial<Record<WebProviderIconGlyph, SimpleIcon>> =
   mailgun: siMailgun,
   sentry: siSentry,
   bitbucket: siBitbucket,
+  adyen: siAdyen,
+  paypal: siPaypal,
 };
 
 export function ProviderIcon({

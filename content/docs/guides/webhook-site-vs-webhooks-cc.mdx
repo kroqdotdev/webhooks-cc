@@ -29,8 +29,8 @@ This comparison covers where each tool fits, what each does well, and when you s
 | Mock responses                  | Yes (status, headers, body, delay)            | Yes (status, body, content type, delay)     |
 | Request forwarding to localhost | Yes (CLI tunnel, standalone Go binary)        | Yes (CLI + browser-based XHR redirect)      |
 | Custom Actions / automation     | No                                            | Yes (40+ actions, visual workflow builder)  |
-| Provider templates              | Yes (28 templates, 27 verification providers) | No                                          |
-| Signature verification          | Yes (SDK, 27 signed providers)                | No                                          |
+| Provider templates              | Yes (32 templates, 30 verification providers) | No                                          |
+| Signature verification          | Yes (SDK, 30 signed providers)                | No                                          |
 | TypeScript SDK                  | Yes (typed client, matchers, test helpers)    | No (REST API only)                          |
 | MCP server for AI agents        | Yes                                           | No                                          |
 | CI/CD testing utilities         | Yes (sendTo, withEndpoint, captureDuring)     | No                                          |
@@ -70,7 +70,7 @@ This comparison covers where each tool fits, what each does well, and when you s
 
 **Developer tooling for testing.** The TypeScript SDK provides `sendTo` (send signed webhooks directly to localhost), `waitFor` (poll for matching requests), `withEndpoint` (temporary endpoint lifecycle), and `captureDuring` (capture multiple webhooks from a single action). These are purpose-built for CI/CD webhook testing. Webhook.site has no SDK.
 
-**Provider-specific signing.** webhooks.cc generates valid provider signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Vercel, GitLab, Typeform, and Standard Webhooks, plus realistic SendGrid and Discord templates for their different security models. Your handler's verification logic works without modification during testing. Webhook.site does not generate provider signatures.
+**Provider-specific signing.** webhooks.cc generates valid provider signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, and Adyen, plus realistic SendGrid, Discord, PayPal, and Plaid templates for their different security models. Your handler's verification logic works without modification during testing for supported verification providers. Webhook.site does not generate provider signatures.
 
 **MCP server for AI agents.** The `@webhooks-cc/mcp` package lets AI coding agents (Claude Code, Cursor, VS Code Copilot) create endpoints, send webhooks, inspect requests, and replay -- all from within the agent's workflow. Webhook.site has no AI agent integration.
 

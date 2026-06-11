@@ -23,8 +23,8 @@ This comparison covers where each tool fits, where they overlap, and when you sh
 | Expose localhost to internet   | Yes (CLI tunnel)                                 | Yes (core feature)                    |
 | Webhook capture and inspection | Yes (full request details, split-pane dashboard) | Limited (ngrok inspect, general HTTP) |
 | Mock responses                 | Yes (configurable per endpoint)                  | No                                    |
-| Provider templates/signing     | Yes (28 templates, 27 verification providers)    | No                                    |
-| Signature verification         | Yes (SDK, 27 signed providers)                   | No                                    |
+| Provider templates/signing     | Yes (32 templates, 30 verification providers)    | No                                    |
+| Signature verification         | Yes (SDK, 30 signed providers)                   | No                                    |
 | Request replay                 | Yes (to any URL, from dashboard or SDK)          | Yes (ngrok inspect)                   |
 | Real-time dashboard            | Yes                                              | Yes (ngrok inspect)                   |
 | CI/CD integration              | Yes (SDK + testing utilities, no tunnel needed)  | Limited (requires running tunnel)     |
@@ -85,7 +85,7 @@ ngrok does not offer programmatic testing tools. To test webhooks with ngrok, yo
 
 ## Signing and verification
 
-webhooks.cc includes 28 provider templates so your handler can test realistic provider traffic. For providers with shared-secret or token-style verification, signing happens locally in the SDK -- no request to external servers.
+webhooks.cc includes 32 provider templates so your handler can test realistic provider traffic. For providers with shared-secret or token-style verification, signing happens locally in the SDK -- no request to external servers.
 
 Supported providers and their signing algorithms:
 
@@ -119,6 +119,10 @@ Supported providers and their signing algorithms:
 | Mux               | HMAC-SHA256          | `mux-signature` (`t=,v1=`)                                   |
 | Sentry            | HMAC-SHA256          | `sentry-hook-signature`                                      |
 | Bitbucket         | HMAC-SHA256          | `x-hub-signature` (`sha256=`, with `x-event-key`)            |
+| DocuSign          | HMAC-SHA256 (base64) | `x-docusign-signature-1`                                     |
+| Adyen             | HMAC-SHA256 (base64) | body field `additionalData.hmacSignature`                    |
+| PayPal            | RSA-SHA256           | `paypal-transmission-sig` (verified with PayPal cert URL)    |
+| Plaid             | None (template-only) | `plaid-verification` placeholder JWT                         |
 
 With ngrok, you need the real provider to send webhooks -- or you disable signature verification in your test environment. Disabling verification is common but risky: it means your tests do not cover the verification code path, and you might deploy a handler that fails signature checks in production.
 

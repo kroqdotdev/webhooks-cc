@@ -34,6 +34,10 @@ import {
   isMuxWebhook,
   isSentryWebhook,
   isBitbucketWebhook,
+  isDocuSignWebhook,
+  isAdyenWebhook,
+  isPayPalWebhook,
+  isPlaidWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -799,6 +803,82 @@ describe("detectWebhookInfo", () => {
         })
       )
     ).toBeNull();
+  });
+});
+
+describe("tier-3 provider detection", () => {
+  it("detects DocuSign from x-docusign-signature-1", () => {
+    const req = makeRequest({
+      headers: { "X-DocuSign-Signature-1": "abc" },
+      body: JSON.stringify({ event: "envelope-completed" }),
+    });
+    expect(detectWebhookProvider(req)).toBe("docusign");
+    expect(isDocuSignWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)).toEqual({
+      provider: "docusign",
+      event: "envelope-completed",
+      via: "header",
+      matchedOn: "x-docusign-signature-1",
+    });
+  });
+
+  it("detects Adyen standard notifications from the notificationItems body", () => {
+    const req = makeRequest({
+      body: JSON.stringify({
+        notificationItems: [
+          {
+            NotificationRequestItem: {
+              eventCode: "AUTHORISATION",
+              additionalData: { hmacSignature: "abc" },
+            },
+          },
+        ],
+      }),
+      contentType: "application/json",
+    });
+    expect(detectWebhookProvider(req)).toBe("adyen");
+    expect(isAdyenWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)).toEqual({
+      provider: "adyen",
+      event: "AUTHORISATION",
+      via: "body",
+      matchedOn: "notificationItems.0.NotificationRequestItem.additionalData.hmacSignature",
+    });
+  });
+
+  it("detects PayPal from paypal-transmission headers", () => {
+    const req = makeRequest({
+      headers: {
+        "paypal-transmission-id": "id",
+        "paypal-transmission-time": "2024-05-16T05:19:23Z",
+        "paypal-transmission-sig": "sig",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-test",
+      },
+      body: JSON.stringify({ event_type: "PAYMENT.CAPTURE.COMPLETED" }),
+    });
+    expect(detectWebhookProvider(req)).toBe("paypal");
+    expect(isPayPalWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)).toEqual({
+      provider: "paypal",
+      event: "PAYMENT.CAPTURE.COMPLETED",
+      via: "header",
+      matchedOn: "paypal-transmission-sig",
+    });
+  });
+
+  it("detects Plaid from Plaid-Verification and extracts webhook_type", () => {
+    const req = makeRequest({
+      headers: { "Plaid-Verification": "eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjF9.sig" },
+      body: JSON.stringify({ webhook_type: "TRANSACTIONS", webhook_code: "DEFAULT_UPDATE" }),
+    });
+    expect(detectWebhookProvider(req)).toBe("plaid");
+    expect(isPlaidWebhook(req)).toBe(true);
+    expect(detectWebhookInfo(req)).toEqual({
+      provider: "plaid",
+      event: "TRANSACTIONS",
+      via: "header",
+      matchedOn: "plaid-verification",
+    });
   });
 });
 

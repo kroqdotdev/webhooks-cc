@@ -31,6 +31,8 @@ import {
   verifyMuxSignature,
   verifySentrySignature,
   verifyBitbucketSignature,
+  verifyDocuSignSignature,
+  verifyAdyenSignature,
   verifySignature,
 } from "../verify";
 
@@ -40,11 +42,15 @@ const ENDPOINT_URL = "https://go.webhooks.cc/w/test-slug";
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 /** Wrapper that asserts headers and body are always present (they always are from buildTemplateSendOptions). */
-async function buildTemplate(provider: string, options?: { template?: string; secret?: string }) {
+async function buildTemplate(
+  provider: string,
+  options?: { template?: string; secret?: string; body?: unknown }
+) {
   const result = await buildTemplateSendOptions(ENDPOINT_URL, {
     provider: provider as Parameters<typeof buildTemplateSendOptions>[1]["provider"],
     secret: options?.secret ?? TEST_SECRET,
     template: options?.template,
+    body: options?.body,
   });
   return {
     ...result,
@@ -1581,32 +1587,184 @@ describe("tier-2 Bitbucket templates produce verifiable signed requests", () => 
   }
 });
 
-// ─── Catalog size guard (tier-2 took the catalog from 21 → 28) ────────────
+// ─── Tier-3: DocuSign, Adyen, PayPal, Plaid ─────────────────────────────
 
-describe("provider catalog size after tier-2", () => {
+describe("tier-3 provider metadata", () => {
+  it("docusign is listed and has HMAC metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("docusign");
+    expect(VERIFY_PROVIDERS).toContain("docusign");
+
+    const meta = TEMPLATE_METADATA.docusign;
+    expect(meta.provider).toBe("docusign");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("x-docusign-signature-1");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("envelope-completed");
+  });
+
+  it("adyen is listed and uses body-embedded HMAC metadata", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("adyen");
+    expect(VERIFY_PROVIDERS).toContain("adyen");
+
+    const meta = TEMPLATE_METADATA.adyen;
+    expect(meta.provider).toBe("adyen");
+    expect(meta.secretRequired).toBe(true);
+    expect("signatureHeader" in meta).toBe(false);
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("AUTHORISATION");
+  });
+
+  it("paypal is listed and stores the webhook ID as the verification secret", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("paypal");
+    expect(VERIFY_PROVIDERS).toContain("paypal");
+
+    const meta = TEMPLATE_METADATA.paypal;
+    expect(meta.provider).toBe("paypal");
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("paypal-transmission-sig");
+    expect(meta.signatureAlgorithm).toBe("rsa-sha256");
+    expect(meta.defaultTemplate).toBe("PAYMENT.CAPTURE.COMPLETED");
+  });
+
+  it("plaid is template-only because verification needs Plaid JWT/JWK lookup", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("plaid");
+    expect(VERIFY_PROVIDERS).not.toContain("plaid");
+
+    const meta = TEMPLATE_METADATA.plaid;
+    expect(meta.provider).toBe("plaid");
+    expect(meta.secretRequired).toBe(false);
+    expect(meta.signatureHeader).toBe("plaid-verification");
+    expect(meta.signatureAlgorithm).toBe("jwt-es256");
+    expect(meta.defaultTemplate).toBe("TRANSACTIONS");
+  });
+});
+
+describe("tier-3 templates produce provider-shaped requests", () => {
+  for (const template of TEMPLATE_METADATA.docusign.templates) {
+    it(`docusign/${template} is valid JSON and the Base64 HMAC verifies`, async () => {
+      const result = await buildTemplate("docusign", { template });
+      expect(result.headers["content-type"]).toBe("application/json");
+      expect(() => JSON.parse(result.body)).not.toThrow();
+
+      const sig = getHeader(result.headers, "x-docusign-signature-1");
+      expect(sig).toBeDefined();
+      expect(await verifyDocuSignSignature(result.body, sig!, TEST_SECRET)).toBe(true);
+      expect(await verifyDocuSignSignature(result.body, sig!, "wrong_secret")).toBe(false);
+    });
+  }
+
+  for (const template of TEMPLATE_METADATA.adyen.templates) {
+    it(`adyen/${template} is valid JSON and the embedded HMAC verifies`, async () => {
+      const result = await buildTemplate("adyen", {
+        template,
+        secret: "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+      });
+      expect(result.headers["content-type"]).toBe("application/json");
+      const parsed = parseBody(result.body) as {
+        notificationItems: Array<{
+          NotificationRequestItem: { additionalData: { hmacSignature: string } };
+        }>;
+      };
+      expect(parsed.notificationItems).toHaveLength(1);
+      expect(
+        parsed.notificationItems[0].NotificationRequestItem.additionalData.hmacSignature
+      ).toMatch(/^[A-Za-z0-9+/=]+$/);
+
+      expect(
+        await verifyAdyenSignature(
+          result.body,
+          "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056"
+        )
+      ).toBe(true);
+    });
+  }
+
+  it("adyen signs every notification item in a multi-item body override", async () => {
+    const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    const makeItem = (merchantReference: string) => ({
+      NotificationRequestItem: {
+        amount: { value: 1130, currency: "EUR" },
+        pspReference: "7914073381342284",
+        eventCode: "AUTHORISATION",
+        merchantAccountCode: "TestMerchant",
+        merchantReference,
+        success: "true",
+      },
+    });
+    const result = await buildTemplate("adyen", {
+      secret: hmacKey,
+      body: {
+        live: "false",
+        notificationItems: [makeItem("Item-1"), makeItem("Item-2")],
+      },
+    });
+
+    const parsed = parseBody(result.body) as {
+      notificationItems: Array<{
+        NotificationRequestItem: { additionalData?: { hmacSignature?: string } };
+      }>;
+    };
+    expect(parsed.notificationItems).toHaveLength(2);
+    for (const wrapper of parsed.notificationItems) {
+      expect(wrapper.NotificationRequestItem.additionalData?.hmacSignature).toMatch(
+        /^[A-Za-z0-9+/=]+$/
+      );
+    }
+    expect(await verifyAdyenSignature(result.body, hmacKey)).toBe(true);
+  });
+
+  it("paypal emits the transmission headers and event payload", async () => {
+    const result = await buildTemplate("paypal", {
+      template: "PAYMENT.CAPTURE.COMPLETED",
+      secret: "WEBHOOK_ID",
+    });
+    expect(result.headers["content-type"]).toBe("application/json");
+    const parsed = parseBody(result.body) as { event_type: string };
+    expect(parsed.event_type).toBe("PAYMENT.CAPTURE.COMPLETED");
+    expect(getHeader(result.headers, "paypal-transmission-id")).toBeDefined();
+    expect(getHeader(result.headers, "paypal-transmission-time")).toBeDefined();
+    expect(getHeader(result.headers, "paypal-cert-url")).toMatch(
+      /^https:\/\/api\.sandbox\.paypal\.com\/v1\/notifications\/certs\//
+    );
+    expect(getHeader(result.headers, "paypal-auth-algo")).toBe("SHA256withRSA");
+    expect(getHeader(result.headers, "paypal-transmission-sig")).toBeDefined();
+  });
+
+  it("plaid emits Plaid-Verification as a placeholder JWT-shaped header", async () => {
+    const result = await buildTemplate("plaid", { template: "TRANSACTIONS" });
+    expect(result.headers["content-type"]).toBe("application/json");
+    const parsed = parseBody(result.body) as { webhook_type: string };
+    expect(parsed.webhook_type).toBe("TRANSACTIONS");
+    expect(getHeader(result.headers, "plaid-verification")).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
+  });
+});
+
+// ─── Catalog size guard (tier-3 took the catalog from 28 → 32) ────────────
+
+describe("provider catalog size after tier-3", () => {
   const TIER2 = ["square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"] as const;
+  const TIER3 = ["docusign", "adyen", "paypal", "plaid"] as const;
 
-  it("lists 28 template providers (21 tier-1 + 7 tier-2)", () => {
-    expect(TEMPLATE_PROVIDERS).toHaveLength(28);
-    for (const provider of TIER2) {
+  it("lists 32 template providers (21 tier-1 + 7 tier-2 + 4 tier-3)", () => {
+    expect(TEMPLATE_PROVIDERS).toHaveLength(32);
+    for (const provider of [...TIER2, ...TIER3]) {
       expect(TEMPLATE_PROVIDERS).toContain(provider);
     }
   });
 
-  it("lists 27 verifiable providers (SendGrid is template-only, uses IP allowlisting)", () => {
-    expect(VERIFY_PROVIDERS).toHaveLength(27);
+  it("lists 30 verifiable providers (SendGrid and Plaid are template-only)", () => {
+    expect(VERIFY_PROVIDERS).toHaveLength(30);
     expect(VERIFY_PROVIDERS).not.toContain("sendgrid");
-    for (const provider of TIER2) {
+    expect(VERIFY_PROVIDERS).not.toContain("plaid");
+    for (const provider of [...TIER2, "docusign", "adyen", "paypal"] as const) {
       expect(VERIFY_PROVIDERS).toContain(provider);
     }
   });
 
-  it("has frozen metadata for every tier-2 provider", () => {
-    for (const provider of TIER2) {
+  it("has frozen metadata for every tier-2 and tier-3 provider", () => {
+    for (const provider of [...TIER2, ...TIER3]) {
       const meta = TEMPLATE_METADATA[provider];
       expect(meta.provider).toBe(provider);
-      expect(meta.secretRequired).toBe(true);
-      expect(meta.signatureAlgorithm).toBe("hmac-sha256");
       expect(meta.templates.length).toBeGreaterThan(0);
       expect(meta.templates).toContain(meta.defaultTemplate);
     }

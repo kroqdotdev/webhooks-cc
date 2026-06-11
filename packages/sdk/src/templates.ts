@@ -8,8 +8,20 @@ import type {
 type TwilioParamEntry = [string, string];
 type SignedTemplateProvider = Exclude<
   TemplateProvider,
-  "standard-webhooks" | "sendgrid" | "discord"
+  "standard-webhooks" | "sendgrid" | "discord" | "plaid"
 >;
+
+type AdyenNotificationRequestItem = {
+  [key: string]: unknown;
+  pspReference?: unknown;
+  originalReference?: unknown;
+  merchantAccountCode?: unknown;
+  merchantReference?: unknown;
+  amount?: { value?: unknown; currency?: unknown };
+  eventCode?: unknown;
+  success?: unknown;
+  additionalData?: Record<string, unknown>;
+};
 
 const DEFAULT_TEMPLATE_BY_PROVIDER = {
   stripe: "payment_intent.succeeded",
@@ -39,6 +51,10 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   mux: "video.asset.created",
   sentry: "issue.created",
   bitbucket: "repo:push",
+  docusign: "envelope-completed",
+  adyen: "AUTHORISATION",
+  paypal: "PAYMENT.CAPTURE.COMPLETED",
+  plaid: "TRANSACTIONS",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -69,6 +85,14 @@ const PROVIDER_TEMPLATES = {
   mux: ["video.asset.created", "video.asset.ready", "video.upload.asset_created"] as const,
   sentry: ["issue.created", "issue.resolved", "error.created"] as const,
   bitbucket: ["repo:push", "pullrequest:created", "pullrequest:fulfilled"] as const,
+  docusign: ["envelope-completed", "envelope-declined", "recipient-completed"] as const,
+  adyen: ["AUTHORISATION", "CAPTURE", "REFUND"] as const,
+  paypal: [
+    "PAYMENT.CAPTURE.COMPLETED",
+    "CHECKOUT.ORDER.APPROVED",
+    "BILLING.SUBSCRIPTION.CREATED",
+  ] as const,
+  plaid: ["TRANSACTIONS", "ITEM", "AUTH"] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -100,6 +124,10 @@ export const TEMPLATE_PROVIDERS = [
   "mux",
   "sentry",
   "bitbucket",
+  "docusign",
+  "adyen",
+  "paypal",
+  "plaid",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -130,7 +158,10 @@ export const VERIFY_PROVIDERS = [
   "mux",
   "sentry",
   "bitbucket",
-] as const satisfies readonly Exclude<TemplateProvider, "sendgrid">[];
+  "docusign",
+  "adyen",
+  "paypal",
+] as const satisfies readonly Exclude<TemplateProvider, "sendgrid" | "plaid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
   stripe: Object.freeze({
@@ -352,6 +383,38 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: true,
     signatureHeader: "x-hub-signature",
     signatureAlgorithm: "hmac-sha256",
+  }),
+  docusign: Object.freeze({
+    provider: "docusign",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.docusign]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.docusign,
+    secretRequired: true,
+    signatureHeader: "x-docusign-signature-1",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  adyen: Object.freeze({
+    provider: "adyen",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.adyen]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.adyen,
+    secretRequired: true,
+    // Adyen standard notifications carry additionalData.hmacSignature in the body.
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  paypal: Object.freeze({
+    provider: "paypal",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.paypal]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.paypal,
+    secretRequired: true,
+    signatureHeader: "paypal-transmission-sig",
+    signatureAlgorithm: "rsa-sha256",
+  }),
+  plaid: Object.freeze({
+    provider: "plaid",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.plaid]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.plaid,
+    secretRequired: false,
+    signatureHeader: "plaid-verification",
+    signatureAlgorithm: "jwt-es256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
 
@@ -1261,6 +1324,94 @@ function buildTemplatePayload(
     };
   }
 
+  if (provider === "docusign") {
+    const statusByTemplate: Record<string, string> = {
+      "envelope-completed": "completed",
+      "envelope-declined": "declined",
+      "recipient-completed": "completed",
+    };
+    const payload = bodyOverride ?? {
+      event,
+      apiVersion: "v2.1",
+      uri: `/restapi/v2.1/accounts/${randomDigits(8)}/envelopes/${randomUuid()}`,
+      retryCount: 0,
+      configurationId: randomUuid(),
+      generatedDateTime: nowIso,
+      data: {
+        accountId: randomDigits(8),
+        envelopeId: randomUuid(),
+        status: statusByTemplate[template] ?? "completed",
+        statusChangedDateTime: nowIso,
+        recipientId: template === "recipient-completed" ? "1" : undefined,
+      },
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "DocuSign Connect" },
+    };
+  }
+
+  if (provider === "adyen") {
+    const item: AdyenNotificationRequestItem = {
+      additionalData: { hmacSignature: "" },
+      amount: {
+        value: event === "REFUND" ? 500 : 1130,
+        currency: "EUR",
+      },
+      pspReference: randomDigits(16),
+      originalReference: event === "AUTHORISATION" ? "" : randomDigits(16),
+      eventCode: event,
+      eventDate: nowIso,
+      merchantAccountCode: "TestMerchant",
+      merchantReference: `TestPayment-${randomDigits(13)}`,
+      paymentMethod: "visa",
+      success: "true",
+    };
+    const payload = bodyOverride ?? {
+      live: "false",
+      notificationItems: [{ NotificationRequestItem: item }],
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Adyen-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "paypal") {
+    const resourceTypeByTemplate: Record<string, string> = {
+      "PAYMENT.CAPTURE.COMPLETED": "capture",
+      "CHECKOUT.ORDER.APPROVED": "checkout-order",
+      "BILLING.SUBSCRIPTION.CREATED": "subscription",
+    };
+    const payload = bodyOverride ?? {
+      id: `WH-${randomHex(8).toUpperCase()}`,
+      event_version: "1.0",
+      create_time: nowIso,
+      resource_type: resourceTypeByTemplate[event] ?? "resource",
+      event_type: event,
+      summary: `Mock PayPal ${event} event`,
+      resource: {
+        id: randomHex(16).toUpperCase(),
+        status: event.endsWith("COMPLETED") ? "COMPLETED" : "APPROVED",
+        amount: {
+          currency_code: "USD",
+          value: "10.00",
+        },
+      },
+      links: [],
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "PayPal/AUHD-214.0-56782998" },
+    };
+  }
+
   if (provider !== "twilio") {
     if (provider === "slack") {
       const eventCallbackPayload = {
@@ -2036,6 +2187,56 @@ export function decodeStandardWebhookSecret(secret: string): Uint8Array {
   }
 }
 
+function hexToBytes(hex: string): Uint8Array {
+  const normalized = hex.trim();
+  if (!/^[a-fA-F0-9]+$/.test(normalized) || normalized.length % 2 !== 0) {
+    throw new Error("Expected a hex-encoded value");
+  }
+
+  const bytes = new Uint8Array(normalized.length / 2);
+  for (let index = 0; index < normalized.length; index += 2) {
+    bytes[index / 2] = parseInt(normalized.slice(index, index + 2), 16);
+  }
+  return bytes;
+}
+
+function adyenField(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  return typeof value === "string" ? value : String(value);
+}
+
+export function buildAdyenNotificationDataToSign(item: AdyenNotificationRequestItem): string {
+  return [
+    item.pspReference,
+    item.originalReference,
+    item.merchantAccountCode,
+    item.merchantReference,
+    item.amount?.value,
+    item.amount?.currency,
+    item.eventCode,
+    item.success,
+  ]
+    .map(adyenField)
+    .join(":");
+}
+
+export async function calculateAdyenHmac(
+  item: AdyenNotificationRequestItem,
+  hmacKey: string
+): Promise<string> {
+  return toBase64(
+    await hmacSignRaw("SHA-256", hexToBytes(hmacKey), buildAdyenNotificationDataToSign(item))
+  );
+}
+
+function toBase64Url(input: string): string {
+  // Encode via UTF-8 bytes — btoa() alone throws on non-Latin1 characters.
+  const base64 = toBase64(new TextEncoder().encode(input));
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 /**
  * Build method/headers/body for a provider template webhook.
  */
@@ -2043,6 +2244,17 @@ export async function buildTemplateSendOptions(
   endpointUrl: string,
   options: SendTemplateOptions
 ): Promise<SendOptions> {
+  // Secretless providers (secretRequired: false) early-return before the
+  // signed paths below, so requireTemplateSecret is only hit when a secret
+  // genuinely participates in signature generation.
+  const requireTemplateSecret = (): string => {
+    const secret = options.secret;
+    if (!secret) {
+      throw new Error(`Provider "${options.provider}" templates require a non-empty secret`);
+    }
+    return secret;
+  };
+
   // Standard Webhooks uses a different signing flow — no predefined templates
   if (options.provider === "standard-webhooks") {
     const method = (options.method ?? "POST").toUpperCase();
@@ -2057,7 +2269,7 @@ export async function buildTemplateSendOptions(
     // If the remainder isn't valid base64 (e.g. Polar.sh raw secrets), fall back
     // to treating the original secret (with prefix) as raw UTF-8 bytes. This
     // matches how Polar's SDK passes secrets to the standardwebhooks library.
-    const secretBytes = decodeStandardWebhookSecret(options.secret);
+    const secretBytes = decodeStandardWebhookSecret(requireTemplateSecret());
     const signature = await hmacSignRaw("SHA-256", secretBytes, signingInput);
 
     return {
@@ -2221,8 +2433,67 @@ export async function buildTemplateSendOptions(
     };
   }
 
+  // Plaid — template payloads with a JWT-shaped placeholder verification header.
+  // Real Plaid verification requires fetching Plaid's JWK by the JWT kid with
+  // Plaid API credentials, so generated test payloads are intentionally unsigned.
+  if (options.provider === "plaid") {
+    const method = (options.method ?? "POST").toUpperCase();
+    const supported = PROVIDER_TEMPLATES.plaid;
+    const template = options.template ?? DEFAULT_TEMPLATE_BY_PROVIDER.plaid;
+    if (!supported.some((item) => item === template)) {
+      throw new Error(
+        `Unsupported template "${template}" for provider "plaid". Supported templates: ${supported.join(", ")}`
+      );
+    }
+
+    const payloadByTemplate: Record<string, unknown> = {
+      TRANSACTIONS: {
+        webhook_type: "TRANSACTIONS",
+        webhook_code: "DEFAULT_UPDATE",
+        item_id: `item_${randomHex(8)}`,
+        new_transactions: 1,
+      },
+      ITEM: {
+        webhook_type: "ITEM",
+        webhook_code: "ERROR",
+        item_id: `item_${randomHex(8)}`,
+        error: { error_type: "ITEM_ERROR", error_code: "WEBHOOK_UPDATE_ACKNOWLEDGED" },
+      },
+      AUTH: {
+        webhook_type: "AUTH",
+        webhook_code: "AUTOMATICALLY_VERIFIED",
+        item_id: `item_${randomHex(8)}`,
+        account_id: `account_${randomHex(8)}`,
+      },
+    };
+
+    const payload = options.body ?? payloadByTemplate[template];
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    const iat = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const jwtHeader = toBase64Url(
+      JSON.stringify({ alg: "ES256", kid: `mock-${randomHex(8)}`, typ: "JWT" })
+    );
+    const jwtPayload = toBase64Url(
+      JSON.stringify({ iat, request_body_sha256: "mock-template-not-verifiable" })
+    );
+
+    return {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "plaid-verification": `${jwtHeader}.${jwtPayload}.mock-signature`,
+        "x-webhooks-cc-template-provider": "plaid",
+        "x-webhooks-cc-template-template": template,
+        "x-webhooks-cc-template-event": template,
+        ...(options.headers ?? {}),
+      },
+      body,
+    };
+  }
+
   // After the early returns, provider is one of the signed template providers
   const provider = options.provider as SignedTemplateProvider;
+  const secret = requireTemplateSecret();
   const method = (options.method ?? "POST").toUpperCase();
   const template = ensureTemplate(provider, options.template);
   const event = options.event ?? defaultEvent(provider, template);
@@ -2240,20 +2511,20 @@ export async function buildTemplateSendOptions(
 
   if (provider === "stripe") {
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
-    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    const signature = await hmacSign("SHA-256", secret, `${timestamp}.${built.body}`);
     headers["stripe-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
   }
 
   if (provider === "github") {
     headers["x-github-event"] = event;
     headers["x-github-delivery"] = randomUuid();
-    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    const signature = await hmacSign("SHA-256", secret, built.body);
     headers["x-hub-signature-256"] = `sha256=${toHex(signature)}`;
   }
 
   if (provider === "shopify") {
     headers["x-shopify-topic"] = event;
-    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    const signature = await hmacSign("SHA-256", secret, built.body);
     headers["x-shopify-hmac-sha256"] = toBase64(signature);
   }
 
@@ -2261,25 +2532,25 @@ export async function buildTemplateSendOptions(
     const signaturePayload = built.twilioParams
       ? buildTwilioSignaturePayload(endpointUrl, built.twilioParams)
       : `${endpointUrl}${built.body}`;
-    const signature = await hmacSign("SHA-1", options.secret, signaturePayload);
+    const signature = await hmacSign("SHA-1", secret, signaturePayload);
     headers["x-twilio-signature"] = toBase64(signature);
   }
 
   if (provider === "slack") {
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
-    const signature = await hmacSign("SHA-256", options.secret, `v0:${timestamp}:${built.body}`);
+    const signature = await hmacSign("SHA-256", secret, `v0:${timestamp}:${built.body}`);
     headers["x-slack-request-timestamp"] = String(timestamp);
     headers["x-slack-signature"] = `v0=${toHex(signature)}`;
   }
 
   if (provider === "paddle") {
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
-    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}:${built.body}`);
+    const signature = await hmacSign("SHA-256", secret, `${timestamp}:${built.body}`);
     headers["paddle-signature"] = `ts=${timestamp};h1=${toHex(signature)}`;
   }
 
   if (provider === "linear") {
-    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    const signature = await hmacSign("SHA-256", secret, built.body);
     headers["linear-signature"] = `sha256=${toHex(signature)}`;
   }
 
@@ -2287,7 +2558,7 @@ export async function buildTemplateSendOptions(
     const msgId = `msg_${randomHex(16)}`;
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signingInput = `${msgId}.${timestamp}.${built.body}`;
-    const secretBytes = decodeStandardWebhookSecret(options.secret);
+    const secretBytes = decodeStandardWebhookSecret(secret);
     const signature = await hmacSignRaw("SHA-256", secretBytes, signingInput);
     const sig = `v1,${toBase64(signature)}`;
     headers["webhook-id"] = msgId;
@@ -2299,56 +2570,53 @@ export async function buildTemplateSendOptions(
   }
 
   if (provider === "vercel") {
-    const signature = await hmacSign("SHA-1", options.secret, built.body);
+    const signature = await hmacSign("SHA-1", secret, built.body);
     headers["x-vercel-signature"] = toHex(signature);
   }
 
   if (provider === "gitlab") {
-    headers["x-gitlab-token"] = options.secret;
+    headers["x-gitlab-token"] = secret;
     const gitlabEvent = template === "merge_request" ? "Merge Request Hook" : "Push Hook";
     headers["x-gitlab-event"] = gitlabEvent;
   }
 
   if (provider === "typeform") {
-    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    const signature = await hmacSign("SHA-256", secret, built.body);
     headers["typeform-signature"] = `sha256=${toBase64(signature)}`;
   }
 
   if (provider === "meta") {
-    const signature = await hmacSign("SHA-256", options.secret, built.body);
+    const signature = await hmacSign("SHA-256", secret, built.body);
     headers["x-hub-signature-256"] = `sha256=${toHex(signature)}`;
   }
 
   if (provider === "lemonsqueezy") {
-    headers["x-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+    headers["x-signature"] = toHex(await hmacSign("SHA-256", secret, built.body));
   }
 
   if (provider === "coinbase-commerce") {
-    headers["x-cc-webhook-signature"] = toHex(
-      await hmacSign("SHA-256", options.secret, built.body)
-    );
+    headers["x-cc-webhook-signature"] = toHex(await hmacSign("SHA-256", secret, built.body));
   }
 
   if (provider === "razorpay") {
-    headers["x-razorpay-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+    headers["x-razorpay-signature"] = toHex(await hmacSign("SHA-256", secret, built.body));
   }
 
   if (provider === "cal") {
-    headers["x-cal-signature-256"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+    headers["x-cal-signature-256"] = toHex(await hmacSign("SHA-256", secret, built.body));
   }
 
   if (provider === "intercom") {
-    headers["x-hub-signature"] =
-      `sha1=${toHex(await hmacSign("SHA-1", options.secret, built.body))}`;
+    headers["x-hub-signature"] = `sha1=${toHex(await hmacSign("SHA-1", secret, built.body))}`;
   }
 
   if (provider === "telegram") {
-    headers["x-telegram-bot-api-secret-token"] = options.secret;
+    headers["x-telegram-bot-api-secret-token"] = secret;
   }
 
   if (provider === "square") {
     // Square signs the notification URL concatenated with the raw body.
-    const signature = await hmacSign("SHA-256", options.secret, `${endpointUrl}${built.body}`);
+    const signature = await hmacSign("SHA-256", secret, `${endpointUrl}${built.body}`);
     headers["x-square-hmacsha256-signature"] = toBase64(signature);
   }
 
@@ -2358,7 +2626,7 @@ export async function buildTemplateSendOptions(
     // the generated signature matches HubSpot for URLs containing those chars.
     const timestamp = (options.timestamp ?? Math.floor(Date.now() / 1000)) * 1000;
     const base = `${method}${decodeHubSpotUri(endpointUrl)}${built.body}${timestamp}`;
-    const signature = await hmacSign("SHA-256", options.secret, base);
+    const signature = await hmacSign("SHA-256", secret, base);
     headers["x-hubspot-request-timestamp"] = String(timestamp);
     headers["x-hubspot-signature-v3"] = toBase64(signature);
   }
@@ -2374,7 +2642,7 @@ export async function buildTemplateSendOptions(
     const timestamp =
       parsed.signature?.timestamp ?? String(options.timestamp ?? Math.floor(Date.now() / 1000));
     const token = parsed.signature?.token ?? randomHex(50);
-    const sig = toHex(await hmacSign("SHA-256", options.secret, `${timestamp}${token}`));
+    const sig = toHex(await hmacSign("SHA-256", secret, `${timestamp}${token}`));
     parsed.signature = { timestamp, token, signature: sig };
     built.body = JSON.stringify(parsed);
   }
@@ -2383,7 +2651,7 @@ export async function buildTemplateSendOptions(
     // Calendly uses the Stripe-style `t=<unix>,v1=<hex>` header, signing
     // `${timestamp}.${body}` with HMAC-SHA256 (hex).
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
-    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    const signature = await hmacSign("SHA-256", secret, `${timestamp}.${built.body}`);
     headers["calendly-webhook-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
   }
 
@@ -2391,14 +2659,14 @@ export async function buildTemplateSendOptions(
     // Mux uses the same Stripe-style `t=<unix>,v1=<hex>` header as Calendly,
     // signing `${timestamp}.${body}` with HMAC-SHA256 (hex).
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
-    const signature = await hmacSign("SHA-256", options.secret, `${timestamp}.${built.body}`);
+    const signature = await hmacSign("SHA-256", secret, `${timestamp}.${built.body}`);
     headers["mux-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
   }
 
   if (provider === "sentry") {
     // Sentry signs the raw body with HMAC-SHA256 (hex) in `sentry-hook-signature`
     // and carries the event resource (e.g. `issue`) in `sentry-hook-resource`.
-    headers["sentry-hook-signature"] = toHex(await hmacSign("SHA-256", options.secret, built.body));
+    headers["sentry-hook-signature"] = toHex(await hmacSign("SHA-256", secret, built.body));
     headers["sentry-hook-resource"] = event.split(".")[0];
   }
 
@@ -2407,8 +2675,50 @@ export async function buildTemplateSendOptions(
     // `x-hub-signature`, and carries the event in the unique `x-event-key` header
     // (which is what auto-detection keys on to avoid the Intercom `sha1=` collision).
     headers["x-event-key"] = event;
-    headers["x-hub-signature"] =
-      `sha256=${toHex(await hmacSign("SHA-256", options.secret, built.body))}`;
+    headers["x-hub-signature"] = `sha256=${toHex(await hmacSign("SHA-256", secret, built.body))}`;
+  }
+
+  if (provider === "docusign") {
+    headers["x-docusign-signature-1"] = toBase64(await hmacSign("SHA-256", secret, built.body));
+    headers["x-authorization-digest"] = "HMACSHA256";
+  }
+
+  if (provider === "adyen") {
+    const parsed = JSON.parse(built.body) as {
+      notificationItems?: Array<{ NotificationRequestItem?: AdyenNotificationRequestItem }>;
+    };
+    // Sign every item — verification requires each item in the batch to carry
+    // its own valid signature, including items from multi-item body overrides.
+    let signedAny = false;
+    for (const wrapper of parsed.notificationItems ?? []) {
+      const item = wrapper?.NotificationRequestItem;
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      item.additionalData = {
+        ...(item.additionalData ?? {}),
+        hmacSignature: await calculateAdyenHmac(item, secret),
+      };
+      signedAny = true;
+    }
+    if (signedAny) {
+      built.body = JSON.stringify(parsed);
+    }
+  }
+
+  if (provider === "paypal") {
+    const timestamp = options.timestamp
+      ? new Date(options.timestamp * 1000).toISOString()
+      : new Date().toISOString();
+    headers["paypal-transmission-id"] = randomUuid();
+    headers["paypal-transmission-time"] = timestamp;
+    headers["paypal-cert-url"] =
+      `https://api.sandbox.paypal.com/v1/notifications/certs/CERT-${randomHex(16)}`;
+    headers["paypal-auth-algo"] = "SHA256withRSA";
+    // PayPal signs with PayPal's private key, which template generation cannot
+    // possess. The verifier supports real PayPal signatures; this placeholder
+    // keeps generated payloads provider-shaped for detection and capture tests.
+    headers["paypal-transmission-sig"] = toBase64Url(`mock:${secret}:${built.body}`);
   }
 
   return {

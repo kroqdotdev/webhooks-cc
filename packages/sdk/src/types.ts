@@ -241,7 +241,11 @@ export type TemplateProvider =
   | "calendly"
   | "mux"
   | "sentry"
-  | "bitbucket";
+  | "bitbucket"
+  | "docusign"
+  | "adyen"
+  | "paypal"
+  | "plaid";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {
@@ -279,8 +283,12 @@ export interface SendTemplateOptions {
   provider: TemplateProvider;
   /** Provider-specific template preset (uses provider default if omitted) */
   template?: string;
-  /** Shared secret used for provider signature generation */
-  secret: string;
+  /**
+   * Shared secret used for provider signature generation. Required for signed
+   * providers; omit for providers whose templates are unsigned (those with
+   * `secretRequired: false`, e.g. sendgrid, discord, plaid).
+   */
+  secret?: string;
   /** Provider event/topic name (provider default used if omitted) */
   event?: string;
   /** HTTP method override (default: "POST") */
@@ -501,6 +509,8 @@ export type VerifySignatureOptions =
       url?: string;
       /** HTTP method covered by the signature (required for HubSpot v3) */
       method?: string;
+      /** Optional certificate fetcher for PayPal self-verification tests/custom transports */
+      fetchCertificate?: (url: string) => Promise<string>;
     }
   | {
       /** Discord interaction verification */

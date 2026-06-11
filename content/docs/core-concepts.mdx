@@ -131,7 +131,7 @@ whk tunnel 3000 -e
 
 Provider templates are pre-built webhook payloads for common services. Each template includes realistic data and, when the provider supports shared-secret or token-style signing, matching signature headers so your handler can verify them.
 
-Supported providers (28): **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, **SendGrid**, **Clerk**, **Discord**, **Vercel**, **GitLab**, **Typeform**, **Standard Webhooks** (Polar, Svix, Resend), **Meta**, **Lemon Squeezy**, **Coinbase Commerce**, **Razorpay**, **Cal.com**, **Intercom**, **Telegram**, **Square**, **HubSpot**, **Mailgun**, **Calendly**, **Mux**, **Sentry**, and **Bitbucket**.
+Supported providers (32): **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, **SendGrid**, **Clerk**, **Discord**, **Vercel**, **GitLab**, **Typeform**, **Standard Webhooks** (Polar, Svix, Resend), **Meta**, **Lemon Squeezy**, **Coinbase Commerce**, **Razorpay**, **Cal.com**, **Intercom**, **Telegram**, **Square**, **HubSpot**, **Mailgun**, **Calendly**, **Mux**, **Sentry**, **Bitbucket**, **DocuSign**, **Adyen**, **PayPal**, and **Plaid**.
 
 ```ts
 await client.endpoints.sendTemplate(endpoint.slug, {
@@ -155,7 +155,7 @@ if (isStripeWebhook(request)) {
 }
 ```
 
-Verification requires the provider's signing secret, which you configure in your application. The SDK supports signature verification for 27 providers: Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord (Ed25519), Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, and Bitbucket.
+Verification requires the provider's signing secret or verification credential, which you configure in your application. The SDK supports signature verification for 30 providers: Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord (Ed25519), Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, and PayPal. SendGrid and Plaid are template-only for verification.
 
 ## Quotas
 

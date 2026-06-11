@@ -18,6 +18,7 @@ import {
 } from "@/lib/dashboard-api";
 import { trackEndpointDeleted, trackEndpointSaved } from "@/lib/analytics";
 import {
+  getWebProviderCredentialLabel,
   getWebProviderInfo,
   getWebProviderLabel,
   WEB_VERIFICATION_PROVIDER_OPTIONS,
@@ -311,8 +312,7 @@ export const EndpointSettingsDialog = forwardRef<
           !providerChanged && hasSigningSecret && !signingSecret;
 
         if (signingProvider && !signingSecret && !hasConfiguredSecretForSelectedProvider) {
-          const label =
-            signingProviderInfo?.verificationMode === "publicKey" ? "public key" : "signing secret";
+          const label = getWebProviderCredentialLabel(signingProvider).toLowerCase();
           throw new Error(`Enter a ${label} before enabling signature verification.`);
         }
 
@@ -596,7 +596,8 @@ export const EndpointSettingsDialog = forwardRef<
                       ))}
                     </select>
                     <p className="text-xs text-muted-foreground mt-1">
-                      SendGrid uses IP allowlisting and is not supported for signature verification.
+                      SendGrid uses IP allowlisting. Plaid verification requires Plaid API
+                      credentials, so it is template-only for now.
                     </p>
                   </div>
 
@@ -607,9 +608,7 @@ export const EndpointSettingsDialog = forwardRef<
                           htmlFor="settings-signing-secret"
                           className="font-bold uppercase tracking-wide text-xs"
                         >
-                          {signingProviderInfo?.verificationMode === "publicKey"
-                            ? "Public Key"
-                            : "Signing Secret"}
+                          {getWebProviderCredentialLabel(signingProvider)}
                         </label>
                         <div className="flex gap-2">
                           <input

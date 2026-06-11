@@ -194,7 +194,8 @@ const total = await client.requests.count({
 
 ## Templates, sendTo, and buildRequest
 
-The SDK can generate signed webhook payloads for:
+The SDK can generate provider-shaped webhook payloads (signed where the provider uses a shared
+secret or public test key flow) for:
 
 - `stripe`
 - `github`
@@ -203,7 +204,9 @@ The SDK can generate signed webhook payloads for:
 - `slack`
 - `paddle`
 - `linear`
+- `sendgrid`
 - `clerk`
+- `discord`
 - `vercel`
 - `gitlab`
 - `typeform`
@@ -222,8 +225,14 @@ The SDK can generate signed webhook payloads for:
 - `mux`
 - `sentry`
 - `bitbucket`
+- `docusign`
+- `adyen`
+- `paypal`
+- `plaid`
 
-(`sendgrid` and `discord` templates are also available but are intentionally unsigned.)
+`sendgrid`, `discord`, `paypal`, and `plaid` templates are intentionally not shared-secret signed:
+SendGrid uses IP allowlisting, Discord/PayPal signatures require provider-owned private keys, and
+Plaid verification uses Plaid JWT/JWK lookup.
 
 Inspect the static provider metadata:
 
@@ -298,6 +307,12 @@ Supported verification providers:
 - `mux`
 - `sentry`
 - `bitbucket`
+- `docusign`
+- `adyen`
+- `paypal`
+
+`sendgrid` and `plaid` are template-only for verification: SendGrid uses IP allowlisting, and Plaid
+JWT/JWK verification requires Plaid API credentials.
 
 ```typescript
 import { isDiscordWebhook, verifySignature } from "@webhooks-cc/sdk";
@@ -344,6 +359,7 @@ isTypeformWebhook      isStandardWebhook       isMetaWebhook        isLemonSquee
 isCoinbaseCommerceWebhook  isRazorpayWebhook   isCalWebhook         isIntercomWebhook
 isTelegramWebhook      isSquareWebhook         isHubSpotWebhook     isMailgunWebhook
 isCalendlyWebhook      isMuxWebhook            isSentryWebhook      isBitbucketWebhook
+isDocuSignWebhook      isAdyenWebhook          isPayPalWebhook      isPlaidWebhook
 ```
 
 ## Matchers, parsing, and diffing

@@ -19,8 +19,10 @@ describe("signing-config", () => {
   test("accepts only providers with receiver verification support", () => {
     expect(isValidSigningProvider("stripe")).toBe(true);
     expect(isValidSigningProvider("discord")).toBe(true);
+    expect(isValidSigningProvider("paypal")).toBe(true);
     expect(isValidSigningProvider("generic-hmac")).toBe(true);
     expect(isValidSigningProvider("sendgrid")).toBe(false);
+    expect(isValidSigningProvider("plaid")).toBe(false);
     expect(isValidSigningProvider("unknown")).toBe(false);
     expect(isValidSigningProvider(null)).toBe(false);
   });

@@ -61,6 +61,10 @@ export {
   isMuxWebhook,
   isSentryWebhook,
   isBitbucketWebhook,
+  isDocuSignWebhook,
+  isAdyenWebhook,
+  isPayPalWebhook,
+  isPlaidWebhook,
   matchJsonField,
 } from "./helpers";
 export {
@@ -130,6 +134,10 @@ export {
   verifyMuxSignature,
   verifySentrySignature,
   verifyBitbucketSignature,
+  verifyDocuSignSignature,
+  verifyAdyenSignature,
+  verifyPayPalSignature,
+  buildPayPalTransmissionMessage,
 } from "./verify";
 export type { SSEFrame } from "./sse";
 export type {

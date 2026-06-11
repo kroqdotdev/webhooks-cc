@@ -73,6 +73,35 @@ fn detect_linear() {
 }
 
 #[test]
+fn detect_docusign() {
+    let h = headers(&[("x-docusign-signature-1", "abc")]);
+    assert_eq!(detect_provider(&h), Some("docusign"));
+}
+
+#[test]
+fn detect_paypal() {
+    let h = headers(&[
+        ("paypal-transmission-id", "id"),
+        ("paypal-transmission-time", "2024-05-16T05:19:23Z"),
+        ("paypal-transmission-sig", "sig"),
+        (
+            "paypal-cert-url",
+            "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-test",
+        ),
+    ]);
+    assert_eq!(detect_provider(&h), Some("paypal"));
+}
+
+#[test]
+fn detect_plaid() {
+    let h = headers(&[(
+        "plaid-verification",
+        "eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjF9.sig",
+    )]);
+    assert_eq!(detect_provider(&h), Some("plaid"));
+}
+
+#[test]
 fn detect_vercel() {
     let h = headers(&[("x-vercel-signature", "abc")]);
     assert_eq!(detect_provider(&h), Some("vercel"));
@@ -647,7 +676,15 @@ fn sendgrid_skipped() {
 #[test]
 fn unknown_provider_skipped() {
     assert!(matches!(
-        verify_signature("unknown_provider", b"", &headers(&[]), b"", None, None, None),
+        verify_signature(
+            "unknown_provider",
+            b"",
+            &headers(&[]),
+            b"",
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }
@@ -787,7 +824,15 @@ fn verify_lemonsqueezy_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-signature", &sig)]);
     assert!(matches!(
-        verify_signature("lemonsqueezy", secret.as_bytes(), &h, body, None, None, None),
+        verify_signature(
+            "lemonsqueezy",
+            secret.as_bytes(),
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Valid
     ));
 }
@@ -810,7 +855,15 @@ fn verify_coinbase_commerce_valid() {
     let sig = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cc-webhook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("coinbase-commerce", secret.as_bytes(), &h, body, None, None, None),
+        verify_signature(
+            "coinbase-commerce",
+            secret.as_bytes(),
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Valid
     ));
 }
@@ -821,7 +874,15 @@ fn verify_coinbase_commerce_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("x-cc-webhook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("coinbase-commerce", b"cb_secret", &h, body, None, None, None),
+        verify_signature(
+            "coinbase-commerce",
+            b"cb_secret",
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -955,7 +1016,15 @@ fn verify_telegram_wrong_token() {
 #[test]
 fn verify_telegram_missing_header() {
     assert!(matches!(
-        verify_signature("telegram", b"secret", &headers(&[]), b"{}", None, None, None),
+        verify_signature(
+            "telegram",
+            b"secret",
+            &headers(&[]),
+            b"{}",
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }
@@ -1078,7 +1147,15 @@ fn verify_hubspot_valid() {
         ("x-hubspot-request-timestamp", &ts.to_string()),
     ]);
     assert!(matches!(
-        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("POST")),
+        verify_signature(
+            "hubspot",
+            b"hs_secret",
+            &h,
+            body,
+            None,
+            Some(url),
+            Some("POST")
+        ),
         VerificationResult::Valid
     ));
 }
@@ -1098,7 +1175,15 @@ fn verify_hubspot_decodes_reserved_uri_chars() {
         ("x-hubspot-request-timestamp", &ts.to_string()),
     ]);
     assert!(matches!(
-        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(encoded_url), Some("POST")),
+        verify_signature(
+            "hubspot",
+            b"hs_secret",
+            &h,
+            body,
+            None,
+            Some(encoded_url),
+            Some("POST")
+        ),
         VerificationResult::Valid
     ));
 }
@@ -1114,7 +1199,15 @@ fn verify_hubspot_wrong_secret() {
         ("x-hubspot-request-timestamp", &ts.to_string()),
     ]);
     assert!(matches!(
-        verify_signature("hubspot", b"wrong_secret", &h, body, None, Some(url), Some("POST")),
+        verify_signature(
+            "hubspot",
+            b"wrong_secret",
+            &h,
+            body,
+            None,
+            Some(url),
+            Some("POST")
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1131,7 +1224,15 @@ fn verify_hubspot_wrong_method() {
         ("x-hubspot-request-timestamp", &ts.to_string()),
     ]);
     assert!(matches!(
-        verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("GET")),
+        verify_signature(
+            "hubspot",
+            b"hs_secret",
+            &h,
+            body,
+            None,
+            Some(url),
+            Some("GET")
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1148,7 +1249,15 @@ fn verify_hubspot_expired_timestamp() {
         ("x-hubspot-request-timestamp", &ts.to_string()),
     ]);
     // Even though the signature itself is correct, the stale timestamp is rejected.
-    match verify_signature("hubspot", b"hs_secret", &h, body, None, Some(url), Some("POST")) {
+    match verify_signature(
+        "hubspot",
+        b"hs_secret",
+        &h,
+        body,
+        None,
+        Some(url),
+        Some("POST"),
+    ) {
         VerificationResult::Invalid(err) => assert_eq!(err.code, "timestamp_expired"),
         other => panic!("expected Invalid(timestamp_expired), got {other:?}"),
     }
@@ -1202,7 +1311,15 @@ fn verify_mailgun_valid() {
     let secret = "mg_signing_key";
     let body = make_mailgun_body(secret, "1700000000", "deadbeefcafe", "delivered");
     assert!(matches!(
-        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), body.as_bytes(), None, None, None),
+        verify_signature(
+            "mailgun",
+            secret.as_bytes(),
+            &headers(&[]),
+            body.as_bytes(),
+            None,
+            None,
+            None
+        ),
         VerificationResult::Valid
     ));
 }
@@ -1211,7 +1328,15 @@ fn verify_mailgun_valid() {
 fn verify_mailgun_wrong_secret() {
     let body = make_mailgun_body("mg_signing_key", "1700000000", "deadbeefcafe", "delivered");
     assert!(matches!(
-        verify_signature("mailgun", b"wrong_secret", &headers(&[]), body.as_bytes(), None, None, None),
+        verify_signature(
+            "mailgun",
+            b"wrong_secret",
+            &headers(&[]),
+            body.as_bytes(),
+            None,
+            None,
+            None
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1225,7 +1350,15 @@ fn verify_mailgun_tampered_token() {
         r#"{{"signature":{{"timestamp":"1700000000","token":"OTHERTOKEN","signature":"{sig}"}},"event-data":{{"event":"delivered"}}}}"#
     );
     assert!(matches!(
-        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), body.as_bytes(), None, None, None),
+        verify_signature(
+            "mailgun",
+            secret.as_bytes(),
+            &headers(&[]),
+            body.as_bytes(),
+            None,
+            None,
+            None
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1235,22 +1368,54 @@ fn verify_mailgun_malformed_body_is_skipped_not_panic() {
     let secret = "mg_signing_key";
     // Non-JSON body → Skipped (never panics).
     assert!(matches!(
-        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"not json at all", None, None, None),
+        verify_signature(
+            "mailgun",
+            secret.as_bytes(),
+            &headers(&[]),
+            b"not json at all",
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
     // Truncated JSON → Skipped.
     assert!(matches!(
-        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"{", None, None, None),
+        verify_signature(
+            "mailgun",
+            secret.as_bytes(),
+            &headers(&[]),
+            b"{",
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
     // Missing signature fields → Skipped.
     assert!(matches!(
-        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), br#"{"event-data":{}}"#, None, None, None),
+        verify_signature(
+            "mailgun",
+            secret.as_bytes(),
+            &headers(&[]),
+            br#"{"event-data":{}}"#,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
     // Empty body → Skipped.
     assert!(matches!(
-        verify_signature("mailgun", secret.as_bytes(), &headers(&[]), b"", None, None, None),
+        verify_signature(
+            "mailgun",
+            secret.as_bytes(),
+            &headers(&[]),
+            b"",
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }
@@ -1266,7 +1431,15 @@ fn mailgun_is_not_auto_detected() {
     assert_eq!(detect_provider(&h), None);
     // Sanity: the body itself still verifies via the explicit provider path.
     assert!(matches!(
-        verify_signature("mailgun", b"mg_signing_key", &h, body.as_bytes(), None, None, None),
+        verify_signature(
+            "mailgun",
+            b"mg_signing_key",
+            &h,
+            body.as_bytes(),
+            None,
+            None,
+            None
+        ),
         VerificationResult::Valid
     ));
 }
@@ -1300,7 +1473,11 @@ fn verify_calendly_valid() {
 #[test]
 fn verify_calendly_wrong_secret() {
     let body = br#"{"event":"invitee.created"}"#;
-    let sig = make_calendly_header("cal_signing_key", "1700000000", std::str::from_utf8(body).unwrap());
+    let sig = make_calendly_header(
+        "cal_signing_key",
+        "1700000000",
+        std::str::from_utf8(body).unwrap(),
+    );
     let h = headers(&[("calendly-webhook-signature", &sig)]);
     assert!(matches!(
         verify_signature("calendly", b"wrong_secret", &h, body, None, None, None),
@@ -1332,7 +1509,15 @@ fn verify_calendly_tampered_body() {
 fn verify_calendly_missing_header() {
     let body = br#"{"event":"invitee.created"}"#;
     assert!(matches!(
-        verify_signature("calendly", b"cal_signing_key", &headers(&[]), body, None, None, None),
+        verify_signature(
+            "calendly",
+            b"cal_signing_key",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }
@@ -1376,7 +1561,11 @@ fn verify_mux_valid() {
 #[test]
 fn verify_mux_wrong_secret() {
     let body = br#"{"type":"video.asset.created"}"#;
-    let sig = make_mux_header("mux_signing_secret", "1700000000", std::str::from_utf8(body).unwrap());
+    let sig = make_mux_header(
+        "mux_signing_secret",
+        "1700000000",
+        std::str::from_utf8(body).unwrap(),
+    );
     let h = headers(&[("mux-signature", &sig)]);
     assert!(matches!(
         verify_signature("mux", b"wrong_secret", &h, body, None, None, None),
@@ -1408,7 +1597,15 @@ fn verify_mux_tampered_body() {
 fn verify_mux_missing_header() {
     let body = br#"{"type":"video.asset.created"}"#;
     assert!(matches!(
-        verify_signature("mux", b"mux_signing_secret", &headers(&[]), body, None, None, None),
+        verify_signature(
+            "mux",
+            b"mux_signing_secret",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }
@@ -1452,7 +1649,15 @@ fn verify_sentry_wrong_secret() {
     let sig = make_hmac_sha256("wrong", std::str::from_utf8(body).unwrap());
     let h = headers(&[("sentry-hook-signature", &sig)]);
     assert!(matches!(
-        verify_signature("sentry", b"sentry_client_secret", &h, body, None, None, None),
+        verify_signature(
+            "sentry",
+            b"sentry_client_secret",
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1480,7 +1685,15 @@ fn verify_sentry_tampered_body() {
 fn verify_sentry_missing_header() {
     let body = br#"{"action":"created"}"#;
     assert!(matches!(
-        verify_signature("sentry", b"sentry_client_secret", &headers(&[]), body, None, None, None),
+        verify_signature(
+            "sentry",
+            b"sentry_client_secret",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Skipped(_)
     ));
 }
@@ -1539,7 +1752,15 @@ fn verify_bitbucket_wrong_secret() {
     );
     let h = headers(&[("x-event-key", "repo:push"), ("x-hub-signature", &sig)]);
     assert!(matches!(
-        verify_signature("bitbucket", b"bitbucket_webhook_secret", &h, body, None, None, None),
+        verify_signature(
+            "bitbucket",
+            b"bitbucket_webhook_secret",
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
         VerificationResult::Invalid(_)
     ));
 }
@@ -1595,6 +1816,243 @@ fn verify_bitbucket_missing_header() {
             None,
             None
         ),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+// ── Tier-3: Docusign, Adyen, PayPal, Plaid ──
+
+#[test]
+fn verify_docusign_valid() {
+    let secret = "docusign_hmac_secret";
+    let body = br#"{"event":"envelope-completed","data":{"envelopeId":"env_123"}}"#;
+    let sig = make_hmac_sha256_b64(secret.as_bytes(), std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-docusign-signature-1", &sig)]);
+    assert!(matches!(
+        verify_signature("docusign", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_docusign_wrong_secret() {
+    let body = br#"{"event":"envelope-completed"}"#;
+    let sig = make_hmac_sha256_b64(b"docusign_hmac_secret", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-docusign-signature-1", &sig)]);
+    assert!(matches!(
+        verify_signature("docusign", b"wrong_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_adyen_valid_official_vector() {
+    let hmac_key = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    let body = br#"{"live":"false","notificationItems":[{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":1130,"currency":"EUR"},"pspReference":"7914073381342284","eventCode":"AUTHORISATION","eventDate":"2019-05-06T17:15:34.121+02:00","merchantAccountCode":"TestMerchant","operations":["CANCEL","CAPTURE","REFUND"],"merchantReference":"TestPayment-1407325143704","paymentMethod":"visa","success":"true"}}]}"#;
+    assert!(matches!(
+        verify_signature(
+            "adyen",
+            hmac_key.as_bytes(),
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_adyen_rejects_batch_with_any_forged_item() {
+    // First item is the official valid vector; second item reuses the same
+    // signature over different data, so it is forged. The whole batch must be
+    // rejected — a single valid item must not vouch for the others.
+    let hmac_key = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    let body = br#"{"live":"false","notificationItems":[{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":1130,"currency":"EUR"},"pspReference":"7914073381342284","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"TestPayment-1407325143704","success":"true"}},{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":999999,"currency":"EUR"},"pspReference":"0000000000000000","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"Forged-Item","success":"true"}}]}"#;
+    assert!(matches!(
+        verify_signature(
+            "adyen",
+            hmac_key.as_bytes(),
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_adyen_rejects_batch_with_unsigned_item() {
+    // One validly signed item plus one item with no hmacSignature at all:
+    // the unsigned item is unverifiable, so the batch must not report Valid.
+    let hmac_key = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    let body = br#"{"live":"false","notificationItems":[{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":1130,"currency":"EUR"},"pspReference":"7914073381342284","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"TestPayment-1407325143704","success":"true"}},{"NotificationRequestItem":{"amount":{"value":999999,"currency":"EUR"},"pspReference":"0000000000000000","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"Unsigned-Item","success":"true"}}]}"#;
+    assert!(matches!(
+        verify_signature(
+            "adyen",
+            hmac_key.as_bytes(),
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_adyen_all_items_valid_in_batch() {
+    // Two items, each carrying its own correct signature → Valid.
+    let hmac_key = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    let body = br#"{"live":"false","notificationItems":[{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":1130,"currency":"EUR"},"pspReference":"7914073381342284","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"TestPayment-1407325143704","success":"true"}},{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":1130,"currency":"EUR"},"pspReference":"7914073381342284","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"TestPayment-1407325143704","success":"true"}}]}"#;
+    assert!(matches!(
+        verify_signature(
+            "adyen",
+            hmac_key.as_bytes(),
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_adyen_wrong_key() {
+    let body = br#"{"notificationItems":[{"NotificationRequestItem":{"additionalData":{"hmacSignature":"coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0="},"amount":{"value":1130,"currency":"EUR"},"pspReference":"7914073381342284","eventCode":"AUTHORISATION","merchantAccountCode":"TestMerchant","merchantReference":"TestPayment-1407325143704","success":"true"}}]}"#;
+    assert!(matches!(
+        verify_signature(
+            "adyen",
+            b"04782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn paypal_transmission_message_uses_crc32_decimal() {
+    let body = br#"{"id":"WH-123","event_type":"PAYMENT.CAPTURE.COMPLETED"}"#;
+    assert_eq!(
+        build_paypal_transmission_message(
+            body,
+            "db49fb10-1343-11ef-ac58-e32457403f67",
+            "2024-05-16T05:19:23Z",
+            "WEBHOOK_ID"
+        ),
+        "db49fb10-1343-11ef-ac58-e32457403f67|2024-05-16T05:19:23Z|WEBHOOK_ID|864276219"
+    );
+}
+
+#[test]
+fn verify_paypal_with_public_key_pem_valid() {
+    let body = br#"{"id":"WH-123","event_type":"PAYMENT.CAPTURE.COMPLETED"}"#;
+    let public_key = r#"-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0E6+8ieSIupdb0jF/8lE
+f6XatWzm7yId5Auo5rn/cYd8ka5Iv5zMeG8VKOvvlnE8lJzgbeJJS14Jv5Rzjher
+nZA6BkWQOeZPh3IYqryJQ3hAIIf3mtbEb0rnDKyEsziuDe2Qm5c7vCsBglkWnK+J
+AuwZR16o1fSCObasvxHdsljizWCxVw8gFxUFuwLrVi/Sn0ypW/L0bJ1fq9x/YHkJ
+vQ8ek33OBP7K3MWuEp9MaVNFVQO1eDMM+PtZ0wGcyOfLizgEmRORtIWA6yIJVmDq
+AC6IFvEpfhZy2uaS3d5gZFrCIS5TmxWEl29uJnJw+fGKno+FaW+CPaQcZNfydWkD
+NwIDAQAB
+-----END PUBLIC KEY-----"#;
+    let h = headers(&[
+        (
+            "paypal-transmission-id",
+            "db49fb10-1343-11ef-ac58-e32457403f67",
+        ),
+        ("paypal-transmission-time", "2024-05-16T05:19:23Z"),
+        ("paypal-auth-algo", "SHA256withRSA"),
+        (
+            "paypal-cert-url",
+            "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-test",
+        ),
+        (
+            "paypal-transmission-sig",
+            "Rjjq7TsIBjZIoDxof57b6Ib0n4Js8qp5jx8ZnSd32XlGImpF7P5EDeNm7MrQapPA+rTRXF3kO/vwlQoE3NRMHUERGUCHyHh6qBz/ngsBZokiH8TDxHxlWdxgaZidUT5xF8mn9TSXXgbMUASYmqPw7sNEKEukKXo52aUeHGMtxR/UqxgjrJTJ6nR56ejR/fSLptHWTypdixoWN651oj4ZiL5yR9Mczlz46Falvosk89udsawevIkRLk+YiJYnQ2squLksyQ+IQVUdVza8TRDMh8Gbt7QsVtrHnor+LKL5K/dvUBjoJAXiKLcfIFEXOTPLs3HlJu3Dper9vwASsDxaXQ==",
+        ),
+    ]);
+    assert!(matches!(
+        verify_paypal_with_certificate(b"WEBHOOK_ID", &h, body, public_key),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn paypal_cert_cache_only_stores_parseable_certs_and_is_bounded() {
+    let pem = r#"-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0E6+8ieSIupdb0jF/8lE
+f6XatWzm7yId5Auo5rn/cYd8ka5Iv5zMeG8VKOvvlnE8lJzgbeJJS14Jv5Rzjher
+nZA6BkWQOeZPh3IYqryJQ3hAIIf3mtbEb0rnDKyEsziuDe2Qm5c7vCsBglkWnK+J
+AuwZR16o1fSCObasvxHdsljizWCxVw8gFxUFuwLrVi/Sn0ypW/L0bJ1fq9x/YHkJ
+vQ8ek33OBP7K3MWuEp9MaVNFVQO1eDMM+PtZ0wGcyOfLizgEmRORtIWA6yIJVmDq
+AC6IFvEpfhZy2uaS3d5gZFrCIS5TmxWEl29uJnJw+fGKno+FaW+CPaQcZNfydWkD
+NwIDAQAB
+-----END PUBLIC KEY-----"#;
+
+    // Responses that do not contain a public key (error pages, truncated
+    // bodies) are never cached — a transient failure must not poison the
+    // cache permanently.
+    assert!(!cache_paypal_certificate(
+        "https://api.paypal.com/v1/notifications/certs/CERT-garbage",
+        "<html>404 Not Found</html>"
+    ));
+
+    // Valid certificates cache fine.
+    assert!(cache_paypal_certificate(
+        "https://api.paypal.com/v1/notifications/certs/CERT-bounded-0",
+        pem
+    ));
+
+    // The cache is bounded: the URL suffix is sender-controlled, so it must
+    // not grow without limit. Once full, new keys are rejected while known
+    // keys can still be refreshed.
+    for i in 0..64 {
+        cache_paypal_certificate(
+            &format!("https://api.paypal.com/v1/notifications/certs/CERT-bounded-{i}"),
+            pem,
+        );
+    }
+    assert!(!cache_paypal_certificate(
+        "https://api.paypal.com/v1/notifications/certs/CERT-bounded-overflow",
+        pem
+    ));
+    assert!(cache_paypal_certificate(
+        "https://api.paypal.com/v1/notifications/certs/CERT-bounded-0",
+        pem
+    ));
+}
+
+#[test]
+fn verify_paypal_rejects_non_paypal_cert_url() {
+    let body = br#"{}"#;
+    let h = headers(&[
+        ("paypal-transmission-id", "id"),
+        ("paypal-transmission-time", "2024-05-16T05:19:23Z"),
+        ("paypal-auth-algo", "SHA256withRSA"),
+        ("paypal-cert-url", "https://example.com/cert.pem"),
+        ("paypal-transmission-sig", "invalid"),
+    ]);
+    assert!(matches!(
+        verify_paypal_with_certificate(b"WEBHOOK_ID", &h, body, ""),
+        VerificationResult::Skipped(_)
+    ));
+}
+
+#[test]
+fn verify_plaid_is_unsupported() {
+    assert!(matches!(
+        verify_signature("plaid", b"", &headers(&[]), b"{}", None, None, None),
         VerificationResult::Skipped(_)
     ));
 }

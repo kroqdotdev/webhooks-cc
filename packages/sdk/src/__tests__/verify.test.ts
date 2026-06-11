@@ -29,6 +29,10 @@ import {
   verifyMuxSignature,
   verifySentrySignature,
   verifyBitbucketSignature,
+  verifyDocuSignSignature,
+  verifyAdyenSignature,
+  verifyPayPalSignature,
+  buildPayPalTransmissionMessage,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
 
@@ -37,6 +41,13 @@ const client = new WebhooksCC({
   baseUrl: "https://test.webhooks.cc",
   webhookUrl: "https://go.test.webhooks.cc",
 });
+
+async function exportPublicKeyPem(publicKey: CryptoKey): Promise<string> {
+  const spki = await crypto.subtle.exportKey("spki", publicKey);
+  const base64 = Buffer.from(new Uint8Array(spki)).toString("base64");
+  const wrapped = base64.match(/.{1,64}/g)?.join("\n") ?? base64;
+  return `-----BEGIN PUBLIC KEY-----\n${wrapped}\n-----END PUBLIC KEY-----`;
+}
 
 describe("signature verification", () => {
   it("verifies Stripe signatures from raw body and header", async () => {
@@ -53,6 +64,298 @@ describe("signature verification", () => {
     expect(
       await verifyStripeSignature(built.body, built.headers["stripe-signature"], "wrong_secret")
     ).toBe(false);
+  });
+
+  it("verifies DocuSign Connect HMAC signatures", async () => {
+    const built = await client.buildRequest("https://example.com/webhooks/docusign", {
+      provider: "docusign",
+      secret: "docusign_secret",
+      body: { event: "envelope-completed", envelopeId: "env_123" },
+    });
+
+    expect(
+      await verifyDocuSignSignature(
+        built.body,
+        built.headers["x-docusign-signature-1"],
+        "docusign_secret"
+      )
+    ).toBe(true);
+    expect(
+      await verifyDocuSignSignature(
+        `${built.body} `,
+        built.headers["x-docusign-signature-1"],
+        "docusign_secret"
+      )
+    ).toBe(false);
+
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "X-DocuSign-Signature-1": built.headers["x-docusign-signature-1"] },
+        },
+        { provider: "docusign", secret: "docusign_secret" }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("verifies Adyen standard notification HMAC signatures from the body", async () => {
+    // Adyen's official documented HMAC test vector — public, not a secret
+    // (https://docs.adyen.com webhook HMAC examples). Kept verbatim so the
+    // precomputed signature in the fixture verifies.
+    const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    const body = JSON.stringify({
+      live: "false",
+      notificationItems: [
+        {
+          NotificationRequestItem: {
+            additionalData: {
+              hmacSignature: "coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0=",
+            },
+            amount: {
+              value: 1130,
+              currency: "EUR",
+            },
+            pspReference: "7914073381342284",
+            eventCode: "AUTHORISATION",
+            eventDate: "2019-05-06T17:15:34.121+02:00",
+            merchantAccountCode: "TestMerchant",
+            operations: ["CANCEL", "CAPTURE", "REFUND"],
+            merchantReference: "TestPayment-1407325143704",
+            paymentMethod: "visa",
+            success: "true",
+          },
+        },
+      ],
+    });
+
+    expect(await verifyAdyenSignature(body, hmacKey)).toBe(true);
+    expect(await verifyAdyenSignature(body, hmacKey.replace(/.$/, "0"))).toBe(false);
+
+    await expect(
+      verifySignature({ body, headers: {} }, { provider: "adyen", secret: hmacKey })
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("rejects Adyen batches where any item is forged or unsigned", async () => {
+    // Adyen's official documented HMAC test vector — public, not a secret
+    // (https://docs.adyen.com webhook HMAC examples). Kept verbatim so the
+    // precomputed signature in the fixture verifies.
+    const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+    const validItem = {
+      NotificationRequestItem: {
+        additionalData: {
+          hmacSignature: "coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0=",
+        },
+        amount: { value: 1130, currency: "EUR" },
+        pspReference: "7914073381342284",
+        eventCode: "AUTHORISATION",
+        merchantAccountCode: "TestMerchant",
+        merchantReference: "TestPayment-1407325143704",
+        success: "true",
+      },
+    };
+    const forgedItem = {
+      NotificationRequestItem: {
+        ...validItem.NotificationRequestItem,
+        amount: { value: 999999, currency: "EUR" },
+        merchantReference: "Forged-Item",
+      },
+    };
+    const unsignedFields: Record<string, unknown> = { ...validItem.NotificationRequestItem };
+    delete unsignedFields.additionalData;
+    const unsignedItem = {
+      NotificationRequestItem: { ...unsignedFields, merchantReference: "Unsigned-Item" },
+    };
+
+    // One genuine item must not vouch for a forged or unsigned sibling.
+    expect(
+      await verifyAdyenSignature(
+        JSON.stringify({ live: "false", notificationItems: [validItem, forgedItem] }),
+        hmacKey
+      )
+    ).toBe(false);
+    expect(
+      await verifyAdyenSignature(
+        JSON.stringify({ live: "false", notificationItems: [validItem, unsignedItem] }),
+        hmacKey
+      )
+    ).toBe(false);
+    // A batch where every item is correctly signed verifies.
+    expect(
+      await verifyAdyenSignature(
+        JSON.stringify({ live: "false", notificationItems: [validItem, validItem] }),
+        hmacKey
+      )
+    ).toBe(true);
+  });
+
+  it("verifies PayPal RSA webhook signatures with a fetched certificate public key", async () => {
+    const keyPair = (await crypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["sign", "verify"]
+    )) as CryptoKeyPair;
+    const publicKeyPem = await exportPublicKeyPem(keyPair.publicKey);
+    const body = JSON.stringify({ id: "WH-123", event_type: "PAYMENT.CAPTURE.COMPLETED" });
+    const transmissionId = "db49fb10-1343-11ef-ac58-e32457403f67";
+    const transmissionTime = "2024-05-16T05:19:23Z";
+    const webhookId = "WEBHOOK_ID";
+    const message = buildPayPalTransmissionMessage(
+      body,
+      transmissionId,
+      transmissionTime,
+      webhookId
+    );
+    const signature = await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      keyPair.privateKey,
+      new TextEncoder().encode(message)
+    );
+    const headers = {
+      "paypal-transmission-id": transmissionId,
+      "paypal-transmission-time": transmissionTime,
+      "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-test",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-transmission-sig": Buffer.from(new Uint8Array(signature)).toString("base64"),
+    };
+
+    expect(
+      await verifyPayPalSignature(body, headers, webhookId, {
+        fetchCertificate: async () => publicKeyPem,
+      })
+    ).toBe(true);
+    expect(
+      await verifyPayPalSignature(`${body} `, headers, webhookId, {
+        fetchCertificate: async () => publicKeyPem,
+      })
+    ).toBe(false);
+
+    await expect(
+      verifySignature({ body, headers }, {
+        provider: "paypal",
+        secret: webhookId,
+        fetchCertificate: async () => publicKeyPem,
+      } as VerifySignatureOptions)
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("throws a descriptive error when the PayPal certificate cannot be downloaded", async () => {
+    const headers = {
+      "paypal-transmission-id": "db49fb10-1343-11ef-ac58-e32457403f67",
+      "paypal-transmission-time": "2024-05-16T05:19:23Z",
+      "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-down",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-transmission-sig": "c2ln",
+    };
+    // A download failure is an infrastructure error, not an invalid
+    // signature — it must surface as a throw, not a false verdict.
+    await expect(
+      verifyPayPalSignature("{}", headers, "WEBHOOK_ID", {
+        fetchCertificate: async () => {
+          throw new Error("connection refused");
+        },
+      })
+    ).rejects.toThrow(/PayPal certificate/);
+  });
+
+  it("does not reuse cached certificates across custom PayPal certificate fetchers", async () => {
+    const headers = {
+      "paypal-transmission-id": "db49fb10-1343-11ef-ac58-e32457403f67",
+      "paypal-transmission-time": "2024-05-16T05:19:23Z",
+      "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-custom",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-transmission-sig": "c2ln",
+    };
+    let firstCalls = 0;
+    let secondCalls = 0;
+    await verifyPayPalSignature("{}", headers, "WEBHOOK_ID", {
+      fetchCertificate: async () => {
+        firstCalls++;
+        return "not a certificate";
+      },
+    });
+    await verifyPayPalSignature("{}", headers, "WEBHOOK_ID", {
+      fetchCertificate: async () => {
+        secondCalls++;
+        return "not a certificate";
+      },
+    });
+    expect(firstCalls).toBe(1);
+    expect(secondCalls).toBe(1);
+  });
+
+  it("aborts the default PayPal certificate download via an AbortSignal timeout", async () => {
+    const headers = {
+      "paypal-transmission-id": "db49fb10-1343-11ef-ac58-e32457403f67",
+      "paypal-transmission-time": "2024-05-16T05:19:23Z",
+      "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-signal",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-transmission-sig": "c2ln",
+    };
+    const originalFetch = globalThis.fetch;
+    let receivedSignal: AbortSignal | undefined;
+    globalThis.fetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      receivedSignal = init?.signal;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => "not a certificate",
+      };
+    }) as unknown as typeof fetch;
+    try {
+      await verifyPayPalSignature("{}", headers, "WEBHOOK_ID");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("verifySignature throws for plaid (verification unsupported)", async () => {
+    await expect(
+      verifySignature({ body: "{}", headers: {} }, { provider: "plaid", secret: "anything" })
+    ).rejects.toThrow(/Plaid/);
+  });
+
+  it("rejects PayPal certificate URLs outside PayPal hosts before fetching", async () => {
+    let fetched = false;
+    expect(
+      await verifyPayPalSignature(
+        "{}",
+        {
+          "paypal-transmission-id": "id",
+          "paypal-transmission-time": "2024-05-16T05:19:23Z",
+          "paypal-cert-url": "https://example.com/cert.pem",
+          "paypal-auth-algo": "SHA256withRSA",
+          "paypal-transmission-sig": "invalid",
+        },
+        "WEBHOOK_ID",
+        {
+          fetchCertificate: async () => {
+            fetched = true;
+            return "";
+          },
+        }
+      )
+    ).toBe(false);
+    expect(fetched).toBe(false);
+  });
+
+  it("keeps Plaid template-only until JWT/JWK verification credentials are supported", async () => {
+    await expect(
+      verifySignature(
+        {
+          body: "{}",
+          headers: { "Plaid-Verification": "eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjF9.sig" },
+        },
+        { provider: "plaid", secret: "plaid_secret" } as VerifySignatureOptions
+      )
+    ).rejects.toThrow(/Plaid webhook verification/);
   });
 
   it("verifies GitHub signatures", async () => {

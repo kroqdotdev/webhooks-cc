@@ -12,6 +12,7 @@ import {
 } from "@/lib/supabase/endpoints";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
+import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -144,7 +145,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       }
 
       if (nextProvider && !hasNewSecret && !hasStoredSecretForSelectedProvider) {
-        const secretLabel = nextProvider === "discord" ? "public key" : "signing secret";
+        const secretLabel = getWebProviderCredentialLabel(nextProvider).toLowerCase();
         return Response.json(
           { error: `A ${secretLabel} is required for ${nextProvider}` },
           { status: 400 }
