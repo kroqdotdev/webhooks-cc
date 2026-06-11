@@ -121,6 +121,10 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
           "mux",
           "sentry",
           "bitbucket",
+          "docusign",
+          "adyen",
+          "paypal",
+          "plaid",
         ]),
       get: vi.fn((provider: string) => ({ provider, templates: [], secretRequired: true })),
       ...(overrides.templates ?? {}),
@@ -259,7 +263,7 @@ describe("registerTools", () => {
     );
   });
 
-  it("exposes all 7 tier-2 providers in provider template listings", async () => {
+  it("exposes all tier-2 and tier-3 providers in provider template listings", async () => {
     const tools = getRegisteredTools(createMockClient());
     const result = await tools.list_provider_templates.handler({});
 
@@ -275,10 +279,14 @@ describe("registerTools", () => {
         "mux",
         "sentry",
         "bitbucket",
+        "docusign",
+        "adyen",
+        "paypal",
+        "plaid",
       ])
     );
-    // 21 tier-1 + 7 tier-2 = 28 named providers in the catalog.
-    expect(providers).toHaveLength(28);
+    // 21 tier-1 + 7 tier-2 + 4 tier-3 = 32 named providers in the catalog.
+    expect(providers).toHaveLength(32);
   });
 
   // verify_signature exercises the real SDK verification path through the MCP
@@ -527,6 +535,112 @@ describe("registerTools", () => {
     });
   });
 
+  describe("verify_signature for tier-3 providers", () => {
+    it("verifies a DocuSign HMAC signature", async () => {
+      const body = '{"event":"envelope-completed"}';
+      const secret = "docusign_hmac_secret";
+      const signature = createHmac("sha256", secret).update(body).digest("base64");
+      const request = makeRequest({
+        body,
+        headers: { "x-docusign-signature-1": signature },
+      });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "docusign",
+          secret,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      const bad = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "docusign",
+          secret: "wrong_secret",
+        })
+      );
+      expect(bad.valid).toBe(false);
+    });
+
+    it("verifies an Adyen body-embedded HMAC signature", async () => {
+      const hmacKey = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+      const body = JSON.stringify({
+        notificationItems: [
+          {
+            NotificationRequestItem: {
+              additionalData: {
+                hmacSignature: "coqCmt/IZ4E3CzPvMY8zTjQVL5hYJUiBRg8UU+iCWo0=",
+              },
+              amount: { value: 1130, currency: "EUR" },
+              pspReference: "7914073381342284",
+              eventCode: "AUTHORISATION",
+              merchantAccountCode: "TestMerchant",
+              merchantReference: "TestPayment-1407325143704",
+              success: "true",
+            },
+          },
+        ],
+      });
+      const request = makeRequest({ body, headers: { "content-type": "application/json" } });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+
+      const ok = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "adyen",
+          secret: hmacKey,
+        })
+      );
+      expect(ok.valid).toBe(true);
+
+      const bad = parseJsonResult(
+        await tools.verify_signature.handler({
+          requestId: request.id,
+          provider: "adyen",
+          secret: hmacKey.replace(/.$/, "0"),
+        })
+      );
+      expect(bad.valid).toBe(false);
+    });
+  });
+
+  it("send_webhook allows secretless provider templates (plaid) without a secret", async () => {
+    const sendTemplate = vi.fn(async () => new Response("ok", { status: 200, statusText: "OK" }));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { sendTemplate } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+
+    const result = parseJsonResult(
+      await tools.send_webhook.handler({ slug: "abc123", provider: "plaid" })
+    );
+
+    expect(sendTemplate).toHaveBeenCalledWith(
+      "abc123",
+      expect.objectContaining({ provider: "plaid" })
+    );
+    expect(result.status).toBe(200);
+  });
+
+  it("send_webhook still rejects signed provider templates without a secret", async () => {
+    const tools = getRegisteredTools(createMockClient({}));
+    const result = await tools.send_webhook.handler({ slug: "abc123", provider: "stripe" });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/secret/i);
+  });
+
   it("returns preview_webhook output from buildRequest", async () => {
     const tools = getRegisteredTools(
       createMockClient({
@@ -689,6 +803,37 @@ describe("registerTools", () => {
     expect(replayTo).toHaveBeenCalledWith("http://localhost:3001/webhooks");
     expect(cleanup).toHaveBeenCalled();
     expect(result.replayResponse.status).toBe(200);
+    expect(result.cleanedUp).toBe(true);
+  });
+
+  it("test_webhook_flow allows secretless provider templates (plaid) without a secret", async () => {
+    const sendTemplate = vi.fn();
+    const builder = {
+      createEndpoint: vi.fn().mockReturnThis(),
+      waitForCapture: vi.fn().mockReturnThis(),
+      setMock: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+      sendTemplate: sendTemplate.mockReturnThis(),
+      verifySignature: vi.fn().mockReturnThis(),
+      replayTo: vi.fn().mockReturnThis(),
+      cleanup: vi.fn().mockReturnThis(),
+      run: vi.fn(async () => ({
+        endpoint: { slug: "flow-ep", url: "https://go.webhooks.cc/w/flow-ep" },
+        request: { id: "req_flow" },
+        cleanedUp: true,
+      })),
+    };
+    const tools = getRegisteredTools(
+      createMockClient({
+        flow: vi.fn(() => builder) as unknown as WebhooksCC["flow"],
+      })
+    );
+
+    const result = parseJsonResult(
+      await tools.test_webhook_flow.handler({ provider: "plaid", cleanup: true })
+    );
+
+    expect(sendTemplate).toHaveBeenCalledWith(expect.objectContaining({ provider: "plaid" }));
     expect(result.cleanedUp).toBe(true);
   });
 });

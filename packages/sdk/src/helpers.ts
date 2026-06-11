@@ -327,6 +327,26 @@ export function isBitbucketWebhook(request: Request): boolean {
   return isDetectedProvider(request, "bitbucket");
 }
 
+/** Check if a request looks like a Docusign Connect webhook. */
+export function isDocuSignWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "docusign");
+}
+
+/** Check if a request looks like an Adyen standard notification webhook. */
+export function isAdyenWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "adyen");
+}
+
+/** Check if a request looks like a PayPal webhook. */
+export function isPayPalWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "paypal");
+}
+
+/** Check if a request looks like a Plaid webhook. */
+export function isPlaidWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "plaid");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -434,6 +454,33 @@ const DETECTORS: readonly Detector[] = [
     event: (request) => getEventString(extractJsonField(request, "type")),
   },
   {
+    provider: "docusign",
+    via: "header",
+    matchedOn: "x-docusign-signature-1",
+    matches: (request) => getHeaderValue(request.headers, "x-docusign-signature-1") !== undefined,
+    event: (request) =>
+      getEventString(extractJsonField(request, "event")) ??
+      getEventString(extractJsonField(request, "data.status")),
+  },
+  {
+    provider: "paypal",
+    via: "header",
+    matchedOn: "paypal-transmission-sig",
+    matches: (request) =>
+      getHeaderValue(request.headers, "paypal-transmission-id") !== undefined &&
+      getHeaderValue(request.headers, "paypal-transmission-time") !== undefined &&
+      getHeaderValue(request.headers, "paypal-transmission-sig") !== undefined &&
+      getHeaderValue(request.headers, "paypal-cert-url") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "event_type")),
+  },
+  {
+    provider: "plaid",
+    via: "header",
+    matchedOn: "plaid-verification",
+    matches: (request) => getHeaderValue(request.headers, "plaid-verification") !== undefined,
+    event: (request) => getEventString(extractJsonField(request, "webhook_type")),
+  },
+  {
     provider: "square",
     via: "header",
     matchedOn: "x-square-hmacsha256-signature",
@@ -459,6 +506,20 @@ const DETECTORS: readonly Detector[] = [
       extractJsonField(request, "signature.token") !== undefined &&
       extractJsonField(request, "signature.timestamp") !== undefined,
     event: (request) => getEventString(extractJsonField(request, "event-data.event")),
+  },
+  {
+    provider: "adyen",
+    via: "body",
+    matchedOn: "notificationItems.0.NotificationRequestItem.additionalData.hmacSignature",
+    matches: (request) =>
+      extractJsonField(
+        request,
+        "notificationItems.0.NotificationRequestItem.additionalData.hmacSignature"
+      ) !== undefined,
+    event: (request) =>
+      getEventString(
+        extractJsonField(request, "notificationItems.0.NotificationRequestItem.eventCode")
+      ),
   },
   {
     provider: "calendly",

@@ -14,6 +14,7 @@ import {
   MAX_GLOB_PATTERN_LEN,
   NotFoundError,
   RateLimitError,
+  TEMPLATE_METADATA,
   TEMPLATE_PROVIDERS,
   TimeoutError,
   UnauthorizedError,
@@ -694,7 +695,12 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .describe("Optional provider template to send with signed headers"),
       template: z.string().optional().describe("Provider-specific template preset"),
       event: z.string().optional().describe("Provider event or topic name"),
-      secret: z.string().optional().describe("Signing secret. Required when provider is set."),
+      secret: z
+        .string()
+        .optional()
+        .describe(
+          "Signing secret. Required for signed provider templates; omit for secretless providers (sendgrid, discord, plaid)."
+        ),
     },
     withErrorHandling(
       async ({ slug, method, headers, body, provider, template, event, secret }) => {
@@ -702,8 +708,8 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
         if (provider) {
           const templateSecret = secret?.trim();
-          if (!templateSecret) {
-            throw new Error("send_webhook with provider templates requires a non-empty secret");
+          if (!templateSecret && TEMPLATE_METADATA[provider]?.secretRequired !== false) {
+            throw new Error(`send_webhook with provider "${provider}" requires a non-empty secret`);
           }
 
           response = await client.endpoints.sendTemplate(slug, {
@@ -914,7 +920,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .string()
         .optional()
         .describe(
-          "Shared signing secret. Required for non-Discord providers when doing client-side verification."
+          "Provider credential for client-side verification (for example a shared signing secret, Adyen hex HMAC key, or PayPal webhook ID). Required for non-Discord providers."
         ),
       publicKey: z
         .string()
@@ -1015,7 +1021,12 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .describe("Optional provider template for signing"),
       template: z.string().optional().describe("Provider-specific template preset"),
       event: z.string().optional().describe("Provider event or topic name"),
-      secret: z.string().optional().describe("Signing secret. Required when provider is set."),
+      secret: z
+        .string()
+        .optional()
+        .describe(
+          "Signing secret. Required for signed provider templates; omit for secretless providers (sendgrid, discord, plaid)."
+        ),
     },
     withErrorHandling(async ({ url, method, headers, body, provider, template, event, secret }) => {
       const response = await client.sendTo(url, {
@@ -1050,7 +1061,12 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .describe("Optional provider template for signing"),
       template: z.string().optional().describe("Provider-specific template preset"),
       event: z.string().optional().describe("Provider event or topic name"),
-      secret: z.string().optional().describe("Signing secret. Required when provider is set."),
+      secret: z
+        .string()
+        .optional()
+        .describe(
+          "Signing secret. Required for signed provider templates; omit for secretless providers (sendgrid, discord, plaid)."
+        ),
     },
     withErrorHandling(async ({ url, method, headers, body, provider, template, event, secret }) => {
       const preview = await client.buildRequest(url, {
@@ -1155,9 +1171,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
         if (provider) {
           const templateSecret = secret?.trim();
-          if (!templateSecret) {
+          if (!templateSecret && TEMPLATE_METADATA[provider]?.secretRequired !== false) {
             throw new Error(
-              "test_webhook_flow with provider templates requires a non-empty secret"
+              `test_webhook_flow with provider "${provider}" requires a non-empty secret`
             );
           }
 
@@ -1173,6 +1189,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
             if (provider === "discord") {
               throw new Error(
                 "test_webhook_flow cannot verify Discord signatures (Ed25519 requires a public key, not a secret)"
+              );
+            }
+            if (!templateSecret) {
+              throw new Error(
+                `test_webhook_flow cannot verify "${provider}" signatures — this provider's templates are unsigned`
               );
             }
 

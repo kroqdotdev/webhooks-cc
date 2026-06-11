@@ -1,12 +1,53 @@
-//! Webhook signature verification for 28 providers.
+//! Webhook signature verification for 31 providers.
 //!
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
 
 use hmac::{Hmac, KeyInit, Mac};
+use ring::signature::{RSA_PKCS1_2048_8192_SHA256, UnparsedPublicKey};
 use sha1::Sha1;
 use sha2::Sha256;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+/// Bound on cached PayPal certificates. The cert URL path suffix is
+/// sender-controlled, so an unbounded map keyed by it would be a
+/// memory-growth vector. PayPal rotates through very few live certs.
+const PAYPAL_CERT_CACHE_MAX: usize = 16;
+
+static PAYPAL_CERT_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static PAYPAL_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn paypal_http_client() -> &'static reqwest::Client {
+    PAYPAL_HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+/// Cache a fetched PayPal certificate. Refuses bodies that do not contain a
+/// public key (error pages must not poison the cache) and refuses new keys
+/// once the cache is full. Returns whether the certificate was stored.
+pub(crate) fn cache_paypal_certificate(cert_url: &str, certificate_pem: &str) -> bool {
+    if public_key_der_from_pem(certificate_pem).is_none() {
+        return false;
+    }
+    let Ok(mut cache) = PAYPAL_CERT_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    else {
+        return false;
+    };
+    if cache.len() >= PAYPAL_CERT_CACHE_MAX && !cache.contains_key(cert_url) {
+        return false;
+    }
+    cache.insert(cert_url.to_string(), certificate_pem.to_string());
+    true
+}
 
 /// Result of a signature verification attempt.
 #[derive(Debug, Clone)]
@@ -122,6 +163,173 @@ fn hmac_sha1(secret: &[u8], payload: &[u8]) -> Vec<u8> {
     mac.finalize().into_bytes().to_vec()
 }
 
+fn hmac_sha256_hex_key(secret_hex: &[u8], payload: &[u8]) -> Result<Vec<u8>, Box<SignatureError>> {
+    let key_hex = std::str::from_utf8(secret_hex).map_err(|_| {
+        Box::new(SignatureError::invalid_encoding(
+            "Adyen HMAC key must be UTF-8 hex",
+        ))
+    })?;
+    let key = hex::decode(key_hex.trim()).map_err(|_| {
+        Box::new(SignatureError::invalid_encoding(
+            "Adyen HMAC key must be hex encoded",
+        ))
+    })?;
+    Ok(hmac_sha256(&key, payload))
+}
+
+fn base64_decode(value: &str) -> Result<Vec<u8>, Box<SignatureError>> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .map_err(|_| {
+            Box::new(SignatureError::invalid_encoding(
+                "Expected a base64-encoded value",
+            ))
+        })
+}
+
+fn pem_to_der(pem: &str, label: &str) -> Option<Vec<u8>> {
+    let begin = format!("-----BEGIN {label}-----");
+    let end = format!("-----END {label}-----");
+    let start = pem.find(&begin)? + begin.len();
+    let finish = pem[start..].find(&end)? + start;
+    let body: String = pem[start..finish]
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect();
+    base64_decode(&body).ok()
+}
+
+#[derive(Clone, Copy)]
+struct DerTlv {
+    tag: u8,
+    start: usize,
+    value_start: usize,
+    value_end: usize,
+    end: usize,
+}
+
+fn read_der_tlv(bytes: &[u8], offset: usize) -> Option<DerTlv> {
+    if offset >= bytes.len() {
+        return None;
+    }
+    let start = offset;
+    let tag = bytes[offset];
+    let mut cursor = offset + 1;
+    if cursor >= bytes.len() {
+        return None;
+    }
+    let mut length = bytes[cursor] as usize;
+    cursor += 1;
+    if length & 0x80 != 0 {
+        let length_bytes = length & 0x7f;
+        if length_bytes == 0 || length_bytes > 4 || cursor + length_bytes > bytes.len() {
+            return None;
+        }
+        length = 0;
+        for _ in 0..length_bytes {
+            length = (length << 8) | bytes[cursor] as usize;
+            cursor += 1;
+        }
+    }
+    let value_start = cursor;
+    let value_end = value_start.checked_add(length)?;
+    if value_end > bytes.len() {
+        return None;
+    }
+    Some(DerTlv {
+        tag,
+        start,
+        value_start,
+        value_end,
+        end: value_end,
+    })
+}
+
+fn subject_public_key_info_from_certificate(cert_der: &[u8]) -> Option<Vec<u8>> {
+    let cert = read_der_tlv(cert_der, 0)?;
+    if cert.tag != 0x30 {
+        return None;
+    }
+    let tbs = read_der_tlv(cert_der, cert.value_start)?;
+    if tbs.tag != 0x30 {
+        return None;
+    }
+
+    let mut cursor = tbs.value_start;
+    let first = read_der_tlv(cert_der, cursor)?;
+    if first.tag == 0xa0 {
+        cursor = first.end;
+    }
+
+    // serialNumber, signature, issuer, validity, subject
+    for _ in 0..5 {
+        let part = read_der_tlv(cert_der, cursor)?;
+        cursor = part.end;
+    }
+
+    let spki = read_der_tlv(cert_der, cursor)?;
+    if spki.tag != 0x30 {
+        return None;
+    }
+    Some(cert_der[spki.start..spki.end].to_vec())
+}
+
+fn public_key_der_from_pem(pem: &str) -> Option<Vec<u8>> {
+    if let Some(public_key) = pem_to_der(pem, "PUBLIC KEY") {
+        return Some(public_key);
+    }
+    let cert = pem_to_der(pem, "CERTIFICATE")?;
+    subject_public_key_info_from_certificate(&cert)
+}
+
+fn rsa_public_key_der_from_spki(spki_der: &[u8]) -> Option<Vec<u8>> {
+    let spki = read_der_tlv(spki_der, 0)?;
+    if spki.tag != 0x30 {
+        return None;
+    }
+    let algorithm = read_der_tlv(spki_der, spki.value_start)?;
+    let public_key = read_der_tlv(spki_der, algorithm.end)?;
+    if public_key.tag != 0x03 || public_key.value_start >= public_key.value_end {
+        return None;
+    }
+    // BIT STRING first byte is the unused-bit count. RSA public keys should be
+    // byte-aligned, so strip that byte and return the inner RSAPublicKey DER.
+    if spki_der[public_key.value_start] != 0 {
+        return None;
+    }
+    Some(spki_der[public_key.value_start + 1..public_key.value_end].to_vec())
+}
+
+pub(crate) fn build_paypal_transmission_message(
+    body: &[u8],
+    transmission_id: &str,
+    transmission_time: &str,
+    webhook_id: &str,
+) -> String {
+    let crc = crc32fast::hash(body);
+    format!("{transmission_id}|{transmission_time}|{webhook_id}|{crc}")
+}
+
+fn is_allowed_paypal_cert_url(cert_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(cert_url) else {
+        return false;
+    };
+    if url.scheme() != "https" {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    matches!(
+        host,
+        "api.paypal.com"
+            | "api-m.paypal.com"
+            | "api.sandbox.paypal.com"
+            | "api-m.sandbox.paypal.com"
+    ) && url.path().starts_with("/v1/notifications/certs/")
+}
+
 /// Verify a webhook signature for the given provider.
 ///
 /// - `provider`: one of the supported provider names (e.g., "stripe", "github").
@@ -180,6 +388,30 @@ pub fn verify_signature(
         // legacy `x-hub-signature` header (Intercom uses the same header with
         // `sha1=`; detection keys on the unique `x-event-key` header instead).
         "bitbucket" => verify_github_with_header(secret, headers, body, "x-hub-signature"),
+        "docusign" => verify_docusign(secret, headers, body),
+        "adyen" => verify_adyen(secret, body),
+        "paypal" => VerificationResult::Skipped(SignatureError {
+            code: "unsupported",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: None,
+            message: Some(
+                "PayPal verification requires certificate fetching; use verify_signature_async."
+                    .to_string(),
+            ),
+        }),
+        "plaid" => VerificationResult::Skipped(SignatureError {
+            code: "unsupported",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: None,
+            message: Some(
+                "Plaid verification requires Plaid JWT/JWK lookup credentials and is not supported yet."
+                    .to_string(),
+            ),
+        }),
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -200,6 +432,183 @@ pub fn verify_signature(
             header: None,
             message: Some(format!("Unknown provider: {provider}")),
         }),
+    }
+}
+
+async fn verify_paypal(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    let Some(cert_url) = get_header(headers, "paypal-cert-url") else {
+        return VerificationResult::Skipped(SignatureError::missing_header("paypal-cert-url"));
+    };
+    if !is_allowed_paypal_cert_url(cert_url) {
+        return VerificationResult::Skipped(SignatureError {
+            code: "unsupported",
+            expected: None,
+            received: Some(truncate(cert_url, 64)),
+            timestamp: None,
+            header: Some("paypal-cert-url".to_string()),
+            message: Some("PayPal certificate URL must be an official PayPal cert URL".to_string()),
+        });
+    }
+
+    let cached = PAYPAL_CERT_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(cert_url).cloned());
+
+    let certificate = if let Some(cached) = cached {
+        cached
+    } else {
+        let cert_fetch_failed = |message: String| {
+            VerificationResult::Skipped(SignatureError {
+                code: "cert_fetch_failed",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: Some("paypal-cert-url".to_string()),
+                message: Some(message),
+            })
+        };
+        let response = match paypal_http_client().get(cert_url).send().await {
+            Ok(response) => response,
+            Err(e) => {
+                return cert_fetch_failed(format!("Failed to fetch PayPal certificate: {e}"));
+            }
+        };
+        if !response.status().is_success() {
+            return cert_fetch_failed(format!(
+                "PayPal certificate fetch returned HTTP {}",
+                response.status()
+            ));
+        }
+        let fetched = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                return cert_fetch_failed(format!("Failed to read PayPal certificate: {e}"));
+            }
+        };
+        // Only parseable certificates are cached, so a transient bad response
+        // cannot permanently poison verification for this URL.
+        cache_paypal_certificate(cert_url, &fetched);
+        fetched
+    };
+
+    verify_paypal_with_certificate(secret, headers, body, &certificate)
+}
+
+pub(crate) fn verify_paypal_with_certificate(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    certificate_pem: &str,
+) -> VerificationResult {
+    let webhook_id = match std::str::from_utf8(secret) {
+        Ok(value) if !value.is_empty() => value,
+        _ => {
+            return VerificationResult::Skipped(SignatureError {
+                code: "missing_secret",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: None,
+                message: Some("PayPal verification requires the webhook ID".to_string()),
+            });
+        }
+    };
+    let Some(transmission_id) = get_header(headers, "paypal-transmission-id") else {
+        return VerificationResult::Skipped(SignatureError::missing_header(
+            "paypal-transmission-id",
+        ));
+    };
+    let Some(transmission_time) = get_header(headers, "paypal-transmission-time") else {
+        return VerificationResult::Skipped(SignatureError::missing_header(
+            "paypal-transmission-time",
+        ));
+    };
+    let Some(cert_url) = get_header(headers, "paypal-cert-url") else {
+        return VerificationResult::Skipped(SignatureError::missing_header("paypal-cert-url"));
+    };
+    let Some(signature_header) = get_header(headers, "paypal-transmission-sig") else {
+        return VerificationResult::Skipped(SignatureError::missing_header(
+            "paypal-transmission-sig",
+        ));
+    };
+    if !is_allowed_paypal_cert_url(cert_url) {
+        return VerificationResult::Skipped(SignatureError {
+            code: "unsupported",
+            expected: None,
+            received: Some(truncate(cert_url, 64)),
+            timestamp: None,
+            header: Some("paypal-cert-url".to_string()),
+            message: Some("PayPal certificate URL must be an official PayPal cert URL".to_string()),
+        });
+    }
+    if let Some(auth_algo) = get_header(headers, "paypal-auth-algo")
+        && !auth_algo.eq_ignore_ascii_case("SHA256WITHRSA")
+    {
+        return VerificationResult::Invalid(SignatureError::invalid_encoding(
+            "PayPal paypal-auth-algo must be SHA256withRSA",
+        ));
+    }
+
+    let signature = match base64_decode(signature_header) {
+        Ok(value) => value,
+        Err(err) => return VerificationResult::Invalid(*err),
+    };
+    let Some(public_key_der) = public_key_der_from_pem(certificate_pem) else {
+        return VerificationResult::Invalid(SignatureError::invalid_encoding(
+            "PayPal certificate did not contain an RSA public key",
+        ));
+    };
+    let message =
+        build_paypal_transmission_message(body, transmission_id, transmission_time, webhook_id);
+    let public_key = UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, public_key_der.as_slice());
+    let valid = public_key.verify(message.as_bytes(), &signature).is_ok()
+        || rsa_public_key_der_from_spki(&public_key_der)
+            .map(|rsa_der| {
+                UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, rsa_der)
+                    .verify(message.as_bytes(), &signature)
+                    .is_ok()
+            })
+            .unwrap_or(false);
+    if valid {
+        VerificationResult::Valid
+    } else {
+        VerificationResult::Invalid(SignatureError {
+            code: "mismatch",
+            expected: Some("RSA-SHA256 signature over PayPal transmission message".to_string()),
+            received: Some(truncate(signature_header, 64)),
+            timestamp: None,
+            header: Some("paypal-transmission-sig".to_string()),
+            message: Some("Computed PayPal signature does not match".to_string()),
+        })
+    }
+}
+
+pub async fn verify_signature_async(
+    provider: &str,
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    signing_header: Option<&str>,
+    request_url: Option<&str>,
+    method: Option<&str>,
+) -> VerificationResult {
+    match provider {
+        "paypal" => verify_paypal(secret, headers, body).await,
+        _ => verify_signature(
+            provider,
+            secret,
+            headers,
+            body,
+            signing_header,
+            request_url,
+            method,
+        ),
     }
 }
 
@@ -232,6 +641,19 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     }
     if get_header(headers, "linear-signature").is_some() {
         return Some("linear");
+    }
+    if get_header(headers, "x-docusign-signature-1").is_some() {
+        return Some("docusign");
+    }
+    if get_header(headers, "paypal-transmission-id").is_some()
+        && get_header(headers, "paypal-transmission-time").is_some()
+        && get_header(headers, "paypal-transmission-sig").is_some()
+        && get_header(headers, "paypal-cert-url").is_some()
+    {
+        return Some("paypal");
+    }
+    if get_header(headers, "plaid-verification").is_some() {
+        return Some("plaid");
     }
     if get_header(headers, "x-vercel-signature").is_some() {
         return Some("vercel");
@@ -417,6 +839,29 @@ fn verify_github_with_header(
         VerificationResult::Valid
     } else {
         let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        err.header = Some(header_name.to_string());
+        VerificationResult::Invalid(err)
+    }
+}
+
+/// Docusign Connect: HMAC-SHA256 over the raw body, base64 encoded in
+/// `x-docusign-signature-1`.
+fn verify_docusign(
+    secret: &[u8],
+    headers: &HashMap<String, String>,
+    body: &[u8],
+) -> VerificationResult {
+    use base64::Engine;
+    let header_name = "x-docusign-signature-1";
+    let Some(sig_header) = get_header(headers, header_name) else {
+        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
+    };
+    let expected = base64::engine::general_purpose::STANDARD.encode(hmac_sha256(secret, body));
+    let received = sig_header.trim();
+    if ct_str_eq(received, &expected) {
+        VerificationResult::Valid
+    } else {
+        let mut err = SignatureError::mismatch(&expected, received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1193,6 +1638,117 @@ fn decode_hubspot_uri(uri: &str) -> String {
         }
     }
     decoded
+}
+
+fn adyen_field(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Number(n)) => n.to_string(),
+        Some(serde_json::Value::Bool(b)) => b.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn adyen_data_to_sign(item: &serde_json::Value) -> String {
+    [
+        adyen_field(item.get("pspReference")),
+        adyen_field(item.get("originalReference")),
+        adyen_field(item.get("merchantAccountCode")),
+        adyen_field(item.get("merchantReference")),
+        adyen_field(item.get("amount").and_then(|amount| amount.get("value"))),
+        adyen_field(item.get("amount").and_then(|amount| amount.get("currency"))),
+        adyen_field(item.get("eventCode")),
+        adyen_field(item.get("success")),
+    ]
+    .join(":")
+}
+
+/// Adyen standard notifications: base64(HMAC-SHA256(hex_key, signed fields))
+/// stored at `additionalData.hmacSignature` inside each notification item.
+fn verify_adyen(secret: &[u8], body: &[u8]) -> VerificationResult {
+    use base64::Engine;
+    let parsed: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => {
+            return VerificationResult::Skipped(SignatureError {
+                code: "missing_header",
+                expected: None,
+                received: None,
+                timestamp: None,
+                header: None,
+                message: Some("Adyen body is not valid JSON".to_string()),
+            });
+        }
+    };
+
+    let Some(items) = parsed
+        .get("notificationItems")
+        .and_then(|items| items.as_array())
+    else {
+        return VerificationResult::Skipped(SignatureError {
+            code: "missing_header",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: Some("notificationItems".to_string()),
+            message: Some("Adyen body is missing notificationItems".to_string()),
+        });
+    };
+
+    // Every notification item must carry its own valid signature: one genuine
+    // item must not vouch for forged or unsigned siblings in the same batch.
+    let mut signed_items = 0usize;
+    let mut unsigned_items = 0usize;
+    for notification in items {
+        let Some(item) = notification.get("NotificationRequestItem") else {
+            continue;
+        };
+        let Some(signature) = item
+            .get("additionalData")
+            .and_then(|data| data.get("hmacSignature"))
+            .and_then(|sig| sig.as_str())
+        else {
+            unsigned_items += 1;
+            continue;
+        };
+        signed_items += 1;
+        let payload = adyen_data_to_sign(item);
+        let expected = match hmac_sha256_hex_key(secret, payload.as_bytes()) {
+            Ok(mac) => base64::engine::general_purpose::STANDARD.encode(mac),
+            Err(err) => return VerificationResult::Invalid(*err),
+        };
+        if !ct_str_eq(signature, &expected) {
+            let mut err = SignatureError::mismatch(&expected, signature);
+            err.header = Some("additionalData.hmacSignature".to_string());
+            return VerificationResult::Invalid(err);
+        }
+    }
+
+    if signed_items == 0 {
+        return VerificationResult::Skipped(SignatureError {
+            code: "missing_header",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: Some("additionalData.hmacSignature".to_string()),
+            message: Some("Adyen body is missing additionalData.hmacSignature".to_string()),
+        });
+    }
+
+    if unsigned_items > 0 {
+        return VerificationResult::Invalid(SignatureError {
+            code: "mismatch",
+            expected: None,
+            received: None,
+            timestamp: None,
+            header: Some("additionalData.hmacSignature".to_string()),
+            message: Some(format!(
+                "Adyen batch contains {unsigned_items} notification item(s) without an hmacSignature"
+            )),
+        });
+    }
+
+    VerificationResult::Valid
 }
 
 /// Mailgun: HMAC-SHA256 hex over `timestamp + token`. Unlike every other

@@ -361,10 +361,21 @@ describe("Signature Verification Integration", () => {
     expect(data.signing_secret_encrypted).not.toContain("plaintext_secret_value");
   });
 
-  it("PATCH: accepts every tier-2 signing provider", async () => {
-    const tier2 = ["square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"];
+  it("PATCH: accepts every tier-2 and tier-3 signing provider", async () => {
+    const providers = [
+      "square",
+      "hubspot",
+      "mailgun",
+      "calendly",
+      "mux",
+      "sentry",
+      "bitbucket",
+      "docusign",
+      "adyen",
+      "paypal",
+    ];
 
-    for (const provider of tier2) {
+    for (const provider of providers) {
       const updated = await updateEndpointBySlugForUser({
         userId: testUserId,
         slug: testEndpointSlug,
@@ -380,9 +391,9 @@ describe("Signature Verification Integration", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// End-to-end automatic verification through the Rust receiver (tier-2).
+// End-to-end automatic verification through the Rust receiver.
 //
-// For each tier-2 provider we configure the endpoint's signing provider+secret,
+// For each round-trippable provider we configure the endpoint's signing provider+secret,
 // build a fully-signed template request with the SDK (signed against the exact
 // receiver capture URL so the request-context providers — Square (URL+body) and
 // HubSpot (method+URI+body+timestamp) — line up), POST it to the receiver, then
@@ -394,7 +405,7 @@ describe("Signature Verification Integration", () => {
 // receiver is not reachable the whole block is skipped.
 // ───────────────────────────────────────────────────────────────────────────
 
-type Tier2Case = {
+type ReceiverVerificationCase = {
   provider: string;
   secret: string;
   /** Provider needs the request URL/method threaded by the receiver. */
@@ -403,7 +414,7 @@ type Tier2Case = {
   bodyEmbedded?: boolean;
 };
 
-const TIER2_CASES: Tier2Case[] = [
+const RECEIVER_VERIFICATION_CASES: ReceiverVerificationCase[] = [
   { provider: "square", secret: "sq_signature_key", requestContext: "url" },
   { provider: "hubspot", secret: "hs_app_client_secret", requestContext: "url+method" },
   { provider: "mailgun", secret: "mg_signing_key", bodyEmbedded: true },
@@ -411,6 +422,12 @@ const TIER2_CASES: Tier2Case[] = [
   { provider: "mux", secret: "mux_signing_secret" },
   { provider: "sentry", secret: "sentry_client_secret" },
   { provider: "bitbucket", secret: "bitbucket_webhook_secret" },
+  { provider: "docusign", secret: "docusign_hmac_secret" },
+  {
+    provider: "adyen",
+    secret: "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+    bodyEmbedded: true,
+  },
 ];
 
 async function receiverReachable(): Promise<boolean> {
@@ -493,7 +510,7 @@ describe("Tier-2 automatic verification through the receiver", () => {
     }
   }, 20000);
 
-  for (const tc of TIER2_CASES) {
+  for (const tc of RECEIVER_VERIFICATION_CASES) {
     it(`verifies a valid ${tc.provider} webhook end-to-end (signature_verified === true)`, async () => {
       if (skipSuite) {
         // Receiver not running — covered by the Verify gate which starts it.
@@ -533,7 +550,7 @@ describe("Tier-2 automatic verification through the receiver", () => {
 
   // Representative tampered-body false cases across the scheme families:
   // body-bound hex (sentry), URL+body (square), and body-embedded (mailgun).
-  for (const tc of TIER2_CASES.filter((c) =>
+  for (const tc of RECEIVER_VERIFICATION_CASES.filter((c) =>
     ["sentry", "square", "mailgun"].includes(c.provider)
   )) {
     it(`rejects a tampered ${tc.provider} body (signature_verified === false)`, async () => {
@@ -588,4 +605,51 @@ describe("Tier-2 automatic verification through the receiver", () => {
       expect(result!.signingProvider).toBe(tc.provider);
     }, 15000);
   }
+
+  // Adyen batches must verify every item: a genuine item must not vouch for a
+  // forged sibling appended to the same notification batch.
+  it("rejects an adyen batch containing a forged item (signature_verified === false)", async () => {
+    if (skipSuite) return;
+
+    const adyenCase = RECEIVER_VERIFICATION_CASES.find((c) => c.provider === "adyen")!;
+    await updateEndpointBySlugForUser({
+      userId,
+      slug,
+      signingProvider: "adyen",
+      signingSecret: adyenCase.secret,
+    });
+
+    const captureUrl = `${RECEIVER_URL}/w/${slug}`;
+    const signed = await buildTemplateSendOptions(captureUrl, {
+      provider: "adyen",
+      secret: adyenCase.secret,
+      method: "POST",
+    });
+
+    // Append a forged item: same (valid) signature, different data.
+    const parsed = JSON.parse(signed.body as string) as {
+      notificationItems: Array<{ NotificationRequestItem: Record<string, unknown> }>;
+    };
+    const genuine = parsed.notificationItems[0].NotificationRequestItem;
+    parsed.notificationItems.push({
+      NotificationRequestItem: {
+        ...genuine,
+        amount: { value: 999999, currency: "EUR" },
+        merchantReference: "Forged-Item",
+      },
+    });
+
+    const forgedPath = `/forged-adyen-${Date.now()}`;
+    const resp = await fetch(`${captureUrl}${forgedPath}`, {
+      method: "POST",
+      headers: signed.headers as Record<string, string>,
+      body: JSON.stringify(parsed),
+    });
+    expect(resp.status).toBe(200);
+
+    const result = await pollForVerification(userId, slug, forgedPath);
+    expect(result, "no verification result written for forged adyen batch").not.toBeNull();
+    expect(result!.signatureVerified, "forged adyen batch must not verify").toBe(false);
+    expect(result!.signingProvider).toBe("adyen");
+  }, 15000);
 });

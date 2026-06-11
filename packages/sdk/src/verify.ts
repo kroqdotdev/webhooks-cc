@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import {
   buildTwilioSignaturePayload,
+  calculateAdyenHmac,
   decodeHubSpotUri,
   decodeStandardWebhookSecret,
   hmacSign,
@@ -17,6 +18,21 @@ import {
 type VerifyableRequest =
   | Pick<CapturedRequest, "body" | "headers">
   | Pick<SearchResult, "body" | "headers">;
+
+type PayPalSignatureOptions = {
+  fetchCertificate?: (url: string) => Promise<string>;
+};
+
+const PAYPAL_CERTIFICATE_CACHE = new Map<string, string>();
+// PayPal rotates through very few live certificates; the URL path suffix is
+// sender-controlled, so the cache must be bounded.
+const PAYPAL_CERTIFICATE_CACHE_MAX = 16;
+const PAYPAL_CERTIFICATE_HOSTS = new Set([
+  "api.paypal.com",
+  "api-m.paypal.com",
+  "api.sandbox.paypal.com",
+  "api-m.sandbox.paypal.com",
+]);
 
 function requireSecret(secret: string, functionName: string): void {
   if (!secret || typeof secret !== "string") {
@@ -36,6 +52,110 @@ function getHeader(headers: Record<string, string>, name: string): string | unde
 
 function normalizeBody(body?: string): string {
   return body ?? "";
+}
+
+function bytesFromBase64(str: string): Uint8Array {
+  if (typeof atob === "function") {
+    const binary = atob(str);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+  return new Uint8Array(Buffer.from(str, "base64"));
+}
+
+function pemToDer(pem: string, label: "PUBLIC KEY" | "CERTIFICATE"): Uint8Array | null {
+  const pattern = new RegExp(`-----BEGIN ${label}-----([\\s\\S]+?)-----END ${label}-----`, "i");
+  const match = pem.match(pattern);
+  if (!match) {
+    return null;
+  }
+  return bytesFromBase64(match[1].replace(/\s+/g, ""));
+}
+
+type DerTlv = {
+  tag: number;
+  start: number;
+  valueStart: number;
+  valueEnd: number;
+  end: number;
+};
+
+function readDerTlv(bytes: Uint8Array, offset: number): DerTlv | null {
+  if (offset >= bytes.length) {
+    return null;
+  }
+  const start = offset;
+  const tag = bytes[offset++];
+  if (offset >= bytes.length) {
+    return null;
+  }
+  let length = bytes[offset++];
+  if (length & 0x80) {
+    const lengthBytes = length & 0x7f;
+    if (lengthBytes === 0 || lengthBytes > 4 || offset + lengthBytes > bytes.length) {
+      return null;
+    }
+    length = 0;
+    for (let i = 0; i < lengthBytes; i++) {
+      length = (length << 8) | bytes[offset++];
+    }
+  }
+  const valueStart = offset;
+  const valueEnd = valueStart + length;
+  if (valueEnd > bytes.length) {
+    return null;
+  }
+  return { tag, start, valueStart, valueEnd, end: valueEnd };
+}
+
+function subjectPublicKeyInfoFromCertificate(certDer: Uint8Array): Uint8Array | null {
+  const cert = readDerTlv(certDer, 0);
+  if (!cert || cert.tag !== 0x30) {
+    return null;
+  }
+  const tbs = readDerTlv(certDer, cert.valueStart);
+  if (!tbs || tbs.tag !== 0x30) {
+    return null;
+  }
+
+  let cursor = tbs.valueStart;
+  const first = readDerTlv(certDer, cursor);
+  if (!first) {
+    return null;
+  }
+  if (first.tag === 0xa0) {
+    cursor = first.end;
+  }
+
+  // serialNumber, signature, issuer, validity, subject
+  for (let i = 0; i < 5; i++) {
+    const part = readDerTlv(certDer, cursor);
+    if (!part) {
+      return null;
+    }
+    cursor = part.end;
+  }
+
+  const spki = readDerTlv(certDer, cursor);
+  if (!spki || spki.tag !== 0x30) {
+    return null;
+  }
+  return certDer.slice(spki.start, spki.end);
+}
+
+function publicKeyDerFromPem(pem: string): Uint8Array | null {
+  const publicKeyDer = pemToDer(pem, "PUBLIC KEY");
+  if (publicKeyDer) {
+    return publicKeyDer;
+  }
+  const certDer = pemToDer(pem, "CERTIFICATE");
+  if (!certDer) {
+    return null;
+  }
+  return subjectPublicKeyInfoFromCertificate(certDer);
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -61,6 +181,102 @@ function timingSafeEqual(left: string, right: string): boolean {
     mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i);
   }
   return mismatch === 0;
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let crc = i;
+    for (let j = 0; j < 8; j++) {
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+    table[i] = crc >>> 0;
+  }
+  return table;
+})();
+
+function crc32Decimal(body: string): string {
+  const bytes = new TextEncoder().encode(body);
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return String((crc ^ 0xffffffff) >>> 0);
+}
+
+export function buildPayPalTransmissionMessage(
+  body: string | undefined,
+  transmissionId: string,
+  transmissionTime: string,
+  webhookId: string
+): string {
+  return `${transmissionId}|${transmissionTime}|${webhookId}|${crc32Decimal(normalizeBody(body))}`;
+}
+
+function isAllowedPayPalCertificateUrl(certUrl: string): boolean {
+  try {
+    const url = new URL(certUrl);
+    return (
+      url.protocol === "https:" &&
+      PAYPAL_CERTIFICATE_HOSTS.has(url.hostname.toLowerCase()) &&
+      url.pathname.startsWith("/v1/notifications/certs/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchPayPalCertificate(
+  certUrl: string,
+  fetchCertificate?: (url: string) => Promise<string>
+): Promise<string> {
+  // A custom fetcher owns its own transport and caching — sharing the module
+  // cache across fetchers would let one fetcher's result leak into another's.
+  if (fetchCertificate) {
+    try {
+      return await fetchCertificate(certUrl);
+    } catch (error) {
+      throw new Error(
+        `Unable to download the PayPal certificate from ${certUrl}: ${describeError(error)}`
+      );
+    }
+  }
+
+  const cached = PAYPAL_CERTIFICATE_CACHE.get(certUrl);
+  if (cached) {
+    return cached;
+  }
+  if (typeof fetch !== "function") {
+    throw new Error(
+      "PayPal signature verification requires the fetch API to download the certificate"
+    );
+  }
+
+  let cert: string;
+  try {
+    const response = await fetch(certUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    cert = await response.text();
+  } catch (error) {
+    throw new Error(
+      `Unable to download the PayPal certificate from ${certUrl}: ${describeError(error)}. ` +
+        "Browsers may block cross-origin certificate downloads; verify server-side or pass options.fetchCertificate."
+    );
+  }
+
+  // Only parseable certificates enter the bounded cache: an error page must
+  // not poison the cache, and the sender-controlled URL suffix must not grow
+  // the map without limit.
+  if (PAYPAL_CERTIFICATE_CACHE.size < PAYPAL_CERTIFICATE_CACHE_MAX && publicKeyDerFromPem(cert)) {
+    PAYPAL_CERTIFICATE_CACHE.set(certUrl, cert);
+  }
+  return cert;
 }
 
 function parseStripeHeader(
@@ -631,6 +847,149 @@ export function verifyBitbucketSignature(
 }
 
 /**
+ * Verify a Docusign Connect HMAC signature. Docusign signs the exact raw body
+ * with HMAC-SHA256 and sends the Base64 result in `X-DocuSign-Signature-1`.
+ */
+export async function verifyDocuSignSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyDocuSignSignature");
+  if (!signatureHeader) {
+    return false;
+  }
+  const expected = toBase64(await hmacSign("SHA-256", secret, normalizeBody(body)));
+  return timingSafeEqual(signatureHeader.trim(), expected);
+}
+
+/**
+ * Verify an Adyen standard notification HMAC signature. The signature is stored
+ * in `notificationItems[].NotificationRequestItem.additionalData.hmacSignature`
+ * and covers the documented eight-field colon-delimited payload, keyed by the
+ * hex HMAC key from the Adyen Customer Area.
+ */
+export async function verifyAdyenSignature(
+  body: string | undefined,
+  hmacKey: string
+): Promise<boolean> {
+  requireSecret(hmacKey, "verifyAdyenSignature");
+  if (!body) {
+    return false;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return false;
+  }
+  const notificationItems = (parsed as { notificationItems?: unknown }).notificationItems;
+  if (!Array.isArray(notificationItems) || notificationItems.length === 0) {
+    return false;
+  }
+
+  // Every notification item must carry its own valid signature: one genuine
+  // item must not vouch for forged or unsigned siblings in the same batch.
+  let signedItems = 0;
+  for (const notification of notificationItems) {
+    const item = (notification as { NotificationRequestItem?: unknown })?.NotificationRequestItem;
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const signature = (item as { additionalData?: { hmacSignature?: unknown } }).additionalData
+      ?.hmacSignature;
+    if (typeof signature !== "string" || signature.length === 0) {
+      return false;
+    }
+    let expected: string;
+    try {
+      expected = await calculateAdyenHmac(
+        item as Parameters<typeof calculateAdyenHmac>[0],
+        hmacKey
+      );
+    } catch {
+      return false;
+    }
+    if (!timingSafeEqual(signature, expected)) {
+      return false;
+    }
+    signedItems++;
+  }
+  return signedItems > 0;
+}
+
+/**
+ * Verify a PayPal webhook self-verification signature. PayPal signs
+ * `transmissionId|timeStamp|webhookId|crc32(rawBody)` with RSA-SHA256 and
+ * publishes the public key in the certificate URL from `paypal-cert-url`.
+ *
+ * Returns `false` for invalid or missing signature material. Throws when the
+ * certificate cannot be downloaded — a transport failure is not a signature
+ * verdict. In browsers, cross-origin restrictions usually block the PayPal
+ * certificate download; pass `options.fetchCertificate` or verify server-side.
+ */
+export async function verifyPayPalSignature(
+  body: string | undefined,
+  headers: Record<string, string>,
+  webhookId: string,
+  options: PayPalSignatureOptions = {}
+): Promise<boolean> {
+  requireSecret(webhookId, "verifyPayPalSignature");
+  const transmissionId = getHeader(headers, "paypal-transmission-id");
+  const transmissionTime = getHeader(headers, "paypal-transmission-time");
+  const certUrl = getHeader(headers, "paypal-cert-url");
+  const authAlgo = getHeader(headers, "paypal-auth-algo");
+  const signatureHeader = getHeader(headers, "paypal-transmission-sig");
+
+  if (!transmissionId || !transmissionTime || !certUrl || !signatureHeader) {
+    return false;
+  }
+  if (authAlgo && authAlgo.toUpperCase() !== "SHA256WITHRSA") {
+    return false;
+  }
+  if (!isAllowedPayPalCertificateUrl(certUrl)) {
+    return false;
+  }
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("crypto.subtle is required for PayPal signature verification");
+  }
+
+  const certificate = await fetchPayPalCertificate(certUrl, options.fetchCertificate);
+  const publicKeyDer = publicKeyDerFromPem(certificate);
+  if (!publicKeyDer) {
+    return false;
+  }
+
+  try {
+    const keyData = new Uint8Array(publicKeyDer.byteLength);
+    keyData.set(publicKeyDer);
+    const decodedSignature = bytesFromBase64(signatureHeader);
+    const signatureData = new Uint8Array(decodedSignature.byteLength);
+    signatureData.set(decodedSignature);
+    const key = await globalThis.crypto.subtle.importKey(
+      "spki",
+      keyData,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    return await globalThis.crypto.subtle.verify(
+      "RSASSA-PKCS1-v1_5",
+      key,
+      signatureData,
+      new TextEncoder().encode(
+        buildPayPalTransmissionMessage(body, transmissionId, transmissionTime, webhookId)
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Verify a Vercel webhook signature against the raw request body.
  * Vercel signs with HMAC-SHA1 and sends the hex-encoded signature in x-vercel-signature.
  */
@@ -1010,6 +1369,30 @@ export async function verifySignature(
       request.body,
       getHeader(request.headers, "x-hub-signature"),
       options.secret
+    );
+  }
+
+  if (options.provider === "docusign") {
+    valid = await verifyDocuSignSignature(
+      request.body,
+      getHeader(request.headers, "x-docusign-signature-1"),
+      options.secret
+    );
+  }
+
+  if (options.provider === "adyen") {
+    valid = await verifyAdyenSignature(request.body, options.secret);
+  }
+
+  if (options.provider === "paypal") {
+    valid = await verifyPayPalSignature(request.body, request.headers, options.secret, {
+      fetchCertificate: options.fetchCertificate,
+    });
+  }
+
+  if (options.provider === "plaid") {
+    throw new Error(
+      "Plaid webhook verification requires Plaid JWT/JWK lookup credentials and is not supported by verifySignature yet."
     );
   }
 

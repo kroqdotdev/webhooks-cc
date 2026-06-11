@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ShieldCheck, ShieldAlert, Shield, Copy, Check, Loader2 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
+  getWebProviderCredentialLabel,
   getWebProviderInfo,
   getWebProviderLabel,
   WEB_PROVIDER_CATALOG,
@@ -66,6 +67,9 @@ function getProviderTip(provider: string): string | null {
     discord:
       "Use the Application Public Key from the General Information page in the Discord Developer Portal.",
     clerk: "Find the signing secret in your Clerk dashboard under Webhooks.",
+    docusign: "Use the HMAC secret key configured for this DocuSign Connect configuration.",
+    adyen: "Use the hex HMAC key from the Adyen webhook security settings.",
+    paypal: "Use the Webhook ID assigned to this listener URL in your PayPal app settings.",
   };
   return tips[provider] ?? null;
 }
@@ -246,8 +250,25 @@ function ClientSideVerification({
     setVerifying(true);
     setResult(null);
 
+    // Load the SDK separately from running verification so a chunk-load
+    // failure and a real verification error report distinct messages.
+    let verifySignature: (typeof import("@webhooks-cc/sdk"))["verifySignature"];
     try {
-      const { verifySignature } = await import("@webhooks-cc/sdk");
+      ({ verifySignature } = await import("@webhooks-cc/sdk"));
+    } catch {
+      setResult({
+        verified: false,
+        error: JSON.stringify({
+          code: "load_error",
+          message:
+            "Failed to load verification library. Check your network connection and try again.",
+        }),
+      });
+      setVerifying(false);
+      return;
+    }
+
+    try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const options: any =
         provider === "discord" ? { provider: "discord", publicKey: secret } : { provider, secret };
@@ -268,16 +289,11 @@ function ClientSideVerification({
             }),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Verification failed";
-      const isLoadError =
-        message.includes("import") || message.includes("fetch") || message.includes("chunk");
       setResult({
         verified: false,
         error: JSON.stringify({
-          code: isLoadError ? "load_error" : "verification_error",
-          message: isLoadError
-            ? "Failed to load verification library. Check your network connection and try again."
-            : message,
+          code: "verification_error",
+          message: err instanceof Error ? err.message : "Verification failed",
         }),
       });
     } finally {
@@ -312,8 +328,8 @@ function ClientSideVerification({
       <div>
         <p className="font-bold uppercase tracking-wide text-xs mb-1">Verify Signature</p>
         <p className="text-xs text-muted-foreground">
-          Paste your signing secret to verify this request&apos;s signature. Verification runs in
-          your browser — the secret is never sent to our servers.
+          Paste the provider credential to verify this request&apos;s signature. Verification runs
+          in your browser, and the credential is never sent to our servers.
         </p>
       </div>
 
@@ -350,9 +366,7 @@ function ClientSideVerification({
         {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
           <div className="space-y-1">
             <label htmlFor="sig-secret" className="font-bold uppercase tracking-wide text-xs">
-              {getWebProviderInfo(provider)?.verificationMode === "publicKey"
-                ? "Public Key"
-                : "Secret"}
+              {getWebProviderCredentialLabel(provider)}
             </label>
             <input
               id="sig-secret"
@@ -405,7 +419,9 @@ function ClientSideVerification({
 
         {provider && getWebProviderInfo(provider)?.verificationMode === "unsupported" && (
           <p className="text-xs text-muted-foreground">
-            SendGrid uses IP allowlisting, not signatures. Signature verification is not applicable.
+            {provider === "plaid"
+              ? "Plaid verification requires Plaid JWT/JWK lookup credentials, so browser verification is not available yet."
+              : "SendGrid uses IP allowlisting, not signatures. Signature verification is not applicable."}
           </p>
         )}
 

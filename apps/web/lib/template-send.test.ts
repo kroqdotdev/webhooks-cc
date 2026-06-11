@@ -11,6 +11,11 @@ import {
 
 const TARGET_URL = "https://go.webhooks.cc/w/demo";
 const SECRET = "mock_webhook_secret";
+const ADYEN_HMAC_KEY = "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056";
+
+function providerSecret(provider: TemplateProvider): string {
+  return provider === "adyen" ? ADYEN_HMAC_KEY : "whsec_dGVzdF9zZWNyZXQ=";
+}
 
 // ---------------------------------------------------------------------------
 // Helper: compute HMAC-SHA1 base64 for Twilio verification
@@ -77,7 +82,7 @@ describe("template-send provider coverage", () => {
         buildTemplateRequest({
           provider,
           template: getDefaultTemplateId(provider),
-          secret: "whsec_dGVzdF9zZWNyZXQ=",
+          secret: providerSecret(provider),
           targetUrl: TARGET_URL,
         }),
         `building default "${provider}" template`
@@ -132,6 +137,8 @@ describe("template-send UI helpers", () => {
     expect(isSecretRequired("github")).toBe(true);
     expect(isSecretRequired("sendgrid")).toBe(false);
     expect(isSecretRequired("discord")).toBe(false);
+    expect(isSecretRequired("paypal")).toBe(true);
+    expect(isSecretRequired("plaid")).toBe(false);
     expect(isSecretRequired("standard-webhooks")).toBe(true);
   });
 });
@@ -367,26 +374,15 @@ describe("template-send template selection", () => {
 // All providers produce valid JSON or form body
 // ---------------------------------------------------------------------------
 describe("template-send body format", () => {
-  const jsonProviders: TemplateProvider[] = [
-    "stripe",
-    "github",
-    "shopify",
-    "slack",
-    "paddle",
-    "linear",
-    "sendgrid",
-    "clerk",
-    "discord",
-    "vercel",
-    "gitlab",
-    "standard-webhooks",
-  ];
+  const jsonProviders = TEMPLATE_PROVIDERS.filter(
+    (provider): provider is Exclude<TemplateProvider, "twilio"> => provider !== "twilio"
+  );
 
   for (const provider of jsonProviders) {
     test(`${provider}: body is valid JSON`, async () => {
       const req = await buildTemplateRequest({
         provider,
-        secret: "whsec_dGVzdF9zZWNyZXQ=",
+        secret: providerSecret(provider),
         targetUrl: TARGET_URL,
       });
       expect(() => JSON.parse(req.body)).not.toThrow();

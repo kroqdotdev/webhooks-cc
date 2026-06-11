@@ -241,12 +241,13 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // Should have None + 28 providers (27 verifiable named providers + generic-hmac;
-  // SendGrid is excluded — it uses IP allowlisting, not signatures).
-  await expect(options).toHaveCount(29);
+  // None + 30 verifiable named providers + generic-hmac.
+  // SendGrid and Plaid are excluded from endpoint signing configuration.
+  await expect(options).toHaveCount(32);
   await expect(options.nth(1)).toHaveText("Stripe");
   await expect(options.filter({ hasText: "Telegram" })).toHaveCount(1);
   await expect(options.filter({ hasText: "Bitbucket" })).toHaveCount(1);
+  await expect(options.filter({ hasText: "PayPal" })).toHaveCount(1);
 });
 
 test("SendGrid IP allowlisting info is shown", async ({ page }) => {
@@ -261,6 +262,13 @@ test("selecting Discord changes label to Public Key", async ({ page }) => {
   await openSettings(page);
   await page.selectOption("#settings-signing-provider", "discord");
   await expect(page.locator("text=Public Key")).toBeVisible();
+});
+
+test("selecting PayPal changes label to Webhook ID", async ({ page }) => {
+  await openDashboard(page);
+  await openSettings(page);
+  await page.selectOption("#settings-signing-provider", "paypal");
+  await expect(page.locator("text=Webhook ID")).toBeVisible();
 });
 
 test("configure signing secret and save", async ({ page }) => {

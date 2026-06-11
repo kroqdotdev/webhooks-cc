@@ -693,7 +693,7 @@ async fn handle_webhook_inner(
                                     }
                                 };
 
-                                let result = crate::verification::verify_signature(
+                                let result = crate::verification::verify_signature_async(
                                     &provider,
                                     &secret,
                                     &verify_headers,
@@ -701,7 +701,8 @@ async fn handle_webhook_inner(
                                     signing_header.as_deref(),
                                     request_url.as_deref(),
                                     Some(verify_method.as_str()),
-                                );
+                                )
+                                .await;
 
                                 let (verified, error_json, error_provider) = match &result {
                                     crate::verification::VerificationResult::Valid => {

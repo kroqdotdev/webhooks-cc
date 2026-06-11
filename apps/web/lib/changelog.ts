@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.23.1";
+export const APP_VERSION = "0.24.0";
 export const CLI_VERSION = "1.1.2";
-export const SDK_VERSION = "1.8.0";
-export const MCP_VERSION = "1.6.0";
+export const SDK_VERSION = "1.9.0";
+export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.24.0",
+    date: "2026-06-05",
+    title: "4 New Providers — DocuSign, Adyen, PayPal, Plaid",
+    track: "web",
+    items: [
+      "Provider catalog grows from 28 to 32: added DocuSign, Adyen, PayPal, and Plaid across templates and detection",
+      "Server-side signature verification now supports DocuSign HMAC, Adyen body-embedded HMAC, and PayPal RSA certificate verification; Plaid remains template-only until Plaid JWT/JWK credentials are supported",
+      "Endpoint settings and the Signature tab use provider-specific credential labels, including PayPal Webhook ID and Adyen HMAC Key",
+    ],
+  },
   {
     version: "0.23.1",
     date: "2026-06-02",
@@ -664,6 +675,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.9.0",
+    date: "2026-06-05",
+    title: "4 New Providers — DocuSign, Adyen, PayPal, Plaid",
+    track: "sdk",
+    items: [
+      "Added DocuSign, Adyen, PayPal, and Plaid templates, bringing TEMPLATE_PROVIDERS to 32 named providers",
+      "New verifiers: verifyDocuSignSignature, verifyAdyenSignature, and verifyPayPalSignature with PayPal certificate URL validation and RSA-SHA256 verification",
+      "New detection helpers: isDocuSignWebhook, isAdyenWebhook, isPayPalWebhook, and isPlaidWebhook; Plaid remains template-only for verification",
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-06-02",
     title: "Agent self-registration on-ramp",
@@ -850,6 +872,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.7.0",
+    date: "2026-06-05",
+    title: "4 New Providers",
+    track: "mcp",
+    items: [
+      "DocuSign, Adyen, PayPal, and Plaid are available in provider template tools through the SDK catalog; verify_signature now exposes DocuSign, Adyen, and PayPal while keeping Plaid template-only",
+    ],
+  },
   {
     version: "1.6.0",
     date: "2026-06-02",

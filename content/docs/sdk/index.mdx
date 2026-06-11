@@ -62,7 +62,7 @@ await client.endpoints.sendTemplate(endpoint.slug, {
 });
 ```
 
-Supports **Typeform** and **Standard Webhooks** (Polar.sh, Svix, Clerk, Resend) alongside Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Vercel, GitLab, SendGrid templates, and Discord templates:
+Supports **Typeform** and **Standard Webhooks** (Polar.sh, Svix, Clerk, Resend) alongside Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Vercel, GitLab, SendGrid, Discord, DocuSign, Adyen, PayPal, and Plaid templates:
 
 ```ts
 await client.endpoints.sendTemplate(endpoint.slug, {
@@ -162,7 +162,7 @@ if (info) {
 }
 ```
 
-The helper detects providers from headers first, then body shape for providers like SendGrid. Use the boolean helpers (`isStripeWebhook`, `isGitHubWebhook`, `isTypeformWebhook`, etc.) when you only need one branch.
+The helper detects providers from headers first, then body shape for providers like SendGrid and Adyen. Use the boolean helpers (`isStripeWebhook`, `isGitHubWebhook`, `isTypeformWebhook`, etc.) when you only need one branch.
 
 ## Learn more
 

@@ -149,10 +149,14 @@ Provider template and signing support includes:
 - `mux`
 - `sentry`
 - `bitbucket`
+- `docusign`
+- `adyen`
+- `paypal`
+- `plaid`
 
 Signature verification also supports:
 
-- all template providers except `sendgrid`, which uses IP allowlisting instead of cryptographic signatures
+- all template providers except `sendgrid` (IP allowlisting) and `plaid` (JWT/JWK verification requires Plaid API credentials)
 
 Use `list_provider_templates` to inspect templates, default events, signature headers, and signing requirements from the agent.
 

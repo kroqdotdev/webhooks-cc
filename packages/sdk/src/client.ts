@@ -898,8 +898,13 @@ export class WebhooksCC {
 
     sendTemplate: async (slug: string, options: SendTemplateOptions): Promise<Response> => {
       validatePathSegment(slug, "slug");
-      if (!options.secret || typeof options.secret !== "string") {
-        throw new Error("sendTemplate requires a non-empty secret");
+      if (
+        TEMPLATE_METADATA[options.provider]?.secretRequired !== false &&
+        (!options.secret || typeof options.secret !== "string")
+      ) {
+        throw new Error(
+          `sendTemplate requires a non-empty secret for provider "${options.provider}"`
+        );
       }
 
       const endpointUrl = `${this.webhookUrl}/w/${slug}`;
@@ -950,8 +955,13 @@ export class WebhooksCC {
     }
 
     if (options.provider) {
-      if (!options.secret || typeof options.secret !== "string") {
-        throw new Error("buildRequest with a provider requires a non-empty secret");
+      if (
+        TEMPLATE_METADATA[options.provider]?.secretRequired !== false &&
+        (!options.secret || typeof options.secret !== "string")
+      ) {
+        throw new Error(
+          `buildRequest with provider "${options.provider}" requires a non-empty secret`
+        );
       }
       const sendOptions = await buildTemplateSendOptions(url, {
         provider: options.provider,
@@ -1024,8 +1034,11 @@ export class WebhooksCC {
     }
 
     if (options.provider) {
-      if (!options.secret || typeof options.secret !== "string") {
-        throw new Error("sendTo with a provider requires a non-empty secret");
+      if (
+        TEMPLATE_METADATA[options.provider]?.secretRequired !== false &&
+        (!options.secret || typeof options.secret !== "string")
+      ) {
+        throw new Error(`sendTo with provider "${options.provider}" requires a non-empty secret`);
       }
       const sendOptions = await buildTemplateSendOptions(url, {
         provider: options.provider,

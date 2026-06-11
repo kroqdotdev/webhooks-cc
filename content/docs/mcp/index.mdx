@@ -17,7 +17,7 @@ seo:
 
 The MCP server exposes 25 tools your AI agent can call:
 
-For provider templates in `send_webhook`, **secret is required**. The MCP server does not inject a default secret.
+For provider templates in `send_webhook`, `secret` is required for every signed provider — only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret. The MCP server does not inject a default secret.
 
 ## Provider-aware testing
 
@@ -30,7 +30,7 @@ Agent: [calls send_webhook with provider: "typeform", template: "form_response",
 Agent: Captured POST request detected as Typeform / form_response
 ```
 
-The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, and Standard Webhooks.
+The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, Adyen, PayPal templates, and Plaid templates.
 
 ### Endpoint management
 

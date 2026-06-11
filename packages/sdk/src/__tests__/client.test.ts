@@ -337,6 +337,10 @@ describe("WebhooksCC", () => {
         "mux",
         "sentry",
         "bitbucket",
+        "docusign",
+        "adyen",
+        "paypal",
+        "plaid",
       ]);
     });
 
@@ -588,6 +592,24 @@ describe("WebhooksCC", () => {
           secret: "whsec_test_123",
         })
       ).rejects.toThrow(/Unsupported template/i);
+    });
+
+    it("sends secretless provider templates (plaid) without a secret", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers(),
+        text: () => Promise.resolve("ok"),
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.endpoints.sendTemplate("abc123", { provider: "plaid" });
+
+      const [, opts] = fetchMock.mock.calls[0];
+      expect(opts.headers["plaid-verification"]).toBeTruthy();
+      expect(opts.body).toContain('"webhook_type":"TRANSACTIONS"');
     });
 
     it("throws when secret is missing", async () => {
