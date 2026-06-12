@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.24.0";
+export const APP_VERSION = "0.25.0";
 export const CLI_VERSION = "1.1.2";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.25.0",
+    date: "2026-06-12",
+    title: "Landing Redesign + Per-Provider Webhook Pages",
+    track: "web",
+    items: [
+      "New provider pages at /webhooks — setup steps, signature details, and sample events for all 32 supported providers, plus a browsable hub grouped by category",
+      "Landing page redesigned around the no-signup flow: get a webhook URL in one click, with sign-in as the secondary path",
+      "New provider strip and navbar links (Docs, Providers, Compare, Pricing, Blog) for easier discovery",
+      "SEO: provider pages added to the sitemap, /agent/claim marked noindex",
+    ],
+  },
   {
     version: "0.24.0",
     date: "2026-06-05",

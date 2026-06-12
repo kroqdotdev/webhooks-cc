@@ -8,6 +8,7 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
 import { LivePreview } from "@/components/landing/live-preview";
 import { TeamsVideo } from "@/components/landing/teams-video";
+import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
 import {
   JsonLd,
@@ -99,7 +100,7 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Can I send signed Stripe, GitHub, Shopify, and Twilio webhooks?",
     answer:
-      "Yes. Use the Send button in the dashboard and select a provider template. webhooks.cc generates realistic payloads and signature headers so you can test your verification code end-to-end.",
+      "Yes. Use the Send button in the dashboard and select a provider template. webhooks.cc generates realistic payloads and signature headers for 30+ providers so you can test your verification code end-to-end.",
   },
   {
     question: "How do I inspect webhook payloads?",
@@ -123,6 +124,15 @@ const LANDING_FAQ: FAQItem[] = [
   },
 ];
 
+const FOOTER_PROVIDERS = [
+  { href: "/webhooks/stripe", label: "Stripe webhooks" },
+  { href: "/webhooks/github", label: "GitHub webhooks" },
+  { href: "/webhooks/shopify", label: "Shopify webhooks" },
+  { href: "/webhooks/slack", label: "Slack webhooks" },
+  { href: "/webhooks/paypal", label: "PayPal webhooks" },
+  { href: "/webhooks", label: "All providers" },
+];
+
 export default async function Home() {
   const [stars, stats] = await Promise.all([getStarCount(), getSiteStats()]);
 
@@ -133,7 +143,25 @@ export default async function Home() {
       <JsonLd data={videoObjectSchema()} />
 
       {/* Navigation */}
-      <FloatingNavbar />
+      <FloatingNavbar>
+        <div className="hidden md:flex items-center gap-4 text-sm font-bold">
+          <Link href="/docs" className="text-muted-foreground hover:text-foreground">
+            Docs
+          </Link>
+          <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
+            Providers
+          </Link>
+          <Link href="/compare" className="text-muted-foreground hover:text-foreground">
+            Compare
+          </Link>
+          <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
+            Pricing
+          </Link>
+          <Link href="/blog" className="text-muted-foreground hover:text-foreground">
+            Blog
+          </Link>
+        </div>
+      </FloatingNavbar>
 
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
@@ -144,12 +172,13 @@ export default async function Home() {
                 Free forever &middot; No credit card
               </div>
               <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.2]">
-                See every webhook <br className="hidden md:block" />
-                <span className="bg-primary text-primary-foreground px-2">as it arrives</span>
+                The fastest way to <br className="hidden md:block" />
+                <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
               </h1>
               <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-                Get a URL, send a webhook, see it arrive. Forward to localhost with the CLI, test in
-                CI with the SDK, or let your AI agent handle it with MCP.
+                Get a URL, point any service at it, and watch every request arrive live. Send signed
+                Stripe or GitHub samples, forward to localhost, assert in CI — or let your AI agent
+                do it over MCP.
               </p>
               <HeroCTA />
 
@@ -189,56 +218,8 @@ export default async function Home() {
             </div>
           </div>
 
-          {/* Install */}
-          <InstallCards />
-
           {/* Live preview */}
           <LivePreview />
-
-          {/* Code preview */}
-          <div className="mt-6 neo-code overflow-x-auto">
-            <pre className="text-sm md:text-base">
-              <code>
-                <span className="text-muted-foreground"># Send manually with curl</span>
-                {"\n"}
-                <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
-                \{"\n"}
-                {"  "}-H{" "}
-                <span className="text-code-string">&quot;Content-Type: application/json&quot;</span>{" "}
-                \{"\n"}
-                {"  "}-d{" "}
-                <span className="text-code-string">
-                  &apos;{`{"event": "payment.success", "amount": 4999}`}&apos;
-                </span>
-                {"\n\n"}
-                <span className="text-muted-foreground">
-                  # Or send a signed provider template in TypeScript
-                </span>
-                {"\n"}
-                <span className="text-code-keyword">
-                  await
-                </span> client.endpoints.sendTemplate(slug, {"{"}
-                {"\n"}
-                {"  "}provider: <span className="text-code-string">&quot;stripe&quot;</span>,{"\n"}
-                {"  "}template:{" "}
-                <span className="text-code-string">&quot;checkout.session.completed&quot;</span>,
-                {"\n"}
-                {"  "}secret: <span className="text-code-string">&quot;whsec_test_123&quot;</span>,
-                {"\n"}
-                {"}"});
-                {"\n\n"}
-                <span className="text-muted-foreground"># Wait for it in your tests</span>
-                {"\n"}
-                <span className="text-code-keyword">const</span> req ={" "}
-                <span className="text-code-keyword">await</span> client.requests.waitFor(slug, {"{"}{" "}
-                {"\n"}
-                {"  "}timeout: <span className="text-code-string">&quot;30s&quot;</span>,{"\n"}
-                {"  "}match: matchHeader(
-                <span className="text-code-string">&quot;stripe-signature&quot;</span>),{"\n"}
-                {"}"});
-              </code>
-            </pre>
-          </div>
         </div>
       </section>
 
@@ -251,7 +232,8 @@ export default async function Home() {
               {
                 step: "1",
                 title: "Get a URL",
-                description: "Create an endpoint in one click. You get a unique public URL.",
+                description:
+                  "One click — no signup needed. You get a unique public URL that captures everything.",
               },
               {
                 step: "2",
@@ -306,10 +288,25 @@ export default async function Home() {
               <div className="w-12 h-12 border-2 border-foreground bg-secondary flex items-center justify-center mb-4 shadow-neo-sm">
                 <Zap className="h-6 w-6 text-secondary-foreground" />
               </div>
-              <h3 className="font-bold text-xl mb-2">Test Stripe, GitHub, and Shopify webhooks</h3>
+              <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
               <p className="text-muted-foreground">
-                Send signed provider templates from the dashboard. Realistic payloads with correct
-                signature headers — test your verification code end-to-end.
+                Realistic payloads with correct signature headers for{" "}
+                <Link href="/webhooks/stripe" className="text-primary font-bold hover:underline">
+                  Stripe
+                </Link>
+                ,{" "}
+                <Link href="/webhooks/github" className="text-primary font-bold hover:underline">
+                  GitHub
+                </Link>
+                ,{" "}
+                <Link href="/webhooks/shopify" className="text-primary font-bold hover:underline">
+                  Shopify
+                </Link>
+                , and{" "}
+                <Link href="/webhooks" className="text-primary font-bold hover:underline">
+                  30+ more
+                </Link>{" "}
+                — test your verification code end-to-end.
               </p>
             </div>
 
@@ -366,6 +363,66 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* Providers */}
+      <ProviderStrip />
+
+      {/* Workflow — install + code */}
+      <section className="py-20 px-4">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">From terminal to test suite</h2>
+          <p className="text-xl text-muted-foreground max-w-2xl">
+            Install the CLI, the SDK, or the MCP server — then script every part of the webhook
+            lifecycle.
+          </p>
+
+          <InstallCards />
+
+          <div className="mt-6 neo-code overflow-x-auto">
+            <pre className="text-sm md:text-base">
+              <code>
+                <span className="text-muted-foreground"># Send manually with curl</span>
+                {"\n"}
+                <span className="text-primary">$</span> curl -X POST https://go.webhooks.cc/w/abc123
+                \{"\n"}
+                {"  "}-H{" "}
+                <span className="text-code-string">&quot;Content-Type: application/json&quot;</span>{" "}
+                \{"\n"}
+                {"  "}-d{" "}
+                <span className="text-code-string">
+                  &apos;{`{"event": "payment.success", "amount": 4999}`}&apos;
+                </span>
+                {"\n\n"}
+                <span className="text-muted-foreground">
+                  # Or send a signed provider template in TypeScript
+                </span>
+                {"\n"}
+                <span className="text-code-keyword">
+                  await
+                </span> client.endpoints.sendTemplate(slug, {"{"}
+                {"\n"}
+                {"  "}provider: <span className="text-code-string">&quot;stripe&quot;</span>,{"\n"}
+                {"  "}template:{" "}
+                <span className="text-code-string">&quot;checkout.session.completed&quot;</span>,
+                {"\n"}
+                {"  "}secret: <span className="text-code-string">&quot;whsec_test_123&quot;</span>,
+                {"\n"}
+                {"}"});
+                {"\n\n"}
+                <span className="text-muted-foreground"># Wait for it in your tests</span>
+                {"\n"}
+                <span className="text-code-keyword">const</span> req ={" "}
+                <span className="text-code-keyword">await</span> client.requests.waitFor(slug, {"{"}{" "}
+                {"\n"}
+                {"  "}timeout: <span className="text-code-string">&quot;30s&quot;</span>,{"\n"}
+                {"  "}match: matchHeader(
+                <span className="text-code-string">&quot;stripe-signature&quot;</span>),{"\n"}
+                {"}"});
+              </code>
+            </pre>
+          </div>
+        </div>
+      </section>
+
       {/* Teams — dedicated video section */}
       <section className="py-20 px-4 bg-muted">
         <div className="max-w-6xl mx-auto">
@@ -392,7 +449,7 @@ export default async function Home() {
       </section>
 
       {/* Pricing */}
-      <section className="py-20 px-4">
+      <section id="pricing" className="py-20 px-4 scroll-mt-20">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
@@ -469,7 +526,7 @@ export default async function Home() {
       </section>
 
       {/* Compare */}
-      <section className="py-20 px-4">
+      <section className="py-20 px-4 bg-muted">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">See how we compare</h2>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl">
@@ -546,9 +603,13 @@ export default async function Home() {
               Your next webhook is one URL away
             </h2>
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
-              Create an endpoint, point your service at it, and see what arrives.
+              Create an endpoint, point your service at it, and see what arrives. No signup needed.
             </p>
-            <div className="flex justify-center text-foreground">
+            <Link href="/go" className="neo-btn-primary text-lg px-6 py-3 inline-block">
+              Get your webhook URL
+              <ArrowRight className="inline-block ml-2 h-5 w-5" />
+            </Link>
+            <div className="mt-6 flex justify-center text-foreground">
               <PricingCTA />
             </div>
           </div>
@@ -558,7 +619,7 @@ export default async function Home() {
       {/* Footer */}
       <footer className="border-t-2 border-foreground py-12 px-4">
         <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-4 gap-8">
+          <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-8">
             <div>
               <p className="font-bold text-lg mb-4">webhooks.cc</p>
               <p className="text-muted-foreground text-sm">
@@ -596,6 +657,18 @@ export default async function Home() {
                     Changelog
                   </Link>
                 </li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-bold mb-4">Providers</p>
+              <ul className="space-y-2 text-sm">
+                {FOOTER_PROVIDERS.map((item) => (
+                  <li key={item.href}>
+                    <Link href={item.href} className="text-muted-foreground hover:text-foreground">
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
               </ul>
             </div>
             <div>

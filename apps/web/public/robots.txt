@@ -8,6 +8,7 @@ Disallow: /api-explorer
 Disallow: /api/
 Disallow: /cli/verify
 Disallow: /blog/preview
+Disallow: /agent/claim
 
 # Agent registration: how AI agents obtain an API credential (auth.md protocol).
 # Also advertised via the Link response header and <link rel="auth.md"> on every page.
