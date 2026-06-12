@@ -26,7 +26,7 @@ function StartFreeCTAInner({
   size = "md",
   goCta = "try without an account",
 }: StartFreeCTAProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const alignClass = align === "center" ? "items-center text-center" : "items-start";
   // bg/text utilities repeated after neo-btn-primary so they survive the Button
   // outline variant's bg-background (utilities beat the components-layer class).
@@ -37,10 +37,8 @@ function StartFreeCTAInner({
       ? `h-12 text-base px-6 ${primaryOverride}`
       : `h-11 text-sm px-5 ${primaryOverride}`;
 
-  if (isLoading) {
-    return <div className={size === "lg" ? "h-[5.5rem]" : "h-[5rem]"} />;
-  }
-
+  // Signed-out is the default branch so the CTA is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
   if (isAuthenticated) {
     return (
       <div className={`flex flex-col gap-3 ${alignClass}`}>
@@ -65,7 +63,7 @@ function StartFreeCTAInner({
           buttonClassName={buttonClass}
         />
       </div>
-      {goCta && (
+      {goCta ? (
         <p className="text-sm text-muted-foreground">
           No credit card &middot; 50 requests/day free &middot; or{" "}
           <Link
@@ -77,7 +75,7 @@ function StartFreeCTAInner({
             <ArrowRight className="inline-block ml-1 h-4 w-4" />
           </Link>
         </p>
-      )}
+      ) : null}
     </div>
   );
 }

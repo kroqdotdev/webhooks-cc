@@ -234,9 +234,24 @@ export interface WebhookProviderPage {
 
 export const WEBHOOK_PROVIDER_SLUGS: readonly TemplateProvider[] = TEMPLATE_PROVIDERS;
 
+// All page data derives from static SDK metadata, so build it once at module
+// load and serve lookups from a Map.
+let pagesBySlug: ReadonlyMap<string, WebhookProviderPage> | null = null;
+
+function getPagesBySlug(): ReadonlyMap<string, WebhookProviderPage> {
+  if (!pagesBySlug) {
+    pagesBySlug = new Map(
+      WEBHOOK_PROVIDER_SLUGS.map((slug) => [slug as string, buildWebhookProviderPage(slug)])
+    );
+  }
+  return pagesBySlug;
+}
+
 export function getWebhookProviderPage(slug: string): WebhookProviderPage | null {
-  if (!(TEMPLATE_PROVIDERS as readonly string[]).includes(slug)) return null;
-  const provider = slug as TemplateProvider;
+  return getPagesBySlug().get(slug) ?? null;
+}
+
+function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPage {
   const meta = TEMPLATE_METADATA[provider];
   const editorial = PROVIDER_EDITORIAL[provider];
   const info = getWebProviderInfo(provider);
@@ -258,10 +273,8 @@ export function getWebhookProviderPage(slug: string): WebhookProviderPage | null
   };
 }
 
-export function getAllWebhookProviderPages(): WebhookProviderPage[] {
-  return WEBHOOK_PROVIDER_SLUGS.map((slug) => getWebhookProviderPage(slug)).filter(
-    (page): page is WebhookProviderPage => page !== null
-  );
+export function getAllWebhookProviderPages(): readonly WebhookProviderPage[] {
+  return [...getPagesBySlug().values()];
 }
 
 export const WEBHOOK_PROVIDER_CATEGORIES: readonly WebhookProviderCategory[] = [

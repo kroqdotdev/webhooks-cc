@@ -144,10 +144,8 @@ export default async function Home() {
 
       {/* Navigation */}
       <FloatingNavbar>
+        {/* AuthNav already renders Docs/Blog/Install — only add what it lacks */}
         <div className="hidden md:flex items-center gap-4 text-sm font-bold">
-          <Link href="/docs" className="text-muted-foreground hover:text-foreground">
-            Docs
-          </Link>
           <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
             Providers
           </Link>
@@ -156,9 +154,6 @@ export default async function Home() {
           </Link>
           <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
             Pricing
-          </Link>
-          <Link href="/blog" className="text-muted-foreground hover:text-foreground">
-            Blog
           </Link>
         </div>
       </FloatingNavbar>

@@ -8,6 +8,11 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://webhooks.cc";
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@webhooks-cc/sdk"],
+  experimental: {
+    // simple-icons is a huge barrel package; rewrite named imports to direct
+    // per-icon paths so client bundles only carry the icons actually used.
+    optimizePackageImports: ["simple-icons"],
+  },
   async headers() {
     return [
       {

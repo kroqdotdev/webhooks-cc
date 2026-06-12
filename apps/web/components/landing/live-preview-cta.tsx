@@ -14,13 +14,13 @@ export function LivePreviewCTA() {
 }
 
 function LivePreviewCTAInner() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
 
+  // Signed-out is the default branch so the CTA is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
   return (
     <div className="flex flex-col items-center gap-3 pt-2">
-      {isLoading ? (
-        <div className="h-11" />
-      ) : isAuthenticated ? (
+      {isAuthenticated ? (
         <Link href="/dashboard" className="neo-btn-primary">
           Go to Dashboard
           <ArrowRight className="inline-block ml-2 h-5 w-5" />

@@ -14,10 +14,10 @@ export function PricingCTA() {
 }
 
 function PricingCTAInner() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
 
-  if (isLoading) return <div className="h-10" />;
-
+  // Signed-out is the default branch so the CTA is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
   if (isAuthenticated) {
     return (
       <Link href="/dashboard" className="neo-btn-primary w-full text-center block">

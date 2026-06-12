@@ -22,7 +22,7 @@ export function AuthNav() {
 }
 
 function AuthNavContent() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -31,9 +31,9 @@ function AuthNavContent() {
 
   const filteredLinks = NAV_LINKS.filter((link) => pathname !== link.href);
 
-  const authButton = isLoading ? (
-    <span className="neo-btn-outline text-sm py-2 px-4 w-28 text-center opacity-50">...</span>
-  ) : isAuthenticated ? (
+  // Sign In is the default branch so a real link is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
+  const authButton = isAuthenticated ? (
     <Link
       href="/dashboard"
       className="neo-btn-primary text-sm py-2 px-4 w-28 text-center"
