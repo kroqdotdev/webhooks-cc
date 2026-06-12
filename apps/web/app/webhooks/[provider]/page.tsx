@@ -5,6 +5,8 @@ import { ArrowRight, Check, ShieldCheck } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
 import { JsonLd, breadcrumbSchema, faqSchema, howToSchema, type FAQItem } from "@/lib/schemas";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
+import { StartFreeCTA } from "@/components/landing/start-free-cta";
+import { PricingCTA } from "@/components/landing/pricing-cta";
 import { ProviderIcon } from "@/components/dashboard/provider-icon";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
 import {
@@ -54,7 +56,7 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
   const items: FAQItem[] = [
     {
       question: `How do I test ${page.label} webhooks without deploying anything?`,
-      answer: `Create a free endpoint on webhooks.cc (no signup needed), then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
+      answer: `Create a free endpoint on webhooks.cc — sign in with GitHub or Google, or use a guest endpoint without an account — then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
     },
     {
       question: `Can I send a sample ${page.label} webhook without a ${page.label} account?`,
@@ -74,7 +76,7 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
 
   items.push({
     question: `Is the ${page.label} webhook tester free?`,
-    answer: `Yes. Guest endpoints need no account and capture up to 25 requests for 12 hours. A free account gets you persistent endpoints, 50 requests per day, 7-day retention, and full CLI, SDK, and MCP access.`,
+    answer: `Yes. A free account gets you persistent endpoints, 50 requests per day, 7-day retention, and full CLI, SDK, and MCP access — no credit card. You can also try a guest endpoint without an account: up to 25 requests for 12 hours.`,
   });
 
   return items;
@@ -95,8 +97,8 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const howToSteps = [
     {
       name: "Create a webhook endpoint",
-      text: "Open webhooks.cc/go to get a free endpoint URL instantly — no signup required.",
-      url: "https://webhooks.cc/go",
+      text: "Sign in free with GitHub or Google to create a persistent endpoint — or grab an instant guest URL at webhooks.cc/go without an account.",
+      url: "https://webhooks.cc",
     },
     {
       name: `Point ${page.label} at your URL`,
@@ -156,18 +158,17 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             {page.label} sends — or fire realistic{page.secretRequired ? ", correctly signed" : ""}{" "}
             sample payloads at your own handler without touching a production account.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/go" className="neo-btn-primary">
-              Get a free webhook URL
-              <ArrowRight className="inline-block ml-2 h-5 w-5" />
-            </Link>
+          <StartFreeCTA goCta="get a guest URL without an account" />
+          <p className="text-sm text-muted-foreground mt-4">
+            Prefer a walkthrough? Read the{" "}
             <Link
               href={guide?.href ?? "/docs/guides/test-webhooks-locally"}
-              className="neo-btn-outline"
+              className="text-primary font-bold hover:underline"
             >
-              {guide ? "Step-by-step guide" : "Local testing guide"}
+              {guide ? guide.label : "local webhook testing guide"}
             </Link>
-          </div>
+            .
+          </p>
         </div>
 
         {/* How it works */}
@@ -344,12 +345,17 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             Your {page.label} webhook URL is seconds away
           </h2>
           <p className="opacity-80 mb-6 max-w-md mx-auto">
-            No signup, no credit card. Create an endpoint and point {page.label} at it.
+            Sign up free, create an endpoint, and point {page.label} at it.
           </p>
-          <Link href="/go" className="neo-btn-primary inline-block">
-            Create a free endpoint
-            <ArrowRight className="inline-block ml-2 h-5 w-5" />
-          </Link>
+          <div className="flex justify-center text-foreground">
+            <PricingCTA />
+          </div>
+          <p className="text-sm opacity-80 mt-6">
+            No credit card &middot; or{" "}
+            <Link href="/go" className="font-bold underline hover:no-underline">
+              try without an account
+            </Link>
+          </p>
         </div>
       </div>
     </main>

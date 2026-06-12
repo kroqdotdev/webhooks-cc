@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
-import { HeroCTA } from "@/components/landing/hero-cta";
+import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users } from "lucide-react";
 import { GitHubCard } from "@/components/landing/github-card";
 import { InstallCards } from "@/components/landing/install-cards";
@@ -180,7 +180,7 @@ export default async function Home() {
                 Stripe or GitHub samples, forward to localhost, assert in CI — or let your AI agent
                 do it over MCP.
               </p>
-              <HeroCTA />
+              <StartFreeCTA size="lg" goCta="grab a URL without an account" />
 
               {/* Social proof — near the CTA for maximum impact */}
               {stats && (
@@ -233,7 +233,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "One click — no signup needed. You get a unique public URL that captures everything.",
+                  "Sign in free with GitHub or Google and create an endpoint in one click — or grab a guest URL without an account.",
               },
               {
                 step: "2",
@@ -603,15 +603,17 @@ export default async function Home() {
               Your next webhook is one URL away
             </h2>
             <p className="text-xl opacity-80 mb-8 max-w-xl mx-auto">
-              Create an endpoint, point your service at it, and see what arrives. No signup needed.
+              Create an endpoint, point your service at it, and see what arrives. Free forever.
             </p>
-            <Link href="/go" className="neo-btn-primary text-lg px-6 py-3 inline-block">
-              Get your webhook URL
-              <ArrowRight className="inline-block ml-2 h-5 w-5" />
-            </Link>
-            <div className="mt-6 flex justify-center text-foreground">
+            <div className="flex justify-center text-foreground">
               <PricingCTA />
             </div>
+            <p className="text-sm opacity-80 mt-6">
+              No credit card &middot; or{" "}
+              <Link href="/go" className="font-bold underline hover:no-underline">
+                try without an account
+              </Link>
+            </p>
           </div>
         </div>
       </section>

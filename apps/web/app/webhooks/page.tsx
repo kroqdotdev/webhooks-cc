@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { createPageMetadata } from "@/lib/seo";
+import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { JsonLd, breadcrumbSchema } from "@/lib/schemas";
 import { ProviderIcon } from "@/components/dashboard/provider-icon";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
@@ -46,15 +46,17 @@ export default function WebhooksHubPage() {
             correctly-signed sample payloads without touching a production account. Pick your
             provider for setup steps, signature details, and sample events.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/go" className="neo-btn-primary">
-              Get a free webhook URL
-              <ArrowRight className="inline-block ml-2 h-5 w-5" />
+          <StartFreeCTA goCta="get a guest URL without an account" />
+          <p className="text-sm text-muted-foreground mt-4">
+            Want the details first? Read the{" "}
+            <Link
+              href="/docs/endpoints/provider-templates"
+              className="text-primary font-bold hover:underline"
+            >
+              provider templates docs
             </Link>
-            <Link href="/docs/endpoints/provider-templates" className="neo-btn-outline">
-              Provider templates docs
-            </Link>
-          </div>
+            .
+          </p>
         </div>
 
         {WEBHOOK_PROVIDER_CATEGORIES.map((category) => {

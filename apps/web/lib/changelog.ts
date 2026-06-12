@@ -29,7 +29,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "New provider pages at /webhooks — setup steps, signature details, and sample events for all 32 supported providers, plus a browsable hub grouped by category",
-      "Landing page redesigned around the no-signup flow: get a webhook URL in one click, with sign-in as the secondary path",
+      "Landing page redesigned around a sign-up-first hero: prominent GitHub/Google start-free buttons, with the no-signup guest endpoint as the secondary path",
       "New provider strip and navbar links (Docs, Providers, Compare, Pricing, Blog) for easier discovery",
       "SEO: provider pages added to the sitemap, /agent/claim marked noindex",
     ],
