@@ -66,6 +66,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@polar-sh/sdk": "^0.47.1"
+    "@polar-sh/sdk": "^0.48.1"
   }
 }
