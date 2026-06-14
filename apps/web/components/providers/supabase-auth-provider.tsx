@@ -42,9 +42,18 @@ function startAuthListener() {
   const supabase = createClient();
 
   // Get initial session
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    setAuthSession(session);
-  });
+  void (async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setAuthSession(session);
+    } catch {
+      // Resolve the loading state even if the session fetch fails, so
+      // consumers don't get stuck showing a loading placeholder forever.
+      setAuthSession(null);
+    }
+  })();
 
   // Listen for auth state changes (login, logout, token refresh).
   // Intentionally never unsubscribed: the store outlives any one component.

@@ -207,12 +207,17 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
   },
 };
 
+// Keyed by both the raw SDK algorithm ids and the catalog's formatted strings,
+// so the catalog-first resolution below still yields the most descriptive copy.
 const ALGORITHM_LABELS: Record<string, string> = {
   "hmac-sha256": "HMAC-SHA256",
   "hmac-sha1": "HMAC-SHA1",
   "rsa-sha256": "RSA-SHA256 (certificate-based)",
+  "RSA-SHA256": "RSA-SHA256 (certificate-based)",
   "jwt-es256": "JWT (ES256)",
+  "JWT ES256": "JWT (ES256)",
   token: "Shared token comparison",
+  Token: "Shared token comparison",
 };
 
 export interface WebhookProviderPage {
@@ -268,9 +273,12 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
   const catalogAlgorithm =
     info?.algorithm && info.algorithm !== "Not applicable" ? info.algorithm : null;
   const signatureHeader = catalogHeader ?? sdkHeader;
-  const signatureAlgorithmLabel = sdkAlgorithm
-    ? (ALGORITHM_LABELS[sdkAlgorithm] ?? sdkAlgorithm)
-    : catalogAlgorithm;
+  // Catalog overrides win (consistent with signatureHeader above), falling back
+  // to the SDK's raw algorithm id; either form is enriched via ALGORITHM_LABELS.
+  const resolvedAlgorithm = catalogAlgorithm ?? sdkAlgorithm ?? null;
+  const signatureAlgorithmLabel = resolvedAlgorithm
+    ? (ALGORITHM_LABELS[resolvedAlgorithm] ?? resolvedAlgorithm)
+    : null;
 
   return {
     slug: provider,
@@ -281,7 +289,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     templates: meta.templates,
     defaultTemplate: "defaultTemplate" in meta ? meta.defaultTemplate : null,
     signatureHeader,
-    signatureAlgorithm: sdkAlgorithm ?? null,
+    signatureAlgorithm: resolvedAlgorithm,
     signatureAlgorithmLabel,
     secretRequired: meta.secretRequired,
     verifySupported: info?.verificationMode === "secret" || info?.verificationMode === "publicKey",
