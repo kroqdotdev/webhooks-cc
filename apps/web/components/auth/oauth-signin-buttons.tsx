@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
 import { trackSignInStarted } from "@/lib/analytics";
 
@@ -17,7 +17,7 @@ export function OAuthSignInButtons({
   buttonClassName?: string;
   layout?: "vertical" | "horizontal";
 }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +44,9 @@ export function OAuthSignInButtons({
     }
   };
 
-  if (isLoading || isAuthenticated) {
+  // Render the buttons while auth state is still resolving so they are part
+  // of the prerendered HTML — sign-in works regardless of the pending check.
+  if (isAuthenticated) {
     return (
       <div className="flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
@@ -54,11 +56,11 @@ export function OAuthSignInButtons({
 
   return (
     <div>
-      {error && (
+      {error ? (
         <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded mb-4">
           {error}
         </div>
-      )}
+      ) : null}
 
       <div className={layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "space-y-3"}>
         <Button

@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useIsAuthenticated,
+} from "@/components/providers/supabase-auth-provider";
 
 export function ComparisonCTA({ compact = false }: { compact?: boolean }) {
   return (
@@ -14,15 +17,15 @@ export function ComparisonCTA({ compact = false }: { compact?: boolean }) {
 }
 
 function ComparisonCTAInner({ compact }: { compact: boolean }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
 
+  // Signed-out is the default branch so the CTA is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
   if (compact) {
     return (
       <div className="neo-card neo-card-static bg-card mb-10 flex flex-col sm:flex-row sm:items-center gap-4">
         <p className="font-bold shrink-0">Try it yourself</p>
-        {isLoading ? (
-          <div className="h-10" />
-        ) : isAuthenticated ? (
+        {isAuthenticated ? (
           <Link href="/dashboard" className="neo-btn-primary text-sm">
             Go to Dashboard
             <ArrowRight className="inline-block ml-1.5 h-4 w-4" />
@@ -56,9 +59,7 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
         Sign up with one click. No credit card, no setup wizard, no trial limits on core features.
       </p>
 
-      {isLoading ? (
-        <div className="h-12" />
-      ) : isAuthenticated ? (
+      {isAuthenticated ? (
         <Link href="/dashboard" className="neo-btn-primary">
           Go to Dashboard
           <ArrowRight className="inline-block ml-2 h-5 w-5" />

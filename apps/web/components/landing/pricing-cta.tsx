@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useIsAuthenticated,
+} from "@/components/providers/supabase-auth-provider";
 import { ArrowRight } from "lucide-react";
 
 export function PricingCTA() {
@@ -14,10 +17,10 @@ export function PricingCTA() {
 }
 
 function PricingCTAInner() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
 
-  if (isLoading) return <div className="h-10" />;
-
+  // Signed-out is the default branch so the CTA is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
   if (isAuthenticated) {
     return (
       <Link href="/dashboard" className="neo-btn-primary w-full text-center block">

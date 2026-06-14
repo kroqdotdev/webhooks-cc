@@ -8,7 +8,7 @@ export const DEFAULT_PAGE_DESCRIPTION =
   "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test in CI with the TypeScript SDK, and automate workflows with the MCP server.";
 export const DEFAULT_OG_IMAGE_PATH = "/og-image.jpg";
 
-export const LAST_CONTENT_UPDATE = new Date("2026-03-30T00:00:00.000Z");
+export const LAST_CONTENT_UPDATE = new Date("2026-06-12T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;
@@ -20,6 +20,8 @@ export interface SitemapPageDefinition {
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/go", changeFrequency: "weekly", priority: 0.9 },
+  // Individual /webhooks/[provider] pages are appended in sitemaps/pages.xml
+  { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
   // Docs pages are auto-generated from content/docs/ in sitemaps/docs.xml
   { path: "/compare", changeFrequency: "monthly", priority: 0.7 },
   { path: "/compare/webhook-site", changeFrequency: "monthly", priority: 0.6 },

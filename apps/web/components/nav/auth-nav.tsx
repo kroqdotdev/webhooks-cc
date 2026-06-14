@@ -4,7 +4,10 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useIsAuthenticated,
+} from "@/components/providers/supabase-auth-provider";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const NAV_LINKS = [
@@ -22,7 +25,7 @@ export function AuthNav() {
 }
 
 function AuthNavContent() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -31,9 +34,9 @@ function AuthNavContent() {
 
   const filteredLinks = NAV_LINKS.filter((link) => pathname !== link.href);
 
-  const authButton = isLoading ? (
-    <span className="neo-btn-outline text-sm py-2 px-4 w-28 text-center opacity-50">...</span>
-  ) : isAuthenticated ? (
+  // Sign In is the default branch so a real link is part of the prerendered
+  // HTML; authenticated visitors see it swap to the dashboard link.
+  const authButton = isAuthenticated ? (
     <Link
       href="/dashboard"
       className="neo-btn-primary text-sm py-2 px-4 w-28 text-center"
