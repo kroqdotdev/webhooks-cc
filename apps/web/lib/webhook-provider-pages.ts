@@ -1,5 +1,5 @@
 import { TEMPLATE_METADATA, TEMPLATE_PROVIDERS, type TemplateProvider } from "@webhooks-cc/sdk";
-import { getWebProviderInfo } from "./provider-catalog";
+import { getWebProviderCredentialLabel, getWebProviderInfo } from "./provider-catalog";
 
 export type WebhookProviderCategory =
   | "Payments & billing"
@@ -230,6 +230,8 @@ export interface WebhookProviderPage {
   secretRequired: boolean;
   /** Whether the dashboard/SDK can verify inbound signatures for this provider. */
   verifySupported: boolean;
+  /** Human label for the credential users add to verify (e.g. "Signing Secret", "Public Key"). */
+  credentialLabel: string;
 }
 
 export const WEBHOOK_PROVIDER_SLUGS: readonly TemplateProvider[] = TEMPLATE_PROVIDERS;
@@ -255,7 +257,20 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
   const meta = TEMPLATE_METADATA[provider];
   const editorial = PROVIDER_EDITORIAL[provider];
   const info = getWebProviderInfo(provider);
-  const algorithm = "signatureAlgorithm" in meta ? meta.signatureAlgorithm : null;
+  const sdkAlgorithm = "signatureAlgorithm" in meta ? meta.signatureAlgorithm : null;
+  const sdkHeader = "signatureHeader" in meta ? (meta.signatureHeader ?? null) : null;
+
+  // The web provider catalog carries hand-tuned overrides the raw SDK template
+  // metadata lacks — e.g. Discord verifies with the x-signature-ed25519 header
+  // using Ed25519, neither of which is in its SDK template. Prefer the catalog
+  // so this page never contradicts the catalog the dashboard verifies against.
+  const catalogHeader = info?.header ? info.header : null;
+  const catalogAlgorithm =
+    info?.algorithm && info.algorithm !== "Not applicable" ? info.algorithm : null;
+  const signatureHeader = catalogHeader ?? sdkHeader;
+  const signatureAlgorithmLabel = sdkAlgorithm
+    ? (ALGORITHM_LABELS[sdkAlgorithm] ?? sdkAlgorithm)
+    : catalogAlgorithm;
 
   return {
     slug: provider,
@@ -265,11 +280,12 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     category: editorial.category,
     templates: meta.templates,
     defaultTemplate: "defaultTemplate" in meta ? meta.defaultTemplate : null,
-    signatureHeader: "signatureHeader" in meta ? (meta.signatureHeader ?? null) : null,
-    signatureAlgorithm: algorithm ?? null,
-    signatureAlgorithmLabel: algorithm ? (ALGORITHM_LABELS[algorithm] ?? algorithm) : null,
+    signatureHeader,
+    signatureAlgorithm: sdkAlgorithm ?? null,
+    signatureAlgorithmLabel,
     secretRequired: meta.secretRequired,
     verifySupported: info?.verificationMode === "secret" || info?.verificationMode === "publicKey",
+    credentialLabel: getWebProviderCredentialLabel(provider),
   };
 }
 

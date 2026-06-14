@@ -70,7 +70,7 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
   if (page.signatureHeader) {
     items.push({
       question: `How do I verify ${page.label} webhook signatures?`,
-      answer: `${page.label} signs each delivery with the ${page.signatureHeader} header using ${page.signatureAlgorithmLabel ?? page.signatureAlgorithm}. ${page.verifySupported ? `webhooks.cc verifies these signatures for you: add your signing secret to the endpoint and every captured request is marked valid or invalid in the dashboard.` : `Capture a real delivery on webhooks.cc to inspect the exact header value, then implement verification in your handler.`}`,
+      answer: `${page.label} signs each delivery with the ${page.signatureHeader} header using ${page.signatureAlgorithmLabel ?? page.signatureAlgorithm}. ${page.verifySupported ? `webhooks.cc verifies these signatures for you: add your ${page.credentialLabel.toLowerCase()} to the endpoint and every captured request is marked valid or invalid in the dashboard.` : `Capture a real delivery on webhooks.cc to inspect the exact header value, then implement verification in your handler.`}`,
     });
   }
 
@@ -217,7 +217,8 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                     {page.verifySupported ? (
                       <span className="inline-flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-primary" />
-                        Supported — add your secret and every request is checked automatically
+                        Supported — add your {page.credentialLabel.toLowerCase()} and every request
+                        is checked automatically
                       </span>
                     ) : (
                       "Capture deliveries to inspect raw signature material"

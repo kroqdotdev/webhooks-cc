@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { useIsAuthenticated } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
 import { trackSignInStarted } from "@/lib/analytics";
 
@@ -17,7 +17,7 @@ export function OAuthSignInButtons({
   buttonClassName?: string;
   layout?: "vertical" | "horizontal";
 }) {
-  const { isAuthenticated } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
 

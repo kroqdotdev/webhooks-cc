@@ -80,3 +80,17 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 export function useAuth(): AuthContextValue {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
+
+/**
+ * Boolean-only selector for consumers that just need isAuthenticated — e.g. the
+ * marketing CTAs mounted several-per-page. The snapshot is a primitive, so
+ * useSyncExternalStore skips re-rendering on auth events that don't flip the
+ * boolean (token refresh, focus-triggered revalidation).
+ */
+export function useIsAuthenticated(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => authState.isAuthenticated,
+    () => false
+  );
+}

@@ -4,7 +4,10 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { trackCTAClick } from "@/lib/analytics";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useIsAuthenticated,
+} from "@/components/providers/supabase-auth-provider";
 
 interface StartFreeCTAProps {
   align?: "start" | "center";
@@ -26,7 +29,7 @@ function StartFreeCTAInner({
   size = "md",
   goCta = "try without an account",
 }: StartFreeCTAProps) {
-  const { isAuthenticated } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
   const alignClass = align === "center" ? "items-center text-center" : "items-start";
   // bg/text utilities repeated after neo-btn-primary so they survive the Button
   // outline variant's bg-background (utilities beat the components-layer class).

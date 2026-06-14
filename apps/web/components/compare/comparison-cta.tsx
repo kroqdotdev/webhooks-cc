@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useIsAuthenticated,
+} from "@/components/providers/supabase-auth-provider";
 
 export function ComparisonCTA({ compact = false }: { compact?: boolean }) {
   return (
@@ -14,7 +17,7 @@ export function ComparisonCTA({ compact = false }: { compact?: boolean }) {
 }
 
 function ComparisonCTAInner({ compact }: { compact: boolean }) {
-  const { isAuthenticated } = useAuth();
+  const isAuthenticated = useIsAuthenticated();
 
   // Signed-out is the default branch so the CTA is part of the prerendered
   // HTML; authenticated visitors see it swap to the dashboard link.
