@@ -116,7 +116,7 @@ let claimUserId: string;
 let claimUserAccessToken: string;
 
 // ID-JAG signing material.
-let idJagPrivateKey: jose.KeyLike;
+let idJagPrivateKey: CryptoKey;
 let idJagKid: string;
 
 /** Mint an ID-JAG (or arbitrary-typ) JWT signed by the test provider key. */
