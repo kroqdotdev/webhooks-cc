@@ -28,7 +28,7 @@
     "jose": "^6.2.3",
     "nanoid": "^5.1.15",
     "pagefind": "^1.5.2",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.1",
     "tsx": "^4.22.4",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
