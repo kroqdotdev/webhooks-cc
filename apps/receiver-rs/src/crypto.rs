@@ -48,10 +48,11 @@ pub fn decrypt_secret(encrypted: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, Crypt
     let ciphertext_and_tag = &encrypted[NONCE_SIZE..];
 
     let cipher = Aes256Gcm::new_from_slice(key).expect("key is always 32 bytes");
-    let nonce = Nonce::<Aes256Gcm>::from_slice(nonce_bytes);
+    let nonce =
+        Nonce::<Aes256Gcm>::try_from(nonce_bytes).map_err(|_| CryptoError::DecryptionFailed)?;
 
     cipher
-        .decrypt(nonce, ciphertext_and_tag)
+        .decrypt(&nonce, ciphertext_and_tag)
         .map_err(|_| CryptoError::DecryptionFailed)
 }
 

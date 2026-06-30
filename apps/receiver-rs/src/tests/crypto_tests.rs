@@ -1,12 +1,11 @@
 use super::*;
-use aes_gcm::aead::Aead;
-use aes_gcm::aead::OsRng;
-use aes_gcm::{AeadCore, Aes256Gcm, KeyInit};
+use aes_gcm::aead::{Aead, Generate, Nonce};
+use aes_gcm::{Aes256Gcm, KeyInit};
 
 /// Helper: encrypt with AES-256-GCM (mirrors Node.js encryption in web app).
 fn encrypt(plaintext: &[u8], key: &[u8; 32]) -> Vec<u8> {
     let cipher = Aes256Gcm::new_from_slice(key).unwrap();
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::<Aes256Gcm>::generate();
     let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
     let mut out = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
     out.extend_from_slice(&nonce);
