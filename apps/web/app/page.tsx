@@ -22,7 +22,7 @@ import { createClient } from "@supabase/supabase-js";
 export const revalidate = 600; // re-render landing page every 10 min to pick up fresh site_stats
 
 export const metadata = createPageMetadata({
-  title: "Webhook Testing Platform — Instant Webhook URL, CLI, SDK & MCP",
+  title: "Webhook Testing Platform — Instant URL, CLI, SDK & MCP",
   description:
     "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then one click with GitHub or Google unlocks the free plan: 50 requests/day, CLI, SDK & MCP.",
   path: "/",

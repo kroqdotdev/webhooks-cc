@@ -32,7 +32,10 @@ const DEMO_PROVIDER_SECRET = "mock_webhook_secret";
 const EXPIRY_MS = 12 * 60 * 60 * 1000;
 const COPY_FEEDBACK_MS = 2000;
 const SEND_FEEDBACK_MS = 3000;
-const SYNC_INTERVAL_MS = 2000;
+const BACKGROUND_SYNC_INTERVAL_MS = 2000;
+const REQUEST_SYNC_INTERVAL_MS = 250;
+const WATCHDOG_WAITING_MS = 3000;
+const WATCHDOG_IDLE_MS = 10_000;
 
 const RequestList = dynamic(
   () => import("@/components/dashboard/request-list").then((module) => module.RequestList),
@@ -109,6 +112,13 @@ function LandingDashboardInner() {
     return () => clearTimeout(searchDebounceRef.current);
   }, [searchInput]);
 
+  // Gates auto-create to one attempt per arming; clearDemoEndpoint re-arms it so a
+  // vanished endpoint self-heals with a fresh one on the next human signal.
+  const autoCreateAttempted = useRef(false);
+  // Allow only one silent self-heal per mount — a persistent create/read mismatch
+  // must surface the error state instead of looping through the create API.
+  const selfHealAttempted = useRef(false);
+
   const clearDemoEndpoint = useCallback((nextError: string | null = null) => {
     setEndpointSlug(null);
     setEndpoint(null);
@@ -123,27 +133,40 @@ function LandingDashboardInner() {
     setDebouncedSearch("");
     setCreateError(nextError);
     prevRequestCount.current = 0;
+    autoCreateAttempted.current = false;
     if (typeof window !== "undefined") {
       localStorage.removeItem(DEMO_ENDPOINT_STORAGE_KEY);
     }
   }, []);
 
-  const refreshEndpoint = useCallback(async (slug: string) => {
-    try {
-      const next = await fetchGuestDashboardEndpoint(slug);
-      if (!next) return;
-      setEndpoint(next);
-      if (next.expiresAt) {
-        setExpiresAt(next.expiresAt);
-        localStorage.setItem(
-          DEMO_ENDPOINT_STORAGE_KEY,
-          JSON.stringify({ slug: next.slug, expiresAt: next.expiresAt })
-        );
+  const refreshEndpoint = useCallback(
+    async (slug: string) => {
+      try {
+        const next = await fetchGuestDashboardEndpoint(slug);
+        if (!next) {
+          // The endpoint vanished server-side (expired or cleaned up).
+          if (selfHealAttempted.current) {
+            clearDemoEndpoint("Your test endpoint expired. Create a new one.");
+          } else {
+            selfHealAttempted.current = true;
+            clearDemoEndpoint();
+          }
+          return;
+        }
+        setEndpoint(next);
+        if (next.expiresAt) {
+          setExpiresAt(next.expiresAt);
+          localStorage.setItem(
+            DEMO_ENDPOINT_STORAGE_KEY,
+            JSON.stringify({ slug: next.slug, expiresAt: next.expiresAt })
+          );
+        }
+      } catch (error) {
+        console.error("Failed to load guest endpoint:", error);
       }
-    } catch (error) {
-      console.error("Failed to load guest endpoint:", error);
-    }
-  }, []);
+    },
+    [clearDemoEndpoint]
+  );
 
   const refreshRequests = useCallback(async (slug: string) => {
     try {
@@ -185,7 +208,7 @@ function LandingDashboardInner() {
     }
   }, []);
 
-  // Restore a stored endpoint on mount so refreshes and /go visits share the same URL.
+  // Restore a stored endpoint on mount so refreshes share the same URL.
   useEffect(() => {
     try {
       const stored = parseStoredDemoEndpoint(localStorage.getItem(DEMO_ENDPOINT_STORAGE_KEY));
@@ -193,6 +216,8 @@ function LandingDashboardInner() {
         setEndpointSlug(stored.slug);
         setExpiresAt(stored.expiresAt);
       }
+    } catch {
+      // localStorage can throw in locked-down browsing modes — start fresh.
     } finally {
       setStorageReady(true);
     }
@@ -200,8 +225,6 @@ function LandingDashboardInner() {
 
   // Auto-create a guest endpoint for signed-out visitors — but only after a human
   // input signal, so crawlers rendering the page never consume the ephemeral pool.
-  // The ref gates this to a single attempt — handleCreateEndpoint is stable (useCallback, []).
-  const autoCreateAttempted = useRef(false);
   useEffect(() => {
     if (!storageReady || isLoading || endpointSlug || autoCreateAttempted.current) return;
     if (isAuthenticated || humanSignal !== "human") return;
@@ -234,7 +257,7 @@ function LandingDashboardInner() {
     return () => clearInterval(interval);
   }, [clearDemoEndpoint, expiresAt]);
 
-  // Realtime updates, with a light poll as fallback for anon realtime gaps.
+  // Realtime updates — the primary sync channel.
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
 
@@ -250,18 +273,75 @@ function LandingDashboardInner() {
       void refreshRequests(endpointSlug);
       void refreshEndpoint(endpointSlug);
     });
-    const interval = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void refreshEndpoint(endpointSlug);
-      void refreshRequests(endpointSlug);
-    }, SYNC_INTERVAL_MS);
 
     return () => {
       unsubscribeEndpoint();
       unsubscribeRequests();
-      window.clearInterval(interval);
     };
   }, [clearDemoEndpoint, endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
+
+  // Catch-up poll — only while the endpoint counter says requests exist that we
+  // haven't loaded yet (covers realtime events that arrived before subscription).
+  useEffect(() => {
+    if (!endpoint?.id || !endpointSlug) return;
+    if (endpoint.requestCount === 0 || requests.length >= endpoint.requestCount) return;
+
+    void refreshRequests(endpointSlug);
+    const interval = window.setInterval(() => {
+      void refreshRequests(endpointSlug);
+    }, REQUEST_SYNC_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [endpoint?.id, endpoint?.requestCount, endpointSlug, requests.length, refreshRequests]);
+
+  // Refresh when the tab regains focus or visibility.
+  useEffect(() => {
+    if (!endpoint?.id || !endpointSlug) return;
+
+    const onFocus = () => {
+      void refreshEndpoint(endpointSlug);
+      void refreshRequests(endpointSlug);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
+
+  // Fallback sync while blurred — browsers deprioritize realtime delivery for
+  // background tabs.
+  useEffect(() => {
+    if (!endpoint?.id || !endpointSlug) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible" && document.hasFocus()) return;
+      void refreshEndpoint(endpointSlug);
+      void refreshRequests(endpointSlug);
+    }, BACKGROUND_SYNC_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
+
+  // Focused watchdog — realtime is the primary channel, but if it silently drops
+  // (network proxies, degraded service) a focused tab must not look dead. A single
+  // cheap endpoint-row read updates the request counter, which arms the catch-up
+  // poll above. Fast while waiting for the first request, slow once requests exist.
+  const hasLoadedRequests = requests.length > 0;
+  useEffect(() => {
+    if (!endpoint?.id || !endpointSlug) return;
+
+    const interval = window.setInterval(
+      () => {
+        if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+        void refreshEndpoint(endpointSlug);
+      },
+      hasLoadedRequests ? WATCHDOG_IDLE_MS : WATCHDOG_WAITING_MS
+    );
+    return () => window.clearInterval(interval);
+  }, [endpoint?.id, endpointSlug, hasLoadedRequests, refreshEndpoint]);
 
   // Live mode: select newly arrived requests automatically, or count them.
   useEffect(() => {
