@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
-import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users } from "lucide-react";
-import { GitHubCard } from "@/components/landing/github-card";
+import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users, Star } from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
-import { LivePreview } from "@/components/landing/live-preview";
+import { InstantUrlHero } from "@/components/landing/instant-url-hero";
 import { TeamsVideo } from "@/components/landing/teams-video";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
@@ -24,7 +23,7 @@ export const revalidate = 600; // re-render landing page every 10 min to pick up
 export const metadata = createPageMetadata({
   title: "Webhook Testing Platform: CLI, SDK & MCP",
   description:
-    "Capture and inspect webhooks in real time. Send signed provider test webhooks, forward to localhost with the CLI, test in CI with the SDK, and debug faster with MCP.",
+    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, send signed provider tests, forward to localhost with the CLI, and test in CI with the SDK.",
   path: "/",
 });
 
@@ -158,63 +157,66 @@ export default async function Home() {
         </div>
       </FloatingNavbar>
 
-      {/* Hero */}
-      <section className="pt-32 pb-20 px-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
-            <div className="max-w-3xl">
-              <div className="inline-block neo-btn-secondary text-sm py-1 px-3 mb-6">
-                Free forever &middot; No credit card
-              </div>
-              <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.2]">
-                The fastest way to <br className="hidden md:block" />
-                <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
-              </h1>
-              <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-                Get a URL, point any service at it, and watch every request arrive live. Send signed
-                Stripe or GitHub samples, forward to localhost, assert in CI — or let your AI agent
-                do it over MCP.
-              </p>
-              <StartFreeCTA size="lg" goCta="grab a URL without an account" />
-
-              {/* Social proof — near the CTA for maximum impact */}
-              {stats && (
-                <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                  {stats.total_users > 0 ? (
-                    <span className="font-semibold">
-                      <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
-                      developers
-                    </span>
-                  ) : null}
-                  {stats.total_endpoints > 0 ? (
-                    <span className="font-semibold">
-                      <span className="text-foreground">
-                        {stats.total_endpoints.toLocaleString()}
-                      </span>{" "}
-                      endpoints created
-                    </span>
-                  ) : null}
-                  {stats.total_webhooks > 0 ? (
-                    <span className="font-semibold">
-                      <span className="text-foreground">
-                        {stats.total_webhooks.toLocaleString()}
-                      </span>{" "}
-                      webhooks captured
-                    </span>
-                  ) : null}
-                  <span className="font-semibold">Open source</span>
-                </div>
-              )}
+      {/* Hero — the live tool front and center, webhook.site style */}
+      <section className="pt-32 pb-16 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <div className="inline-block neo-btn-secondary text-sm py-1 px-3 mb-6">
+              Free forever &middot; No credit card &middot; No signup needed
             </div>
-
-            {/* GitHub — hidden on mobile to keep CTA above the fold */}
-            <div className="hidden lg:block">
-              <GitHubCard stars={stars} />
-            </div>
+            <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-5 leading-[1.15]">
+              The fastest way to{" "}
+              <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
+            </h1>
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+              Your free webhook URL is already live below. Point any service at it and watch every
+              request arrive in real time — then sign up free to keep it.
+            </p>
           </div>
 
-          {/* Live preview */}
-          <LivePreview />
+          {/* The tool IS the hero: a real endpoint, created on page load */}
+          <InstantUrlHero />
+
+          <div className="mt-8 flex justify-center">
+            <StartFreeCTA size="md" align="center" goCta={null} />
+          </div>
+
+          {/* Social proof */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+            {stats && stats.total_users > 0 ? (
+              <span className="font-semibold">
+                <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
+                developers
+              </span>
+            ) : null}
+            {stats && stats.total_endpoints > 0 ? (
+              <span className="font-semibold">
+                <span className="text-foreground">{stats.total_endpoints.toLocaleString()}</span>{" "}
+                endpoints created
+              </span>
+            ) : null}
+            {stats && stats.total_webhooks > 0 ? (
+              <span className="font-semibold">
+                <span className="text-foreground">{stats.total_webhooks.toLocaleString()}</span>{" "}
+                webhooks captured
+              </span>
+            ) : null}
+            <a
+              href="https://github.com/kroqdotdev/webhooks-cc"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold hover:text-foreground"
+            >
+              Open source
+              {typeof stars === "number" ? (
+                <>
+                  {" "}
+                  &middot; <Star className="inline-block h-3.5 w-3.5 -mt-0.5" />{" "}
+                  <span className="text-foreground">{stars.toLocaleString()}</span> on GitHub
+                </>
+              ) : null}
+            </a>
+          </div>
         </div>
       </section>
 
@@ -228,7 +230,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "Sign in free with GitHub or Google and create an endpoint in one click — or grab a guest URL without an account.",
+                  "You already have one — it went live the moment you opened this page. Sign up free to make it permanent.",
               },
               {
                 step: "2",
