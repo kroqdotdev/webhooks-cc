@@ -736,10 +736,11 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
   );
 }
 
-/** Full-bleed dashboard shell — fills the hero viewport like a real app screen. */
+/** Full-bleed dashboard shell — fills the hero viewport like a real app screen.
+ *  Top edge is provided by the title strip above it. */
 function DashboardFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full border-t-2 border-b-2 border-foreground bg-background flex flex-col overflow-hidden">
+    <div className="h-full border-b-2 border-foreground bg-background flex flex-col overflow-hidden">
       {children}
     </div>
   );

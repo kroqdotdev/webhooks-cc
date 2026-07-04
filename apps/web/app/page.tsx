@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FloatingNavbar } from "@/components/nav/floating-navbar";
+import { AuthNav } from "@/components/nav/auth-nav";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users, Star } from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
@@ -141,37 +141,50 @@ export default async function Home() {
       <JsonLd data={faqSchema(LANDING_FAQ)} />
       <JsonLd data={videoObjectSchema()} />
 
-      {/* Navigation */}
-      <FloatingNavbar>
-        {/* AuthNav already renders Docs/Blog/Install — only add what it lacks */}
-        <div className="hidden md:flex items-center gap-4 text-sm font-bold">
-          <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
-            Providers
-          </Link>
-          <Link href="/compare" className="text-muted-foreground hover:text-foreground">
-            Compare
-          </Link>
-          <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
-            Pricing
-          </Link>
+      {/* Navigation — solid app header, same chrome as the real dashboard */}
+      <header className="border-b-2 border-foreground bg-background sticky top-0 z-50 relative">
+        <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
+              webhooks.cc
+            </Link>
+            {/* AuthNav already renders Docs/Blog/Install — only add what it lacks */}
+            <div className="hidden lg:flex items-center gap-4 text-sm font-bold">
+              <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
+                Providers
+              </Link>
+              <Link href="/compare" className="text-muted-foreground hover:text-foreground">
+                Compare
+              </Link>
+              <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
+                Pricing
+              </Link>
+            </div>
+          </div>
+          <AuthNav />
         </div>
-      </FloatingNavbar>
+      </header>
 
       {/* Hero — the landing screen IS the dashboard, webhook.site style */}
-      <section className="min-h-svh flex flex-col pt-28 md:pt-32">
-        <div className="px-4 pb-6 text-center">
-          <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
+      <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
+        {/* Title strip inside the app chrome — the page's H1 lives here */}
+        <div className="shrink-0 border-b-2 border-foreground bg-muted px-4 py-2 text-center">
+          <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
             The fastest way to{" "}
-            <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
+            <span className="bg-primary text-primary-foreground px-1.5">test webhooks</span>
           </h1>
-          <p className="mt-2 text-sm md:text-base text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
             Your free webhook URL is live below — point any service at it. No signup, no credit
-            card. Sign up free to keep it.
+            card.{" "}
+            <Link href="/login" className="font-bold text-foreground hover:text-primary">
+              Sign up free
+            </Link>{" "}
+            to keep it.
           </p>
         </div>
 
         {/* The dashboard fills the rest of the first viewport: a real endpoint, created on page load */}
-        <div className="flex-1 min-h-[480px]">
+        <div className="flex-1 min-h-[440px]">
           <LandingDashboard />
         </div>
       </section>
