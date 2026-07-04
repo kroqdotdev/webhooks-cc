@@ -27,7 +27,7 @@ export default function NotFound() {
             <Link href="/blog" className="neo-btn px-6 py-3 font-bold">
               Blog
             </Link>
-            <Link href="/go" className="neo-btn px-6 py-3 font-bold">
+            <Link href="/" className="neo-btn px-6 py-3 font-bold">
               Try it free
             </Link>
           </nav>

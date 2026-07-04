@@ -21,7 +21,7 @@ import { useHumanSignal } from "@/lib/use-human-signal";
 import { subscribeToEndpointRow, subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
-import { trackCTAClick, trackGuestEndpointCreated } from "@/lib/analytics";
+import { trackGuestEndpointCreated } from "@/lib/analytics";
 import { ArrowRight, Check, Circle, Copy, Send } from "lucide-react";
 
 const REQUEST_LIMIT = 25;
@@ -552,11 +552,10 @@ function LandingDashboardInner() {
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
           <Link
-            href="/go"
-            onClick={() => trackCTAClick("try_live")}
+            href="/webhooks"
             className="text-sm font-bold hover:text-primary transition-colors"
           >
-            Open full-screen inspector
+            Works with Stripe, GitHub, Shopify &amp; 30+ providers
             <ArrowRight className="inline-block ml-1 h-4 w-4" />
           </Link>
         </div>

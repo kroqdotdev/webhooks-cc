@@ -713,10 +713,7 @@ export default async function Home() {
               <PricingCTA />
             </div>
             <p className="text-sm opacity-80 mt-6">
-              No credit card &middot; or{" "}
-              <Link href="/go" className="font-bold underline hover:no-underline">
-                try without an account
-              </Link>
+              No credit card &middot; or scroll up — your guest URL is already live
             </p>
           </div>
         </div>

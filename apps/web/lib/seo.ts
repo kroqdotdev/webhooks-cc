@@ -19,7 +19,7 @@ export interface SitemapPageDefinition {
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
-  { path: "/go", changeFrequency: "weekly", priority: 0.9 },
+  // /go permanently redirects to / (the landing page is the guest dashboard now)
   // Individual /webhooks/[provider] pages are appended in sitemaps/pages.xml
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
   // Docs pages are auto-generated from content/docs/ in sitemaps/docs.xml

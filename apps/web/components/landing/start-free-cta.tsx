@@ -70,7 +70,7 @@ function StartFreeCTAInner({
         <p className="text-sm text-muted-foreground">
           No credit card &middot; 50 requests/day free &middot; or{" "}
           <Link
-            href="/go"
+            href="/"
             className="text-foreground font-bold hover:text-primary transition-colors"
             onClick={() => trackCTAClick("try_live")}
           >

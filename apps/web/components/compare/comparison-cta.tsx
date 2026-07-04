@@ -40,7 +40,7 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
             <span className="text-sm text-muted-foreground">
               or{" "}
               <Link
-                href="/go"
+                href="/"
                 className="text-foreground font-semibold hover:text-primary transition-colors"
               >
                 try without an account
@@ -74,7 +74,7 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
           <p className="text-sm text-muted-foreground">
             or{" "}
             <Link
-              href="/go"
+              href="/"
               className="text-foreground font-semibold hover:text-primary transition-colors"
             >
               try without an account

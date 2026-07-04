@@ -353,7 +353,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           </div>
           <p className="text-sm opacity-80 mt-6">
             No credit card &middot; or{" "}
-            <Link href="/go" className="font-bold underline hover:no-underline">
+            <Link href="/" className="font-bold underline hover:no-underline">
               try without an account
             </Link>
           </p>
