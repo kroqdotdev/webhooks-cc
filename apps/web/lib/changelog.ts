@@ -15,13 +15,27 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.25.0";
+export const APP_VERSION = "0.26.0";
 export const CLI_VERSION = "1.1.2";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.26.0",
+    date: "2026-07-05",
+    title: "The Landing Page Is Now the Dashboard",
+    track: "web",
+    items: [
+      "Visit webhooks.cc and you're in the inspector: a live guest webhook URL is created the moment you arrive — no signup — with the full request dashboard (live feed, body tree, headers, replay) filling the first screen",
+      "One-click test sends from the empty state: a custom payload or signed Stripe, GitHub, and Shopify templates, plus a copy-able curl command",
+      "One click with GitHub or Google keeps your guest endpoint and unlocks the free plan — messaging now spells this out at every step, including a guest-vs-free comparison",
+      "/go retired: it permanently redirects to the landing page, which now provides the same experience",
+      "Crawler protection: guest endpoints are no longer created for bots (server-side user-agent screen + creation waits for a human input signal)",
+      "SEO: HowTo structured data, new FAQ entries, and an instant-URL page title and description",
+    ],
+  },
   {
     version: "0.25.0",
     date: "2026-06-12",
