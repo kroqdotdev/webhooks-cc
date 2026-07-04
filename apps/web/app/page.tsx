@@ -236,13 +236,11 @@ export default async function Home() {
       <section className="py-16 px-4">
         <div className="max-w-6xl mx-auto flex flex-col items-center gap-8">
           <div className="text-center max-w-2xl">
-            <h2 className="text-3xl md:text-4xl font-bold mb-3">
-              One click keeps your endpoint
-            </h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-3">One click keeps your endpoint</h2>
             <p className="text-lg text-muted-foreground">
-              The URL above is a guest endpoint. Sign in with GitHub or Google — a single click,
-              no email forms, no credit card — and it becomes a permanent free endpoint with
-              everything below.
+              The URL above is a guest endpoint. Sign in with GitHub or Google — a single click, no
+              email forms, no credit card — and it becomes a permanent free endpoint with everything
+              below.
             </p>
           </div>
 
@@ -252,14 +250,16 @@ export default async function Home() {
                 Guest URL — what you have now
               </p>
               <ul className="space-y-2 text-sm">
-                {["25 requests total", "Expires after 12 hours", "One endpoint, this browser only"].map(
-                  (item) => (
-                    <li key={item} className="flex items-center gap-2 text-muted-foreground">
-                      <span className="h-1.5 w-1.5 bg-muted-foreground shrink-0" aria-hidden />
-                      {item}
-                    </li>
-                  )
-                )}
+                {[
+                  "25 requests total",
+                  "Expires after 12 hours",
+                  "One endpoint, this browser only",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-muted-foreground">
+                    <span className="h-1.5 w-1.5 bg-muted-foreground shrink-0" aria-hidden />
+                    {item}
+                  </li>
+                ))}
               </ul>
             </div>
 

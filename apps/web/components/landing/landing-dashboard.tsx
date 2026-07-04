@@ -383,19 +383,17 @@ function LandingDashboardInner() {
         r._id.toLowerCase().includes(q)
       );
     };
-    return requests.filter(matchesFilters).map(
-      (r): RequestSummary => ({
-        _id: r._id,
-        _creationTime: r._creationTime,
-        method: r.method,
-        path: r.path,
-        contentType: r.contentType,
-        size: r.size,
-        receivedAt: r.receivedAt,
-        detectedProvider: r.detectedProvider,
-        detectedEvent: r.detectedEvent,
-      })
-    );
+    return requests.filter(matchesFilters).map((r): RequestSummary => ({
+      _id: r._id,
+      _creationTime: r._creationTime,
+      method: r.method,
+      path: r.path,
+      contentType: r.contentType,
+      size: r.size,
+      receivedAt: r.receivedAt,
+      detectedProvider: r.detectedProvider,
+      detectedEvent: r.detectedEvent,
+    }));
   }, [requests, methodFilter, debouncedSearch]);
 
   const displayDetail = useMemo(
@@ -631,10 +629,7 @@ function LandingDashboardInner() {
           <p className="text-xs text-muted-foreground font-bold">
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
-          <Link
-            href="/webhooks"
-            className="text-sm font-bold hover:text-primary transition-colors"
-          >
+          <Link href="/webhooks" className="text-sm font-bold hover:text-primary transition-colors">
             Works with Stripe, GitHub, Shopify &amp; 30+ providers
             <ArrowRight className="inline-block ml-1 h-4 w-4" />
           </Link>
