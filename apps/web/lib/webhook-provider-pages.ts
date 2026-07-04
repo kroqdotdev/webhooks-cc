@@ -2,11 +2,7 @@ import { TEMPLATE_METADATA, TEMPLATE_PROVIDERS, type TemplateProvider } from "@w
 import { getWebProviderCredentialLabel, getWebProviderInfo } from "./provider-catalog";
 
 export type WebhookProviderCategory =
-  | "Payments & billing"
-  | "Dev & deploy"
-  | "Communication"
-  | "Commerce & SaaS"
-  | "Identity & data";
+  "Payments & billing" | "Dev & deploy" | "Communication" | "Commerce & SaaS" | "Identity & data";
 
 interface ProviderEditorial {
   /** What this provider's webhooks notify you about — one factual sentence. */

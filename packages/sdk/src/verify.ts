@@ -16,8 +16,7 @@ import {
 } from "./templates";
 
 type VerifyableRequest =
-  | Pick<CapturedRequest, "body" | "headers">
-  | Pick<SearchResult, "body" | "headers">;
+  Pick<CapturedRequest, "body" | "headers"> | Pick<SearchResult, "body" | "headers">;
 
 type PayPalSignatureOptions = {
   fetchCertificate?: (url: string) => Promise<string>;

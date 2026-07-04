@@ -122,8 +122,7 @@ export type AuthResult =
  * user because session-token validation never yields an unowned key.
  */
 export type SessionAuthResult =
-  | { success: true; userId: string }
-  | { success: false; response: Response };
+  { success: true; userId: string } | { success: false; response: Response };
 
 export async function authenticateRequest(request: Request): Promise<AuthResult> {
   const token = extractBearerToken(request);

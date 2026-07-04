@@ -624,21 +624,19 @@ export default function DashboardPage() {
 
   const displayedItems = useMemo((): AnyRequestSummary[] => {
     if (debouncedSearch) {
-      return searchResults.map(
-        (r): ClickHouseSummary => ({
-          id: r.id,
-          method: r.method,
-          path: r.path,
-          contentType: r.contentType,
-          size: r.size,
-          receivedAt: r.receivedAt,
-          signatureVerified: r.signatureVerified,
-          signatureError: r.signatureError,
-          signingProvider: r.signingProvider,
-          detectedProvider: r.detectedProvider,
-          detectedEvent: r.detectedEvent,
-        })
-      );
+      return searchResults.map((r): ClickHouseSummary => ({
+        id: r.id,
+        method: r.method,
+        path: r.path,
+        contentType: r.contentType,
+        size: r.size,
+        receivedAt: r.receivedAt,
+        signatureVerified: r.signatureVerified,
+        signatureError: r.signatureError,
+        signingProvider: r.signingProvider,
+        detectedProvider: r.detectedProvider,
+        detectedEvent: r.detectedEvent,
+      }));
     }
 
     const recentSummaries: AnyRequestSummary[] = recentRequests

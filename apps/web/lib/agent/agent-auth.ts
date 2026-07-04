@@ -695,8 +695,7 @@ export interface IdJagCredential {
 }
 
 export type IssueIdJagResult =
-  | { ok: true; value: IdJagCredential }
-  | { ok: false; error: "too_many_keys" };
+  { ok: true; value: IdJagCredential } | { ok: false; error: "too_many_keys" };
 
 /**
  * Issue a credential for a verified ID-JAG assertion. Matches an existing user

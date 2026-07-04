@@ -33,8 +33,7 @@ interface FlowClient {
 }
 
 type FlowSendStep =
-  | { kind: "send"; options: SendOptions }
-  | { kind: "sendTemplate"; options: SendTemplateOptions };
+  { kind: "send"; options: SendOptions } | { kind: "sendTemplate"; options: SendTemplateOptions };
 
 export type WebhookFlowVerifyOptions =
   | {
