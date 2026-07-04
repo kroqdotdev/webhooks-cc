@@ -20,6 +20,7 @@ import {
   type GuestEndpointRecord,
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
+import { useHumanSignal } from "@/lib/use-human-signal";
 import { subscribeToEndpointRow, subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
@@ -99,6 +100,7 @@ export function GuestLiveDashboard() {
 
 function GuestLiveDashboardInner() {
   const { isAuthenticated, isLoading } = useAuth();
+  const humanSignal = useHumanSignal();
   const router = useRouter();
 
   useEffect(() => {
@@ -479,7 +481,8 @@ function GuestLiveDashboardInner() {
       const rawMessage = error instanceof Error ? error.message : "";
       if (
         rawMessage.includes("Too many requests") ||
-        rawMessage.includes("Too many active demo endpoints")
+        rawMessage.includes("Too many active demo endpoints") ||
+        rawMessage.includes("automated clients")
       ) {
         setCreateError(rawMessage);
       } else {
@@ -490,15 +493,16 @@ function GuestLiveDashboardInner() {
     }
   }, []);
 
-  // Auto-create endpoint when visiting /go with no stored endpoint.
+  // Auto-create endpoint when visiting /go with no stored endpoint — but only after
+  // a human input signal, so crawlers rendering the page never consume the ephemeral pool.
   // The ref gates this to a single attempt — handleCreateEndpoint is stable (useCallback, []).
   const autoCreateAttempted = useRef(false);
   useEffect(() => {
     if (!storageReady || endpointSlug || autoCreateAttempted.current) return;
-    if (isAuthenticated) return;
+    if (isAuthenticated || humanSignal !== "human") return;
     autoCreateAttempted.current = true;
     void handleCreateEndpoint();
-  }, [storageReady, endpointSlug, isAuthenticated, handleCreateEndpoint]);
+  }, [storageReady, endpointSlug, isAuthenticated, humanSignal, handleCreateEndpoint]);
 
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
@@ -564,6 +568,25 @@ function GuestLiveDashboardInner() {
                   Sign in instead
                 </Link>
               </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Automated browsers never emit a human signal — offer a manual create instead.
+    if (humanSignal === "automated" && !isCreating) {
+      return (
+        <div className="h-screen flex flex-col overflow-hidden">
+          <GoHeader isAuthenticated={isAuthenticated} isLoading={isLoading} />
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="neo-card neo-card-static max-w-md w-full text-center space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Guest endpoints are created on demand in automated sessions.
+              </p>
+              <button onClick={handleRetryCreate} className="neo-btn-primary">
+                Create test endpoint
+              </button>
             </div>
           </div>
         </div>

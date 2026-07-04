@@ -17,6 +17,7 @@ import {
   type GuestEndpointRecord,
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
+import { useHumanSignal } from "@/lib/use-human-signal";
 import { subscribeToEndpointRow, subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
@@ -75,6 +76,7 @@ export function LandingDashboard() {
 
 function LandingDashboardInner() {
   const { isAuthenticated, isLoading } = useAuth();
+  const humanSignal = useHumanSignal();
 
   const [endpointSlug, setEndpointSlug] = useState<string | null>(null);
   const [endpoint, setEndpoint] = useState<GuestEndpointRecord | null>(null);
@@ -171,7 +173,8 @@ function LandingDashboardInner() {
       const rawMessage = error instanceof Error ? error.message : "";
       if (
         rawMessage.includes("Too many requests") ||
-        rawMessage.includes("Too many active demo endpoints")
+        rawMessage.includes("Too many active demo endpoints") ||
+        rawMessage.includes("automated clients")
       ) {
         setCreateError(rawMessage);
       } else {
@@ -195,15 +198,16 @@ function LandingDashboardInner() {
     }
   }, []);
 
-  // Auto-create a guest endpoint the moment a signed-out visitor lands.
+  // Auto-create a guest endpoint for signed-out visitors — but only after a human
+  // input signal, so crawlers rendering the page never consume the ephemeral pool.
   // The ref gates this to a single attempt — handleCreateEndpoint is stable (useCallback, []).
   const autoCreateAttempted = useRef(false);
   useEffect(() => {
     if (!storageReady || isLoading || endpointSlug || autoCreateAttempted.current) return;
-    if (isAuthenticated) return;
+    if (isAuthenticated || humanSignal !== "human") return;
     autoCreateAttempted.current = true;
     void handleCreateEndpoint();
-  }, [storageReady, isLoading, endpointSlug, isAuthenticated, handleCreateEndpoint]);
+  }, [storageReady, isLoading, endpointSlug, isAuthenticated, humanSignal, handleCreateEndpoint]);
 
   useEffect(() => {
     if (!endpointSlug) return;
@@ -379,6 +383,22 @@ function LandingDashboardInner() {
   }
 
   if (!endpointUrl) {
+    // Automated browsers never emit a human signal — offer a manual create instead.
+    if (humanSignal === "automated" && !isCreating) {
+      return (
+        <DashboardFrame>
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+            <p className="text-sm text-muted-foreground max-w-sm">
+              Guest endpoints are created on demand in automated sessions.
+            </p>
+            <button onClick={() => void handleCreateEndpoint()} className="neo-btn-primary">
+              Get your webhook URL
+            </button>
+          </div>
+        </DashboardFrame>
+      );
+    }
+
     return (
       <DashboardFrame>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
