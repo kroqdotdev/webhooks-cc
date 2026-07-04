@@ -8,7 +8,7 @@ export const DEFAULT_PAGE_DESCRIPTION =
   "Capture and inspect webhooks in real time. Forward to localhost with the CLI, test in CI with the TypeScript SDK, and automate workflows with the MCP server.";
 export const DEFAULT_OG_IMAGE_PATH = "/og-image.jpg";
 
-export const LAST_CONTENT_UPDATE = new Date("2026-06-12T00:00:00.000Z");
+export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;

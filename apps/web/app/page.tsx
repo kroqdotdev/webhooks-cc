@@ -13,6 +13,7 @@ import {
   JsonLd,
   softwareApplicationSchema,
   faqSchema,
+  howToSchema,
   videoObjectSchema,
   type FAQItem,
 } from "@/lib/schemas";
@@ -21,10 +22,20 @@ import { createClient } from "@supabase/supabase-js";
 export const revalidate = 600; // re-render landing page every 10 min to pick up fresh site_stats
 
 export const metadata = createPageMetadata({
-  title: "Webhook Testing Platform: CLI, SDK & MCP",
+  title: "Webhook Testing Platform — Instant Webhook URL, CLI, SDK & MCP",
   description:
-    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, send signed provider tests, forward to localhost with the CLI, and test in CI with the SDK.",
+    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then one click with GitHub or Google unlocks the free plan: 50 requests/day, CLI, SDK & MCP.",
   path: "/",
+  keywords: [
+    "webhook testing",
+    "test webhooks online",
+    "instant webhook url",
+    "webhook inspector",
+    "webhook debugger",
+    "capture webhooks",
+    "webhook to localhost",
+    "free webhook testing tool",
+  ],
 });
 
 interface GitHubRepoResponse {
@@ -81,6 +92,16 @@ async function getSiteStats(): Promise<SiteStats | null> {
 }
 
 const LANDING_FAQ: FAQItem[] = [
+  {
+    question: "Do I need an account to test webhooks?",
+    answer:
+      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, one click with GitHub or Google creates a free account: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
+  },
+  {
+    question: "What do I get when I sign up free?",
+    answer:
+      "Everything on the free plan, with one click via GitHub or Google — no email forms, no credit card. You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
+  },
   {
     question: "How do I test webhooks locally?",
     answer:
@@ -139,6 +160,28 @@ export default async function Home() {
     <main className="min-h-screen">
       <JsonLd data={softwareApplicationSchema()} />
       <JsonLd data={faqSchema(LANDING_FAQ)} />
+      <JsonLd
+        data={howToSchema({
+          name: "How to test a webhook in seconds",
+          description:
+            "Get a live webhook URL without an account, point any service at it, and inspect every request in a real-time dashboard.",
+          totalTime: "PT1M",
+          steps: [
+            {
+              name: "Get a URL",
+              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent.",
+            },
+            {
+              name: "Point your service",
+              text: "Configure Stripe, GitHub, or any service to send webhooks to your URL.",
+            },
+            {
+              name: "See what arrives",
+              text: "Headers, body, and query params appear live in the dashboard. Forward to localhost or assert in tests.",
+            },
+          ],
+        })}
+      />
       <JsonLd data={videoObjectSchema()} />
 
       {/* Navigation — solid app header, same chrome as the real dashboard */}
@@ -175,11 +218,11 @@ export default async function Home() {
           </h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
             Your free webhook URL is live below — point any service at it. No signup, no credit
-            card.{" "}
+            card. One click with GitHub or Google{" "}
             <Link href="/login" className="font-bold text-foreground hover:text-primary">
-              Sign up free
-            </Link>{" "}
-            to keep it.
+              keeps it, free
+            </Link>
+            .
           </p>
         </div>
 
@@ -189,9 +232,62 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Sign-up + social proof — first thing below the app screen */}
-      <section className="py-14 px-4">
-        <div className="max-w-6xl mx-auto flex flex-col items-center gap-6">
+      {/* One-click free upgrade — first thing below the app screen */}
+      <section className="py-16 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col items-center gap-8">
+          <div className="text-center max-w-2xl">
+            <h2 className="text-3xl md:text-4xl font-bold mb-3">
+              One click keeps your endpoint
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              The URL above is a guest endpoint. Sign in with GitHub or Google — a single click,
+              no email forms, no credit card — and it becomes a permanent free endpoint with
+              everything below.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
+            <div className="neo-card neo-card-static">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+                Guest URL — what you have now
+              </p>
+              <ul className="space-y-2 text-sm">
+                {["25 requests total", "Expires after 12 hours", "One endpoint, this browser only"].map(
+                  (item) => (
+                    <li key={item} className="flex items-center gap-2 text-muted-foreground">
+                      <span className="h-1.5 w-1.5 bg-muted-foreground shrink-0" aria-hidden />
+                      {item}
+                    </li>
+                  )
+                )}
+              </ul>
+            </div>
+
+            <div className="neo-card neo-card-static border-primary relative">
+              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-2 border-foreground shadow-neo-sm">
+                1 click away
+              </div>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+                Free account — GitHub or Google
+              </p>
+              <ul className="space-y-2 text-sm">
+                {[
+                  "Keep this exact endpoint, forever",
+                  "50 requests/day, unlimited endpoints",
+                  "7-day request history",
+                  "Mock responses & request replay",
+                  "Signed Stripe, GitHub, Shopify test webhooks",
+                  "CLI tunnel, TypeScript SDK & MCP for AI agents",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-primary shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
           <StartFreeCTA size="lg" align="center" goCta={null} />
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
             {stats && stats.total_users > 0 ? (
@@ -241,7 +337,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "You already have one — it went live the moment you opened this page. Sign up free to make it permanent.",
+                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google makes it permanent.",
               },
               {
                 step: "2",
