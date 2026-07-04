@@ -5,7 +5,7 @@ import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users, Star } from "
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
-import { InstantUrlHero } from "@/components/landing/instant-url-hero";
+import { LandingDashboard } from "@/components/landing/landing-dashboard";
 import { TeamsVideo } from "@/components/landing/teams-video";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
@@ -157,32 +157,30 @@ export default async function Home() {
         </div>
       </FloatingNavbar>
 
-      {/* Hero — the live tool front and center, webhook.site style */}
-      <section className="pt-32 pb-16 px-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-10">
-            <div className="inline-block neo-btn-secondary text-sm py-1 px-3 mb-6">
-              Free forever &middot; No credit card &middot; No signup needed
-            </div>
-            <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-5 leading-[1.15]">
-              The fastest way to{" "}
-              <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
-            </h1>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              Your free webhook URL is already live below. Point any service at it and watch every
-              request arrive in real time — then sign up free to keep it.
-            </p>
-          </div>
+      {/* Hero — the landing screen IS the dashboard, webhook.site style */}
+      <section className="min-h-svh flex flex-col pt-28 md:pt-32">
+        <div className="px-4 pb-6 text-center">
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight leading-tight">
+            The fastest way to{" "}
+            <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
+          </h1>
+          <p className="mt-2 text-sm md:text-base text-muted-foreground max-w-2xl mx-auto">
+            Your free webhook URL is live below — point any service at it. No signup, no credit
+            card. Sign up free to keep it.
+          </p>
+        </div>
 
-          {/* The tool IS the hero: a real endpoint, created on page load */}
-          <InstantUrlHero />
+        {/* The dashboard fills the rest of the first viewport: a real endpoint, created on page load */}
+        <div className="flex-1 min-h-[480px]">
+          <LandingDashboard />
+        </div>
+      </section>
 
-          <div className="mt-8 flex justify-center">
-            <StartFreeCTA size="md" align="center" goCta={null} />
-          </div>
-
-          {/* Social proof */}
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+      {/* Sign-up + social proof — first thing below the app screen */}
+      <section className="py-14 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col items-center gap-6">
+          <StartFreeCTA size="lg" align="center" goCta={null} />
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
             {stats && stats.total_users > 0 ? (
               <span className="font-semibold">
                 <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
