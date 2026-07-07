@@ -14,6 +14,7 @@ import {
   fetchGuestDashboardEndpoint,
   fetchGuestDashboardRequests,
   normalizeGuestEndpoint,
+  GuestApiError,
   type GuestEndpointRecord,
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
@@ -133,7 +134,11 @@ function LandingDashboardInner() {
     setDebouncedSearch("");
     setCreateError(nextError);
     prevRequestCount.current = 0;
-    autoCreateAttempted.current = false;
+    // Re-arm auto-create only on the silent path — when an error is being
+    // surfaced, an immediate re-create would clobber it (and could loop).
+    if (nextError === null) {
+      autoCreateAttempted.current = false;
+    }
     if (typeof window !== "undefined") {
       localStorage.removeItem(DEMO_ENDPOINT_STORAGE_KEY);
     }
@@ -177,6 +182,9 @@ function LandingDashboardInner() {
   }, []);
 
   const handleCreateEndpoint = useCallback(async () => {
+    // Mark the attempt for every caller (auto-create effect, manual CTA, retry)
+    // so the click's own trusted pointer event can't trigger a second create.
+    autoCreateAttempted.current = true;
     setIsCreating(true);
     setCreateError(null);
     try {
@@ -194,10 +202,11 @@ function LandingDashboardInner() {
       );
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "";
+      const isAutomatedClient = error instanceof GuestApiError && error.code === "automated_client";
       if (
+        isAutomatedClient ||
         rawMessage.includes("Too many requests") ||
-        rawMessage.includes("Too many active demo endpoints") ||
-        rawMessage.includes("automated clients")
+        rawMessage.includes("Too many active demo endpoints")
       ) {
         setCreateError(rawMessage);
       } else {
@@ -461,13 +470,17 @@ function LandingDashboardInner() {
   }
 
   if (!endpointUrl) {
-    // Automated browsers never emit a human signal — offer a manual create instead.
-    if (humanSignal === "automated" && !isCreating) {
+    // No create in flight and no human signal yet (reader who hasn't interacted,
+    // or an automated browser) — show an honest manual CTA instead of a fake
+    // spinner. Any real gesture still auto-creates for regular visitors.
+    if (!isCreating && humanSignal !== "human") {
       return (
         <DashboardFrame>
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
             <p className="text-sm text-muted-foreground max-w-sm">
-              Guest endpoints are created on demand in automated sessions.
+              {humanSignal === "automated"
+                ? "Guest endpoints are created on demand in automated sessions."
+                : "Your free guest URL is created the moment you interact with the page — or right now:"}
             </p>
             <button onClick={() => void handleCreateEndpoint()} className="neo-btn-primary">
               Get your webhook URL

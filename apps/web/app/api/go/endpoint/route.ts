@@ -12,7 +12,10 @@ export async function POST(request: Request) {
   const userAgent = request.headers.get("user-agent");
   if (!userAgent || isbot(userAgent)) {
     return Response.json(
-      { error: "Guest endpoints aren't created for automated clients. Sign in free instead." },
+      {
+        error: "Guest endpoints aren't created for automated clients. Sign in free instead.",
+        code: "automated_client",
+      },
       { status: 403 }
     );
   }

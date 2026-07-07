@@ -24,7 +24,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.26.0",
-    date: "2026-07-05",
+    date: "2026-07-07",
     title: "The Landing Page Is Now the Dashboard",
     track: "web",
     items: [

@@ -12,7 +12,7 @@ import {
 interface StartFreeCTAProps {
   align?: "start" | "center";
   size?: "lg" | "md";
-  /** Label for the secondary /go link. Pass null to hide it. */
+  /** Label for the secondary guest-URL link (points to /). Pass null to hide it. */
   goCta?: string | null;
 }
 

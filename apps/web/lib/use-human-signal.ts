@@ -28,16 +28,24 @@ export function useHumanSignal(): HumanSignal {
       return;
     }
 
-    const markHuman = () => setSignal("human");
-    const options: AddEventListenerOptions = { once: true, passive: true, capture: true };
-    for (const event of SIGNAL_EVENTS) {
-      window.addEventListener(event, markHuman, options);
-    }
-    return () => {
+    // Only trusted (user-agent generated) events count — synthetic events
+    // dispatched from page scripts must not flip the gate. No `once` option:
+    // an untrusted event would otherwise consume the listener for free.
+    const detach = () => {
       for (const event of SIGNAL_EVENTS) {
         window.removeEventListener(event, markHuman, { capture: true });
       }
     };
+    function markHuman(event: Event) {
+      if (!event.isTrusted) return;
+      setSignal("human");
+      detach();
+    }
+    const options: AddEventListenerOptions = { passive: true, capture: true };
+    for (const event of SIGNAL_EVENTS) {
+      window.addEventListener(event, markHuman, options);
+    }
+    return detach;
   }, []);
 
   return signal;

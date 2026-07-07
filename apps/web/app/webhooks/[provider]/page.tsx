@@ -97,7 +97,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const howToSteps = [
     {
       name: "Create a webhook endpoint",
-      text: "Sign in free with GitHub or Google to create a persistent endpoint — or grab an instant guest URL at webhooks.cc/go without an account.",
+      text: "Sign in free with GitHub or Google to create a persistent endpoint — or grab an instant guest URL at webhooks.cc without an account.",
       url: "https://webhooks.cc",
     },
     {
