@@ -12,7 +12,7 @@ import {
 interface StartFreeCTAProps {
   align?: "start" | "center";
   size?: "lg" | "md";
-  /** Label for the secondary /go link. Pass null to hide it. */
+  /** Label for the secondary guest-URL link (points to /). Pass null to hide it. */
   goCta?: string | null;
 }
 
@@ -70,7 +70,7 @@ function StartFreeCTAInner({
         <p className="text-sm text-muted-foreground">
           No credit card &middot; 50 requests/day free &middot; or{" "}
           <Link
-            href="/go"
+            href="/"
             className="text-foreground font-bold hover:text-primary transition-colors"
             onClick={() => trackCTAClick("try_live")}
           >

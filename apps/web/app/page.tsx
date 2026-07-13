@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { FloatingNavbar } from "@/components/nav/floating-navbar";
+import { AuthNav } from "@/components/nav/auth-nav";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
-import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users } from "lucide-react";
-import { GitHubCard } from "@/components/landing/github-card";
+import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users, Star } from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
-import { LivePreview } from "@/components/landing/live-preview";
+import { LandingDashboard } from "@/components/landing/landing-dashboard";
 import { TeamsVideo } from "@/components/landing/teams-video";
 import { ProviderStrip } from "@/components/landing/provider-strip";
 import { createPageMetadata } from "@/lib/seo";
@@ -14,6 +13,7 @@ import {
   JsonLd,
   softwareApplicationSchema,
   faqSchema,
+  howToSchema,
   videoObjectSchema,
   type FAQItem,
 } from "@/lib/schemas";
@@ -22,10 +22,20 @@ import { createClient } from "@supabase/supabase-js";
 export const revalidate = 600; // re-render landing page every 10 min to pick up fresh site_stats
 
 export const metadata = createPageMetadata({
-  title: "Webhook Testing Platform: CLI, SDK & MCP",
+  title: "Webhook Testing Platform — Instant URL, CLI, SDK & MCP",
   description:
-    "Capture and inspect webhooks in real time. Send signed provider test webhooks, forward to localhost with the CLI, test in CI with the SDK, and debug faster with MCP.",
+    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then one click with GitHub or Google unlocks the free plan: 50 requests/day, CLI, SDK & MCP.",
   path: "/",
+  keywords: [
+    "webhook testing",
+    "test webhooks online",
+    "instant webhook url",
+    "webhook inspector",
+    "webhook debugger",
+    "capture webhooks",
+    "webhook to localhost",
+    "free webhook testing tool",
+  ],
 });
 
 interface GitHubRepoResponse {
@@ -82,6 +92,16 @@ async function getSiteStats(): Promise<SiteStats | null> {
 }
 
 const LANDING_FAQ: FAQItem[] = [
+  {
+    question: "Do I need an account to test webhooks?",
+    answer:
+      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, one click with GitHub or Google creates a free account: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
+  },
+  {
+    question: "What do I get when I sign up free?",
+    answer:
+      "Everything on the free plan, with one click via GitHub or Google — no email forms, no credit card. You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
+  },
   {
     question: "How do I test webhooks locally?",
     answer:
@@ -140,81 +160,170 @@ export default async function Home() {
     <main className="min-h-screen">
       <JsonLd data={softwareApplicationSchema()} />
       <JsonLd data={faqSchema(LANDING_FAQ)} />
+      <JsonLd
+        data={howToSchema({
+          name: "How to test a webhook in seconds",
+          description:
+            "Get a live webhook URL without an account, point any service at it, and inspect every request in a real-time dashboard.",
+          totalTime: "PT1M",
+          steps: [
+            {
+              name: "Get a URL",
+              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent.",
+            },
+            {
+              name: "Point your service",
+              text: "Configure Stripe, GitHub, or any service to send webhooks to your URL.",
+            },
+            {
+              name: "See what arrives",
+              text: "Headers, body, and query params appear live in the dashboard. Forward to localhost or assert in tests.",
+            },
+          ],
+        })}
+      />
       <JsonLd data={videoObjectSchema()} />
 
-      {/* Navigation */}
-      <FloatingNavbar>
-        {/* AuthNav already renders Docs/Blog/Install — only add what it lacks */}
-        <div className="hidden md:flex items-center gap-4 text-sm font-bold">
-          <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
-            Providers
-          </Link>
-          <Link href="/compare" className="text-muted-foreground hover:text-foreground">
-            Compare
-          </Link>
-          <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
-            Pricing
-          </Link>
+      {/* Navigation — solid app header, same chrome as the real dashboard */}
+      <header className="border-b-2 border-foreground bg-background sticky top-[var(--ann-h,0px)] z-50">
+        <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
+              webhooks.cc
+            </Link>
+            {/* AuthNav already renders Docs/Blog/Install — only add what it lacks */}
+            <div className="hidden lg:flex items-center gap-4 text-sm font-bold">
+              <Link href="/webhooks" className="text-muted-foreground hover:text-foreground">
+                Providers
+              </Link>
+              <Link href="/compare" className="text-muted-foreground hover:text-foreground">
+                Compare
+              </Link>
+              <Link href="#pricing" className="text-muted-foreground hover:text-foreground">
+                Pricing
+              </Link>
+            </div>
+          </div>
+          <AuthNav />
         </div>
-      </FloatingNavbar>
+      </header>
 
-      {/* Hero */}
-      <section className="pt-32 pb-20 px-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
-            <div className="max-w-3xl">
-              <div className="inline-block neo-btn-secondary text-sm py-1 px-3 mb-6">
-                Free forever &middot; No credit card
-              </div>
-              <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.2]">
-                The fastest way to <br className="hidden md:block" />
-                <span className="bg-primary text-primary-foreground px-2">test webhooks</span>
-              </h1>
-              <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-                Get a URL, point any service at it, and watch every request arrive live. Send signed
-                Stripe or GitHub samples, forward to localhost, assert in CI — or let your AI agent
-                do it over MCP.
+      {/* Hero — the landing screen IS the dashboard, webhook.site style */}
+      <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
+        {/* Title strip inside the app chrome — the page's H1 lives here */}
+        <div className="shrink-0 border-b-2 border-foreground bg-muted px-4 py-2 text-center">
+          <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
+            The fastest way to{" "}
+            <span className="bg-primary text-primary-foreground px-1.5">test webhooks</span>
+          </h1>
+          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
+            Your free webhook URL is live below — point any service at it. No signup, no credit
+            card. One click with GitHub or Google{" "}
+            <Link href="/login" className="font-bold text-foreground hover:text-primary">
+              keeps it, free
+            </Link>
+            .
+          </p>
+        </div>
+
+        {/* The dashboard fills the rest of the first viewport: a real endpoint, created on page load */}
+        <div className="flex-1 min-h-[440px]">
+          <LandingDashboard />
+        </div>
+      </section>
+
+      {/* One-click free upgrade — first thing below the app screen */}
+      <section className="py-16 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col items-center gap-8">
+          <div className="text-center max-w-2xl">
+            <h2 className="text-3xl md:text-4xl font-bold mb-3">One click keeps your endpoint</h2>
+            <p className="text-lg text-muted-foreground">
+              The URL above is a guest endpoint. Sign in with GitHub or Google — a single click, no
+              email forms, no credit card — and it becomes a permanent free endpoint with everything
+              below.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
+            <div className="neo-card neo-card-static">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+                Guest URL — what you have now
               </p>
-              <StartFreeCTA size="lg" goCta="grab a URL without an account" />
-
-              {/* Social proof — near the CTA for maximum impact */}
-              {stats && (
-                <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                  {stats.total_users > 0 ? (
-                    <span className="font-semibold">
-                      <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
-                      developers
-                    </span>
-                  ) : null}
-                  {stats.total_endpoints > 0 ? (
-                    <span className="font-semibold">
-                      <span className="text-foreground">
-                        {stats.total_endpoints.toLocaleString()}
-                      </span>{" "}
-                      endpoints created
-                    </span>
-                  ) : null}
-                  {stats.total_webhooks > 0 ? (
-                    <span className="font-semibold">
-                      <span className="text-foreground">
-                        {stats.total_webhooks.toLocaleString()}
-                      </span>{" "}
-                      webhooks captured
-                    </span>
-                  ) : null}
-                  <span className="font-semibold">Open source</span>
-                </div>
-              )}
+              <ul className="space-y-2 text-sm">
+                {[
+                  "25 requests total",
+                  "Expires after 12 hours",
+                  "One endpoint, this browser only",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-muted-foreground">
+                    <span className="h-1.5 w-1.5 bg-muted-foreground shrink-0" aria-hidden />
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            {/* GitHub — hidden on mobile to keep CTA above the fold */}
-            <div className="hidden lg:block">
-              <GitHubCard stars={stars} />
+            <div className="neo-card neo-card-static border-primary relative">
+              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-2 border-foreground shadow-neo-sm">
+                1 click away
+              </div>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+                Free account — GitHub or Google
+              </p>
+              <ul className="space-y-2 text-sm">
+                {[
+                  "Keep this exact endpoint, forever",
+                  "50 requests/day, unlimited endpoints",
+                  "7-day request history",
+                  "Mock responses & request replay",
+                  "Signed Stripe, GitHub, Shopify test webhooks",
+                  "CLI tunnel, TypeScript SDK & MCP for AI agents",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-primary shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
 
-          {/* Live preview */}
-          <LivePreview />
+          <StartFreeCTA size="lg" align="center" goCta={null} />
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+            {stats && stats.total_users > 0 ? (
+              <span className="font-semibold">
+                <span className="text-foreground">{stats.total_users.toLocaleString()}</span>{" "}
+                developers
+              </span>
+            ) : null}
+            {stats && stats.total_endpoints > 0 ? (
+              <span className="font-semibold">
+                <span className="text-foreground">{stats.total_endpoints.toLocaleString()}</span>{" "}
+                endpoints created
+              </span>
+            ) : null}
+            {stats && stats.total_webhooks > 0 ? (
+              <span className="font-semibold">
+                <span className="text-foreground">{stats.total_webhooks.toLocaleString()}</span>{" "}
+                webhooks captured
+              </span>
+            ) : null}
+            <a
+              href="https://github.com/kroqdotdev/webhooks-cc"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold hover:text-foreground"
+            >
+              Open source
+              {typeof stars === "number" ? (
+                <>
+                  {" "}
+                  &middot; <Star className="inline-block h-3.5 w-3.5 -mt-0.5" />{" "}
+                  <span className="text-foreground">{stars.toLocaleString()}</span> on GitHub
+                </>
+              ) : null}
+            </a>
+          </div>
         </div>
       </section>
 
@@ -228,7 +337,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "Sign in free with GitHub or Google and create an endpoint in one click — or grab a guest URL without an account.",
+                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google makes it permanent.",
               },
               {
                 step: "2",
@@ -604,10 +713,7 @@ export default async function Home() {
               <PricingCTA />
             </div>
             <p className="text-sm opacity-80 mt-6">
-              No credit card &middot; or{" "}
-              <Link href="/go" className="font-bold underline hover:no-underline">
-                try without an account
-              </Link>
+              No credit card &middot; or scroll up — your guest URL is already live
             </p>
           </div>
         </div>

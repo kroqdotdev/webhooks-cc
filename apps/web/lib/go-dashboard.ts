@@ -85,18 +85,31 @@ function normalizeRequest(
   };
 }
 
+/** Error carrying the API's stable machine-readable `code` alongside the message. */
+export class GuestApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string
+  ) {
+    super(message);
+    this.name = "GuestApiError";
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json().catch(() => null)) as
-    | (T & { error?: string })
-    | { error?: string }
-    | null;
+    (T & { error?: string; code?: string }) | { error?: string; code?: string } | null;
 
   if (!response.ok) {
     const message =
       data && typeof data === "object" && "error" in data && typeof data.error === "string"
         ? data.error
         : `Request failed (${response.status})`;
-    throw new Error(message);
+    const code =
+      data && typeof data === "object" && "code" in data && typeof data.code === "string"
+        ? data.code
+        : undefined;
+    throw new GuestApiError(message, code);
   }
 
   return data as T;

@@ -27,6 +27,17 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        // /go is retired — the landing page now IS the guest dashboard.
+        // Permanent redirect preserves the page's search rankings and backlinks.
+        source: "/go",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

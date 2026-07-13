@@ -109,7 +109,7 @@ export default function WebhooksHubPage() {
           <p className="text-muted-foreground">
             Every webhooks.cc endpoint accepts any HTTP webhook — the provider pages just add signed
             sample payloads and signature verification.{" "}
-            <Link href="/go" className="text-primary font-bold hover:underline">
+            <Link href="/" className="text-primary font-bold hover:underline">
               Create a free endpoint
             </Link>{" "}
             and point your service at it, or use the{" "}

@@ -178,7 +178,7 @@ export function BlogPostShell({
               </div>
             )}
 
-            <Link href="/go" className="neo-btn-primary w-full text-center block">
+            <Link href="/" className="neo-btn-primary w-full text-center block">
               Try webhooks.cc
               <ArrowRight className="inline-block ml-2 h-4 w-4" />
             </Link>

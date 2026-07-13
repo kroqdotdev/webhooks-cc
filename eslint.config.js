@@ -14,7 +14,7 @@ export default tseslint.config(
       "**/.next/**",
       "**/.turbo/**",
       "**/target/**",
-      ".claude/worktrees/**",
+      ".claude/**",
       "**/*.config.js",
       "**/*.config.mjs",
       "**/public/_pagefind/**",

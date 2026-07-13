@@ -9,7 +9,7 @@ dist/
 *.tsbuildinfo
 apps/cli-rs/target/
 apps/receiver-rs/target/
-.claude/worktrees/
+.claude/
 
 # Generated files
 pnpm-lock.yaml

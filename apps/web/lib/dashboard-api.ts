@@ -72,9 +72,7 @@ function withAuthHeaders(accessToken: string, init?: RequestInit): RequestInit {
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json().catch(() => null)) as
-    | (T & { error?: string })
-    | { error?: string }
-    | null;
+    (T & { error?: string }) | { error?: string } | null;
 
   if (!response.ok) {
     const message =

@@ -28,12 +28,17 @@ function createAnonClient() {
   });
 }
 
-function guestRequest(ip: string): Request {
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+function guestRequest(ip: string, userAgent: string | null = BROWSER_UA): Request {
+  const headers: Record<string, string> = { "x-forwarded-for": ip };
+  if (userAgent !== null) {
+    headers["user-agent"] = userAgent;
+  }
   return new Request("https://webhooks.cc/api/go/endpoint", {
     method: "POST",
-    headers: {
-      "x-forwarded-for": ip,
-    },
+    headers,
   });
 }
 
@@ -157,6 +162,29 @@ describe("Supabase Guest Endpoint Integration", () => {
       .eq("endpoint_id", endpoint.id);
 
     expect(anonRequests).toEqual([]);
+  });
+
+  it("rejects guest endpoint creation from crawlers and clients without a user agent", async () => {
+    const botAgents = [
+      "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+      "curl/8.7.1",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36",
+    ];
+
+    for (const agent of botAgents) {
+      const response = await createGuestEndpointRoute(guestRequest("198.51.100.40", agent));
+      expect(response.status).toBe(403);
+    }
+
+    const missingUa = await createGuestEndpointRoute(guestRequest("198.51.100.40", null));
+    expect(missingUa.status).toBe(403);
+
+    // A regular browser UA from the same IP still works — the screen is UA-based, not IP-based
+    const humanResponse = await createGuestEndpointRoute(guestRequest("198.51.100.40"));
+    expect(humanResponse.status).toBe(200);
+    const endpoint = (await humanResponse.json()) as { id: string };
+    guestEndpointIds.add(endpoint.id);
   });
 
   it("rate limits anonymous guest endpoint creation by IP", async () => {
