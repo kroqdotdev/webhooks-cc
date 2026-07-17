@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.26.0";
+export const APP_VERSION = "0.26.1";
 export const CLI_VERSION = "1.1.2";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.26.1",
+    date: "2026-07-17",
+    title: "Fix: stale delete button in endpoint settings",
+    track: "web",
+    items: [
+      "Fixed the endpoint settings dialog showing a disabled “Deleting...” button when opening another endpoint's settings right after deleting one — previously only a page reload cleared it",
+    ],
+  },
   {
     version: "0.26.0",
     date: "2026-07-07",

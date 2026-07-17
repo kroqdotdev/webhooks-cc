@@ -153,7 +153,7 @@ impl Screen for EndpointDetailScreen {
                 lines.push(Line::from(vec![
                     Span::styled("  Mock:      ", theme::style_muted()),
                     Span::styled(
-                        format!("{} — {}", mock.status, &mock.body.chars().take(40).collect::<String>()),
+                        format!("{} — {}", mock.status, mock.body.chars().take(40).collect::<String>()),
                         Style::default().fg(theme::ACCENT),
                     ),
                 ]));

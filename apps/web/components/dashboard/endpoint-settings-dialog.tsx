@@ -385,6 +385,7 @@ export const EndpointSettingsDialog = forwardRef<
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
       setIsDeleting(false);
     }
   };
