@@ -26,7 +26,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jose": "^6.2.3",
-    "nanoid": "^5.1.15",
+    "nanoid": "^6.0.0",
     "pagefind": "^1.5.2",
     "prettier": "^3.9.5",
     "tsx": "^4.23.1",
