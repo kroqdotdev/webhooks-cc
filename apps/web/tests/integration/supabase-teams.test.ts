@@ -28,6 +28,7 @@ import {
   getRequestByIdForUser,
   clearRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
+import type { Database } from "@/lib/supabase/database";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -37,9 +38,11 @@ if (!SERVICE_ROLE_KEY) {
   throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required for integration tests");
 }
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+const admin = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+
+const SEAT_REQUEST_LIMIT = 100_000;
 
 const TEST_PASSWORD = "TestPassword123!";
 const ts = Date.now();
@@ -61,6 +64,8 @@ let teamId: string;
 let endpointId: string;
 let endpointSlug: string;
 
+// Teams are plan-independent: membership and access hang off the team's own
+// subscription, so test users stay on the free plan.
 async function createTestUser(email: string, name: string): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({
     email,
@@ -69,12 +74,32 @@ async function createTestUser(email: string, name: string): Promise<string> {
     user_metadata: { full_name: name },
   });
   if (error) throw error;
-  const userId = data.user!.id;
+  return data.user!.id;
+}
 
-  // Upgrade to pro (teams require pro plan)
-  await admin.from("users").update({ plan: "pro" }).eq("id", userId);
-
-  return userId;
+/**
+ * Puts a team on an active Teams subscription. `polar_subscription_id` stays
+ * null unless a caller asks for one, so seat assignment short-circuits before
+ * any Polar HTTP call.
+ */
+async function activateTeam(
+  teamId: string,
+  seats: number,
+  opts: { subscriptionId?: string } = {}
+): Promise<void> {
+  const { error } = await admin
+    .from("teams")
+    .update({
+      subscription_status: "active",
+      seats,
+      request_limit: seats * SEAT_REQUEST_LIMIT,
+      requests_used: 0,
+      period_start: new Date().toISOString(),
+      period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      polar_subscription_id: opts.subscriptionId ?? null,
+    })
+    .eq("id", teamId);
+  if (error) throw error;
 }
 
 async function insertRequest(epId: string, userId: string, path: string) {
@@ -134,7 +159,7 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("Team CRUD", () => {
-    it("creates a team and adds creator as owner", async () => {
+    it("creates a team for a free user and adds creator as owner", async () => {
       const result = await createTeam(ownerId, "Integration Test Team");
       expect("error" in result).toBe(false);
       const team = result as Exclude<typeof result, { error: string }>;
@@ -145,6 +170,15 @@ describe("Teams Integration", () => {
       expect(team.memberCount).toBe(1);
       expect(team.role).toBe("owner");
       expect(team.createdAt).toBeGreaterThan(0);
+
+      // A fresh team has no subscription yet.
+      expect(team.subscriptionStatus).toBeNull();
+      expect(team.suspended).toBe(true);
+      expect(team.seats).toBe(0);
+      expect(team.requestsUsed).toBe(0);
+      expect(team.requestLimit).toBe(0);
+      expect(team.periodEnd).toBeNull();
+      expect(team.cancelAtPeriodEnd).toBe(false);
 
       teamId = team.id;
     });
@@ -158,6 +192,34 @@ describe("Teams Integration", () => {
       expect(team!.name).toBe("Integration Test Team");
       expect(team!.role).toBe("owner");
       expect(team!.memberCount).toBe(1);
+    });
+
+    it("reports an unsubscribed team as suspended with no seats", async () => {
+      const teams = await listTeamsForUser(ownerId);
+      const team = teams.find((t) => t.id === teamId);
+
+      expect(team).toBeDefined();
+      expect(team!.subscriptionStatus).toBeNull();
+      expect(team!.suspended).toBe(true);
+      expect(team!.seats).toBe(0);
+      expect(team!.requestLimit).toBe(0);
+      expect(team!.periodEnd).toBeNull();
+    });
+
+    it("reports billing fields once the team subscribes", async () => {
+      await activateTeam(teamId, 25);
+
+      const teams = await listTeamsForUser(ownerId);
+      const team = teams.find((t) => t.id === teamId);
+
+      expect(team).toBeDefined();
+      expect(team!.subscriptionStatus).toBe("active");
+      expect(team!.suspended).toBe(false);
+      expect(team!.seats).toBe(25);
+      expect(team!.requestsUsed).toBe(0);
+      expect(team!.requestLimit).toBe(25 * SEAT_REQUEST_LIMIT);
+      expect(team!.cancelAtPeriodEnd).toBe(false);
+      expect(team!.periodEnd).toBeGreaterThan(Date.now());
     });
 
     it("returns empty list for user with no teams", async () => {
@@ -611,6 +673,9 @@ describe("Teams Integration", () => {
     });
 
     it("owner deletes the team", async () => {
+      // Subscribed, but with no Polar subscription id — deletion skips the revoke.
+      await activateTeam(tempTeamId, 2);
+
       const result = await deleteTeam(ownerId, tempTeamId);
       expect(result).toBe(true);
     });
@@ -952,12 +1017,14 @@ describe("Teams Integration", () => {
       // Stays on free plan (default)
     });
 
-    it("free user cannot create a team", async () => {
+    it("free user can create a team (teams are plan-independent)", async () => {
       const result = await createTeam(freeUserId, "Free Team");
-      expect("error" in result).toBe(true);
-      if ("error" in result) {
-        expect(result.error).toContain("Pro");
-      }
+      expect("error" in result).toBe(false);
+      const team = result as Exclude<typeof result, { error: string }>;
+      expect(team.suspended).toBe(true);
+      expect(team.seats).toBe(0);
+
+      await deleteTeam(freeUserId, team.id);
     });
 
     it("free user cannot accept a team invite", async () => {
@@ -1068,7 +1135,7 @@ describe("Teams Integration", () => {
 
       await admin.from("users").update({ plan: "free" }).eq("id", teamRow.created_by);
 
-      // listTeamsForUser should show suspended: true
+      // Suspension tracks the team's own subscription: this team never bought one.
       const teams = await listTeamsForUser(freeUser2Id);
       const team = teams.find((t) => t.id === suspensionTeamId);
       expect(team).toBeDefined();
@@ -1103,7 +1170,7 @@ describe("Teams Integration", () => {
       await admin.auth.admin.deleteUser(proMemberId);
     });
 
-    it("re-upgrade owner — team reactivates", async () => {
+    it("subscribing the team clears suspension", async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: teamRow } = await (admin as any)
         .from("teams")
@@ -1112,6 +1179,7 @@ describe("Teams Integration", () => {
         .single();
 
       await admin.from("users").update({ plan: "pro" }).eq("id", teamRow.created_by);
+      await activateTeam(suspensionTeamId, 5);
 
       // Team no longer suspended
       const teams = await listTeamsForUser(freeUser2Id);
