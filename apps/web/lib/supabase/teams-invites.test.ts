@@ -173,6 +173,49 @@ describe("acceptInvite", () => {
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_3", "member@example.com");
   });
 
+  test("releases the seat and rethrows when the accept RPC throws", async () => {
+    mockFns.assignTeamSeat.mockResolvedValue("seat_4");
+    const admin = createFakeAdmin({
+      "team_invites:select": [PENDING_INVITE],
+      "team_members:select": [{ data: null }],
+    });
+    const timeout = new Error("canceling statement due to statement timeout");
+    admin.rpc.mockRejectedValue(timeout);
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    // Nothing downstream would ever reference this seat: the invite is still
+    // pending and no membership row was written.
+    await expect(acceptInvite("user_1", "invite_1")).rejects.toBe(timeout);
+    expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_4", "member@example.com");
+  });
+
+  test("releases the seat and rethrows when the accept RPC returns a database error", async () => {
+    mockFns.assignTeamSeat.mockResolvedValue("seat_5");
+    const admin = createFakeAdmin({
+      "team_invites:select": [PENDING_INVITE],
+      "team_members:select": [{ data: null }],
+    });
+    const dbError = { code: "57014", message: "canceling statement" };
+    admin.rpc.mockResolvedValue({ data: null, error: dbError });
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    await expect(acceptInvite("user_1", "invite_1")).rejects.toBe(dbError);
+    expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_5", "member@example.com");
+  });
+
+  test("does not revoke when the accept RPC fails with no seat assigned", async () => {
+    const admin = createFakeAdmin({
+      "team_invites:select": [PENDING_INVITE],
+      "team_members:select": [{ data: null }],
+    });
+    const failure = new Error("pool exhausted");
+    admin.rpc.mockRejectedValue(failure);
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    await expect(acceptInvite("user_1", "invite_1")).rejects.toBe(failure);
+    expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+  });
+
   test("does not revoke by email when no seat was assigned", async () => {
     // Unsubscribed team: assignTeamSeat returns null. A revoke call here would
     // fall back to an email lookup and could strip an unrelated seat.

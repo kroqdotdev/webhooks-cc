@@ -333,15 +333,27 @@ export async function acceptInvite(
     : await assignTeamSeat(invite.team_id, invite.invited_email, userId);
 
   // Atomic: claim invite + enforce the seat cap + insert member in one transaction
-  const { data, error } = await admin.rpc("accept_team_invite", {
-    p_user_id: userId,
-    p_invite_id: inviteId,
-    p_seat_id: seatId,
-  });
+  let result: { status: string };
+  try {
+    const { data, error } = await admin.rpc("accept_team_invite", {
+      p_user_id: userId,
+      p_invite_id: inviteId,
+      p_seat_id: seatId,
+    });
 
-  if (error) throw error;
-
-  const result = data as { status: string };
+    if (error) throw error;
+    result = data as { status: string };
+  } catch (rpcError) {
+    // A failed RPC (timeout, pool exhaustion, restart) leaves the invite pending
+    // with no membership row referencing the seat, so nothing downstream could
+    // ever release it and a retry would assign a second one. Release it here and
+    // rethrow; revokeTeamSeat swallows its own failures, so it cannot mask the
+    // original error.
+    if (seatId) {
+      await revokeTeamSeat(invite.team_id, seatId, invite.invited_email);
+    }
+    throw rpcError;
+  }
 
   if (result.status === "accepted") return { accepted: true };
 
