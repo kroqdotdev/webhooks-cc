@@ -1,8 +1,4 @@
-import {
-  authenticateRequestRequireUser,
-  extractBearerToken,
-  validateBearerTokenWithPlan,
-} from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
   validateNotificationUrl,
@@ -11,7 +7,11 @@ import {
 } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
-import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/lib/supabase/teams";
+import {
+  getShareMetadataForOwnedEndpoints,
+  getSharedEndpointsForUser,
+  hasActiveTeamMembership,
+} from "@/lib/supabase/teams";
 import { serverEnv } from "@/lib/env";
 
 export async function GET(request: Request) {
@@ -19,15 +19,14 @@ export async function GET(request: Request) {
   if (!auth.success) return auth.response;
 
   try {
-    // Check plan — team features only for pro users
-    const token = extractBearerToken(request);
-    const validation = token ? await validateBearerTokenWithPlan(token) : null;
-    const isPro = validation?.plan === "pro";
+    // Sharing is a team feature, so the gate is the team's subscription, not
+    // the caller's personal plan.
+    const onActiveTeam = await hasActiveTeamMembership(auth.userId);
 
     const [endpoints, shareMetadata, sharedEndpoints] = await Promise.all([
       listEndpointsForUser(auth.userId),
-      isPro ? getShareMetadataForOwnedEndpoints(auth.userId) : Promise.resolve(new Map()),
-      isPro ? getSharedEndpointsForUser(auth.userId) : Promise.resolve([]),
+      onActiveTeam ? getShareMetadataForOwnedEndpoints(auth.userId) : Promise.resolve(new Map()),
+      onActiveTeam ? getSharedEndpointsForUser(auth.userId) : Promise.resolve([]),
     ]);
 
     const owned = endpoints.map((ep) => ({

@@ -1,5 +1,6 @@
 import { createAdminClient } from "./admin";
 import type { Json } from "./database";
+import { requireActiveTeam } from "./teams-gating";
 import type { TeamEndpointShare, TeamEndpointRow, SharedEndpoint } from "./teams-types";
 
 // ---------------------------------------------------------------------------
@@ -46,13 +47,24 @@ function normalizeMockResponse(mock_response: Json | null): SharedEndpoint["mock
   };
 }
 
-async function requirePro(userId: string): Promise<string | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.from("users").select("plan").eq("id", userId).maybeSingle();
+/**
+ * Narrows a set of team ids to the subscribed ones. Callers that only need a
+ * yes/no answer pass `limit: 1`.
+ */
+async function filterActiveTeamIds(teamIds: string[], limit?: number): Promise<string[]> {
+  if (teamIds.length === 0) return [];
 
+  const admin = createAdminClient();
+  let query = admin
+    .from("teams")
+    .select("id")
+    .in("id", teamIds)
+    .not("subscription_status", "is", null);
+  if (limit !== undefined) query = query.limit(limit);
+
+  const { data, error } = await query;
   if (error) throw error;
-  if (!data || data.plan !== "pro") return "Teams require a Pro plan";
-  return null;
+  return (data ?? []).map((row) => row.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +99,11 @@ export async function shareEndpointWithTeam(
 
   if (memberError) throw memberError;
   if (!membership) return { success: false, error: "You are not a member of this team" };
+
+  // Sharing hands a whole team read access, so it needs the team's subscription.
+  // Unsharing stays ungated: revoking access must keep working after a lapse.
+  const inactiveError = await requireActiveTeam(teamId);
+  if (inactiveError) return { success: false, error: inactiveError };
 
   // Insert share
   const { error: insertError } = await admin
@@ -206,28 +223,17 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
 
   const teamIds = memberships.map((m) => m.team_id);
 
-  // Fetch team names and owners to check suspension
+  // Suspended teams share nothing: a team is usable only while it carries a
+  // subscription of its own, whatever personal plan its members are on.
   const { data: teamsData, error: teamsError } = await admin
     .from("teams")
-    .select("id, name, created_by")
-    .in("id", teamIds);
+    .select("id, name")
+    .in("id", teamIds)
+    .not("subscription_status", "is", null);
 
   if (teamsError) throw teamsError;
 
-  // Filter out suspended teams (owner not on pro)
-  const sharedOwnerIds = [
-    ...new Set(((teamsData ?? []) as { created_by: string }[]).map((t) => t.created_by)),
-  ];
-  const { data: sharedOwnerRows } = await admin
-    .from("users")
-    .select("id, plan")
-    .in("id", sharedOwnerIds.length > 0 ? sharedOwnerIds : ["__none__"]);
-
-  const sharedOwnerPlanMap = new Map((sharedOwnerRows ?? []).map((u) => [u.id, u.plan]));
-  const activeTeams = (
-    (teamsData ?? []) as { id: string; name: string; created_by: string }[]
-  ).filter((t) => sharedOwnerPlanMap.get(t.created_by) === "pro");
-
+  const activeTeams = (teamsData ?? []) as { id: string; name: string }[];
   if (activeTeams.length === 0) return [];
 
   const activeTeamIds = activeTeams.map((t) => t.id);
@@ -324,11 +330,9 @@ export async function resolveEndpointAccess(
     return { endpointId: endpoint.id, ownerId, isOwner: true };
   }
 
-  // Team access requires pro plan
-  const proError = await requirePro(userId);
-  if (proError) return null;
-
-  // Check team access: user must be a team member AND endpoint must be shared with that team
+  // A non-owner needs one team that the endpoint is shared with, that they
+  // belong to, and that carries a subscription. Personal plans do not enter
+  // into it — neither the requester's nor the endpoint owner's.
   const { data: teamAccess, error: teamAccessError } = await admin
     .from("team_members")
     .select("team_id")
@@ -339,29 +343,20 @@ export async function resolveEndpointAccess(
 
   const userTeamIds = teamAccess.map((m) => m.team_id);
 
+  // Every matching share, not just the first: one lapsed team must not mask a
+  // subscribed one that shares the same endpoint.
   const { data: shareAccess, error: shareAccessError } = await admin
     .from("team_endpoints")
     .select("team_id")
     .eq("endpoint_id", endpoint.id)
-    .in("team_id", userTeamIds)
-    .limit(1);
+    .in("team_id", userTeamIds);
 
   if (shareAccessError) throw shareAccessError;
   if (!shareAccess || shareAccess.length === 0) return null;
 
-  // Check that the team's owner is still on a pro plan (team not suspended)
-  const shareTeamId = shareAccess[0].team_id;
-  const { data: teamRow, error: teamRowError } = await admin
-    .from("teams")
-    .select("created_by")
-    .eq("id", shareTeamId)
-    .maybeSingle();
-
-  if (teamRowError) throw teamRowError;
-  if (!teamRow) return null;
-
-  const teamOwnerProError = await requirePro(teamRow.created_by);
-  if (teamOwnerProError) return null;
+  const shareTeamIds = [...new Set(shareAccess.map((s) => s.team_id))];
+  const activeShareTeamIds = await filterActiveTeamIds(shareTeamIds, 1);
+  if (activeShareTeamIds.length === 0) return null;
 
   return { endpointId: endpoint.id, ownerId, isOwner: false };
 }

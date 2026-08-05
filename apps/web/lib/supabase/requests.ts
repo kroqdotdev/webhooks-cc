@@ -22,6 +22,7 @@ type SelectedRequestRow = Pick<
   | "ip"
   | "size"
   | "received_at"
+  | "team_id"
 > & {
   signature_verified?: boolean | null;
   signature_error?: string | null;
@@ -204,7 +205,18 @@ async function getAccessibleEndpoint(
   return { id: access.endpointId, slug, ownerId: access.ownerId };
 }
 
-async function getUserCutoff(userId: string): Promise<number> {
+interface Retention {
+  /** Rows received before this instant are outside the owner's window. */
+  cutoff: number;
+  /**
+   * True on the free plan, where a request billed to a team's pooled quota was
+   * paid for by that team's subscription and so outlives the 7-day personal
+   * window. Mirrors the `team_id is null` carve-out in cleanup_free_user_requests().
+   */
+  exemptTeamBilled: boolean;
+}
+
+async function getUserRetention(userId: string): Promise<Retention> {
   const admin = createAdminClient();
   const { data: user, error } = await admin
     .from("users")
@@ -216,8 +228,20 @@ async function getUserCutoff(userId: string): Promise<number> {
     throw error;
   }
 
-  const retentionMs = user?.plan === "pro" ? PRO_RETENTION_MS : FREE_RETENTION_MS;
-  return Date.now() - retentionMs;
+  const isPro = user?.plan === "pro";
+  return {
+    cutoff: Date.now() - (isPro ? PRO_RETENTION_MS : FREE_RETENTION_MS),
+    exemptTeamBilled: !isPro,
+  };
+}
+
+/**
+ * PostgREST `or()` filter that keeps team-billed rows past the cutoff. It stays
+ * a separate conjunct from any caller-supplied `since`/`after` bound, which must
+ * keep applying to team-billed rows too.
+ */
+function retentionOrFilter(cutoff: number): string {
+  return `team_id.not.is.null,received_at.gte.${new Date(cutoff).toISOString()}`;
 }
 
 export async function getRequestByIdForUser(
@@ -230,7 +254,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -255,8 +279,12 @@ export async function getRequestByIdForUser(
   const access = await resolveEndpointAccess(userId, endpointData.data.slug);
   if (!access) return null;
 
-  const cutoff = await getUserCutoff(access.ownerId);
-  if (parseMillis(row.received_at) < cutoff) {
+  const retention = await getUserRetention(access.ownerId);
+  const teamBilled = row.team_id !== null;
+  if (
+    !(retention.exemptTeamBilled && teamBilled) &&
+    parseMillis(row.received_at) < retention.cutoff
+  ) {
     return null;
   }
 
@@ -275,16 +303,27 @@ export async function listRequestsForEndpointByUser(input: {
     return null;
   }
 
-  const cutoff = await getUserCutoff(endpoint.ownerId);
-  const floor = input.since === undefined ? cutoff : Math.max(input.since, cutoff);
+  const retention = await getUserRetention(endpoint.ownerId);
 
-  const { data, error } = await admin
+  const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
     )
-    .eq("endpoint_id", endpoint.id)
-    .gte("received_at", new Date(floor).toISOString())
+    .eq("endpoint_id", endpoint.id);
+
+  if (retention.exemptTeamBilled) {
+    query.or(retentionOrFilter(retention.cutoff));
+    if (input.since !== undefined) {
+      query.gte("received_at", new Date(input.since).toISOString());
+    }
+  } else {
+    const floor =
+      input.since === undefined ? retention.cutoff : Math.max(input.since, retention.cutoff);
+    query.gte("received_at", new Date(floor).toISOString());
+  }
+
+  const { data, error } = await query
     .order("received_at", { ascending: false })
     .limit(clampLimit(input.limit, 50))
     .returns<SelectedRequestRow[]>();
@@ -308,16 +347,23 @@ export async function listNewRequestsForEndpointByUser(input: {
     return null;
   }
 
-  const cutoff = await getUserCutoff(endpoint.ownerId);
-  const floor = Math.max(input.after, cutoff);
+  const retention = await getUserRetention(endpoint.ownerId);
 
-  const { data, error } = await admin
+  const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
     )
     .eq("endpoint_id", endpoint.id)
-    .gt("received_at", new Date(floor).toISOString())
+    .gt("received_at", new Date(input.after).toISOString());
+
+  if (retention.exemptTeamBilled) {
+    query.or(retentionOrFilter(retention.cutoff));
+  } else {
+    query.gte("received_at", new Date(retention.cutoff).toISOString());
+  }
+
+  const { data, error } = await query
     .order("received_at", { ascending: true })
     .limit(clampLimit(input.limit, 100))
     .returns<SelectedRequestRow[]>();
@@ -347,16 +393,25 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   }
 
   const limit = clampLimit(input.limit, 50);
-  const cutoff = decoded?.cutoff ?? (await getUserCutoff(endpoint.ownerId));
+  const retention = await getUserRetention(endpoint.ownerId);
+  // The cursor pins the cutoff so pages stay stable as the window slides.
+  const cutoff = decoded?.cutoff ?? retention.cutoff;
   const offset = decoded?.offset ?? 0;
 
-  const { data, error } = await admin
+  const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
     )
-    .eq("endpoint_id", endpoint.id)
-    .gte("received_at", new Date(cutoff).toISOString())
+    .eq("endpoint_id", endpoint.id);
+
+  if (retention.exemptTeamBilled) {
+    query.or(retentionOrFilter(cutoff));
+  } else {
+    query.gte("received_at", new Date(cutoff).toISOString());
+  }
+
+  const { data, error } = await query
     .order("received_at", { ascending: false })
     .range(offset, offset + limit)
     .returns<SelectedRequestRow[]>();
