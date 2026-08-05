@@ -1,5 +1,6 @@
 import { PolarConfigError, getPolarWebhookSecret } from "@/lib/polar";
 import { applyPolarWebhookEvent } from "@/lib/supabase/billing";
+import { applyTeamPolarWebhookEvent, extractTeamIdFromWebhook } from "@/lib/supabase/team-billing";
 import { SDKValidationError } from "@polar-sh/sdk/models/errors/sdkvalidationerror";
 import { validateEvent, WebhookVerificationError } from "@polar-sh/sdk/webhooks";
 
@@ -20,7 +21,16 @@ export async function POST(request: Request) {
   try {
     const event = validateEvent(body, toHeaderRecord(request), getPolarWebhookSecret());
 
-    await applyPolarWebhookEvent(event.type, event.data);
+    // Team-customer events carry their team id in the payload (customer metadata,
+    // a `team:` external id, or seat metadata on bare customer_seat.* payloads).
+    // Pass the raw event data through — reshaping it would strip seat routing keys.
+    const data = event.data as Record<string, unknown>;
+    const teamId = extractTeamIdFromWebhook(data);
+    if (teamId) {
+      await applyTeamPolarWebhookEvent(event.type, teamId, data);
+    } else {
+      await applyPolarWebhookEvent(event.type, event.data);
+    }
 
     return Response.json({ received: true });
   } catch (error) {
