@@ -98,11 +98,17 @@ export function TeamSubscriptionCard({
   isOwner,
   accessToken,
   onChanged,
+  activating = false,
+  activationTimedOut = false,
 }: {
   team: Team;
   isOwner: boolean;
   accessToken: string | null;
   onChanged?: () => Promise<void> | void;
+  /** Owner is back from checkout and the activating webhook has not landed yet. */
+  activating?: boolean;
+  /** The activation wait ran out; offer checkout again as an escape hatch. */
+  activationTimedOut?: boolean;
 }) {
   const [checkoutSeats, setCheckoutSeats] = useState(DEFAULT_TEAM_SEATS);
   const [seatDraft, setSeatDraft] = useState(() => clampSeats(team.seats));
@@ -194,6 +200,7 @@ export function TeamSubscriptionCard({
     setNotice(null);
     try {
       await resubscribeTeamSubscription(accessToken, team.id);
+      setNotice("Subscription reactivated — it renews at the end of the period.");
       await onChanged?.();
     } catch (err) {
       console.error("Team resubscribe error:", err);
@@ -217,8 +224,25 @@ export function TeamSubscriptionCard({
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Subscription</h2>
         <div className="border rounded-lg p-6 bg-card space-y-4">
-          {isOwner ? (
+          {isOwner && activating ? (
             <>
+              <div className="space-y-1">
+                <p className="font-medium">Activating your subscription...</p>
+                <p className="text-sm text-muted-foreground">
+                  Payment received. Waiting for Polar to confirm the subscription — this page
+                  updates itself, so there is no need to pay again.
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground animate-pulse">Checking...</p>
+            </>
+          ) : isOwner ? (
+            <>
+              {activationTimedOut && (
+                <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                  Confirmation is taking longer than expected. Refresh the page in a minute — only
+                  subscribe again if your Polar receipt shows no charge.
+                </p>
+              )}
               <div className="space-y-1">
                 <p className="font-medium">No active subscription</p>
                 <p className="text-sm text-muted-foreground">
@@ -252,7 +276,11 @@ export function TeamSubscriptionCard({
 
   // ── Subscribed ─────────────────────────────────────────────────
   const isPastDue = team.subscriptionStatus === "past_due";
-  const isCanceling = team.cancelAtPeriodEnd || team.subscriptionStatus === "canceled";
+  // `subscription.canceled` writes cancel_at_period_end and the status together,
+  // but resubscribing only clears the flag — the status stays "canceled" until
+  // the `subscription.uncanceled` webhook lands. Keying on the flag alone keeps
+  // a successful reactivation from still reading as "Cancels at period end".
+  const isCanceling = team.cancelAtPeriodEnd;
   const statusLabel = isPastDue
     ? "Payment past due"
     : isCanceling

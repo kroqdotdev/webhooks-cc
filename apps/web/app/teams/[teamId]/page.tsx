@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { TeamSubscriptionCard } from "@/components/teams/team-subscription-card";
 import type { Team } from "@/lib/supabase/teams-types";
+import { ACTIVATION_POLL_INTERVAL_MS, hasActivationTimedOut } from "@/lib/team-activation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -117,9 +118,10 @@ function HelpTooltip({ text }: { text: string }) {
   );
 }
 
-export default function TeamDetailPage() {
+function TeamDetailContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const teamId = params.teamId as string;
   const { session, isLoading: authLoading } = useAuth();
 
@@ -158,6 +160,9 @@ export default function TeamDetailPage() {
   // Delete team
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Post-checkout activation wait
+  const [activationTimedOut, setActivationTimedOut] = useState(false);
 
   const authHeader: Record<string, string> = session?.access_token
     ? { Authorization: `Bearer ${session.access_token}` }
@@ -231,6 +236,46 @@ export default function TeamDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, session, teamId]);
+
+  // ── Post-checkout activation wait ────────────────────────────────
+  // Polar sends the owner back here before `subscription.created` has
+  // necessarily landed, so poll the team row rather than showing a live
+  // Subscribe button to someone who just paid.
+  const returnedFromCheckout = searchParams.get("subscribed") === "true";
+  const isTeamActive = team !== null && team.subscriptionStatus !== null;
+  const activating = returnedFromCheckout && team !== null && !isTeamActive && !activationTimedOut;
+
+  // The poller reads the latest refreshTeam through a ref: it closes over team
+  // state, so depending on it directly would restart the interval — and the
+  // timeout — on every refresh.
+  const refreshTeamRef = useRef(refreshTeam);
+  useEffect(() => {
+    refreshTeamRef.current = refreshTeam;
+  });
+
+  useEffect(() => {
+    if (!activating) return;
+
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      if (hasActivationTimedOut(startedAt, Date.now())) {
+        setActivationTimedOut(true);
+        return;
+      }
+      void refreshTeamRef.current();
+    }, ACTIVATION_POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [activating]);
+
+  // Drop the flag once the subscription is live so a later refresh does not
+  // re-enter the waiting state.
+  useEffect(() => {
+    if (!returnedFromCheckout || !isTeamActive) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("subscribed");
+    router.replace(`${url.pathname}${url.search}`, { scroll: false });
+  }, [returnedFromCheckout, isTeamActive, router]);
 
   const handleRemoveMember = async (userId: string) => {
     setRemovingId(userId);
@@ -398,7 +443,7 @@ export default function TeamDetailPage() {
         <h1 className="text-2xl font-bold">{teamName}</h1>
       </div>
 
-      {team?.suspended && (
+      {team?.suspended && !activating && (
         <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
           <p className="font-medium text-yellow-700 dark:text-yellow-400">
             Team suspended — no active subscription
@@ -416,6 +461,8 @@ export default function TeamDetailPage() {
           isOwner={isOwner}
           accessToken={session?.access_token ?? null}
           onChanged={refreshTeam}
+          activating={activating}
+          activationTimedOut={returnedFromCheckout && activationTimedOut}
         />
       )}
 
@@ -695,5 +742,21 @@ export default function TeamDetailPage() {
         </section>
       )}
     </main>
+  );
+}
+
+export default function TeamDetailPage() {
+  // useSearchParams (the post-checkout `?subscribed=true` flag) needs a Suspense
+  // boundary above it.
+  return (
+    <Suspense
+      fallback={
+        <main className="container mx-auto px-4 py-8 max-w-2xl">
+          <div className="animate-pulse text-muted-foreground">Loading...</div>
+        </main>
+      }
+    >
+      <TeamDetailContent />
+    </Suspense>
   );
 }
