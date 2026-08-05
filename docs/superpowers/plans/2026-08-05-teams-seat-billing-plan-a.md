@@ -966,7 +966,7 @@ git add -A && git commit -m "test(e2e): teams specs for subscription-gated UI"
 ## Deploy checklist (after merge — operator steps, not tasks)
 
 1. Polar dashboard (sandbox first): create seat-based product "webhooks.cc Teams", $12/seat/mo fixed, no benefits needed. Copy product id → `POLAR_TEAMS_PRODUCT_ID` in `.env.local`.
-2. Apply `00033_team_billing.sql` to production Postgres.
+2. On production FIRST run `create index concurrently if not exists requests_team on public.requests(team_id) where team_id is not null;` out-of-band (plain `create index` inside the migration would SHARE-lock `requests` and block ingestion; the migration's `if not exists` then no-ops — same hazard/remedy as 00020's companion script). Then apply `00033_team_billing.sql` to production Postgres.
 3. `make deploy-web`.
 4. Sandbox end-to-end: subscribe a test team (Polar test card), invite/accept, capture on a shared endpoint, watch the pool bar; cancel; revoke.
 5. Existing teams show suspended with subscribe CTA — expected (hard cutover).
