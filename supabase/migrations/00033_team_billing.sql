@@ -221,5 +221,210 @@ begin
 end;
 $$;
 
+-- ============================================================================
+-- Part 3: team lifecycle — seat-capped invite acceptance, team period resets,
+-- and a retention carve-out for team-billed requests.
+-- ============================================================================
+
+-- Housekeeping for Part 2: 00019 added the 10-argument capture_webhook the Rust
+-- receiver calls, but the 9-argument version from 00018 was never dropped. Two
+-- live overloads make PostgREST report "Could not choose the best candidate
+-- function" for any call that omits p_body_raw. Nothing calls the 9-arg form.
+drop function if exists public.capture_webhook(
+  text, text, text, jsonb, text, jsonb, text, text, timestamptz
+);
+
+-- ----------------------------------------------------------------------------
+-- accept_team_invite: seats are the member cap.
+--
+-- Base is 00022_accept_team_invite.sql. Two changes: the hardcoded 25-member
+-- limit becomes the team's purchased seat count, and a team without a
+-- subscription cannot seat anyone at all. Both rejections roll the invite back
+-- to pending so it stays retryable once the owner buys seats. The new p_seat_id
+-- carries the Polar seat assignment onto the membership row.
+--
+-- The signature changes (2 args -> 3), so the old overload must go: leaving it
+-- would make PostgREST ambiguous for two-argument callers.
+-- ----------------------------------------------------------------------------
+
+drop function if exists public.accept_team_invite(uuid, uuid);
+
+create or replace function public.accept_team_invite(
+  p_user_id uuid,
+  p_invite_id uuid,
+  p_seat_id text default null
+)
+returns jsonb
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_team_id uuid;
+  v_team record;
+  v_member_count integer;
+begin
+  -- Atomically claim the invite: pending → accepted, only if caller is the invited user
+  update public.team_invites
+  set status = 'accepted'
+  where id = p_invite_id
+    and invited_user_id = p_user_id
+    and status = 'pending'
+  returning team_id into v_team_id;
+
+  if v_team_id is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  -- Lock team row first to serialize concurrent accepts (even when no members exist yet)
+  select id, seats, subscription_status into v_team
+  from public.teams
+  where id = v_team_id
+  for update;
+
+  if v_team.subscription_status is null then
+    -- Roll back invite to pending so it can be accepted once the team subscribes
+    update public.team_invites set status = 'pending' where id = p_invite_id;
+    return jsonb_build_object('status', 'inactive');
+  end if;
+
+  -- Also lock existing memberships for this team
+  perform 1 from public.team_members where team_id = v_team_id for update;
+
+  select count(*) into v_member_count
+  from public.team_members
+  where team_id = v_team_id;
+
+  if v_member_count >= v_team.seats then
+    -- Roll back invite to pending so user can retry after seats are added
+    update public.team_invites set status = 'pending' where id = p_invite_id;
+    return jsonb_build_object('status', 'full');
+  end if;
+
+  -- Add as team member (ignore if already a member)
+  insert into public.team_members (team_id, user_id, role, polar_seat_id)
+  values (v_team_id, p_user_id, 'member', p_seat_id)
+  on conflict (team_id, user_id) do nothing;
+
+  return jsonb_build_object('status', 'accepted');
+end;
+$$;
+
+-- Revoke public access, only service_role can call
+revoke all on function public.accept_team_invite(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.accept_team_invite(uuid, uuid, text) to service_role;
+
+-- ----------------------------------------------------------------------------
+-- process_billing_period_resets: teams renew and lapse like personal Pro.
+--
+-- Base is 00005_billing_period_resets.sql; the two user CTEs are unchanged. Two
+-- team CTEs follow them, in the same order and with the same predicates: a team
+-- that canceled at period end is deactivated (counted as downgraded), and every
+-- other active team rolls into a fresh 30-day period (counted as renewed).
+-- Return shape is unchanged — the pg_cron job and lib/supabase/billing.ts both
+-- depend on it.
+-- ----------------------------------------------------------------------------
+
+create or replace function public.process_billing_period_resets()
+returns table(processed integer, downgraded integer, renewed integer)
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  downgraded_count integer := 0;
+  renewed_count integer := 0;
+begin
+  with downgraded_users as (
+    update public.users
+    set
+      plan = 'free',
+      subscription_status = null,
+      request_limit = 50,
+      requests_used = 0,
+      cancel_at_period_end = false,
+      period_start = null,
+      period_end = null,
+      polar_subscription_id = null
+    where plan = 'pro'
+      and cancel_at_period_end = true
+      and period_end is not null
+      and period_end <= now()
+    returning id
+  )
+  select count(*) into downgraded_count from downgraded_users;
+
+  with renewed_users as (
+    update public.users
+    set
+      requests_used = 0,
+      period_start = period_end,
+      period_end = period_end + interval '30 days'
+    where plan = 'pro'
+      and cancel_at_period_end = false
+      and period_end is not null
+      and period_end <= now()
+    returning id
+  )
+  select count(*) into renewed_count from renewed_users;
+
+  with deactivated_teams as (
+    update public.teams
+    set
+      subscription_status = null,
+      polar_subscription_id = null,
+      cancel_at_period_end = false,
+      period_start = null,
+      period_end = null
+    where subscription_status is not null
+      and cancel_at_period_end = true
+      and period_end is not null
+      and period_end <= now()
+    returning id
+  )
+  select downgraded_count + count(*) into downgraded_count from deactivated_teams;
+
+  with renewed_teams as (
+    update public.teams
+    set
+      requests_used = 0,
+      period_start = period_end,
+      period_end = period_end + interval '30 days'
+    where subscription_status is not null
+      and cancel_at_period_end = false
+      and period_end is not null
+      and period_end <= now()
+    returning id
+  )
+  select renewed_count + count(*) into renewed_count from renewed_teams;
+
+  return query
+  select downgraded_count + renewed_count, downgraded_count, renewed_count;
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- cleanup_free_user_requests: 7-day retention is a personal-plan limit.
+--
+-- Base is 00001_initial_schema.sql; only the delete predicate changes. A request
+-- billed to a team was paid for by that team's subscription, so the owner's
+-- personal plan must not decide how long it is kept.
+-- ----------------------------------------------------------------------------
+
+create or replace function public.cleanup_free_user_requests()
+returns integer
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  deleted integer;
+begin
+  delete from public.requests
+  where user_id in (select id from public.users where plan = 'free')
+    and team_id is null
+    and received_at < now() - interval '7 days';
+  get diagnostics deleted = row_count;
+  return deleted;
+end;
+$$;
+
 -- Reload PostgREST schema cache so the Part 1 columns are visible via REST API
 notify pgrst, 'reload schema';
