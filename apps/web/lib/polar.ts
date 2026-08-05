@@ -32,6 +32,13 @@ export function getPolarCheckoutConfig() {
   };
 }
 
+export function getPolarTeamsCheckoutConfig() {
+  return {
+    appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
+    teamsProductId: requireEnv("POLAR_TEAMS_PRODUCT_ID"),
+  };
+}
+
 export function getPolarWebhookSecret(): string {
   return requireEnv("POLAR_WEBHOOK_SECRET");
 }
