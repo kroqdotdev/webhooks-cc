@@ -401,6 +401,17 @@ begin
 end;
 $$;
 
+-- `create or replace` preserves the pre-existing ACL, and this function predates
+-- the hardening pass — it still carried the anon/authenticated EXECUTE that
+-- Supabase's default privileges hand to every new function in `public`. Same
+-- treatment 00025_harden_cleanup_rpc.sql applied to the ephemeral cleanup RPC.
+-- Both callers are unaffected: pg_cron runs as postgres, and lib/supabase/
+-- billing.ts calls it through the service-role client.
+revoke all on function public.process_billing_period_resets() from public;
+revoke all on function public.process_billing_period_resets() from anon;
+revoke all on function public.process_billing_period_resets() from authenticated;
+grant execute on function public.process_billing_period_resets() to service_role;
+
 -- ----------------------------------------------------------------------------
 -- cleanup_free_user_requests: 7-day retention is a personal-plan limit.
 --
@@ -425,6 +436,15 @@ begin
   return deleted;
 end;
 $$;
+
+-- Same hardening, and more urgent here: this is a security definer function
+-- whose DELETE is not scoped to any caller, so an anon EXECUTE grant let anyone
+-- holding the published anon key destroy every free-tier user's request history
+-- over PostgREST. Its only caller is the daily pg_cron job, which runs as postgres.
+revoke all on function public.cleanup_free_user_requests() from public;
+revoke all on function public.cleanup_free_user_requests() from anon;
+revoke all on function public.cleanup_free_user_requests() from authenticated;
+grant execute on function public.cleanup_free_user_requests() to service_role;
 
 -- Reload PostgREST schema cache so the Part 1 columns are visible via REST API
 notify pgrst, 'reload schema';

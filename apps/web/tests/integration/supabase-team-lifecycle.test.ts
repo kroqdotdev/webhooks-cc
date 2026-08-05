@@ -5,14 +5,31 @@ import { createEndpointForUser } from "@/lib/supabase/endpoints";
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 if (!SERVICE_ROLE_KEY) {
   throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required for integration tests");
 }
 
+if (!ANON_KEY) {
+  throw new Error("SUPABASE_ANON_KEY env var required for integration tests");
+}
+
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+const anon = createClient(SUPABASE_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+async function callAnonRpc(functionName: string, params?: Record<string, unknown>) {
+  const rpc = anon.rpc.bind(anon) as unknown as (
+    name: string,
+    functionParams?: Record<string, unknown>
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+
+  return rpc(functionName, params);
+}
 
 const TEST_PASSWORD = "TestPassword123!";
 const ts = Date.now();
@@ -331,5 +348,35 @@ describe("cleanup_free_user_requests team carve-out", () => {
 
     expect(await requestExists(personalRequestId)).toBe(false);
     expect(await requestExists(teamRequestId)).toBe(true);
+  });
+});
+
+// `create or replace` preserves a function's existing ACL, so every function
+// this migration re-creates needs its service-role-only grant asserted, not
+// assumed. Mirrors supabase-cleanup.test.ts's check on the ephemeral cleanup RPC.
+describe("service-role-only grants", () => {
+  it("does not allow anonymous clients to invoke the free-user retention rpc", async () => {
+    const { data, error } = await callAnonRpc("cleanup_free_user_requests");
+
+    expect(data).toBeNull();
+    expect(error).not.toBeNull();
+  });
+
+  it("does not allow anonymous clients to invoke the billing reset rpc", async () => {
+    const { data, error } = await callAnonRpc("process_billing_period_resets");
+
+    expect(data).toBeNull();
+    expect(error).not.toBeNull();
+  });
+
+  it("does not allow anonymous clients to invoke the invite acceptance rpc", async () => {
+    const { data, error } = await callAnonRpc("accept_team_invite", {
+      p_user_id: ownerId,
+      p_invite_id: ownerId,
+      p_seat_id: null,
+    });
+
+    expect(data).toBeNull();
+    expect(error).not.toBeNull();
   });
 });
