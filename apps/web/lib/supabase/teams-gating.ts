@@ -25,6 +25,27 @@ export async function requireActiveTeam(teamId: string): Promise<string | null> 
   return null;
 }
 
+/**
+ * True when the user belongs to any team at all, subscribed or not.
+ *
+ * This is the gate for a user's view of their OWN endpoints' share rows, which
+ * is management surface rather than a paid feature: it exposes only shares the
+ * caller created and the names of teams they already belong to. Gating it on a
+ * subscription would hide the unshare control exactly when a team lapses,
+ * stranding endpoints that are still shared.
+ */
+export async function hasAnyTeamMembership(userId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("team_members")
+    .select("team_id")
+    .eq("user_id", userId)
+    .limit(1);
+
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
 /** True when the user belongs to at least one subscribed team. */
 export async function hasActiveTeamMembership(userId: string): Promise<boolean> {
   const admin = createAdminClient();

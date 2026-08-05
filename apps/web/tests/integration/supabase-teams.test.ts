@@ -21,6 +21,7 @@ import {
   resolveEndpointAccess,
   getShareMetadataForOwnedEndpoints,
   hasActiveTeamMembership,
+  hasAnyTeamMembership,
 } from "@/lib/supabase/teams";
 import {
   listRequestsForEndpointByUser,
@@ -1476,14 +1477,15 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // hasActiveTeamMembership — the share-metadata gate on GET /api/endpoints
+  // The two gates on GET /api/endpoints: share metadata for the caller's OWN
+  // endpoints (any membership) vs shared-with-me endpoints (paid, active only)
   // ---------------------------------------------------------------------------
 
   describe("Share-metadata gate", () => {
     let gateUserId: string;
     let gateTeamId: string;
 
-    it("is false for a user with no teams", async () => {
+    it("both gates are false for a user with no teams", async () => {
       const { data } = await admin.auth.admin.createUser({
         email: `test-teams-gate-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
@@ -1492,27 +1494,111 @@ describe("Teams Integration", () => {
       });
       gateUserId = data!.user!.id;
 
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(false);
       expect(await hasActiveTeamMembership(gateUserId)).toBe(false);
     });
 
-    it("is false while the user's only team is unsubscribed", async () => {
+    it("membership alone is enough for the share-metadata gate", async () => {
       const created = await createTeam(gateUserId, "Gate Team");
       gateTeamId = (created as { id: string }).id;
 
+      // The team has no subscription: the owner still needs to see their own
+      // share rows to manage them, but buys no shared-with-me access.
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(true);
       expect(await hasActiveTeamMembership(gateUserId)).toBe(false);
     });
 
-    it("flips true once the team subscribes and false again when it lapses", async () => {
+    it("the active gate flips true once the team subscribes and false when it lapses", async () => {
       await activateTeam(gateTeamId, 2);
       expect(await hasActiveTeamMembership(gateUserId)).toBe(true);
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(true);
 
       await admin.from("teams").update({ subscription_status: null }).eq("id", gateTeamId);
       expect(await hasActiveTeamMembership(gateUserId)).toBe(false);
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(true);
     });
 
     it("cleanup gate test", async () => {
       await admin.from("teams").delete().eq("id", gateTeamId);
       await admin.auth.admin.deleteUser(gateUserId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // An owner keeps control of an endpoint they shared with a team that lapsed
+  // ---------------------------------------------------------------------------
+
+  describe("Lapsed-team share management", () => {
+    let lapsedOwnerId: string;
+    let lapsedMemberId: string;
+    let lapsedTeamId: string;
+    let lapsedEndpointId: string;
+
+    it("setup: shared endpoint on a team whose subscription then lapses", async () => {
+      const [ownerData, memberData] = await Promise.all([
+        admin.auth.admin.createUser({
+          email: `test-lapsed-owner-${ts}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: "Lapsed Owner" },
+        }),
+        admin.auth.admin.createUser({
+          email: `test-lapsed-member-${ts}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: "Lapsed Member" },
+        }),
+      ]);
+      lapsedOwnerId = ownerData.data!.user!.id;
+      lapsedMemberId = memberData.data!.user!.id;
+
+      const created = await createTeam(lapsedOwnerId, "Lapsed Management Team");
+      lapsedTeamId = (created as { id: string }).id;
+      await activateTeam(lapsedTeamId, 3);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: lapsedTeamId, user_id: lapsedMemberId, role: "member" });
+
+      const ep = await createEndpointForUser({ userId: lapsedOwnerId, name: "Lapsed EP" });
+      lapsedEndpointId = ep.id;
+      expect(
+        (await shareEndpointWithTeam(lapsedOwnerId, lapsedTeamId, lapsedEndpointId)).success
+      ).toBe(true);
+
+      // The subscription lapses — as every pre-existing team does at cutover.
+      await admin.from("teams").update({ subscription_status: null }).eq("id", lapsedTeamId);
+    });
+
+    it("owner still sees the share row on their own endpoint", async () => {
+      // Without this the endpoint drops out of the team page's "shared" list and
+      // its Remove button disappears, stranding the share.
+      const map = await getShareMetadataForOwnedEndpoints(lapsedOwnerId);
+      const shares = map.get(lapsedEndpointId);
+      expect(shares).toBeDefined();
+      expect(shares!.some((s) => s.teamId === lapsedTeamId)).toBe(true);
+    });
+
+    it("the member's shared-with-me list is empty — that part is the paid feature", async () => {
+      const shared = await getSharedEndpointsForUser(lapsedMemberId);
+      expect(shared.find((e) => e.id === lapsedEndpointId)).toBeUndefined();
+      expect(await hasActiveTeamMembership(lapsedMemberId)).toBe(false);
+    });
+
+    it("owner can still unshare from the lapsed team", async () => {
+      expect(await unshareEndpointFromTeam(lapsedOwnerId, lapsedTeamId, lapsedEndpointId)).toBe(
+        true
+      );
+
+      const map = await getShareMetadataForOwnedEndpoints(lapsedOwnerId);
+      expect(map.get(lapsedEndpointId)).toBeUndefined();
+    });
+
+    it("cleanup lapsed-team test", async () => {
+      await admin.from("teams").delete().eq("id", lapsedTeamId);
+      await admin.auth.admin.deleteUser(lapsedOwnerId);
+      await admin.auth.admin.deleteUser(lapsedMemberId);
     });
   });
 

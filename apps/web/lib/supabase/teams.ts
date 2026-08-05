@@ -14,7 +14,12 @@ export type {
 export { createTeam, listTeamsForUser, updateTeam, deleteTeam } from "./teams-crud";
 
 // Subscription gating
-export { requireActiveTeam, hasActiveTeamMembership, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
+export {
+  requireActiveTeam,
+  hasActiveTeamMembership,
+  hasAnyTeamMembership,
+  TEAM_INACTIVE_MESSAGE,
+} from "./teams-gating";
 
 // Membership
 export { listTeamMembers, removeTeamMember, leaveTeam } from "./teams-members";
