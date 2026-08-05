@@ -68,10 +68,11 @@ export async function listTeamMembers(
   const members = membersData as TeamMemberRow[];
   const userIds = members.map((m) => m.user_id);
 
-  // Fetch user profiles (including plan)
+  // Fetch user profiles. Personal plan is deliberately absent: team access is
+  // keyed to the team's own subscription.
   const { data: usersData, error: usersError } = await admin
     .from("users")
-    .select("id, email, name, image, plan")
+    .select("id, email, name, image")
     .in("id", userIds);
 
   if (usersError) throw usersError;
@@ -87,7 +88,6 @@ export async function listTeamMembers(
       name: user?.name ?? null,
       image: user?.image ?? null,
       role: m.role,
-      plan: (user?.plan === "pro" ? "pro" : "free") as "free" | "pro",
       joinedAt: parseMillis(m.joined_at),
     };
   });

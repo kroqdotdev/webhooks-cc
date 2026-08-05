@@ -1639,21 +1639,26 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Team member plan info in listTeamMembers
+  // listTeamMembers exposes membership, never personal plan
   // ---------------------------------------------------------------------------
 
-  describe("Team member plan visibility", () => {
-    it("listTeamMembers returns plan field for each member", async () => {
+  describe("Team member fields", () => {
+    it("listTeamMembers returns role and email but no plan field", async () => {
       const members = await listTeamMembers(ownerId, teamId);
       expect(members).not.toBeNull();
+      expect(members!.length).toBeGreaterThan(0);
 
       const owner = members!.find((m) => m.userId === ownerId);
       expect(owner).toBeDefined();
-      expect(owner!.plan).toBe("pro");
+      expect(owner!.role).toBe("owner");
+      expect(owner!.email).toContain("@");
 
-      const member = members!.find((m) => m.userId === memberId);
-      if (member) {
-        expect(["free", "pro"]).toContain(member.plan);
+      // Access hangs off the team subscription, so a personal plan is not part
+      // of the member payload at all.
+      for (const member of members!) {
+        expect(member).not.toHaveProperty("plan");
+        expect(["owner", "member"]).toContain(member.role);
+        expect(member.email).toContain("@");
       }
     });
   });

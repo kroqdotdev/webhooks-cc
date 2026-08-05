@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { createClient } from "@/lib/supabase/client";
+import type { Team } from "@/lib/supabase/teams-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Lock } from "lucide-react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import {
   trackTeamCreated,
@@ -23,15 +23,8 @@ import {
   trackTeamInviteDeclined,
 } from "@/lib/analytics";
 
-interface Team {
-  id: string;
-  name: string;
-  createdBy: string;
-  createdAt: number;
-  memberCount: number;
-  role: "owner" | "member";
-  suspended: boolean;
-}
+/** Shown when accepting fails for a reason the API could not name (500, network). */
+const GENERIC_ACCEPT_ERROR = "Couldn't claim a seat — try again or ask the owner to check seats.";
 
 interface Invite {
   id: string;
@@ -42,8 +35,7 @@ interface Invite {
 }
 
 export default function TeamsPage() {
-  const { user: authUser, session, isLoading: authLoading } = useAuth();
-  const [plan, setPlan] = useState<string | null>(null);
+  const { session, isLoading: authLoading } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,28 +46,23 @@ export default function TeamsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [acceptError, setAcceptError] = useState<{ inviteId: string; message: string } | null>(
+    null
+  );
 
   const authHeader: Record<string, string> = session?.access_token
     ? { Authorization: `Bearer ${session.access_token}` }
     : {};
 
   const fetchData = async () => {
-    if (!session?.access_token || !authUser) return;
+    if (!session?.access_token) return;
     setLoading(true);
     setLoadError(null);
     try {
-      const supabase = createClient();
-      const [planRes, teamsRes, invitesRes] = await Promise.all([
-        supabase.from("users").select("plan").eq("id", authUser.id).single<{ plan: string }>(),
+      const [teamsRes, invitesRes] = await Promise.all([
         fetch("/api/teams", { headers: authHeader }),
         fetch("/api/invites", { headers: authHeader }),
       ]);
-
-      if (planRes.error) {
-        setLoadError("Failed to load account data. Please try refreshing.");
-        return;
-      }
-      setPlan(planRes.data.plan);
 
       if (!teamsRes.ok || !invitesRes.ok) {
         setLoadError("Failed to load teams. Please try refreshing.");
@@ -126,6 +113,7 @@ export default function TeamsPage() {
 
   const handleAccept = async (inviteId: string) => {
     setAcceptingId(inviteId);
+    setAcceptError(null);
     try {
       const res = await fetch(`/api/invites/${inviteId}/accept`, {
         method: "POST",
@@ -134,7 +122,18 @@ export default function TeamsPage() {
       if (res.ok) {
         trackTeamInviteAccepted();
         await fetchData();
+        return;
       }
+
+      // 400s name the reason (inactive team, no free seat); a 500 means the seat
+      // claim itself broke, which has no message worth repeating verbatim.
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setAcceptError({
+        inviteId,
+        message: res.status >= 500 || !data.error ? GENERIC_ACCEPT_ERROR : data.error,
+      });
+    } catch {
+      setAcceptError({ inviteId, message: GENERIC_ACCEPT_ERROR });
     } finally {
       setAcceptingId(null);
     }
@@ -180,101 +179,62 @@ export default function TeamsPage() {
     );
   }
 
-  const isPro = plan === "pro";
   const ownedTeams = teams.filter((t) => t.role === "owner");
   const memberTeams = teams.filter((t) => t.role === "member");
-
-  // Free user with no team memberships at all → full upgrade wall
-  if (!isPro && teams.length === 0 && invites.length === 0) {
-    return (
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
-        <section className="space-y-4">
-          <h1 className="text-2xl font-bold">Teams</h1>
-          <div className="border rounded-lg p-6 bg-card space-y-4">
-            <div className="flex items-center gap-3">
-              <Lock className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Teams is a Pro feature</p>
-                <p className="text-sm text-muted-foreground">
-                  Collaborate on webhook endpoints with your team. Create teams, invite members, and
-                  share endpoints — all in real time.
-                </p>
-              </div>
-            </div>
-            <Button asChild>
-              <Link href="/account">Upgrade to Pro</Link>
-            </Button>
-          </div>
-        </section>
-      </main>
-    );
-  }
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-2xl space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Teams</h1>
-        {isPro ? (
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-1" />
-                New Team
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="h-4 w-4 mr-1" />
+              New Team
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create a new team</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <Label htmlFor="team-name">Team name</Label>
+              <Input
+                id="team-name"
+                placeholder="e.g. Acme Corp"
+                value={newTeamName}
+                onChange={(e) => {
+                  setNewTeamName(e.target.value);
+                  setCreateError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleCreateTeam();
+                }}
+                autoFocus
+              />
+              {createError && <p className="text-sm text-destructive">{createError}</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+                Cancel
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create a new team</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3 py-2">
-                <Label htmlFor="team-name">Team name</Label>
-                <Input
-                  id="team-name"
-                  placeholder="e.g. Acme Corp"
-                  value={newTeamName}
-                  onChange={(e) => {
-                    setNewTeamName(e.target.value);
-                    setCreateError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleCreateTeam();
-                  }}
-                  autoFocus
-                />
-                {createError && <p className="text-sm text-destructive">{createError}</p>}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => void handleCreateTeam()}
-                  disabled={creating || !newTeamName.trim()}
-                >
-                  {creating ? "Creating..." : "Create team"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        ) : (
-          <Button size="sm" variant="outline" asChild>
-            <Link href="/account">Upgrade to Pro</Link>
-          </Button>
-        )}
+              <Button
+                onClick={() => void handleCreateTeam()}
+                disabled={creating || !newTeamName.trim()}
+              >
+                {creating ? "Creating..." : "Create team"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Free user who owns teams — show suspension notice */}
-      {!isPro && ownedTeams.length > 0 && (
-        <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
-          <p className="font-medium text-yellow-700 dark:text-yellow-400">
-            Your teams are suspended
-          </p>
+      {teams.length === 0 && invites.length === 0 && (
+        <div className="border rounded-lg p-6 bg-card space-y-2">
+          <p className="font-medium">You&apos;re not in a team yet</p>
           <p className="text-sm text-muted-foreground">
-            Your plan is no longer Pro. Shared endpoints are inaccessible to team members.{" "}
-            <Link href="/account" className="underline font-medium text-foreground">
-              Upgrade to Pro
-            </Link>{" "}
-            to reactivate.
+            Create a team to share endpoints with your teammates. Teams are $12/seat/mo, and every
+            seat adds 100,000 requests to the team&apos;s shared monthly pool.
           </p>
         </div>
       )}
@@ -294,19 +254,13 @@ export default function TeamsPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isPro ? (
-                      <Button
-                        size="sm"
-                        onClick={() => void handleAccept(invite.id)}
-                        disabled={acceptingId === invite.id || decliningId === invite.id}
-                      >
-                        {acceptingId === invite.id ? "Accepting..." : "Accept"}
-                      </Button>
-                    ) : (
-                      <Button size="sm" asChild>
-                        <Link href="/account">Upgrade to accept</Link>
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => void handleAccept(invite.id)}
+                      disabled={acceptingId === invite.id || decliningId === invite.id}
+                    >
+                      {acceptingId === invite.id ? "Accepting..." : "Accept"}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -317,6 +271,11 @@ export default function TeamsPage() {
                     </Button>
                   </div>
                 </div>
+                {acceptError?.inviteId === invite.id && (
+                  <p className="text-sm text-destructive mt-2" role="alert" aria-live="polite">
+                    {acceptError.message}
+                  </p>
+                )}
                 {i < invites.length - 1 && <div className="border-t mt-4" />}
               </div>
             ))}
@@ -334,15 +293,11 @@ export default function TeamsPage() {
                 {ownedTeams.some((t) => t.suspended) && (
                   <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-3 text-sm">
                     <p className="font-medium text-yellow-700 dark:text-yellow-400">
-                      Your teams are suspended
+                      Some of your teams are suspended
                     </p>
                     <p className="text-muted-foreground">
-                      Your plan has been downgraded. Shared endpoints are inaccessible to team
-                      members until you{" "}
-                      <Link href="/account" className="underline font-medium text-foreground">
-                        upgrade to Pro
-                      </Link>
-                      .
+                      A suspended team has no active subscription — open it and subscribe to restore
+                      access to its shared endpoints.
                     </p>
                   </div>
                 )}
@@ -392,33 +347,22 @@ export default function TeamsPage() {
                             {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
                           </p>
                         </div>
-                        {team.suspended ? (
+                        {team.suspended && (
                           <Badge variant="outline" className="text-yellow-600 border-yellow-500/50">
                             Suspended
                           </Badge>
-                        ) : !isPro ? (
-                          <Badge variant="outline" className="text-muted-foreground">
-                            Pro required
-                          </Badge>
-                        ) : null}
+                        )}
                       </div>
                       <Button size="sm" variant="outline" asChild>
                         <Link href={`/teams/${team.id}`}>View</Link>
                       </Button>
                     </div>
-                    {team.suspended ? (
+                    {team.suspended && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        The team owner has downgraded their plan. Shared endpoints are inaccessible
-                        until they upgrade.
+                        This team has no active subscription. Shared endpoints are inaccessible
+                        until the owner subscribes.
                       </p>
-                    ) : !isPro ? (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        <Link href="/account" className="underline">
-                          Upgrade to Pro
-                        </Link>{" "}
-                        to access shared endpoints from this team.
-                      </p>
-                    ) : null}
+                    )}
                     {i < memberTeams.length - 1 && <div className="border-t mt-4" />}
                   </div>
                 ))}

@@ -38,7 +38,6 @@ export interface TeamMember {
   name: string | null;
   image: string | null;
   role: "owner" | "member";
-  plan: "free" | "pro";
   joinedAt: number;
 }
 
