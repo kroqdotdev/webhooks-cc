@@ -1,12 +1,17 @@
 import { createPolarClient, getPolarCheckoutConfig, unwrapPolarResult } from "@/lib/polar";
 import { createAdminClient } from "./admin";
+import {
+  asNonEmptyString,
+  asRecord,
+  normalizeStoredSubscriptionStatus,
+  parseEventTimestamp,
+} from "./billing-shared";
 import type { Database } from "./database";
 
 const FREE_REQUEST_LIMIT = 50;
 const PRO_REQUEST_LIMIT = 100_000;
 
 type UserRow = Database["public"]["Tables"]["users"]["Row"];
-type StoredSubscriptionStatus = UserRow["subscription_status"];
 
 class BillingActionError extends Error {
   code: string;
@@ -33,43 +38,6 @@ interface BillingPeriodResetRow {
   processed: number;
   downgraded: number;
   renewed: number;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function asNonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function normalizeStoredSubscriptionStatus(status: unknown): StoredSubscriptionStatus {
-  switch (status) {
-    case "active":
-    case "trialing":
-      return "active";
-    case "canceled":
-      return "canceled";
-    case "past_due":
-    case "incomplete":
-    case "incomplete_expired":
-    case "unpaid":
-      return "past_due";
-    default:
-      return null;
-  }
-}
-
-function parseEventTimestamp(value: unknown): string | null {
-  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-    return null;
-  }
-
-  return value.toISOString();
 }
 
 async function getBillingUser(userId: string): Promise<BillingUser> {
