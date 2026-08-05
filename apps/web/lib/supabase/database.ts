@@ -538,6 +538,7 @@ export interface Database {
         Args: {
           p_user_id: string;
           p_invite_id: string;
+          p_seat_id?: string | null;
         };
         Returns: Json;
       };

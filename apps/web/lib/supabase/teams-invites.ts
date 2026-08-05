@@ -1,5 +1,10 @@
 import { createAdminClient } from "./admin";
+import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
+import { requireActiveTeam, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
 import type { TeamInvite, TeamInviteRow } from "./teams-types";
+
+/** Every purchased seat is occupied — membership is capped by seats, not plan. */
+const NO_SEATS_MESSAGE = "Team has no available seats — ask the owner to add seats";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -9,15 +14,6 @@ function parseMillis(timestamp: string | null): number {
   if (!timestamp) return Date.now();
   const value = Date.parse(timestamp);
   return Number.isFinite(value) ? value : Date.now();
-}
-
-async function requirePro(userId: string): Promise<string | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.from("users").select("plan").eq("id", userId).maybeSingle();
-
-  if (error) throw error;
-  if (!data || data.plan !== "pro") return "Teams require a Pro plan";
-  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,15 +39,27 @@ export async function createInvite(
   if (callerError) throw callerError;
   if (!callerMembership) return { error: "Not authorized" };
 
-  // Check team member limit (max 25)
+  // Only a subscribed team can seat anyone
+  const activeError = await requireActiveTeam(teamId);
+  if (activeError) return { error: activeError };
+
+  // Purchased seats are the member cap
   const { count: memberCount, error: countError } = await admin
     .from("team_members")
     .select("id", { count: "exact", head: true })
     .eq("team_id", teamId);
 
   if (countError) throw countError;
-  if ((memberCount ?? 0) >= 25) {
-    return { error: "Team has reached the maximum of 25 members" };
+
+  const { data: teamSeats, error: seatsError } = await admin
+    .from("teams")
+    .select("seats")
+    .eq("id", teamId)
+    .maybeSingle();
+
+  if (seatsError) throw seatsError;
+  if ((memberCount ?? 0) >= (teamSeats?.seats ?? 0)) {
+    return { error: NO_SEATS_MESSAGE };
   }
 
   // Look up invited user by email
@@ -293,27 +301,66 @@ export async function acceptInvite(
   userId: string,
   inviteId: string
 ): Promise<{ accepted: boolean; error?: string }> {
-  const proError = await requirePro(userId);
-  if (proError) return { accepted: false, error: proError };
-
   const admin = createAdminClient();
 
-  // Atomic: claim invite + enforce 25-member limit + insert member in one transaction
+  // The Polar seat has to be assigned before the membership row exists, so read
+  // the invite's team and email up front. A non-pending or wrongly-addressed
+  // invite short-circuits here, before any seat is spent.
+  const { data: invite, error: inviteError } = await admin
+    .from("team_invites")
+    .select("team_id, invited_email")
+    .eq("id", inviteId)
+    .eq("invited_user_id", userId)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (inviteError) throw inviteError;
+  if (!invite) return { accepted: false };
+
+  // An existing member re-accepting must not consume a second seat: the RPC's
+  // insert is on-conflict-do-nothing, so a fresh assignment would be stranded.
+  const { data: existingMember, error: memberError } = await admin
+    .from("team_members")
+    .select("id")
+    .eq("team_id", invite.team_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (memberError) throw memberError;
+
+  const seatId = existingMember
+    ? null
+    : await assignTeamSeat(invite.team_id, invite.invited_email, userId);
+
+  // Atomic: claim invite + enforce the seat cap + insert member in one transaction
   const { data, error } = await admin.rpc("accept_team_invite", {
     p_user_id: userId,
     p_invite_id: inviteId,
+    p_seat_id: seatId,
   });
 
   if (error) throw error;
 
   const result = data as { status: string };
 
-  if (result.status === "not_found") return { accepted: false };
-  if (result.status === "full") {
-    return { accepted: false, error: "Team has reached the maximum of 25 members" };
+  if (result.status === "accepted") return { accepted: true };
+
+  // The RPC refused and rolled the invite back — release the seat we just took.
+  // Only ever the seat this call assigned: a null seat id would make
+  // revokeTeamSeat fall back to an email lookup and could strip a seat the user
+  // legitimately holds.
+  if (seatId) {
+    await revokeTeamSeat(invite.team_id, seatId, invite.invited_email);
   }
 
-  return { accepted: true };
+  if (result.status === "inactive") {
+    return { accepted: false, error: TEAM_INACTIVE_MESSAGE };
+  }
+  if (result.status === "full") {
+    return { accepted: false, error: NO_SEATS_MESSAGE };
+  }
+
+  return { accepted: false };
 }
 
 // ---------------------------------------------------------------------------

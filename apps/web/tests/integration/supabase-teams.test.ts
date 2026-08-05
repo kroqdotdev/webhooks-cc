@@ -44,6 +44,10 @@ const admin = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 const SEAT_REQUEST_LIMIT = 100_000;
 
+// Exact user-facing strings the invite path must return.
+const INACTIVE_TEAM_ERROR = "This team needs an active Teams subscription";
+const NO_SEATS_ERROR = "Team has no available seats — ask the owner to add seats";
+
 const TEST_PASSWORD = "TestPassword123!";
 const ts = Date.now();
 
@@ -253,7 +257,15 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("Invites", () => {
-    it("creates an invite for a registered user", async () => {
+    it("creates an invite for a registered user while the owner is on the free plan", async () => {
+      // The team's subscription is the gate — nobody here is Pro.
+      const { data: inviter } = await admin
+        .from("users")
+        .select("plan")
+        .eq("id", ownerId)
+        .maybeSingle();
+      expect(inviter!.plan).toBe("free");
+
       const result = await createInvite(ownerId, teamId, MEMBER_EMAIL);
 
       expect(result.error).toBeUndefined();
@@ -261,6 +273,30 @@ describe("Teams Integration", () => {
       expect(result.invite!.teamId).toBe(teamId);
       expect(result.invite!.invitedEmail).toBe(MEMBER_EMAIL);
       expect(result.invite!.status).toBe("pending");
+    });
+
+    it("rejects invites on a team with no subscription", async () => {
+      const created = await createTeam(ownerId, "Unsubscribed Invite Team");
+      const unsubscribedTeamId = (created as { id: string }).id;
+
+      const result = await createInvite(ownerId, unsubscribedTeamId, THIRD_EMAIL);
+      expect(result.error).toBe(INACTIVE_TEAM_ERROR);
+      expect(result.invite).toBeUndefined();
+
+      await admin.from("teams").delete().eq("id", unsubscribedTeamId);
+    });
+
+    it("rejects invites once members fill every purchased seat", async () => {
+      const created = await createTeam(ownerId, "One Seat Team");
+      const oneSeatTeamId = (created as { id: string }).id;
+      // One seat, and the owner already occupies it.
+      await activateTeam(oneSeatTeamId, 1);
+
+      const result = await createInvite(ownerId, oneSeatTeamId, THIRD_EMAIL);
+      expect(result.error).toBe(NO_SEATS_ERROR);
+      expect(result.invite).toBeUndefined();
+
+      await admin.from("teams").delete().eq("id", oneSeatTeamId);
     });
 
     it("rejects invite for non-existent email", async () => {
@@ -344,13 +380,42 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("Accept invite and membership", () => {
-    it("accepts the pending invite", async () => {
+    it("accepts the pending invite while on the free plan", async () => {
+      const { data: invitee } = await admin
+        .from("users")
+        .select("plan")
+        .eq("id", memberId)
+        .maybeSingle();
+      expect(invitee!.plan).toBe("free");
+
       const invites = await listPendingInvitesForUser(memberId);
       const invite = invites.find((i) => i.teamId === teamId);
       expect(invite).toBeDefined();
 
       const result = await acceptInvite(memberId, invite!.id);
       expect(result.accepted).toBe(true);
+    });
+
+    it("rejects acceptance when the team's subscription lapsed, leaving the invite pending", async () => {
+      const created = await createTeam(ownerId, "Lapsed Team");
+      const lapsedTeamId = (created as { id: string }).id;
+      await activateTeam(lapsedTeamId, 5);
+
+      const inviteResult = await createInvite(ownerId, lapsedTeamId, THIRD_EMAIL);
+      expect(inviteResult.invite).toBeDefined();
+
+      // Subscription lapses between invite and accept.
+      await admin.from("teams").update({ subscription_status: null }).eq("id", lapsedTeamId);
+
+      const accepted = await acceptInvite(thirdId, inviteResult.invite!.id);
+      expect(accepted.accepted).toBe(false);
+      expect(accepted.error).toBe(INACTIVE_TEAM_ERROR);
+
+      // Rolled back to pending so it works once the team resubscribes.
+      const stillPending = await listPendingInvitesForUser(thirdId);
+      expect(stillPending.some((i) => i.id === inviteResult.invite!.id)).toBe(true);
+
+      await admin.from("teams").delete().eq("id", lapsedTeamId);
     });
 
     it("member now appears in team members list", async () => {
@@ -628,7 +693,16 @@ describe("Teams Integration", () => {
       expect(result).toBe(false);
     });
 
-    it("owner removes the member", async () => {
+    it("owner removes the member and releases their recorded seat", async () => {
+      // A recorded seat id exercises the release path; the team has no Polar
+      // subscription, so revokeTeamSeat short-circuits without any HTTP call.
+      const { error: seatError } = await admin
+        .from("team_members")
+        .update({ polar_seat_id: "seat_remove_test" })
+        .eq("team_id", teamId)
+        .eq("user_id", memberId);
+      expect(seatError).toBeNull();
+
       const result = await removeTeamMember(ownerId, teamId, memberId);
       expect(result).toBe(true);
     });
@@ -935,7 +1009,7 @@ describe("Teams Integration", () => {
       expect(result).toBe(false);
     });
 
-    it("member can leave a team", async () => {
+    it("member can leave a team, releasing their recorded seat", async () => {
       // Ensure member is in the team
       const teams = await listTeamsForUser(memberId);
       const inTeam = teams.some((t) => t.id === teamId);
@@ -949,6 +1023,13 @@ describe("Teams Integration", () => {
             { onConflict: "team_id,user_id" }
           );
       }
+
+      // As in the removal test: a recorded seat id, no Polar subscription.
+      await admin
+        .from("team_members")
+        .update({ polar_seat_id: "seat_leave_test" })
+        .eq("team_id", teamId)
+        .eq("user_id", memberId);
 
       const result = await leaveTeam(memberId, teamId);
       expect(result).toBe(true);
@@ -998,14 +1079,14 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Pro-only enforcement
+  // Plan-independent membership
   // ---------------------------------------------------------------------------
 
-  describe("Pro-only enforcement", () => {
+  describe("Plan-independent membership", () => {
     let freeUserId: string;
     let freeInviteId: string;
 
-    it("creates a free user for pro-only tests", async () => {
+    it("creates a free user for plan-independence tests", async () => {
       const { data, error } = await admin.auth.admin.createUser({
         email: `test-teams-free-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
@@ -1027,7 +1108,7 @@ describe("Teams Integration", () => {
       await deleteTeam(freeUserId, team.id);
     });
 
-    it("free user cannot accept a team invite", async () => {
+    it("free user can accept an invite to a subscribed team", async () => {
       const inviteResult = await createInvite(
         ownerId,
         teamId,
@@ -1037,8 +1118,15 @@ describe("Teams Integration", () => {
       freeInviteId = inviteResult.invite!.id;
 
       const acceptResult = await acceptInvite(freeUserId, freeInviteId);
-      expect(acceptResult.accepted).toBe(false);
-      expect(acceptResult.error).toContain("Pro");
+      expect(acceptResult.accepted).toBe(true);
+      expect(acceptResult.error).toBeUndefined();
+
+      const members = await listTeamMembers(ownerId, teamId);
+      expect(members!.some((m) => m.userId === freeUserId)).toBe(true);
+
+      // Restore the roster for the suites that follow.
+      const removed = await removeTeamMember(ownerId, teamId, freeUserId);
+      expect(removed).toBe(true);
     });
 
     it("cleanup free user", async () => {
@@ -1259,107 +1347,115 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Member limit at accept time
+  // Seat cap at accept time
   // ---------------------------------------------------------------------------
 
-  describe("Member limit at accept time", () => {
-    let limitTeamId: string;
-    let limitOwnerId: string;
-    const fillerUserIds: string[] = [];
+  describe("Seat cap at accept time", () => {
+    let seatTeamId: string;
+    let seatOwnerId: string;
+    const seatUserIds: string[] = [];
     let overflowUserId: string;
 
-    it("setup: create team with 24 members (23 fillers + owner)", async () => {
+    it("setup: create a 2-seat team whose owner takes the first seat", async () => {
       const { data: ownerData } = await admin.auth.admin.createUser({
-        email: `test-limit-owner-${ts}@webhooks-test.local`,
+        email: `test-seat-owner-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
-        user_metadata: { full_name: "Limit Owner" },
+        user_metadata: { full_name: "Seat Owner" },
       });
-      limitOwnerId = ownerData!.user!.id;
-      fillerUserIds.push(limitOwnerId);
-      await admin.from("users").update({ plan: "pro" }).eq("id", limitOwnerId);
+      seatOwnerId = ownerData!.user!.id;
+      seatUserIds.push(seatOwnerId);
 
-      const teamResult = await createTeam(limitOwnerId, "Limit Team");
+      const teamResult = await createTeam(seatOwnerId, "Seat Cap Team");
       expect("error" in teamResult).toBe(false);
-      limitTeamId = (teamResult as { id: string }).id;
+      seatTeamId = (teamResult as { id: string }).id;
 
-      // Add 23 fillers (total = 24 with owner)
-      for (let i = 0; i < 23; i++) {
-        const { data } = await admin.auth.admin.createUser({
-          email: `test-limit-filler-${ts}-${i}@webhooks-test.local`,
-          password: TEST_PASSWORD,
-          email_confirm: true,
-          user_metadata: { full_name: `Filler ${i}` },
-        });
-        await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
-        fillerUserIds.push(data!.user!.id);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any)
-          .from("team_members")
-          .insert({ team_id: limitTeamId, user_id: data!.user!.id, role: "member" });
-      }
+      await activateTeam(seatTeamId, 2);
     });
 
-    it("invite succeeds when team has 24 members", async () => {
-      // Create the overflow user (will be the 25th)
+    it("invite succeeds while a seat is free", async () => {
       const { data } = await admin.auth.admin.createUser({
-        email: `test-limit-overflow-${ts}@webhooks-test.local`,
+        email: `test-seat-overflow-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
         user_metadata: { full_name: "Overflow User" },
       });
       overflowUserId = data!.user!.id;
-      fillerUserIds.push(overflowUserId);
-      await admin.from("users").update({ plan: "pro" }).eq("id", overflowUserId);
+      seatUserIds.push(overflowUserId);
 
-      // Invite should succeed (team has 24, below 25 limit)
+      // 1 member, 2 seats
       const inviteResult = await createInvite(
-        limitOwnerId,
-        limitTeamId,
-        `test-limit-overflow-${ts}@webhooks-test.local`
+        seatOwnerId,
+        seatTeamId,
+        `test-seat-overflow-${ts}@webhooks-test.local`
       );
       expect(inviteResult.error).toBeUndefined();
       expect(inviteResult.invite).toBeDefined();
     });
 
-    it("add one more member to bring team to 25 before accept", async () => {
+    it("fills the last seat before the invite is accepted", async () => {
       const { data } = await admin.auth.admin.createUser({
-        email: `test-limit-filler-${ts}-extra@webhooks-test.local`,
+        email: `test-seat-filler-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
-        user_metadata: { full_name: "Extra Filler" },
+        user_metadata: { full_name: "Seat Filler" },
       });
-      fillerUserIds.push(data!.user!.id);
-      await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+      seatUserIds.push(data!.user!.id);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any)
         .from("team_members")
-        .insert({ team_id: limitTeamId, user_id: data!.user!.id, role: "member" });
+        .insert({ team_id: seatTeamId, user_id: data!.user!.id, role: "member" });
     });
 
-    it("acceptInvite fails and rolls back when team is at 25", async () => {
-      // Get the pending invite
+    it("createInvite is rejected once every seat is taken", async () => {
+      const { data } = await admin.auth.admin.createUser({
+        email: `test-seat-late-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Late User" },
+      });
+      seatUserIds.push(data!.user!.id);
+
+      const result = await createInvite(
+        seatOwnerId,
+        seatTeamId,
+        `test-seat-late-${ts}@webhooks-test.local`
+      );
+      expect(result.error).toBe(NO_SEATS_ERROR);
+    });
+
+    it("acceptInvite fails and rolls back when every seat is taken", async () => {
       const invites = await listPendingInvitesForUser(overflowUserId);
-      const invite = invites.find((i) => i.teamId === limitTeamId);
+      const invite = invites.find((i) => i.teamId === seatTeamId);
       expect(invite).toBeDefined();
 
-      // Try to accept — should fail because team now has 25 members
       const result = await acceptInvite(overflowUserId, invite!.id);
       expect(result.accepted).toBe(false);
-      expect(result.error).toContain("25");
+      expect(result.error).toBe(NO_SEATS_ERROR);
 
       // Invite should be rolled back to pending
       const afterInvites = await listPendingInvitesForUser(overflowUserId);
-      const afterInvite = afterInvites.find((i) => i.teamId === limitTeamId);
+      const afterInvite = afterInvites.find((i) => i.teamId === seatTeamId);
       expect(afterInvite).toBeDefined();
       expect(afterInvite!.id).toBe(invite!.id);
     });
 
-    it("cleanup limit test", async () => {
+    it("accepting succeeds after the owner buys another seat", async () => {
+      await activateTeam(seatTeamId, 3);
+
+      const invites = await listPendingInvitesForUser(overflowUserId);
+      const invite = invites.find((i) => i.teamId === seatTeamId);
+      expect(invite).toBeDefined();
+
+      const result = await acceptInvite(overflowUserId, invite!.id);
+      expect(result.accepted).toBe(true);
+    });
+
+    it("cleanup seat cap test", async () => {
       // Delete the team (cascades team_members, team_invites, team_endpoints)
-      await admin.from("teams").delete().eq("id", limitTeamId);
+      await admin.from("teams").delete().eq("id", seatTeamId);
       // Delete all created auth users
-      for (const userId of fillerUserIds) {
+      for (const userId of seatUserIds) {
         await admin.auth.admin.deleteUser(userId);
       }
     });

@@ -1,4 +1,5 @@
 import { createAdminClient } from "./admin";
+import { revokeTeamSeat } from "./team-billing";
 import type { TeamMember, TeamMemberRow } from "./teams-types";
 
 // ---------------------------------------------------------------------------
@@ -9,6 +10,28 @@ function parseMillis(timestamp: string | null): number {
   if (!timestamp) return Date.now();
   const value = Date.parse(timestamp);
   return Number.isFinite(value) ? value : Date.now();
+}
+
+/**
+ * Releases the Polar seat a departed member held. Called after the membership
+ * row is gone; `revokeTeamSeat` swallows its own failures because our DB, not
+ * Polar, is what gates team access.
+ */
+async function releaseMemberSeat(
+  teamId: string,
+  userId: string,
+  seatId: string | null
+): Promise<void> {
+  const admin = createAdminClient();
+  const { data: user, error } = await admin
+    .from("users")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  await revokeTeamSeat(teamId, seatId, user?.email ?? "");
 }
 
 // ---------------------------------------------------------------------------
@@ -96,16 +119,20 @@ export async function removeTeamMember(
   if (memberError) throw memberError;
   if (!membership) return false;
 
+  // The deleted row carries the seat assignment away with it, so read it back.
   const { data, error } = await admin
     .from("team_members")
     .delete()
     .eq("team_id", teamId)
     .eq("user_id", targetUserId)
-    .select("id")
+    .select("id, polar_seat_id")
     .maybeSingle();
 
   if (error) throw error;
-  return !!data;
+  if (!data) return false;
+
+  await releaseMemberSeat(teamId, targetUserId, data.polar_seat_id);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,9 +159,12 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
     .delete()
     .eq("team_id", teamId)
     .eq("user_id", userId)
-    .select("id")
+    .select("id, polar_seat_id")
     .maybeSingle();
 
   if (error) throw error;
-  return !!data;
+  if (!data) return false;
+
+  await releaseMemberSeat(teamId, userId, data.polar_seat_id);
+  return true;
 }
