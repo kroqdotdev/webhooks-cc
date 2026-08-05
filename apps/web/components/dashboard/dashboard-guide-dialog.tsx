@@ -298,7 +298,8 @@ const SECTIONS: Section[] = [
             automatically verify every incoming webhook (see next section)
           </li>
           <li>
-            <strong>Team sharing</strong> — share the endpoint with your teams (Pro)
+            <strong>Team sharing</strong> — share the endpoint with your teams (requires an active
+            Teams subscription)
           </li>
           <li>
             <strong>Rename</strong> your endpoint for easier identification
