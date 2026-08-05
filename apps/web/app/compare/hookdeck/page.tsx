@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Does Hookdeck have a free tier?",
     answer:
-      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every feature included on both tiers — only Teams (invite members, share endpoints) requires Pro. The paid plan raises rate limits and retention.",
+      "Yes. Hookdeck offers a free tier with limited events per month. webhooks.cc also offers a free tier with every individual feature included on both tiers. The paid plan raises rate limits and retention, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
   },
   {
     question: "Does webhooks.cc handle webhook retries and delivery guarantees?",
@@ -45,8 +45,8 @@ const ROWS = [
   ["CI test assertions (waitFor)", "Yes", "No"],
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
-  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Team+ ($39/mo), unlimited seats"],
-  ["Free tier features", "Everything except Teams", "Limited events/month"],
+  ["Team collaboration", "$12/seat/mo, pooled quota", "Team+ ($39/mo), unlimited seats"],
+  ["Free tier features", "Every individual feature", "Limited events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({
@@ -153,8 +153,8 @@ export default function CompareHookdeckPage() {
               These tools are not mutually exclusive. A common pattern: use webhooks.cc during
               development to capture and debug webhook payloads, write SDK assertions in your test
               suite, then use Hookdeck in production for reliable delivery with retries and rate
-              limiting. For teams, webhooks.cc Pro costs $8/month with up to 25 members, while
-              Hookdeck&apos;s Team plan starts at $39/month with unlimited seats.
+              limiting. For teams, webhooks.cc costs $12/seat/month, while Hookdeck&apos;s Team plan
+              starts at $39/month with unlimited seats.
             </p>
           </div>
         </div>

@@ -7,7 +7,7 @@ const FAQ_ITEMS = [
   {
     question: "What are the best Webhook.site alternatives in 2026?",
     answer:
-      "webhooks.cc is a strong Webhook.site alternative for developers who need automated webhook testing. It adds a TypeScript SDK with test assertions, a native CLI tunnel, an MCP server for AI coding agents, and a free tier where every feature is included — only Teams (invite members, share endpoints) requires Pro. Other alternatives include Beeceptor (API mocking focus), RequestBin/Pipedream (workflow automation), and Hookdeck (production webhook infrastructure).",
+      "webhooks.cc is a strong Webhook.site alternative for developers who need automated webhook testing. It adds a TypeScript SDK with test assertions, a native CLI tunnel, an MCP server for AI coding agents, and a free tier where every individual feature is included, with Teams (invite members, share endpoints) billed separately at $12/seat/mo. Other alternatives include Beeceptor (API mocking focus), RequestBin/Pipedream (workflow automation), and Hookdeck (production webhook infrastructure).",
   },
   {
     question: "What is the main difference between webhooks.cc and Webhook.site?",
@@ -17,7 +17,7 @@ const FAQ_ITEMS = [
   {
     question: "Does webhooks.cc have a free plan like Webhook.site?",
     answer:
-      "Yes. Every feature is included on both tiers — inspection, replay, mock responses, CLI tunnel, SDK, and MCP. Only Teams (invite members, share endpoints) requires Pro. The paid plan also raises rate limits and extends request retention.",
+      "Yes. Every individual feature is included on both tiers — inspection, replay, mock responses, CLI tunnel, SDK, and MCP. The paid plan raises rate limits and extends request retention. Teams (invite members, share endpoints) is a separate per-team subscription at $12/seat/mo.",
   },
   {
     question: "Can I use webhooks.cc for CI/CD webhook testing?",
@@ -44,8 +44,8 @@ const ROWS = [
   ["Request body matchers", "Yes (method, header, body path)", "No"],
   ["SSE real-time streaming", "Yes", "No"],
   ["Open source", "Yes (AGPL + MIT)", "No"],
-  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Enterprise only, from $69/mo"],
-  ["Free tier features", "Everything except Teams", "Some features paid-only"],
+  ["Team collaboration", "$12/seat/mo, pooled quota", "Enterprise only, from $69/mo"],
+  ["Free tier features", "Every individual feature", "Some features paid-only"],
 ] as const;
 
 export const metadata = createPageMetadata({
@@ -87,8 +87,8 @@ export default function CompareWebhookSitePage() {
           If you&apos;re evaluating Webhook.site alternatives, here&apos;s the short version: both
           tools capture and inspect webhooks. webhooks.cc goes further with a TypeScript SDK for CI
           test assertions, a CLI tunnel for local development, and an MCP server for AI-assisted
-          workflows — every feature included on both tiers, with only Teams (invite members, share
-          endpoints) requiring Pro.
+          workflows — every individual feature included on both tiers, with Teams (invite members,
+          share endpoints) billed separately at $12/seat/mo.
         </p>
 
         {/* Feature table */}
@@ -150,11 +150,12 @@ export default function CompareWebhookSitePage() {
           <div className="neo-card neo-card-static">
             <h3 className="text-lg font-bold mb-2">Pricing model</h3>
             <p className="text-muted-foreground">
-              Every feature is included on both free and paid tiers — only Teams (invite members,
-              share endpoints) requires Pro at $8/month with up to 25 members. Webhook.site reserves
-              team collaboration for its Enterprise tier, starting at $69/month. The paid plan
-              raises request limits and extends retention. Webhook.site gates some features (custom
-              responses, API access) behind paid tiers.
+              Every individual feature is included on both free and paid tiers. Teams (invite
+              members, share endpoints) is its own per-team subscription at $12/seat/month, where
+              each seat adds 100,000 pooled requests. Webhook.site reserves team collaboration for
+              its Enterprise tier, starting at $69/month. The paid plan raises request limits and
+              extends retention. Webhook.site gates some features (custom responses, API access)
+              behind paid tiers.
             </p>
           </div>
         </div>
@@ -167,7 +168,7 @@ export default function CompareWebhookSitePage() {
               <li>Webhook assertions in CI pipelines (SDK waitFor)</li>
               <li>AI agents that create, inspect, and replay webhooks (MCP)</li>
               <li>A CLI tunnel purpose-built for webhook forwarding</li>
-              <li>Every feature on both tiers — only Teams requires Pro</li>
+              <li>Every individual feature on both tiers, plus teams at $12/seat/mo</li>
               <li>Open-source codebase you can inspect and self-host</li>
             </ul>
           </div>
