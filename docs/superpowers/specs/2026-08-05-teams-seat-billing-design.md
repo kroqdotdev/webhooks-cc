@@ -105,7 +105,7 @@ All new/changed functions keep `security definer set search_path = ''` and servi
 | `teams-invites.ts` `acceptInvite` | accepting user must be Pro | team active (checked in RPC); seat assigned in Polar first |
 | `teams-endpoints.ts` share/unshare | owner Pro | team active |
 | `teams-endpoints.ts` `resolveEndpointAccess` | requester Pro + owner Pro + membership | membership in an active team the endpoint is shared with (endpoint owner always passes regardless) |
-| `app/api/endpoints/route.ts` share-metadata fetch | gated on requester `plan === "pro"` | gated on requester having ≥1 active-team membership |
+| `app/api/endpoints/route.ts` share-metadata fetch | gated on requester `plan === "pro"` | split: owned-endpoint share metadata requires ANY team membership (owners always see/manage their own shares, even lapsed); shared-with-me requires ≥1 active-team membership |
 
 Inactive team = invites, sharing, and member access to shared endpoints all blocked; data retained; reactivates instantly when a subscription becomes active.
 
