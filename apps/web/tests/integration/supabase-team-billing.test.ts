@@ -22,6 +22,10 @@ const ts = Date.now();
 const OWNER_EMAIL = `test-tb-owner-${ts}@webhooks-test.local`;
 const MEMBER_EMAIL = `test-tb-member-${ts}@webhooks-test.local`;
 
+// `teams_polar_customer` is a unique index: no two teams — including leftovers
+// from an interrupted run — may carry the same Polar customer id.
+const LIFECYCLE_CUSTOMER_ID = `cus_lifecycle_${ts}`;
+
 let ownerId: string;
 let memberId: string;
 
@@ -125,7 +129,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
   it("activates the team on subscription.created", async () => {
     await applyTeamPolarWebhookEvent("subscription.created", teamId, {
       id: "sub_1",
-      customerId: "cus_1",
+      customerId: LIFECYCLE_CUSTOMER_ID,
       status: "active",
       seats: 5,
       currentPeriodStart: periodStart,
@@ -135,7 +139,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
 
     const team = await getTeam(teamId);
     expect(team.polar_subscription_id).toBe("sub_1");
-    expect(team.polar_customer_id).toBe("cus_1");
+    expect(team.polar_customer_id).toBe(LIFECYCLE_CUSTOMER_ID);
     expect(team.subscription_status).toBe("active");
     expect(team.seats).toBe(5);
     expect(team.request_limit).toBe(5 * TEAM_SEAT_REQUEST_LIMIT);
@@ -149,7 +153,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
 
     await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
       id: "sub_1",
-      customerId: "cus_1",
+      customerId: LIFECYCLE_CUSTOMER_ID,
       status: "active",
       seats: 8,
       currentPeriodStart: periodStart,
@@ -167,7 +171,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
   it("flags a scheduled cancellation on subscription.canceled", async () => {
     await applyTeamPolarWebhookEvent("subscription.canceled", teamId, {
       id: "sub_1",
-      customerId: "cus_1",
+      customerId: LIFECYCLE_CUSTOMER_ID,
     });
 
     const team = await getTeam(teamId);
@@ -179,7 +183,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
   it("clears the cancellation flag on subscription.uncanceled", async () => {
     await applyTeamPolarWebhookEvent("subscription.uncanceled", teamId, {
       id: "sub_1",
-      customerId: "cus_1",
+      customerId: LIFECYCLE_CUSTOMER_ID,
       status: "active",
     });
 
@@ -191,7 +195,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
   it("deactivates the team on subscription.revoked but retains seats and usage", async () => {
     await applyTeamPolarWebhookEvent("subscription.revoked", teamId, {
       id: "sub_1",
-      customerId: "cus_1",
+      customerId: LIFECYCLE_CUSTOMER_ID,
     });
 
     const team = await getTeam(teamId);
@@ -210,7 +214,7 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
 
     await applyTeamPolarWebhookEvent("subscription.created", teamId, {
       id: "sub_2",
-      customerId: "cus_1",
+      customerId: LIFECYCLE_CUSTOMER_ID,
       status: "active",
       seats: 3,
       currentPeriodStart: newStart,
@@ -225,6 +229,89 @@ describe("applyTeamPolarWebhookEvent — subscription lifecycle", () => {
     expect(team.request_limit).toBe(3 * TEAM_SEAT_REQUEST_LIMIT);
     expect(team.requests_used).toBe(0);
     expect(new Date(team.period_end!).toISOString()).toBe(newEnd.toISOString());
+  });
+});
+
+describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
+  const periodStart = new Date(Date.now() - 60_000);
+  const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  async function activatedTeam(name: string, subscriptionId: string, customerId: string) {
+    const teamId = await createTestTeam(ownerId, name);
+    await applyTeamPolarWebhookEvent("subscription.created", teamId, {
+      id: subscriptionId,
+      customerId,
+      status: "active",
+      seats: 8,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+    return teamId;
+  }
+
+  it("keeps a revoked team deactivated when a late cancel event arrives", async () => {
+    const customerId = `cus_stale_revoked_${ts}`;
+    const teamId = await activatedTeam(`TB Stale Revoked ${ts}`, "sub_stale_1", customerId);
+
+    await applyTeamPolarWebhookEvent("subscription.revoked", teamId, {
+      id: "sub_stale_1",
+      customerId,
+    });
+
+    // Polar retries: a `canceled` (and later an `uncanceled`) for the very
+    // subscription that was just revoked. Neither may resurrect the pool gate.
+    await applyTeamPolarWebhookEvent("subscription.canceled", teamId, {
+      id: "sub_stale_1",
+      customerId,
+    });
+
+    let team = await getTeam(teamId);
+    expect(team.subscription_status).toBeNull();
+    expect(team.cancel_at_period_end).toBe(false);
+
+    await applyTeamPolarWebhookEvent("subscription.uncanceled", teamId, {
+      id: "sub_stale_1",
+      customerId,
+      status: "active",
+    });
+
+    team = await getTeam(teamId);
+    expect(team.subscription_status).toBeNull();
+    expect(team.period_end).toBeNull();
+  });
+
+  it("ignores cancel events belonging to a different subscription", async () => {
+    const customerId = `cus_stale_mismatch_${ts}`;
+    const teamId = await activatedTeam(`TB Stale Mismatch ${ts}`, "sub_stale_2", customerId);
+
+    await applyTeamPolarWebhookEvent("subscription.canceled", teamId, {
+      id: "sub_previous",
+      customerId,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+    expect(team.cancel_at_period_end).toBe(false);
+  });
+
+  it("activates with a one-seat pool when the payload carries no seat count", async () => {
+    const teamId = await createTestTeam(ownerId, `TB Seatless ${ts}`);
+
+    await applyTeamPolarWebhookEvent("subscription.created", teamId, {
+      id: "sub_seatless",
+      customerId: `cus_seatless_${ts}`,
+      status: "active",
+      seats: null,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+    expect(team.seats).toBeGreaterThanOrEqual(1);
+    expect(team.request_limit).toBeGreaterThanOrEqual(TEAM_SEAT_REQUEST_LIMIT);
   });
 });
 

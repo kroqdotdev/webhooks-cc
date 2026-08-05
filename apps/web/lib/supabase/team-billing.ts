@@ -434,10 +434,14 @@ async function applyTeamSubscriptionState(
 
   const subscriptionId = asNonEmptyString(data.id);
   const customerId = asNonEmptyString(data.customerId);
-  const seats =
+  const payloadSeats =
     typeof data.seats === "number" && Number.isInteger(data.seats) && data.seats > 0
       ? data.seats
-      : team.seats;
+      : null;
+  // `Subscription.seats` is null for non-seat-based products. Falling back to a
+  // fresh team's stored 0 would activate it with request_limit 0, which 429s
+  // every request the team is paying for — floor the pool at one seat instead.
+  const seats = payloadSeats ?? (team.seats > 0 ? team.seats : 1);
 
   // A different subscription id means a brand-new subscription (the team was
   // deactivated and re-subscribed) — that starts a fresh pooled quota. Repeat
@@ -461,6 +465,28 @@ async function applyTeamSubscriptionState(
       typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
     ...(isNewSubscription ? { requests_used: 0 } : {}),
   });
+}
+
+/**
+ * Whether a cancel/uncancel event still describes the subscription the team
+ * holds. Both events write a non-null `subscription_status`, which is the team's
+ * access gate — so a retried `subscription.canceled` landing after
+ * `subscription.revoked` would silently re-open a deactivated team's pool, and
+ * neither reset CTE could ever clean it up (both require `period_end` non-null).
+ * A `canceled` that arrives too early is safe to drop: the `created`/`updated`
+ * event that follows carries `cancelAtPeriodEnd` and re-applies it.
+ */
+async function isLiveSubscriptionEvent(
+  teamId: string,
+  data: Record<string, unknown>
+): Promise<boolean> {
+  const storedSubscriptionId = await getTeamSubscriptionId(teamId);
+  if (!storedSubscriptionId) {
+    return false;
+  }
+
+  const eventSubscriptionId = asNonEmptyString(data.id);
+  return eventSubscriptionId === null || eventSubscriptionId === storedSubscriptionId;
 }
 
 async function applySeatAssignment(teamId: string, data: Record<string, unknown>): Promise<void> {
@@ -543,6 +569,10 @@ export async function applyTeamPolarWebhookEvent(
       return;
 
     case "subscription.canceled":
+      if (!(await isLiveSubscriptionEvent(teamId, data))) {
+        return;
+      }
+
       await updateTeamById(teamId, {
         cancel_at_period_end: true,
         subscription_status: "canceled",
@@ -550,6 +580,10 @@ export async function applyTeamPolarWebhookEvent(
       return;
 
     case "subscription.uncanceled":
+      if (!(await isLiveSubscriptionEvent(teamId, data))) {
+        return;
+      }
+
       await updateTeamById(teamId, {
         cancel_at_period_end: false,
         subscription_status: normalizeStoredSubscriptionStatus(data.status) ?? "active",
