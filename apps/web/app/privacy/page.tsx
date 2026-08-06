@@ -164,11 +164,16 @@ export default function PrivacyPage() {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               <span className="font-bold text-foreground">Free plan:</span> Captured requests are
-              cleared on each billing period reset.
+              deleted 7 days after they are received.
             </p>
             <p>
-              <span className="font-bold text-foreground">Pro plan:</span> Requests are retained for
-              30 days.
+              <span className="font-bold text-foreground">Pro plan:</span> Captured requests are
+              deleted 31 days after they are received.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Team-shared endpoints:</span> Requests
+              billed to a team&apos;s subscription are retained for 31 days regardless of the
+              endpoint owner&apos;s plan.
             </p>
             <p>
               Ephemeral (anonymous) endpoints and their requests are automatically deleted when they
