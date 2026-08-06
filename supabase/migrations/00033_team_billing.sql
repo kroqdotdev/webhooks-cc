@@ -455,8 +455,10 @@ grant execute on function public.cleanup_free_user_requests() to service_role;
 -- cleanup_free_user_requests() actually deletes, or a free owner sees a
 -- team-billed request in the dashboard but cannot find it by searching.
 --
--- Grants are deliberately untouched: `create or replace` keeps the existing
--- ACL, and re-issuing the 00021 revokes here would be an unrelated change.
+-- Both functions are `security definer` over an arbitrary p_user_id, so anon or
+-- authenticated execute is a full read of every user's captured headers and
+-- bodies. `create or replace` preserves the pre-existing (over-broad) ACL, so
+-- the revoke/grant stanzas below are re-issued after the definitions.
 -- ============================================================================
 
 create or replace function public.search_requests(
@@ -602,6 +604,36 @@ begin
   return coalesce(v_count, 0);
 end;
 $$;
+
+-- Keep both search RPCs service-role only. `create or replace` above preserves
+-- whatever ACL the function already had, so these must be re-issued here or a
+-- stale anon/authenticated grant survives the migration. Every caller goes
+-- through createAdminClient() in lib/supabase/search.ts.
+revoke all on function public.search_requests(
+  uuid, text, text, text, text, bigint, bigint, integer, integer, text
+) from public;
+revoke all on function public.search_requests(
+  uuid, text, text, text, text, bigint, bigint, integer, integer, text
+) from anon;
+revoke all on function public.search_requests(
+  uuid, text, text, text, text, bigint, bigint, integer, integer, text
+) from authenticated;
+grant execute on function public.search_requests(
+  uuid, text, text, text, text, bigint, bigint, integer, integer, text
+) to service_role;
+
+revoke all on function public.search_requests_count(
+  uuid, text, text, text, text, bigint, bigint
+) from public;
+revoke all on function public.search_requests_count(
+  uuid, text, text, text, text, bigint, bigint
+) from anon;
+revoke all on function public.search_requests_count(
+  uuid, text, text, text, text, bigint, bigint
+) from authenticated;
+grant execute on function public.search_requests_count(
+  uuid, text, text, text, text, bigint, bigint
+) to service_role;
 
 -- Reload PostgREST schema cache so the Part 1 columns are visible via REST API
 notify pgrst, 'reload schema';

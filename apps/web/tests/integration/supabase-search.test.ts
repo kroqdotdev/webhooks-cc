@@ -6,14 +6,31 @@ import { countSearchRequestsForUser, searchRequestsForUser } from "@/lib/supabas
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 if (!SERVICE_ROLE_KEY) {
   throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required for integration tests");
 }
 
+if (!ANON_KEY) {
+  throw new Error("SUPABASE_ANON_KEY env var required for integration tests");
+}
+
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+const anon = createClient(SUPABASE_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+async function callAnonRpc(functionName: string, args: Record<string, unknown>) {
+  const rpc = anon.rpc.bind(anon) as unknown as (
+    name: string,
+    params: Record<string, unknown>
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+
+  return rpc(functionName, args);
+}
 
 const TEST_EMAIL = `test-search-${Date.now()}@webhooks-test.local`;
 const TEST_PASSWORD = "TestPassword123!";
@@ -252,5 +269,55 @@ describe("Supabase Search Integration", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.detectedProvider).toBe("shopify");
     expect(results[0]?.detectedEvent).toBe("orders/create");
+  });
+
+  it("does not allow anonymous clients to invoke the search rpc", async () => {
+    const { data, error } = await callAnonRpc("search_requests", {
+      p_user_id: testUserId,
+      p_plan: "pro",
+    });
+
+    expect(data).toBeNull();
+    expect(error).not.toBeNull();
+  });
+
+  it("does not allow anonymous clients to invoke the search count rpc", async () => {
+    const { data, error } = await callAnonRpc("search_requests_count", {
+      p_user_id: testUserId,
+      p_plan: "pro",
+    });
+
+    expect(data).toBeNull();
+    expect(error).not.toBeNull();
+  });
+
+  it("still allows the service role to invoke both search rpcs", async () => {
+    const { error: cleanupError } = await admin.from("requests").delete().eq("user_id", testUserId);
+    expect(cleanupError).toBeNull();
+
+    await insertRequest({
+      endpointId: primaryEndpointId,
+      path: "/service-role-grant",
+      body: '{"grant":"service_role"}',
+      receivedAt: Date.now() - 1_000,
+    });
+
+    const results = await searchRequestsForUser({
+      userId: testUserId,
+      plan: "pro",
+      slug: primaryEndpointSlug,
+      q: "service-role-grant",
+    });
+
+    expect(results).toHaveLength(1);
+
+    const count = await countSearchRequestsForUser({
+      userId: testUserId,
+      plan: "pro",
+      slug: primaryEndpointSlug,
+      q: "service-role-grant",
+    });
+
+    expect(count).toBe(1);
   });
 });
