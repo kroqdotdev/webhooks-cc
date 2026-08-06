@@ -965,8 +965,34 @@ git add -A && git commit -m "test(e2e): teams specs for subscription-gated UI"
 
 ## Deploy checklist (after merge — operator steps, not tasks)
 
-1. Polar dashboard (sandbox first): create seat-based product "webhooks.cc Teams", $12/seat/mo fixed, no benefits needed. Copy product id → `POLAR_TEAMS_PRODUCT_ID` in `.env.local`.
-2. On production FIRST run `create index concurrently if not exists requests_team on public.requests(team_id) where team_id is not null;` out-of-band (plain `create index` inside the migration would SHARE-lock `requests` and block ingestion; the migration's `if not exists` then no-ops — same hazard/remedy as 00020's companion script). Then apply `00033_team_billing.sql` to production Postgres.
-3. `make deploy-web`.
-4. Sandbox end-to-end: subscribe a test team (Polar test card), invite/accept, capture on a shared endpoint, watch the pool bar; cancel; revoke.
-5. Existing teams show suspended with subscribe CTA — expected (hard cutover).
+1. **Polar: create the PRODUCTION product.** In the production (non-sandbox) Polar org, create "webhooks.cc Teams" with pricing type `seat_based` and a **volume** tier at $12/seat/mo — not a fixed price. This is the shape verified live against the sandbox product; a fixed-price product does not emit the seat lifecycle the app depends on. No benefits needed. Copy the product id → `POLAR_TEAMS_PRODUCT_ID` in the **production** env.
+
+   Also restore production Polar credentials in the production env: `POLAR_ACCESS_TOKEN` and `POLAR_WEBHOOK_SECRET` must be the production org's values, and `POLAR_SANDBOX` must be unset or `false`. Dev's `.env.local` currently carries **sandbox** credentials left over from live verification — deploying without this step points production billing at the sandbox, where real checkouts silently do nothing.
+
+2. **Polar: register/verify the production org webhook endpoint.** URL `https://webhooks.cc/api/polar-webhook`, secret = the production `POLAR_WEBHOOK_SECRET`. Subscribed event types must include `customer_seat.assigned`, `customer_seat.claimed`, and `customer_seat.revoked` **in addition to** the `subscription.*` events. The seat events are a new family for this feature — an endpoint that already exists for subscription billing will not be delivering them. Live verification only simulated these deliveries locally, so production delivery is unproven until the smoke test in step 8.
+
+3. **Index out-of-band, before the migration.** On production run `create index concurrently if not exists requests_team on public.requests(team_id) where team_id is not null;` (plain `create index` inside the migration would SHARE-lock `requests` and block ingestion; the migration's `if not exists` then no-ops — same hazard/remedy as 00020's companion script).
+
+4. **Apply `00033_team_billing.sql` to production Postgres with a lock timeout, at low traffic.** Prefix the run with `SET lock_timeout='5s';` (or apply during a quiet window). `alter table requests add column` takes a brief ACCESS EXCLUSIVE lock; if it queues behind a long-running reader, every concurrent capture blocks — and the receiver's fail-open returns 200 OK to senders while dropping the request, so a lock queue becomes silent capture loss rather than a visible error. Failing fast on the timeout and retrying is the safe mode.
+
+5. **ACL audit on production (post-apply).** Query `pg_proc` ACLs for `capture_webhook`, `search_requests`, `search_requests_count`, `accept_team_invite`, `process_billing_period_resets`, `cleanup_free_user_requests`:
+
+   ```sql
+   select p.proname, pg_get_function_identity_arguments(p.oid) as args, p.proacl
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('capture_webhook','search_requests','search_requests_count',
+                       'accept_team_invite','process_billing_period_resets','cleanup_free_user_requests');
+   ```
+
+   Both search functions must show **service_role only** after this migration (00033 re-issues the revokes; `create or replace` alone would have preserved a stale anon/authenticated grant). `capture_webhook` is *not* hardened in this deploy — it is a tracked follow-up. Before any future hardening, first confirm which role the receiver's `DATABASE_URL` connects as: revoking a grant the receiver depends on would be masked by fail-open as silent capture loss, not an error.
+
+6. **Confirm the per-minute pg_cron billing-resets job runs green post-migration.** Check `cron.job_run_details` for `process_billing_period_resets` — the migration changes the function it calls, so a signature or permission mismatch surfaces here as repeated failures rather than anywhere user-visible.
+
+7. `make deploy-web`.
+
+8. **Production smoke test (replaces the old sandbox e2e).** One real checkout and cancel against a throwaway test team on production: subscribe, invite/accept a seat, capture on a shared endpoint, watch the pool bar, then cancel and revoke. Tail the `/api/polar-webhook` logs throughout and confirm deliveries arrive for **both** `subscription.*` and `customer_seat.*` — this is the first proof that step 2's event subscription is actually wired up.
+
+9. Existing teams show suspended with subscribe CTA — expected (hard cutover).
+
+10. **Housekeeping:** this branch sets `APP_VERSION` to 0.27.0; the parked instant-URL branch (PR #262) carries 0.26.0. Whichever merges second reconciles `apps/web/lib/changelog.ts` and `apps/web/package.json`.
