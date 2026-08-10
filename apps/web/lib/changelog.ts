@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.26.1";
+export const APP_VERSION = "0.26.2";
 export const CLI_VERSION = "1.1.2";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.26.2",
+    date: "2026-08-11",
+    title: "Fix: CLI login no longer locks out at the API key cap",
+    track: "web",
+    items: [
+      "CLI device logins at the 10-key limit now rotate the oldest CLI-issued key instead of failing with an opaque “Claim failed” — manually created keys are never touched",
+      "When a claim does hit the cap (all keys manually created), the CLI now shows an actionable message pointing to the account page instead of “Claim failed”",
+    ],
+  },
   {
     version: "0.26.1",
     date: "2026-07-17",

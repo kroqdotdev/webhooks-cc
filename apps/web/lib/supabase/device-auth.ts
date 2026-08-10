@@ -5,6 +5,7 @@ import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "./api-keys";
 const DEVICE_CODE_TTL_MS = 15 * 60 * 1000;
 const API_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_PENDING_CODES = 500;
+export const DEVICE_AUTH_KEY_NAME = "CLI (device auth)";
 
 const generateDeviceCode = customAlphabet(
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
@@ -200,7 +201,37 @@ export async function claimDeviceCode(deviceCode: string): Promise<ClaimedDevice
   }
 
   if ((count ?? 0) >= MAX_KEYS_PER_USER) {
-    throw new Error(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed per user`);
+    // Every CLI login mints a fresh key and `whk auth logout` only clears the
+    // local token, so repeat logins accumulate device-auth keys until every
+    // claim fails and the user is locked out. Rotate the oldest device-auth
+    // keys to make room; manually created keys are never touched.
+    const excess = (count ?? 0) - MAX_KEYS_PER_USER + 1;
+    const { data: rotatable, error: rotatableError } = await admin
+      .from("api_keys")
+      .select("id")
+      .eq("user_id", code.user_id)
+      .eq("name", DEVICE_AUTH_KEY_NAME)
+      .order("created_at", { ascending: true })
+      .limit(excess);
+
+    if (rotatableError) {
+      throw rotatableError;
+    }
+    if ((rotatable?.length ?? 0) < excess) {
+      throw new Error(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed per user`);
+    }
+
+    const { error: rotateError } = await admin
+      .from("api_keys")
+      .delete()
+      .in(
+        "id",
+        rotatable.map((key) => key.id)
+      );
+
+    if (rotateError) {
+      throw rotateError;
+    }
   }
 
   const { data: consumedCode, error: consumeError } = await admin
@@ -224,7 +255,7 @@ export async function claimDeviceCode(deviceCode: string): Promise<ClaimedDevice
     user_id: code.user_id,
     key_hash: hashApiKey(rawKey),
     key_prefix: rawKey.slice(0, 12),
-    name: "CLI (device auth)",
+    name: DEVICE_AUTH_KEY_NAME,
     expires_at: new Date(Date.now() + API_KEY_TTL_MS).toISOString(),
   });
 
