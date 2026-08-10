@@ -24,6 +24,17 @@ export async function POST(request: Request) {
       email: result.email,
     });
   } catch (error) {
+    // The key cap is the one claim failure the user can fix themselves, so it
+    // gets an actionable message instead of the generic "Claim failed".
+    if (error instanceof Error && error.message.includes("Maximum of")) {
+      return Response.json(
+        {
+          error:
+            "API key limit reached. Delete unused keys at webhooks.cc/account, then log in again.",
+        },
+        { status: 400 }
+      );
+    }
     // Distinguish expected claim failures (expired, already used, etc.) from server errors
     if (
       error instanceof Error &&
@@ -31,8 +42,7 @@ export async function POST(request: Request) {
         error.message.includes("Invalid") ||
         error.message.includes("already claimed") ||
         error.message.includes("not yet authorized") ||
-        error.message.includes("not properly authorized") ||
-        error.message.includes("Maximum of"))
+        error.message.includes("not properly authorized"))
     ) {
       return Response.json({ error: "Claim failed" }, { status: 400 });
     }

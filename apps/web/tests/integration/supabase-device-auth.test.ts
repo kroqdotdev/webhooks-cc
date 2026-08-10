@@ -1,11 +1,13 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   authorizeDeviceCodeForUser,
   claimDeviceCode,
   createDeviceCodeRecord,
+  DEVICE_AUTH_KEY_NAME,
   pollDeviceCodeStatus,
 } from "@/lib/supabase/device-auth";
+import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -73,5 +75,82 @@ describe("Supabase Device Auth Integration", () => {
 
     const afterClaim = await pollDeviceCodeStatus(created.deviceCode);
     expect(afterClaim).toEqual({ status: "expired" });
+  });
+
+  describe("API key cap", () => {
+    afterEach(async () => {
+      await admin.from("api_keys").delete().eq("user_id", testUserId);
+    });
+
+    async function seedKeys(name: string, count: number) {
+      // Staggered created_at so "oldest" is deterministic
+      const base = Date.now() - count * 60_000;
+      const rows = Array.from({ length: count }, (_, i) => {
+        const raw = generateApiKey();
+        return {
+          user_id: testUserId,
+          key_hash: hashApiKey(raw),
+          key_prefix: raw.slice(0, 12),
+          name,
+          created_at: new Date(base + i * 60_000).toISOString(),
+        };
+      });
+      const { data, error } = await admin.from("api_keys").insert(rows).select("id");
+      if (error) throw error;
+      return data.map((row) => row.id as string);
+    }
+
+    async function authorizedDeviceCode() {
+      const created = await createDeviceCodeRecord();
+      await authorizeDeviceCodeForUser(testUserId, created.userCode);
+      return created.deviceCode;
+    }
+
+    it("rotates the oldest device-auth key when the user is at the cap", async () => {
+      const seededIds = await seedKeys(DEVICE_AUTH_KEY_NAME, MAX_KEYS_PER_USER);
+      const oldestId = seededIds[0];
+
+      const claimed = await claimDeviceCode(await authorizedDeviceCode());
+      expect(claimed.apiKey.startsWith("whcc_")).toBe(true);
+
+      const { data: remaining } = await admin
+        .from("api_keys")
+        .select("id")
+        .eq("user_id", testUserId);
+      expect(remaining).toHaveLength(MAX_KEYS_PER_USER);
+      expect(remaining!.map((row) => row.id)).not.toContain(oldestId);
+    });
+
+    it("never rotates manually created keys", async () => {
+      await seedKeys("CI deploy key", MAX_KEYS_PER_USER);
+
+      await expect(claimDeviceCode(await authorizedDeviceCode())).rejects.toThrow(
+        /Maximum of \d+ API keys/
+      );
+
+      const { count } = await admin
+        .from("api_keys")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", testUserId);
+      expect(count).toBe(MAX_KEYS_PER_USER);
+    });
+
+    it("rotates only device-auth keys in a mixed set", async () => {
+      const manualIds = await seedKeys("CI deploy key", MAX_KEYS_PER_USER - 1);
+      const [deviceKeyId] = await seedKeys(DEVICE_AUTH_KEY_NAME, 1);
+
+      const claimed = await claimDeviceCode(await authorizedDeviceCode());
+      expect(claimed.apiKey.startsWith("whcc_")).toBe(true);
+
+      const { data: remaining } = await admin
+        .from("api_keys")
+        .select("id")
+        .eq("user_id", testUserId);
+      const remainingIds = remaining!.map((row) => row.id);
+      expect(remainingIds).not.toContain(deviceKeyId);
+      for (const id of manualIds) {
+        expect(remainingIds).toContain(id);
+      }
+    });
   });
 });
