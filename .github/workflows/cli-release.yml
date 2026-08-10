@@ -88,8 +88,22 @@ jobs:
         with:
           merge-multiple: true
 
+      # Releases before v1.0.0 were Go builds named whk_<goos>_<goarch>.<ext>,
+      # and the v0.x self-updater downloads exactly that asset name (verified
+      # against a matching checksums.txt line). Publish renamed copies of the
+      # Rust archives so `whk update` still works from v0.x installs. The
+      # archives are compatible: the Go updater extracts by binary base name
+      # (whk / whk.exe), which is what the Rust archives contain.
+      - name: Copy assets to legacy v0.x names
+        run: |
+          cp "whk-$GITHUB_REF_NAME-aarch64-apple-darwin.tar.gz" whk_darwin_arm64.tar.gz
+          cp "whk-$GITHUB_REF_NAME-x86_64-apple-darwin.tar.gz" whk_darwin_amd64.tar.gz
+          cp "whk-$GITHUB_REF_NAME-aarch64-unknown-linux-gnu.tar.gz" whk_linux_arm64.tar.gz
+          cp "whk-$GITHUB_REF_NAME-x86_64-unknown-linux-gnu.tar.gz" whk_linux_amd64.tar.gz
+          cp "whk-$GITHUB_REF_NAME-x86_64-pc-windows-msvc.zip" whk_windows_amd64.zip
+
       - name: Generate checksums
-        run: sha256sum whk-* > checksums.txt
+        run: sha256sum whk-* whk_* > checksums.txt
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
@@ -102,6 +116,7 @@ jobs:
         with:
           files: |
             whk-*
+            whk_*
             checksums.txt
             checksums.txt.sigstore.json
           generate_release_notes: true
