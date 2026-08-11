@@ -251,6 +251,7 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 | `check_and_decrement_quota()`        | Atomic quota check + decrement for owned endpoints                      |
 | `check_and_increment_ephemeral()`    | Atomic request count check + increment for ephemeral endpoints (25 cap) |
 | `start_free_period()`                | Lazy 24h period activation for free users                               |
+| `claim_device_code()`                | Atomic CLI device-code claim: cap check + device-auth key rotation + code consumption + key mint |
 | `increment_endpoint_request_count()` | Increment endpoint counter                                              |
 | `increment_user_requests_used()`     | Increment user usage counter                                            |
 

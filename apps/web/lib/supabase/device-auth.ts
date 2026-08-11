@@ -176,106 +176,47 @@ export async function authorizeDeviceCodeForUser(
 
 export async function claimDeviceCode(deviceCode: string): Promise<ClaimedDeviceCode> {
   const admin = createAdminClient();
-  const code = await findDeviceCodeByCode(deviceCode);
-
-  if (!code) {
-    throw new Error("Invalid or expired code");
-  }
-  if (isExpired(code.expires_at)) {
-    throw new Error("Code expired");
-  }
-  if (code.status !== "authorized") {
-    throw new Error("Code not yet authorized");
-  }
-  if (!code.user_id) {
-    throw new Error("Code not properly authorized");
-  }
-
-  const { count, error: countError } = await admin
-    .from("api_keys")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", code.user_id);
-
-  if (countError) {
-    throw countError;
-  }
-
-  if ((count ?? 0) >= MAX_KEYS_PER_USER) {
-    // Every CLI login mints a fresh key and `whk auth logout` only clears the
-    // local token, so repeat logins accumulate device-auth keys until every
-    // claim fails and the user is locked out. Rotate the oldest device-auth
-    // keys to make room; manually created keys are never touched.
-    const excess = (count ?? 0) - MAX_KEYS_PER_USER + 1;
-    const { data: rotatable, error: rotatableError } = await admin
-      .from("api_keys")
-      .select("id")
-      .eq("user_id", code.user_id)
-      .eq("name", DEVICE_AUTH_KEY_NAME)
-      .order("created_at", { ascending: true })
-      .limit(excess);
-
-    if (rotatableError) {
-      throw rotatableError;
-    }
-    if ((rotatable?.length ?? 0) < excess) {
-      throw new Error(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed per user`);
-    }
-
-    const { error: rotateError } = await admin
-      .from("api_keys")
-      .delete()
-      .in(
-        "id",
-        rotatable.map((key) => key.id)
-      );
-
-    if (rotateError) {
-      throw rotateError;
-    }
-  }
-
-  const { data: consumedCode, error: consumeError } = await admin
-    .from("device_codes")
-    .delete()
-    .eq("id", code.id)
-    .eq("status", "authorized")
-    .eq("user_id", code.user_id)
-    .select("id")
-    .maybeSingle();
-
-  if (consumeError) {
-    throw consumeError;
-  }
-  if (!consumedCode) {
-    throw new Error("Invalid or already claimed code");
-  }
-
   const rawKey = generateApiKey();
-  const { error: insertError } = await admin.from("api_keys").insert({
-    user_id: code.user_id,
-    key_hash: hashApiKey(rawKey),
-    key_prefix: rawKey.slice(0, 12),
-    name: DEVICE_AUTH_KEY_NAME,
-    expires_at: new Date(Date.now() + API_KEY_TTL_MS).toISOString(),
+
+  // The whole claim runs in one transaction: at the key cap it rotates the
+  // oldest device-auth keys (is_device_auth flag, never the display name —
+  // manually created keys are never touched), consumes the device code, and
+  // mints the new key, serialized per user. Rotation exists because every CLI
+  // login mints a fresh key while `whk auth logout` only clears the local
+  // token, so repeat logins would otherwise lock the user out at the cap.
+  const { data, error } = await admin.rpc("claim_device_code", {
+    p_device_code: deviceCode,
+    p_key_hash: hashApiKey(rawKey),
+    p_key_prefix: rawKey.slice(0, 12),
+    p_key_name: DEVICE_AUTH_KEY_NAME,
+    p_key_expires_at: new Date(Date.now() + API_KEY_TTL_MS).toISOString(),
+    p_max_keys: MAX_KEYS_PER_USER,
   });
 
-  if (insertError) {
-    throw insertError;
+  if (error) {
+    throw error;
   }
 
-  const { data: user, error: userError } = await admin
-    .from("users")
-    .select("email")
-    .eq("id", code.user_id)
-    .maybeSingle();
-
-  if (userError) {
-    throw userError;
-  }
-
-  return {
-    apiKey: rawKey,
-    userId: code.user_id,
-    email: user?.email ?? "",
+  const result = data as {
+    status: "ok" | "invalid" | "expired" | "not_authorized" | "key_limit";
+    user_id?: string;
+    email?: string | null;
   };
+
+  switch (result.status) {
+    case "ok":
+      return {
+        apiKey: rawKey,
+        userId: result.user_id!,
+        email: result.email ?? "",
+      };
+    case "expired":
+      throw new Error("Code expired");
+    case "not_authorized":
+      throw new Error("Code not yet authorized");
+    case "key_limit":
+      throw new Error(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed per user`);
+    default:
+      throw new Error("Invalid or expired code");
+  }
 }
