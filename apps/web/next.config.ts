@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 // auth.md discovery URL. Mirrors lib/agent/metadata.ts buildAuthMdUrl(), but
@@ -7,6 +8,11 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://webhooks.cc";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Pin the tracing root to the monorepo root. Without this, Next walks up
+  // past the repo looking for a lockfile and a stray ~/package.json makes the
+  // standalone output land under .next/standalone/<home-relative-path>/,
+  // breaking the post-build public/static copy in the build script.
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   transpilePackages: ["@webhooks-cc/sdk"],
   experimental: {
     // simple-icons is a huge barrel package; rewrite named imports to direct

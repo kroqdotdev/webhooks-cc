@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.26.2";
+export const APP_VERSION = "0.26.3";
 export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.26.3",
+    date: "2026-08-11",
+    title: "Security: dependency updates across the stack",
+    track: "web",
+    items: [
+      "Next.js 16.2.11, patching several security advisories in the framework",
+      "All open Dependabot security alerts resolved: hardened transitive dependencies (sharp, tar, js-yaml, dompurify, hono, and friends) via lockfile overrides",
+      "Routine dependency refresh: React 19.2.8, Supabase SSR, Radix UI, Polar SDK, PostHog, and the Rust receiver/CLI dependency set (including a quinn-proto advisory fix)",
+    ],
+  },
   {
     version: "0.26.2",
     date: "2026-08-11",
