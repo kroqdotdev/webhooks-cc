@@ -16,7 +16,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.26.2";
-export const CLI_VERSION = "1.1.2";
+export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
@@ -598,6 +598,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.1.3",
+    date: "2026-08-11",
+    title: "Self-Update Rescue for v0.x Installs",
+    track: "cli",
+    items: [
+      "Releases again include the legacy `whk_<os>_<arch>` archives (with checksums), so `whk update` works from pre-1.0 installs — v0.6.0 users stuck on “no release asset for darwin/arm64” can now update straight to the current version",
+      "No binary changes — identical CLI code to 1.1.2",
+    ],
+  },
   {
     version: "1.1.2",
     date: "2026-05-24",
