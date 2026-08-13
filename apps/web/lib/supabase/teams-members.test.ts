@@ -102,6 +102,24 @@ describe("removeTeamMember", () => {
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", null, "member@example.com");
   });
 
+  test("still releases the seat and reports success when the email lookup fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "team_members:delete": [{ data: { id: "member_1", polar_seat_id: "seat_1" } }],
+        "users:select": [{ error: new Error("db down") }],
+      })
+    );
+
+    // The membership row is already gone; the lookup failure must not turn a
+    // committed removal into an error, and the known seat id must still be
+    // released (the email is only revokeTeamSeat's fallback lookup key).
+    await expect(removeTeamMember("user_1", "team_1", "user_2")).resolves.toBe(true);
+    expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_1", "");
+    expect(consoleError).toHaveBeenCalled();
+  });
+
   test("touches no seat when the target was not a member", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

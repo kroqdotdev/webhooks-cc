@@ -25,10 +25,32 @@ create index if not exists teams_period_end
 alter table public.team_members
   add column if not exists polar_seat_id text;
 
+-- public.requests is the hot capture path, so the team_id rollout must not
+-- block writes: the FK is added NOT VALID (no table scan under the lock) and
+-- validated separately, and the index is built concurrently. Each statement
+-- must run outside a transaction block (psql autocommit, the documented way
+-- these migrations are applied); CREATE INDEX CONCURRENTLY refuses to run
+-- inside one.
 alter table public.requests
-  add column if not exists team_id uuid references public.teams(id) on delete set null;
+  add column if not exists team_id uuid;
 
-create index if not exists requests_team
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'requests_team_id_fkey'
+      and conrelid = 'public.requests'::regclass
+  ) then
+    alter table public.requests
+      add constraint requests_team_id_fkey
+      foreign key (team_id) references public.teams(id) on delete set null
+      not valid;
+  end if;
+end $$;
+
+alter table public.requests validate constraint requests_team_id_fkey;
+
+create index concurrently if not exists requests_team
   on public.requests(team_id) where team_id is not null;
 
 -- ============================================================================

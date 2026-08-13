@@ -186,6 +186,17 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
 
   if (teamError) throw teamError;
 
+  // Stop billing BEFORE the row that records the subscription id disappears.
+  // A failed revoke aborts the deletion so the owner can simply retry: the
+  // opposite order would leave an orphaned Polar subscription that keeps
+  // charging, with no stored id left to reconcile against. The inverse failure
+  // (revoked subscription on a team that still exists) is recoverable in the
+  // UI, so revoke-then-delete is the safe order.
+  const subscriptionId = teamRow?.polar_subscription_id ?? null;
+  if (subscriptionId) {
+    await revokeTeamSubscription(subscriptionId);
+  }
+
   const { data, error } = await admin
     .from("teams")
     .delete()
@@ -195,17 +206,6 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
 
   if (error) throw error;
   if (!data) return false;
-
-  // Stop billing for a team that no longer exists. Polar failures are logged,
-  // never surfaced: the team is already gone and retrying cannot bring it back.
-  const subscriptionId = teamRow?.polar_subscription_id ?? null;
-  if (subscriptionId) {
-    try {
-      await revokeTeamSubscription(subscriptionId);
-    } catch (err) {
-      console.error("[teams] failed to revoke subscription for deleted team", teamId, err);
-    }
-  }
 
   return true;
 }

@@ -29,7 +29,17 @@ async function releaseMemberSeat(
     .eq("id", userId)
     .maybeSingle();
 
-  if (error) throw error;
+  // The membership row is already gone, so a failed lookup must not throw: it
+  // would fail a removal that committed AND skip the seat release below. The
+  // email is only the fallback lookup key inside revokeTeamSeat anyway; with a
+  // known seat id the release works without it.
+  if (error) {
+    console.error("[teams-members] failed to read member email for seat release", {
+      teamId,
+      userId,
+      error,
+    });
+  }
 
   await revokeTeamSeat(teamId, seatId, user?.email ?? "");
 }

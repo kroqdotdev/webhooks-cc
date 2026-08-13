@@ -112,6 +112,14 @@ export function TeamSubscriptionCard({
 }) {
   const [checkoutSeats, setCheckoutSeats] = useState(DEFAULT_TEAM_SEATS);
   const [seatDraft, setSeatDraft] = useState(() => clampSeats(team.seats));
+  // The parent refreshes the `team` prop in place (no remount), so a seat count
+  // changed elsewhere (Polar webhook, another owner session, another tab) must
+  // re-seed the draft or the stepper keeps offering a stale value to submit.
+  const [syncedSeats, setSyncedSeats] = useState(team.seats);
+  if (syncedSeats !== team.seats) {
+    setSyncedSeats(team.seats);
+    setSeatDraft(clampSeats(team.seats));
+  }
   const [subscribing, setSubscribing] = useState(false);
   const [savingSeats, setSavingSeats] = useState(false);
   const [canceling, setCanceling] = useState(false);

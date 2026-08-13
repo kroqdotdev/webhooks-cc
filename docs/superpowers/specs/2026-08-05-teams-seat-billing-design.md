@@ -46,14 +46,14 @@ Team page → subscription card → seat-count picker (min 1) → `POST /api/tea
 
 `/api/polar-webhook` (existing route, existing signature validation) branches: events whose customer has `externalId` starting `team:` (or `metadata.teamId`) go to a new team handler; everything else flows to the untouched personal-Pro handler.
 
-| Event (team customer) | Effect on `teams` row |
-| --- | --- |
+| Event (team customer)                         | Effect on `teams` row                                                                                                                                                              |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `subscription.created` / `updated` / `active` | `polar_subscription_id`, `subscription_status` (reuse `normalizeStoredSubscriptionStatus`), `seats`, `request_limit = seats × 100_000`, `period_start/end`, `cancel_at_period_end` |
-| `subscription.canceled` / `uncanceled` | `cancel_at_period_end` + status, mirroring the personal handlers |
-| `subscription.revoked` | `subscription_status = null` (team inactive), `polar_subscription_id = null`, `cancel_at_period_end = false`, periods nulled. `seats`/usage retained for history |
-| `customer_seat.revoked` | remove the matching `team_members` row (match by `metadata.userId`, fallback email). If it targets the owner, ignore and log — owners can't be removed |
-| `customer_seat.assigned` / `claimed` | store `seat.id` on the matching membership row if empty (covers the owner's auto-claimed seat); otherwise no-op |
-| `order.*`, `benefit_grant.*` | ignored |
+| `subscription.canceled` / `uncanceled`        | `cancel_at_period_end` + status, mirroring the personal handlers                                                                                                                   |
+| `subscription.revoked`                        | `subscription_status = null` (team inactive), `polar_subscription_id = null`, `cancel_at_period_end = false`, periods nulled. `seats`/usage retained for history                   |
+| `customer_seat.revoked`                       | remove the matching `team_members` row (match by `metadata.userId`, fallback email). If it targets the owner, ignore and log — owners can't be removed                             |
+| `customer_seat.assigned` / `claimed`          | store `seat.id` on the matching membership row if empty (covers the owner's auto-claimed seat); otherwise no-op                                                                    |
+| `order.*`, `benefit_grant.*`                  | ignored                                                                                                                                                                            |
 
 Handlers stay idempotent (pure column upserts keyed by team id), matching the existing personal handlers.
 
@@ -97,15 +97,15 @@ All new/changed functions keep `security definer set search_path = ''` and servi
 
 ## 5. Access Gating (replaces all Pro checks)
 
-| Location | Today | New |
-| --- | --- | --- |
-| `teams-crud.ts` `requirePro()` (create) | caller must be Pro | removed — anyone creates a team shell |
-| `teams-crud.ts` `listTeamsForUser` suspended flag | owner not Pro | `subscription_status is null` |
-| `teams-invites.ts` `createInvite` | owner Pro + invitee has account + 25-cap | team active + members < seats (soft check; authoritative at accept) |
-| `teams-invites.ts` `acceptInvite` | accepting user must be Pro | team active (checked in RPC); seat assigned in Polar first |
-| `teams-endpoints.ts` share/unshare | owner Pro | team active |
-| `teams-endpoints.ts` `resolveEndpointAccess` | requester Pro + owner Pro + membership | membership in an active team the endpoint is shared with (endpoint owner always passes regardless) |
-| `app/api/endpoints/route.ts` share-metadata fetch | gated on requester `plan === "pro"` | split: owned-endpoint share metadata requires ANY team membership (owners always see/manage their own shares, even lapsed); shared-with-me requires ≥1 active-team membership |
+| Location                                          | Today                                    | New                                                                                                                                                                           |
+| ------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `teams-crud.ts` `requirePro()` (create)           | caller must be Pro                       | removed — anyone creates a team shell                                                                                                                                         |
+| `teams-crud.ts` `listTeamsForUser` suspended flag | owner not Pro                            | `subscription_status is null`                                                                                                                                                 |
+| `teams-invites.ts` `createInvite`                 | owner Pro + invitee has account + 25-cap | team active + members < seats (soft check; authoritative at accept)                                                                                                           |
+| `teams-invites.ts` `acceptInvite`                 | accepting user must be Pro               | team active (checked in RPC); seat assigned in Polar first                                                                                                                    |
+| `teams-endpoints.ts` share/unshare                | owner Pro                                | team active                                                                                                                                                                   |
+| `teams-endpoints.ts` `resolveEndpointAccess`      | requester Pro + owner Pro + membership   | membership in an active team the endpoint is shared with (endpoint owner always passes regardless)                                                                            |
+| `app/api/endpoints/route.ts` share-metadata fetch | gated on requester `plan === "pro"`      | split: owned-endpoint share metadata requires ANY team membership (owners always see/manage their own shares, even lapsed); shared-with-me requires ≥1 active-team membership |
 
 Inactive team = invites, sharing, and member access to shared endpoints all blocked; data retained; reactivates instantly when a subscription becomes active.
 

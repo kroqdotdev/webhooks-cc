@@ -51,7 +51,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Webhook.site Alternative — Full Comparison (2026)",
   description:
-    "Webhook.site alternative with a TypeScript SDK for CI testing, CLI tunnel to localhost, and MCP server for AI agents. Free tier includes every feature.",
+    "Webhook.site alternative with a TypeScript SDK for CI testing, CLI tunnel to localhost, and MCP server for AI agents. Free tier includes every individual feature; Teams is billed separately.",
   path: "/compare/webhook-site",
   keywords: [
     "webhook.site alternative",

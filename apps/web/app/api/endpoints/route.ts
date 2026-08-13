@@ -11,7 +11,6 @@ import {
   getShareMetadataForOwnedEndpoints,
   getSharedEndpointsForUser,
   hasActiveTeamMembership,
-  hasAnyTeamMembership,
 } from "@/lib/supabase/teams";
 import { serverEnv } from "@/lib/env";
 
@@ -20,20 +19,17 @@ export async function GET(request: Request) {
   if (!auth.success) return auth.response;
 
   try {
-    // Two different gates, neither of them a personal plan:
-    //  - `sharedWith` on the caller's OWN endpoints is management surface. Any
-    //    membership is enough, or the unshare control vanishes the moment a
-    //    team lapses and still-shared endpoints get stranded.
-    //  - Endpoints shared WITH the caller are the paid feature, so those need a
-    //    team that carries a subscription.
-    const [onAnyTeam, onActiveTeam] = await Promise.all([
-      hasAnyTeamMembership(auth.userId),
-      hasActiveTeamMembership(auth.userId),
-    ]);
+    // Only endpoints shared WITH the caller are gated (they are the paid
+    // feature, so they need a team that carries a subscription). `sharedWith`
+    // on the caller's OWN endpoints is management surface and must never be
+    // gated, not even on membership: shares outlive the sharer's membership,
+    // so an owner who left every team still needs the unshare control for
+    // teams that can otherwise keep reading their endpoint.
+    const onActiveTeam = await hasActiveTeamMembership(auth.userId);
 
     const [endpoints, shareMetadata, sharedEndpoints] = await Promise.all([
       listEndpointsForUser(auth.userId),
-      onAnyTeam ? getShareMetadataForOwnedEndpoints(auth.userId) : Promise.resolve(new Map()),
+      getShareMetadataForOwnedEndpoints(auth.userId),
       onActiveTeam ? getSharedEndpointsForUser(auth.userId) : Promise.resolve([]),
     ]);
 

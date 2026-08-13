@@ -49,6 +49,12 @@ let recorded: RecordedCall[] = [];
 
 function createFakeAdmin(responses: Record<string, QueryResult[]>) {
   return {
+    rpc(name: string, params?: unknown) {
+      recorded.push({ table: `rpc:${name}`, op: "rpc", payload: params });
+      const queue = responses[`rpc:${name}`];
+      const next = queue?.shift();
+      return Promise.resolve({ data: null, error: null, ...next });
+    },
     from(table: string) {
       let op = "select";
       let payload: unknown;
@@ -166,6 +172,25 @@ describe("createTeamCheckout", () => {
     expect(mockFns.createPolarClient).not.toHaveBeenCalled();
   });
 
+  test("rejects the checkout when the owner row is missing, instead of an empty billing email", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+        "users:select": [{ data: null }],
+      })
+    );
+
+    const customerCreate = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ customers: { create: customerCreate } });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
+      code: "owner_not_found",
+    });
+
+    expect(customerCreate).not.toHaveBeenCalled();
+  });
+
   test("creates a team-scoped Polar customer and a seated checkout", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
@@ -213,8 +238,9 @@ describe("updateTeamSeats", () => {
   test("refuses to shrink the subscription below the current member count", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [OWNER_MEMBERSHIP, { count: 4 }],
+        "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 5 })],
+        "rpc:update_team_seats": [{ data: { status: "below_members", member_count: 4 } }],
       })
     );
 
@@ -238,16 +264,26 @@ describe("updateTeamSeats", () => {
     });
   });
 
-  test("updates Polar and the local pool limit together", async () => {
+  test("writes the seat change through the locking RPC before calling Polar", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [OWNER_MEMBERSHIP, { count: 2 }],
+        "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
-        "teams:update": [{}],
+        "rpc:update_team_seats": [{ data: { status: "ok", previous_seats: 2 } }],
       })
     );
 
-    const subscriptionUpdate = vi.fn().mockResolvedValue({ id: "sub_1" });
+    const rpcWrite = {
+      table: "rpc:update_team_seats",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 6 },
+    };
+    const subscriptionUpdate = vi.fn().mockImplementation(() => {
+      // The DB write must land before Polar is told: the RPC's row lock is
+      // what serializes the change against concurrent invite accepts.
+      expect(recorded).toContainEqual(rpcWrite);
+      return Promise.resolve({ id: "sub_1" });
+    });
     mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
 
     await updateTeamSeats("user_1", "team_1", 6);
@@ -256,11 +292,33 @@ describe("updateTeamSeats", () => {
       id: "sub_1",
       subscriptionUpdate: { seats: 6 },
     });
+    expect(recorded).toContainEqual(rpcWrite);
+  });
+
+  test("restores the previous seat count when Polar rejects the update", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
+        "rpc:update_team_seats": [
+          { data: { status: "ok", previous_seats: 2 } },
+          { data: { status: "ok", previous_seats: 6 } },
+        ],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 6)).rejects.toThrow("polar down");
+
     expect(recorded).toContainEqual({
-      table: "teams",
-      op: "update",
-      payload: { seats: 6, request_limit: 600_000 },
+      table: "rpc:update_team_seats",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 2 },
     });
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });
 

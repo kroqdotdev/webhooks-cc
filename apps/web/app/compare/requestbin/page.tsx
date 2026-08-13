@@ -143,8 +143,8 @@ export default function CompareRequestBinPage() {
               webhooks.cc includes a native CLI for tunneling webhooks to localhost, a TypeScript
               SDK with <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> for test
               assertions, and an MCP server for AI agent integration. Team collaboration on
-              webhooks.cc costs $12/seat/month, with each seat adding 100,000 pooled requests;
-              Pipedream includes team features on all plans with unlimited members. RequestBin
+              webhooks.cc costs $12/seat/month, with each seat adding 100,000 pooled requests per 30
+              days; Pipedream includes team features on all plans with unlimited members. RequestBin
               focuses on the Pipedream workflow editor and API — it does not offer webhook-specific
               dev tooling.
             </p>

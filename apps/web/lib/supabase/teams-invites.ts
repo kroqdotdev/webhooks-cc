@@ -342,6 +342,11 @@ export async function acceptInvite(
     });
 
     if (error) throw error;
+    // Validate inside the try: a null or malformed payload dereferenced after
+    // this block would throw past the compensation below and strand the seat.
+    if (!data || typeof (data as { status?: unknown }).status !== "string") {
+      throw new Error("accept_team_invite returned no status");
+    }
     result = data as { status: string };
   } catch (rpcError) {
     // A failed RPC (timeout, pool exhaustion, restart) leaves the invite pending

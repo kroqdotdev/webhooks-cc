@@ -21,6 +21,9 @@ const ts = Date.now();
 // Team billing is plan-independent — no user below is upgraded to Pro.
 const OWNER_EMAIL = `test-tb-owner-${ts}@webhooks-test.local`;
 const MEMBER_EMAIL = `test-tb-member-${ts}@webhooks-test.local`;
+// create_team_with_owner caps ownership at 10 teams per user, so the review
+// regression tests seat their teams under a second owner.
+const ALT_OWNER_EMAIL = `test-tb-owner2-${ts}@webhooks-test.local`;
 
 // `teams_polar_customer` is a unique index: no two teams — including leftovers
 // from an interrupted run — may carry the same Polar customer id.
@@ -28,6 +31,7 @@ const LIFECYCLE_CUSTOMER_ID = `cus_lifecycle_${ts}`;
 
 let ownerId: string;
 let memberId: string;
+let altOwnerId: string;
 
 const createdUserIds: string[] = [];
 const createdTeamIds: string[] = [];
@@ -106,6 +110,7 @@ async function createSeatTeam(name: string, polarSeatId: string | null = null) {
 beforeAll(async () => {
   ownerId = await createTestUser(OWNER_EMAIL, "TB Owner");
   memberId = await createTestUser(MEMBER_EMAIL, "TB Member");
+  altOwnerId = await createTestUser(ALT_OWNER_EMAIL, "TB Owner Two");
 });
 
 afterAll(async () => {
@@ -236,8 +241,13 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
   const periodStart = new Date(Date.now() - 60_000);
   const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-  async function activatedTeam(name: string, subscriptionId: string, customerId: string) {
-    const teamId = await createTestTeam(ownerId, name);
+  async function activatedTeam(
+    name: string,
+    subscriptionId: string,
+    customerId: string,
+    owner = ownerId
+  ) {
+    const teamId = await createTestTeam(owner, name);
     await applyTeamPolarWebhookEvent("subscription.created", teamId, {
       id: subscriptionId,
       customerId,
@@ -295,6 +305,107 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     expect(team.cancel_at_period_end).toBe(false);
   });
 
+  it("resets pooled usage when a renewal advances the period on the same subscription", async () => {
+    const customerId = `cus_renewal_${ts}`;
+    const teamId = await activatedTeam(`TB Renewal ${ts}`, "sub_renewal", customerId, altOwnerId);
+    await setRequestsUsed(teamId, 4321);
+
+    // Polar renewals keep the subscription id and only advance the period
+    // bounds; the period transition is the one reset signal, and the cron
+    // fallback cannot fire because this write moves period_end into the future.
+    const renewedStart = periodEnd;
+    const renewedEnd = new Date(periodEnd.getTime() + 30 * 24 * 60 * 60 * 1000);
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_renewal",
+      customerId,
+      status: "active",
+      seats: 8,
+      currentPeriodStart: renewedStart,
+      currentPeriodEnd: renewedEnd,
+      cancelAtPeriodEnd: false,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.requests_used).toBe(0);
+    expect(team.subscription_status).toBe("active");
+    expect(new Date(team.period_start!).toISOString()).toBe(renewedStart.toISOString());
+    expect(new Date(team.period_end!).toISOString()).toBe(renewedEnd.toISOString());
+  });
+
+  it("keeps stored period bounds and usage when a stale update arrives out of order", async () => {
+    const customerId = `cus_stale_period_${ts}`;
+    const teamId = await activatedTeam(
+      `TB Stale Period ${ts}`,
+      "sub_stale_period",
+      customerId,
+      altOwnerId
+    );
+    await setRequestsUsed(teamId, 777);
+
+    const staleStart = new Date(periodStart.getTime() - 30 * 24 * 60 * 60 * 1000);
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_stale_period",
+      customerId,
+      status: "active",
+      seats: 8,
+      currentPeriodStart: staleStart,
+      currentPeriodEnd: periodStart,
+      cancelAtPeriodEnd: false,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.requests_used).toBe(777);
+    expect(new Date(team.period_start!).toISOString()).toBe(periodStart.toISOString());
+    expect(new Date(team.period_end!).toISOString()).toBe(periodEnd.toISOString());
+  });
+
+  it("ignores a revoked event belonging to a replaced subscription", async () => {
+    const customerId = `cus_revoked_mismatch_${ts}`;
+    const teamId = await activatedTeam(
+      `TB Revoked Mismatch ${ts}`,
+      "sub_current",
+      customerId,
+      altOwnerId
+    );
+
+    // A delayed revoke for the subscription this team already replaced must
+    // not deactivate the current, paying one.
+    await applyTeamPolarWebhookEvent("subscription.revoked", teamId, {
+      id: "sub_previous",
+      customerId,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+    expect(team.polar_subscription_id).toBe("sub_current");
+    expect(team.period_end).not.toBeNull();
+  });
+
+  it("keeps the team active when a live event carries an unrecognized status", async () => {
+    const customerId = `cus_unknown_status_${ts}`;
+    const teamId = await activatedTeam(
+      `TB Unknown Status ${ts}`,
+      "sub_unknown",
+      customerId,
+      altOwnerId
+    );
+
+    // subscription_status null is the deactivation gate, so an unknown status
+    // value on a live-subscription event must never null it.
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_unknown",
+      customerId,
+      status: "some_future_status",
+      seats: 8,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+  });
+
   it("activates with a one-seat pool when the payload carries no seat count", async () => {
     const teamId = await createTestTeam(ownerId, `TB Seatless ${ts}`);
 
@@ -312,6 +423,53 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     expect(team.subscription_status).toBe("active");
     expect(team.seats).toBeGreaterThanOrEqual(1);
     expect(team.request_limit).toBeGreaterThanOrEqual(TEAM_SEAT_REQUEST_LIMIT);
+  });
+});
+
+describe("update_team_seats RPC", () => {
+  it("updates seats and pool limit atomically, and refuses to undercut membership", async () => {
+    // Two memberships: the alt owner plus one invitee.
+    const teamId = await createTestTeam(altOwnerId, `TB Seat RPC ${ts}`);
+    await addMember(teamId, memberId);
+
+    const { data: ok, error } = await admin.rpc("update_team_seats", {
+      p_team_id: teamId,
+      p_seats: 4,
+    });
+    expect(error).toBeNull();
+    expect(ok).toMatchObject({ status: "ok", previous_seats: 0 });
+
+    let team = await getTeam(teamId);
+    expect(team.seats).toBe(4);
+    expect(team.request_limit).toBe(4 * TEAM_SEAT_REQUEST_LIMIT);
+
+    const { data: refused } = await admin.rpc("update_team_seats", {
+      p_team_id: teamId,
+      p_seats: 1,
+    });
+    expect(refused).toMatchObject({ status: "below_members", member_count: 2 });
+
+    team = await getTeam(teamId);
+    expect(team.seats).toBe(4);
+    expect(team.request_limit).toBe(4 * TEAM_SEAT_REQUEST_LIMIT);
+  });
+
+  it("reports a missing team and an out-of-range seat count without writing", async () => {
+    const { data: notFound } = await admin.rpc("update_team_seats", {
+      p_team_id: crypto.randomUUID(),
+      p_seats: 2,
+    });
+    expect(notFound).toMatchObject({ status: "not_found" });
+
+    const teamId = await createTestTeam(altOwnerId, `TB Seat RPC Bounds ${ts}`);
+    const { data: invalid } = await admin.rpc("update_team_seats", {
+      p_team_id: teamId,
+      p_seats: 0,
+    });
+    expect(invalid).toMatchObject({ status: "invalid_seats" });
+
+    const team = await getTeam(teamId);
+    expect(team.seats).toBe(0);
   });
 });
 

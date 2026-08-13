@@ -120,9 +120,16 @@ async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<string> {
     throw error;
   }
 
+  // maybeSingle() returns null data without an error when no user row matches.
+  // A Polar customer created with an empty email would bind the team to a
+  // billing contact that can never receive seat or invoice emails.
+  if (!owner?.email) {
+    throw new TeamBillingError("owner_not_found", "Team owner has no billing email");
+  }
+
   const polar = createPolarClient();
   const result = await polar.customers.create({
-    email: owner?.email ?? "",
+    email: owner.email,
     name: team.name,
     externalId: `team:${team.id}`,
     metadata: {
@@ -140,20 +147,6 @@ function assertValidSeatCount(seats: number): void {
   if (!Number.isInteger(seats) || seats < 1 || seats > MAX_TEAM_SEATS) {
     throw new TeamBillingError("invalid_seats", `Seats must be between 1 and ${MAX_TEAM_SEATS}`);
   }
-}
-
-async function countTeamMembers(teamId: string): Promise<number> {
-  const admin = createAdminClient();
-  const { count, error } = await admin
-    .from("team_members")
-    .select("id", { count: "exact", head: true })
-    .eq("team_id", teamId);
-
-  if (error) {
-    throw error;
-  }
-
-  return count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,29 +231,74 @@ export async function updateTeamSeats(
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
 
-  const memberCount = await countTeamMembers(teamId);
-  if (seats < memberCount) {
+  // Write the new seat count first, through an RPC that takes the same row lock
+  // as accept_team_invite and re-counts members under it. Checking the count
+  // out here and lowering seats only after Polar returned would leave a window
+  // where a concurrent invite accept admits a member onto a seat this reduction
+  // is removing.
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("update_team_seats", {
+    p_team_id: teamId,
+    p_seats: seats,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const rpcResult = asRecord(data);
+  const status = rpcResult ? asNonEmptyString(rpcResult.status) : null;
+
+  if (status === "below_members") {
+    const memberCount =
+      typeof rpcResult?.member_count === "number" ? rpcResult.member_count : seats;
     throw new TeamBillingError(
       "seats_below_members",
       `Team has ${memberCount} members — remove members before reducing to ${seats} seats`
     );
   }
 
-  const polar = createPolarClient();
-  const result = await polar.subscriptions.update({
-    id: team.polar_subscription_id,
-    subscriptionUpdate: { seats },
-  });
-  unwrapPolarResult(result, "team seat update");
+  if (status !== "ok") {
+    throw new TeamBillingError("seat_update_failed", "Failed to update seats");
+  }
 
-  // Optimistic local write; the subscription.updated webhook confirms it.
-  await updateTeamById(team.id, {
-    seats,
-    request_limit: seats * TEAM_SEAT_REQUEST_LIMIT,
-  });
+  const previousSeats =
+    typeof rpcResult?.previous_seats === "number" ? rpcResult.previous_seats : team.seats;
+
+  try {
+    const polar = createPolarClient();
+    const result = await polar.subscriptions.update({
+      id: team.polar_subscription_id,
+      subscriptionUpdate: { seats },
+    });
+    unwrapPolarResult(result, "team seat update");
+  } catch (polarError) {
+    // Polar never saw the change, so put the previous count back (the same RPC,
+    // so the restore also serializes against invite accepts). If the restore
+    // itself is refused or fails, the subscription.updated webhook remains the
+    // reconciler of record; surface the original Polar error either way.
+    const { data: restoreData, error: restoreError } = await admin.rpc("update_team_seats", {
+      p_team_id: teamId,
+      p_seats: previousSeats,
+    });
+
+    const restoreStatus = asRecord(restoreData)
+      ? asNonEmptyString(asRecord(restoreData)!.status)
+      : null;
+    if (restoreError || restoreStatus !== "ok") {
+      console.error("[team-billing] failed to restore seats after Polar error", {
+        teamId,
+        previousSeats,
+        restoreError,
+        restoreStatus,
+      });
+    }
+
+    throw polarError;
+  }
 }
 
-/** Cancels immediately. Used by team deletion, where the team row is already gone. */
+/** Cancels immediately. Used by team deletion, which revokes before deleting the row. */
 export async function revokeTeamSubscription(polarSubscriptionId: string): Promise<void> {
   const polar = createPolarClient();
   const result = await polar.subscriptions.revoke({ id: polarSubscriptionId });
@@ -420,7 +458,7 @@ async function applyTeamSubscriptionState(
   const admin = createAdminClient();
   const { data: team, error } = await admin
     .from("teams")
-    .select("polar_subscription_id, seats")
+    .select("polar_subscription_id, subscription_status, seats, period_start")
     .eq("id", teamId)
     .maybeSingle();
 
@@ -449,6 +487,38 @@ async function applyTeamSubscriptionState(
   const isNewSubscription =
     subscriptionId !== null && subscriptionId !== team.polar_subscription_id;
 
+  const incomingPeriodStart = parseEventTimestamp(data.currentPeriodStart);
+  const incomingPeriodStartMs = incomingPeriodStart ? Date.parse(incomingPeriodStart) : null;
+  const storedPeriodStartMs = team.period_start ? Date.parse(team.period_start) : null;
+
+  // An ordinary renewal keeps the subscription id and only advances the period
+  // bounds, so a forward-moving period start is the one signal that a fresh
+  // paid month began. It must clear usage here: this same write pushes
+  // period_end into the future, which blinds the cron fallback reset. Seat-only
+  // updates carry the unchanged period start and keep usage.
+  const isRenewal =
+    !isNewSubscription &&
+    incomingPeriodStartMs !== null &&
+    storedPeriodStartMs !== null &&
+    incomingPeriodStartMs > storedPeriodStartMs;
+
+  // A period start older than the stored one is a stale, out-of-order event
+  // (a retried `updated` landing after the renewal already applied). Writing
+  // its bounds would roll the period backwards, so keep the stored bounds.
+  const isStalePeriod =
+    !isNewSubscription &&
+    incomingPeriodStartMs !== null &&
+    storedPeriodStartMs !== null &&
+    incomingPeriodStartMs < storedPeriodStartMs;
+
+  // created/updated/active all describe a live subscription, and for teams a
+  // null subscription_status IS the deactivation gate (capture_webhook stops
+  // billing the pool, accept_team_invite refuses, the dashboard shows
+  // suspended). An unrecognized status value must therefore never null the
+  // gate: keep the stored status, or default to active for a first event.
+  const status =
+    normalizeStoredSubscriptionStatus(data.status) ?? team.subscription_status ?? "active";
+
   // subscription_status, request_limit and both period bounds are written in a
   // single statement on purpose: a team with a status but no request_limit
   // hard-429s every request, and one with a status but no period_end never
@@ -456,25 +526,29 @@ async function applyTeamSubscriptionState(
   await updateTeamById(teamId, {
     polar_customer_id: customerId ?? undefined,
     polar_subscription_id: subscriptionId ?? undefined,
-    subscription_status: normalizeStoredSubscriptionStatus(data.status),
+    subscription_status: status,
     seats,
     request_limit: seats * TEAM_SEAT_REQUEST_LIMIT,
-    period_start: parseEventTimestamp(data.currentPeriodStart),
-    period_end: parseEventTimestamp(data.currentPeriodEnd),
+    period_start: isStalePeriod ? undefined : incomingPeriodStart,
+    period_end: isStalePeriod ? undefined : parseEventTimestamp(data.currentPeriodEnd),
     cancel_at_period_end:
       typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
-    ...(isNewSubscription ? { requests_used: 0 } : {}),
+    ...(isNewSubscription || isRenewal ? { requests_used: 0 } : {}),
   });
 }
 
 /**
- * Whether a cancel/uncancel event still describes the subscription the team
- * holds. Both events write a non-null `subscription_status`, which is the team's
- * access gate — so a retried `subscription.canceled` landing after
+ * Whether a cancel/uncancel/revoke event still describes the subscription the
+ * team holds. Cancel and uncancel write a non-null `subscription_status`, which
+ * is the team's access gate — so a retried `subscription.canceled` landing after
  * `subscription.revoked` would silently re-open a deactivated team's pool, and
  * neither reset CTE could ever clean it up (both require `period_end` non-null).
  * A `canceled` that arrives too early is safe to drop: the `created`/`updated`
  * event that follows carries `cancelAtPeriodEnd` and re-applies it.
+ *
+ * Revocation needs the same check in the other direction: after a team replaces
+ * its subscription, a delayed or retried `subscription.revoked` for the old one
+ * must not clear the row that now tracks the new, paying subscription.
  */
 async function isLiveSubscriptionEvent(
   teamId: string,
@@ -591,6 +665,10 @@ export async function applyTeamPolarWebhookEvent(
       return;
 
     case "subscription.revoked":
+      if (!(await isLiveSubscriptionEvent(teamId, data))) {
+        return;
+      }
+
       // Nulling the status is what deactivates the team: capture_webhook and the
       // gating helpers key off it. seats/requests_used/request_limit are kept so
       // the period's usage stays visible until a new subscription resets it.

@@ -130,7 +130,7 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access — every individual feature works on both tiers. Pro ($8/month) raises the limit to 100,000 requests per month with 30-day retention. Teams is billed separately at $12/seat/mo.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access — every individual feature works on both tiers. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Teams is billed separately at $12/seat/mo.",
   },
   {
     question: "Whose quota is used for shared team endpoints?",
@@ -544,7 +544,8 @@ export default async function Home() {
                 Try Teams
               </Link>
               <p className="text-sm text-muted-foreground mt-3">
-                $12/seat/mo — every seat adds 100,000 requests to the team&apos;s shared pool
+                $12/seat/mo — every seat adds 100,000 requests per 30 days to the team&apos;s shared
+                pool
               </p>
             </div>
             <div className="neo-card neo-card-static p-0! overflow-hidden">

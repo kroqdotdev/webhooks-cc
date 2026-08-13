@@ -31,6 +31,7 @@
 The installed SDK (^0.48.1) predates the seats API. Upgrade it, then verify the seat surface exists and pin down the exact call shapes the rest of this plan assumes.
 
 **Files:**
+
 - Modify: `apps/web/package.json` (dependency `@polar-sh/sdk`)
 - Modify: `package.json` (root; also lists `@polar-sh/sdk` — keep versions identical)
 - Modify: `apps/web/lib/polar.ts`
@@ -38,6 +39,7 @@ The installed SDK (^0.48.1) predates the seats API. Upgrade it, then verify the 
 - Modify: `.env.example` (POLAR block, lines 21–25 area)
 
 **Interfaces:**
+
 - Produces: `getPolarTeamsCheckoutConfig(): { appUrl: string; teamsProductId: string }` from `@/lib/polar`. Later tasks call `polar.customerSeats.assign(...)`, `polar.customerSeats.revoke(...)`, `polar.customerSeats.list(...)`, `polar.subscriptions.update({ id, subscriptionUpdate: { seats } })`, `polar.subscriptions.revoke({ id })`, and `polar.checkouts.create({ products, seats, customerId, successUrl })`.
 
 - [ ] **Step 1: Upgrade the SDK in both package.json files**
@@ -86,6 +88,7 @@ In `.env.example`, under the existing POLAR vars, add:
 pnpm typecheck && pnpm --filter web build
 cd apps/web && npx vitest run tests/integration/supabase-billing.test.ts
 ```
+
 Expected: PASS (SDK upgrade must not break the existing personal-Pro billing paths; `unwrapPolarResult` in `lib/polar.ts` already tolerates both result shapes).
 
 - [ ] **Step 6: Commit**
@@ -99,10 +102,12 @@ git add -A && git commit -m "chore(billing): bump @polar-sh/sdk for seats API, a
 ### Task 2: Migration 00033 part 1 — schema columns + TS row types
 
 **Files:**
+
 - Create: `supabase/migrations/00033_team_billing.sql` (schema section only; procedures appended in Tasks 3–4)
 - Modify: `apps/web/lib/supabase/database.ts` (hand-maintained row types: `teams`, `team_members`, `requests`)
 
 **Interfaces:**
+
 - Produces: columns `teams.polar_customer_id/polar_subscription_id/subscription_status/seats/requests_used/request_limit/period_start/period_end/cancel_at_period_end`, `team_members.polar_seat_id`, `requests.team_id` — used by every later task.
 
 - [ ] **Step 1: Write the schema section of the migration**
@@ -148,6 +153,7 @@ create index if not exists requests_team
 set -a; source .env.local; set +a
 /opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
 ```
+
 Expected: `ALTER TABLE` / `CREATE INDEX` output, no errors. (If connection fails: `colima start`, then retry.)
 
 - [ ] **Step 3: Extend the hand-maintained row types in `database.ts`**
@@ -155,15 +161,15 @@ Expected: `ALTER TABLE` / `CREATE INDEX` output, no errors. (If connection fails
 Find the `teams` table entry and add to its `Row` (and mirror optional variants in `Insert`/`Update`, following exactly how the `users` table entry declares its polar fields):
 
 ```typescript
-          polar_customer_id: string | null;
-          polar_subscription_id: string | null;
-          subscription_status: "active" | "canceled" | "past_due" | null;
-          seats: number;
-          requests_used: number;
-          request_limit: number;
-          period_start: string | null;
-          period_end: string | null;
-          cancel_at_period_end: boolean;
+polar_customer_id: string | null;
+polar_subscription_id: string | null;
+subscription_status: "active" | "canceled" | "past_due" | null;
+seats: number;
+requests_used: number;
+request_limit: number;
+period_start: string | null;
+period_end: string | null;
+cancel_at_period_end: boolean;
 ```
 
 To `team_members` Row/Insert/Update add `polar_seat_id: string | null;`. To `requests` Row/Insert/Update add `team_id: string | null;`.
@@ -183,10 +189,12 @@ git commit -m "feat(db): team billing columns, member seat ids, request team sta
 The hot path. The function's signature and result statuses are frozen; only the internal quota branch changes.
 
 **Files:**
+
 - Modify: `supabase/migrations/00033_team_billing.sql` (append)
 - Create: `apps/web/tests/integration/supabase-team-quota.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 columns.
 - Produces: `capture_webhook` bills the oldest actively-subscribed team share and stamps `requests.team_id`; personal path byte-identical to `00023_response_rules.sql:17-156`.
 
@@ -240,6 +248,7 @@ Setup: create owner (free plan, `request_limit` left at default 50), create team
 ```bash
 cd apps/web && npx vitest run tests/integration/supabase-team-quota.test.ts
 ```
+
 Expected: FAIL — captures on the shared endpoint bill the owner (case 1: `teams.requests_used` stays 0, `team_id` null).
 
 - [ ] **Step 3: Append the new capture_webhook to the migration**
@@ -315,6 +324,7 @@ set -a; source .env.local; set +a
 /opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
 cd apps/web && npx vitest run tests/integration/supabase-team-quota.test.ts
 ```
+
 Expected: PASS all 5 cases. Also re-run the untouched receiver contract: `cd apps/receiver-rs && cargo test` → PASS.
 
 - [ ] **Step 5: Commit**
@@ -328,10 +338,12 @@ git add -A && git commit -m "feat(db): capture_webhook bills team-shared endpoin
 ### Task 4: Migration 00033 part 3 — seats in accept_team_invite, team period resets, retention carve-outs
 
 **Files:**
+
 - Modify: `supabase/migrations/00033_team_billing.sql` (append)
 - Create: `apps/web/tests/integration/supabase-team-lifecycle.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 columns.
 - Produces: `accept_team_invite(p_user_id uuid, p_invite_id uuid, p_seat_id text default null)` returning `{"status": "accepted" | "not_found" | "full" | "inactive"}`; `process_billing_period_resets()` (same return shape) also handles teams; `cleanup_free_user_requests()` skips team-billed rows.
 
@@ -350,6 +362,7 @@ Create `apps/web/tests/integration/supabase-team-lifecycle.test.ts` (same harnes
 ```bash
 cd apps/web && npx vitest run tests/integration/supabase-team-lifecycle.test.ts
 ```
+
 Expected: FAIL (RPC signature mismatch on `p_seat_id` / no `inactive` status / team rows untouched by resets / team request deleted).
 
 - [ ] **Step 3: Append the three function replacements to the migration**
@@ -469,6 +482,7 @@ set -a; source .env.local; set +a
 cd apps/web && npx vitest run tests/integration/supabase-team-lifecycle.test.ts tests/integration/supabase-billing-reset.test.ts
 git add -A && git commit -m "feat(db): seat-capped invites, team period resets, team-aware retention"
 ```
+
 (`supabase-billing-reset.test.ts` guards the unchanged personal-reset behavior.)
 
 ---
@@ -476,11 +490,13 @@ git add -A && git commit -m "feat(db): seat-capped invites, team period resets, 
 ### Task 5: `team-billing.ts` — per-team Polar customer, checkout, seats, webhook apply
 
 **Files:**
+
 - Create: `apps/web/lib/supabase/team-billing.ts`
 - Create: `apps/web/tests/integration/supabase-team-billing.test.ts` (webhook-apply paths, DB only)
 - Test: `apps/web/lib/supabase/team-billing.test.ts` (unit, mocked Polar for checkout/seat paths)
 
 **Interfaces:**
+
 - Consumes: `createPolarClient`, `getPolarTeamsCheckoutConfig`, `unwrapPolarResult` from `@/lib/polar` (Task 1); `createAdminClient` from `./admin`.
 - Produces (all exported from `@/lib/supabase/team-billing`):
   - `TEAM_SEAT_REQUEST_LIMIT = 100_000`
@@ -500,12 +516,13 @@ git add -A && git commit -m "feat(db): seat-capped invites, team period resets, 
 `apps/web/tests/integration/supabase-team-billing.test.ts` (same harness; no Polar calls — `applyTeamPolarWebhookEvent` is pure DB):
 
 1. `subscription.created` with `{ id: "sub_1", customerId: "cus_1", status: "active", seats: 5, currentPeriodStart: new Date(...), currentPeriodEnd: new Date(...), cancelAtPeriodEnd: false }` → team row: `polar_subscription_id` "sub_1", `polar_customer_id` "cus_1", status "active", seats 5, `request_limit` 500_000, periods set.
-2. `subscription.updated` with `seats: 8` → seats 8, `request_limit` 800_000 (usage untouched).
-3. `subscription.canceled` → `cancel_at_period_end` true, status "canceled".
-4. `subscription.uncanceled` → back to active, flag false.
-5. `subscription.revoked` → status null, `polar_subscription_id` null, flags/periods cleared; `seats`/`requests_used` retained.
-6. `customer_seat.revoked` with `{ metadata: { userId: memberId } }` → that member's `team_members` row deleted; same event targeting the owner's userId → membership retained.
-7. `customer_seat.claimed` with an email matching a membership whose `polar_seat_id` is null and `{ id: "seat_1" }` → seat id stored.
+2. `subscription.updated` with `seats: 8` → seats 8, `request_limit` 800_000 (usage untouched). This is the seat-only case: the period start in the payload equals the stored one.
+3. `subscription.updated` renewal (same subscription id, `currentPeriodStart` advanced past the stored `period_start`) → `requests_used` reset to 0 and the new period bounds stored. Separate from the seat-only test above: a renewal keeps the subscription id, so the period transition is the only reset signal, and the cron fallback cannot fire because this same write moves `period_end` into the future. A stale event (older `currentPeriodStart`) keeps the stored bounds and usage.
+4. `subscription.canceled` → `cancel_at_period_end` true, status "canceled".
+5. `subscription.uncanceled` → back to active, flag false.
+6. `subscription.revoked` → status null, `polar_subscription_id` null, flags/periods cleared; `seats`/`requests_used` retained. A revoked event whose subscription id differs from the stored one (the team already re-subscribed) is a no-op: the delayed revoke of a replaced subscription must not deactivate the paying one.
+7. `customer_seat.revoked` with `{ metadata: { userId: memberId } }` → that member's `team_members` row deleted; same event targeting the owner's userId → membership retained.
+8. `customer_seat.claimed` with an email matching a membership whose `polar_seat_id` is null and `{ id: "seat_1" }` → seat id stored.
 
 - [ ] **Step 2: Run to verify failure** (module doesn't exist)
 
@@ -539,7 +556,8 @@ async function getTeamForOwner(userId: string, teamId: string) {
     .eq("role", "owner")
     .maybeSingle();
   if (memberError) throw memberError;
-  if (!membership) throw new TeamBillingError("not_owner", "Only the team owner can manage billing");
+  if (!membership)
+    throw new TeamBillingError("not_owner", "Only the team owner can manage billing");
 
   const { data: team, error } = await admin
     .from("teams")
@@ -615,7 +633,7 @@ export async function createTeamCheckout(
 }
 ```
 
-`updateTeamSeats`: owner check → `no_subscription` if `polar_subscription_id` null → count `team_members` rows; `seats < memberCount` → `seats_below_members` → `polar.subscriptions.update({ id, subscriptionUpdate: { seats } })` → update `teams.seats` + `request_limit = seats * TEAM_SEAT_REQUEST_LIMIT` locally (webhook will confirm). `cancelTeamSubscription`/`resubscribeTeam`: mirror `cancelSubscriptionForUser`/`resubscribeForUser` in `billing.ts:202-243` operating on the team row. `assignTeamSeat`: read team's `polar_subscription_id` (null → return null), `polar.customerSeats.assign({ subscriptionId, email, immediateClaim: true, metadata: { userId: memberUserId, teamId } })` (exact param names per Task 1 verification), return seat id. `revokeTeamSeat`: try stored id; else `customerSeats.list` by subscription and match email; wrap all Polar errors in `console.error` + return (never throw — membership is already gone). `applyTeamPolarWebhookEvent`: switch mirroring `applyPolarWebhookEvent` but writing the `teams` row per the Step-1 test matrix; `customer_seat.revoked` deletes `team_members` where `user_id = metadata.userId` (fallback: match user by email) **unless** that user is the team's `created_by`; `customer_seat.assigned`/`claimed` stores `data.id` into `polar_seat_id` where null, matching member by `metadata.userId` then email.
+`updateTeamSeats`: owner check → `no_subscription` if `polar_subscription_id` null → call the `update_team_seats` RPC (00034), which locks the team row exactly like `accept_team_invite`, re-counts members under the lock, and writes `seats` + `request_limit` atomically (returning `below_members` + the count when the reduction undercuts membership, which maps to `seats_below_members`) → then `polar.subscriptions.update({ id, subscriptionUpdate: { seats } })`; if Polar fails, call the RPC again with the previous count to restore, and let the `subscription.updated` webhook remain the reconciler of record. Counting members outside a lock and lowering `teams.seats` only after Polar returns would let a concurrent invite accept admit a member onto an unpaid seat. `cancelTeamSubscription`/`resubscribeTeam`: mirror `cancelSubscriptionForUser`/`resubscribeForUser` in `billing.ts:202-243` operating on the team row. `assignTeamSeat`: read team's `polar_subscription_id` (null → return null), `polar.customerSeats.assign({ subscriptionId, email, immediateClaim: true, metadata: { userId: memberUserId, teamId } })` (exact param names per Task 1 verification), return seat id. `revokeTeamSeat`: try stored id; else `customerSeats.list` by subscription and match email; wrap all Polar errors in `console.error` + return (never throw — membership is already gone). `applyTeamPolarWebhookEvent`: switch mirroring `applyPolarWebhookEvent` but writing the `teams` row per the Step-1 test matrix; `customer_seat.revoked` deletes `team_members` where `user_id = metadata.userId` (fallback: match user by email) **unless** that user is the team's `created_by`; `customer_seat.assigned`/`claimed` stores `data.id` into `polar_seat_id` where null, matching member by `metadata.userId` then email.
 
 - [ ] **Step 4: Unit tests for guard rails (mocked Polar)**
 
@@ -634,10 +652,12 @@ git add -A && git commit -m "feat(billing): team-billing lib — per-team Polar 
 ### Task 6: Webhook route branches team events
 
 **Files:**
+
 - Modify: `apps/web/app/api/polar-webhook/route.ts:23`
 - Test: `apps/web/app/api/polar-webhook/route.test.ts` (create)
 
 **Interfaces:**
+
 - Consumes: `extractTeamIdFromWebhook`, `applyTeamPolarWebhookEvent` (Task 5); existing `applyPolarWebhookEvent`.
 
 - [ ] **Step 1: Write failing route test**
@@ -649,13 +669,13 @@ Mock `@polar-sh/sdk/webhooks` (`validateEvent` returns a fixed event), `@/lib/su
 Replace `route.ts:23`:
 
 ```typescript
-    const data = event.data as Record<string, unknown>;
-    const teamId = extractTeamIdFromWebhook(data);
-    if (teamId) {
-      await applyTeamPolarWebhookEvent(event.type, teamId, data);
-    } else {
-      await applyPolarWebhookEvent(event.type, event.data);
-    }
+const data = event.data as Record<string, unknown>;
+const teamId = extractTeamIdFromWebhook(data);
+if (teamId) {
+  await applyTeamPolarWebhookEvent(event.type, teamId, data);
+} else {
+  await applyPolarWebhookEvent(event.type, event.data);
+}
 ```
 
 with imports added. Everything else (validation, error mapping) unchanged.
@@ -672,12 +692,14 @@ git add -A && git commit -m "feat(billing): route Polar team-customer events to 
 ### Task 7: Gating swap — teams-crud + shared gating helpers + team deletion revokes subscription
 
 **Files:**
+
 - Create: `apps/web/lib/supabase/teams-gating.ts`
 - Modify: `apps/web/lib/supabase/teams-crud.ts` (remove `requirePro`; billing fields on `Team`; deleteTeam revokes)
 - Modify: `apps/web/lib/supabase/teams-types.ts:16-24` (`Team` interface)
 - Modify: `apps/web/tests/integration/supabase-teams.test.ts` (harness + crud suites)
 
 **Interfaces:**
+
 - Consumes: `revokeTeamSubscription` (Task 5).
 - Produces: `requireActiveTeam(teamId: string): Promise<string | null>` (error message or null) and `hasActiveTeamMembership(userId: string): Promise<boolean>` from `@/lib/supabase/teams-gating`; `Team` gains `subscriptionStatus: "active" | "canceled" | "past_due" | null; seats: number; requestsUsed: number; requestLimit: number; periodEnd: number | null; cancelAtPeriodEnd: boolean;` — `suspended === (subscriptionStatus === null)`.
 
@@ -722,7 +744,7 @@ export async function hasActiveTeamMembership(userId: string): Promise<boolean> 
 
 (If the `teams!inner` embed doesn't resolve — check how other files embed joins; fallback: two queries, membership team ids then `teams.select("id").in("id", ids).not("subscription_status","is",null).limit(1)`.)
 
-`teams-crud.ts`: delete `requirePro` and its `createTeam` call; `listTeamsForUser` selects the billing columns and maps `suspended: team.subscription_status === null` plus the new `Team` fields (drop the owner-plan batch lookup entirely); `createTeam` returns the new fields zeroed (`suspended: true`, `seats: 0`, ...). `deleteTeam`: before the delete, select `polar_subscription_id`; after a successful delete, `if (subId) await revokeTeamSubscription(subId)` (revoke failures log, never block deletion). Re-export `teams-gating` from the `teams.ts` barrel.
+`teams-crud.ts`: delete `requirePro` and its `createTeam` call; `listTeamsForUser` selects the billing columns and maps `suspended: team.subscription_status === null` plus the new `Team` fields (drop the owner-plan batch lookup entirely); `createTeam` returns the new fields zeroed (`suspended: true`, `seats: 0`, ...). `deleteTeam`: select `polar_subscription_id`, then revoke the Polar subscription BEFORE deleting the row: a failed revoke aborts the deletion (the owner just retries), because the reverse order can strand an active Polar subscription with no stored id left to reconcile against. The inverse failure mode (revoked subscription on a still-existing team) is recoverable through resubscribe. Re-export `teams-gating` from the `teams.ts` barrel.
 
 - [ ] **Step 3: Run suites to pass, typecheck, commit**
 
@@ -737,11 +759,13 @@ git add -A && git commit -m "feat(teams): subscription-based gating for team cru
 ### Task 8: Gating swap — invites and member removal drive Polar seats
 
 **Files:**
+
 - Modify: `apps/web/lib/supabase/teams-invites.ts` (`requirePro` out; seat lifecycle in `acceptInvite`; seat-aware `createInvite`)
 - Modify: `apps/web/lib/supabase/teams-members.ts` (`removeTeamMember`, `leaveTeam` revoke seats)
 - Modify: `apps/web/tests/integration/supabase-teams.test.ts` (invite/member suites)
 
 **Interfaces:**
+
 - Consumes: `requireActiveTeam` (Task 7); `assignTeamSeat`, `revokeTeamSeat` (Task 5); `accept_team_invite` 3-arg RPC (Task 4).
 - Produces: `acceptInvite(userId, inviteId)` return type unchanged (`{ accepted: boolean; error?: string }`) — new error strings: `"This team needs an active Teams subscription"`, `"Team has no available seats — ask the owner to add seats"`.
 
@@ -754,24 +778,24 @@ Invite suite updates: `createInvite` fails on unsubscribed team with the subscri
 `teams-invites.ts` `createInvite`: replace the owner-check's follow-up 25-cap block with:
 
 ```typescript
-  const activeError = await requireActiveTeam(teamId);
-  if (activeError) return { error: activeError };
+const activeError = await requireActiveTeam(teamId);
+if (activeError) return { error: activeError };
 
-  const { count: memberCount, error: countError } = await admin
-    .from("team_members")
-    .select("id", { count: "exact", head: true })
-    .eq("team_id", teamId);
-  if (countError) throw countError;
+const { count: memberCount, error: countError } = await admin
+  .from("team_members")
+  .select("id", { count: "exact", head: true })
+  .eq("team_id", teamId);
+if (countError) throw countError;
 
-  const { data: teamSeats, error: seatsError } = await admin
-    .from("teams")
-    .select("seats")
-    .eq("id", teamId)
-    .maybeSingle();
-  if (seatsError) throw seatsError;
-  if ((memberCount ?? 0) >= (teamSeats?.seats ?? 0)) {
-    return { error: "Team has no available seats — ask the owner to add seats" };
-  }
+const { data: teamSeats, error: seatsError } = await admin
+  .from("teams")
+  .select("seats")
+  .eq("id", teamId)
+  .maybeSingle();
+if (seatsError) throw seatsError;
+if ((memberCount ?? 0) >= (teamSeats?.seats ?? 0)) {
+  return { error: "Team has no available seats — ask the owner to add seats" };
+}
 ```
 
 (The invitee-must-have-account lookup stays in Plan A; Plan B removes it.) `acceptInvite`: drop `requirePro`; fetch the invite's team + invited email; `const seatId = await assignTeamSeat(teamId, invitedEmail, userId);` then `admin.rpc("accept_team_invite", { p_user_id: userId, p_invite_id: inviteId, p_seat_id: seatId })`; map `"inactive"` → subscription error, `"full"` → seats error **and** compensating `await revokeTeamSeat(teamId, seatId, invitedEmail)`. `teams-members.ts`: in `removeTeamMember` and `leaveTeam`, select `polar_seat_id` + member email with the membership row, and after the successful delete call `revokeTeamSeat(teamId, polarSeatId, email)`.
@@ -788,6 +812,7 @@ git add -A && git commit -m "feat(teams): seat-gated invites; membership changes
 ### Task 9: Gating swap — endpoint sharing and access resolution
 
 **Files:**
+
 - Modify: `apps/web/lib/supabase/teams-endpoints.ts` (`requirePro` out everywhere; `resolveEndpointAccess:304-367`; `getSharedEndpointsForUser:218-231`; share/unshare guards)
 - Modify: `apps/web/app/api/endpoints/route.ts:22-31` (share-metadata gate)
 - Modify: `apps/web/lib/supabase/requests.ts:207-221` + list/get retention checks
@@ -795,6 +820,7 @@ git add -A && git commit -m "feat(teams): seat-gated invites; membership changes
 - Modify: `apps/web/tests/integration/supabase-teams.test.ts` (suspension/access suites)
 
 **Interfaces:**
+
 - Consumes: `requireActiveTeam`, `hasActiveTeamMembership` (Task 7).
 - Produces: `resolveEndpointAccess` unchanged signature; non-owner access rule = membership in an active team the endpoint is shared with.
 
@@ -804,7 +830,7 @@ Rewrite the suspension suite: member of active team reads shared endpoint reques
 
 - [ ] **Step 2: Implement**
 
-`teams-endpoints.ts`: `resolveEndpointAccess` — delete both `requirePro` calls (requester at L328, owner at L352-364); after finding `shareAccess` team ids, keep only teams with `subscription_status` non-null (adjust the `team_endpoints` query to join or follow with a `teams` filter query across ALL matching share teams — access passes if ANY sharing team the user belongs to is active, not just the first row; use `.in("id", shareTeamIds).not("subscription_status", "is", null).limit(1)`). Share/unshare guards swap `requirePro` for `requireActiveTeam(teamId)`. `getSharedEndpointsForUser` replaces the owner-plan filter (L218-231) with an active-teams filter. `app/api/endpoints/route.ts`: replace the `plan === "pro"` condition with a SPLIT gate — owned-endpoint share metadata (`getShareMetadataForOwnedEndpoints`) fetched when the user has ANY team membership (owners must always see/manage their own shares, even for lapsed teams — otherwise unshare is unreachable after the hard cutover); shared-with-me endpoints (`getSharedEndpointsForUser`) fetched only when `await hasActiveTeamMembership(auth.userId)`. `requests.ts`: select `team_id` in `getRequestByIdForUser` (add to the select at L232-234) and skip the cutoff when `row.team_id !== null`; in the two list functions that call `getUserCutoff(ownerId)` (`listRequestsForEndpointByUser` area L202+), when the owner is free change the single `gte("received_at", ...)` filter to `.or(\`team_id.not.is.null,received_at.gte.${cutoffIso}\`)` so team-billed rows survive the 7-day read cutoff. `search_requests` (append to migration 00033): re-create the function copying its current definition from `00021_search_index_compat.sql`, changing only the retention predicate inside the dynamic SQL from `r.received_at >= cutoff`-style to also pass rows where `r.team_id is not null` (exact edit: wherever `v_retention_cutoff` is applied, use `(%s is null or r.team_id is not null or r.received_at >= %s)` semantics matching the existing format-string style). Apply the migration again after editing.
+`teams-endpoints.ts`: `resolveEndpointAccess` — delete both `requirePro` calls (requester at L328, owner at L352-364); after finding `shareAccess` team ids, keep only teams with `subscription_status` non-null (adjust the `team_endpoints` query to join or follow with a `teams` filter query across ALL matching share teams — access passes if ANY sharing team the user belongs to is active, not just the first row; use `.in("id", shareTeamIds).not("subscription_status", "is", null).limit(1)`). Share/unshare guards swap `requirePro` for `requireActiveTeam(teamId)`. `getSharedEndpointsForUser` replaces the owner-plan filter (L218-231) with an active-teams filter. `app/api/endpoints/route.ts`: replace the `plan === "pro"` condition with a SPLIT gate — owned-endpoint share metadata (`getShareMetadataForOwnedEndpoints`) fetched when the user has ANY team membership (owners must always see/manage their own shares, even for lapsed teams — otherwise unshare is unreachable after the hard cutover); shared-with-me endpoints (`getSharedEndpointsForUser`) fetched only when `await hasActiveTeamMembership(auth.userId)`. `requests.ts`: select `team_id` in `getRequestByIdForUser` (add to the select at L232-234) and skip the cutoff when `row.team_id !== null`; in the two list functions that call `getUserCutoff(ownerId)` (`listRequestsForEndpointByUser` area L202+), when the owner is free change the single `gte("received_at", ...)` filter to `.or(\`team_id.not.is.null,received_at.gte.${cutoffIso}\`)`so team-billed rows survive the 7-day read cutoff.`search_requests`(append to migration 00033): re-create the function copying its current definition from`00021_search_index_compat.sql`, changing only the retention predicate inside the dynamic SQL from `r.received_at >= cutoff`-style to also pass rows where `r.team_id is not null`(exact edit: wherever`v_retention_cutoff`is applied, use`(%s is null or r.team_id is not null or r.received_at >= %s)` semantics matching the existing format-string style). Apply the migration again after editing.
 
 - [ ] **Step 3: Run suites to pass; verify receiver still green; commit**
 
@@ -821,6 +847,7 @@ git add -A && git commit -m "feat(teams): endpoint access + retention keyed to a
 ### Task 10: Team billing API routes
 
 **Files:**
+
 - Create: `apps/web/app/api/teams/[teamId]/billing/checkout/route.ts`
 - Create: `apps/web/app/api/teams/[teamId]/billing/cancel/route.ts`
 - Create: `apps/web/app/api/teams/[teamId]/billing/resubscribe/route.ts`
@@ -828,6 +855,7 @@ git add -A && git commit -m "feat(teams): endpoint access + retention keyed to a
 - Test: `apps/web/app/api/teams/[teamId]/billing/checkout/route.test.ts`
 
 **Interfaces:**
+
 - Consumes: `createTeamCheckout`, `cancelTeamSubscription`, `resubscribeTeam`, `updateTeamSeats`, `TeamBillingError` (Task 5); `authenticateSessionRequest` from `@/lib/api-auth` (session-token only — billing mutations reject API keys, same as personal billing).
 - Produces: `POST .../checkout {seats} → {url}`; `POST .../cancel`; `POST .../resubscribe`; `POST .../seats {seats}` → 204.
 
@@ -896,12 +924,14 @@ git add -A && git commit -m "feat(api): team billing routes — checkout, cancel
 ### Task 11: UI — team subscription card, page states, teams index
 
 **Files:**
+
 - Create: `apps/web/components/teams/team-subscription-card.tsx`
 - Modify: `apps/web/app/teams/[teamId]/page.tsx` (suspension notices L400-439, member plan badge L466-473, card slot)
 - Modify: `apps/web/app/teams/page.tsx` (upgrade wall L188-211, accept gating L297-309, badges L399-421)
 - Modify: `apps/web/lib/analytics.ts` (one new event beside the teams events at L126-157)
 
 **Interfaces:**
+
 - Consumes: `Team` with billing fields (Task 7); billing routes (Task 10); `UsageDisplay` from `@/components/billing/usage-display`; `Button`/dialog primitives from `@/components/ui`; access token pattern from `upgrade-button.tsx`.
 - Produces: `<TeamSubscriptionCard team={team} isOwner={boolean} accessToken={string | null} onChanged={() => void} />`.
 
@@ -922,9 +952,10 @@ git add -A && git commit -m "feat(web): team subscription card, seat management,
 ### Task 12: Copy — landing pricing, docs, changelog, CLAUDE.md
 
 **Files:**
+
 - Modify: `apps/web/app/page.tsx` (pricing section ~L555-626, teams video section copy ~L530-549)
-- Modify: `apps/web/content/docs/plans-limits.mdx` (plans table L24-28, "only Pro feature is Teams" L30, team quota rules L63-67, caps L97-98)
-- Modify: `apps/web/content/docs/teams.mdx` (gating + quota sections)
+- Modify: `content/docs/plans-limits.mdx` (plans table L24-28, "only Pro feature is Teams" L30, team quota rules L63-67, caps L97-98)
+- Modify: `content/docs/teams.mdx` (gating + quota sections)
 - Modify: `apps/web/lib/changelog.ts` (APP_VERSION minor bump + new web entry at top)
 - Modify: `apps/web/package.json` (`version` — keep equal to APP_VERSION)
 - Modify: `CLAUDE.md` (env table: `POLAR_TEAMS_PRODUCT_ID`; schema table: teams billing columns; plans description)
@@ -943,6 +974,7 @@ git add -A && git commit -m "docs(web): teams pricing tier, plan docs, changelog
 ### Task 13: E2E updates + full verification sweep
 
 **Files:**
+
 - Modify: `apps/web/tests/e2e/teams.spec.ts`
 
 - [ ] **Step 1: Update e2e expectations** — assertions referencing the Pro upgrade wall / "Teams require a Pro plan" / "Upgrade to accept" now assert the subscribe CTA ("Subscribe"), suspended badge, and seat copy ("$12/seat/mo"). Follow existing spec structure; do not add Polar-dependent flows (checkout is external).
@@ -953,6 +985,7 @@ pnpm typecheck && pnpm lint && pnpm build
 make test
 cd apps/web && npx vitest run tests/integration/
 ```
+
 Expected: all green. Any failure is fixed before this task completes — no skips, no `.only`.
 
 - [ ] **Step 3: Commit**
@@ -971,9 +1004,9 @@ git add -A && git commit -m "test(e2e): teams specs for subscription-gated UI"
 
 2. **Polar: register/verify the production org webhook endpoint.** URL `https://webhooks.cc/api/polar-webhook`, secret = the production `POLAR_WEBHOOK_SECRET`. Subscribed event types must include `customer_seat.assigned`, `customer_seat.claimed`, and `customer_seat.revoked` **in addition to** the `subscription.*` events. The seat events are a new family for this feature — an endpoint that already exists for subscription billing will not be delivering them. Live verification only simulated these deliveries locally, so production delivery is unproven until the smoke test in step 8.
 
-3. **Pre-create the `requests_team` index — ORDERING MATTERS.** The column `requests.team_id` is created BY the migration, so the concurrent index cannot be built before it. Correct sequence: first run ONLY the two column/index-free schema statements, or simply run the migration in two stages: (a) `SET lock_timeout='5s'; alter table public.requests add column if not exists team_id uuid references public.teams(id) on delete set null;` as its own statement at low traffic; (b) then, out-of-band, `create index concurrently if not exists requests_team on public.requests(team_id) where team_id is not null;` (concurrent build avoids the SHARE lock a plain `create index` would take on `requests` — same hazard/remedy as 00020's companion script); (c) then apply the full `00033_team_billing.sql` — its `add column if not exists` and `create index if not exists` both no-op, and everything else applies.
+3. ~~Pre-create the `requests_team` index~~ **No longer needed:** `00033_team_billing.sql` is now non-blocking by construction. The `team_id` column is added bare (brief metadata-only ACCESS EXCLUSIVE), the FK is added `NOT VALID` and validated in a separate statement (no table scan under the write-blocking lock), and the index is built with `create index concurrently`. The file must be applied via plain `psql -f` (autocommit, the documented way) — `create index concurrently` refuses to run inside a transaction block, so do NOT wrap it with `-1`/`--single-transaction`.
 
-4. **Apply `00033_team_billing.sql` to production Postgres with a lock timeout, at low traffic** (step 3c). Prefix the run with `SET lock_timeout='5s';` (or apply during a quiet window). `alter table requests add column` takes a brief ACCESS EXCLUSIVE lock; if it queues behind a long-running reader, every concurrent capture blocks — and the receiver's fail-open returns 200 OK to senders while dropping the request, so a lock queue becomes silent capture loss rather than a visible error. Failing fast on the timeout and retrying is the safe mode.
+4. **Apply `00033_team_billing.sql`, then `00034_team_billing_hardening.sql`, to production Postgres with a lock timeout.** Prefix with `SET lock_timeout='5s';` (or apply during a quiet window): even the metadata-only `add column` takes a brief ACCESS EXCLUSIVE lock, and if it queues behind a long-running reader, every concurrent capture blocks — the receiver's fail-open returns 200 OK to senders while dropping the request, so a lock queue becomes silent capture loss rather than a visible error. Failing fast on the timeout and retrying is the safe mode. 00034 adds the `update_team_seats` RPC (seat changes take the same row lock as invite accepts) and the `capture_webhook` ACL hardening.
 
 5. **ACL audit on production (post-apply).** Query `pg_proc` ACLs for `capture_webhook`, `search_requests`, `search_requests_count`, `accept_team_invite`, `process_billing_period_resets`, `cleanup_free_user_requests`:
 
@@ -985,7 +1018,7 @@ git add -A && git commit -m "test(e2e): teams specs for subscription-gated UI"
                        'accept_team_invite','process_billing_period_resets','cleanup_free_user_requests');
    ```
 
-   Both search functions must show **service_role only** after this migration (00033 re-issues the revokes; `create or replace` alone would have preserved a stale anon/authenticated grant). `capture_webhook` is *not* hardened in this deploy — it is a tracked follow-up. Before any future hardening, first confirm which role the receiver's `DATABASE_URL` connects as: revoking a grant the receiver depends on would be masked by fail-open as silent capture loss, not an error.
+   Both search functions must show **service_role only** after this migration (00033 re-issues the revokes; `create or replace` alone would have preserved a stale anon/authenticated grant). `capture_webhook` must ALSO show service_role only: 00034 revokes public/anon/authenticated and grants service_role. The receiver's `DATABASE_URL` role was confirmed as `postgres` (the function owner), which retains EXECUTE regardless — but re-verify the production `DATABASE_URL` role before applying, because revoking a grant the receiver depends on would be masked by fail-open as silent capture loss, not an error.
 
 6. **Confirm the per-minute pg_cron billing-resets job runs green post-migration.** Check `cron.job_run_details` for `process_billing_period_resets` — the migration changes the function it calls, so a signature or permission mismatch surfaces here as repeated failures rather than anywhere user-visible.
 
@@ -997,11 +1030,13 @@ git add -A && git commit -m "test(e2e): teams specs for subscription-gated UI"
 
 10. **Housekeeping:** this branch sets `APP_VERSION` to 0.27.0; the parked instant-URL branch (PR #262) carries 0.26.0. Whichever merges second reconciles `apps/web/lib/changelog.ts` and `apps/web/package.json`.
 
-## Post-merge follow-ups (triaged by the final whole-branch review — none block merge)
+## Post-merge follow-ups (triaged by the final whole-branch review)
 
-1. **Renewal usage-reset race**: if Polar's renewal `subscription.updated` lands just before the cron tick, it advances `period_end` first and the cron skips the `requests_used` reset — a busy team carries used quota into the paid new period. Fix in BOTH team and personal handlers: reset usage when `period_start` advances. (Personal Pro on main has the identical race.)
-2. **Departed-member shares keep billing the team pool**: leave/remove keeps `team_endpoints` rows; the sharer's traffic drains the pool with no unshare affordance on either side. Fix: delete the departing user's share rows in `removeTeamMember`/`leaveTeam`.
-3. **Orphaned-Polar-subscription family**: deleteTeam read-before-delete window (use `.delete().select(...)` RETURNING), webhook no-op for deleted teams, revoke-failure is console.error only (add alerting); fold in pending-checkout tracking to close the double-checkout gap during the webhook window.
-4. **`capture_webhook` ACL hardening**: anon/PUBLIC-executable security definer (pre-existing since 00010). First verify the receiver's `DATABASE_URL` role, then revoke public/anon/authenticated in a 00034; check prod ACLs.
-5. **Stale `subscription.updated` after `revoked`** can re-activate a team with a past period (cron then renews it unbilled). Very low likelihood (out-of-order redelivery across a revoke); parity with personal handler; consider a live-subscription guard on created/updated/active.
-6. Smaller items: surface Polar validation detail on checkout 502 (unroutable emails); endpoint-switcher label/value mismatch (`endpoint-switcher.tsx:87`); manage-page single-shot `fetchData` swallows errors (blank page on one hiccup); 30d-vs-31d retention copy mismatch (plans-limits.mdx:29 vs :64, endpoints/index.mdx, core-concepts.mdx, page.tsx:133 — code is 31); anon-rejection tests could assert error code 42501; `releaseMemberSeat` throwing after committed delete; T3/T5 test-coverage gaps (retry_after-null branch, cancel/resubscribe/revokeTeamSubscription, shared_at tiebreaker).
+Several of these were promoted into release work by the PR #310 review round and are now fixed in-branch; what remains deferred is marked.
+
+1. **Renewal usage-reset race** — TEAM HALF FIXED IN-BRANCH: `applyTeamSubscriptionState` now resets `requests_used` when a same-subscription event advances `currentPeriodStart` past the stored `period_start`, keeps usage for seat-only updates, and ignores stale (older) period bounds. STILL DEFERRED: the personal Pro handler on main has the identical race and needs the same fix.
+2. **Departed-member shares keep billing the team pool** (deferred): leave/remove keeps `team_endpoints` rows; the sharer's traffic drains the pool. Mitigated in-branch: `sharedWith` metadata on owned endpoints is no longer gated on membership, so a departed sharer keeps the unshare control on their dashboard. Full fix (delete the departing user's share rows in `removeTeamMember`/`leaveTeam`) still deferred.
+3. **Orphaned-Polar-subscription family** — DELETE ORDER FIXED IN-BRANCH: `deleteTeam` now revokes the Polar subscription before deleting the row, and a failed revoke aborts the deletion for retry. STILL DEFERRED: webhook no-op for deleted teams, alerting on revoke failure, pending-checkout tracking for the double-checkout gap.
+4. **`capture_webhook` ACL hardening** — FIXED IN-BRANCH: `00034_team_billing_hardening.sql` revokes public/anon/authenticated and grants service_role. Receiver role confirmed as `postgres` (function owner) in dev; re-verify on prod per deploy checklist step 5.
+5. **Stale `subscription.updated` after `revoked`** can re-activate a team with a past period (cron then renews it unbilled). Very low likelihood (out-of-order redelivery across a revoke); parity with personal handler; consider a live-subscription guard on created/updated/active. Partially narrowed in-branch: `subscription.revoked` itself now carries the live-subscription check, so a delayed revoke cannot clear a successor subscription.
+6. Smaller items: surface Polar validation detail on checkout 502 (unroutable emails); endpoint-switcher label/value mismatch (`endpoint-switcher.tsx:87`); manage-page single-shot `fetchData` swallows errors (blank page on one hiccup); ~~30d-vs-31d retention copy mismatch~~ (fixed in-branch: plans-limits.mdx table and page.tsx:133 now say 31 days); anon-rejection tests could assert error code 42501; ~~`releaseMemberSeat` throwing after committed delete~~ (fixed in-branch: lookup failure logs and the seat release still runs); T3/T5 test-coverage gaps (retry_after-null branch, cancel/resubscribe/revokeTeamSubscription, shared_at tiebreaker).

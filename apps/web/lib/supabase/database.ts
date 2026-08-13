@@ -542,6 +542,13 @@ export interface Database {
         };
         Returns: Json;
       };
+      update_team_seats: {
+        Args: {
+          p_team_id: string;
+          p_seats: number;
+        };
+        Returns: Json;
+      };
       search_requests: {
         Args: {
           p_user_id: string;

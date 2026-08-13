@@ -25,6 +25,8 @@ interface QueryResult {
   error?: unknown;
 }
 
+let recorded: string[] = [];
+
 function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: unknown) {
   return {
     rpc: vi.fn().mockResolvedValue({ data: rpcResult, error: null }),
@@ -32,6 +34,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
       let op = "select";
 
       const take = (): QueryResult => {
+        recorded.push(`${table}:${op}`);
         const queue = responses[`${table}:${op}`];
         return { data: null, error: null, ...queue?.shift() };
       };
@@ -67,6 +70,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
 const OWNER_MEMBERSHIP: QueryResult = { data: { role: "owner" } };
 
 beforeEach(() => {
+  recorded = [];
   vi.clearAllMocks();
 });
 
@@ -190,7 +194,7 @@ describe("listTeamsForUser", () => {
 });
 
 describe("deleteTeam", () => {
-  test("revokes the Polar subscription after deleting the team", async () => {
+  test("revokes the Polar subscription before deleting the team", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
@@ -198,9 +202,16 @@ describe("deleteTeam", () => {
         "teams:delete": [{ data: { id: "team_1" } }],
       })
     );
+    mockFns.revokeTeamSubscription.mockImplementation(() => {
+      // The delete must not have run yet: once the row is gone, a failed
+      // revoke would leave an orphaned subscription with no stored id.
+      expect(recorded).not.toContain("teams:delete");
+      return Promise.resolve();
+    });
 
     await expect(deleteTeam("user_1", "team_1")).resolves.toBe(true);
     expect(mockFns.revokeTeamSubscription).toHaveBeenCalledWith("sub_123");
+    expect(recorded).toContain("teams:delete");
   });
 
   test("skips the revoke when the team never subscribed", async () => {
@@ -216,7 +227,7 @@ describe("deleteTeam", () => {
     expect(mockFns.revokeTeamSubscription).not.toHaveBeenCalled();
   });
 
-  test("still reports success when the revoke fails", async () => {
+  test("aborts the deletion when the revoke fails, so the owner can retry", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
@@ -225,10 +236,9 @@ describe("deleteTeam", () => {
       })
     );
     mockFns.revokeTeamSubscription.mockRejectedValue(new Error("polar down"));
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(deleteTeam("user_1", "team_1")).resolves.toBe(true);
-    expect(consoleError).toHaveBeenCalled();
+    await expect(deleteTeam("user_1", "team_1")).rejects.toThrow("polar down");
+    expect(recorded).not.toContain("teams:delete");
   });
 
   test("does not touch Polar when the caller is not the owner", async () => {

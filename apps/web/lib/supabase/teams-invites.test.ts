@@ -203,6 +203,25 @@ describe("acceptInvite", () => {
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_5", "member@example.com");
   });
 
+  test("releases the seat and throws when the accept RPC returns no payload", async () => {
+    mockFns.assignTeamSeat.mockResolvedValue("seat_6");
+    const admin = createFakeAdmin(
+      {
+        "team_invites:select": [PENDING_INVITE],
+        "team_members:select": [{ data: null }],
+      },
+      null
+    );
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    // A null payload dereferenced outside the try would TypeError past the
+    // compensation and strand the seat; it must fail inside it instead.
+    await expect(acceptInvite("user_1", "invite_1")).rejects.toThrow(
+      "accept_team_invite returned no status"
+    );
+    expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_6", "member@example.com");
+  });
+
   test("does not revoke when the accept RPC fails with no seat assigned", async () => {
     const admin = createFakeAdmin({
       "team_invites:select": [PENDING_INVITE],
