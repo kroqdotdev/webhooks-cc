@@ -406,6 +406,71 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     expect(team.subscription_status).toBe("active");
   });
 
+  it("ignores subscription events for a foreign subscription while another is live", async () => {
+    const customerId = `cus_foreign_${ts}`;
+    const teamId = await activatedTeam(`TB Foreign Sub ${ts}`, "sub_live", customerId, altOwnerId);
+
+    // A double-checkout's second subscription (or a stale cross-subscription
+    // event) must never overwrite the subscription the team actually tracks.
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_foreign",
+      customerId,
+      status: "active",
+      seats: 3,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.polar_subscription_id).toBe("sub_live");
+    expect(team.seats).toBe(8);
+  });
+
+  it("keeps a revoked team deactivated on stale updated/active, reactivates on created", async () => {
+    const customerId = `cus_postrevoke_${ts}`;
+    const teamId = await activatedTeam(`TB Post Revoke ${ts}`, "sub_gone", customerId, altOwnerId);
+
+    await applyTeamPolarWebhookEvent("subscription.revoked", teamId, { id: "sub_gone", customerId });
+
+    // Stale deliveries for the revoked subscription must not re-open the pool:
+    // the cron would renew a reactivated team unbilled forever.
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_gone",
+      customerId,
+      status: "active",
+      seats: 8,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+    await applyTeamPolarWebhookEvent("subscription.active", teamId, {
+      id: "sub_gone",
+      customerId,
+      status: "active",
+    });
+
+    let team = await getTeam(teamId);
+    expect(team.subscription_status).toBeNull();
+    expect(team.polar_subscription_id).toBeNull();
+
+    // A genuinely new subscription still activates.
+    await applyTeamPolarWebhookEvent("subscription.created", teamId, {
+      id: "sub_next",
+      customerId,
+      status: "active",
+      seats: 2,
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+
+    team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+    expect(team.polar_subscription_id).toBe("sub_next");
+    expect(team.requests_used).toBe(0);
+  });
+
   it("activates with a one-seat pool when the payload carries no seat count", async () => {
     const teamId = await createTestTeam(ownerId, `TB Seatless ${ts}`);
 

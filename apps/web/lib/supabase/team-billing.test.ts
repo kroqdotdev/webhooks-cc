@@ -18,6 +18,7 @@ vi.mock("./admin", () => ({
 
 import {
   TeamBillingError,
+  applyTeamPolarWebhookEvent,
   assignTeamSeat,
   createTeamCheckout,
   extractTeamIdFromWebhook,
@@ -460,6 +461,93 @@ describe("revokeTeamSeat", () => {
     await expect(revokeTeamSeat("team_1", "seat_1", "member@example.com")).resolves.toBeUndefined();
     expect(revokeSeat).toHaveBeenCalledWith({ seatId: "seat_1" });
     expect(consoleError).toHaveBeenCalled();
+  });
+});
+
+describe("subscription event guards", () => {
+  const subscriptionEvent = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    customerId: "cus_1",
+    status: "active",
+    seats: 3,
+    currentPeriodStart: new Date("2026-08-01T00:00:00Z"),
+    currentPeriodEnd: new Date("2026-08-31T00:00:00Z"),
+    cancelAtPeriodEnd: false,
+    ...overrides,
+  });
+
+  const teamsUpdates = () =>
+    recorded.filter((call) => call.table === "teams" && call.op === "update");
+
+  test("ignores events for a foreign subscription while another is live", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_live",
+              subscription_status: "active",
+              seats: 5,
+              period_start: "2026-08-01T00:00:00.000Z",
+            },
+          },
+        ],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent("subscription.updated", "team_1", subscriptionEvent("sub_2"));
+
+    expect(teamsUpdates()).toEqual([]);
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  test("ignores updated/active for a deactivated team", async () => {
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deactivatedRow = {
+      data: {
+        polar_subscription_id: null,
+        subscription_status: null,
+        seats: 5,
+        period_start: null,
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [deactivatedRow, deactivatedRow] })
+    );
+
+    await applyTeamPolarWebhookEvent("subscription.updated", "team_1", subscriptionEvent("sub_1"));
+    await applyTeamPolarWebhookEvent("subscription.active", "team_1", subscriptionEvent("sub_1"));
+
+    expect(teamsUpdates()).toEqual([]);
+    expect(consoleWarn).toHaveBeenCalledTimes(2);
+  });
+
+  test("subscription.created reactivates a deactivated team with a fresh pool", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: null,
+              subscription_status: null,
+              seats: 5,
+              period_start: null,
+            },
+          },
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent("subscription.created", "team_1", subscriptionEvent("sub_new"));
+
+    expect(teamsUpdates()).toHaveLength(1);
+    expect(teamsUpdates()[0].payload).toMatchObject({
+      polar_subscription_id: "sub_new",
+      subscription_status: "active",
+      requests_used: 0,
+    });
   });
 });
 

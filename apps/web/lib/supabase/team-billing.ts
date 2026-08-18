@@ -490,6 +490,7 @@ async function resolveSeatMemberId(data: Record<string, unknown>): Promise<strin
 }
 
 async function applyTeamSubscriptionState(
+  eventType: string,
   teamId: string,
   data: Record<string, unknown>
 ): Promise<void> {
@@ -510,6 +511,49 @@ async function applyTeamSubscriptionState(
 
   const subscriptionId = asNonEmptyString(data.id);
   const customerId = asNonEmptyString(data.customerId);
+
+  // The team already tracks a live subscription and this event describes a
+  // different one. Applying it would let a stale cross-subscription event (or
+  // a double-checkout's second subscription) overwrite the row that gates
+  // access and billing. The Polar-side orphan is deliberately NOT auto-revoked;
+  // this log line is the remediation signal.
+  if (
+    team.polar_subscription_id !== null &&
+    team.subscription_status !== null &&
+    subscriptionId !== null &&
+    subscriptionId !== team.polar_subscription_id
+  ) {
+    console.error("[team-billing] ignoring event for foreign subscription", {
+      teamId,
+      eventType,
+      storedSubscriptionId: team.polar_subscription_id,
+      eventSubscriptionId: subscriptionId,
+    });
+    return;
+  }
+
+  // A deactivated team (revoke nulls both the status and the stored id) may
+  // only be reactivated by subscription.created, i.e. a genuinely new
+  // subscription. A delayed `updated`/`active` for the revoked subscription
+  // would otherwise re-open the pool with bounds the cron then renews
+  // unbilled. Trade-off: if Polar never delivers `created` for a new
+  // subscription, the team stays visibly inactive (activation-wait timeout on
+  // the team page) until redelivery, a loud failure instead of a silent
+  // unbilled reactivation. Mixed states (one of id/status set, the other not)
+  // fall through: they only arise from manual intervention, and the full-state
+  // upsert below is the correct repair.
+  if (
+    team.polar_subscription_id === null &&
+    team.subscription_status === null &&
+    eventType !== "subscription.created"
+  ) {
+    console.warn("[team-billing] ignoring non-created event for unsubscribed team", {
+      teamId,
+      eventType,
+      eventSubscriptionId: subscriptionId,
+    });
+    return;
+  }
   const payloadSeats =
     typeof data.seats === "number" && Number.isInteger(data.seats) && data.seats > 0
       ? data.seats
@@ -701,7 +745,7 @@ export async function applyTeamPolarWebhookEvent(
     case "subscription.created":
     case "subscription.updated":
     case "subscription.active":
-      await applyTeamSubscriptionState(teamId, data);
+      await applyTeamSubscriptionState(eventType, teamId, data);
       return;
 
     case "subscription.canceled":
