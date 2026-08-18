@@ -35,7 +35,7 @@
 
 - Produces: `handle_new_user()` links pending `team_invites` rows by email at signup; `teams.pending_checkout jsonb` used by Task 8.
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 ```sql
 -- ============================================================================
@@ -92,15 +92,15 @@ alter table public.teams add column pending_checkout jsonb;
 notify pgrst, 'reload schema';
 ```
 
-- [ ] **Step 2: Apply to dev**
+- [x] **Step 2: Apply to dev**
 
 ```bash
 /opt/homebrew/opt/libpq/bin/psql --set=ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/migrations/00036_invite_linking.sql
 ```
 
-- [ ] **Step 3: Add `pending_checkout: Json | null` to the `teams` Row/Insert/Update types in `database.ts`**
+- [x] **Step 3: Add `pending_checkout: Json | null` to the `teams` Row/Insert/Update types in `database.ts`**
 
-- [ ] **Step 4: `pnpm typecheck`, then commit**
+- [x] **Step 4: `pnpm typecheck`, then commit**
 
 ```bash
 git add -A && git commit -m "feat(teams): migration 00036 with invite linking at signup and pending-checkout cache"
@@ -122,7 +122,7 @@ git add -A && git commit -m "feat(teams): migration 00036 with invite linking at
 
 - Produces: `buildTeamInviteEmail({ inviterEmail, teamName, invitedEmail, appUrl }): EmailMessage`, `getLastMessageForEmail(email): EmailMessage | null` (dev-transport test hook), `EMAIL_FROM` env var with `AGENT_EMAIL_FROM` as fallback.
 
-- [ ] **Step 1: Generalize the from-address**
+- [x] **Step 1: Generalize the from-address**
 
 In `env.ts`, next to `AGENT_EMAIL_FROM`, add `EMAIL_FROM: z.string().optional(),` (schema and the serverEnv construction site). In both transports replace `serverEnv().AGENT_EMAIL_FROM` with:
 
@@ -137,7 +137,7 @@ from: serverEnv().EMAIL_FROM ?? serverEnv().AGENT_EMAIL_FROM,
 # EMAIL_FROM=webhooks.cc <noreply@webhooks.cc>
 ```
 
-- [ ] **Step 2: Invite email builder**
+- [x] **Step 2: Invite email builder**
 
 `team-invite-email.ts` exports a pure builder (no I/O, unit-testable):
 
@@ -169,7 +169,7 @@ export function buildTeamInviteEmail(params: {
 
 Escape `inviterEmail`/`teamName` in the HTML variant (team names are user input).
 
-- [ ] **Step 3: Dev-transport test hook**
+- [x] **Step 3: Dev-transport test hook**
 
 `dev-transport.ts` already records the last message per recipient. Export the whole message so the invite tests can assert subject/body, not just OTPs:
 
@@ -179,7 +179,7 @@ export function getLastMessageForEmail(email: string): EmailMessage | null {
 }
 ```
 
-- [ ] **Step 4: Unit test the builder** (new `team-invite-email.test.ts` beside it: subject shape, link present, HTML escapes a team name containing `<script>`), run `pnpm test:unit`, `pnpm typecheck`, commit:
+- [x] **Step 4: Unit test the builder** (new `team-invite-email.test.ts` beside it: subject shape, link present, HTML escapes a team name containing `<script>`), run `pnpm test:unit`, `pnpm typecheck`, commit:
 
 ```bash
 git add -A && git commit -m "feat(email): shared EMAIL_FROM, team invite email builder, dev-transport message hook"
@@ -199,7 +199,7 @@ git add -A && git commit -m "feat(email): shared EMAIL_FROM, team invite email b
 
 - Produces: `createInvite(userId, teamId, email): Promise<{ invite?: TeamInvite; warning?: string; error?: string }>`; the one behavior change to the return shape is the optional `warning`.
 
-- [ ] **Step 1: Rework the lookup chain in `createInvite`**
+- [x] **Step 1: Rework the lookup chain in `createInvite`**
 
 Normalize once at the top: `const normalizedEmail = email.trim().toLowerCase();` and use it everywhere (today the code mixes `email.toLowerCase()` and `email.toLowerCase().trim()`).
 
@@ -224,7 +224,7 @@ Error copy for both this branch and the `23505` race branch becomes "A pending i
 - Insert `invited_user_id: invitedUser?.id ?? null`. The declined/accepted-row cleanup before insert stays (unique constraint is `(team_id, invited_email)`).
 - Response mapping: `invitedEmail: invite.invited_email` (today it reads `invitedUser.email`, which no longer exists for unknown emails).
 
-- [ ] **Step 2: Send the invite email after a successful insert**
+- [x] **Step 2: Send the invite email after a successful insert**
 
 After the insert succeeds, build and send, best-effort:
 
@@ -249,15 +249,15 @@ return { invite: { ... }, warning };
 
 The invite always exists in-app regardless of delivery; that is the spec's contract. In non-production the dev transport records instead of sending, so local invites never email anyone.
 
-- [ ] **Step 3: Route passes the warning through**
+- [x] **Step 3: Route passes the warning through**
 
 In the invite route's success branch return `Response.json({ ...result.invite, warning: result.warning })`. The existing rate limiting (20 per 10 min per user, `checkRateLimitByKeyWithInfo`) is untouched and is what bounds outbound invite email volume.
 
-- [ ] **Step 4: Update `teams-invites.test.ts`**
+- [x] **Step 4: Update `teams-invites.test.ts`**
 
 Cases to add or adjust: unknown email creates an invite with null `invited_user_id`; duplicate pending invite for the same email rejected regardless of account existence; known email still links `invited_user_id` immediately; self-invite by own email rejected; email-send failure returns `warning` and still returns `invite`. Run `pnpm test:unit`, `pnpm typecheck`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(teams): invite any email address, send invite email with best-effort delivery"
@@ -271,11 +271,11 @@ git add -A && git commit -m "feat(teams): invite any email address, send invite 
 
 - Modify: `apps/web/app/teams/[teamId]/page.tsx` (invite section, ~L515-575)
 
-- [ ] **Step 1: Copy changes**
+- [x] **Step 1: Copy changes**
 
 The tooltip at ~L540 currently reads "Enter the email of a registered webhooks.cc user...". Replace with: "Invite anyone by email. If they don't have an account yet, the invite is waiting after they sign up with that address." Pending-invite rows already render `invite.invitedEmail` (works for unlinked invites without changes).
 
-- [ ] **Step 2: Surface the warning**
+- [x] **Step 2: Surface the warning**
 
 `handleInvite` parses the response body; when `warning` is present show it via the existing `inviteMessage` state as a distinct visual state (success styling with the warning text, or a third `"warning"` type, matching the page's existing message pattern), instead of the plain success message.
 
@@ -293,19 +293,19 @@ git add -A && git commit -m "feat(teams): invite form accepts unknown emails, su
 
 - Modify: `apps/web/tests/integration/supabase-teams.test.ts` (or a new `supabase-team-invites.test.ts` if the suite is getting long)
 
-- [ ] **Step 1: Invite email recording test**
+- [x] **Step 1: Invite email recording test**
 
 Call `createInvite` directly (dev transport is active under vitest) and assert via `getLastMessageForEmail` that the recorded message has the invited address, the inviter email in the subject, and the `/teams` link in the body. Reset with `__resetEmailTestStore()` between cases.
 
-- [ ] **Step 2: `handle_new_user` linking test**
+- [x] **Step 2: `handle_new_user` linking test**
 
 Create a pending invite for a fresh random email with `invited_user_id = null` (through `createInvite`), then create the auth user with that email via the service-role client: `admin.auth.admin.createUser({ email, email_confirm: true })` (see `supabase-auth.test.ts` for the established pattern of creating and cleaning up auth users). Assert the invite row's `invited_user_id` now equals the new user's id. Also assert the negative: a `declined` invite for the same email does not get linked.
 
-- [ ] **Step 3: End-to-end unknown-email flow**
+- [x] **Step 3: End-to-end unknown-email flow**
 
 Subscribed team (seed the `teams` row billing columns directly, as the Plan A suites do) → invite unknown email → sign the user up → `listPendingInvitesForUser` shows it → `acceptInvite` succeeds and the member row exists. Mock/stub the Polar seat assign the way `supabase-team-lifecycle.test.ts` handles it (or run with a null seat id path if the team fixture has no `polar_subscription_id`, which makes `assignTeamSeat` return null by design).
 
-- [ ] **Step 4: Run the touched suites, commit**
+- [x] **Step 4: Run the touched suites, commit**
 
 ```bash
 cd apps/web && npx vitest run tests/integration/supabase-teams.test.ts
@@ -323,7 +323,7 @@ Plan A fixed the team half of this in `applyTeamSubscriptionState`; the personal
 - Modify: `apps/web/lib/supabase/billing.ts` (`subscription.created`/`subscription.updated` branch, ~L229-253)
 - Modify: `apps/web/app/api/polar-webhook/route.test.ts` (or the billing unit suite, following its existing mock pattern)
 
-- [ ] **Step 1: Port the team-half period logic**
+- [x] **Step 1: Port the team-half period logic**
 
 Before the update, fetch the stored row (`period_start`, `polar_subscription_id`, `subscription_status`) for the resolved user. Then mirror `team-billing.ts` exactly:
 
@@ -334,11 +334,11 @@ Before the update, fetch the stored row (`period_start`, `polar_subscription_id`
 
 Everything else in the branch (plan `"pro"`, `PRO_REQUEST_LIMIT`, `cancel_at_period_end`) is unchanged.
 
-- [ ] **Step 2: Tests**
+- [x] **Step 2: Tests**
 
 Renewal event resets usage; same-period repeat event does not; stale (older `currentPeriodStart`) event leaves stored bounds and usage; new subscription id resets usage; unknown status preserves stored status. Run the suite + `pnpm test:unit`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "fix(billing): reset personal Pro usage on webhook renewal, reject stale period bounds"
@@ -355,7 +355,7 @@ Closes Plan A follow-up #5: a stale `subscription.updated` after `subscription.r
 - Modify: `apps/web/lib/supabase/team-billing.ts` (`applyTeamSubscriptionState` gains an `eventType` parameter; `applyTeamPolarWebhookEvent` passes it)
 - Modify: `apps/web/lib/supabase/team-billing.test.ts`
 
-- [ ] **Step 1: Two guards at the top of `applyTeamSubscriptionState`, after the team row load**
+- [x] **Step 1: Two guards at the top of `applyTeamSubscriptionState`, after the team row load**
 
 ```typescript
 // G1 (foreign subscription): the team already tracks a live subscription and
@@ -397,11 +397,11 @@ if (
 
 Note the mixed states (one of id/status null, the other not) intentionally fall through to the normal apply: they can only arise from partial manual intervention and the full-state upsert is the correct repair.
 
-- [ ] **Step 2: Tests**
+- [x] **Step 2: Tests**
 
 In `team-billing.test.ts`: foreign-subscription `updated` against an active team leaves the row untouched; post-revoke `updated` and `active` are ignored; post-revoke `created` activates (fresh id, usage reset via the existing `isNewSubscription` path); first-ever `created` on a never-subscribed team still works; existing renewal/stale-period cases still pass. Check whether any existing integration test activates a team via a simulated `subscription.updated` alone; if so, switch it to `subscription.created` (that is now the contract).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "fix(teams): guard subscription events against foreign and post-revoke stale deliveries"
@@ -418,7 +418,7 @@ Closes the "pending-checkout tracking" half of Plan A follow-up #3 and the revie
 - Modify: `apps/web/lib/supabase/team-billing.ts` (`createTeamCheckout`, `applyTeamSubscriptionState`, `BILLING_TEAM_COLUMNS`/`BillingTeam`)
 - Modify: `apps/web/lib/supabase/team-billing.test.ts`
 
-- [ ] **Step 1: Reuse an open checkout session**
+- [x] **Step 1: Reuse an open checkout session**
 
 Add `pending_checkout` to `BILLING_TEAM_COLUMNS` and the `BillingTeam` pick. In `createTeamCheckout`, after the `already_subscribed` check:
 
@@ -446,15 +446,15 @@ await updateTeamById(team.id, {
 });
 ```
 
-- [ ] **Step 2: Clear the cache when a subscription lands**
+- [x] **Step 2: Clear the cache when a subscription lands**
 
 In `applyTeamSubscriptionState`'s final `updateTeamById`, add `pending_checkout: null`. Add the same to the `subscription.revoked` update (a stale pre-revoke session must not be resurrected by the reuse path after resubscribe).
 
-- [ ] **Step 3: Tests**
+- [x] **Step 3: Tests**
 
 Unit: second call with same seats inside the TTL returns the cached URL and does not call `checkouts.create`; different seats mints fresh; expired `created_at` mints fresh; subscription apply nulls the cache. Run `pnpm test:unit`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(teams): idempotent checkout reusing the open Polar session within 30 minutes"
@@ -473,7 +473,7 @@ Closes Plan A follow-up #2: leave/remove currently keeps the departing member's 
 - Modify: `apps/web/lib/supabase/team-billing.ts` (`applySeatRevocation`: the webhook-driven removal path must clean up the same way)
 - Modify: `apps/web/lib/supabase/teams-members.test.ts`, integration suite
 
-- [ ] **Step 1: The helper**
+- [x] **Step 1: The helper**
 
 ```typescript
 /**
@@ -496,17 +496,17 @@ export async function removeMemberShares(teamId: string, userId: string): Promis
 }
 ```
 
-- [ ] **Step 2: Call it from all three removal paths**
+- [x] **Step 2: Call it from all three removal paths**
 
 In `removeTeamMember` and `leaveTeam`: after the successful membership delete, `await removeMemberShares(teamId, <departed user id>);` then the existing `releaseMemberSeat`. In `applySeatRevocation` (team-billing.ts): after the membership delete succeeds, call the same helper.
 
 Behavior change to note in the commit body: when the sharer departs, the endpoint immediately stops being shared with (and billed to) that team. The Plan A mitigation (departed sharers keep the unshare control) becomes moot for new departures but stays for pre-existing orphaned rows.
 
-- [ ] **Step 3: Tests**
+- [x] **Step 3: Tests**
 
 Unit (`teams-members.test.ts`): removal and leave both delete the share rows; a share-delete failure does not fail the removal. Integration: member shares an endpoint into the team, leaves, `team_endpoints` row is gone; other members' shares are untouched. Run both suites.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "fix(teams): delete a departed member's endpoint shares on remove/leave/seat-revoke"
@@ -525,11 +525,11 @@ Four independent fixes from Plan A follow-up #6; one commit each or one batch co
 - Modify: `apps/web/app/teams/[teamId]/page.tsx` (`fetchData`)
 - Modify: `apps/web/tests/integration/supabase-teams.test.ts` (anon-rejection asserts, ~L1786-1834)
 
-- [ ] **Step 1: Surface Polar validation detail on checkout 502**
+- [x] **Step 1: Surface Polar validation detail on checkout 502**
 
 Add `describePolarError(error: unknown): string | null` to `lib/polar.ts`: inspect the installed SDK's error classes (verify names in `node_modules/@polar-sh/sdk`; validation failures carry a `detail` array or body text; the motivating case is Polar rejecting an unroutable owner email at `customers.create`). Return a short human-readable string or null, never raw response bodies over ~200 chars. In the checkout route's final catch, include it: `Response.json({ error: "Failed to start checkout", detail }, { status: 502 })`, and log it. The team page's checkout error handler shows `detail` when present.
 
-- [ ] **Step 2: Endpoint-switcher value/list mismatch**
+- [x] **Step 2: Endpoint-switcher value/list mismatch**
 
 `endpoint-switcher.tsx` sets `<Select value={currentSlug || allEndpoints[0]?.slug}>` with the raw `?endpoint=` param. When the param names a slug that is not in the list (deleted endpoint, stale link), the Select's value matches no `SelectItem`, so the trigger renders the empty placeholder while the dashboard itself (which resolves `endpoints.find(...) ?? endpoints[0]`) shows the first endpoint. Fix by resolving the same way the dashboard does:
 
@@ -540,15 +540,15 @@ const resolvedSlug =
 
 and pass `resolvedSlug` as the Select value. Verify the fallback ordering matches the dashboard's `endpoints` array ordering (both derive from `fetchDashboardEndpoints`; confirm the dashboard flattens owned-then-shared and mirror it).
 
-- [ ] **Step 3: Team page `fetchData` error state**
+- [x] **Step 3: Team page `fetchData` error state**
 
 `fetchData` has no catch: one rejected fetch leaves the page permanently on whatever partial state it had, with no path to recovery, and non-ok responses are silently skipped. Add a `loadError` state set in a catch (and when the teams response is not ok, since the page is unusable without the team row); render an error card with a Retry button that calls `fetchData()` again. Keep partial data that did load.
 
-- [ ] **Step 4: Anon-rejection asserts**
+- [x] **Step 4: Anon-rejection asserts**
 
 The four anon-client tests only assert empty `data`, which passes under RLS filtering AND under revoked grants, so they cannot detect a grant regression. First verify against dev what the anon client actually gets for `teams`/`team_members`/`team_invites`/`team_endpoints` (Plan A's hardening revoked table grants, which surfaces as PostgREST error code `42501` insufficient_privilege). Then pin the stronger assertion that actually holds: capture `error` and `expect(error?.code).toBe("42501")` alongside the empty-data check. If dev shows RLS-only behavior (null error) for any table, keep the data assertion there and note it inline rather than pinning a false expectation.
 
-- [ ] **Step 5: Run `pnpm test:unit`, the integration suite, `pnpm typecheck`; verify switcher + team page fixes in the browser. Commit**
+- [x] **Step 5: Run `pnpm test:unit`, the integration suite, `pnpm typecheck`; verify switcher + team page fixes in the browser. Commit** (tests + typecheck done; browser spot-check still open)
 
 ```bash
 git add -A && git commit -m "fix(web): checkout error detail, switcher slug resolution, team page error state, anon-grant asserts"
@@ -565,23 +565,23 @@ No production code changes expected in this task; it pins behavior that already 
 - Modify: `apps/web/tests/integration/supabase-team-quota.test.ts`
 - Modify: `apps/web/lib/supabase/team-billing.test.ts`
 
-- [ ] **Step 1: `retry_after` null branch (SQL)**
+- [x] **Step 1: `retry_after` null branch (SQL)**
 
 In the pooled-quota suite: a team row with non-null `subscription_status`, `request_limit` exhausted, and `period_end` null → `capture_webhook` returns `quota_exceeded` with a null/absent `retry_after`. (The state should be unreachable through the single-statement webhook writes, but the SQL branch exists and the receiver maps it; pin it.)
 
-- [ ] **Step 2: `shared_at` ordering (SQL)**
+- [x] **Step 2: `shared_at` ordering (SQL)**
 
 Two active teams share the same endpoint; set their `team_endpoints.shared_at` values explicitly (distinct timestamps) and assert the capture bills, and stamps `requests.team_id` with, the older share, in both insertion orders. Equal-timestamp determinism is documented as out of scope (see the triage table below).
 
-- [ ] **Step 3: Subscription-management unit tests**
+- [x] **Step 3: Subscription-management unit tests**
 
 `team-billing.test.ts` gains: `cancelTeamSubscription` (Polar update called with `cancelAtPeriodEnd: true`, row flag set; `no_subscription` error), `resubscribeTeam` (`not_scheduled` error branch; success clears the flag), `revokeTeamSubscription` (calls `subscriptions.revoke`).
 
-- [ ] **Step 4: Deleted-team webhook no-ops**
+- [x] **Step 4: Deleted-team webhook no-ops**
 
 For each event family (`subscription.created/updated/active`, `canceled`, `uncanceled`, `revoked`, `customer_seat.assigned/claimed/revoked`) applied with a `teamId` that has no row: no throw, no writes. This pins the "webhook no-op for deleted teams" follow-up (#3), which inspection shows already holds via the early returns; the tests make it load-bearing.
 
-- [ ] **Step 5: Run both suites, commit**
+- [x] **Step 5: Run both suites, commit**
 
 ```bash
 git add -A && git commit -m "test(teams): retry_after null branch, shared_at ordering, subscription mgmt, deleted-team no-ops"
@@ -597,11 +597,11 @@ git add -A && git commit -m "test(teams): retry_after null branch, shared_at ord
 - Modify: `apps/web/content/docs/teams.mdx` (invite section: any email, signup-links-invite path, note that email/password signup arrives with Plan C; today the invitee signs up via GitHub/Google with the invited address)
 - Modify: `CLAUDE.md` (optional env table: `EMAIL_FROM` row)
 
-- [ ] **Step 1: Version + changelog.** Minor bump to 0.28.0 (new user-facing feature). Entry, track `web`: email invites to any address with signup linking, checkout idempotency, billing-webhook hardening, departed-member share cleanup. Housekeeping note from Plan A step 10 still stands: the parked instant-URL branch (PR #262) carries 0.26.0 and reconciles against whatever is on main when it merges.
+- [x] **Step 1: Version + changelog.** Minor bump to 0.28.0 (new user-facing feature). Entry, track `web`: email invites to any address with signup linking, checkout idempotency, billing-webhook hardening, departed-member share cleanup. Housekeeping note from Plan A step 10 still stands: the parked instant-URL branch (PR #262) carries 0.26.0 and reconciles against whatever is on main when it merges.
 
-- [ ] **Step 2: Docs + CLAUDE.md.** Update the teams doc invite copy; add `EMAIL_FROM` to the optional env var table (with the `AGENT_EMAIL_FROM` fallback noted).
+- [x] **Step 2: Docs + CLAUDE.md.** Update the teams doc invite copy; add `EMAIL_FROM` to the optional env var table (with the `AGENT_EMAIL_FROM` fallback noted).
 
-- [ ] **Step 3: Full verification sweep**
+- [x] **Step 3: Full verification sweep**
 
 ```bash
 pnpm typecheck && pnpm lint && pnpm --filter web build
@@ -609,7 +609,7 @@ cd apps/web && pnpm test:unit && npx vitest run tests/integration/
 cd ../../apps/receiver-rs && cargo test   # must pass untouched; no receiver changes in this plan
 ```
 
-- [ ] **Step 4: Commit, push, open the PR**
+- [x] **Step 4: Commit, push, open the PR**
 
 ```bash
 git add -A && git commit -m "chore(release): v0.28.0, team email invites + Plan A follow-up hardening"
