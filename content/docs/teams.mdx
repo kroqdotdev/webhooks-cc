@@ -3,7 +3,7 @@ title: Teams
 description: "Share webhook endpoints across your team. Invite members, assign roles, manage permissions, and inspect incoming requests together in a shared real-time dashboard."
 section: features
 order: 20
-lastUpdated: 2026-03-30
+lastUpdated: 2026-08-06
 schema: none
 seo:
   ogTitle: "Team Collaboration for Webhooks"
@@ -12,11 +12,23 @@ seo:
 
 Share webhook endpoints with teammates so everyone can see incoming requests and edit settings together.
 
+## Plan and Pricing
+
+Teams are billed per team, not per account: **$12/seat/month**, on a 30-day period that starts when the team subscribes.
+
+- Any account can create a team — Free and Pro alike. Personal plans have no bearing on team access.
+- A team does nothing until it has an active subscription. Until then it is **suspended**: invites, endpoint sharing, and member access to shared endpoints are blocked, though the team and its data are kept.
+- **Seats are the member cap.** A team holds exactly as many members as it has purchased seats, and the owner occupies one of them.
+- **Seats are also the quota.** Every seat adds 100,000 requests per 30-day period to one pool shared by the whole team.
+
+The team owner manages all of this from the team page: subscribe, add or remove seats, cancel, and resubscribe. Canceling keeps the team active until the current period ends, then suspends it — nothing is deleted.
+
 ## Creating a Team
 
 1. Open the **Teams** page from the avatar dropdown in the header
 2. Click **New Team** and enter a name
 3. You are the team owner — you can invite members, manage the team, and delete it
+4. Subscribe from the team page to activate it — pick the number of seats you need
 
 ## Inviting Members
 
@@ -24,6 +36,8 @@ Share webhook endpoints with teammates so everyone can see incoming requests and
 2. Enter a teammate's email in the **Invite Member** field
 3. They must have a registered webhooks.cc account
 4. They'll see the invite on their Teams page and can accept or decline
+
+Each accepted invite claims a seat. When members equal seats, the team is full — add a seat before inviting anyone else. Removing a member (or a member leaving) frees their seat for reuse.
 
 ## Sharing Endpoints
 
@@ -51,12 +65,22 @@ You can share any endpoint you own with one or more teams:
 | Share/unshare      | Yes   | No     |
 | Invite members     | Yes   | No     |
 | Remove members     | Yes   | No     |
+| Manage billing     | Yes   | No     |
 | Delete team        | Yes   | No     |
+
+## Quota and Retention
+
+Sharing an endpoint with an active team moves its billing to that team:
+
+- **Requests draw from the team pool** — seats × 100,000 per 30-day period, tracked on the team, not on any member's account
+- **Retention is 31 days** for team-billed requests, whatever plan the endpoint owner is on
+- **One team per request** — if an endpoint is shared with several active teams, the oldest share is billed
+- **Suspended teams don't bill** — while a team has no active subscription, requests on its shared endpoints fall back to the endpoint owner's personal quota and retention
+- When the pool is exhausted the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset
 
 ## How It Works
 
 - Sharing is **view and edit only** — team members can see requests and change settings, but cannot delete endpoints
-- **Quota is unchanged** — webhooks are always counted against the endpoint owner's plan, not the viewer's
-- **Data retention** follows the owner's plan (7 days for free, 30 days for pro)
 - **Real-time updates** work for shared endpoints — team members see new requests instantly via SSE
 - Shared endpoints work with the CLI (`whk listen`) and SDK (`requests.subscribe`) using the endpoint owner's access
+- Deleting a team cancels its subscription and releases every seat; the endpoints themselves are untouched and stay with their owners

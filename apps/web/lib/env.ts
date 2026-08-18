@@ -33,6 +33,9 @@ const serverEnvSchema = z
     ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
     MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
     EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
+    // Polar seat-based Teams product. Optional so deploys without Teams billing keep working;
+    // getPolarTeamsCheckoutConfig() throws at call time when it is missing.
+    POLAR_TEAMS_PRODUCT_ID: z.string().optional(),
     // Agent auth (auth.md) — all optional with defaults so existing deploys are unaffected.
     RESEND_API_KEY: z.string().optional(),
     // SMTP transport for agent OTP email (used in production when SMTP_HOST is set;
@@ -108,6 +111,7 @@ export function serverEnv() {
       ENDPOINT_CREATE_RATE_WINDOW_MS: process.env.ENDPOINT_CREATE_RATE_WINDOW_MS,
       MAX_EPHEMERAL_ENDPOINTS: process.env.MAX_EPHEMERAL_ENDPOINTS,
       EPHEMERAL_TTL_HOURS: process.env.EPHEMERAL_TTL_HOURS,
+      POLAR_TEAMS_PRODUCT_ID: process.env.POLAR_TEAMS_PRODUCT_ID,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       SMTP_HOST: process.env.SMTP_HOST,
       SMTP_PORT: process.env.SMTP_PORT,

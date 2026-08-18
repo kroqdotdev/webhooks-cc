@@ -20,7 +20,15 @@ export interface Team {
   createdAt: number;
   memberCount: number;
   role: "owner" | "member";
+  /** True while the team has no subscription — `subscriptionStatus === null`. */
   suspended: boolean;
+  subscriptionStatus: "active" | "canceled" | "past_due" | null;
+  seats: number;
+  requestsUsed: number;
+  requestLimit: number;
+  /** End of the current billing period in millis; null when unsubscribed. */
+  periodEnd: number | null;
+  cancelAtPeriodEnd: boolean;
 }
 
 export interface TeamMember {
@@ -30,7 +38,6 @@ export interface TeamMember {
   name: string | null;
   image: string | null;
   role: "owner" | "member";
-  plan: "free" | "pro";
   joinedAt: number;
 }
 

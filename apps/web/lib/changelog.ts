@@ -15,13 +15,27 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.26.3";
+export const APP_VERSION = "0.27.0";
 export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.27.0",
+    date: "2026-08-18",
+    title: "Teams Is Now Its Own Seat-Based Plan",
+    track: "web",
+    items: [
+      "Teams no longer requires Pro — any account can create a team, and the team carries its own subscription at $12/seat/mo",
+      "Every seat adds 100,000 requests per 30 days to a pool shared by the whole team: requests on team-shared endpoints bill the team instead of the endpoint owner",
+      "Seats are the member cap — add a seat to add a member, and freed seats are reusable",
+      "Team-billed requests are kept for 31 days regardless of the endpoint owner's plan",
+      "Per-team billing through Polar: subscribe, adjust seats, cancel, and resubscribe from the team page",
+      "A team without an active subscription is suspended — its data is kept, but invites, sharing, and member access to shared endpoints pause until it subscribes",
+    ],
+  },
   {
     version: "0.26.3",
     date: "2026-08-11",

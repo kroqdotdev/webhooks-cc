@@ -92,6 +92,12 @@ export interface EndpointSettingsDialogHandle {
   open: () => void;
 }
 
+/** Team share/unshare failures answer `{ error }` — show the server's reason. */
+async function readShareError(response: Response, fallback: string): Promise<string> {
+  const data = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof data?.error === "string" ? data.error : fallback;
+}
+
 function TeamSharingSection({
   accessToken,
   endpointId,
@@ -150,13 +156,15 @@ function TeamSharingSection({
           method: "DELETE",
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        if (res.ok) {
-          setSharedTeamIds((prev) => {
-            const next = new Set(prev);
-            next.delete(teamId);
-            return next;
-          });
+        if (!res.ok) {
+          setTeamError(await readShareError(res, "Failed to stop sharing"));
+          return;
         }
+        setSharedTeamIds((prev) => {
+          const next = new Set(prev);
+          next.delete(teamId);
+          return next;
+        });
       } else {
         const res = await fetch(`/api/teams/${teamId}/endpoints`, {
           method: "POST",
@@ -166,9 +174,11 @@ function TeamSharingSection({
           },
           body: JSON.stringify({ endpointId }),
         });
-        if (res.ok) {
-          setSharedTeamIds((prev) => new Set(prev).add(teamId));
+        if (!res.ok) {
+          setTeamError(await readShareError(res, "Failed to share endpoint"));
+          return;
         }
+        setSharedTeamIds((prev) => new Set(prev).add(teamId));
       }
     } catch {
       setTeamError("Failed to update sharing");

@@ -1,4 +1,5 @@
 import { createAdminClient } from "./admin";
+import { revokeTeamSubscription } from "./team-billing";
 import type { Team, TeamRow } from "./teams-types";
 
 // ---------------------------------------------------------------------------
@@ -11,23 +12,15 @@ function parseMillis(timestamp: string | null): number {
   return Number.isFinite(value) ? value : Date.now();
 }
 
-async function requirePro(userId: string): Promise<string | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.from("users").select("plan").eq("id", userId).maybeSingle();
-
-  if (error) throw error;
-  if (!data || data.plan !== "pro") return "Teams require a Pro plan";
-  return null;
-}
-
 // ---------------------------------------------------------------------------
 // createTeam
 // ---------------------------------------------------------------------------
 
+/**
+ * Anyone can create a team, regardless of personal plan. The team starts
+ * unsubscribed (suspended) until its owner buys seats.
+ */
 export async function createTeam(userId: string, name: string): Promise<Team | { error: string }> {
-  const proError = await requirePro(userId);
-  if (proError) return { error: proError };
-
   const admin = createAdminClient();
 
   // Atomic: insert team + owner member in one transaction via stored procedure
@@ -61,7 +54,13 @@ export async function createTeam(userId: string, name: string): Promise<Team | {
     createdAt: parseMillis(result.created_at ?? null),
     memberCount: 1,
     role: "owner",
-    suspended: false,
+    suspended: true,
+    subscriptionStatus: null,
+    seats: 0,
+    requestsUsed: 0,
+    requestLimit: 0,
+    periodEnd: null,
+    cancelAtPeriodEnd: false,
   };
 }
 
@@ -86,15 +85,16 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
   );
   const teamIds = Array.from(membershipMap.keys());
 
-  // Fetch team rows
+  // Fetch team rows, including their billing state
   const { data: teamsData, error: teamsError } = await admin
     .from("teams")
-    .select("id, name, created_by, created_at")
+    .select(
+      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, period_end, cancel_at_period_end"
+    )
     .in("id", teamIds);
 
   if (teamsError) throw teamsError;
 
-  // Fetch member counts and owner plans
   const teams = (teamsData ?? []) as TeamRow[];
 
   // Batch: get all member counts
@@ -110,22 +110,6 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
     countMap.set(row.team_id, (countMap.get(row.team_id) ?? 0) + 1);
   }
 
-  // Batch: get owner plans to determine suspension
-  const ownerIds = [...new Set(teams.map((t) => t.created_by))];
-
-  let ownerRows: { id: string; plan: "free" | "pro" }[] = [];
-  if (ownerIds.length > 0) {
-    const { data, error: ownerError } = await admin
-      .from("users")
-      .select("id, plan")
-      .in("id", ownerIds);
-
-    if (ownerError) throw ownerError;
-    ownerRows = data ?? [];
-  }
-
-  const ownerPlanMap = new Map(ownerRows.map((u) => [u.id, u.plan]));
-
   return teams.map((team) => ({
     id: team.id,
     name: team.name,
@@ -133,7 +117,14 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
     createdAt: parseMillis(team.created_at),
     memberCount: countMap.get(team.id) ?? 0,
     role: membershipMap.get(team.id) ?? ("member" as const),
-    suspended: ownerPlanMap.get(team.created_by) !== "pro",
+    // A team is usable exactly while it has a subscription.
+    suspended: team.subscription_status === null,
+    subscriptionStatus: team.subscription_status,
+    seats: team.seats,
+    requestsUsed: team.requests_used,
+    requestLimit: team.request_limit,
+    periodEnd: team.period_end ? parseMillis(team.period_end) : null,
+    cancelAtPeriodEnd: team.cancel_at_period_end,
   }));
 }
 
@@ -186,6 +177,26 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
   if (memberError) throw memberError;
   if (!membership) return false;
 
+  // Read the subscription id before the row goes away.
+  const { data: teamRow, error: teamError } = await admin
+    .from("teams")
+    .select("polar_subscription_id")
+    .eq("id", teamId)
+    .maybeSingle();
+
+  if (teamError) throw teamError;
+
+  // Stop billing BEFORE the row that records the subscription id disappears.
+  // A failed revoke aborts the deletion so the owner can simply retry: the
+  // opposite order would leave an orphaned Polar subscription that keeps
+  // charging, with no stored id left to reconcile against. The inverse failure
+  // (revoked subscription on a team that still exists) is recoverable in the
+  // UI, so revoke-then-delete is the safe order.
+  const subscriptionId = teamRow?.polar_subscription_id ?? null;
+  if (subscriptionId) {
+    await revokeTeamSubscription(subscriptionId);
+  }
+
   const { data, error } = await admin
     .from("teams")
     .delete()
@@ -194,5 +205,7 @@ export async function deleteTeam(userId: string, teamId: string): Promise<boolea
     .maybeSingle();
 
   if (error) throw error;
-  return !!data;
+  if (!data) return false;
+
+  return true;
 }

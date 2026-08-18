@@ -20,6 +20,8 @@ import {
   getSharedEndpointsForUser,
   resolveEndpointAccess,
   getShareMetadataForOwnedEndpoints,
+  hasActiveTeamMembership,
+  hasAnyTeamMembership,
 } from "@/lib/supabase/teams";
 import {
   listRequestsForEndpointByUser,
@@ -28,6 +30,7 @@ import {
   getRequestByIdForUser,
   clearRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
+import type { Database } from "@/lib/supabase/database";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -37,9 +40,15 @@ if (!SERVICE_ROLE_KEY) {
   throw new Error("SUPABASE_SERVICE_ROLE_KEY env var required for integration tests");
 }
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+const admin = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+
+const SEAT_REQUEST_LIMIT = 100_000;
+
+// Exact user-facing strings the invite path must return.
+const INACTIVE_TEAM_ERROR = "This team needs an active Teams subscription";
+const NO_SEATS_ERROR = "Team has no available seats — ask the owner to add seats";
 
 const TEST_PASSWORD = "TestPassword123!";
 const ts = Date.now();
@@ -61,6 +70,8 @@ let teamId: string;
 let endpointId: string;
 let endpointSlug: string;
 
+// Teams are plan-independent: membership and access hang off the team's own
+// subscription, so test users stay on the free plan.
 async function createTestUser(email: string, name: string): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({
     email,
@@ -69,20 +80,51 @@ async function createTestUser(email: string, name: string): Promise<string> {
     user_metadata: { full_name: name },
   });
   if (error) throw error;
-  const userId = data.user!.id;
-
-  // Upgrade to pro (teams require pro plan)
-  await admin.from("users").update({ plan: "pro" }).eq("id", userId);
-
-  return userId;
+  return data.user!.id;
 }
 
-async function insertRequest(epId: string, userId: string, path: string) {
+/**
+ * Puts a team on an active Teams subscription. `polar_subscription_id` stays
+ * null unless a caller asks for one, so seat assignment short-circuits before
+ * any Polar HTTP call.
+ */
+async function activateTeam(
+  teamId: string,
+  seats: number,
+  opts: { subscriptionId?: string } = {}
+): Promise<void> {
+  const { error } = await admin
+    .from("teams")
+    .update({
+      subscription_status: "active",
+      seats,
+      request_limit: seats * SEAT_REQUEST_LIMIT,
+      requests_used: 0,
+      period_start: new Date().toISOString(),
+      period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      polar_subscription_id: opts.subscriptionId ?? null,
+    })
+    .eq("id", teamId);
+  if (error) throw error;
+}
+
+/**
+ * `teamId` stamps the row as billed to that team's pooled quota — the same
+ * thing capture_webhook() does — which is what exempts it from the owner's
+ * personal retention window.
+ */
+async function insertRequest(
+  epId: string,
+  userId: string,
+  path: string,
+  opts: { receivedAt?: Date; teamId?: string } = {}
+) {
   const { data, error } = await admin
     .from("requests")
     .insert({
       endpoint_id: epId,
       user_id: userId,
+      team_id: opts.teamId ?? null,
       method: "POST",
       path,
       headers: { "content-type": "application/json" },
@@ -91,7 +133,7 @@ async function insertRequest(epId: string, userId: string, path: string) {
       content_type: "application/json",
       ip: "127.0.0.1",
       size: 13,
-      received_at: new Date().toISOString(),
+      received_at: (opts.receivedAt ?? new Date()).toISOString(),
     })
     .select("id")
     .single();
@@ -134,7 +176,7 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("Team CRUD", () => {
-    it("creates a team and adds creator as owner", async () => {
+    it("creates a team for a free user and adds creator as owner", async () => {
       const result = await createTeam(ownerId, "Integration Test Team");
       expect("error" in result).toBe(false);
       const team = result as Exclude<typeof result, { error: string }>;
@@ -145,6 +187,15 @@ describe("Teams Integration", () => {
       expect(team.memberCount).toBe(1);
       expect(team.role).toBe("owner");
       expect(team.createdAt).toBeGreaterThan(0);
+
+      // A fresh team has no subscription yet.
+      expect(team.subscriptionStatus).toBeNull();
+      expect(team.suspended).toBe(true);
+      expect(team.seats).toBe(0);
+      expect(team.requestsUsed).toBe(0);
+      expect(team.requestLimit).toBe(0);
+      expect(team.periodEnd).toBeNull();
+      expect(team.cancelAtPeriodEnd).toBe(false);
 
       teamId = team.id;
     });
@@ -158,6 +209,34 @@ describe("Teams Integration", () => {
       expect(team!.name).toBe("Integration Test Team");
       expect(team!.role).toBe("owner");
       expect(team!.memberCount).toBe(1);
+    });
+
+    it("reports an unsubscribed team as suspended with no seats", async () => {
+      const teams = await listTeamsForUser(ownerId);
+      const team = teams.find((t) => t.id === teamId);
+
+      expect(team).toBeDefined();
+      expect(team!.subscriptionStatus).toBeNull();
+      expect(team!.suspended).toBe(true);
+      expect(team!.seats).toBe(0);
+      expect(team!.requestLimit).toBe(0);
+      expect(team!.periodEnd).toBeNull();
+    });
+
+    it("reports billing fields once the team subscribes", async () => {
+      await activateTeam(teamId, 25);
+
+      const teams = await listTeamsForUser(ownerId);
+      const team = teams.find((t) => t.id === teamId);
+
+      expect(team).toBeDefined();
+      expect(team!.subscriptionStatus).toBe("active");
+      expect(team!.suspended).toBe(false);
+      expect(team!.seats).toBe(25);
+      expect(team!.requestsUsed).toBe(0);
+      expect(team!.requestLimit).toBe(25 * SEAT_REQUEST_LIMIT);
+      expect(team!.cancelAtPeriodEnd).toBe(false);
+      expect(team!.periodEnd).toBeGreaterThan(Date.now());
     });
 
     it("returns empty list for user with no teams", async () => {
@@ -191,7 +270,15 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("Invites", () => {
-    it("creates an invite for a registered user", async () => {
+    it("creates an invite for a registered user while the owner is on the free plan", async () => {
+      // The team's subscription is the gate — nobody here is Pro.
+      const { data: inviter } = await admin
+        .from("users")
+        .select("plan")
+        .eq("id", ownerId)
+        .maybeSingle();
+      expect(inviter!.plan).toBe("free");
+
       const result = await createInvite(ownerId, teamId, MEMBER_EMAIL);
 
       expect(result.error).toBeUndefined();
@@ -199,6 +286,30 @@ describe("Teams Integration", () => {
       expect(result.invite!.teamId).toBe(teamId);
       expect(result.invite!.invitedEmail).toBe(MEMBER_EMAIL);
       expect(result.invite!.status).toBe("pending");
+    });
+
+    it("rejects invites on a team with no subscription", async () => {
+      const created = await createTeam(ownerId, "Unsubscribed Invite Team");
+      const unsubscribedTeamId = (created as { id: string }).id;
+
+      const result = await createInvite(ownerId, unsubscribedTeamId, THIRD_EMAIL);
+      expect(result.error).toBe(INACTIVE_TEAM_ERROR);
+      expect(result.invite).toBeUndefined();
+
+      await admin.from("teams").delete().eq("id", unsubscribedTeamId);
+    });
+
+    it("rejects invites once members fill every purchased seat", async () => {
+      const created = await createTeam(ownerId, "One Seat Team");
+      const oneSeatTeamId = (created as { id: string }).id;
+      // One seat, and the owner already occupies it.
+      await activateTeam(oneSeatTeamId, 1);
+
+      const result = await createInvite(ownerId, oneSeatTeamId, THIRD_EMAIL);
+      expect(result.error).toBe(NO_SEATS_ERROR);
+      expect(result.invite).toBeUndefined();
+
+      await admin.from("teams").delete().eq("id", oneSeatTeamId);
     });
 
     it("rejects invite for non-existent email", async () => {
@@ -282,13 +393,42 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("Accept invite and membership", () => {
-    it("accepts the pending invite", async () => {
+    it("accepts the pending invite while on the free plan", async () => {
+      const { data: invitee } = await admin
+        .from("users")
+        .select("plan")
+        .eq("id", memberId)
+        .maybeSingle();
+      expect(invitee!.plan).toBe("free");
+
       const invites = await listPendingInvitesForUser(memberId);
       const invite = invites.find((i) => i.teamId === teamId);
       expect(invite).toBeDefined();
 
       const result = await acceptInvite(memberId, invite!.id);
       expect(result.accepted).toBe(true);
+    });
+
+    it("rejects acceptance when the team's subscription lapsed, leaving the invite pending", async () => {
+      const created = await createTeam(ownerId, "Lapsed Team");
+      const lapsedTeamId = (created as { id: string }).id;
+      await activateTeam(lapsedTeamId, 5);
+
+      const inviteResult = await createInvite(ownerId, lapsedTeamId, THIRD_EMAIL);
+      expect(inviteResult.invite).toBeDefined();
+
+      // Subscription lapses between invite and accept.
+      await admin.from("teams").update({ subscription_status: null }).eq("id", lapsedTeamId);
+
+      const accepted = await acceptInvite(thirdId, inviteResult.invite!.id);
+      expect(accepted.accepted).toBe(false);
+      expect(accepted.error).toBe(INACTIVE_TEAM_ERROR);
+
+      // Rolled back to pending so it works once the team resubscribes.
+      const stillPending = await listPendingInvitesForUser(thirdId);
+      expect(stillPending.some((i) => i.id === inviteResult.invite!.id)).toBe(true);
+
+      await admin.from("teams").delete().eq("id", lapsedTeamId);
     });
 
     it("member now appears in team members list", async () => {
@@ -379,6 +519,17 @@ describe("Teams Integration", () => {
       const result = await shareEndpointWithTeam(memberId, teamId, endpointId);
       expect(result.success).toBe(false);
       expect(result.error).toBe("Endpoint not found or not owned by you");
+    });
+
+    it("rejects sharing with a team that has no subscription", async () => {
+      const created = await createTeam(ownerId, "Unsubscribed Share Team");
+      const unsubscribedTeamId = (created as { id: string }).id;
+
+      const result = await shareEndpointWithTeam(ownerId, unsubscribedTeamId, endpointId);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(INACTIVE_TEAM_ERROR);
+
+      await admin.from("teams").delete().eq("id", unsubscribedTeamId);
     });
 
     it("getTeamSharesForEndpoint returns the sharing info", async () => {
@@ -566,7 +717,16 @@ describe("Teams Integration", () => {
       expect(result).toBe(false);
     });
 
-    it("owner removes the member", async () => {
+    it("owner removes the member and releases their recorded seat", async () => {
+      // A recorded seat id exercises the release path; the team has no Polar
+      // subscription, so revokeTeamSeat short-circuits without any HTTP call.
+      const { error: seatError } = await admin
+        .from("team_members")
+        .update({ polar_seat_id: "seat_remove_test" })
+        .eq("team_id", teamId)
+        .eq("user_id", memberId);
+      expect(seatError).toBeNull();
+
       const result = await removeTeamMember(ownerId, teamId, memberId);
       expect(result).toBe(true);
     });
@@ -611,6 +771,9 @@ describe("Teams Integration", () => {
     });
 
     it("owner deletes the team", async () => {
+      // Subscribed, but with no Polar subscription id — deletion skips the revoke.
+      await activateTeam(tempTeamId, 2);
+
       const result = await deleteTeam(ownerId, tempTeamId);
       expect(result).toBe(true);
     });
@@ -837,6 +1000,8 @@ describe("Teams Integration", () => {
       const team2Result = await createTeam(ownerId, "Second Team");
       expect("error" in team2Result).toBe(false);
       secondTeamId = (team2Result as { id: string }).id;
+      // Sharing requires a subscription on the receiving team.
+      await activateTeam(secondTeamId, 5);
 
       // Add member to second team
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -870,7 +1035,7 @@ describe("Teams Integration", () => {
       expect(result).toBe(false);
     });
 
-    it("member can leave a team", async () => {
+    it("member can leave a team, releasing their recorded seat", async () => {
       // Ensure member is in the team
       const teams = await listTeamsForUser(memberId);
       const inTeam = teams.some((t) => t.id === teamId);
@@ -884,6 +1049,13 @@ describe("Teams Integration", () => {
             { onConflict: "team_id,user_id" }
           );
       }
+
+      // As in the removal test: a recorded seat id, no Polar subscription.
+      await admin
+        .from("team_members")
+        .update({ polar_seat_id: "seat_leave_test" })
+        .eq("team_id", teamId)
+        .eq("user_id", memberId);
 
       const result = await leaveTeam(memberId, teamId);
       expect(result).toBe(true);
@@ -933,14 +1105,14 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Pro-only enforcement
+  // Plan-independent membership
   // ---------------------------------------------------------------------------
 
-  describe("Pro-only enforcement", () => {
+  describe("Plan-independent membership", () => {
     let freeUserId: string;
     let freeInviteId: string;
 
-    it("creates a free user for pro-only tests", async () => {
+    it("creates a free user for plan-independence tests", async () => {
       const { data, error } = await admin.auth.admin.createUser({
         email: `test-teams-free-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
@@ -952,15 +1124,17 @@ describe("Teams Integration", () => {
       // Stays on free plan (default)
     });
 
-    it("free user cannot create a team", async () => {
+    it("free user can create a team (teams are plan-independent)", async () => {
       const result = await createTeam(freeUserId, "Free Team");
-      expect("error" in result).toBe(true);
-      if ("error" in result) {
-        expect(result.error).toContain("Pro");
-      }
+      expect("error" in result).toBe(false);
+      const team = result as Exclude<typeof result, { error: string }>;
+      expect(team.suspended).toBe(true);
+      expect(team.seats).toBe(0);
+
+      await deleteTeam(freeUserId, team.id);
     });
 
-    it("free user cannot accept a team invite", async () => {
+    it("free user can accept an invite to a subscribed team", async () => {
       const inviteResult = await createInvite(
         ownerId,
         teamId,
@@ -970,8 +1144,15 @@ describe("Teams Integration", () => {
       freeInviteId = inviteResult.invite!.id;
 
       const acceptResult = await acceptInvite(freeUserId, freeInviteId);
-      expect(acceptResult.accepted).toBe(false);
-      expect(acceptResult.error).toContain("Pro");
+      expect(acceptResult.accepted).toBe(true);
+      expect(acceptResult.error).toBeUndefined();
+
+      const members = await listTeamMembers(ownerId, teamId);
+      expect(members!.some((m) => m.userId === freeUserId)).toBe(true);
+
+      // Restore the roster for the suites that follow.
+      const removed = await removeTeamMember(ownerId, teamId, freeUserId);
+      expect(removed).toBe(true);
     });
 
     it("cleanup free user", async () => {
@@ -982,108 +1163,110 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Pro-only: resolveEndpointAccess and suspension
+  // Access and suspension follow the team's subscription, never a personal plan
   // ---------------------------------------------------------------------------
 
-  describe("Pro-only access control and suspension", () => {
-    let freeUser2Id: string;
+  describe("Subscription-based access control and suspension", () => {
+    let suspOwnerId: string;
+    let freeMemberId: string;
+    let proMemberId: string;
     let suspensionTeamId: string;
     let suspensionEndpointId: string;
     let suspensionEndpointSlug: string;
 
-    it("setup: create a pro owner with team, endpoint, and a free member", async () => {
-      // Create a new pro user to be the owner
+    it("setup: subscribed team, free owner, free member, shared endpoint", async () => {
       const { data: ownerData } = await admin.auth.admin.createUser({
         email: `test-suspend-owner-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
         user_metadata: { full_name: "Suspend Owner" },
       });
-      const suspOwner = ownerData!.user!.id;
-      await admin.from("users").update({ plan: "pro" }).eq("id", suspOwner);
+      suspOwnerId = ownerData!.user!.id;
+      // The owner stays on the free personal plan on purpose.
 
-      // Create team
-      const teamResult = await createTeam(suspOwner, "Suspension Test Team");
+      const teamResult = await createTeam(suspOwnerId, "Suspension Test Team");
       expect("error" in teamResult).toBe(false);
       suspensionTeamId = (teamResult as { id: string }).id;
+      await activateTeam(suspensionTeamId, 5);
 
-      // Create endpoint
-      const ep = await createEndpointForUser({ userId: suspOwner, name: "Susp EP" });
+      const ep = await createEndpointForUser({ userId: suspOwnerId, name: "Susp EP" });
       suspensionEndpointId = ep.id;
       suspensionEndpointSlug = ep.slug;
 
-      // Share endpoint
-      await shareEndpointWithTeam(suspOwner, suspensionTeamId, suspensionEndpointId);
+      const shared = await shareEndpointWithTeam(
+        suspOwnerId,
+        suspensionTeamId,
+        suspensionEndpointId
+      );
+      expect(shared.success).toBe(true);
 
-      // Create a free user and add as member
       const { data: freeData } = await admin.auth.admin.createUser({
         email: `test-suspend-free-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
         user_metadata: { full_name: "Suspend Free" },
       });
-      freeUser2Id = freeData!.user!.id;
-      // Keep as free plan
+      freeMemberId = freeData!.user!.id;
 
-      // Add as member directly (bypassing invite since free users can't accept)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any)
         .from("team_members")
-        .insert({ team_id: suspensionTeamId, user_id: freeUser2Id, role: "member" });
+        .insert({ team_id: suspensionTeamId, user_id: freeMemberId, role: "member" });
 
-      // Insert a request for access tests
-      await insertRequest(suspensionEndpointId, suspOwner, "/suspend-test");
+      await insertRequest(suspensionEndpointId, suspOwnerId, "/suspend-test");
     });
 
-    it("free member cannot resolve access to shared endpoint", async () => {
-      const access = await resolveEndpointAccess(freeUser2Id, suspensionEndpointSlug);
-      expect(access).toBeNull();
+    it("free member of a subscribed team resolves access to the shared endpoint", async () => {
+      const access = await resolveEndpointAccess(freeMemberId, suspensionEndpointSlug);
+      expect(access).not.toBeNull();
+      expect(access!.endpointId).toBe(suspensionEndpointId);
+      expect(access!.ownerId).toBe(suspOwnerId);
+      expect(access!.isOwner).toBe(false);
     });
 
-    it("free member still sees shared endpoints in utility (API layer filters)", async () => {
-      // getSharedEndpointsForUser checks team owner plan, not requesting user plan.
-      // Since the team owner is pro, the endpoint appears. The API route filters
-      // free users at a higher level (GET /api/endpoints skips sharing for free users).
-      const shared = await getSharedEndpointsForUser(freeUser2Id);
-      const ep = shared.find((e) => e.id === suspensionEndpointId);
-      expect(ep).toBeDefined();
-    });
+    it("free member sees the endpoint in their shared list and reads its requests", async () => {
+      const shared = await getSharedEndpointsForUser(freeMemberId);
+      expect(shared.find((e) => e.id === suspensionEndpointId)).toBeDefined();
 
-    it("free member cannot list requests on shared endpoint", async () => {
       const requests = await listRequestsForEndpointByUser({
-        userId: freeUser2Id,
+        userId: freeMemberId,
+        slug: suspensionEndpointSlug,
+      });
+      expect(requests).not.toBeNull();
+      expect(requests!.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("deactivating the subscription revokes member access; the owner keeps it", async () => {
+      await admin.from("teams").update({ subscription_status: null }).eq("id", suspensionTeamId);
+
+      expect(await resolveEndpointAccess(freeMemberId, suspensionEndpointSlug)).toBeNull();
+
+      const shared = await getSharedEndpointsForUser(freeMemberId);
+      expect(shared.find((e) => e.id === suspensionEndpointId)).toBeUndefined();
+
+      const requests = await listRequestsForEndpointByUser({
+        userId: freeMemberId,
         slug: suspensionEndpointSlug,
       });
       expect(requests).toBeNull();
+
+      // The endpoint owner never depends on the team's subscription.
+      const ownerAccess = await resolveEndpointAccess(suspOwnerId, suspensionEndpointSlug);
+      expect(ownerAccess).not.toBeNull();
+      expect(ownerAccess!.isOwner).toBe(true);
+
+      const teams = await listTeamsForUser(freeMemberId);
+      expect(teams.find((t) => t.id === suspensionTeamId)!.suspended).toBe(true);
     });
 
-    it("downgrade owner to free — team becomes suspended", async () => {
-      // Find the owner
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: teamRow } = await (admin as any)
-        .from("teams")
-        .select("created_by")
-        .eq("id", suspensionTeamId)
-        .single();
-
-      await admin.from("users").update({ plan: "free" }).eq("id", teamRow.created_by);
-
-      // listTeamsForUser should show suspended: true
-      const teams = await listTeamsForUser(freeUser2Id);
-      const team = teams.find((t) => t.id === suspensionTeamId);
-      expect(team).toBeDefined();
-      expect(team!.suspended).toBe(true);
-    });
-
-    it("pro member also loses access when team is suspended", async () => {
-      // Create a pro member and add to the suspended team
+    it("a Pro personal plan buys no access to an unsubscribed team", async () => {
       const { data: proMemberData } = await admin.auth.admin.createUser({
         email: `test-suspend-pro-member-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
         user_metadata: { full_name: "Pro Member Susp" },
       });
-      const proMemberId = proMemberData!.user!.id;
+      proMemberId = proMemberData!.user!.id;
       await admin.from("users").update({ plan: "pro" }).eq("id", proMemberId);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1091,46 +1274,331 @@ describe("Teams Integration", () => {
         .from("team_members")
         .insert({ team_id: suspensionTeamId, user_id: proMemberId, role: "member" });
 
-      // Even a pro member can't access when team owner is free
-      const access = await resolveEndpointAccess(proMemberId, suspensionEndpointSlug);
-      expect(access).toBeNull();
+      expect(await resolveEndpointAccess(proMemberId, suspensionEndpointSlug)).toBeNull();
 
       const shared = await getSharedEndpointsForUser(proMemberId);
-      const found = shared.find((e) => e.id === suspensionEndpointId);
-      expect(found).toBeUndefined();
-
-      // Cleanup
-      await admin.auth.admin.deleteUser(proMemberId);
+      expect(shared.find((e) => e.id === suspensionEndpointId)).toBeUndefined();
     });
 
-    it("re-upgrade owner — team reactivates", async () => {
+    it("resubscribing the team restores access for both members", async () => {
+      await activateTeam(suspensionTeamId, 5);
+
+      const freeAccess = await resolveEndpointAccess(freeMemberId, suspensionEndpointSlug);
+      expect(freeAccess).not.toBeNull();
+      expect(freeAccess!.isOwner).toBe(false);
+
+      const proAccess = await resolveEndpointAccess(proMemberId, suspensionEndpointSlug);
+      expect(proAccess).not.toBeNull();
+
+      const shared = await getSharedEndpointsForUser(freeMemberId);
+      expect(shared.find((e) => e.id === suspensionEndpointId)).toBeDefined();
+
+      const requests = await listRequestsForEndpointByUser({
+        userId: freeMemberId,
+        slug: suspensionEndpointSlug,
+      });
+      expect(requests).not.toBeNull();
+
+      const teams = await listTeamsForUser(freeMemberId);
+      expect(teams.find((t) => t.id === suspensionTeamId)!.suspended).toBe(false);
+    });
+
+    it("access passes when any sharing team the user belongs to is subscribed", async () => {
+      const ep = await createEndpointForUser({ userId: suspOwnerId, name: "Multi Share EP" });
+
+      // The share row for the team that later lapses is inserted first, so an
+      // implementation that only inspects the first matching share row fails here.
+      const lapsed = await createTeam(suspOwnerId, "Lapsed Share Team");
+      const lapsedTeamId = (lapsed as { id: string }).id;
+      await activateTeam(lapsedTeamId, 2);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: teamRow } = await (admin as any)
-        .from("teams")
-        .select("created_by")
-        .eq("id", suspensionTeamId)
-        .single();
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: lapsedTeamId, user_id: freeMemberId, role: "member" });
+      expect((await shareEndpointWithTeam(suspOwnerId, lapsedTeamId, ep.id)).success).toBe(true);
 
-      await admin.from("users").update({ plan: "pro" }).eq("id", teamRow.created_by);
+      expect((await shareEndpointWithTeam(suspOwnerId, suspensionTeamId, ep.id)).success).toBe(
+        true
+      );
 
-      // Team no longer suspended
-      const teams = await listTeamsForUser(freeUser2Id);
-      const team = teams.find((t) => t.id === suspensionTeamId);
-      expect(team).toBeDefined();
-      expect(team!.suspended).toBe(false);
+      await admin.from("teams").update({ subscription_status: null }).eq("id", lapsedTeamId);
+
+      const access = await resolveEndpointAccess(freeMemberId, ep.slug);
+      expect(access).not.toBeNull();
+      expect(access!.isOwner).toBe(false);
+
+      // Once every sharing team has lapsed, access is gone.
+      await admin.from("teams").update({ subscription_status: null }).eq("id", suspensionTeamId);
+      expect(await resolveEndpointAccess(freeMemberId, ep.slug)).toBeNull();
+
+      await activateTeam(suspensionTeamId, 5);
+      await admin.from("teams").delete().eq("id", lapsedTeamId);
     });
 
     it("cleanup suspension test users", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: teamRow } = await (admin as any)
-        .from("teams")
-        .select("created_by")
-        .eq("id", suspensionTeamId)
-        .single();
-
       await admin.from("teams").delete().eq("id", suspensionTeamId);
-      await admin.auth.admin.deleteUser(teamRow.created_by);
-      await admin.auth.admin.deleteUser(freeUser2Id);
+      await admin.auth.admin.deleteUser(suspOwnerId);
+      await admin.auth.admin.deleteUser(freeMemberId);
+      await admin.auth.admin.deleteUser(proMemberId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Retention: a team-billed request outlives the owner's personal window
+  // ---------------------------------------------------------------------------
+
+  describe("Team-billed retention", () => {
+    let retOwnerId: string;
+    let retMemberId: string;
+    let retTeamId: string;
+    let retEndpointId: string;
+    let retEndpointSlug: string;
+    let teamBilledId: string;
+    let personalId: string;
+
+    it("setup: free owner, subscribed team, two 10-day-old requests", async () => {
+      const [ownerData, memberData] = await Promise.all([
+        admin.auth.admin.createUser({
+          email: `test-retention-owner-${ts}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: "Retention Owner" },
+        }),
+        admin.auth.admin.createUser({
+          email: `test-retention-member-${ts}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: "Retention Member" },
+        }),
+      ]);
+      retOwnerId = ownerData.data!.user!.id;
+      retMemberId = memberData.data!.user!.id;
+      // Both stay on the free personal plan (7-day retention).
+
+      const teamResult = await createTeam(retOwnerId, "Retention Team");
+      retTeamId = (teamResult as { id: string }).id;
+      await activateTeam(retTeamId, 3);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: retTeamId, user_id: retMemberId, role: "member" });
+
+      const ep = await createEndpointForUser({ userId: retOwnerId, name: "Retention EP" });
+      retEndpointId = ep.id;
+      retEndpointSlug = ep.slug;
+      expect((await shareEndpointWithTeam(retOwnerId, retTeamId, retEndpointId)).success).toBe(
+        true
+      );
+
+      const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000);
+      teamBilledId = await insertRequest(retEndpointId, retOwnerId, "/team-billed", {
+        receivedAt: tenDaysAgo,
+        teamId: retTeamId,
+      });
+      personalId = await insertRequest(retEndpointId, retOwnerId, "/personal", {
+        receivedAt: tenDaysAgo,
+      });
+    });
+
+    it("owner reads the team-billed request past the free 7-day cutoff", async () => {
+      const req = await getRequestByIdForUser(retOwnerId, teamBilledId);
+      expect(req).not.toBeNull();
+      expect(req!.path).toBe("/team-billed");
+    });
+
+    it("team member reads the team-billed request past the cutoff", async () => {
+      const req = await getRequestByIdForUser(retMemberId, teamBilledId);
+      expect(req).not.toBeNull();
+      expect(req!.id).toBe(teamBilledId);
+    });
+
+    it("a personal request of the same age stays hidden from both", async () => {
+      expect(await getRequestByIdForUser(retOwnerId, personalId)).toBeNull();
+      expect(await getRequestByIdForUser(retMemberId, personalId)).toBeNull();
+    });
+
+    it("list returns the team-billed row and drops the personal one", async () => {
+      const requests = await listRequestsForEndpointByUser({
+        userId: retOwnerId,
+        slug: retEndpointSlug,
+      });
+      expect(requests).not.toBeNull();
+      const paths = requests!.map((r) => r.path);
+      expect(paths).toContain("/team-billed");
+      expect(paths).not.toContain("/personal");
+    });
+
+    it("paginated list applies the same carve-out for a member", async () => {
+      const page = await listPaginatedRequestsForEndpointByUser({
+        userId: retMemberId,
+        slug: retEndpointSlug,
+        limit: 10,
+      });
+      expect(page).not.toBeNull();
+      const paths = page!.items.map((r) => r.path);
+      expect(paths).toContain("/team-billed");
+      expect(paths).not.toContain("/personal");
+    });
+
+    it("the caller's `since` bound still wins over the carve-out", async () => {
+      const requests = await listRequestsForEndpointByUser({
+        userId: retOwnerId,
+        slug: retEndpointSlug,
+        since: Date.now() - 60_000,
+      });
+      expect(requests).not.toBeNull();
+      expect(requests!.map((r) => r.path)).not.toContain("/team-billed");
+    });
+
+    it("listNewRequests honours `after` and still returns fresh team-billed rows", async () => {
+      const freshId = await insertRequest(retEndpointId, retOwnerId, "/team-billed-fresh", {
+        teamId: retTeamId,
+      });
+
+      const requests = await listNewRequestsForEndpointByUser({
+        userId: retMemberId,
+        slug: retEndpointSlug,
+        after: Date.now() - 60_000,
+      });
+      expect(requests).not.toBeNull();
+      const paths = requests!.map((r) => r.path);
+      expect(paths).toContain("/team-billed-fresh");
+      // The 10-day-old team-billed row is older than `after`.
+      expect(paths).not.toContain("/team-billed");
+      expect(requests!.some((r) => r.id === freshId)).toBe(true);
+    });
+
+    it("cleanup retention test", async () => {
+      await admin.from("teams").delete().eq("id", retTeamId);
+      await admin.auth.admin.deleteUser(retOwnerId);
+      await admin.auth.admin.deleteUser(retMemberId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // The two gates on GET /api/endpoints: share metadata for the caller's OWN
+  // endpoints (any membership) vs shared-with-me endpoints (paid, active only)
+  // ---------------------------------------------------------------------------
+
+  describe("Share-metadata gate", () => {
+    let gateUserId: string;
+    let gateTeamId: string;
+
+    it("both gates are false for a user with no teams", async () => {
+      const { data } = await admin.auth.admin.createUser({
+        email: `test-teams-gate-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Gate User" },
+      });
+      gateUserId = data!.user!.id;
+
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(false);
+      expect(await hasActiveTeamMembership(gateUserId)).toBe(false);
+    });
+
+    it("membership alone is enough for the share-metadata gate", async () => {
+      const created = await createTeam(gateUserId, "Gate Team");
+      gateTeamId = (created as { id: string }).id;
+
+      // The team has no subscription: the owner still needs to see their own
+      // share rows to manage them, but buys no shared-with-me access.
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(true);
+      expect(await hasActiveTeamMembership(gateUserId)).toBe(false);
+    });
+
+    it("the active gate flips true once the team subscribes and false when it lapses", async () => {
+      await activateTeam(gateTeamId, 2);
+      expect(await hasActiveTeamMembership(gateUserId)).toBe(true);
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(true);
+
+      await admin.from("teams").update({ subscription_status: null }).eq("id", gateTeamId);
+      expect(await hasActiveTeamMembership(gateUserId)).toBe(false);
+      expect(await hasAnyTeamMembership(gateUserId)).toBe(true);
+    });
+
+    it("cleanup gate test", async () => {
+      await admin.from("teams").delete().eq("id", gateTeamId);
+      await admin.auth.admin.deleteUser(gateUserId);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // An owner keeps control of an endpoint they shared with a team that lapsed
+  // ---------------------------------------------------------------------------
+
+  describe("Lapsed-team share management", () => {
+    let lapsedOwnerId: string;
+    let lapsedMemberId: string;
+    let lapsedTeamId: string;
+    let lapsedEndpointId: string;
+
+    it("setup: shared endpoint on a team whose subscription then lapses", async () => {
+      const [ownerData, memberData] = await Promise.all([
+        admin.auth.admin.createUser({
+          email: `test-lapsed-owner-${ts}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: "Lapsed Owner" },
+        }),
+        admin.auth.admin.createUser({
+          email: `test-lapsed-member-${ts}@webhooks-test.local`,
+          password: TEST_PASSWORD,
+          email_confirm: true,
+          user_metadata: { full_name: "Lapsed Member" },
+        }),
+      ]);
+      lapsedOwnerId = ownerData.data!.user!.id;
+      lapsedMemberId = memberData.data!.user!.id;
+
+      const created = await createTeam(lapsedOwnerId, "Lapsed Management Team");
+      lapsedTeamId = (created as { id: string }).id;
+      await activateTeam(lapsedTeamId, 3);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any)
+        .from("team_members")
+        .insert({ team_id: lapsedTeamId, user_id: lapsedMemberId, role: "member" });
+
+      const ep = await createEndpointForUser({ userId: lapsedOwnerId, name: "Lapsed EP" });
+      lapsedEndpointId = ep.id;
+      expect(
+        (await shareEndpointWithTeam(lapsedOwnerId, lapsedTeamId, lapsedEndpointId)).success
+      ).toBe(true);
+
+      // The subscription lapses — as every pre-existing team does at cutover.
+      await admin.from("teams").update({ subscription_status: null }).eq("id", lapsedTeamId);
+    });
+
+    it("owner still sees the share row on their own endpoint", async () => {
+      // Without this the endpoint drops out of the team page's "shared" list and
+      // its Remove button disappears, stranding the share.
+      const map = await getShareMetadataForOwnedEndpoints(lapsedOwnerId);
+      const shares = map.get(lapsedEndpointId);
+      expect(shares).toBeDefined();
+      expect(shares!.some((s) => s.teamId === lapsedTeamId)).toBe(true);
+    });
+
+    it("the member's shared-with-me list is empty — that part is the paid feature", async () => {
+      const shared = await getSharedEndpointsForUser(lapsedMemberId);
+      expect(shared.find((e) => e.id === lapsedEndpointId)).toBeUndefined();
+      expect(await hasActiveTeamMembership(lapsedMemberId)).toBe(false);
+    });
+
+    it("owner can still unshare from the lapsed team", async () => {
+      expect(await unshareEndpointFromTeam(lapsedOwnerId, lapsedTeamId, lapsedEndpointId)).toBe(
+        true
+      );
+
+      const map = await getShareMetadataForOwnedEndpoints(lapsedOwnerId);
+      expect(map.get(lapsedEndpointId)).toBeUndefined();
+    });
+
+    it("cleanup lapsed-team test", async () => {
+      await admin.from("teams").delete().eq("id", lapsedTeamId);
+      await admin.auth.admin.deleteUser(lapsedOwnerId);
+      await admin.auth.admin.deleteUser(lapsedMemberId);
     });
   });
 
@@ -1162,7 +1630,7 @@ describe("Teams Integration", () => {
       expect(shares![0].teamId).toBe(teamId);
     });
 
-    it("getSharedEndpointsForUser returns endpoint for pro member", async () => {
+    it("getSharedEndpointsForUser returns the endpoint for a member of the subscribed team", async () => {
       const shared = await getSharedEndpointsForUser(memberId);
       const ep = shared.find((e) => e.id === endpointId);
       expect(ep).toBeDefined();
@@ -1171,127 +1639,140 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Team member plan info in listTeamMembers
+  // listTeamMembers exposes membership, never personal plan
   // ---------------------------------------------------------------------------
 
-  describe("Team member plan visibility", () => {
-    it("listTeamMembers returns plan field for each member", async () => {
+  describe("Team member fields", () => {
+    it("listTeamMembers returns role and email but no plan field", async () => {
       const members = await listTeamMembers(ownerId, teamId);
       expect(members).not.toBeNull();
+      expect(members!.length).toBeGreaterThan(0);
 
       const owner = members!.find((m) => m.userId === ownerId);
       expect(owner).toBeDefined();
-      expect(owner!.plan).toBe("pro");
+      expect(owner!.role).toBe("owner");
+      expect(owner!.email).toContain("@");
 
-      const member = members!.find((m) => m.userId === memberId);
-      if (member) {
-        expect(["free", "pro"]).toContain(member.plan);
+      // Access hangs off the team subscription, so a personal plan is not part
+      // of the member payload at all.
+      for (const member of members!) {
+        expect(member).not.toHaveProperty("plan");
+        expect(["owner", "member"]).toContain(member.role);
+        expect(member.email).toContain("@");
       }
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Member limit at accept time
+  // Seat cap at accept time
   // ---------------------------------------------------------------------------
 
-  describe("Member limit at accept time", () => {
-    let limitTeamId: string;
-    let limitOwnerId: string;
-    const fillerUserIds: string[] = [];
+  describe("Seat cap at accept time", () => {
+    let seatTeamId: string;
+    let seatOwnerId: string;
+    const seatUserIds: string[] = [];
     let overflowUserId: string;
 
-    it("setup: create team with 24 members (23 fillers + owner)", async () => {
+    it("setup: create a 2-seat team whose owner takes the first seat", async () => {
       const { data: ownerData } = await admin.auth.admin.createUser({
-        email: `test-limit-owner-${ts}@webhooks-test.local`,
+        email: `test-seat-owner-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
-        user_metadata: { full_name: "Limit Owner" },
+        user_metadata: { full_name: "Seat Owner" },
       });
-      limitOwnerId = ownerData!.user!.id;
-      fillerUserIds.push(limitOwnerId);
-      await admin.from("users").update({ plan: "pro" }).eq("id", limitOwnerId);
+      seatOwnerId = ownerData!.user!.id;
+      seatUserIds.push(seatOwnerId);
 
-      const teamResult = await createTeam(limitOwnerId, "Limit Team");
+      const teamResult = await createTeam(seatOwnerId, "Seat Cap Team");
       expect("error" in teamResult).toBe(false);
-      limitTeamId = (teamResult as { id: string }).id;
+      seatTeamId = (teamResult as { id: string }).id;
 
-      // Add 23 fillers (total = 24 with owner)
-      for (let i = 0; i < 23; i++) {
-        const { data } = await admin.auth.admin.createUser({
-          email: `test-limit-filler-${ts}-${i}@webhooks-test.local`,
-          password: TEST_PASSWORD,
-          email_confirm: true,
-          user_metadata: { full_name: `Filler ${i}` },
-        });
-        await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
-        fillerUserIds.push(data!.user!.id);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any)
-          .from("team_members")
-          .insert({ team_id: limitTeamId, user_id: data!.user!.id, role: "member" });
-      }
+      await activateTeam(seatTeamId, 2);
     });
 
-    it("invite succeeds when team has 24 members", async () => {
-      // Create the overflow user (will be the 25th)
+    it("invite succeeds while a seat is free", async () => {
       const { data } = await admin.auth.admin.createUser({
-        email: `test-limit-overflow-${ts}@webhooks-test.local`,
+        email: `test-seat-overflow-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
         user_metadata: { full_name: "Overflow User" },
       });
       overflowUserId = data!.user!.id;
-      fillerUserIds.push(overflowUserId);
-      await admin.from("users").update({ plan: "pro" }).eq("id", overflowUserId);
+      seatUserIds.push(overflowUserId);
 
-      // Invite should succeed (team has 24, below 25 limit)
+      // 1 member, 2 seats
       const inviteResult = await createInvite(
-        limitOwnerId,
-        limitTeamId,
-        `test-limit-overflow-${ts}@webhooks-test.local`
+        seatOwnerId,
+        seatTeamId,
+        `test-seat-overflow-${ts}@webhooks-test.local`
       );
       expect(inviteResult.error).toBeUndefined();
       expect(inviteResult.invite).toBeDefined();
     });
 
-    it("add one more member to bring team to 25 before accept", async () => {
+    it("fills the last seat before the invite is accepted", async () => {
       const { data } = await admin.auth.admin.createUser({
-        email: `test-limit-filler-${ts}-extra@webhooks-test.local`,
+        email: `test-seat-filler-${ts}@webhooks-test.local`,
         password: TEST_PASSWORD,
         email_confirm: true,
-        user_metadata: { full_name: "Extra Filler" },
+        user_metadata: { full_name: "Seat Filler" },
       });
-      fillerUserIds.push(data!.user!.id);
-      await admin.from("users").update({ plan: "pro" }).eq("id", data!.user!.id);
+      seatUserIds.push(data!.user!.id);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any)
         .from("team_members")
-        .insert({ team_id: limitTeamId, user_id: data!.user!.id, role: "member" });
+        .insert({ team_id: seatTeamId, user_id: data!.user!.id, role: "member" });
     });
 
-    it("acceptInvite fails and rolls back when team is at 25", async () => {
-      // Get the pending invite
+    it("createInvite is rejected once every seat is taken", async () => {
+      const { data } = await admin.auth.admin.createUser({
+        email: `test-seat-late-${ts}@webhooks-test.local`,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+        user_metadata: { full_name: "Late User" },
+      });
+      seatUserIds.push(data!.user!.id);
+
+      const result = await createInvite(
+        seatOwnerId,
+        seatTeamId,
+        `test-seat-late-${ts}@webhooks-test.local`
+      );
+      expect(result.error).toBe(NO_SEATS_ERROR);
+    });
+
+    it("acceptInvite fails and rolls back when every seat is taken", async () => {
       const invites = await listPendingInvitesForUser(overflowUserId);
-      const invite = invites.find((i) => i.teamId === limitTeamId);
+      const invite = invites.find((i) => i.teamId === seatTeamId);
       expect(invite).toBeDefined();
 
-      // Try to accept — should fail because team now has 25 members
       const result = await acceptInvite(overflowUserId, invite!.id);
       expect(result.accepted).toBe(false);
-      expect(result.error).toContain("25");
+      expect(result.error).toBe(NO_SEATS_ERROR);
 
       // Invite should be rolled back to pending
       const afterInvites = await listPendingInvitesForUser(overflowUserId);
-      const afterInvite = afterInvites.find((i) => i.teamId === limitTeamId);
+      const afterInvite = afterInvites.find((i) => i.teamId === seatTeamId);
       expect(afterInvite).toBeDefined();
       expect(afterInvite!.id).toBe(invite!.id);
     });
 
-    it("cleanup limit test", async () => {
+    it("accepting succeeds after the owner buys another seat", async () => {
+      await activateTeam(seatTeamId, 3);
+
+      const invites = await listPendingInvitesForUser(overflowUserId);
+      const invite = invites.find((i) => i.teamId === seatTeamId);
+      expect(invite).toBeDefined();
+
+      const result = await acceptInvite(overflowUserId, invite!.id);
+      expect(result.accepted).toBe(true);
+    });
+
+    it("cleanup seat cap test", async () => {
       // Delete the team (cascades team_members, team_invites, team_endpoints)
-      await admin.from("teams").delete().eq("id", limitTeamId);
+      await admin.from("teams").delete().eq("id", seatTeamId);
       // Delete all created auth users
-      for (const userId of fillerUserIds) {
+      for (const userId of seatUserIds) {
         await admin.auth.admin.deleteUser(userId);
       }
     });

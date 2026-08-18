@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is Smee.io free?",
     answer:
-      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every feature included on both tiers — only Teams (invite members, share endpoints) requires Pro. The paid plan raises rate limits and retention.",
+      "Yes, Smee.io is free and open source. webhooks.cc also has a free tier with every individual feature included on both tiers. The paid plan raises rate limits and retention, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo.",
   },
   {
     question: "Should I use Smee.io or webhooks.cc for GitHub App development?",
@@ -45,8 +45,8 @@ const ROWS = [
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Auth / user accounts", "Yes (optional)", "No — anonymous channels"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (ISC)"],
-  ["Team collaboration", "Pro ($8/mo), up to 25 members", "None"],
-  ["Free tier features", "Everything except Teams", "Free (fully open)"],
+  ["Team collaboration", "$12/seat/mo, pooled quota", "None"],
+  ["Free tier features", "Every individual feature", "Free (fully open)"],
 ] as const;
 
 export const metadata = createPageMetadata({
@@ -141,8 +141,8 @@ export default function CompareSmeePage() {
             <p className="text-muted-foreground">
               webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions,
               a native CLI with built-in tunneling, and an MCP server for AI coding agents. For
-              teams, webhooks.cc Pro ($8/month) supports up to 25 members with shared endpoints;
-              Smee.io has no team or collaboration features. Smee.io provides a small npm client (
+              teams, webhooks.cc shares endpoints across a team at $12/seat/month; Smee.io has no
+              team or collaboration features. Smee.io provides a small npm client (
               <code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>) for forwarding —
               no SDK, no test helpers, no MCP.
             </p>

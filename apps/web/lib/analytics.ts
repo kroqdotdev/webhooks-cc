@@ -156,6 +156,10 @@ export function trackEndpointTeamToggled(action: "shared" | "unshared") {
   capture("endpoint_team_toggled", { action });
 }
 
+export function trackTeamSubscribeClicked(seats: number) {
+  capture("team_subscribe_clicked", { seats });
+}
+
 // ── Guest / Ephemeral ───────────────────────────────────────────
 export function trackGuestEndpointCreated() {
   capture("guest_endpoint_created");

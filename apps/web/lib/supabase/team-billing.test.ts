@@ -1,0 +1,501 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const mockFns = vi.hoisted(() => ({
+  createAdminClient: vi.fn(),
+  createPolarClient: vi.fn(),
+  getPolarTeamsCheckoutConfig: vi.fn(),
+}));
+
+vi.mock("@/lib/polar", () => ({
+  createPolarClient: mockFns.createPolarClient,
+  getPolarTeamsCheckoutConfig: mockFns.getPolarTeamsCheckoutConfig,
+  unwrapPolarResult: <T>(result: T) => result,
+}));
+
+vi.mock("./admin", () => ({
+  createAdminClient: mockFns.createAdminClient,
+}));
+
+import {
+  TeamBillingError,
+  assignTeamSeat,
+  createTeamCheckout,
+  extractTeamIdFromWebhook,
+  revokeTeamSeat,
+  updateTeamSeats,
+} from "./team-billing";
+
+// ---------------------------------------------------------------------------
+// Minimal supabase-js query-builder double.
+//
+// Responses are queued per `${table}:${operation}` and consumed in call order,
+// so a function that hits the same table twice (owner check, then member count)
+// gets each queued response in turn. Anything unscripted resolves empty.
+// ---------------------------------------------------------------------------
+
+interface QueryResult {
+  data?: unknown;
+  error?: unknown;
+  count?: number;
+}
+
+interface RecordedCall {
+  table: string;
+  op: string;
+  payload?: unknown;
+}
+
+let recorded: RecordedCall[] = [];
+
+function createFakeAdmin(responses: Record<string, QueryResult[]>) {
+  return {
+    rpc(name: string, params?: unknown) {
+      recorded.push({ table: `rpc:${name}`, op: "rpc", payload: params });
+      const queue = responses[`rpc:${name}`];
+      const next = queue?.shift();
+      return Promise.resolve({ data: null, error: null, ...next });
+    },
+    from(table: string) {
+      let op = "select";
+      let payload: unknown;
+
+      const take = (): QueryResult => {
+        const queue = responses[`${table}:${op}`];
+        const next = queue?.shift();
+        return { data: null, error: null, count: 0, ...next };
+      };
+
+      const builder: Record<string, unknown> = {};
+      const chain = () => builder;
+
+      for (const method of ["eq", "is", "in", "order", "limit", "select"] as const) {
+        builder[method] = chain;
+      }
+
+      for (const method of ["insert", "update", "delete"] as const) {
+        builder[method] = (value?: unknown) => {
+          op = method;
+          payload = value;
+          return builder;
+        };
+      }
+
+      const settle = () => {
+        recorded.push({ table, op, payload });
+        return Promise.resolve(take());
+      };
+
+      builder.maybeSingle = settle;
+      builder.single = settle;
+      builder.then = (
+        onFulfilled?: (value: QueryResult) => unknown,
+        onRejected?: (reason: unknown) => unknown
+      ) => settle().then(onFulfilled, onRejected);
+
+      return builder;
+    },
+  };
+}
+
+const OWNER_MEMBERSHIP: QueryResult = { data: { role: "owner" } };
+
+function teamRow(overrides: Record<string, unknown> = {}) {
+  return {
+    data: {
+      id: "team_1",
+      name: "Acme",
+      created_by: "user_1",
+      polar_customer_id: null,
+      polar_subscription_id: null,
+      subscription_status: null,
+      seats: 0,
+      cancel_at_period_end: false,
+      ...overrides,
+    },
+  };
+}
+
+beforeEach(() => {
+  recorded = [];
+  vi.clearAllMocks();
+  mockFns.getPolarTeamsCheckoutConfig.mockReturnValue({
+    appUrl: "https://webhooks.cc",
+    teamsProductId: "prod_teams_123",
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("createTeamCheckout", () => {
+  test("rejects a seat count below one before touching the database", async () => {
+    await expect(createTeamCheckout("user_1", "team_1", 0)).rejects.toMatchObject({
+      name: "TeamBillingError",
+      code: "invalid_seats",
+    });
+
+    expect(mockFns.createAdminClient).not.toHaveBeenCalled();
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("rejects a fractional seat count", async () => {
+    await expect(createTeamCheckout("user_1", "team_1", 2.5)).rejects.toMatchObject({
+      code: "invalid_seats",
+    });
+  });
+
+  test("rejects a caller who is not the team owner", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "team_members:select": [{ data: null }] })
+    );
+
+    await expect(createTeamCheckout("user_2", "team_1", 5)).rejects.toMatchObject({
+      code: "not_owner",
+    });
+
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("rejects a team that already carries a subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ subscription_status: "past_due" })],
+      })
+    );
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
+      code: "already_subscribed",
+    });
+
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("rejects the checkout when the owner row is missing, instead of an empty billing email", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+        "users:select": [{ data: null }],
+      })
+    );
+
+    const customerCreate = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ customers: { create: customerCreate } });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
+      code: "owner_not_found",
+    });
+
+    expect(customerCreate).not.toHaveBeenCalled();
+  });
+
+  test("creates a team-scoped Polar customer and a seated checkout", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+        "users:select": [{ data: { email: "owner@example.com" } }],
+        "teams:update": [{}],
+      })
+    );
+
+    const customerCreate = vi.fn().mockResolvedValue({ id: "cus_team_1" });
+    const checkoutCreate = vi
+      .fn()
+      .mockResolvedValue({ url: "https://sandbox.polar.sh/checkout/team" });
+    mockFns.createPolarClient.mockReturnValue({
+      customers: { create: customerCreate },
+      checkouts: { create: checkoutCreate },
+    });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/team"
+    );
+
+    expect(customerCreate).toHaveBeenCalledWith({
+      email: "owner@example.com",
+      name: "Acme",
+      externalId: "team:team_1",
+      metadata: { teamId: "team_1" },
+    });
+    expect(checkoutCreate).toHaveBeenCalledWith({
+      products: ["prod_teams_123"],
+      seats: 5,
+      successUrl: "https://webhooks.cc/teams/team_1?subscribed=true",
+      customerId: "cus_team_1",
+    });
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: { polar_customer_id: "cus_team_1" },
+    });
+  });
+});
+
+describe("updateTeamSeats", () => {
+  test("refuses to shrink the subscription below the current member count", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 5 })],
+        "rpc:update_team_seats": [{ data: { status: "below_members", member_count: 4 } }],
+      })
+    );
+
+    await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toMatchObject({
+      code: "seats_below_members",
+    });
+
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("rejects a team without a subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+      })
+    );
+
+    await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toMatchObject({
+      code: "no_subscription",
+    });
+  });
+
+  test("reduction: writes the seat change through the locking RPC before calling Polar", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6 })],
+        "rpc:update_team_seats": [{ data: { status: "ok", previous_seats: 6 } }],
+      })
+    );
+
+    const rpcWrite = {
+      table: "rpc:update_team_seats",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 3 },
+    };
+    const subscriptionUpdate = vi.fn().mockImplementation(() => {
+      // For a reduction the DB write must land before Polar is told: the RPC's
+      // row lock is what serializes it against concurrent invite accepts.
+      expect(recorded).toContainEqual(rpcWrite);
+      return Promise.resolve({ id: "sub_1" });
+    });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await updateTeamSeats("user_1", "team_1", 3);
+
+    expect(subscriptionUpdate).toHaveBeenCalledWith({
+      id: "sub_1",
+      subscriptionUpdate: { seats: 3 },
+    });
+    expect(recorded).toContainEqual(rpcWrite);
+  });
+
+  test("increase: confirms with Polar before exposing capacity in the database", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
+        "rpc:update_team_seats": [{ data: { status: "ok", previous_seats: 2 } }],
+      })
+    );
+
+    const rpcWrite = {
+      table: "rpc:update_team_seats",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 6 },
+    };
+    const subscriptionUpdate = vi.fn().mockImplementation(() => {
+      // For an increase the DB write must wait for Polar: a concurrent invite
+      // accept must never fill capacity Polar has not confirmed.
+      expect(recorded).not.toContainEqual(rpcWrite);
+      return Promise.resolve({ id: "sub_1" });
+    });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await updateTeamSeats("user_1", "team_1", 6);
+
+    expect(subscriptionUpdate).toHaveBeenCalledWith({
+      id: "sub_1",
+      subscriptionUpdate: { seats: 6 },
+    });
+    expect(recorded).toContainEqual(rpcWrite);
+  });
+
+  test("increase: leaves the database untouched when Polar rejects the update", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 6)).rejects.toThrow("polar down");
+
+    expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
+  });
+
+  test("increase: surfaces a DB write failure after Polar accepted and logs it", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
+        "rpc:update_team_seats": [{ data: { status: "not_found" } }],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockResolvedValue({ id: "sub_1" });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 6)).rejects.toMatchObject({
+      code: "seat_update_failed",
+    });
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  test("reduction: restores the previous seat count when Polar rejects the update", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6 })],
+        "rpc:update_team_seats": [
+          { data: { status: "ok", previous_seats: 6 } },
+          { data: { status: "ok", previous_seats: 3 } },
+        ],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toThrow("polar down");
+
+    expect(recorded).toContainEqual({
+      table: "rpc:update_team_seats",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 6 },
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+});
+
+describe("seat assignment", () => {
+  test("returns null without calling Polar when the team has no subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [{ data: { polar_subscription_id: null } }] })
+    );
+
+    await expect(assignTeamSeat("team_1", "member@example.com", "user_2")).resolves.toBeNull();
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("claims the seat immediately and tags it with the member", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [{ data: { polar_subscription_id: "sub_1" } }] })
+    );
+
+    const assignSeat = vi.fn().mockResolvedValue({ id: "seat_1" });
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { assignSeat } });
+
+    await expect(assignTeamSeat("team_1", "member@example.com", "user_2")).resolves.toBe("seat_1");
+    expect(assignSeat).toHaveBeenCalledWith({
+      subscriptionId: "sub_1",
+      email: "member@example.com",
+      immediateClaim: true,
+      metadata: { userId: "user_2", teamId: "team_1" },
+    });
+  });
+});
+
+describe("revokeTeamSeat", () => {
+  test("looks the seat up by email when no seat id was stored", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [{ data: { polar_subscription_id: "sub_1" } }] })
+    );
+
+    const listSeats = vi.fn().mockResolvedValue({
+      totalSeats: 3,
+      availableSeats: 1,
+      seats: [
+        { id: "seat_old", status: "revoked", customerEmail: "member@example.com", email: null },
+        { id: "seat_1", status: "claimed", customerEmail: "Member@Example.com", email: null },
+      ],
+    });
+    const revokeSeat = vi.fn().mockResolvedValue({ id: "seat_1" });
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, revokeSeat } });
+
+    await revokeTeamSeat("team_1", null, "member@example.com");
+
+    expect(listSeats).toHaveBeenCalledWith({ subscriptionId: "sub_1" });
+    expect(revokeSeat).toHaveBeenCalledWith({ seatId: "seat_1" });
+  });
+
+  test("never calls Polar for a team without a subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [{ data: { polar_subscription_id: null } }] })
+    );
+
+    await expect(revokeTeamSeat("team_1", "seat_1", "member@example.com")).resolves.toBeUndefined();
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("logs and swallows Polar failures — the membership is already gone", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [{ data: { polar_subscription_id: "sub_1" } }] })
+    );
+
+    const revokeSeat = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { revokeSeat } });
+
+    await expect(revokeTeamSeat("team_1", "seat_1", "member@example.com")).resolves.toBeUndefined();
+    expect(revokeSeat).toHaveBeenCalledWith({ seatId: "seat_1" });
+    expect(consoleError).toHaveBeenCalled();
+  });
+});
+
+describe("extractTeamIdFromWebhook", () => {
+  test("prefers the customer metadata team id", () => {
+    expect(
+      extractTeamIdFromWebhook({
+        customer: { metadata: { teamId: "team_1" }, externalId: "team:other" },
+      })
+    ).toBe("team_1");
+  });
+
+  test("strips the team prefix from the customer external id", () => {
+    expect(extractTeamIdFromWebhook({ customer: { externalId: "team:team_2" } })).toBe("team_2");
+  });
+
+  test("returns null for a personal customer", () => {
+    expect(
+      extractTeamIdFromWebhook({
+        customer: { externalId: "user_1", metadata: { userId: "user_1" } },
+      })
+    ).toBeNull();
+  });
+
+  test("routes seat events by their seat metadata", () => {
+    expect(extractTeamIdFromWebhook({ id: "seat_1", seatMetadata: { teamId: "team_3" } })).toBe(
+      "team_3"
+    );
+  });
+});
+
+describe("TeamBillingError", () => {
+  test("carries a machine-readable code", () => {
+    const error = new TeamBillingError("not_owner", "Only the team owner can manage billing");
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe("not_owner");
+    expect(error.message).toBe("Only the team owner can manage billing");
+  });
+});

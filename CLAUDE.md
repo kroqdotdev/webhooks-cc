@@ -232,16 +232,17 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 
 ### Supabase Backend
 
-**Schema (6 tables + auth system):**
+**Schema (7 tables + auth system):**
 
-| Table          | Key fields                                                                          | Notes                                                 |
-| -------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `users`        | email, plan (free/pro), requests_used, request_limit, polar_customer_id, period_end | Indexes: email, polar_customer, plan, plan+period_end |
-| `endpoints`    | slug (unique), user_id?, mock_response (jsonb)?, is_ephemeral, expires_at?          | Indexes: slug, user, expires, ephemeral+expires       |
-| `requests`     | endpoint_id, user_id, method, path, headers (jsonb), body, ip, received_at          | Indexes: endpoint+time, user+time, received_at        |
-| `api_keys`     | user_id, key_hash (SHA-256), key_prefix, expires_at                                 | Indexes: key_hash, user                               |
-| `device_codes` | device_code, user_code, status, user_id?, expires_at                                | Indexes: device_code, user_code, status               |
-| `blog_posts`   | slug (unique), title, content, status (draft/published)                             | Index: slug, status                                   |
+| Table          | Key fields                                                                                                                       | Notes                                                                                                                                                                                          |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`        | email, plan (free/pro), requests_used, request_limit, polar_customer_id, period_end                                              | Indexes: email, polar_customer, plan, plan+period_end                                                                                                                                          |
+| `endpoints`    | slug (unique), user_id?, mock_response (jsonb)?, is_ephemeral, expires_at?                                                       | Indexes: slug, user, expires, ephemeral+expires                                                                                                                                                |
+| `requests`     | endpoint_id, user_id, team_id?, method, path, headers (jsonb), body, ip, received_at                                             | Indexes: endpoint+time, user+time, received_at, team                                                                                                                                           |
+| `api_keys`     | user_id, key_hash (SHA-256), key_prefix, expires_at                                                                              | Indexes: key_hash, user                                                                                                                                                                        |
+| `device_codes` | device_code, user_code, status, user_id?, expires_at                                                                             | Indexes: device_code, user_code, status                                                                                                                                                        |
+| `blog_posts`   | slug (unique), title, content, status (draft/published)                                                                          | Index: slug, status                                                                                                                                                                            |
+| `teams`        | name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, requests_used, request_limit, period_end | Ownership is `team_members.role = 'owner'`, not a column on `teams`; membership/sharing live in `team_members`, `team_invites`, `team_endpoints`; active iff `subscription_status is not null` |
 
 **Key stored procedures:**
 
@@ -259,14 +260,14 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 
 **Cron jobs (via pg_cron):**
 
-| Job                         | Schedule        | Purpose                                                                  |
-| --------------------------- | --------------- | ------------------------------------------------------------------------ |
-| Billing period resets       | Every minute    | Reset free (24h) and pro (30d) periods, downgrade canceled subscriptions |
-| Ephemeral endpoint cleanup  | Every 5 min     | Delete expired ephemeral endpoints and orphaned requests                 |
-| Expired device code cleanup | Every 5 min     | Delete expired CLI login codes                                           |
-| Free user request cleanup   | Daily 01:30 UTC | Delete requests older than 7 days for free users                         |
-| Old request cleanup         | Daily 01:00 UTC | Delete all requests older than 31 days                                   |
-| Expired API key cleanup     | Daily 02:00 UTC | Delete expired API keys                                                  |
+| Job                         | Schedule        | Purpose                                                                               |
+| --------------------------- | --------------- | ------------------------------------------------------------------------------------- |
+| Billing period resets       | Every minute    | Reset free (24h), pro (30d), and team (30d) periods, downgrade canceled subscriptions |
+| Ephemeral endpoint cleanup  | Every 5 min     | Delete expired ephemeral endpoints and orphaned requests                              |
+| Expired device code cleanup | Every 5 min     | Delete expired CLI login codes                                                        |
+| Free user request cleanup   | Daily 01:30 UTC | Delete requests older than 7 days for free users (team-billed rows excluded)          |
+| Old request cleanup         | Daily 01:00 UTC | Delete all requests older than 31 days                                                |
+| Expired API key cleanup     | Daily 02:00 UTC | Delete expired API keys                                                               |
 
 **Key patterns:**
 
@@ -277,6 +278,8 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 - API keys use SHA-256 hashed storage with `whcc_` prefix, validated by hash lookup
 - Device auth flow: create → authorize → poll → claim (API key generated at claim time)
 - Sensitive routes (account deletion, billing mutations) require Supabase session tokens — API keys are rejected
+- Teams are billed per team, not per user: a Polar seat-based subscription ($12/seat/mo) on the `teams` row buys both the member cap and a pooled quota of seats × 100,000 requests per 30 days. `users.plan` stays `free`/`pro` and has no bearing on team access
+- `capture_webhook()` bills an endpoint shared with an active team (oldest share wins) against that team's pool and stamps `requests.team_id`; team-billed requests get 31-day retention regardless of the owner's plan
 
 ### Web App Structure
 
@@ -357,13 +360,14 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 ### Supabase Environment
 
-| Variable               | Purpose                        |
-| ---------------------- | ------------------------------ |
-| `POLAR_ACCESS_TOKEN`   | Polar.sh API                   |
-| `POLAR_WEBHOOK_SECRET` | Webhook signature verification |
-| `POLAR_PRO_PRODUCT_ID` | Product ID for checkout        |
-| `POLAR_SANDBOX`        | `true` for sandbox mode        |
-| `BLOG_API_SECRET`      | Blog admin API auth            |
+| Variable                 | Purpose                                  |
+| ------------------------ | ---------------------------------------- |
+| `POLAR_ACCESS_TOKEN`     | Polar.sh API                             |
+| `POLAR_WEBHOOK_SECRET`   | Webhook signature verification           |
+| `POLAR_PRO_PRODUCT_ID`   | Product ID for Pro checkout              |
+| `POLAR_TEAMS_PRODUCT_ID` | Seat-based product ID for Teams checkout |
+| `POLAR_SANDBOX`          | `true` for sandbox mode                  |
+| `BLOG_API_SECRET`        | Blog admin API auth                      |
 
 ### Optional
 

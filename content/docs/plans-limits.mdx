@@ -1,9 +1,9 @@
 ---
 title: "Plans & Limits"
-description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free and pro plans side by side with exact numbers, billing periods, and upgrade paths."
+description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
 section: getting-started
 order: 4
-lastUpdated: 2026-03-20
+lastUpdated: 2026-08-06
 schema: faq
 keywords:
   [
@@ -13,21 +13,25 @@ keywords:
     "webhook retention",
     "free plan",
     "pro plan",
+    "teams plan",
   ]
 seo:
   ogTitle: "Plans & Limits"
-  ogDescription: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare free and pro plans side by side with exact numbers and upgrade paths."
+  ogDescription: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare free, pro, and teams plans side by side with exact numbers and upgrade paths."
 ---
 
 ## Plans overview
 
-| Plan    | Requests | Period   | Retention | Endpoints                 | Teams | Price            |
-| ------- | -------- | -------- | --------- | ------------------------- | ----- | ---------------- |
-| Guest   | 25       | 12 hours | 12 hours  | Ephemeral only (12hr TTL) | —     | Free (no signup) |
-| Free    | 50       | 24 hours | 7 days    | Unlimited, never expire   | —     | Free             |
-| **Pro** | 100,000  | 30 days  | 30 days   | Unlimited, never expire   | Yes   | $8/month         |
+| Plan      | Requests         | Period   | Retention | Endpoints                    | Price            |
+| --------- | ---------------- | -------- | --------- | ---------------------------- | ---------------- |
+| Guest     | 25               | 12 hours | 12 hours  | Ephemeral only (12hr TTL)    | Free (no signup) |
+| Free      | 50               | 24 hours | 7 days    | Unlimited, never expire      | Free             |
+| **Pro**   | 100,000          | 30 days  | 31 days   | Unlimited, never expire      | $8/month         |
+| **Teams** | 100,000 per seat | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month   |
 
-Every feature — webhook capture, inspection, replay, mock responses, CLI tunneling, SDK, and MCP server — works on both Free and Pro. The only feature exclusive to Pro is **Teams** (create teams, invite members, share endpoints).
+Every feature — webhook capture, inspection, replay, mock responses, CLI tunneling, SDK, and MCP server — works on both Free and Pro.
+
+**Teams** is a separate, per-team subscription rather than a tier of your personal plan. Any account (Free or Pro) can create a team, and the team's own subscription decides what it can do. See [Teams and shared endpoints](#teams-and-shared-endpoints) below.
 
 Endpoints created by logged-in users (Free or Pro) **never expire**. They persist until you explicitly delete them from the dashboard, CLI, SDK, or API. Only ephemeral endpoints -- created without an account or explicitly marked ephemeral -- auto-delete after 12 hours.
 
@@ -38,6 +42,8 @@ Endpoints created by logged-in users (Free or Pro) **never expire**. They persis
 **Free** — billing periods activate lazily. Your 24-hour window starts when your first webhook request is captured, not when you sign up. Once the period expires, the counter resets and the next request starts a new 24-hour window.
 
 **Pro** — 30-day rolling billing periods. The counter resets automatically at the end of each period. Canceled subscriptions remain active until the current period ends, then downgrade to Free.
+
+**Teams** — 30-day rolling periods on the team itself, starting when the team subscribes. The team's pooled counter resets at the end of each period. A canceled team subscription stays active until the period ends, then the team is suspended.
 
 ## Request quotas
 
@@ -56,15 +62,25 @@ Captured requests are cleaned up automatically based on your plan:
 
 - **Free** — requests older than 7 days are deleted daily at 01:30 UTC
 - **Pro** — requests older than 31 days are deleted daily at 01:00 UTC
+- **Team-billed** — requests captured on an endpoint shared with an active team are kept for 31 days, even when the endpoint owner is on Free
 - **Ephemeral** — requests are deleted when the endpoint expires (12 hours after creation)
 
 Deleted requests cannot be recovered. Export important requests as JSON or CSV from the dashboard before they expire.
 
 ## Teams and shared endpoints
 
-When you share an endpoint with a team, incoming webhooks count against **your** quota — not the team member viewing them. Data retention also follows the endpoint owner's plan.
+Teams are billed per team at **$12/seat/month**. Any account can create a team, but the team stays inert until its owner subscribes — the subscription, not anyone's personal plan, is what activates it.
 
-Every team member must be on the Pro plan to access shared endpoints. If a member downgrades, they lose access to shared endpoints but remain in the team.
+**Seats decide two things:**
+
+- **The member cap** — a team can hold exactly as many members as it has purchased seats (the owner occupies one). Adding a member beyond that means buying another seat first.
+- **The request pool** — each seat adds 100,000 requests per 30-day period to a single pool shared by the whole team.
+
+**Whose quota gets used.** Once an endpoint is shared with a team that has an active subscription, its captured requests draw from that team's pool instead of the endpoint owner's personal quota, and they are retained for 31 days regardless of the owner's plan. If an endpoint is shared with several active teams, the oldest share is billed — never more than one team per request. Endpoints that are not shared with an active team keep counting against their owner's own quota and retention.
+
+When the pool is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset.
+
+**Without an active subscription** (never subscribed, or canceled and past the period end) a team is suspended: its data is kept, but invites, endpoint sharing, and member access to shared endpoints are all blocked until it subscribes again. Requests captured while a team is suspended fall back to the endpoint owner's personal quota.
 
 ## Rate limits
 
@@ -94,8 +110,9 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Ephemeral endpoints (per user) | 25 concurrent         |
 | SSE stream connection          | 30 minutes max        |
 | SSE keepalive interval         | 30 seconds            |
-| Teams per user (Pro only)      | 10                    |
-| Members per team               | 25                    |
+| Teams owned per user           | 10                    |
+| Members per team               | = purchased seats     |
+| Seats per team                 | 1,000                 |
 
 <FAQ>
 <FAQItem question="Do sendTo calls count toward my quota?">
@@ -111,6 +128,16 @@ The API returns a `429 Too Many Requests` response with a `Retry-After` header. 
 <FAQItem question="When does my free plan period start?">
 
 On your first captured request, not when you sign up. The 24-hour window activates lazily — if you create an account and do not receive any webhooks, no quota is consumed and no period is started.
+
+</FAQItem>
+<FAQItem question="Whose quota do team-shared endpoints use?">
+
+The team's. An endpoint shared with a team that has an active Teams subscription bills its captured requests to that team's pooled quota — 100,000 requests per seat per 30 days — and those requests are kept for 31 days regardless of the endpoint owner's personal plan. Endpoints that are not shared with an active team still count against their owner's quota.
+
+</FAQItem>
+<FAQItem question="Do I need Pro to create a team?">
+
+No. Any account can create a team. The team needs its own Teams subscription ($12/seat/month) before it can invite members or share endpoints, and personal Free or Pro plans have no bearing on team access.
 
 </FAQItem>
 </FAQ>

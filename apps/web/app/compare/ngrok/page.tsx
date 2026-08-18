@@ -22,7 +22,7 @@ const FAQ_ITEMS = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. Every feature is included on both tiers — webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. Only Teams (invite members, share endpoints) requires Pro. The paid plan also increases rate limits and retention. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
+      "Yes. Every individual feature is included on both tiers — webhook capture, inspection, replay, mock responses, CLI tunnel, TypeScript SDK, and MCP server. The paid plan increases rate limits and retention, and Teams (invite members, share endpoints) is billed separately at $12/seat/mo. ngrok also has a free tier, but some features (like custom domains and IP restrictions) require paid plans.",
   },
   {
     question: "Does ngrok have a webhook testing SDK?",
@@ -45,8 +45,8 @@ const ROWS = [
   ["Custom domains", "No", "Yes (paid)"],
   ["Edge computing / traffic policy", "No", "Yes (paid)"],
   ["Open source", "Yes (AGPL + MIT)", "Partially (agent)"],
-  ["Team collaboration", "Pro ($8/mo), up to 25 members", "Pro+ ($20/mo + $25/seat)"],
-  ["Free tier features", "Everything except Teams", "Limited connections + features"],
+  ["Team collaboration", "$12/seat/mo, pooled quota", "$20/mo incl. 3 seats, then $5/seat"],
+  ["Free tier features", "Every individual feature", "Limited connections + features"],
 ] as const;
 
 export const metadata = createPageMetadata({
@@ -154,8 +154,8 @@ export default function CompareNgrokPage() {
               edge computing — features that go well beyond webhooks. If you need those, ngrok is
               the right tool. If your goal is to test and debug webhook integrations, webhooks.cc
               does that with less setup and more webhook-specific tooling. Team collaboration on
-              webhooks.cc starts at $8/month with up to 25 members, while ngrok charges $20/month
-              plus $25 per additional seat.
+              webhooks.cc costs $12/seat/month, while ngrok&apos;s pay-as-you-go plan starts at
+              $20/month with 3 seats included and $5 per additional seat, plus metered usage.
             </p>
           </div>
         </div>

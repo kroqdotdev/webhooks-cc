@@ -130,12 +130,12 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Is webhooks.cc free?",
     answer:
-      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access. Every feature works on both tiers — the only exception is Teams (invite members, share endpoints), which requires Pro. Pro ($8/month) also raises the limit to 100,000 requests per month with 30-day retention.",
+      "Yes. The free plan gives you 50 requests per day, 7-day retention, unlimited endpoints, and full CLI, SDK, and MCP access — every individual feature works on both tiers. Pro ($8/month) raises the limit to 100,000 requests per month with 31-day retention. Teams is billed separately at $12/seat/mo.",
   },
   {
     question: "Whose quota is used for shared team endpoints?",
     answer:
-      "The endpoint owner's. When you share an endpoint with your team, incoming webhooks count against your request limit. Every team member needs their own Pro plan to access shared endpoints, but usage is always tracked on the owner's account.",
+      "The team's. Once an endpoint is shared with a team that has an active Teams subscription, its incoming webhooks draw from the team's pooled quota — 100,000 requests per seat per 30 days — instead of the owner's personal quota, and they are kept for 31 days no matter which plan the owner is on. Endpoints that are not shared with an active team still count against the owner's own limit.",
   },
   {
     question: "How do I connect an AI coding agent?",
@@ -455,7 +455,7 @@ export default async function Home() {
               <h3 className="font-bold text-xl mb-2">
                 Collaborate with your team{" "}
                 <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border-2 border-foreground align-middle shadow-neo-sm">
-                  Pro
+                  Teams
                 </span>
               </h3>
               <p className="text-muted-foreground">
@@ -533,7 +533,7 @@ export default async function Home() {
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-4">
-                Pro feature
+                Teams
               </p>
               <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for teams</h2>
               <p className="text-xl text-muted-foreground mb-8">
@@ -543,7 +543,10 @@ export default async function Home() {
               <Link href="/teams" className="neo-btn-primary inline-block">
                 Try Teams
               </Link>
-              <p className="text-sm text-muted-foreground mt-3">Requires Pro plan</p>
+              <p className="text-sm text-muted-foreground mt-3">
+                $12/seat/mo — every seat adds 100,000 requests per 30 days to the team&apos;s shared
+                pool
+              </p>
             </div>
             <div className="neo-card neo-card-static p-0! overflow-hidden">
               <TeamsVideo />
@@ -558,11 +561,11 @@ export default async function Home() {
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Straightforward pricing</h2>
             <p className="text-xl text-muted-foreground">
-              Every feature on both tiers. Only Teams is Pro-exclusive.
+              Every feature on Free and Pro. Add Teams when you need to work together.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8">
             {/* Free Plan */}
             <div className="neo-card">
               <div className="mb-6">
@@ -585,10 +588,6 @@ export default async function Home() {
                     <span>{feature}</span>
                   </li>
                 ))}
-                <li className="flex items-center gap-3 text-muted-foreground">
-                  <span className="h-5 w-5 flex-shrink-0 text-center">—</span>
-                  <span>Teams (Pro only)</span>
-                </li>
               </ul>
               <PricingCTA />
             </div>
@@ -612,7 +611,6 @@ export default async function Home() {
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
-                  "Teams — invite members, share endpoints",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0" />
@@ -624,6 +622,38 @@ export default async function Home() {
                 Start free, upgrade later
               </p>
               <PricingCTA />
+            </div>
+
+            {/* Teams Plan */}
+            <div className="neo-card">
+              <div className="mb-6">
+                <h3 className="font-bold text-2xl mb-2">Teams</h3>
+                <p className="text-5xl font-bold">
+                  $12
+                  <span className="text-lg font-normal text-muted-foreground">/seat/mo</span>
+                </p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {[
+                  "100,000 pooled requests per seat / 30 days",
+                  "Seats are the member cap",
+                  "Shared endpoints, real-time for everyone",
+                  "31-day retention on team traffic",
+                  "Billed per team, not per account",
+                ].map((feature) => (
+                  <li key={feature} className="flex items-center gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-sm text-muted-foreground mb-3 text-center">
+                Any account can create a team
+              </p>
+              <Link href="/teams" className="neo-btn-outline w-full text-center block">
+                Create a team
+                <ArrowRight className="inline-block ml-2 h-5 w-5" />
+              </Link>
             </div>
           </div>
         </div>

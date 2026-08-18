@@ -1,4 +1,5 @@
 import { createAdminClient } from "./admin";
+import { revokeTeamSeat } from "./team-billing";
 import type { TeamMember, TeamMemberRow } from "./teams-types";
 
 // ---------------------------------------------------------------------------
@@ -9,6 +10,38 @@ function parseMillis(timestamp: string | null): number {
   if (!timestamp) return Date.now();
   const value = Date.parse(timestamp);
   return Number.isFinite(value) ? value : Date.now();
+}
+
+/**
+ * Releases the Polar seat a departed member held. Called after the membership
+ * row is gone; `revokeTeamSeat` swallows its own failures because our DB, not
+ * Polar, is what gates team access.
+ */
+async function releaseMemberSeat(
+  teamId: string,
+  userId: string,
+  seatId: string | null
+): Promise<void> {
+  const admin = createAdminClient();
+  const { data: user, error } = await admin
+    .from("users")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // The membership row is already gone, so a failed lookup must not throw: it
+  // would fail a removal that committed AND skip the seat release below. The
+  // email is only the fallback lookup key inside revokeTeamSeat anyway; with a
+  // known seat id the release works without it.
+  if (error) {
+    console.error("[teams-members] failed to read member email for seat release", {
+      teamId,
+      userId,
+      error,
+    });
+  }
+
+  await revokeTeamSeat(teamId, seatId, user?.email ?? "");
 }
 
 // ---------------------------------------------------------------------------
@@ -45,10 +78,11 @@ export async function listTeamMembers(
   const members = membersData as TeamMemberRow[];
   const userIds = members.map((m) => m.user_id);
 
-  // Fetch user profiles (including plan)
+  // Fetch user profiles. Personal plan is deliberately absent: team access is
+  // keyed to the team's own subscription.
   const { data: usersData, error: usersError } = await admin
     .from("users")
-    .select("id, email, name, image, plan")
+    .select("id, email, name, image")
     .in("id", userIds);
 
   if (usersError) throw usersError;
@@ -64,7 +98,6 @@ export async function listTeamMembers(
       name: user?.name ?? null,
       image: user?.image ?? null,
       role: m.role,
-      plan: (user?.plan === "pro" ? "pro" : "free") as "free" | "pro",
       joinedAt: parseMillis(m.joined_at),
     };
   });
@@ -96,16 +129,20 @@ export async function removeTeamMember(
   if (memberError) throw memberError;
   if (!membership) return false;
 
+  // The deleted row carries the seat assignment away with it, so read it back.
   const { data, error } = await admin
     .from("team_members")
     .delete()
     .eq("team_id", teamId)
     .eq("user_id", targetUserId)
-    .select("id")
+    .select("id, polar_seat_id")
     .maybeSingle();
 
   if (error) throw error;
-  return !!data;
+  if (!data) return false;
+
+  await releaseMemberSeat(teamId, targetUserId, data.polar_seat_id);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,9 +169,12 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
     .delete()
     .eq("team_id", teamId)
     .eq("user_id", userId)
-    .select("id")
+    .select("id, polar_seat_id")
     .maybeSingle();
 
   if (error) throw error;
-  return !!data;
+  if (!data) return false;
+
+  await releaseMemberSeat(teamId, userId, data.polar_seat_id);
+  return true;
 }

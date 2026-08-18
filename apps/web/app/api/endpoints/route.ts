@@ -1,8 +1,4 @@
-import {
-  authenticateRequestRequireUser,
-  extractBearerToken,
-  validateBearerTokenWithPlan,
-} from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
   validateNotificationUrl,
@@ -11,7 +7,11 @@ import {
 } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createEndpointForUser, listEndpointsForUser } from "@/lib/supabase/endpoints";
-import { getShareMetadataForOwnedEndpoints, getSharedEndpointsForUser } from "@/lib/supabase/teams";
+import {
+  getShareMetadataForOwnedEndpoints,
+  getSharedEndpointsForUser,
+  hasActiveTeamMembership,
+} from "@/lib/supabase/teams";
 import { serverEnv } from "@/lib/env";
 
 export async function GET(request: Request) {
@@ -19,15 +19,18 @@ export async function GET(request: Request) {
   if (!auth.success) return auth.response;
 
   try {
-    // Check plan — team features only for pro users
-    const token = extractBearerToken(request);
-    const validation = token ? await validateBearerTokenWithPlan(token) : null;
-    const isPro = validation?.plan === "pro";
+    // Only endpoints shared WITH the caller are gated (they are the paid
+    // feature, so they need a team that carries a subscription). `sharedWith`
+    // on the caller's OWN endpoints is management surface and must never be
+    // gated, not even on membership: shares outlive the sharer's membership,
+    // so an owner who left every team still needs the unshare control for
+    // teams that can otherwise keep reading their endpoint.
+    const onActiveTeam = await hasActiveTeamMembership(auth.userId);
 
     const [endpoints, shareMetadata, sharedEndpoints] = await Promise.all([
       listEndpointsForUser(auth.userId),
-      isPro ? getShareMetadataForOwnedEndpoints(auth.userId) : Promise.resolve(new Map()),
-      isPro ? getSharedEndpointsForUser(auth.userId) : Promise.resolve([]),
+      getShareMetadataForOwnedEndpoints(auth.userId),
+      onActiveTeam ? getSharedEndpointsForUser(auth.userId) : Promise.resolve([]),
     ]);
 
     const owned = endpoints.map((ep) => ({

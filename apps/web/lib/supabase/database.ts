@@ -293,6 +293,7 @@ export interface Database {
           id: string;
           endpoint_id: string;
           user_id: string | null;
+          team_id: string | null;
           method: string;
           path: string;
           headers: Json;
@@ -311,6 +312,7 @@ export interface Database {
           id?: string;
           endpoint_id: string;
           user_id?: string | null;
+          team_id?: string | null;
           method: string;
           path: string;
           headers?: Json;
@@ -329,6 +331,7 @@ export interface Database {
           id?: string;
           endpoint_id?: string;
           user_id?: string | null;
+          team_id?: string | null;
           method?: string;
           path?: string;
           headers?: Json;
@@ -457,6 +460,7 @@ export interface Database {
           user_id: string;
           role: "owner" | "member";
           joined_at: string;
+          polar_seat_id: string | null;
         };
         Insert: {
           id?: string;
@@ -464,6 +468,7 @@ export interface Database {
           user_id: string;
           role: "owner" | "member";
           joined_at?: string;
+          polar_seat_id?: string | null;
         };
         Update: {
           id?: string;
@@ -471,6 +476,7 @@ export interface Database {
           user_id?: string;
           role?: "owner" | "member";
           joined_at?: string;
+          polar_seat_id?: string | null;
         };
         Relationships: [];
       };
@@ -480,18 +486,45 @@ export interface Database {
           name: string;
           created_by: string;
           created_at: string;
+          polar_customer_id: string | null;
+          polar_subscription_id: string | null;
+          subscription_status: "active" | "canceled" | "past_due" | null;
+          seats: number;
+          requests_used: number;
+          request_limit: number;
+          period_start: string | null;
+          period_end: string | null;
+          cancel_at_period_end: boolean;
         };
         Insert: {
           id?: string;
           name: string;
           created_by: string;
           created_at?: string;
+          polar_customer_id?: string | null;
+          polar_subscription_id?: string | null;
+          subscription_status?: "active" | "canceled" | "past_due" | null;
+          seats?: number;
+          requests_used?: number;
+          request_limit?: number;
+          period_start?: string | null;
+          period_end?: string | null;
+          cancel_at_period_end?: boolean;
         };
         Update: {
           id?: string;
           name?: string;
           created_by?: string;
           created_at?: string;
+          polar_customer_id?: string | null;
+          polar_subscription_id?: string | null;
+          subscription_status?: "active" | "canceled" | "past_due" | null;
+          seats?: number;
+          requests_used?: number;
+          request_limit?: number;
+          period_start?: string | null;
+          period_end?: string | null;
+          cancel_at_period_end?: boolean;
         };
         Relationships: [];
       };
@@ -509,6 +542,14 @@ export interface Database {
         Args: {
           p_user_id: string;
           p_invite_id: string;
+          p_seat_id?: string | null;
+        };
+        Returns: Json;
+      };
+      update_team_seats: {
+        Args: {
+          p_team_id: string;
+          p_seats: number;
         };
         Returns: Json;
       };

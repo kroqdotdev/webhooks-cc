@@ -67,6 +67,7 @@ describe("Supabase Control Plane Integration", () => {
     expect(validation).toEqual({
       userId: testUserId,
       plan: "free",
+      isAgentIssued: false,
     });
 
     const { data: keyRow, error: keyError } = await admin

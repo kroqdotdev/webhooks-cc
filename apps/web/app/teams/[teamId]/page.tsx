@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { createClient } from "@/lib/supabase/client";
+import { TeamSubscriptionCard } from "@/components/teams/team-subscription-card";
+import type { Team } from "@/lib/supabase/teams-types";
+import { ACTIVATION_POLL_INTERVAL_MS, hasActivationTimedOut } from "@/lib/team-activation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,7 +43,6 @@ interface Member {
   email: string;
   image: string | null;
   role: "owner" | "member";
-  plan: "free" | "pro";
 }
 
 interface PendingInvite {
@@ -117,16 +118,15 @@ function HelpTooltip({ text }: { text: string }) {
   );
 }
 
-export default function TeamDetailPage() {
+function TeamDetailContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const teamId = params.teamId as string;
   const { session, isLoading: authLoading } = useAuth();
 
+  const [team, setTeam] = useState<Team | null>(null);
   const [teamName, setTeamName] = useState("");
-  const [role, setRole] = useState<"owner" | "member">("member");
-  const [suspended, setSuspended] = useState(false);
-  const [isPro, setIsPro] = useState(true);
   const currentUserId = session?.user?.id ?? null;
   const [members, setMembers] = useState<Member[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
@@ -161,6 +161,9 @@ export default function TeamDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Post-checkout activation wait
+  const [activationTimedOut, setActivationTimedOut] = useState(false);
+
   const authHeader: Record<string, string> = session?.access_token
     ? { Authorization: `Bearer ${session.access_token}` }
     : {};
@@ -169,29 +172,19 @@ export default function TeamDetailPage() {
     if (!session?.access_token || !session?.user) return;
     setLoading(true);
     try {
-      const supabase = createClient();
-      const [planRes, teamsRes, membersRes, endpointsRes] = await Promise.all([
-        supabase.from("users").select("plan").eq("id", session.user.id).single<{ plan: string }>(),
+      const [teamsRes, membersRes, endpointsRes] = await Promise.all([
         fetch("/api/teams", { headers: authHeader }),
         fetch(`/api/teams/${teamId}/members`, { headers: authHeader }),
         fetch("/api/endpoints", { headers: authHeader }),
       ]);
 
-      setIsPro(planRes.data?.plan === "pro");
-
       if (teamsRes.ok) {
-        const teams: Array<{
-          id: string;
-          name: string;
-          role: "owner" | "member";
-          suspended: boolean;
-        }> = await teamsRes.json();
-        const team = teams.find((t) => t.id === teamId);
-        if (team) {
-          setTeamName(team.name);
-          setRenameValue(team.name);
-          setRole(team.role);
-          setSuspended(team.suspended);
+        const teams = (await teamsRes.json()) as Team[];
+        const current = teams.find((t) => t.id === teamId);
+        if (current) {
+          setTeam(current);
+          setTeamName(current.name);
+          setRenameValue(current.name);
         }
       }
 
@@ -220,6 +213,21 @@ export default function TeamDetailPage() {
     }
   };
 
+  // Billing actions only move team fields, so they refresh the team row alone —
+  // a full fetchData() would flip the page back to its loading state and drop
+  // the card's inline result message.
+  const refreshTeam = async () => {
+    if (!session?.access_token) return;
+    const res = await fetch("/api/teams", { headers: authHeader });
+    if (!res.ok) return;
+    const teams = (await res.json()) as Team[];
+    const current = teams.find((t) => t.id === teamId);
+    if (current) {
+      setTeam(current);
+      setTeamName(current.name);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && session) {
       void fetchData();
@@ -228,6 +236,46 @@ export default function TeamDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, session, teamId]);
+
+  // ── Post-checkout activation wait ────────────────────────────────
+  // Polar sends the owner back here before `subscription.created` has
+  // necessarily landed, so poll the team row rather than showing a live
+  // Subscribe button to someone who just paid.
+  const returnedFromCheckout = searchParams.get("subscribed") === "true";
+  const isTeamActive = team !== null && team.subscriptionStatus !== null;
+  const activating = returnedFromCheckout && team !== null && !isTeamActive && !activationTimedOut;
+
+  // The poller reads the latest refreshTeam through a ref: it closes over team
+  // state, so depending on it directly would restart the interval — and the
+  // timeout — on every refresh.
+  const refreshTeamRef = useRef(refreshTeam);
+  useEffect(() => {
+    refreshTeamRef.current = refreshTeam;
+  });
+
+  useEffect(() => {
+    if (!activating) return;
+
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      if (hasActivationTimedOut(startedAt, Date.now())) {
+        setActivationTimedOut(true);
+        return;
+      }
+      void refreshTeamRef.current();
+    }, ACTIVATION_POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [activating]);
+
+  // Drop the flag once the subscription is live so a later refresh does not
+  // re-enter the waiting state.
+  useEffect(() => {
+    if (!returnedFromCheckout || !isTeamActive) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("subscribed");
+    router.replace(`${url.pathname}${url.search}`, { scroll: false });
+  }, [returnedFromCheckout, isTeamActive, router]);
 
   const handleRemoveMember = async (userId: string) => {
     setRemovingId(userId);
@@ -379,7 +427,7 @@ export default function TeamDetailPage() {
     );
   }
 
-  const isOwner = role === "owner";
+  const isOwner = team?.role === "owner";
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-2xl space-y-8">
@@ -395,47 +443,27 @@ export default function TeamDetailPage() {
         <h1 className="text-2xl font-bold">{teamName}</h1>
       </div>
 
-      {suspended && (
-        <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4">
-          {isOwner ? (
-            <div className="space-y-2">
-              <p className="font-medium text-yellow-700 dark:text-yellow-400">
-                This team is suspended
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Your plan has been downgraded. Team members can no longer access shared endpoints.{" "}
-                <Link href="/account" className="underline font-medium text-foreground">
-                  Upgrade to Pro
-                </Link>{" "}
-                to reactivate your team.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="font-medium text-yellow-700 dark:text-yellow-400">
-                This team is suspended
-              </p>
-              <p className="text-sm text-muted-foreground">
-                The team owner has downgraded their plan. Shared endpoints are inaccessible until
-                the owner upgrades to Pro again.
-              </p>
-            </div>
-          )}
+      {team?.suspended && !activating && (
+        <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
+          <p className="font-medium text-yellow-700 dark:text-yellow-400">
+            Team suspended — no active subscription
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Shared endpoints are inaccessible to members until this team has an active Teams
+            subscription.
+          </p>
         </div>
       )}
 
-      {/* Free member of active team */}
-      {!suspended && !isOwner && !isPro && (
-        <div className="rounded-md border border-blue-500/20 bg-blue-500/10 p-4 space-y-2">
-          <p className="font-medium text-blue-700 dark:text-blue-400">Pro plan required</p>
-          <p className="text-sm text-muted-foreground">
-            You need a Pro plan to access shared endpoints from this team. You can still view the
-            team and its members, but shared endpoints won&apos;t appear in your dashboard.{" "}
-            <Link href="/account" className="underline font-medium text-foreground">
-              Upgrade to Pro
-            </Link>
-          </p>
-        </div>
+      {team && (
+        <TeamSubscriptionCard
+          team={team}
+          isOwner={isOwner}
+          accessToken={session?.access_token ?? null}
+          onChanged={refreshTeam}
+          activating={activating}
+          activationTimedOut={returnedFromCheckout && activationTimedOut}
+        />
       )}
 
       {/* Members */}
@@ -463,14 +491,6 @@ export default function TeamDetailPage() {
                       <Badge variant={member.role === "owner" ? "default" : "secondary"}>
                         {member.role}
                       </Badge>
-                      {isOwner && member.plan !== "pro" && (
-                        <Badge
-                          variant="outline"
-                          className="text-yellow-600 border-yellow-500/50 text-[10px]"
-                        >
-                          Free — no access
-                        </Badge>
-                      )}
                       {isOwner && member.role !== "owner" && member.userId !== currentUserId && (
                         <Button
                           size="sm"
@@ -559,7 +579,7 @@ export default function TeamDetailPage() {
         <section className="space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Shared Endpoints</h2>
-            <HelpTooltip text="Endpoints shared with this team. All members can view requests and edit settings. Only the endpoint owner can delete or manage sharing. Requests to shared endpoints count toward the endpoint owner's quota." />
+            <HelpTooltip text="Endpoints shared with this team. All members can view requests and edit settings. Only the endpoint owner can delete or manage sharing. While this team's subscription is active, requests to these endpoints draw from the team's pooled quota instead of the endpoint owner's personal quota." />
           </div>
           <div className="border rounded-lg p-6 bg-card space-y-4">
             {(() => {
@@ -722,5 +742,21 @@ export default function TeamDetailPage() {
         </section>
       )}
     </main>
+  );
+}
+
+export default function TeamDetailPage() {
+  // useSearchParams (the post-checkout `?subscribed=true` flag) needs a Suspense
+  // boundary above it.
+  return (
+    <Suspense
+      fallback={
+        <main className="container mx-auto px-4 py-8 max-w-2xl">
+          <div className="animate-pulse text-muted-foreground">Loading...</div>
+        </main>
+      }
+    >
+      <TeamDetailContent />
+    </Suspense>
   );
 }
