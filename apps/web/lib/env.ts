@@ -50,6 +50,9 @@ const serverEnvSchema = z
       .default(false),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+    // Shared from-address for all outbound email; AGENT_EMAIL_FROM is the
+    // legacy name and remains the fallback so existing deployments keep working.
+    EMAIL_FROM: z.string().optional(),
     AGENT_EMAIL_FROM: z.string().default("webhooks.cc <noreply@webhooks.cc>"),
     AGENT_REGISTER_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
     AGENT_REGISTER_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(3_600_000),
@@ -118,6 +121,7 @@ export function serverEnv() {
       SMTP_SECURE: process.env.SMTP_SECURE,
       SMTP_USER: process.env.SMTP_USER,
       SMTP_PASS: process.env.SMTP_PASS,
+      EMAIL_FROM: process.env.EMAIL_FROM,
       AGENT_EMAIL_FROM: process.env.AGENT_EMAIL_FROM,
       AGENT_REGISTER_RATE_LIMIT: process.env.AGENT_REGISTER_RATE_LIMIT,
       AGENT_REGISTER_RATE_WINDOW_MS: process.env.AGENT_REGISTER_RATE_WINDOW_MS,

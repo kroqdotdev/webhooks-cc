@@ -12,7 +12,7 @@ export async function sendViaResend(message: EmailMessage, apiKey: string): Prom
   const resend = new Resend(apiKey);
 
   const { error } = await resend.emails.send({
-    from: serverEnv().AGENT_EMAIL_FROM,
+    from: serverEnv().EMAIL_FROM ?? serverEnv().AGENT_EMAIL_FROM,
     to: message.to,
     subject: message.subject,
     text: message.text,

@@ -12,8 +12,9 @@ import type { EmailMessage } from "./mailer";
  *   - Implicit TLS: port 465, SMTP_SECURE=true (TLS from the first byte)
  *
  * Auth user is SMTP_USER (e.g. postmaster@webhooks.cc); the visible From header
- * is AGENT_EMAIL_FROM (e.g. webhooks.cc <noreply@webhooks.cc>). Secrets are
- * read only from the validated server env / process.env and are never logged.
+ * is EMAIL_FROM, falling back to the legacy AGENT_EMAIL_FROM (e.g.
+ * webhooks.cc <noreply@webhooks.cc>). Secrets are read only from the validated
+ * server env / process.env and are never logged.
  *
  * `sendViaSmtp` / `verifySmtp` send/connect via SMTP regardless of NODE_ENV so
  * the deliverability test can exercise real delivery directly. Routine OTP
@@ -76,7 +77,7 @@ export async function sendViaSmtp(
 
   try {
     const info = await transport.sendMail({
-      from: serverEnv().AGENT_EMAIL_FROM,
+      from: serverEnv().EMAIL_FROM ?? serverEnv().AGENT_EMAIL_FROM,
       to: message.to,
       subject: message.subject,
       text: message.text,
