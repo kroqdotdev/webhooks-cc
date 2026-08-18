@@ -37,7 +37,7 @@
     "isbot": "^5.2.1",
     "jose": "^6.2.8",
     "lucide-react": "^1.31.0",
-    "next": "16.2.11",
+    "next": "16.3.1",
     "next-mdx-remote": "^6.0.0",
     "nodemailer": "^9.0.5",
     "posthog-js": "^1.417.1",
