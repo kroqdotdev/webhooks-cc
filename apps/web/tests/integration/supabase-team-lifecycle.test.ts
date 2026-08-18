@@ -300,6 +300,35 @@ describe("process_billing_period_resets for teams", () => {
     expect(delta).toBeLessThanOrEqual(31 * 24 * 60 * 60 * 1000);
   });
 
+  it("catches up a renewal more than one interval late in a single run", async () => {
+    const teamId = await createTestTeam(ownerId, `TL Late Renew ${ts}`);
+    const day = 24 * 60 * 60 * 1000;
+    // 75 days late = two whole 30-day intervals missed. One run must land the
+    // period in the future (start 15 days ago, end 15 days ahead) with a single
+    // usage reset — not one reset per missed interval on consecutive runs.
+    const staleEnd = new Date(Date.now() - 75 * day).toISOString();
+    await activateTeam(teamId, 3, {
+      requests_used: 123,
+      cancel_at_period_end: false,
+      period_start: new Date(Date.now() - 105 * day).toISOString(),
+      period_end: staleEnd,
+    });
+
+    await runBillingResets();
+
+    const team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+    expect(team.requests_used).toBe(0);
+    expect(Date.parse(team.period_start!)).toBe(Date.parse(staleEnd) + 60 * day);
+    expect(Date.parse(team.period_end!)).toBe(Date.parse(staleEnd) + 90 * day);
+    expect(Date.parse(team.period_end!)).toBeGreaterThan(Date.now());
+
+    // The caught-up period must be stable: a follow-up run may not touch it.
+    await runBillingResets();
+    const after = await getTeam(teamId);
+    expect(Date.parse(after.period_end!)).toBe(Date.parse(team.period_end!));
+  });
+
   it("deactivates a team that canceled at period end", async () => {
     const teamId = await createTestTeam(ownerId, `TL Cancel ${ts}`);
     await activateTeam(teamId, 2, {

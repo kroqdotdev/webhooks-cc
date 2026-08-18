@@ -18,7 +18,7 @@
 - Pool limit constant: `seats × 100_000` per 30-day period. Constant name in TS: `TEAM_SEAT_REQUEST_LIMIT = 100_000`.
 - `capture_webhook`'s signature and result statuses must NOT change (Rust receiver contract). `cd apps/receiver-rs && cargo test` must pass untouched.
 - All SQL functions: `security definer set search_path = ''`, `revoke all ... from public, anon, authenticated; grant execute ... to service_role`.
-- Migrations: create `supabase/migrations/00033_team_billing.sql`; apply to dev with `/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql`. Dev Supabase runs at `/opt/lohsefar-dev-supabase` (start colima first if down: `colima start`). Load env: `set -a; source .env.local; set +a` from repo root.
+- Migrations: create `supabase/migrations/00033_team_billing.sql`; apply to dev with `/opt/homebrew/opt/libpq/bin/psql --set=ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql`. Dev Supabase runs at `/opt/lohsefar-dev-supabase` (start colima first if down: `colima start`). Load env: `set -a; source .env.local; set +a` from repo root.
 - Integration tests: `cd apps/web && npx vitest run tests/integration/<file>` (requires `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` in env, loaded from `.env.local`).
 - Display price copy: **$12/seat/month** — exact string "$12/seat/mo" in UI.
 - Env var for the Polar product: `POLAR_TEAMS_PRODUCT_ID`.
@@ -151,7 +151,7 @@ create index if not exists requests_team
 
 ```bash
 set -a; source .env.local; set +a
-/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
+/opt/homebrew/opt/libpq/bin/psql --set=ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
 ```
 
 Expected: `ALTER TABLE` / `CREATE INDEX` output, no errors. (If connection fails: `colima start`, then retry.)
@@ -277,26 +277,39 @@ Replace the owned-endpoint quota branch header (`elsif v_endpoint.user_id is not
      limit 1;
 
     if v_team.id is not null then
-      -- Pooled quota: atomic conditional increment on the single team row
+      -- Pooled quota: atomic conditional increment on the single team row.
+      -- The status condition re-checks the window between the select above
+      -- and this update: a team deactivated in between must not be billed.
       update public.teams
          set requests_used = requests_used + 1
        where id = v_team.id
+         and subscription_status is not null
          and requests_used < request_limit;
 
-      if not found then
-        v_retry_after := null;
-        if v_team.period_end is not null and v_team.period_end > now() then
-          v_retry_after := extract(epoch from (v_team.period_end - now()))::bigint * 1000;
+      if found then
+        v_billing_team_id := v_team.id;
+      else
+        -- No row updated: pool exhausted, or the team deactivated since the
+        -- select. Only a still-active team may answer quota_exceeded; a
+        -- deactivated one falls through to the owner's personal quota.
+        perform 1 from public.teams
+         where id = v_team.id and subscription_status is not null;
+
+        if found then
+          v_retry_after := null;
+          if v_team.period_end is not null and v_team.period_end > now() then
+            v_retry_after := extract(epoch from (v_team.period_end - now()))::bigint * 1000;
+          end if;
+
+          return jsonb_build_object(
+            'status', 'quota_exceeded',
+            'retry_after', v_retry_after
+          );
         end if;
-
-        return jsonb_build_object(
-          'status', 'quota_exceeded',
-          'retry_after', v_retry_after
-        );
       end if;
+    end if;
 
-      v_billing_team_id := v_team.id;
-    else
+    if v_billing_team_id is null then
       -- Personal quota path: UNCHANGED from 00023 (user lookup, start_free_period,
       -- check_and_decrement_quota, quota_exceeded with retry_after). Paste verbatim here.
     end if;
@@ -321,7 +334,7 @@ Everything else (ephemeral branch, expiry, mock/rules response build, endpoint c
 
 ```bash
 set -a; source .env.local; set +a
-/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
+/opt/homebrew/opt/libpq/bin/psql --set=ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
 cd apps/web && npx vitest run tests/integration/supabase-team-quota.test.ts
 ```
 
@@ -450,12 +463,17 @@ grant execute on function public.accept_team_invite(uuid, uuid, text) to service
   )
   select downgraded_count + count(*) into downgraded_count from deactivated_teams;
 
+  -- Renewal advances to the first 30-day boundary after now() in one pass, so
+  -- a reset job that was down for more than one interval grants a single fresh
+  -- quota window instead of one reset per missed interval on consecutive runs.
   with renewed_teams as (
     update public.teams
     set
       requests_used = 0,
-      period_start = period_end,
+      period_start = period_end + interval '30 days'
+        * floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')),
       period_end = period_end + interval '30 days'
+        * (floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')) + 1)
     where subscription_status is not null
       and cancel_at_period_end = false
       and period_end is not null
@@ -478,7 +496,7 @@ grant execute on function public.accept_team_invite(uuid, uuid, text) to service
 
 ```bash
 set -a; source .env.local; set +a
-/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
+/opt/homebrew/opt/libpq/bin/psql --set=ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
 cd apps/web && npx vitest run tests/integration/supabase-team-lifecycle.test.ts tests/integration/supabase-billing-reset.test.ts
 git add -A && git commit -m "feat(db): seat-capped invites, team period resets, team-aware retention"
 ```
@@ -633,7 +651,7 @@ export async function createTeamCheckout(
 }
 ```
 
-`updateTeamSeats`: owner check → `no_subscription` if `polar_subscription_id` null → call the `update_team_seats` RPC (00034), which locks the team row exactly like `accept_team_invite`, re-counts members under the lock, and writes `seats` + `request_limit` atomically (returning `below_members` + the count when the reduction undercuts membership, which maps to `seats_below_members`) → then `polar.subscriptions.update({ id, subscriptionUpdate: { seats } })`; if Polar fails, call the RPC again with the previous count to restore, and let the `subscription.updated` webhook remain the reconciler of record. Counting members outside a lock and lowering `teams.seats` only after Polar returns would let a concurrent invite accept admit a member onto an unpaid seat. `cancelTeamSubscription`/`resubscribeTeam`: mirror `cancelSubscriptionForUser`/`resubscribeForUser` in `billing.ts:202-243` operating on the team row. `assignTeamSeat`: read team's `polar_subscription_id` (null → return null), `polar.customerSeats.assign({ subscriptionId, email, immediateClaim: true, metadata: { userId: memberUserId, teamId } })` (exact param names per Task 1 verification), return seat id. `revokeTeamSeat`: try stored id; else `customerSeats.list` by subscription and match email; wrap all Polar errors in `console.error` + return (never throw — membership is already gone). `applyTeamPolarWebhookEvent`: switch mirroring `applyPolarWebhookEvent` but writing the `teams` row per the Step-1 test matrix; `customer_seat.revoked` deletes `team_members` where `user_id = metadata.userId` (fallback: match user by email) **unless** that user is the team's `created_by`; `customer_seat.assigned`/`claimed` stores `data.id` into `polar_seat_id` where null, matching member by `metadata.userId` then email.
+`updateTeamSeats`: owner check → `no_subscription` if `polar_subscription_id` null → then direction-specific ordering. A **reduction** calls the `update_team_seats` RPC (00034) first, which locks the team row exactly like `accept_team_invite`, re-counts members under the lock, and writes `seats` + `request_limit` atomically (returning `below_members` + the count when the reduction undercuts membership, which maps to `seats_below_members`) → then `polar.subscriptions.update({ id, subscriptionUpdate: { seats } })`; if Polar fails, call the RPC again with the previous count to restore. An **increase** calls Polar first and writes the RPC only after Polar accepted: writing the higher limit first would expose capacity a concurrent invite accept can fill before the purchase is confirmed, and a Polar rejection would then leave the team above its paid seat count with a rollback that fails on `below_members`. In both directions the `subscription.updated` webhook remains the reconciler of record. Counting members outside a lock and lowering `teams.seats` only after Polar returns would let a concurrent invite accept admit a member onto an unpaid seat. `cancelTeamSubscription`/`resubscribeTeam`: mirror `cancelSubscriptionForUser`/`resubscribeForUser` in `billing.ts:202-243` operating on the team row. `assignTeamSeat`: read team's `polar_subscription_id` (null → return null), `polar.customerSeats.assign({ subscriptionId, email, immediateClaim: true, metadata: { userId: memberUserId, teamId } })` (exact param names per Task 1 verification), return seat id. `revokeTeamSeat`: try stored id; else `customerSeats.list` by subscription and match email; wrap all Polar errors in `console.error` + return (never throw — membership is already gone). `applyTeamPolarWebhookEvent`: switch mirroring `applyPolarWebhookEvent` but writing the `teams` row per the Step-1 test matrix; `customer_seat.revoked` deletes `team_members` where `user_id = metadata.userId` (fallback: match user by email) **unless** that user is the team's `created_by`, and only when the event's seat id matches the member's stored `polar_seat_id` (a null stored id still honors the revoke) so a delayed event for an old seat never removes a member holding a replacement seat; `customer_seat.assigned`/`claimed` stores `data.id` into `polar_seat_id` where null, matching member by `metadata.userId` then email.
 
 - [ ] **Step 4: Unit tests for guard rails (mocked Polar)**
 
@@ -836,7 +854,7 @@ Rewrite the suspension suite: member of active team reads shared endpoint reques
 
 ```bash
 set -a; source .env.local; set +a
-/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
+/opt/homebrew/opt/libpq/bin/psql --set=ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f supabase/migrations/00033_team_billing.sql
 cd apps/web && npx vitest run tests/integration/supabase-teams.test.ts tests/integration/supabase-team-quota.test.ts
 cd ../../apps/receiver-rs && cargo test
 git add -A && git commit -m "feat(teams): endpoint access + retention keyed to active team subscription"
@@ -960,12 +978,12 @@ git add -A && git commit -m "feat(web): team subscription card, seat management,
 - Modify: `apps/web/package.json` (`version` — keep equal to APP_VERSION)
 - Modify: `CLAUDE.md` (env table: `POLAR_TEAMS_PRODUCT_ID`; schema table: teams billing columns; plans description)
 
-- [ ] **Step 1: Rewrite copy.** Pricing gains a third tier card: **Teams — $12/seat/mo** — "Pooled 100k requests per seat / 30 days", "Seats = members", "Shared endpoints & real-time collaboration", "Pro-level 31-day retention on team traffic". Remove every "Teams (Pro only)" phrase repo-wide (`grep -rn "Pro only" apps/web` and fix each hit). plans-limits.mdx: teams section states — any account can create a team; activating requires the Teams plan; pool = seats × 100k per 30 days tracked per team; member cap = seats; suspended teams keep data but block invites/sharing/member access. Changelog entry (track "web"): seat-based Teams plan, pooled quota, per-team billing. Minor version bump (0.x → 0.(x+1).0) in both files.
+- [ ] **Step 1: Rewrite copy.** Pricing gains a third tier card: **Teams — $12/seat/mo** — "Pooled 100k requests per seat / 30 days", "Seats = members", "Shared endpoints & real-time collaboration", "Pro-level 31-day retention on team traffic". Remove every "Teams (Pro only)" phrase repo-wide (`grep -rn "Pro only" apps/web content/docs` and fix each hit). plans-limits.mdx: teams section states — any account can create a team; activating requires the Teams plan; pool = seats × 100k per 30 days tracked per team; member cap = seats; suspended teams keep data but block invites/sharing/member access. Changelog entry (track "web"): seat-based Teams plan, pooled quota, per-team billing. Minor version bump (0.x → 0.(x+1).0) in both files.
 - [ ] **Step 2: Verify + commit**
 
 ```bash
 pnpm --filter web build && pnpm lint && pnpm format:check
-grep -rn "Pro only" apps/web --include="*.tsx" --include="*.mdx" | wc -l   # expect 0
+grep -rn "Pro only" apps/web content/docs --include="*.tsx" --include="*.mdx" --exclude-dir=.next | wc -l   # expect 0
 git add -A && git commit -m "docs(web): teams pricing tier, plan docs, changelog for seat-based teams"
 ```
 
@@ -1004,9 +1022,9 @@ git add -A && git commit -m "test(e2e): teams specs for subscription-gated UI"
 
 2. **Polar: register/verify the production org webhook endpoint.** URL `https://webhooks.cc/api/polar-webhook`, secret = the production `POLAR_WEBHOOK_SECRET`. Subscribed event types must include `customer_seat.assigned`, `customer_seat.claimed`, and `customer_seat.revoked` **in addition to** the `subscription.*` events. The seat events are a new family for this feature — an endpoint that already exists for subscription billing will not be delivering them. Live verification only simulated these deliveries locally, so production delivery is unproven until the smoke test in step 8.
 
-3. ~~Pre-create the `requests_team` index~~ **No longer needed:** `00033_team_billing.sql` is now non-blocking by construction. The `team_id` column is added bare (brief metadata-only ACCESS EXCLUSIVE), the FK is added `NOT VALID` and validated in a separate statement (no table scan under the write-blocking lock), and the index is built with `create index concurrently`. The file must be applied via plain `psql -f` (autocommit, the documented way) — `create index concurrently` refuses to run inside a transaction block, so do NOT wrap it with `-1`/`--single-transaction`.
+3. ~~Pre-create the `requests_team` index~~ **No longer needed:** `00033_team_billing.sql` is now non-blocking by construction. The `team_id` column is added bare (brief metadata-only ACCESS EXCLUSIVE), the FK is added `NOT VALID` and validated in a separate statement (no table scan under the write-blocking lock), and the index is built with `create index concurrently`. The file must be applied via plain `psql --set=ON_ERROR_STOP=1 -f` (autocommit, the documented way) — `create index concurrently` refuses to run inside a transaction block, so do NOT wrap it with `-1`/`--single-transaction`, and without `ON_ERROR_STOP` a mid-file failure would leave a partial migration while psql keeps executing. Retrying after an interrupted `create index concurrently` is safe: the migration drops a leftover invalid `requests_team` index before rebuilding (an invalid index would otherwise be silently kept by `if not exists`).
 
-4. **Apply `00033_team_billing.sql`, then `00034_team_billing_hardening.sql`, to production Postgres with a lock timeout.** Prefix with `SET lock_timeout='5s';` (or apply during a quiet window): even the metadata-only `add column` takes a brief ACCESS EXCLUSIVE lock, and if it queues behind a long-running reader, every concurrent capture blocks — the receiver's fail-open returns 200 OK to senders while dropping the request, so a lock queue becomes silent capture loss rather than a visible error. Failing fast on the timeout and retrying is the safe mode. 00034 adds the `update_team_seats` RPC (seat changes take the same row lock as invite accepts) and the `capture_webhook` ACL hardening.
+4. **Apply `00033_team_billing.sql`, then `00034_team_billing_hardening.sql`, to production Postgres with a lock timeout and `--set=ON_ERROR_STOP=1`.** Prefix with `SET lock_timeout='5s';` (or apply during a quiet window): even the metadata-only `add column` takes a brief ACCESS EXCLUSIVE lock, and if it queues behind a long-running reader, every concurrent capture blocks — the receiver's fail-open returns 200 OK to senders while dropping the request, so a lock queue becomes silent capture loss rather than a visible error. Failing fast on the timeout and retrying is the safe mode. 00034 adds the `update_team_seats` RPC (seat changes take the same row lock as invite accepts) and the `capture_webhook` ACL hardening.
 
 5. **ACL audit on production (post-apply).** Query `pg_proc` ACLs for `capture_webhook`, `search_requests`, `search_requests_count`, `accept_team_invite`, `process_billing_period_resets`, `cleanup_free_user_requests`:
 
@@ -1038,5 +1056,5 @@ Several of these were promoted into release work by the PR #310 review round and
 2. **Departed-member shares keep billing the team pool** (deferred): leave/remove keeps `team_endpoints` rows; the sharer's traffic drains the pool. Mitigated in-branch: `sharedWith` metadata on owned endpoints is no longer gated on membership, so a departed sharer keeps the unshare control on their dashboard. Full fix (delete the departing user's share rows in `removeTeamMember`/`leaveTeam`) still deferred.
 3. **Orphaned-Polar-subscription family** — DELETE ORDER FIXED IN-BRANCH: `deleteTeam` now revokes the Polar subscription before deleting the row, and a failed revoke aborts the deletion for retry. STILL DEFERRED: webhook no-op for deleted teams, alerting on revoke failure, pending-checkout tracking for the double-checkout gap.
 4. **`capture_webhook` ACL hardening** — FIXED IN-BRANCH: `00034_team_billing_hardening.sql` revokes public/anon/authenticated and grants service_role. Receiver role confirmed as `postgres` (function owner) in dev; re-verify on prod per deploy checklist step 5.
-5. **Stale `subscription.updated` after `revoked`** can re-activate a team with a past period (cron then renews it unbilled). Very low likelihood (out-of-order redelivery across a revoke); parity with personal handler; consider a live-subscription guard on created/updated/active. Partially narrowed in-branch: `subscription.revoked` itself now carries the live-subscription check, so a delayed revoke cannot clear a successor subscription.
+5. **Stale `subscription.updated` after `revoked`** can re-activate a team with a past period (cron then renews it unbilled). Very low likelihood (out-of-order redelivery across a revoke); parity with personal handler; consider a live-subscription guard on created/updated/active. Partially narrowed in-branch: `subscription.revoked` itself now carries the live-subscription check, so a delayed revoke cannot clear a successor subscription, and `customer_seat.revoked` now binds to the member's stored `polar_seat_id`, so a delayed seat revoke cannot remove a member holding a replacement seat. What remains deferred is the guard on `created`/`updated`/`active`.
 6. Smaller items: surface Polar validation detail on checkout 502 (unroutable emails); endpoint-switcher label/value mismatch (`endpoint-switcher.tsx:87`); manage-page single-shot `fetchData` swallows errors (blank page on one hiccup); ~~30d-vs-31d retention copy mismatch~~ (fixed in-branch: plans-limits.mdx table and page.tsx:133 now say 31 days); anon-rejection tests could assert error code 42501; ~~`releaseMemberSeat` throwing after committed delete~~ (fixed in-branch: lookup failure logs and the seat release still runs); T3/T5 test-coverage gaps (retry_after-null branch, cancel/resubscribe/revokeTeamSubscription, shared_at tiebreaker).

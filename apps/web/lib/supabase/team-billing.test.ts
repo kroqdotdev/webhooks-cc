@@ -264,7 +264,38 @@ describe("updateTeamSeats", () => {
     });
   });
 
-  test("writes the seat change through the locking RPC before calling Polar", async () => {
+  test("reduction: writes the seat change through the locking RPC before calling Polar", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6 })],
+        "rpc:update_team_seats": [{ data: { status: "ok", previous_seats: 6 } }],
+      })
+    );
+
+    const rpcWrite = {
+      table: "rpc:update_team_seats",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 3 },
+    };
+    const subscriptionUpdate = vi.fn().mockImplementation(() => {
+      // For a reduction the DB write must land before Polar is told: the RPC's
+      // row lock is what serializes it against concurrent invite accepts.
+      expect(recorded).toContainEqual(rpcWrite);
+      return Promise.resolve({ id: "sub_1" });
+    });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await updateTeamSeats("user_1", "team_1", 3);
+
+    expect(subscriptionUpdate).toHaveBeenCalledWith({
+      id: "sub_1",
+      subscriptionUpdate: { seats: 3 },
+    });
+    expect(recorded).toContainEqual(rpcWrite);
+  });
+
+  test("increase: confirms with Polar before exposing capacity in the database", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
@@ -279,9 +310,9 @@ describe("updateTeamSeats", () => {
       payload: { p_team_id: "team_1", p_seats: 6 },
     };
     const subscriptionUpdate = vi.fn().mockImplementation(() => {
-      // The DB write must land before Polar is told: the RPC's row lock is
-      // what serializes the change against concurrent invite accepts.
-      expect(recorded).toContainEqual(rpcWrite);
+      // For an increase the DB write must wait for Polar: a concurrent invite
+      // accept must never fill capacity Polar has not confirmed.
+      expect(recorded).not.toContainEqual(rpcWrite);
       return Promise.resolve({ id: "sub_1" });
     });
     mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
@@ -295,16 +326,11 @@ describe("updateTeamSeats", () => {
     expect(recorded).toContainEqual(rpcWrite);
   });
 
-  test("restores the previous seat count when Polar rejects the update", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  test("increase: leaves the database untouched when Polar rejects the update", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
-        "rpc:update_team_seats": [
-          { data: { status: "ok", previous_seats: 2 } },
-          { data: { status: "ok", previous_seats: 6 } },
-        ],
       })
     );
 
@@ -313,10 +339,50 @@ describe("updateTeamSeats", () => {
 
     await expect(updateTeamSeats("user_1", "team_1", 6)).rejects.toThrow("polar down");
 
+    expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
+  });
+
+  test("increase: surfaces a DB write failure after Polar accepted and logs it", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
+        "rpc:update_team_seats": [{ data: { status: "not_found" } }],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockResolvedValue({ id: "sub_1" });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 6)).rejects.toMatchObject({
+      code: "seat_update_failed",
+    });
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  test("reduction: restores the previous seat count when Polar rejects the update", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6 })],
+        "rpc:update_team_seats": [
+          { data: { status: "ok", previous_seats: 6 } },
+          { data: { status: "ok", previous_seats: 3 } },
+        ],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toThrow("polar down");
+
     expect(recorded).toContainEqual({
       table: "rpc:update_team_seats",
       op: "rpc",
-      payload: { p_team_id: "team_1", p_seats: 2 },
+      payload: { p_team_id: "team_1", p_seats: 6 },
     });
     expect(consoleError).not.toHaveBeenCalled();
   });

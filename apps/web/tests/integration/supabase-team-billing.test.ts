@@ -494,6 +494,21 @@ describe("applyTeamPolarWebhookEvent — seat events", () => {
     expect(ownerMembership!.role).toBe("owner");
   });
 
+  it("ignores a revoked event for a seat the member no longer holds", async () => {
+    const teamId = await createSeatTeam(`TB Seat Stale Revoke ${ts}`, "seat_replacement");
+
+    // A delayed revoke for the member's old seat must not remove a member who
+    // has since been re-seated under a new seat id.
+    await applyTeamPolarWebhookEvent("customer_seat.revoked", teamId, {
+      id: "seat_old",
+      seatMetadata: { userId: memberId, teamId },
+    });
+
+    const membership = await getMembership(teamId, memberId);
+    expect(membership).not.toBeNull();
+    expect(membership!.polar_seat_id).toBe("seat_replacement");
+  });
+
   it("falls back to the seat email when the seat carries no user metadata", async () => {
     const teamId = await createSeatTeam(`TB Seat Email ${ts}`);
 

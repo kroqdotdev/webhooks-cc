@@ -231,12 +231,50 @@ export async function updateTeamSeats(
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
 
-  // Write the new seat count first, through an RPC that takes the same row lock
-  // as accept_team_invite and re-counts members under it. Checking the count
-  // out here and lowering seats only after Polar returned would leave a window
-  // where a concurrent invite accept admits a member onto a seat this reduction
-  // is removing.
+  // Ordering is direction-specific. An increase tells Polar first: writing the
+  // higher limit to the database before Polar confirms would expose capacity a
+  // concurrent invite accept can fill, and a Polar rejection then leaves the
+  // team above its paid seat count with a rollback that fails on
+  // below_members. A reduction writes the database first, through an RPC that
+  // takes the same row lock as accept_team_invite and re-counts members under
+  // it; checking the count out here and lowering seats only after Polar
+  // returned would leave a window where a concurrent invite accept admits a
+  // member onto a seat this reduction is removing.
   const admin = createAdminClient();
+
+  if (seats > team.seats) {
+    const polar = createPolarClient();
+    const result = await polar.subscriptions.update({
+      id: team.polar_subscription_id,
+      subscriptionUpdate: { seats },
+    });
+    unwrapPolarResult(result, "team seat update");
+
+    const { data, error } = await admin.rpc("update_team_seats", {
+      p_team_id: teamId,
+      p_seats: seats,
+    });
+    const status = asRecord(data) ? asNonEmptyString(asRecord(data)!.status) : null;
+
+    if (error || status !== "ok") {
+      // Polar already accepted the increase, so the paid capacity exists but
+      // the pool still shows the old limit. The subscription.updated webhook
+      // reconciles seats and request_limit; surface the failure to the owner.
+      console.error("[team-billing] Polar accepted seat increase but DB write failed", {
+        teamId,
+        seats,
+        error,
+        status,
+      });
+      if (error) {
+        throw error;
+      }
+      throw new TeamBillingError("seat_update_failed", "Failed to update seats");
+    }
+
+    return;
+  }
+
   const { data, error } = await admin.rpc("update_team_seats", {
     p_team_id: teamId,
     p_seats: seats,
@@ -607,6 +645,30 @@ async function applySeatRevocation(teamId: string, data: Record<string, unknown>
   // The owner keeps access even if their seat is released — otherwise a stray
   // Polar event could orphan the team.
   if (!team || team.created_by === memberUserId) {
+    return;
+  }
+
+  const { data: membership, error: membershipError } = await admin
+    .from("team_members")
+    .select("polar_seat_id")
+    .eq("team_id", teamId)
+    .eq("user_id", memberUserId)
+    .maybeSingle();
+
+  if (membershipError) {
+    throw membershipError;
+  }
+
+  if (!membership) {
+    return;
+  }
+
+  // Honor the revocation only for the seat the member currently holds: a
+  // delayed event for an old seat must not remove a member who has since been
+  // re-seated. A null stored id (the claim webhook has not landed yet) still
+  // honors the revoke, matching the pre-seat-id behavior.
+  const eventSeatId = asNonEmptyString(data.id);
+  if (eventSeatId && membership.polar_seat_id && membership.polar_seat_id !== eventSeatId) {
     return;
   }
 

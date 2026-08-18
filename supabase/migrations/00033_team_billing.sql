@@ -50,6 +50,26 @@ end $$;
 
 alter table public.requests validate constraint requests_team_id_fkey;
 
+-- An interrupted CREATE INDEX CONCURRENTLY leaves an invalid index behind, and
+-- IF NOT EXISTS below would silently keep it. Drop it first so a retry of this
+-- migration rebuilds a usable index. The plain DROP is metadata-only for an
+-- invalid index and only ever runs in the retry path (DROP INDEX CONCURRENTLY
+-- cannot run inside a DO block).
+do $$
+begin
+  if exists (
+    select 1
+      from pg_index i
+      join pg_class c on c.oid = i.indexrelid
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public'
+       and c.relname = 'requests_team'
+       and not i.indisvalid
+  ) then
+    execute 'drop index public.requests_team';
+  end if;
+end $$;
+
 create index concurrently if not exists requests_team
   on public.requests(team_id) where team_id is not null;
 
@@ -136,26 +156,40 @@ begin
      limit 1;
 
     if v_team.id is not null then
-      -- Pooled quota: atomic conditional increment on the single team row
+      -- Pooled quota: atomic conditional increment on the single team row.
+      -- The status condition re-checks the window between the select above
+      -- and this update: a team deactivated in between must not be billed.
       update public.teams
          set requests_used = requests_used + 1
        where id = v_team.id
+         and subscription_status is not null
          and requests_used < request_limit;
 
-      if not found then
-        v_retry_after := null;
-        if v_team.period_end is not null and v_team.period_end > now() then
-          v_retry_after := extract(epoch from (v_team.period_end - now()))::bigint * 1000;
+      if found then
+        v_billing_team_id := v_team.id;
+      else
+        -- No row updated: pool exhausted, or the team deactivated since the
+        -- select. Only a still-active team may answer quota_exceeded; a
+        -- deactivated one falls through to the owner's personal quota below.
+        perform 1 from public.teams
+         where id = v_team.id
+           and subscription_status is not null;
+
+        if found then
+          v_retry_after := null;
+          if v_team.period_end is not null and v_team.period_end > now() then
+            v_retry_after := extract(epoch from (v_team.period_end - now()))::bigint * 1000;
+          end if;
+
+          return jsonb_build_object(
+            'status', 'quota_exceeded',
+            'retry_after', v_retry_after
+          );
         end if;
-
-        return jsonb_build_object(
-          'status', 'quota_exceeded',
-          'retry_after', v_retry_after
-        );
       end if;
+    end if;
 
-      v_billing_team_id := v_team.id;
-    else
+    if v_billing_team_id is null then
       -- Owned endpoint: check user quota
       select id, plan, request_limit, requests_used, period_end
         into v_user
@@ -404,12 +438,17 @@ begin
   )
   select downgraded_count + count(*) into downgraded_count from deactivated_teams;
 
+  -- Renewal advances to the first 30-day boundary after now() in one pass, so
+  -- a reset job that was down for more than one interval grants a single fresh
+  -- quota window instead of one reset per missed interval on consecutive runs.
   with renewed_teams as (
     update public.teams
     set
       requests_used = 0,
-      period_start = period_end,
+      period_start = period_end + interval '30 days'
+        * floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')),
       period_end = period_end + interval '30 days'
+        * (floor(extract(epoch from (now() - period_end)) / extract(epoch from interval '30 days')) + 1)
     where subscription_status is not null
       and cancel_at_period_end = false
       and period_end is not null

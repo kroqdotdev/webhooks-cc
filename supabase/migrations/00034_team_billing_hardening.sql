@@ -21,9 +21,11 @@
 --
 -- Locks the team row first, exactly like accept_team_invite, so seat
 -- reductions and invite accepts serialize: the member count checked here
--- cannot grow before the seat write lands. The caller (team-billing.ts)
--- calls this BEFORE the Polar subscription update and calls it again with the
--- previous count to roll back if Polar fails.
+-- cannot grow before the seat write lands. The caller (team-billing.ts) is
+-- direction-specific: a reduction calls this BEFORE the Polar subscription
+-- update (and again with the previous count to roll back if Polar fails); an
+-- increase calls Polar first and writes here only after Polar accepted, so a
+-- concurrent invite accept can never fill capacity Polar has not confirmed.
 --
 -- The 100000 request-per-seat multiplier must match TEAM_SEAT_REQUEST_LIMIT
 -- in apps/web/lib/supabase/team-billing.ts.
