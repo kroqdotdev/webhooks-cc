@@ -136,7 +136,7 @@ function TeamDetailContent() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<{
-    type: "success" | "error";
+    type: "success" | "warning" | "error";
     text: string;
   } | null>(null);
 
@@ -306,7 +306,14 @@ function TeamDetailContent() {
       if (res.ok) {
         trackTeamMemberInvited("success");
         setInviteEmail("");
-        setInviteMessage({ type: "success", text: "Invite sent successfully." });
+        const data = (await res.json().catch(() => ({}))) as { warning?: string };
+        // The invite exists either way; a warning only means the notification
+        // email did not go out.
+        setInviteMessage(
+          data.warning
+            ? { type: "warning", text: data.warning }
+            : { type: "success", text: "Invite sent successfully." }
+        );
         await fetchData();
       } else {
         const data = (await res.json().catch(() => ({}))) as {
@@ -537,7 +544,7 @@ function TeamDetailContent() {
         <section className="space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Invite Member</h2>
-            <HelpTooltip text="Enter the email of a registered webhooks.cc user. They'll receive an invite they can accept or decline." />
+            <HelpTooltip text="Invite anyone by email. If they don't have an account yet, the invite is waiting after they sign up with that address." />
           </div>
           <div className="border rounded-lg p-6 space-y-4 bg-card">
             <Label htmlFor="invite-email">Email address</Label>
@@ -564,7 +571,11 @@ function TeamDetailContent() {
             {inviteMessage && (
               <p
                 className={`text-sm ${
-                  inviteMessage.type === "success" ? "text-green-600" : "text-destructive"
+                  inviteMessage.type === "success"
+                    ? "text-green-600"
+                    : inviteMessage.type === "warning"
+                      ? "text-amber-600"
+                      : "text-destructive"
                 }`}
               >
                 {inviteMessage.text}
