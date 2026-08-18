@@ -27,7 +27,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@scalar/api-reference-react": "^0.9.60",
     "@supabase/ssr": "^0.12.4",
-    "@supabase/supabase-js": "^2.110.2",
+    "@supabase/supabase-js": "^2.112.3",
     "@webhooks-cc/sdk": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
