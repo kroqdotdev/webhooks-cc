@@ -5,7 +5,9 @@
  *
  * Checkout answers 200 `{ url }`; cancel, resubscribe and seats answer 204 with
  * an empty body, so those three never parse a response. Failures always carry a
- * JSON `{ error }` string, which is rethrown verbatim for inline display.
+ * JSON `{ error }` string, optionally with a `detail` string (e.g. Polar
+ * validation detail); both are folded into the thrown message for inline
+ * display.
  */
 
 function billingRequest(accessToken: string, body?: unknown): RequestInit {
@@ -19,8 +21,15 @@ function billingRequest(accessToken: string, body?: unknown): RequestInit {
 }
 
 async function readError(response: Response): Promise<string> {
-  const data = (await response.json().catch(() => null)) as { error?: unknown } | null;
-  return typeof data?.error === "string" ? data.error : `Request failed (${response.status})`;
+  const data = (await response.json().catch(() => null)) as {
+    error?: unknown;
+    detail?: unknown;
+  } | null;
+  const message =
+    typeof data?.error === "string" ? data.error : `Request failed (${response.status})`;
+  return typeof data?.detail === "string" && data.detail.length > 0
+    ? `${message}: ${data.detail}`
+    : message;
 }
 
 export async function startTeamCheckout(

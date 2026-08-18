@@ -1948,52 +1948,42 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("RLS enforcement", () => {
-    it("anon client cannot read teams table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return; // skip if no anon key
+    // The anon role keeps Supabase's default table-level SELECT grant on these
+    // tables, so read rejection is RLS row filtering: an empty result with NO
+    // error (asserting code 42501 on selects would pin a false expectation).
+    // Writes are different: the deny-all `with check (false)` policies raise a
+    // row-level security violation, which PostgREST surfaces as 42501 — those
+    // assertions below are what prove the policies are actually active.
+    const TEAM_TABLES = ["teams", "team_members", "team_invites", "team_endpoints"] as const;
 
-      const anon = createClient(SUPABASE_URL, anonKey, {
+    function anonClient() {
+      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!anonKey) return null; // skip if no anon key
+      return createClient(SUPABASE_URL, anonKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       });
+    }
 
-      const { data } = await anon.from("teams").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
+    for (const table of TEAM_TABLES) {
+      it(`anon client cannot read ${table} table`, async () => {
+        const anon = anonClient();
+        if (!anon) return;
 
-    it("anon client cannot read team_members table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return;
-
-      const anon = createClient(SUPABASE_URL, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
+        const { data, error } = await anon.from(table).select("id").limit(1);
+        expect(error).toBeNull();
+        expect(data).toEqual([]);
       });
 
-      const { data } = await anon.from("team_members").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
+      it(`anon client cannot insert into ${table} table (42501)`, async () => {
+        const anon = anonClient();
+        if (!anon) return;
 
-    it("anon client cannot read team_invites table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return;
-
-      const anon = createClient(SUPABASE_URL, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (anon as any).from(table).insert({}).select("id");
+        expect(data).toBeNull();
+        expect(error).not.toBeNull();
+        expect(error!.code).toBe("42501");
       });
-
-      const { data } = await anon.from("team_invites").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
-
-    it("anon client cannot read team_endpoints table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return;
-
-      const anon = createClient(SUPABASE_URL, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-
-      const { data } = await anon.from("team_endpoints").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
+    }
   });
 });

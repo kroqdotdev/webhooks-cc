@@ -72,7 +72,12 @@ export function EndpointSwitcher() {
     router.push(`/dashboard?endpoint=${slug}`);
   };
 
-  const defaultSlug = currentSlug || allEndpoints[0]?.slug;
+  // Resolve the ?endpoint= param the same way the dashboard does (exact match,
+  // else first endpoint): a stale or deleted slug otherwise leaves the Select
+  // with a value no SelectItem carries, rendering an empty trigger while the
+  // dashboard shows the first endpoint.
+  const defaultSlug =
+    allEndpoints.find((ep) => ep.slug === currentSlug)?.slug ?? allEndpoints[0]?.slug;
 
   // Split owned endpoints into personal (not shared) and shared-by-me
   const personalEndpoints = data.owned.filter((ep) => !ep.sharedWith || ep.sharedWith.length === 0);

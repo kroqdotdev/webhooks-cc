@@ -131,6 +131,7 @@ function TeamDetailContent() {
   const [members, setMembers] = useState<Member[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Invite
   const [inviteEmail, setInviteEmail] = useState("");
@@ -171,6 +172,7 @@ function TeamDetailContent() {
   const fetchData = async () => {
     if (!session?.access_token || !session?.user) return;
     setLoading(true);
+    setLoadError(false);
     try {
       const [teamsRes, membersRes, endpointsRes] = await Promise.all([
         fetch("/api/teams", { headers: authHeader }),
@@ -186,6 +188,10 @@ function TeamDetailContent() {
           setTeamName(current.name);
           setRenameValue(current.name);
         }
+      } else {
+        // The page is unusable without the team row: offer a retry instead of
+        // rendering a permanently empty shell.
+        setLoadError(true);
       }
 
       if (membersRes.ok) {
@@ -208,6 +214,11 @@ function TeamDetailContent() {
       }
 
       // Identify current user from session
+    } catch (error) {
+      // One network hiccup previously stranded the page on partial state with
+      // no path to recovery.
+      console.error("Failed to load team page data:", error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -430,6 +441,24 @@ function TeamDetailContent() {
     return (
       <main className="container mx-auto px-4 py-8 max-w-2xl">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </main>
+    );
+  }
+
+  if (loadError && !team) {
+    return (
+      <main className="container mx-auto px-4 py-8 max-w-2xl space-y-4">
+        <Link
+          href="/teams"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Teams
+        </Link>
+        <div className="border rounded-lg p-6 space-y-3 bg-card">
+          <p className="text-sm text-destructive">Failed to load this team. Please try again.</p>
+          <Button onClick={() => void fetchData()}>Retry</Button>
+        </div>
       </main>
     );
   }
