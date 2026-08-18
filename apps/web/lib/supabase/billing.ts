@@ -233,21 +233,64 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         return;
       }
 
+      const admin = createAdminClient();
+      const { data: stored, error: storedError } = await admin
+        .from("users")
+        .select("polar_subscription_id, subscription_status, period_start")
+        .eq("id", userId)
+        .maybeSingle<{
+          polar_subscription_id: string | null;
+          subscription_status: "active" | "canceled" | "past_due" | null;
+          period_start: string | null;
+        }>();
+
+      if (storedError) throw storedError;
+      if (!stored) return;
+
       const currentPeriodStart = parseEventTimestamp(data.currentPeriodStart);
       const currentPeriodEnd = parseEventTimestamp(data.currentPeriodEnd);
       const customerId = asNonEmptyString(data.customerId);
       const subscriptionId = asNonEmptyString(data.id);
 
+      // Same renewal semantics as applyTeamSubscriptionState in team-billing.ts.
+      // A new subscription id starts a fresh quota. A same-subscription event
+      // whose period start moved forward is a renewal and must clear usage HERE:
+      // this same write pushes period_end into the future, which blinds the
+      // per-minute cron fallback reset (it only touches rows with
+      // period_end <= now()). A period start older than the stored one is a
+      // stale out-of-order delivery whose bounds must not roll the period back.
+      const isNewSubscription =
+        subscriptionId !== null && subscriptionId !== stored.polar_subscription_id;
+
+      const incomingPeriodStartMs = currentPeriodStart ? Date.parse(currentPeriodStart) : null;
+      const storedPeriodStartMs = stored.period_start ? Date.parse(stored.period_start) : null;
+
+      const isRenewal =
+        !isNewSubscription &&
+        incomingPeriodStartMs !== null &&
+        storedPeriodStartMs !== null &&
+        incomingPeriodStartMs > storedPeriodStartMs;
+
+      const isStalePeriod =
+        !isNewSubscription &&
+        incomingPeriodStartMs !== null &&
+        storedPeriodStartMs !== null &&
+        incomingPeriodStartMs < storedPeriodStartMs;
+
       await updateUserById(userId, {
         polar_customer_id: customerId ?? undefined,
         polar_subscription_id: subscriptionId ?? undefined,
-        subscription_status: normalizeStoredSubscriptionStatus(data.status),
+        // An unrecognized status value keeps the stored status instead of
+        // nulling it, mirroring the team handler.
+        subscription_status:
+          normalizeStoredSubscriptionStatus(data.status) ?? stored.subscription_status ?? "active",
         plan: "pro",
         request_limit: PRO_REQUEST_LIMIT,
-        period_start: currentPeriodStart,
-        period_end: currentPeriodEnd,
+        period_start: isStalePeriod ? undefined : currentPeriodStart,
+        period_end: isStalePeriod ? undefined : currentPeriodEnd,
         cancel_at_period_end:
           typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
+        ...(isNewSubscription || isRenewal ? { requests_used: 0 } : {}),
       });
       return;
     }
