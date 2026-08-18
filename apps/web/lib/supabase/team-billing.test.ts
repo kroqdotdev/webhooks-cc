@@ -20,9 +20,12 @@ import {
   TeamBillingError,
   applyTeamPolarWebhookEvent,
   assignTeamSeat,
+  cancelTeamSubscription,
   createTeamCheckout,
   extractTeamIdFromWebhook,
+  resubscribeTeam,
   revokeTeamSeat,
+  revokeTeamSubscription,
   updateTeamSeats,
 } from "./team-billing";
 
@@ -555,6 +558,155 @@ describe("revokeTeamSeat", () => {
     await expect(revokeTeamSeat("team_1", "seat_1", "member@example.com")).resolves.toBeUndefined();
     expect(revokeSeat).toHaveBeenCalledWith({ seatId: "seat_1" });
     expect(consoleError).toHaveBeenCalled();
+  });
+});
+
+describe("subscription management", () => {
+  test("cancelTeamSubscription flags cancel-at-period-end in Polar, then the row", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", subscription_status: "active" })],
+        "teams:update": [{}],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockResolvedValue({ id: "sub_1" });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await cancelTeamSubscription("user_1", "team_1");
+
+    expect(subscriptionUpdate).toHaveBeenCalledWith({
+      id: "sub_1",
+      subscriptionUpdate: { cancelAtPeriodEnd: true },
+    });
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: { cancel_at_period_end: true },
+    });
+  });
+
+  test("cancelTeamSubscription rejects a team without a subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+      })
+    );
+
+    await expect(cancelTeamSubscription("user_1", "team_1")).rejects.toMatchObject({
+      code: "no_subscription",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("resubscribeTeam rejects when no cancellation is scheduled", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            polar_subscription_id: "sub_1",
+            subscription_status: "active",
+            cancel_at_period_end: false,
+          }),
+        ],
+      })
+    );
+
+    await expect(resubscribeTeam("user_1", "team_1")).rejects.toMatchObject({
+      code: "not_scheduled",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("resubscribeTeam clears the scheduled cancellation", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            polar_subscription_id: "sub_1",
+            subscription_status: "canceled",
+            cancel_at_period_end: true,
+          }),
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    const subscriptionUpdate = vi.fn().mockResolvedValue({ id: "sub_1" });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await resubscribeTeam("user_1", "team_1");
+
+    expect(subscriptionUpdate).toHaveBeenCalledWith({
+      id: "sub_1",
+      subscriptionUpdate: { cancelAtPeriodEnd: false },
+    });
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: { cancel_at_period_end: false },
+    });
+  });
+
+  test("revokeTeamSubscription revokes the Polar subscription immediately", async () => {
+    const revoke = vi.fn().mockResolvedValue({ id: "sub_1" });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { revoke } });
+
+    await revokeTeamSubscription("sub_1");
+
+    expect(revoke).toHaveBeenCalledWith({ id: "sub_1" });
+  });
+});
+
+describe("webhook events for a deleted team", () => {
+  // The team row is gone (deleted with, or after, its subscription): every
+  // event family must no-op without throwing and without writing.
+  const NO_TEAM: QueryResult = { data: null };
+
+  test.each([
+    "subscription.created",
+    "subscription.updated",
+    "subscription.active",
+    "subscription.canceled",
+    "subscription.uncanceled",
+    "subscription.revoked",
+  ])("%s no-ops without writes", async (eventType) => {
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [NO_TEAM] }));
+
+    await applyTeamPolarWebhookEvent(eventType, "team_gone", {
+      id: "sub_1",
+      customerId: "cus_1",
+      status: "active",
+      seats: 2,
+    });
+
+    expect(recorded.filter((call) => call.op !== "select")).toEqual([]);
+  });
+
+  test("customer_seat.revoked no-ops without deleting anything", async () => {
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [NO_TEAM] }));
+
+    await applyTeamPolarWebhookEvent("customer_seat.revoked", "team_gone", {
+      id: "seat_1",
+      seatMetadata: { userId: "user_2", teamId: "team_gone" },
+    });
+
+    expect(recorded.filter((call) => call.op === "delete")).toEqual([]);
+  });
+
+  test("customer_seat.assigned no-ops (the seat-id update matches no rows)", async () => {
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({}));
+
+    await expect(
+      applyTeamPolarWebhookEvent("customer_seat.assigned", "team_gone", {
+        id: "seat_1",
+        seatMetadata: { userId: "user_2", teamId: "team_gone" },
+      })
+    ).resolves.toBeUndefined();
   });
 });
 

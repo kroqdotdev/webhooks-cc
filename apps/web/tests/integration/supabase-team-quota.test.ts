@@ -236,6 +236,29 @@ describe("capture_webhook team-pooled quota", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("returns quota_exceeded with a null retry_after when the exhausted team has no period end", async () => {
+    const teamId = await createTestTeam(ownerTeamId, `TQ NoPeriod ${ts}`);
+    const endpoint = await createTestEndpoint(ownerTeamId, "TQ no-period endpoint");
+    await shareEndpoint(teamId, endpoint.id, ownerTeamId);
+    await activateTeam(teamId, 1);
+
+    // The webhook apply writes status and period bounds in one statement, so
+    // this state should be unreachable in practice; the SQL branch exists and
+    // the Rust receiver maps a null retry_after to no Retry-After header.
+    const { error: updateError } = await admin
+      .from("teams")
+      .update({ requests_used: 100_000, period_end: null })
+      .eq("id", teamId);
+    if (updateError) throw updateError;
+
+    const result = await capture(endpoint.slug);
+    expect(result.status).toBe("quota_exceeded");
+    expect(result.retry_after ?? null).toBeNull();
+
+    const requests = await getRequests(endpoint.id);
+    expect(requests).toHaveLength(0);
+  });
+
   it("falls back to the owner's personal quota when the team has no subscription", async () => {
     const teamId = await createTestTeam(ownerFallbackId, `TQ Inactive ${ts}`);
     const endpoint = await createTestEndpoint(ownerFallbackId, "TQ inactive endpoint");
@@ -295,6 +318,32 @@ describe("capture_webhook team-pooled quota", () => {
 
     // Owner's personal quota never participated.
     expect((await getUserUsage(ownerTeamId)).requests_used).toBe(0);
+  });
+
+  it("bills by shared_at even when the newest share was inserted first", async () => {
+    // Same scenario as above with the INSERT order reversed: this pins the
+    // ordering to shared_at rather than insertion (id) order.
+    const oldestTeamId = await createTestTeam(ownerTeamId, `TQ OrderOld ${ts}`);
+    const newestTeamId = await createTestTeam(ownerTeamId, `TQ OrderNew ${ts}`);
+    const endpoint = await createTestEndpoint(ownerTeamId, "TQ reversed-order endpoint");
+
+    const earlier = new Date(Date.now() - 120_000);
+    const later = new Date(Date.now() - 1_000);
+    await shareEndpoint(newestTeamId, endpoint.id, ownerTeamId, later);
+    await shareEndpoint(oldestTeamId, endpoint.id, ownerTeamId, earlier);
+
+    await activateTeam(oldestTeamId, 1);
+    await activateTeam(newestTeamId, 1);
+
+    const result = await capture(endpoint.slug);
+    expect(result.status).toBe("ok");
+
+    expect((await getTeam(oldestTeamId)).requests_used).toBe(1);
+    expect((await getTeam(newestTeamId)).requests_used).toBe(0);
+
+    const requests = await getRequests(endpoint.id);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.team_id).toBe(oldestTeamId);
   });
 
   it("leaves unshared endpoints on the owner's personal quota", async () => {
