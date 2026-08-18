@@ -30,6 +30,7 @@ import {
   getRequestByIdForUser,
   clearRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
+import { __resetEmailTestStore, getLastMessageForEmail } from "@/lib/email/dev-transport";
 import type { Database } from "@/lib/supabase/database";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
@@ -312,11 +313,6 @@ describe("Teams Integration", () => {
       await admin.from("teams").delete().eq("id", oneSeatTeamId);
     });
 
-    it("rejects invite for non-existent email", async () => {
-      const result = await createInvite(ownerId, teamId, "nobody@nonexistent.test");
-      expect(result.error).toBe("No account found with that email address");
-    });
-
     it("rejects invite from non-member", async () => {
       // memberId is not yet a team member at this point
       const result = await createInvite(memberId, teamId, THIRD_EMAIL);
@@ -385,6 +381,109 @@ describe("Teams Integration", () => {
     it("rejects declining an already-declined invite", async () => {
       const result = await declineInvite(thirdId, thirdInviteId);
       expect(result).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Unknown-email invites: created unlinked, emailed, linked at signup
+  // ---------------------------------------------------------------------------
+
+  describe("Unknown-email invites", () => {
+    const GHOST_EMAIL = `test-teams-ghost-${ts}@webhooks-test.local`;
+    const GHOST2_EMAIL = `test-teams-ghost2-${ts}@webhooks-test.local`;
+    let ghostTeamId: string;
+    let ghostUserId: string | null = null;
+    let ghost2UserId: string | null = null;
+    let ghostInviteId: string;
+
+    beforeAll(async () => {
+      const created = await createTeam(ownerId, "Ghost Invite Team");
+      ghostTeamId = (created as { id: string }).id;
+      await activateTeam(ghostTeamId, 3);
+    });
+
+    afterAll(async () => {
+      await admin.from("teams").delete().eq("id", ghostTeamId);
+      if (ghostUserId) await admin.auth.admin.deleteUser(ghostUserId);
+      if (ghost2UserId) await admin.auth.admin.deleteUser(ghost2UserId);
+    });
+
+    it("creates an unlinked invite for an email with no account and records the email", async () => {
+      __resetEmailTestStore();
+
+      const result = await createInvite(ownerId, ghostTeamId, GHOST_EMAIL);
+      expect(result.error).toBeUndefined();
+      expect(result.invite).toBeDefined();
+      expect(result.invite!.invitedEmail).toBe(GHOST_EMAIL);
+      ghostInviteId = result.invite!.id;
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id, status")
+        .eq("id", ghostInviteId)
+        .maybeSingle();
+      expect(row!.status).toBe("pending");
+      expect(row!.invited_user_id).toBeNull();
+
+      // The dev transport recorded the invite email (never delivered in tests).
+      const message = getLastMessageForEmail(GHOST_EMAIL);
+      expect(message).not.toBeNull();
+      expect(message!.subject).toContain("Ghost Invite Team");
+      expect(message!.subject).toContain(OWNER_EMAIL);
+      expect(message!.text).toContain("/teams");
+    });
+
+    it("links the pending invite to the account at signup", async () => {
+      ghostUserId = await createTestUser(GHOST_EMAIL, "Ghost User");
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id")
+        .eq("id", ghostInviteId)
+        .maybeSingle();
+      expect(row!.invited_user_id).toBe(ghostUserId);
+    });
+
+    it("does not link non-pending invites at signup", async () => {
+      const result = await createInvite(ownerId, ghostTeamId, GHOST2_EMAIL);
+      expect(result.error).toBeUndefined();
+      const declinedInviteId = result.invite!.id;
+
+      // Force a declined, unlinked invite (declining requires an account, so
+      // stamp the status directly).
+      await admin
+        .from("team_invites")
+        .update({ status: "declined", invited_user_id: null })
+        .eq("id", declinedInviteId);
+
+      ghost2UserId = await createTestUser(GHOST2_EMAIL, "Ghost Two");
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id, status")
+        .eq("id", declinedInviteId)
+        .maybeSingle();
+      expect(row!.status).toBe("declined");
+      expect(row!.invited_user_id).toBeNull();
+    });
+
+    it("the linked invite shows up for the new account and accepts into a membership", async () => {
+      const invites = await listPendingInvitesForUser(ghostUserId!);
+      const invite = invites.find((i) => i.teamId === ghostTeamId);
+      expect(invite).toBeDefined();
+      expect(invite!.id).toBe(ghostInviteId);
+
+      const result = await acceptInvite(ghostUserId!, ghostInviteId);
+      expect(result.accepted).toBe(true);
+
+      const { data: membership } = await admin
+        .from("team_members")
+        .select("id, role")
+        .eq("team_id", ghostTeamId)
+        .eq("user_id", ghostUserId!)
+        .maybeSingle();
+      expect(membership).not.toBeNull();
+      expect(membership!.role).toBe("member");
     });
   });
 
