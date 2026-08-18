@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
+import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import { TEAM_SEAT_REQUEST_LIMIT, applyTeamPolarWebhookEvent } from "@/lib/supabase/team-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
@@ -557,6 +558,38 @@ describe("applyTeamPolarWebhookEvent — seat events", () => {
     const ownerMembership = await getMembership(teamId, ownerId);
     expect(ownerMembership).not.toBeNull();
     expect(ownerMembership!.role).toBe("owner");
+  });
+
+  it("removes the revoked member's endpoint shares along with the membership", async () => {
+    const teamId = await createSeatTeam(`TB Seat Share Cleanup ${ts}`, "seat_shared");
+
+    const endpoint = await createEndpointForUser({
+      userId: memberId,
+      name: "TB Seat Share EP",
+    });
+    const { error: shareError } = await admin.from("team_endpoints").insert({
+      team_id: teamId,
+      endpoint_id: endpoint.id,
+      shared_by: memberId,
+    });
+    if (shareError) throw shareError;
+
+    await applyTeamPolarWebhookEvent("customer_seat.revoked", teamId, {
+      id: "seat_shared",
+      seatMetadata: { userId: memberId, teamId },
+    });
+
+    expect(await getMembership(teamId, memberId)).toBeNull();
+
+    const { data: shares, error } = await admin
+      .from("team_endpoints")
+      .select("id")
+      .eq("team_id", teamId)
+      .eq("shared_by", memberId);
+    if (error) throw error;
+    expect(shares).toEqual([]);
+
+    await admin.from("endpoints").delete().eq("id", endpoint.id);
   });
 
   it("ignores a revoked event for a seat the member no longer holds", async () => {

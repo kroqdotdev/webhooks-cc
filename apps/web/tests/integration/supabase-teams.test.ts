@@ -1176,6 +1176,72 @@ describe("Teams Integration", () => {
   // Team creation limit (max 10 owned teams)
   // ---------------------------------------------------------------------------
 
+  describe("Departed-member share cleanup", () => {
+    let cleanupTeamId: string;
+    let memberEndpointId: string;
+    let ownerEndpointId: string;
+
+    async function addThirdAsMember() {
+      const { error } = await admin
+        .from("team_members")
+        .insert({ team_id: cleanupTeamId, user_id: thirdId, role: "member" });
+      if (error) throw error;
+    }
+
+    async function shareRows() {
+      const { data, error } = await admin
+        .from("team_endpoints")
+        .select("endpoint_id, shared_by")
+        .eq("team_id", cleanupTeamId);
+      if (error) throw error;
+      return data ?? [];
+    }
+
+    beforeAll(async () => {
+      const created = await createTeam(ownerId, "Share Cleanup Team");
+      cleanupTeamId = (created as { id: string }).id;
+      await activateTeam(cleanupTeamId, 5);
+
+      const memberEp = await createEndpointForUser({
+        userId: thirdId,
+        name: "Cleanup Member EP",
+      });
+      memberEndpointId = memberEp.id;
+      const ownerEp = await createEndpointForUser({ userId: ownerId, name: "Cleanup Owner EP" });
+      ownerEndpointId = ownerEp.id;
+    });
+
+    afterAll(async () => {
+      await admin.from("teams").delete().eq("id", cleanupTeamId);
+      await admin.from("endpoints").delete().in("id", [memberEndpointId, ownerEndpointId]);
+    });
+
+    it("deletes the leaver's shares but keeps other members' shares", async () => {
+      await addThirdAsMember();
+      const shared = await shareEndpointWithTeam(thirdId, cleanupTeamId, memberEndpointId);
+      expect(shared.success).toBe(true);
+      const ownerShared = await shareEndpointWithTeam(ownerId, cleanupTeamId, ownerEndpointId);
+      expect(ownerShared.success).toBe(true);
+
+      await expect(leaveTeam(thirdId, cleanupTeamId)).resolves.toBe(true);
+
+      const rows = await shareRows();
+      expect(rows.some((r) => r.shared_by === thirdId)).toBe(false);
+      expect(rows.some((r) => r.shared_by === ownerId)).toBe(true);
+    });
+
+    it("deletes the shares when the owner removes the member", async () => {
+      await addThirdAsMember();
+      const shared = await shareEndpointWithTeam(thirdId, cleanupTeamId, memberEndpointId);
+      expect(shared.success).toBe(true);
+
+      await expect(removeTeamMember(ownerId, cleanupTeamId, thirdId)).resolves.toBe(true);
+
+      const rows = await shareRows();
+      expect(rows.some((r) => r.shared_by === thirdId)).toBe(false);
+    });
+  });
+
   describe("Team creation limit", () => {
     const tempTeamIds: string[] = [];
 

@@ -1,5 +1,6 @@
 import { createAdminClient } from "./admin";
 import { revokeTeamSeat } from "./team-billing";
+import { removeMemberShares } from "./teams-endpoints";
 import type { TeamMember, TeamMemberRow } from "./teams-types";
 
 // ---------------------------------------------------------------------------
@@ -141,6 +142,7 @@ export async function removeTeamMember(
   if (error) throw error;
   if (!data) return false;
 
+  await removeMemberShares(teamId, targetUserId);
   await releaseMemberSeat(teamId, targetUserId, data.polar_seat_id);
   return true;
 }
@@ -175,6 +177,7 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
   if (error) throw error;
   if (!data) return false;
 
+  await removeMemberShares(teamId, userId);
   await releaseMemberSeat(teamId, userId, data.polar_seat_id);
   return true;
 }

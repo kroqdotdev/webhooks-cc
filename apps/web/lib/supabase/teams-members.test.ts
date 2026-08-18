@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   revokeTeamSeat: vi.fn(),
+  removeMemberShares: vi.fn(),
 }));
 
 vi.mock("./admin", () => ({
@@ -11,6 +12,10 @@ vi.mock("./admin", () => ({
 
 vi.mock("./team-billing", () => ({
   revokeTeamSeat: mockFns.revokeTeamSeat,
+}));
+
+vi.mock("./teams-endpoints", () => ({
+  removeMemberShares: mockFns.removeMemberShares,
 }));
 
 import { leaveTeam, removeTeamMember } from "./teams-members";
@@ -69,6 +74,7 @@ const MEMBER_MEMBERSHIP: QueryResult = { data: { role: "member" } };
 beforeEach(() => {
   vi.clearAllMocks();
   mockFns.revokeTeamSeat.mockResolvedValue(undefined);
+  mockFns.removeMemberShares.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -87,6 +93,8 @@ describe("removeTeamMember", () => {
 
     await expect(removeTeamMember("user_1", "team_1", "user_2")).resolves.toBe(true);
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_1", "member@example.com");
+    // The departed member's endpoint shares stop billing the team pool.
+    expect(mockFns.removeMemberShares).toHaveBeenCalledWith("team_1", "user_2");
   });
 
   test("still releases by email when the membership has no recorded seat", async () => {
@@ -130,6 +138,7 @@ describe("removeTeamMember", () => {
 
     await expect(removeTeamMember("user_1", "team_1", "user_2")).resolves.toBe(false);
     expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+    expect(mockFns.removeMemberShares).not.toHaveBeenCalled();
   });
 
   test("touches no seat when the caller is not the owner", async () => {
@@ -154,6 +163,7 @@ describe("leaveTeam", () => {
 
     await expect(leaveTeam("user_2", "team_1")).resolves.toBe(true);
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_9", "leaver@example.com");
+    expect(mockFns.removeMemberShares).toHaveBeenCalledWith("team_1", "user_2");
   });
 
   test("keeps the owner's seat when they try to leave", async () => {
@@ -163,5 +173,6 @@ describe("leaveTeam", () => {
 
     await expect(leaveTeam("user_1", "team_1")).resolves.toBe(false);
     expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+    expect(mockFns.removeMemberShares).not.toHaveBeenCalled();
   });
 });

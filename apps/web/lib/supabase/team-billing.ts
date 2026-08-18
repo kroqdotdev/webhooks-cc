@@ -7,6 +7,7 @@ import {
   parseEventTimestamp,
 } from "./billing-shared";
 import type { Database } from "./database";
+import { removeMemberShares } from "./teams-endpoints";
 
 /** Pooled request allowance granted per seat, per 30-day period. */
 export const TEAM_SEAT_REQUEST_LIMIT = 100_000;
@@ -765,6 +766,10 @@ async function applySeatRevocation(teamId: string, data: Record<string, unknown>
   if (error) {
     throw error;
   }
+
+  // The webhook-driven removal cleans up like remove/leave do: the departed
+  // member's shares must stop billing the team pool.
+  await removeMemberShares(teamId, memberUserId);
 }
 
 export async function applyTeamPolarWebhookEvent(

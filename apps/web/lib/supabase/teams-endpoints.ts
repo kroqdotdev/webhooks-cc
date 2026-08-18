@@ -155,6 +155,35 @@ export async function unshareEndpointFromTeam(
 }
 
 // ---------------------------------------------------------------------------
+// removeMemberShares
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes the share rows a departed member created for this team, so their
+ * endpoints stop billing the team's pooled quota. Called after the membership
+ * row is already gone, so failures log and swallow: throwing would report
+ * failure for a removal that committed, and until the rows are gone we are
+ * merely back in the pre-cleanup state (departed sharer keeps the unshare
+ * control on their dashboard).
+ */
+export async function removeMemberShares(teamId: string, userId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("team_endpoints")
+    .delete()
+    .eq("team_id", teamId)
+    .eq("shared_by", userId);
+
+  if (error) {
+    console.error("[teams-endpoints] failed to remove departed member's shares", {
+      teamId,
+      userId,
+      error,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // getTeamSharesForEndpoint
 // ---------------------------------------------------------------------------
 
