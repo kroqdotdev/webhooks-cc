@@ -5,6 +5,7 @@ const mockFns = vi.hoisted(() => ({
   assignTeamSeat: vi.fn(),
   revokeTeamSeat: vi.fn(),
   requireActiveTeam: vi.fn(),
+  sendEmail: vi.fn(),
 }));
 
 vi.mock("./admin", () => ({
@@ -19,6 +20,14 @@ vi.mock("./team-billing", () => ({
 vi.mock("./teams-gating", () => ({
   requireActiveTeam: mockFns.requireActiveTeam,
   TEAM_INACTIVE_MESSAGE: "This team needs an active Teams subscription",
+}));
+
+vi.mock("@/lib/email/mailer", () => ({
+  sendEmail: mockFns.sendEmail,
+}));
+
+vi.mock("@/lib/env", () => ({
+  publicEnv: () => ({ NEXT_PUBLIC_APP_URL: "https://app.test" }),
 }));
 
 import { acceptInvite, createInvite } from "./teams-invites";
@@ -86,6 +95,7 @@ beforeEach(() => {
   mockFns.requireActiveTeam.mockResolvedValue(null);
   mockFns.assignTeamSeat.mockResolvedValue(null);
   mockFns.revokeTeamSeat.mockResolvedValue(undefined);
+  mockFns.sendEmail.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -311,34 +321,55 @@ describe("createInvite", () => {
     });
   });
 
-  test("allows the invite while a seat is free", async () => {
+  // Queue order for a full createInvite run: owner check (team_members),
+  // member count (team_members), seats (teams), inviter email (users),
+  // team name (teams), invited user (users), [member check (team_members)
+  // only when the invitee has an account], pending-invite check
+  // (team_invites), insert (team_invites:insert).
+  function fakeAdminForCreate(overrides: {
+    invitedUser: QueryResult;
+    withMemberCheck: boolean;
+    insert: QueryResult;
+    pendingInvite?: QueryResult;
+  }) {
+    return createFakeAdmin({
+      "team_members:select": [
+        OWNER,
+        { count: 2 },
+        ...(overrides.withMemberCheck ? [{ data: null }] : []),
+      ],
+      "teams:select": [{ data: { seats: 3 } }, { data: { name: "Acme" } }],
+      "users:select": [{ data: { email: "owner@example.com" } }, overrides.invitedUser],
+      "team_invites:select": [overrides.pendingInvite ?? { data: null }],
+      "team_invites:insert": [overrides.insert],
+    });
+  }
+
+  const INSERTED_INVITE: QueryResult = {
+    data: {
+      id: "invite_1",
+      team_id: "team_1",
+      invited_by: "user_1",
+      invited_email: "new@example.com",
+      invited_user_id: "user_2",
+      status: "pending",
+      created_at: "2026-01-01T00:00:00Z",
+    },
+  };
+
+  test("allows the invite while a seat is free and sends the invite email", async () => {
     mockFns.createAdminClient.mockReturnValue(
-      createFakeAdmin({
-        "team_members:select": [OWNER, { count: 2 }, { data: null }],
-        "teams:select": [{ data: { seats: 3 } }, { data: { name: "Acme" } }],
-        "users:select": [
-          { data: { id: "user_2", email: "new@example.com" } },
-          { data: { email: "owner@example.com" } },
-        ],
-        "team_invites:insert": [
-          {
-            data: {
-              id: "invite_1",
-              team_id: "team_1",
-              invited_by: "user_1",
-              invited_email: "new@example.com",
-              invited_user_id: "user_2",
-              status: "pending",
-              created_at: "2026-01-01T00:00:00Z",
-            },
-          },
-        ],
+      fakeAdminForCreate({
+        invitedUser: { data: { id: "user_2", email: "new@example.com" } },
+        withMemberCheck: true,
+        insert: INSERTED_INVITE,
       })
     );
 
     const result = await createInvite("user_1", "team_1", "new@example.com");
 
     expect(result.error).toBeUndefined();
+    expect(result.warning).toBeUndefined();
     expect(result.invite).toMatchObject({
       id: "invite_1",
       teamId: "team_1",
@@ -346,5 +377,82 @@ describe("createInvite", () => {
       invitedEmail: "new@example.com",
       status: "pending",
     });
+    expect(mockFns.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "new@example.com",
+        subject: expect.stringContaining("invited you to Acme"),
+      })
+    );
+  });
+
+  test("invites an email with no account (unlinked, claimed at signup)", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      fakeAdminForCreate({
+        invitedUser: { data: null },
+        withMemberCheck: false,
+        insert: {
+          data: {
+            ...(INSERTED_INVITE.data as Record<string, unknown>),
+            invited_user_id: null,
+          },
+        },
+      })
+    );
+
+    const result = await createInvite("user_1", "team_1", "New@Example.com ");
+
+    expect(result.error).toBeUndefined();
+    expect(result.invite).toMatchObject({ invitedEmail: "new@example.com" });
+    expect(mockFns.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "new@example.com" })
+    );
+  });
+
+  test("rejects a duplicate pending invite for the same email", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      fakeAdminForCreate({
+        invitedUser: { data: null },
+        withMemberCheck: false,
+        pendingInvite: { data: { id: "invite_0" } },
+        insert: INSERTED_INVITE,
+      })
+    );
+
+    await expect(createInvite("user_1", "team_1", "new@example.com")).resolves.toEqual({
+      error: "A pending invite already exists for this email",
+    });
+    expect(mockFns.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test("rejects inviting the owner's own email even without an account lookup hit", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      fakeAdminForCreate({
+        invitedUser: { data: null },
+        withMemberCheck: false,
+        insert: INSERTED_INVITE,
+      })
+    );
+
+    await expect(createInvite("user_1", "team_1", "Owner@example.com")).resolves.toEqual({
+      error: "You cannot invite yourself",
+    });
+    expect(mockFns.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test("returns a warning when the invite email cannot be sent", async () => {
+    mockFns.sendEmail.mockRejectedValue(new Error("smtp down"));
+    mockFns.createAdminClient.mockReturnValue(
+      fakeAdminForCreate({
+        invitedUser: { data: { id: "user_2", email: "new@example.com" } },
+        withMemberCheck: true,
+        insert: INSERTED_INVITE,
+      })
+    );
+
+    const result = await createInvite("user_1", "team_1", "new@example.com");
+
+    expect(result.error).toBeUndefined();
+    expect(result.invite).toMatchObject({ id: "invite_1" });
+    expect(result.warning).toBe("Invite created, but the notification email could not be sent");
   });
 });

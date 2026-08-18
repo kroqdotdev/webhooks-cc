@@ -1,3 +1,6 @@
+import { sendEmail } from "@/lib/email/mailer";
+import { buildTeamInviteEmail } from "@/lib/email/team-invite-email";
+import { publicEnv } from "@/lib/env";
 import { createAdminClient } from "./admin";
 import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
 import { requireActiveTeam, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
@@ -24,8 +27,9 @@ export async function createInvite(
   userId: string,
   teamId: string,
   email: string
-): Promise<{ invite?: TeamInvite; error?: string }> {
+): Promise<{ invite?: TeamInvite; warning?: string; error?: string }> {
   const admin = createAdminClient();
+  const normalizedEmail = email.trim().toLowerCase();
 
   // Verify caller is owner
   const { data: callerMembership, error: callerError } = await admin
@@ -62,51 +66,8 @@ export async function createInvite(
     return { error: NO_SEATS_MESSAGE };
   }
 
-  // Look up invited user by email
-  const { data: invitedUser, error: invitedUserError } = await admin
-    .from("users")
-    .select("id, email")
-    .eq("email", email.toLowerCase())
-    .maybeSingle();
-
-  if (invitedUserError) throw invitedUserError;
-  if (!invitedUser) return { error: "No account found with that email address" };
-
-  // Cannot invite self
-  if (invitedUser.id === userId) return { error: "You cannot invite yourself" };
-
-  // Check if already a member
-  const { data: existingMember, error: existingMemberError } = await admin
-    .from("team_members")
-    .select("id")
-    .eq("team_id", teamId)
-    .eq("user_id", invitedUser.id)
-    .maybeSingle();
-
-  if (existingMemberError) throw existingMemberError;
-  if (existingMember) return { error: "User is already a member of this team" };
-
-  // Check for existing pending invite
-  const { data: existingInvite, error: existingInviteError } = await admin
-    .from("team_invites")
-    .select("id")
-    .eq("team_id", teamId)
-    .eq("invited_user_id", invitedUser.id)
-    .eq("status", "pending")
-    .maybeSingle();
-
-  if (existingInviteError) throw existingInviteError;
-  if (existingInvite) return { error: "A pending invite already exists for this user" };
-
-  // Delete any old declined/accepted invites so the unique constraint doesn't block re-invites
-  await admin
-    .from("team_invites")
-    .delete()
-    .eq("team_id", teamId)
-    .eq("invited_email", email.toLowerCase().trim())
-    .in("status", ["declined", "accepted"]);
-
-  // Look up inviter email and team name for response
+  // Inviter email and team name are needed for the self-invite check, the
+  // invite email, and the response, so fetch them before the invitee lookup.
   const { data: inviterUser, error: inviterError } = await admin
     .from("users")
     .select("email")
@@ -124,14 +85,66 @@ export async function createInvite(
   if (teamError) throw teamError;
   if (!teamData) return { error: "Team not found" };
 
+  // Cannot invite self (by email; the account-id variant is checked below)
+  if (inviterUser?.email?.toLowerCase() === normalizedEmail) {
+    return { error: "You cannot invite yourself" };
+  }
+
+  // Look up the invited user by email. A miss is fine: the invite is created
+  // unlinked and handle_new_user claims it when an account with this email
+  // signs up.
+  const { data: invitedUser, error: invitedUserError } = await admin
+    .from("users")
+    .select("id, email")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+
+  if (invitedUserError) throw invitedUserError;
+
+  if (invitedUser) {
+    if (invitedUser.id === userId) return { error: "You cannot invite yourself" };
+
+    // Check if already a member
+    const { data: existingMember, error: existingMemberError } = await admin
+      .from("team_members")
+      .select("id")
+      .eq("team_id", teamId)
+      .eq("user_id", invitedUser.id)
+      .maybeSingle();
+
+    if (existingMemberError) throw existingMemberError;
+    if (existingMember) return { error: "User is already a member of this team" };
+  }
+
+  // Check for an existing pending invite. Keyed on the email, not the user id:
+  // unknown-address invites have no invited_user_id to match on.
+  const { data: existingInvite, error: existingInviteError } = await admin
+    .from("team_invites")
+    .select("id")
+    .eq("team_id", teamId)
+    .eq("invited_email", normalizedEmail)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (existingInviteError) throw existingInviteError;
+  if (existingInvite) return { error: "A pending invite already exists for this email" };
+
+  // Delete any old declined/accepted invites so the unique constraint doesn't block re-invites
+  await admin
+    .from("team_invites")
+    .delete()
+    .eq("team_id", teamId)
+    .eq("invited_email", normalizedEmail)
+    .in("status", ["declined", "accepted"]);
+
   // Insert invite
   const { data: inviteData, error: insertError } = await admin
     .from("team_invites")
     .insert({
       team_id: teamId,
       invited_by: userId,
-      invited_email: email.toLowerCase().trim(),
-      invited_user_id: invitedUser.id,
+      invited_email: normalizedEmail,
+      invited_user_id: invitedUser?.id ?? null,
       status: "pending",
     })
     .select("id, team_id, invited_by, invited_email, invited_user_id, status, created_at")
@@ -139,12 +152,29 @@ export async function createInvite(
 
   if (insertError) {
     if (insertError.code === "23505") {
-      return { error: "A pending invite already exists for this user" };
+      return { error: "A pending invite already exists for this email" };
     }
     throw insertError;
   }
 
   const invite = inviteData as TeamInviteRow;
+
+  // Best-effort notification: the invite exists in-app regardless of whether
+  // the email delivers, so a send failure downgrades to a warning.
+  let warning: string | undefined;
+  try {
+    await sendEmail(
+      buildTeamInviteEmail({
+        inviterEmail: inviterUser?.email ?? "A webhooks.cc user",
+        teamName: teamData.name,
+        invitedEmail: normalizedEmail,
+        appUrl: publicEnv().NEXT_PUBLIC_APP_URL,
+      })
+    );
+  } catch (error) {
+    console.error("[teams-invites] invite email send failed", { teamId, error });
+    warning = "Invite created, but the notification email could not be sent";
+  }
 
   return {
     invite: {
@@ -153,10 +183,11 @@ export async function createInvite(
       teamName: teamData.name,
       invitedBy: invite.invited_by,
       inviterEmail: inviterUser?.email ?? "",
-      invitedEmail: invitedUser.email,
+      invitedEmail: invite.invited_email,
       status: invite.status,
       createdAt: parseMillis(invite.created_at),
     },
+    warning,
   };
 }
 
