@@ -232,6 +232,100 @@ describe("createTeamCheckout", () => {
       op: "update",
       payload: { polar_customer_id: "cus_team_1" },
     });
+    // The fresh session is cached for the reuse path.
+    const cacheWrite = recorded.find(
+      (call) =>
+        call.table === "teams" &&
+        call.op === "update" &&
+        (call.payload as Record<string, unknown>)?.pending_checkout != null
+    );
+    expect(cacheWrite).toBeDefined();
+    expect((cacheWrite!.payload as Record<string, unknown>).pending_checkout).toMatchObject({
+      url: "https://sandbox.polar.sh/checkout/team",
+      seats: 5,
+    });
+  });
+
+  test("reuses the cached checkout session for the same seat count within the TTL", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            pending_checkout: {
+              id: "co_1",
+              url: "https://sandbox.polar.sh/checkout/cached",
+              seats: 5,
+              created_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          }),
+        ],
+      })
+    );
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/cached"
+    );
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("mints a fresh session when the requested seat count differs from the cached one", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            polar_customer_id: "cus_team_1",
+            pending_checkout: {
+              id: "co_1",
+              url: "https://sandbox.polar.sh/checkout/cached",
+              seats: 3,
+              created_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          }),
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    const checkoutCreate = vi
+      .fn()
+      .mockResolvedValue({ id: "co_2", url: "https://sandbox.polar.sh/checkout/fresh" });
+    mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/fresh"
+    );
+    expect(checkoutCreate).toHaveBeenCalledWith(expect.objectContaining({ seats: 5 }));
+  });
+
+  test("mints a fresh session when the cached one is past the TTL", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            polar_customer_id: "cus_team_1",
+            pending_checkout: {
+              id: "co_1",
+              url: "https://sandbox.polar.sh/checkout/stale",
+              seats: 5,
+              created_at: new Date(Date.now() - 31 * 60_000).toISOString(),
+            },
+          }),
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    const checkoutCreate = vi
+      .fn()
+      .mockResolvedValue({ id: "co_3", url: "https://sandbox.polar.sh/checkout/fresh" });
+    mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/fresh"
+    );
   });
 });
 
@@ -547,6 +641,8 @@ describe("subscription event guards", () => {
       polar_subscription_id: "sub_new",
       subscription_status: "active",
       requests_used: 0,
+      // The checkout that produced this subscription stops being reusable.
+      pending_checkout: null,
     });
   });
 });

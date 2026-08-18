@@ -13,6 +13,9 @@ export const TEAM_SEAT_REQUEST_LIMIT = 100_000;
 
 const MAX_TEAM_SEATS = 1000;
 
+/** How long a cached Polar checkout session is reused instead of minting a new one. */
+const PENDING_CHECKOUT_TTL_MS = 30 * 60_000;
+
 type TeamRow = Database["public"]["Tables"]["teams"]["Row"];
 type TeamUpdate = Database["public"]["Tables"]["teams"]["Update"];
 
@@ -26,10 +29,11 @@ type BillingTeam = Pick<
   | "subscription_status"
   | "seats"
   | "cancel_at_period_end"
+  | "pending_checkout"
 >;
 
 const BILLING_TEAM_COLUMNS =
-  "id, name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, cancel_at_period_end";
+  "id, name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, cancel_at_period_end, pending_checkout";
 
 class TeamBillingError extends Error {
   code: string;
@@ -165,6 +169,25 @@ export async function createTeamCheckout(
     throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
   }
 
+  // Reuse the open checkout session when one was minted moments ago for the
+  // same seat count: a double-click or second tab must not create a second
+  // session that could ALSO be completed. Best-effort dedup only; the
+  // foreign-subscription guard in applyTeamSubscriptionState is the backstop
+  // if two sessions do complete. A different seat count mints a fresh session.
+  const pending = asRecord(team.pending_checkout);
+  const pendingUrl = pending ? asNonEmptyString(pending.url) : null;
+  const pendingAtRaw = pending ? asNonEmptyString(pending.created_at) : null;
+  const pendingAt = pendingAtRaw ? Date.parse(pendingAtRaw) : NaN;
+  if (
+    pendingUrl !== null &&
+    typeof pending?.seats === "number" &&
+    pending.seats === seats &&
+    Number.isFinite(pendingAt) &&
+    Date.now() - pendingAt < PENDING_CHECKOUT_TTL_MS
+  ) {
+    return pendingUrl;
+  }
+
   const polar = createPolarClient();
   const { appUrl, teamsProductId } = getPolarTeamsCheckoutConfig();
   const customerId = await ensureTeamPolarCustomerId(team);
@@ -176,6 +199,21 @@ export async function createTeamCheckout(
     customerId,
   });
   const checkout = unwrapPolarResult(result, "team checkout creation");
+
+  // Cache the session for the reuse path above. The session exists either way,
+  // so a failed cache write only costs the dedup and must not fail the checkout.
+  try {
+    await updateTeamById(team.id, {
+      pending_checkout: {
+        id: checkout.id,
+        url: checkout.url,
+        seats,
+        created_at: new Date().toISOString(),
+      },
+    });
+  } catch (cacheError) {
+    console.error("[team-billing] failed to cache pending checkout", { teamId, cacheError });
+  }
 
   return checkout.url;
 }
@@ -615,6 +653,8 @@ async function applyTeamSubscriptionState(
     period_end: isStalePeriod ? undefined : parseEventTimestamp(data.currentPeriodEnd),
     cancel_at_period_end:
       typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
+    // The checkout that produced this subscription is no longer pending.
+    pending_checkout: null,
     ...(isNewSubscription || isRenewal ? { requests_used: 0 } : {}),
   });
 }
@@ -784,6 +824,9 @@ export async function applyTeamPolarWebhookEvent(
         cancel_at_period_end: false,
         period_start: null,
         period_end: null,
+        // A pre-revoke checkout session must not be resurrected by the reuse
+        // path after a resubscribe.
+        pending_checkout: null,
       });
       return;
 
