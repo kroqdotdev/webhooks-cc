@@ -63,7 +63,7 @@ Handlers stay idempotent (pure column upserts keyed by team id), matching the ex
 
 Primary: Polar's `subscription.updated` on renewal refreshes periods. Fallback: extend `process_billing_period_resets()` (existing per-minute pg_cron job) — for teams with non-null status and `period_end <= now()`: if `cancel_at_period_end`, deactivate (as `subscription.revoked` above); else reset `requests_used = 0` and advance the period 30 days, mirroring the personal Pro branch.
 
-## 4. Schema (new migration `00033_team_billing.sql`)
+## 4. Schema (new migration `00034_team_billing.sql`)
 
 ```sql
 alter table public.teams add column
@@ -151,7 +151,7 @@ Generally available, not team-gated.
 
 1. Bump `@polar-sh/sdk`; verify seat API surface.
 2. Create seat-based Teams product in Polar sandbox + production; set `POLAR_TEAMS_PRODUCT_ID`.
-3. Apply `00033_team_billing.sql` (psql, per project convention).
+3. Apply `00034_team_billing.sql` (psql, per project convention).
 4. Configure GoTrue email provider + SMTP on dev, verify, then production.
 5. `make deploy-web`.
 6. Hard cutover is implicit: existing teams have `subscription_status = null` → suspended with "subscribe" CTA. No data migration needed.

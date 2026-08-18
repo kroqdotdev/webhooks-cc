@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 00033: Team seat-based billing (Polar)
+-- Migration 00034: Team seat-based billing (Polar)
 -- Part 1: schema. Teams get their own subscription + pooled quota state.
 -- ============================================================================
 

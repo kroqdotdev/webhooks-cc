@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 00034: Team billing hardening (PR #310 review follow-ups)
+-- Migration 00035: Team billing hardening (PR #310 review follow-ups)
 --
 -- 1. update_team_seats(): seat changes now happen inside the database, under
 --    the same row lock accept_team_invite takes. The previous flow read the
@@ -8,7 +8,7 @@
 --    the owner was removing.
 -- 2. capture_webhook() ACL: revoke the default public/anon/authenticated
 --    EXECUTE that Supabase hands to every new function in `public` and that
---    00033's create-or-replace preserved. The function is security definer, so
+--    00034's create-or-replace preserved. The function is security definer, so
 --    an anonymous caller holding the published anon key could forge captures
 --    for known endpoint slugs over PostgREST, billing quotas and inserting
 --    request history. The Rust receiver connects as the postgres role (the
@@ -80,7 +80,7 @@ revoke all on function public.update_team_seats(uuid, integer) from public, anon
 grant execute on function public.update_team_seats(uuid, integer) to service_role;
 
 -- ----------------------------------------------------------------------------
--- capture_webhook ACL hardening (same treatment 00025 and 00033 applied to the
+-- capture_webhook ACL hardening (same treatment 00025 and 00034 applied to the
 -- cleanup and search RPCs).
 -- ----------------------------------------------------------------------------
 

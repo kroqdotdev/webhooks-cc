@@ -16,7 +16,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.27.0";
-export const CLI_VERSION = "1.1.2";
+export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
@@ -24,7 +24,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
     version: "0.27.0",
-    date: "2026-08-06",
+    date: "2026-08-18",
     title: "Teams Is Now Its Own Seat-Based Plan",
     track: "web",
     items: [
@@ -34,6 +34,27 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Team-billed requests are kept for 31 days regardless of the endpoint owner's plan",
       "Per-team billing through Polar: subscribe, adjust seats, cancel, and resubscribe from the team page",
       "A team without an active subscription is suspended — its data is kept, but invites, sharing, and member access to shared endpoints pause until it subscribes",
+    ],
+  },
+  {
+    version: "0.26.3",
+    date: "2026-08-11",
+    title: "Security: dependency updates across the stack",
+    track: "web",
+    items: [
+      "Next.js 16.2.11, patching several security advisories in the framework",
+      "All open Dependabot security alerts resolved: hardened transitive dependencies (sharp, tar, js-yaml, dompurify, hono, and friends) via lockfile overrides",
+      "Routine dependency refresh: React 19.2.8, Supabase SSR, Radix UI, Polar SDK, PostHog, and the Rust receiver/CLI dependency set (including a quinn-proto advisory fix)",
+    ],
+  },
+  {
+    version: "0.26.2",
+    date: "2026-08-11",
+    title: "Fix: CLI login no longer locks out at the API key cap",
+    track: "web",
+    items: [
+      "CLI device logins at the 10-key limit now rotate the oldest CLI-issued key instead of failing with an opaque “Claim failed” — manually created keys are never touched",
+      "When a claim does hit the cap (all keys manually created), the CLI now shows an actionable message pointing to the account page instead of “Claim failed”",
     ],
   },
   {
@@ -602,6 +623,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.1.3",
+    date: "2026-08-11",
+    title: "Self-Update Rescue for v0.x Installs",
+    track: "cli",
+    items: [
+      "Releases again include the legacy `whk_<os>_<arch>` archives (with checksums), so `whk update` works from pre-1.0 installs — v0.6.0 users stuck on “no release asset for darwin/arm64” can now update straight to the current version",
+      "No binary changes — identical CLI code to 1.1.2",
+    ],
+  },
   {
     version: "1.1.2",
     date: "2026-05-24",

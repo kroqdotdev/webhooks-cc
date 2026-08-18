@@ -20,6 +20,8 @@ export interface Database {
           is_agent_issued: boolean;
           client_name: string | null;
           claimed_at: string | null;
+          // Minted by the CLI device flow (rotation-eligible) — migration 00033.
+          is_device_auth: boolean;
         };
         Insert: {
           id?: string;
@@ -34,6 +36,7 @@ export interface Database {
           is_agent_issued?: boolean;
           client_name?: string | null;
           claimed_at?: string | null;
+          is_device_auth?: boolean;
         };
         Update: {
           id?: string;
@@ -48,6 +51,7 @@ export interface Database {
           is_agent_issued?: boolean;
           client_name?: string | null;
           claimed_at?: string | null;
+          is_device_auth?: boolean;
         };
         Relationships: [];
       };
@@ -546,6 +550,17 @@ export interface Database {
         Args: {
           p_team_id: string;
           p_seats: number;
+        };
+        Returns: Json;
+      };
+      claim_device_code: {
+        Args: {
+          p_device_code: string;
+          p_key_hash: string;
+          p_key_prefix: string;
+          p_key_name: string;
+          p_key_expires_at: string;
+          p_max_keys: number;
         };
         Returns: Json;
       };
