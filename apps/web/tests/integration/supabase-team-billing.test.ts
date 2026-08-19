@@ -1,8 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
+import type { Json } from "@/lib/supabase/database";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
-import { TEAM_SEAT_REQUEST_LIMIT, applyTeamPolarWebhookEvent } from "@/lib/supabase/team-billing";
+import {
+  TEAM_SEAT_REQUEST_LIMIT,
+  applyTeamPolarWebhookEvent,
+  claimPendingCheckoutSlot,
+} from "@/lib/supabase/team-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -493,6 +498,65 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     expect(team.subscription_status).toBe("active");
     expect(team.seats).toBeGreaterThanOrEqual(1);
     expect(team.request_limit).toBeGreaterThanOrEqual(TEAM_SEAT_REQUEST_LIMIT);
+  });
+});
+
+describe("pending-checkout claim", () => {
+  // Pins the PostgREST filter syntax claimPendingCheckoutSlot relies on
+  // (jsonb ->> paths and quoted values inside or()) against the real server.
+  let teamId: string;
+
+  beforeAll(async () => {
+    teamId = await createTestTeam(altOwnerId, `TB Claim ${ts}`);
+  });
+
+  async function setPending(value: Json | null) {
+    const { error } = await admin
+      .from("teams")
+      .update({ pending_checkout: value })
+      .eq("id", teamId);
+    if (error) throw error;
+  }
+
+  it("claims an empty slot, then refuses while the fresh lease is held", async () => {
+    await setPending(null);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(true);
+    // Second concurrent-style request for the same seat count: blocked.
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(false);
+  });
+
+  it("claims over an abandoned lease", async () => {
+    await setPending({
+      status: "creating",
+      seats: 3,
+      created_at: new Date(Date.now() - 2 * 60_000).toISOString(),
+    });
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(true);
+  });
+
+  it("refuses over an open same-seat session, claims for a different seat count", async () => {
+    const session: Json = {
+      id: "co_claim",
+      url: "https://example.com/checkout",
+      seats: 3,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    await setPending(session);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(false);
+    await setPending(session);
+    expect(await claimPendingCheckoutSlot(teamId, 5)).toBe(true);
+  });
+
+  it("claims over an expired session", async () => {
+    await setPending({
+      id: "co_claim",
+      url: "https://example.com/checkout",
+      seats: 3,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() - 1_000).toISOString(),
+    });
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(true);
   });
 });
 

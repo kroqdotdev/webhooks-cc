@@ -633,7 +633,7 @@ git add -A && git commit -m "chore(release): v0.28.0, team email invites + Plan 
 | #1 Personal Pro renewal usage-reset race | **Fixed here** (Task 6) |
 | #2 Departed-member shares keep billing the pool | **Fixed here** (Task 9) |
 | #3 Webhook no-op for deleted teams | Already holds by inspection; **pinned by tests** (Task 11) |
-| #3 Pending-checkout tracking / double-checkout gap | **Best-effort fix here** (Task 8: session reuse) + DB-side backstop (Task 7 G1). Full checkout serialization stays out of scope: the remaining window requires two sessions minted for different seat counts AND both completed, and G1's error log is the remediation signal for the Polar-side orphan. |
+| #3 Pending-checkout tracking / double-checkout gap | **Fixed here** (Task 8: session reuse; extended post-review with an atomic per-team lease on `pending_checkout`, so concurrent requests cannot both mint, the loser reuses the winner's session or gets `checkout_in_progress`). DB-side backstop: Task 7 G1. |
 | #3 Alerting on seat/subscription revoke failure | **Stays log-based, by decision.** There is no alerting infrastructure; revoke failures `console.error` into journald, which the operator tails (`make prod`). Revisit if/when an alerting channel exists. |
 | #4 `capture_webhook` ACL hardening | Shipped in Plan A (00035); nothing to do |
 | #5 Live-subscription guard on `created`/`updated`/`active` | **Fixed here** (Task 7) |

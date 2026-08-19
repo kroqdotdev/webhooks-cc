@@ -225,7 +225,7 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
     expect(update!.filters).toContainEqual(["eq", "period_start", "2026-07-01T00:00:00.000Z"]);
   });
 
-  test("a non-renewal update writes unconditionally (only the row id filter)", async () => {
+  test("a non-renewal update is compare-and-swapped on the observed state too", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "users:select": [storedUser({ period_start: "2026-08-01T00:00:00.000Z" })],
@@ -235,9 +235,13 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
 
     await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
 
+    // An updated event read before a concurrent revoke must not resurrect the
+    // revoked subscription's state after it.
     const update = recorded.find((call) => call.table === "users" && call.op === "update");
     expect(update).toBeDefined();
-    expect(update!.filters).toEqual([["eq", "id", "user_1"]]);
+    expect(update!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
+    expect(update!.filters).toContainEqual(["eq", "period_start", "2026-08-01T00:00:00.000Z"]);
+    expect(update!.payload).not.toHaveProperty("requests_used");
   });
 
   test("no-ops for a user row that no longer exists", async () => {

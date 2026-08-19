@@ -17,6 +17,13 @@ const MAX_TEAM_SEATS = 1000;
 /** How long a cached Polar checkout session is reused instead of minting a new one. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60_000;
 
+/**
+ * How long a "creating" lease blocks other requests from minting. Polar
+ * checkout creation takes single-digit seconds; a lease older than this is an
+ * abandoned attempt (crashed request) and may be claimed over.
+ */
+const CHECKOUT_LEASE_TTL_MS = 60_000;
+
 type TeamRow = Database["public"]["Tables"]["teams"]["Row"];
 type TeamUpdate = Database["public"]["Tables"]["teams"]["Update"];
 
@@ -158,6 +165,69 @@ function assertValidSeatCount(seats: number): void {
 // Subscription management (owner-initiated)
 // ---------------------------------------------------------------------------
 
+/**
+ * The cached Polar session's URL when it is reusable for this seat count, else
+ * null. Polar's own session expiry is authoritative when stored; the 30-minute
+ * TTL on created_at is the fallback for caches without one. A "creating" lease
+ * (no url yet) is never reusable.
+ */
+function reusablePendingCheckoutUrl(pendingCheckout: unknown, seats: number): string | null {
+  const pending = asRecord(pendingCheckout);
+  const url = pending ? asNonEmptyString(pending.url) : null;
+  if (url === null || typeof pending?.seats !== "number" || pending.seats !== seats) {
+    return null;
+  }
+
+  const createdAtRaw = asNonEmptyString(pending.created_at);
+  const createdAt = createdAtRaw ? Date.parse(createdAtRaw) : NaN;
+  const expiresAtRaw = asNonEmptyString(pending.expires_at);
+  const expiresAt = expiresAtRaw ? Date.parse(expiresAtRaw) : NaN;
+  const sessionStillOpen = Number.isFinite(expiresAt)
+    ? Date.now() < expiresAt
+    : Number.isFinite(createdAt) && Date.now() - createdAt < PENDING_CHECKOUT_TTL_MS;
+
+  return sessionStillOpen ? url : null;
+}
+
+/**
+ * Atomically claims the right to mint a Polar checkout session for a team by
+ * writing a "creating" lease into `pending_checkout`. The claim succeeds when
+ * the slot is empty, holds an abandoned lease (older than the lease TTL), an
+ * expired session, or a session for a different seat count — exactly the
+ * states `createTeamCheckout` would mint over. Concurrent requests race this
+ * single conditional UPDATE, so at most one of them mints; the losers reuse
+ * the winner's session or report checkout_in_progress.
+ *
+ * Exported for the integration test that pins the PostgREST filter syntax.
+ */
+export async function claimPendingCheckoutSlot(teamId: string, seats: number): Promise<boolean> {
+  const admin = createAdminClient();
+  const now = Date.now();
+  const leaseCutoff = new Date(now - CHECKOUT_LEASE_TTL_MS).toISOString();
+  const nowIso = new Date(now).toISOString();
+
+  const { data, error } = await admin
+    .from("teams")
+    .update({ pending_checkout: { status: "creating", seats, created_at: nowIso } })
+    .eq("id", teamId)
+    .or(
+      [
+        "pending_checkout.is.null",
+        `pending_checkout->>created_at.lt."${leaseCutoff}"`,
+        `pending_checkout->>seats.neq.${seats}`,
+        `pending_checkout->>expires_at.lt."${nowIso}"`,
+      ].join(",")
+    )
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data !== null;
+}
+
 export async function createTeamCheckout(
   userId: string,
   teamId: string,
@@ -170,60 +240,84 @@ export async function createTeamCheckout(
     throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
   }
 
-  // Reuse the open checkout session when one is still live for the same seat
-  // count: a double-click or second tab must not create a second session that
-  // could ALSO be completed. Polar's own session expiry is authoritative when
-  // stored; the 30-minute TTL on created_at is the fallback for caches written
-  // before expires_at existed (or when Polar omitted it). Best-effort dedup
-  // only; the foreign-subscription guard in applyTeamSubscriptionState is the
-  // backstop if two sessions do complete. A different seat count mints fresh.
-  const pending = asRecord(team.pending_checkout);
-  const pendingUrl = pending ? asNonEmptyString(pending.url) : null;
-  const pendingAtRaw = pending ? asNonEmptyString(pending.created_at) : null;
-  const pendingAt = pendingAtRaw ? Date.parse(pendingAtRaw) : NaN;
-  const pendingExpiresRaw = pending ? asNonEmptyString(pending.expires_at) : null;
-  const pendingExpiresAt = pendingExpiresRaw ? Date.parse(pendingExpiresRaw) : NaN;
-  const sessionStillOpen = Number.isFinite(pendingExpiresAt)
-    ? Date.now() < pendingExpiresAt
-    : Number.isFinite(pendingAt) && Date.now() - pendingAt < PENDING_CHECKOUT_TTL_MS;
-  if (
-    pendingUrl !== null &&
-    typeof pending?.seats === "number" &&
-    pending.seats === seats &&
-    sessionStillOpen
-  ) {
-    return pendingUrl;
+  // Reuse the open checkout session for the same seat count: a double-click
+  // or second tab must not create a second session that could ALSO be
+  // completed.
+  const cachedUrl = reusablePendingCheckoutUrl(team.pending_checkout, seats);
+  if (cachedUrl !== null) {
+    return cachedUrl;
   }
 
-  const polar = createPolarClient();
-  const { appUrl, teamsProductId } = getPolarTeamsCheckoutConfig();
-  const customerId = await ensureTeamPolarCustomerId(team);
+  // Serialize minting: exactly one concurrent request wins the lease and
+  // creates the Polar session. The foreign-subscription guard in
+  // applyTeamSubscriptionState remains the backstop for sessions minted
+  // before this lease existed (or across a lease expiry).
+  const claimed = await claimPendingCheckoutSlot(teamId, seats);
+  if (!claimed) {
+    // Another request holds the slot. One re-read settles whether it already
+    // finished (reuse its session) or is still minting (tell the caller to
+    // retry in a moment rather than minting a double).
+    const admin = createAdminClient();
+    const { data: fresh, error } = await admin
+      .from("teams")
+      .select("pending_checkout")
+      .eq("id", teamId)
+      .maybeSingle();
 
-  const result = await polar.checkouts.create({
-    products: [teamsProductId],
-    seats,
-    successUrl: `${appUrl}/teams/${teamId}?subscribed=true`,
-    customerId,
-  });
-  const checkout = unwrapPolarResult(result, "team checkout creation");
+    if (error) throw error;
 
-  // Cache the session for the reuse path above. The session exists either way,
-  // so a failed cache write only costs the dedup and must not fail the checkout.
+    const freshUrl = reusablePendingCheckoutUrl(fresh?.pending_checkout ?? null, seats);
+    if (freshUrl !== null) {
+      return freshUrl;
+    }
+
+    throw new TeamBillingError(
+      "checkout_in_progress",
+      "A checkout session is already being prepared for this team — try again in a moment"
+    );
+  }
+
   try {
-    await updateTeamById(team.id, {
-      pending_checkout: {
-        id: checkout.id,
-        url: checkout.url,
-        seats,
-        created_at: new Date().toISOString(),
-        expires_at: parseEventTimestamp(checkout.expiresAt),
-      },
-    });
-  } catch (cacheError) {
-    console.error("[team-billing] failed to cache pending checkout", { teamId, cacheError });
-  }
+    const polar = createPolarClient();
+    const { appUrl, teamsProductId } = getPolarTeamsCheckoutConfig();
+    const customerId = await ensureTeamPolarCustomerId(team);
 
-  return checkout.url;
+    const result = await polar.checkouts.create({
+      products: [teamsProductId],
+      seats,
+      successUrl: `${appUrl}/teams/${teamId}?subscribed=true`,
+      customerId,
+    });
+    const checkout = unwrapPolarResult(result, "team checkout creation");
+
+    // Replace the lease with the session for the reuse path. The session
+    // exists either way, so a failed cache write only costs the dedup (the
+    // lease TTL then reopens the slot) and must not fail the checkout.
+    try {
+      await updateTeamById(team.id, {
+        pending_checkout: {
+          id: checkout.id,
+          url: checkout.url,
+          seats,
+          created_at: new Date().toISOString(),
+          expires_at: parseEventTimestamp(checkout.expiresAt),
+        },
+      });
+    } catch (cacheError) {
+      console.error("[team-billing] failed to cache pending checkout", { teamId, cacheError });
+    }
+
+    return checkout.url;
+  } catch (error) {
+    // Release the lease so a retry can mint immediately instead of waiting
+    // out the lease TTL. Best effort: the TTL is the backstop.
+    try {
+      await updateTeamById(team.id, { pending_checkout: null });
+    } catch (releaseError) {
+      console.error("[team-billing] failed to release checkout lease", { teamId, releaseError });
+    }
+    throw error;
+  }
 }
 
 export async function cancelTeamSubscription(userId: string, teamId: string): Promise<void> {
@@ -665,58 +759,81 @@ async function applyTeamSubscriptionState(
     pending_checkout: null,
   };
 
-  if (isNewSubscription || isRenewal) {
-    // The pooled-usage reset must apply at most once: two overlapping
-    // deliveries of the same renewal would otherwise both read the old
-    // period_start, both classify as renewals, and the second write would
-    // erase captures billed between them. Conditioning the write on the
-    // subscription id and period start we read makes the loser a no-op (the
-    // winner already wrote this event's full state).
-    let guarded = admin
-      .from("teams")
-      .update({ ...patch, requests_used: 0 })
-      .eq("id", teamId);
-    guarded =
-      team.polar_subscription_id === null
-        ? guarded.is("polar_subscription_id", null)
-        : guarded.eq("polar_subscription_id", team.polar_subscription_id);
-    guarded =
-      team.period_start === null
-        ? guarded.is("period_start", null)
-        : guarded.eq("period_start", team.period_start);
+  // Every write is compare-and-swapped on the state that was read. This keeps
+  // two failure modes out: overlapping deliveries of the same renewal both
+  // zeroing the pool (erasing captures billed between the writes), and an
+  // updated/active event read before a concurrent revoke resurrecting the
+  // revoked subscription's state after it. The loser's write matches no rows;
+  // events carry full state and Polar redelivers, so a skipped write converges
+  // on the next delivery.
+  let guarded = admin
+    .from("teams")
+    .update(isNewSubscription || isRenewal ? { ...patch, requests_used: 0 } : patch)
+    .eq("id", teamId);
+  guarded =
+    team.polar_subscription_id === null
+      ? guarded.is("polar_subscription_id", null)
+      : guarded.eq("polar_subscription_id", team.polar_subscription_id);
+  guarded =
+    team.period_start === null
+      ? guarded.is("period_start", null)
+      : guarded.eq("period_start", team.period_start);
 
-    const { error: guardedError } = await guarded;
-    if (guardedError) throw guardedError;
-    return;
-  }
-
-  await updateTeamById(teamId, patch);
+  const { error: guardedError } = await guarded;
+  if (guardedError) throw guardedError;
 }
 
 /**
- * Whether a cancel/uncancel/revoke event still describes the subscription the
- * team holds. Cancel and uncancel write a non-null `subscription_status`, which
- * is the team's access gate — so a retried `subscription.canceled` landing after
- * `subscription.revoked` would silently re-open a deactivated team's pool, and
- * neither reset CTE could ever clean it up (both require `period_end` non-null).
- * A `canceled` that arrives too early is safe to drop: the `created`/`updated`
- * event that follows carries `cancelAtPeriodEnd` and re-applies it.
+ * The stored subscription id when a cancel/uncancel/revoke event still
+ * describes the subscription the team holds, else null. Cancel and uncancel
+ * write a non-null `subscription_status`, which is the team's access gate — so
+ * a retried `subscription.canceled` landing after `subscription.revoked` would
+ * silently re-open a deactivated team's pool, and neither reset CTE could ever
+ * clean it up (both require `period_end` non-null). A `canceled` that arrives
+ * too early is safe to drop: the `created`/`updated` event that follows
+ * carries `cancelAtPeriodEnd` and re-applies it.
  *
- * Revocation needs the same check in the other direction: after a team replaces
- * its subscription, a delayed or retried `subscription.revoked` for the old one
- * must not clear the row that now tracks the new, paying subscription.
+ * Revocation needs the same check in the other direction: after a team
+ * replaces its subscription, a delayed or retried `subscription.revoked` for
+ * the old one must not clear the row that now tracks the new, paying
+ * subscription.
+ *
+ * Callers condition their write on the returned id (see
+ * `updateTeamForSubscription`), so a subscription replaced between this read
+ * and the write turns the write into a no-op instead of clobbering the
+ * replacement.
  */
-async function isLiveSubscriptionEvent(
+async function liveSubscriptionIdForEvent(
   teamId: string,
   data: Record<string, unknown>
-): Promise<boolean> {
+): Promise<string | null> {
   const storedSubscriptionId = await getTeamSubscriptionId(teamId);
   if (!storedSubscriptionId) {
-    return false;
+    return null;
   }
 
   const eventSubscriptionId = asNonEmptyString(data.id);
-  return eventSubscriptionId === null || eventSubscriptionId === storedSubscriptionId;
+  return eventSubscriptionId === null || eventSubscriptionId === storedSubscriptionId
+    ? storedSubscriptionId
+    : null;
+}
+
+/** Applies a terminal-transition patch only while the team still tracks `subscriptionId`. */
+async function updateTeamForSubscription(
+  teamId: string,
+  subscriptionId: string,
+  patch: TeamUpdate
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("teams")
+    .update(patch)
+    .eq("id", teamId)
+    .eq("polar_subscription_id", subscriptionId);
+
+  if (error) {
+    throw error;
+  }
 }
 
 async function applySeatAssignment(teamId: string, data: Record<string, unknown>): Promise<void> {
@@ -790,6 +907,11 @@ async function applySeatRevocation(teamId: string, data: Record<string, unknown>
     return;
   }
 
+  // Shares before the membership row, like remove/leave: a failure here
+  // throws, the webhook answers 500, and Polar's redelivery retries the whole
+  // removal, so cleanup cannot be silently lost.
+  await removeMemberShares(teamId, memberUserId);
+
   const { error } = await admin
     .from("team_members")
     .delete()
@@ -799,10 +921,6 @@ async function applySeatRevocation(teamId: string, data: Record<string, unknown>
   if (error) {
     throw error;
   }
-
-  // The webhook-driven removal cleans up like remove/leave do: the departed
-  // member's shares must stop billing the team pool.
-  await removeMemberShares(teamId, memberUserId);
 }
 
 export async function applyTeamPolarWebhookEvent(
@@ -826,37 +944,42 @@ export async function applyTeamPolarWebhookEvent(
       await applyTeamSubscriptionState(eventType, teamId, data);
       return;
 
-    case "subscription.canceled":
-      if (!(await isLiveSubscriptionEvent(teamId, data))) {
+    case "subscription.canceled": {
+      const liveId = await liveSubscriptionIdForEvent(teamId, data);
+      if (!liveId) {
         return;
       }
 
-      await updateTeamById(teamId, {
+      await updateTeamForSubscription(teamId, liveId, {
         cancel_at_period_end: true,
         subscription_status: "canceled",
       });
       return;
+    }
 
-    case "subscription.uncanceled":
-      if (!(await isLiveSubscriptionEvent(teamId, data))) {
+    case "subscription.uncanceled": {
+      const liveId = await liveSubscriptionIdForEvent(teamId, data);
+      if (!liveId) {
         return;
       }
 
-      await updateTeamById(teamId, {
+      await updateTeamForSubscription(teamId, liveId, {
         cancel_at_period_end: false,
         subscription_status: normalizeStoredSubscriptionStatus(data.status) ?? "active",
       });
       return;
+    }
 
-    case "subscription.revoked":
-      if (!(await isLiveSubscriptionEvent(teamId, data))) {
+    case "subscription.revoked": {
+      const liveId = await liveSubscriptionIdForEvent(teamId, data);
+      if (!liveId) {
         return;
       }
 
       // Nulling the status is what deactivates the team: capture_webhook and the
       // gating helpers key off it. seats/requests_used/request_limit are kept so
       // the period's usage stays visible until a new subscription resets it.
-      await updateTeamById(teamId, {
+      await updateTeamForSubscription(teamId, liveId, {
         subscription_status: null,
         polar_subscription_id: null,
         cancel_at_period_end: false,
@@ -867,6 +990,7 @@ export async function applyTeamPolarWebhookEvent(
         pending_checkout: null,
       });
       return;
+    }
 
     case "customer_seat.assigned":
     case "customer_seat.claimed":

@@ -93,6 +93,11 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
         };
       }
 
+      builder.or = (expression: string) => {
+        filters.push(["or", expression, null]);
+        return builder;
+      };
+
       for (const method of ["insert", "update", "delete"] as const) {
         builder[method] = (value?: unknown) => {
           op = method;
@@ -201,6 +206,8 @@ describe("createTeamCheckout", () => {
         "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow()],
         "users:select": [{ data: null }],
+        // Lease claim, then the lease release after the failure.
+        "teams:update": [{ data: { id: "team_1" } }, {}],
       })
     );
 
@@ -220,7 +227,8 @@ describe("createTeamCheckout", () => {
         "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow()],
         "users:select": [{ data: { email: "owner@example.com" } }],
-        "teams:update": [{}],
+        // Lease claim, customer-id write, session cache write.
+        "teams:update": [{ data: { id: "team_1" } }, {}, {}],
       })
     );
 
@@ -254,12 +262,18 @@ describe("createTeamCheckout", () => {
       op: "update",
       payload: { polar_customer_id: "cus_team_1" },
     });
-    // The fresh session is cached for the reuse path.
+    // The fresh session is cached for the reuse path (the lease claim also
+    // writes pending_checkout, so match on the session's url).
     const cacheWrite = recorded.find(
       (call) =>
         call.table === "teams" &&
         call.op === "update" &&
-        (call.payload as Record<string, unknown>)?.pending_checkout != null
+        (
+          (call.payload as Record<string, unknown>)?.pending_checkout as
+            | Record<string, unknown>
+            | null
+            | undefined
+        )?.url != null
     );
     expect(cacheWrite).toBeDefined();
     expect((cacheWrite!.payload as Record<string, unknown>).pending_checkout).toMatchObject({
@@ -306,7 +320,7 @@ describe("createTeamCheckout", () => {
             },
           }),
         ],
-        "teams:update": [{}],
+        "teams:update": [{ data: { id: "team_1" } }, {}],
       })
     );
 
@@ -327,7 +341,7 @@ describe("createTeamCheckout", () => {
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow({ polar_customer_id: "cus_team_1" })],
-        "teams:update": [{ error: new Error("db down") }],
+        "teams:update": [{ data: { id: "team_1" } }, { error: new Error("db down") }],
       })
     );
 
@@ -384,7 +398,7 @@ describe("createTeamCheckout", () => {
             },
           }),
         ],
-        "teams:update": [{}],
+        "teams:update": [{ data: { id: "team_1" } }, {}],
       })
     );
 
@@ -413,7 +427,7 @@ describe("createTeamCheckout", () => {
             },
           }),
         ],
-        "teams:update": [{}],
+        "teams:update": [{ data: { id: "team_1" } }, {}],
       })
     );
 
@@ -425,6 +439,85 @@ describe("createTeamCheckout", () => {
     await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
       "https://sandbox.polar.sh/checkout/fresh"
     );
+  });
+
+  test("returns the winner's session when the lease claim is lost and the session appeared", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow(),
+          // Re-read after the lost claim: the concurrent winner finished.
+          {
+            data: {
+              pending_checkout: {
+                id: "co_w",
+                url: "https://sandbox.polar.sh/checkout/winner",
+                seats: 5,
+                created_at: new Date(Date.now() - 5_000).toISOString(),
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              },
+            },
+          },
+        ],
+        "teams:update": [{ data: null }],
+      })
+    );
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/winner"
+    );
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("reports checkout_in_progress when another request is still minting", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow(),
+          // Re-read after the lost claim: the winner is still creating.
+          {
+            data: {
+              pending_checkout: {
+                status: "creating",
+                seats: 5,
+                created_at: new Date(Date.now() - 2_000).toISOString(),
+              },
+            },
+          },
+        ],
+        "teams:update": [{ data: null }],
+      })
+    );
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
+      code: "checkout_in_progress",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("releases the lease when Polar rejects the checkout", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_customer_id: "cus_team_1" })],
+        "teams:update": [{ data: { id: "team_1" } }, {}],
+      })
+    );
+
+    const checkoutCreate = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toThrow("polar down");
+
+    // A retry must be able to mint immediately instead of waiting out the
+    // lease TTL.
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: { pending_checkout: null },
+    });
   });
 });
 
@@ -923,7 +1016,7 @@ describe("subscription event guards", () => {
     expect(teamsUpdates()[0].payload).toMatchObject({ requests_used: 0 });
   });
 
-  test("a non-renewal update writes unconditionally (only the row id filter)", async () => {
+  test("a non-renewal update is compare-and-swapped on the observed state too", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "teams:select": [
@@ -942,9 +1035,35 @@ describe("subscription event guards", () => {
 
     await applyTeamPolarWebhookEvent("subscription.updated", "team_1", subscriptionEvent("sub_1"));
 
+    // An updated/active event read before a concurrent revoke must not
+    // resurrect the revoked subscription's state after it.
     const update = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
     expect(update).toBeDefined();
-    expect(update!.filters).toEqual([["eq", "id", "team_1"]]);
+    expect(update!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
+    expect(update!.filters).toContainEqual(["eq", "period_start", "2026-08-01T00:00:00.000Z"]);
+  });
+
+  test("terminal transitions are conditioned on the live subscription id", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          { data: { polar_subscription_id: "sub_1" } },
+          { data: { polar_subscription_id: "sub_1" } },
+        ],
+        "teams:update": [{}, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent("subscription.canceled", "team_1", { id: "sub_1" });
+    await applyTeamPolarWebhookEvent("subscription.revoked", "team_1", { id: "sub_1" });
+
+    const updates = recordedFilters.filter((c) => c.table === "teams" && c.op === "update");
+    expect(updates).toHaveLength(2);
+    for (const update of updates) {
+      // A replacement subscription committing between the liveness read and
+      // this write must turn the write into a no-op, not get clobbered.
+      expect(update.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
+    }
   });
 });
 

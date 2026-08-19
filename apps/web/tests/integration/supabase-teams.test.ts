@@ -391,9 +391,11 @@ describe("Teams Integration", () => {
   describe("Unknown-email invites", () => {
     const GHOST_EMAIL = `test-teams-ghost-${ts}@webhooks-test.local`;
     const GHOST2_EMAIL = `test-teams-ghost2-${ts}@webhooks-test.local`;
+    const GHOST3_EMAIL = `test-teams-ghost3-${ts}@webhooks-test.local`;
     let ghostTeamId: string;
     let ghostUserId: string | null = null;
     let ghost2UserId: string | null = null;
+    let ghost3UserId: string | null = null;
     let ghostInviteId: string;
 
     beforeAll(async () => {
@@ -406,6 +408,7 @@ describe("Teams Integration", () => {
       await admin.from("teams").delete().eq("id", ghostTeamId);
       if (ghostUserId) await admin.auth.admin.deleteUser(ghostUserId);
       if (ghost2UserId) await admin.auth.admin.deleteUser(ghost2UserId);
+      if (ghost3UserId) await admin.auth.admin.deleteUser(ghost3UserId);
     });
 
     it("creates an unlinked invite for an email with no account and records the email", async () => {
@@ -484,6 +487,32 @@ describe("Teams Integration", () => {
         .maybeSingle();
       expect(membership).not.toBeNull();
       expect(membership!.role).toBe("member");
+    });
+
+    it("self-heals an invite whose signup linking was lost", async () => {
+      const result = await createInvite(ownerId, ghostTeamId, GHOST3_EMAIL);
+      expect(result.error).toBeUndefined();
+      const inviteId = result.invite!.id;
+
+      ghost3UserId = await createTestUser(GHOST3_EMAIL, "Ghost Three");
+
+      // Simulate the lost signup race / failed reconcile: force the link off.
+      await admin.from("team_invites").update({ invited_user_id: null }).eq("id", inviteId);
+
+      // Listing surfaces the unlinked invite by email AND repairs the link.
+      const invites = await listPendingInvitesForUser(ghost3UserId);
+      expect(invites.some((i) => i.id === inviteId)).toBe(true);
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id")
+        .eq("id", inviteId)
+        .maybeSingle();
+      expect(row!.invited_user_id).toBe(ghost3UserId);
+
+      // And the healed invite accepts end-to-end.
+      const accepted = await acceptInvite(ghost3UserId, inviteId);
+      expect(accepted.accepted).toBe(true);
     });
   });
 

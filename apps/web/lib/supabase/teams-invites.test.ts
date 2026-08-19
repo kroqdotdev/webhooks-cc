@@ -100,7 +100,7 @@ const NO_SEATS = "Team has no available seats — ask the owner to add seats";
 const INACTIVE = "This team needs an active Teams subscription";
 
 const PENDING_INVITE: QueryResult = {
-  data: { team_id: "team_1", invited_email: "member@example.com" },
+  data: { team_id: "team_1", invited_email: "member@example.com", invited_user_id: "user_1" },
 };
 
 beforeEach(() => {
@@ -301,6 +301,63 @@ describe("acceptInvite", () => {
 
   test("spends no seat when the invite is not pending for this user", async () => {
     const admin = createFakeAdmin({ "team_invites:select": [{ data: null }] });
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: false });
+    expect(mockFns.assignTeamSeat).not.toHaveBeenCalled();
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  test("claims and accepts an unlinked invite addressed to the caller's email", async () => {
+    // The invite was created before the account existed and the trigger never
+    // linked it: accepting by the owning email is the durable recovery path.
+    const admin = createFakeAdmin(
+      {
+        "team_invites:select": [
+          { data: { team_id: "team_1", invited_email: "member@example.com", invited_user_id: null } },
+        ],
+        "users:select": [{ data: { email: "Member@Example.com" } }],
+        "team_invites:update": [{ data: { id: "invite_1" } }],
+        "team_members:select": [{ data: null }],
+      },
+      { status: "accepted" }
+    );
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: true });
+    expect(recorded).toContainEqual({
+      table: "team_invites",
+      op: "update",
+      payload: { invited_user_id: "user_1" },
+    });
+  });
+
+  test("refuses an unlinked invite addressed to a different email", async () => {
+    const admin = createFakeAdmin({
+      "team_invites:select": [
+        { data: { team_id: "team_1", invited_email: "member@example.com", invited_user_id: null } },
+      ],
+      "users:select": [{ data: { email: "other@example.com" } }],
+    });
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: false });
+    expect(mockFns.assignTeamSeat).not.toHaveBeenCalled();
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  test("refuses an invite linked to a different user", async () => {
+    const admin = createFakeAdmin({
+      "team_invites:select": [
+        {
+          data: {
+            team_id: "team_1",
+            invited_email: "member@example.com",
+            invited_user_id: "user_9",
+          },
+        },
+      ],
+    });
     mockFns.createAdminClient.mockReturnValue(admin);
 
     await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: false });

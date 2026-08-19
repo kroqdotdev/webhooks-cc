@@ -7,6 +7,7 @@ export const ERROR_STATUS: Record<string, number> = {
   not_owner: 403,
   team_not_found: 404,
   already_subscribed: 409,
+  checkout_in_progress: 409,
   invalid_seats: 400,
   no_subscription: 409,
   not_scheduled: 409,

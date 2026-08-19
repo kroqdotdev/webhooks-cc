@@ -292,32 +292,28 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
           typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
       };
 
-      if (isNewSubscription || isRenewal) {
-        // The reset must apply at most once: two overlapping deliveries of the
-        // same renewal would otherwise both read the old period_start, both
-        // classify as renewals, and the second write would erase usage captured
-        // between them. Conditioning the write on the subscription id and
-        // period start we read makes the loser a no-op (the winner already
-        // wrote this event's full state).
-        let guarded = admin
-          .from("users")
-          .update({ ...patch, requests_used: 0 })
-          .eq("id", userId);
-        guarded =
-          stored.polar_subscription_id === null
-            ? guarded.is("polar_subscription_id", null)
-            : guarded.eq("polar_subscription_id", stored.polar_subscription_id);
-        guarded =
-          stored.period_start === null
-            ? guarded.is("period_start", null)
-            : guarded.eq("period_start", stored.period_start);
+      // Every write is compare-and-swapped on the state that was read. This
+      // keeps two failure modes out: overlapping deliveries of the same
+      // renewal both zeroing requests_used (erasing usage captured between the
+      // writes), and an updated/active event read before a concurrent revoke
+      // resurrecting the revoked subscription's state after it. The loser's
+      // write matches no rows; events carry full state and Polar redelivers,
+      // so a skipped write converges on the next delivery.
+      let guarded = admin
+        .from("users")
+        .update(isNewSubscription || isRenewal ? { ...patch, requests_used: 0 } : patch)
+        .eq("id", userId);
+      guarded =
+        stored.polar_subscription_id === null
+          ? guarded.is("polar_subscription_id", null)
+          : guarded.eq("polar_subscription_id", stored.polar_subscription_id);
+      guarded =
+        stored.period_start === null
+          ? guarded.is("period_start", null)
+          : guarded.eq("period_start", stored.period_start);
 
-        const { error: guardedError } = await guarded;
-        if (guardedError) throw guardedError;
-        return;
-      }
-
-      await updateUserById(userId, patch);
+      const { error: guardedError } = await guarded;
+      if (guardedError) throw guardedError;
       return;
     }
 

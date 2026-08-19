@@ -485,6 +485,20 @@ function TeamDetailContent() {
         <h1 className="text-2xl font-bold">{teamName}</h1>
       </div>
 
+      {/* A failed refresh after a successful load keeps the (stale) content
+          visible; this banner is what makes the failure recoverable instead of
+          silently ignored. The no-data case renders the full-page card above. */}
+      {loadError && team && (
+        <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 flex items-center justify-between gap-3">
+          <p className="text-sm text-destructive">
+            Failed to refresh team data. Some information may be out of date.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => void fetchData()}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       {team?.suspended && !activating && (
         <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
           <p className="font-medium text-yellow-700 dark:text-yellow-400">

@@ -130,6 +130,23 @@ export async function removeTeamMember(
   if (memberError) throw memberError;
   if (!membership) return false;
 
+  // Confirm the target is a member before touching anything: the share
+  // cleanup below must only run for an actual removal.
+  const { data: target, error: targetError } = await admin
+    .from("team_members")
+    .select("id")
+    .eq("team_id", teamId)
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (targetError) throw targetError;
+  if (!target) return false;
+
+  // Shares first: a failure here aborts the removal (retryable), whereas a
+  // failure after the membership delete would leave the departed member's
+  // endpoints draining the team pool with nothing left to retry it.
+  await removeMemberShares(teamId, targetUserId);
+
   // The deleted row carries the seat assignment away with it, so read it back.
   const { data, error } = await admin
     .from("team_members")
@@ -142,7 +159,6 @@ export async function removeTeamMember(
   if (error) throw error;
   if (!data) return false;
 
-  await removeMemberShares(teamId, targetUserId);
   await releaseMemberSeat(teamId, targetUserId, data.polar_seat_id);
   return true;
 }
@@ -166,6 +182,9 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
   if (!membership) return false;
   if (membership.role === "owner") return false;
 
+  // Shares first, same rationale as removeTeamMember: abort while retryable.
+  await removeMemberShares(teamId, userId);
+
   const { data, error } = await admin
     .from("team_members")
     .delete()
@@ -177,7 +196,6 @@ export async function leaveTeam(userId: string, teamId: string): Promise<boolean
   if (error) throw error;
   if (!data) return false;
 
-  await removeMemberShares(teamId, userId);
   await releaseMemberSeat(teamId, userId, data.polar_seat_id);
   return true;
 }

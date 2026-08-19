@@ -166,9 +166,9 @@ export async function createInvite(
   // Close the signup race: an account created between the user lookup above
   // and the insert was linked by neither path (the handle_new_user trigger ran
   // before the invite existed, and the insert stored a null invited_user_id).
-  // Re-check and link; signups after the insert are the trigger's job. Best
-  // effort: a failure here just leaves the pre-reconcile behavior, and the
-  // invite already exists.
+  // Re-check and link. Best effort: listPendingInvitesForUser and acceptInvite
+  // both self-heal unlinked invites by email, so a failure here only delays
+  // the link, it cannot lose the invite.
   if (!invitedUser) {
     try {
       const { data: lateUser, error: lateUserError } = await admin
@@ -239,9 +239,56 @@ export async function listPendingInvitesForUser(userId: string): Promise<TeamInv
     .order("created_at", { ascending: false });
 
   if (invitesError) throw invitesError;
-  if (!invitesData || invitesData.length === 0) return [];
 
-  const invites = invitesData as TeamInviteRow[];
+  // Self-heal: pending invites addressed to this account's email that never
+  // got linked (a signup raced the invite insert, or the post-insert reconcile
+  // failed) are surfaced and claimed here, making every listing a durable
+  // retry of the linking rather than leaving such invites invisible forever.
+  const { data: userRow, error: userError } = await admin
+    .from("users")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (userError) throw userError;
+
+  let unlinked: TeamInviteRow[] = [];
+  if (userRow?.email) {
+    const { data: unlinkedData, error: unlinkedError } = await admin
+      .from("team_invites")
+      .select("id, team_id, invited_by, invited_email, invited_user_id, status, created_at")
+      .is("invited_user_id", null)
+      .eq("invited_email", userRow.email.toLowerCase())
+      .eq("status", "pending");
+
+    if (unlinkedError) throw unlinkedError;
+    unlinked = (unlinkedData ?? []) as TeamInviteRow[];
+
+    if (unlinked.length > 0) {
+      // Best effort: the rows are returned either way, and acceptInvite claims
+      // unlinked invites by email itself, so a failed link here only delays it.
+      const { error: linkError } = await admin
+        .from("team_invites")
+        .update({ invited_user_id: userId })
+        .in(
+          "id",
+          unlinked.map((invite) => invite.id)
+        )
+        .is("invited_user_id", null);
+
+      if (linkError) {
+        console.error("[teams-invites] failed to self-heal unlinked invites", {
+          userId,
+          error: linkError,
+        });
+      }
+    }
+  }
+
+  const invites = [...((invitesData ?? []) as TeamInviteRow[]), ...unlinked].sort(
+    (a, b) => parseMillis(b.created_at) - parseMillis(a.created_at)
+  );
+  if (invites.length === 0) return [];
 
   // Collect team IDs and inviter IDs for batch lookups
   const teamIds = [...new Set(invites.map((i) => i.team_id))];
@@ -372,14 +419,43 @@ export async function acceptInvite(
   // invite short-circuits here, before any seat is spent.
   const { data: invite, error: inviteError } = await admin
     .from("team_invites")
-    .select("team_id, invited_email")
+    .select("team_id, invited_email, invited_user_id")
     .eq("id", inviteId)
-    .eq("invited_user_id", userId)
     .eq("status", "pending")
     .maybeSingle();
 
   if (inviteError) throw inviteError;
   if (!invite) return { accepted: false };
+
+  if (invite.invited_user_id !== userId) {
+    // An unlinked invite (signup raced its creation) is claimable by the
+    // account that owns the invited email; anything else is not the caller's
+    // invite. Claiming here is what makes the linking durable: the RPC below
+    // requires invited_user_id = caller.
+    if (invite.invited_user_id !== null) return { accepted: false };
+
+    const { data: caller, error: callerError } = await admin
+      .from("users")
+      .select("email")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (callerError) throw callerError;
+    if (!caller?.email || caller.email.toLowerCase() !== invite.invited_email.toLowerCase()) {
+      return { accepted: false };
+    }
+
+    const { data: claimed, error: claimError } = await admin
+      .from("team_invites")
+      .update({ invited_user_id: userId })
+      .eq("id", inviteId)
+      .is("invited_user_id", null)
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) throw claimError;
+    if (!claimed) return { accepted: false };
+  }
 
   // An existing member re-accepting must not consume a second seat: the RPC's
   // insert is on-conflict-do-nothing, so a fresh assignment would be stranded.
