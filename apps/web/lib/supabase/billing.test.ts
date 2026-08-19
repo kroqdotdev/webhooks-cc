@@ -33,6 +33,7 @@ interface RecordedCall {
   table: string;
   op: string;
   payload?: unknown;
+  filters?: Array<[string, string, unknown]>;
 }
 
 let recorded: RecordedCall[] = [];
@@ -42,6 +43,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
     from(table: string) {
       let op = "select";
       let payload: unknown;
+      const filters: Array<[string, string, unknown]> = [];
 
       const take = (): QueryResult => {
         const queue = responses[`${table}:${op}`];
@@ -52,8 +54,15 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
 
-      for (const method of ["eq", "is", "in", "order", "limit", "select"] as const) {
+      for (const method of ["in", "order", "limit", "select"] as const) {
         builder[method] = chain;
+      }
+
+      for (const method of ["eq", "is"] as const) {
+        builder[method] = (field: string, value: unknown) => {
+          filters.push([method, field, value]);
+          return builder;
+        };
       }
 
       for (const method of ["insert", "update", "delete"] as const) {
@@ -65,7 +74,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
       }
 
       const settle = () => {
-        recorded.push({ table, op, payload });
+        recorded.push({ table, op, payload, filters: [...filters] });
         return Promise.resolve(take());
       };
 
@@ -198,6 +207,37 @@ describe("applyPolarWebhookEvent subscription.created/updated", () => {
     );
 
     expect(userUpdatePayload()).toMatchObject({ subscription_status: "canceled" });
+  });
+
+  test("the renewal reset is conditioned on the observed subscription id and period start", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [storedUser()], "users:update": [{}] })
+    );
+
+    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+
+    // Two overlapping deliveries of the same renewal must not both zero the
+    // usage counter: the write carries optimistic filters on the state that
+    // was read, so the loser matches no rows.
+    const update = recorded.find((call) => call.table === "users" && call.op === "update");
+    expect(update).toBeDefined();
+    expect(update!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
+    expect(update!.filters).toContainEqual(["eq", "period_start", "2026-07-01T00:00:00.000Z"]);
+  });
+
+  test("a non-renewal update writes unconditionally (only the row id filter)", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [storedUser({ period_start: "2026-08-01T00:00:00.000Z" })],
+        "users:update": [{}],
+      })
+    );
+
+    await applyPolarWebhookEvent("subscription.updated", subscriptionEvent());
+
+    const update = recorded.find((call) => call.table === "users" && call.op === "update");
+    expect(update).toBeDefined();
+    expect(update!.filters).toEqual([["eq", "id", "user_1"]]);
   });
 
   test("no-ops for a user row that no longer exists", async () => {

@@ -594,7 +594,7 @@ git add -A && git commit -m "test(teams): retry_after null branch, shared_at ord
 **Files:**
 
 - Modify: `apps/web/lib/changelog.ts` (`APP_VERSION` → `0.28.0`, new web entry), `apps/web/package.json` (`version`)
-- Modify: `apps/web/content/docs/teams.mdx` (invite section: any email, signup-links-invite path, note that email/password signup arrives with Plan C; today the invitee signs up via GitHub/Google with the invited address)
+- Modify: `content/docs/teams.mdx` (invite section: any email, signup-links-invite path, note that email/password signup arrives with Plan C; today the invitee signs up via GitHub/Google with the invited address)
 - Modify: `CLAUDE.md` (optional env table: `EMAIL_FROM` row)
 
 - [x] **Step 1: Version + changelog.** Minor bump to 0.28.0 (new user-facing feature). Entry, track `web`: email invites to any address with signup linking, checkout idempotency, billing-webhook hardening, departed-member share cleanup. Housekeeping note from Plan A step 10 still stands: the parked instant-URL branch (PR #262) carries 0.26.0 and reconciles against whatever is on main when it merges.

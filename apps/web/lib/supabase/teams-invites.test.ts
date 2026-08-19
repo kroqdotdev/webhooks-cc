@@ -44,11 +44,20 @@ interface QueryResult {
   count?: number;
 }
 
+interface RecordedCall {
+  table: string;
+  op: string;
+  payload?: unknown;
+}
+
+let recorded: RecordedCall[] = [];
+
 function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: unknown) {
   return {
     rpc: vi.fn().mockResolvedValue({ data: rpcResult, error: null }),
     from(table: string) {
       let op = "select";
+      let payload: unknown;
 
       const take = (): QueryResult => {
         const queue = responses[`${table}:${op}`];
@@ -63,13 +72,17 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
       }
 
       for (const method of ["insert", "update", "delete"] as const) {
-        builder[method] = () => {
+        builder[method] = (value?: unknown) => {
           op = method;
+          payload = value;
           return builder;
         };
       }
 
-      const settle = () => Promise.resolve(take());
+      const settle = () => {
+        recorded.push({ table, op, payload });
+        return Promise.resolve(take());
+      };
 
       builder.maybeSingle = settle;
       builder.single = settle;
@@ -91,6 +104,7 @@ const PENDING_INVITE: QueryResult = {
 };
 
 beforeEach(() => {
+  recorded = [];
   vi.clearAllMocks();
   mockFns.requireActiveTeam.mockResolvedValue(null);
   mockFns.assignTeamSeat.mockResolvedValue(null);
@@ -331,6 +345,7 @@ describe("createInvite", () => {
     withMemberCheck: boolean;
     insert: QueryResult;
     pendingInvite?: QueryResult;
+    lateUser?: QueryResult;
   }) {
     return createFakeAdmin({
       "team_members:select": [
@@ -339,7 +354,12 @@ describe("createInvite", () => {
         ...(overrides.withMemberCheck ? [{ data: null }] : []),
       ],
       "teams:select": [{ data: { seats: 3 } }, { data: { name: "Acme" } }],
-      "users:select": [{ data: { email: "owner@example.com" } }, overrides.invitedUser],
+      "users:select": [
+        { data: { email: "owner@example.com" } },
+        overrides.invitedUser,
+        // Post-insert signup-race re-check (only consumed for unknown emails).
+        ...(overrides.lateUser ? [overrides.lateUser] : []),
+      ],
       "team_invites:select": [overrides.pendingInvite ?? { data: null }],
       "team_invites:insert": [overrides.insert],
     });
@@ -406,6 +426,33 @@ describe("createInvite", () => {
     expect(mockFns.sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "new@example.com" })
     );
+  });
+
+  test("links the invite when the account was created during the insert (signup race)", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      fakeAdminForCreate({
+        invitedUser: { data: null },
+        withMemberCheck: false,
+        insert: {
+          data: {
+            ...(INSERTED_INVITE.data as Record<string, unknown>),
+            invited_user_id: null,
+          },
+        },
+        lateUser: { data: { id: "user_late" } },
+      })
+    );
+
+    const result = await createInvite("user_1", "team_1", "new@example.com");
+
+    expect(result.error).toBeUndefined();
+    // The trigger ran before the invite existed, so the reconcile pass must
+    // link the row itself.
+    expect(recorded).toContainEqual({
+      table: "team_invites",
+      op: "update",
+      payload: { invited_user_id: "user_late" },
+    });
   });
 
   test("rejects a duplicate pending invite for the same email", async () => {

@@ -277,7 +277,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         storedPeriodStartMs !== null &&
         incomingPeriodStartMs < storedPeriodStartMs;
 
-      await updateUserById(userId, {
+      const patch: Database["public"]["Tables"]["users"]["Update"] = {
         polar_customer_id: customerId ?? undefined,
         polar_subscription_id: subscriptionId ?? undefined,
         // An unrecognized status value keeps the stored status instead of
@@ -290,8 +290,34 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         period_end: isStalePeriod ? undefined : currentPeriodEnd,
         cancel_at_period_end:
           typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
-        ...(isNewSubscription || isRenewal ? { requests_used: 0 } : {}),
-      });
+      };
+
+      if (isNewSubscription || isRenewal) {
+        // The reset must apply at most once: two overlapping deliveries of the
+        // same renewal would otherwise both read the old period_start, both
+        // classify as renewals, and the second write would erase usage captured
+        // between them. Conditioning the write on the subscription id and
+        // period start we read makes the loser a no-op (the winner already
+        // wrote this event's full state).
+        let guarded = admin
+          .from("users")
+          .update({ ...patch, requests_used: 0 })
+          .eq("id", userId);
+        guarded =
+          stored.polar_subscription_id === null
+            ? guarded.is("polar_subscription_id", null)
+            : guarded.eq("polar_subscription_id", stored.polar_subscription_id);
+        guarded =
+          stored.period_start === null
+            ? guarded.is("period_start", null)
+            : guarded.eq("period_start", stored.period_start);
+
+        const { error: guardedError } = await guarded;
+        if (guardedError) throw guardedError;
+        return;
+      }
+
+      await updateUserById(userId, patch);
       return;
     }
 

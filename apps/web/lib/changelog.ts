@@ -30,7 +30,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "Team invites no longer require the invitee to have an account: invite any email address, they get an invite email, and signing up with that address links the invite to their new account automatically",
       "Invite emails tell the invitee who invited them, to which team, and where to accept",
-      "Subscribing twice by accident is no longer possible: clicking Subscribe again within 30 minutes reuses the same checkout session, and the billing webhook ignores events from a subscription the team doesn't hold",
+      "Clicking Subscribe again within 30 minutes reuses the open checkout session for the same seat count instead of creating a second one, and the billing webhook ignores events from a subscription the team doesn't hold",
       "Pro renewals now reset the monthly request counter the moment the renewal lands instead of relying on a background sweep",
       "When a member leaves or is removed, the endpoints they shared with the team are unshared so their traffic stops drawing from the team pool",
       "Checkout failures now surface Polar's validation detail (e.g. a rejected billing email) instead of a bare error",

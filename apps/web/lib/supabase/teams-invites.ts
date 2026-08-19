@@ -129,13 +129,17 @@ export async function createInvite(
   if (existingInviteError) throw existingInviteError;
   if (existingInvite) return { error: "A pending invite already exists for this email" };
 
-  // Delete any old declined/accepted invites so the unique constraint doesn't block re-invites
-  await admin
+  // Delete any old declined/accepted invites so the unique constraint doesn't
+  // block re-invites. A swallowed failure here would surface as a confusing
+  // duplicate-invite error from the insert below.
+  const { error: deleteError } = await admin
     .from("team_invites")
     .delete()
     .eq("team_id", teamId)
     .eq("invited_email", normalizedEmail)
     .in("status", ["declined", "accepted"]);
+
+  if (deleteError) throw deleteError;
 
   // Insert invite
   const { data: inviteData, error: insertError } = await admin
@@ -158,6 +162,35 @@ export async function createInvite(
   }
 
   const invite = inviteData as TeamInviteRow;
+
+  // Close the signup race: an account created between the user lookup above
+  // and the insert was linked by neither path (the handle_new_user trigger ran
+  // before the invite existed, and the insert stored a null invited_user_id).
+  // Re-check and link; signups after the insert are the trigger's job. Best
+  // effort: a failure here just leaves the pre-reconcile behavior, and the
+  // invite already exists.
+  if (!invitedUser) {
+    try {
+      const { data: lateUser, error: lateUserError } = await admin
+        .from("users")
+        .select("id")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+      if (lateUserError) throw lateUserError;
+      if (lateUser) {
+        const { error: linkError } = await admin
+          .from("team_invites")
+          .update({ invited_user_id: lateUser.id })
+          .eq("id", invite.id)
+          .is("invited_user_id", null);
+
+        if (linkError) throw linkError;
+      }
+    } catch (error) {
+      console.error("[teams-invites] failed to link invite after signup race", { teamId, error });
+    }
+  }
 
   // Best-effort notification: the invite exists in-app regardless of whether
   // the email delivers, so a send failure downgrades to a warning.

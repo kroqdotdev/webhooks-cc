@@ -49,7 +49,16 @@ interface RecordedCall {
   payload?: unknown;
 }
 
+interface RecordedFilterCall {
+  table: string;
+  op: string;
+  filters: Array<[string, string, unknown]>;
+}
+
 let recorded: RecordedCall[] = [];
+// eq/is filters per query, kept out of `recorded` so exact-equality assertions
+// on it keep working.
+let recordedFilters: RecordedFilterCall[] = [];
 
 function createFakeAdmin(responses: Record<string, QueryResult[]>) {
   return {
@@ -62,6 +71,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
     from(table: string) {
       let op = "select";
       let payload: unknown;
+      const filters: Array<[string, string, unknown]> = [];
 
       const take = (): QueryResult => {
         const queue = responses[`${table}:${op}`];
@@ -72,8 +82,15 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
 
-      for (const method of ["eq", "is", "in", "order", "limit", "select"] as const) {
+      for (const method of ["in", "order", "limit", "select"] as const) {
         builder[method] = chain;
+      }
+
+      for (const method of ["eq", "is"] as const) {
+        builder[method] = (field: string, value: unknown) => {
+          filters.push([method, field, value]);
+          return builder;
+        };
       }
 
       for (const method of ["insert", "update", "delete"] as const) {
@@ -86,6 +103,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
 
       const settle = () => {
         recorded.push({ table, op, payload });
+        recordedFilters.push({ table, op, filters: [...filters] });
         return Promise.resolve(take());
       };
 
@@ -121,6 +139,7 @@ function teamRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   recorded = [];
+  recordedFilters = [];
   vi.clearAllMocks();
   mockFns.getPolarTeamsCheckoutConfig.mockReturnValue({
     appUrl: "https://webhooks.cc",
@@ -300,6 +319,83 @@ describe("createTeamCheckout", () => {
       "https://sandbox.polar.sh/checkout/fresh"
     );
     expect(checkoutCreate).toHaveBeenCalledWith(expect.objectContaining({ seats: 5 }));
+  });
+
+  test("still returns the checkout URL when the cache write fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_customer_id: "cus_team_1" })],
+        "teams:update": [{ error: new Error("db down") }],
+      })
+    );
+
+    const checkoutCreate = vi
+      .fn()
+      .mockResolvedValue({ id: "co_9", url: "https://sandbox.polar.sh/checkout/uncached" });
+    mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+    // The session exists in Polar either way; losing the dedup cache must not
+    // fail the checkout.
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/uncached"
+    );
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  test("reuses the session while Polar's expires_at is in the future, even past the created_at TTL", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            pending_checkout: {
+              id: "co_1",
+              url: "https://sandbox.polar.sh/checkout/cached",
+              seats: 5,
+              created_at: new Date(Date.now() - 45 * 60_000).toISOString(),
+              expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+            },
+          }),
+        ],
+      })
+    );
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/cached"
+    );
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("mints a fresh session when Polar's expires_at has passed despite a recent created_at", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({
+            polar_customer_id: "cus_team_1",
+            pending_checkout: {
+              id: "co_1",
+              url: "https://sandbox.polar.sh/checkout/expired",
+              seats: 5,
+              created_at: new Date(Date.now() - 60_000).toISOString(),
+              expires_at: new Date(Date.now() - 1_000).toISOString(),
+            },
+          }),
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    const checkoutCreate = vi
+      .fn()
+      .mockResolvedValue({ id: "co_4", url: "https://sandbox.polar.sh/checkout/fresh" });
+    mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+    await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+      "https://sandbox.polar.sh/checkout/fresh"
+    );
   });
 
   test("mints a fresh session when the cached one is past the TTL", async () => {
@@ -796,6 +892,59 @@ describe("subscription event guards", () => {
       // The checkout that produced this subscription stops being reusable.
       pending_checkout: null,
     });
+  });
+
+  test("the renewal reset is conditioned on the observed subscription id and period start", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 3,
+              period_start: "2026-07-01T00:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent("subscription.updated", "team_1", subscriptionEvent("sub_1"));
+
+    // Two overlapping deliveries of the same renewal must not both zero the
+    // pool: the write carries optimistic filters on the state that was read,
+    // so the loser matches no rows.
+    const update = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
+    expect(update).toBeDefined();
+    expect(update!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
+    expect(update!.filters).toContainEqual(["eq", "period_start", "2026-07-01T00:00:00.000Z"]);
+    expect(teamsUpdates()[0].payload).toMatchObject({ requests_used: 0 });
+  });
+
+  test("a non-renewal update writes unconditionally (only the row id filter)", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 3,
+              period_start: "2026-08-01T00:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent("subscription.updated", "team_1", subscriptionEvent("sub_1"));
+
+    const update = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
+    expect(update).toBeDefined();
+    expect(update!.filters).toEqual([["eq", "id", "team_1"]]);
   });
 });
 

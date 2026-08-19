@@ -170,21 +170,27 @@ export async function createTeamCheckout(
     throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
   }
 
-  // Reuse the open checkout session when one was minted moments ago for the
-  // same seat count: a double-click or second tab must not create a second
-  // session that could ALSO be completed. Best-effort dedup only; the
-  // foreign-subscription guard in applyTeamSubscriptionState is the backstop
-  // if two sessions do complete. A different seat count mints a fresh session.
+  // Reuse the open checkout session when one is still live for the same seat
+  // count: a double-click or second tab must not create a second session that
+  // could ALSO be completed. Polar's own session expiry is authoritative when
+  // stored; the 30-minute TTL on created_at is the fallback for caches written
+  // before expires_at existed (or when Polar omitted it). Best-effort dedup
+  // only; the foreign-subscription guard in applyTeamSubscriptionState is the
+  // backstop if two sessions do complete. A different seat count mints fresh.
   const pending = asRecord(team.pending_checkout);
   const pendingUrl = pending ? asNonEmptyString(pending.url) : null;
   const pendingAtRaw = pending ? asNonEmptyString(pending.created_at) : null;
   const pendingAt = pendingAtRaw ? Date.parse(pendingAtRaw) : NaN;
+  const pendingExpiresRaw = pending ? asNonEmptyString(pending.expires_at) : null;
+  const pendingExpiresAt = pendingExpiresRaw ? Date.parse(pendingExpiresRaw) : NaN;
+  const sessionStillOpen = Number.isFinite(pendingExpiresAt)
+    ? Date.now() < pendingExpiresAt
+    : Number.isFinite(pendingAt) && Date.now() - pendingAt < PENDING_CHECKOUT_TTL_MS;
   if (
     pendingUrl !== null &&
     typeof pending?.seats === "number" &&
     pending.seats === seats &&
-    Number.isFinite(pendingAt) &&
-    Date.now() - pendingAt < PENDING_CHECKOUT_TTL_MS
+    sessionStillOpen
   ) {
     return pendingUrl;
   }
@@ -210,6 +216,7 @@ export async function createTeamCheckout(
         url: checkout.url,
         seats,
         created_at: new Date().toISOString(),
+        expires_at: parseEventTimestamp(checkout.expiresAt),
       },
     });
   } catch (cacheError) {
@@ -644,7 +651,7 @@ async function applyTeamSubscriptionState(
   // single statement on purpose: a team with a status but no request_limit
   // hard-429s every request, and one with a status but no period_end never
   // resets. They must never be observable apart.
-  await updateTeamById(teamId, {
+  const patch: TeamUpdate = {
     polar_customer_id: customerId ?? undefined,
     polar_subscription_id: subscriptionId ?? undefined,
     subscription_status: status,
@@ -656,8 +663,34 @@ async function applyTeamSubscriptionState(
       typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
     // The checkout that produced this subscription is no longer pending.
     pending_checkout: null,
-    ...(isNewSubscription || isRenewal ? { requests_used: 0 } : {}),
-  });
+  };
+
+  if (isNewSubscription || isRenewal) {
+    // The pooled-usage reset must apply at most once: two overlapping
+    // deliveries of the same renewal would otherwise both read the old
+    // period_start, both classify as renewals, and the second write would
+    // erase captures billed between them. Conditioning the write on the
+    // subscription id and period start we read makes the loser a no-op (the
+    // winner already wrote this event's full state).
+    let guarded = admin
+      .from("teams")
+      .update({ ...patch, requests_used: 0 })
+      .eq("id", teamId);
+    guarded =
+      team.polar_subscription_id === null
+        ? guarded.is("polar_subscription_id", null)
+        : guarded.eq("polar_subscription_id", team.polar_subscription_id);
+    guarded =
+      team.period_start === null
+        ? guarded.is("period_start", null)
+        : guarded.eq("period_start", team.period_start);
+
+    const { error: guardedError } = await guarded;
+    if (guardedError) throw guardedError;
+    return;
+  }
+
+  await updateTeamById(teamId, patch);
 }
 
 /**

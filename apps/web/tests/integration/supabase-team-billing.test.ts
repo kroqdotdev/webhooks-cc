@@ -36,6 +36,7 @@ let altOwnerId: string;
 
 const createdUserIds: string[] = [];
 const createdTeamIds: string[] = [];
+const createdEndpointIds: string[] = [];
 
 async function createTestUser(email: string, name: string): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({
@@ -117,6 +118,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (createdTeamIds.length > 0) {
     await admin.from("teams").delete().in("id", createdTeamIds);
+  }
+  if (createdEndpointIds.length > 0) {
+    await admin.from("endpoints").delete().in("id", createdEndpointIds);
   }
   for (const userId of createdUserIds) {
     await admin.auth.admin.deleteUser(userId);
@@ -567,6 +571,7 @@ describe("applyTeamPolarWebhookEvent — seat events", () => {
       userId: memberId,
       name: "TB Seat Share EP",
     });
+    createdEndpointIds.push(endpoint.id);
     const { error: shareError } = await admin.from("team_endpoints").insert({
       team_id: teamId,
       endpoint_id: endpoint.id,
@@ -588,8 +593,6 @@ describe("applyTeamPolarWebhookEvent — seat events", () => {
       .eq("shared_by", memberId);
     if (error) throw error;
     expect(shares).toEqual([]);
-
-    await admin.from("endpoints").delete().eq("id", endpoint.id);
   });
 
   it("ignores a revoked event for a seat the member no longer holds", async () => {

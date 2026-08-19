@@ -187,6 +187,12 @@ function TeamDetailContent() {
           setTeam(current);
           setTeamName(current.name);
           setRenameValue(current.name);
+        } else {
+          // A 200 without this team means it was deleted or access was
+          // removed; without the flag the page renders an empty shell with no
+          // way to recover.
+          setTeam(null);
+          setLoadError(true);
         }
       } else {
         // The page is unusable without the team row: offer a retry instead of
