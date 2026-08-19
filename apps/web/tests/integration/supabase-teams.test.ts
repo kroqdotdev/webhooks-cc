@@ -30,6 +30,7 @@ import {
   getRequestByIdForUser,
   clearRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
+import { __resetEmailTestStore, getLastMessageForEmail } from "@/lib/email/dev-transport";
 import type { Database } from "@/lib/supabase/database";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
@@ -312,11 +313,6 @@ describe("Teams Integration", () => {
       await admin.from("teams").delete().eq("id", oneSeatTeamId);
     });
 
-    it("rejects invite for non-existent email", async () => {
-      const result = await createInvite(ownerId, teamId, "nobody@nonexistent.test");
-      expect(result.error).toBe("No account found with that email address");
-    });
-
     it("rejects invite from non-member", async () => {
       // memberId is not yet a team member at this point
       const result = await createInvite(memberId, teamId, THIRD_EMAIL);
@@ -385,6 +381,138 @@ describe("Teams Integration", () => {
     it("rejects declining an already-declined invite", async () => {
       const result = await declineInvite(thirdId, thirdInviteId);
       expect(result).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Unknown-email invites: created unlinked, emailed, linked at signup
+  // ---------------------------------------------------------------------------
+
+  describe("Unknown-email invites", () => {
+    const GHOST_EMAIL = `test-teams-ghost-${ts}@webhooks-test.local`;
+    const GHOST2_EMAIL = `test-teams-ghost2-${ts}@webhooks-test.local`;
+    const GHOST3_EMAIL = `test-teams-ghost3-${ts}@webhooks-test.local`;
+    let ghostTeamId: string;
+    let ghostUserId: string | null = null;
+    let ghost2UserId: string | null = null;
+    let ghost3UserId: string | null = null;
+    let ghostInviteId: string;
+
+    beforeAll(async () => {
+      const created = await createTeam(ownerId, "Ghost Invite Team");
+      ghostTeamId = (created as { id: string }).id;
+      await activateTeam(ghostTeamId, 3);
+    });
+
+    afterAll(async () => {
+      await admin.from("teams").delete().eq("id", ghostTeamId);
+      if (ghostUserId) await admin.auth.admin.deleteUser(ghostUserId);
+      if (ghost2UserId) await admin.auth.admin.deleteUser(ghost2UserId);
+      if (ghost3UserId) await admin.auth.admin.deleteUser(ghost3UserId);
+    });
+
+    it("creates an unlinked invite for an email with no account and records the email", async () => {
+      __resetEmailTestStore();
+
+      const result = await createInvite(ownerId, ghostTeamId, GHOST_EMAIL);
+      expect(result.error).toBeUndefined();
+      expect(result.invite).toBeDefined();
+      expect(result.invite!.invitedEmail).toBe(GHOST_EMAIL);
+      ghostInviteId = result.invite!.id;
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id, status")
+        .eq("id", ghostInviteId)
+        .maybeSingle();
+      expect(row!.status).toBe("pending");
+      expect(row!.invited_user_id).toBeNull();
+
+      // The dev transport recorded the invite email (never delivered in tests).
+      const message = getLastMessageForEmail(GHOST_EMAIL);
+      expect(message).not.toBeNull();
+      expect(message!.subject).toContain("Ghost Invite Team");
+      expect(message!.subject).toContain(OWNER_EMAIL);
+      expect(message!.text).toContain("/teams");
+    });
+
+    it("links the pending invite to the account at signup", async () => {
+      ghostUserId = await createTestUser(GHOST_EMAIL, "Ghost User");
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id")
+        .eq("id", ghostInviteId)
+        .maybeSingle();
+      expect(row!.invited_user_id).toBe(ghostUserId);
+    });
+
+    it("does not link non-pending invites at signup", async () => {
+      const result = await createInvite(ownerId, ghostTeamId, GHOST2_EMAIL);
+      expect(result.error).toBeUndefined();
+      const declinedInviteId = result.invite!.id;
+
+      // Force a declined, unlinked invite (declining requires an account, so
+      // stamp the status directly).
+      await admin
+        .from("team_invites")
+        .update({ status: "declined", invited_user_id: null })
+        .eq("id", declinedInviteId);
+
+      ghost2UserId = await createTestUser(GHOST2_EMAIL, "Ghost Two");
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id, status")
+        .eq("id", declinedInviteId)
+        .maybeSingle();
+      expect(row!.status).toBe("declined");
+      expect(row!.invited_user_id).toBeNull();
+    });
+
+    it("the linked invite shows up for the new account and accepts into a membership", async () => {
+      const invites = await listPendingInvitesForUser(ghostUserId!);
+      const invite = invites.find((i) => i.teamId === ghostTeamId);
+      expect(invite).toBeDefined();
+      expect(invite!.id).toBe(ghostInviteId);
+
+      const result = await acceptInvite(ghostUserId!, ghostInviteId);
+      expect(result.accepted).toBe(true);
+
+      const { data: membership } = await admin
+        .from("team_members")
+        .select("id, role")
+        .eq("team_id", ghostTeamId)
+        .eq("user_id", ghostUserId!)
+        .maybeSingle();
+      expect(membership).not.toBeNull();
+      expect(membership!.role).toBe("member");
+    });
+
+    it("self-heals an invite whose signup linking was lost", async () => {
+      const result = await createInvite(ownerId, ghostTeamId, GHOST3_EMAIL);
+      expect(result.error).toBeUndefined();
+      const inviteId = result.invite!.id;
+
+      ghost3UserId = await createTestUser(GHOST3_EMAIL, "Ghost Three");
+
+      // Simulate the lost signup race / failed reconcile: force the link off.
+      await admin.from("team_invites").update({ invited_user_id: null }).eq("id", inviteId);
+
+      // Listing surfaces the unlinked invite by email AND repairs the link.
+      const invites = await listPendingInvitesForUser(ghost3UserId);
+      expect(invites.some((i) => i.id === inviteId)).toBe(true);
+
+      const { data: row } = await admin
+        .from("team_invites")
+        .select("invited_user_id")
+        .eq("id", inviteId)
+        .maybeSingle();
+      expect(row!.invited_user_id).toBe(ghost3UserId);
+
+      // And the healed invite accepts end-to-end.
+      const accepted = await acceptInvite(ghost3UserId, inviteId);
+      expect(accepted.accepted).toBe(true);
     });
   });
 
@@ -1076,6 +1204,72 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
   // Team creation limit (max 10 owned teams)
   // ---------------------------------------------------------------------------
+
+  describe("Departed-member share cleanup", () => {
+    let cleanupTeamId: string;
+    let memberEndpointId: string;
+    let ownerEndpointId: string;
+
+    async function addThirdAsMember() {
+      const { error } = await admin
+        .from("team_members")
+        .insert({ team_id: cleanupTeamId, user_id: thirdId, role: "member" });
+      if (error) throw error;
+    }
+
+    async function shareRows() {
+      const { data, error } = await admin
+        .from("team_endpoints")
+        .select("endpoint_id, shared_by")
+        .eq("team_id", cleanupTeamId);
+      if (error) throw error;
+      return data ?? [];
+    }
+
+    beforeAll(async () => {
+      const created = await createTeam(ownerId, "Share Cleanup Team");
+      cleanupTeamId = (created as { id: string }).id;
+      await activateTeam(cleanupTeamId, 5);
+
+      const memberEp = await createEndpointForUser({
+        userId: thirdId,
+        name: "Cleanup Member EP",
+      });
+      memberEndpointId = memberEp.id;
+      const ownerEp = await createEndpointForUser({ userId: ownerId, name: "Cleanup Owner EP" });
+      ownerEndpointId = ownerEp.id;
+    });
+
+    afterAll(async () => {
+      await admin.from("teams").delete().eq("id", cleanupTeamId);
+      await admin.from("endpoints").delete().in("id", [memberEndpointId, ownerEndpointId]);
+    });
+
+    it("deletes the leaver's shares but keeps other members' shares", async () => {
+      await addThirdAsMember();
+      const shared = await shareEndpointWithTeam(thirdId, cleanupTeamId, memberEndpointId);
+      expect(shared.success).toBe(true);
+      const ownerShared = await shareEndpointWithTeam(ownerId, cleanupTeamId, ownerEndpointId);
+      expect(ownerShared.success).toBe(true);
+
+      await expect(leaveTeam(thirdId, cleanupTeamId)).resolves.toBe(true);
+
+      const rows = await shareRows();
+      expect(rows.some((r) => r.shared_by === thirdId)).toBe(false);
+      expect(rows.some((r) => r.shared_by === ownerId)).toBe(true);
+    });
+
+    it("deletes the shares when the owner removes the member", async () => {
+      await addThirdAsMember();
+      const shared = await shareEndpointWithTeam(thirdId, cleanupTeamId, memberEndpointId);
+      expect(shared.success).toBe(true);
+
+      await expect(removeTeamMember(ownerId, cleanupTeamId, thirdId)).resolves.toBe(true);
+
+      const rows = await shareRows();
+      expect(rows.some((r) => r.shared_by === thirdId)).toBe(false);
+    });
+  });
 
   describe("Team creation limit", () => {
     const tempTeamIds: string[] = [];
@@ -1783,52 +1977,42 @@ describe("Teams Integration", () => {
   // ---------------------------------------------------------------------------
 
   describe("RLS enforcement", () => {
-    it("anon client cannot read teams table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return; // skip if no anon key
+    // The anon role keeps Supabase's default table-level SELECT grant on these
+    // tables, so read rejection is RLS row filtering: an empty result with NO
+    // error (asserting code 42501 on selects would pin a false expectation).
+    // Writes are different: the deny-all `with check (false)` policies raise a
+    // row-level security violation, which PostgREST surfaces as 42501 — those
+    // assertions below are what prove the policies are actually active.
+    const TEAM_TABLES = ["teams", "team_members", "team_invites", "team_endpoints"] as const;
 
-      const anon = createClient(SUPABASE_URL, anonKey, {
+    function anonClient() {
+      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!anonKey) return null; // skip if no anon key
+      return createClient(SUPABASE_URL, anonKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       });
+    }
 
-      const { data } = await anon.from("teams").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
+    for (const table of TEAM_TABLES) {
+      it(`anon client cannot read ${table} table`, async () => {
+        const anon = anonClient();
+        if (!anon) return;
 
-    it("anon client cannot read team_members table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return;
-
-      const anon = createClient(SUPABASE_URL, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
+        const { data, error } = await anon.from(table).select("id").limit(1);
+        expect(error).toBeNull();
+        expect(data).toEqual([]);
       });
 
-      const { data } = await anon.from("team_members").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
+      it(`anon client cannot insert into ${table} table (42501)`, async () => {
+        const anon = anonClient();
+        if (!anon) return;
 
-    it("anon client cannot read team_invites table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return;
-
-      const anon = createClient(SUPABASE_URL, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (anon as any).from(table).insert({}).select("id");
+        expect(data).toBeNull();
+        expect(error).not.toBeNull();
+        expect(error!.code).toBe("42501");
       });
-
-      const { data } = await anon.from("team_invites").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
-
-    it("anon client cannot read team_endpoints table", async () => {
-      const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) return;
-
-      const anon = createClient(SUPABASE_URL, anonKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-
-      const { data } = await anon.from("team_endpoints").select("id").limit(1);
-      expect(data).toEqual([]);
-    });
+    }
   });
 });

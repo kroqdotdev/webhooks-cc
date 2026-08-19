@@ -131,12 +131,13 @@ function TeamDetailContent() {
   const [members, setMembers] = useState<Member[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Invite
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<{
-    type: "success" | "error";
+    type: "success" | "warning" | "error";
     text: string;
   } | null>(null);
 
@@ -171,6 +172,7 @@ function TeamDetailContent() {
   const fetchData = async () => {
     if (!session?.access_token || !session?.user) return;
     setLoading(true);
+    setLoadError(false);
     try {
       const [teamsRes, membersRes, endpointsRes] = await Promise.all([
         fetch("/api/teams", { headers: authHeader }),
@@ -185,7 +187,17 @@ function TeamDetailContent() {
           setTeam(current);
           setTeamName(current.name);
           setRenameValue(current.name);
+        } else {
+          // A 200 without this team means it was deleted or access was
+          // removed; without the flag the page renders an empty shell with no
+          // way to recover.
+          setTeam(null);
+          setLoadError(true);
         }
+      } else {
+        // The page is unusable without the team row: offer a retry instead of
+        // rendering a permanently empty shell.
+        setLoadError(true);
       }
 
       if (membersRes.ok) {
@@ -208,6 +220,11 @@ function TeamDetailContent() {
       }
 
       // Identify current user from session
+    } catch (error) {
+      // One network hiccup previously stranded the page on partial state with
+      // no path to recovery.
+      console.error("Failed to load team page data:", error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -306,7 +323,14 @@ function TeamDetailContent() {
       if (res.ok) {
         trackTeamMemberInvited("success");
         setInviteEmail("");
-        setInviteMessage({ type: "success", text: "Invite sent successfully." });
+        const data = (await res.json().catch(() => ({}))) as { warning?: string };
+        // The invite exists either way; a warning only means the notification
+        // email did not go out.
+        setInviteMessage(
+          data.warning
+            ? { type: "warning", text: data.warning }
+            : { type: "success", text: "Invite sent successfully." }
+        );
         await fetchData();
       } else {
         const data = (await res.json().catch(() => ({}))) as {
@@ -427,6 +451,27 @@ function TeamDetailContent() {
     );
   }
 
+  // A stale `team` from a previous route must never render under a new
+  // teamId: every action handler uses the route's teamId, so the user would
+  // act on a different team than the page displays.
+  if (loadError && (!team || team.id !== teamId)) {
+    return (
+      <main className="container mx-auto px-4 py-8 max-w-2xl space-y-4">
+        <Link
+          href="/teams"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Teams
+        </Link>
+        <div className="border rounded-lg p-6 space-y-3 bg-card">
+          <p className="text-sm text-destructive">Failed to load this team. Please try again.</p>
+          <Button onClick={() => void fetchData()}>Retry</Button>
+        </div>
+      </main>
+    );
+  }
+
   const isOwner = team?.role === "owner";
 
   return (
@@ -442,6 +487,21 @@ function TeamDetailContent() {
         </Link>
         <h1 className="text-2xl font-bold">{teamName}</h1>
       </div>
+
+      {/* A failed refresh after a successful load keeps the (stale) content
+          visible; this banner is what makes the failure recoverable instead of
+          silently ignored. Only for the route's own team: a mismatched id
+          renders the full-page card above instead. */}
+      {loadError && team?.id === teamId && (
+        <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 flex items-center justify-between gap-3">
+          <p className="text-sm text-destructive">
+            Failed to refresh team data. Some information may be out of date.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => void fetchData()}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       {team?.suspended && !activating && (
         <div className="rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 space-y-2">
@@ -537,7 +597,7 @@ function TeamDetailContent() {
         <section className="space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Invite Member</h2>
-            <HelpTooltip text="Enter the email of a registered webhooks.cc user. They'll receive an invite they can accept or decline." />
+            <HelpTooltip text="Invite anyone by email. If they don't have an account yet, the invite is waiting after they sign up with that address." />
           </div>
           <div className="border rounded-lg p-6 space-y-4 bg-card">
             <Label htmlFor="invite-email">Email address</Label>
@@ -564,7 +624,11 @@ function TeamDetailContent() {
             {inviteMessage && (
               <p
                 className={`text-sm ${
-                  inviteMessage.type === "success" ? "text-green-600" : "text-destructive"
+                  inviteMessage.type === "success"
+                    ? "text-green-600"
+                    : inviteMessage.type === "warning"
+                      ? "text-amber-600"
+                      : "text-destructive"
                 }`}
               >
                 {inviteMessage.text}

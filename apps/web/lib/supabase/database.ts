@@ -495,6 +495,7 @@ export interface Database {
           period_start: string | null;
           period_end: string | null;
           cancel_at_period_end: boolean;
+          pending_checkout: Json | null;
         };
         Insert: {
           id?: string;
@@ -510,6 +511,7 @@ export interface Database {
           period_start?: string | null;
           period_end?: string | null;
           cancel_at_period_end?: boolean;
+          pending_checkout?: Json | null;
         };
         Update: {
           id?: string;
@@ -525,6 +527,7 @@ export interface Database {
           period_start?: string | null;
           period_end?: string | null;
           cancel_at_period_end?: boolean;
+          pending_checkout?: Json | null;
         };
         Relationships: [];
       };

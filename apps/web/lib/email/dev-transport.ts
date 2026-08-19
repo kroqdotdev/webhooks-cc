@@ -27,6 +27,14 @@ export function sendViaDevTransport(message: EmailMessage): void {
 }
 
 /**
+ * Test hook: return the most recent full message sent to `email`, or null if
+ * none. Only meaningful when the dev transport is active (non-production).
+ */
+export function getLastMessageForEmail(email: string): EmailMessage | null {
+  return lastMessageByEmail.get(email.toLowerCase()) ?? null;
+}
+
+/**
  * Test hook: return the most recent OTP sent to `email`, or null if none.
  * Only meaningful when the dev transport is active (non-production / no key).
  */

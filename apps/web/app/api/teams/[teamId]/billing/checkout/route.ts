@@ -1,5 +1,5 @@
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { PolarConfigError } from "@/lib/polar";
+import { PolarConfigError, describePolarError } from "@/lib/polar";
 import { createTeamCheckout, TeamBillingError } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
 
@@ -33,6 +33,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
     }
 
     console.error("Team checkout failed:", error);
-    return Response.json({ error: "Failed to start checkout" }, { status: 502 });
+    // Surface Polar validation detail (e.g. an unroutable billing email) so
+    // the owner sees why instead of a bare "failed".
+    const detail = describePolarError(error);
+    return Response.json(
+      detail ? { error: "Failed to start checkout", detail } : { error: "Failed to start checkout" },
+      { status: 502 }
+    );
   }
 }

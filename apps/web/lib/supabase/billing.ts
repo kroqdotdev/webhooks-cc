@@ -233,22 +233,87 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         return;
       }
 
+      const admin = createAdminClient();
+      const { data: stored, error: storedError } = await admin
+        .from("users")
+        .select("polar_subscription_id, subscription_status, period_start")
+        .eq("id", userId)
+        .maybeSingle<{
+          polar_subscription_id: string | null;
+          subscription_status: "active" | "canceled" | "past_due" | null;
+          period_start: string | null;
+        }>();
+
+      if (storedError) throw storedError;
+      if (!stored) return;
+
       const currentPeriodStart = parseEventTimestamp(data.currentPeriodStart);
       const currentPeriodEnd = parseEventTimestamp(data.currentPeriodEnd);
       const customerId = asNonEmptyString(data.customerId);
       const subscriptionId = asNonEmptyString(data.id);
 
-      await updateUserById(userId, {
+      // Same renewal semantics as applyTeamSubscriptionState in team-billing.ts.
+      // A new subscription id starts a fresh quota. A same-subscription event
+      // whose period start moved forward is a renewal and must clear usage HERE:
+      // this same write pushes period_end into the future, which blinds the
+      // per-minute cron fallback reset (it only touches rows with
+      // period_end <= now()). A period start older than the stored one is a
+      // stale out-of-order delivery whose bounds must not roll the period back.
+      const isNewSubscription =
+        subscriptionId !== null && subscriptionId !== stored.polar_subscription_id;
+
+      const incomingPeriodStartMs = currentPeriodStart ? Date.parse(currentPeriodStart) : null;
+      const storedPeriodStartMs = stored.period_start ? Date.parse(stored.period_start) : null;
+
+      const isRenewal =
+        !isNewSubscription &&
+        incomingPeriodStartMs !== null &&
+        storedPeriodStartMs !== null &&
+        incomingPeriodStartMs > storedPeriodStartMs;
+
+      const isStalePeriod =
+        !isNewSubscription &&
+        incomingPeriodStartMs !== null &&
+        storedPeriodStartMs !== null &&
+        incomingPeriodStartMs < storedPeriodStartMs;
+
+      const patch: Database["public"]["Tables"]["users"]["Update"] = {
         polar_customer_id: customerId ?? undefined,
         polar_subscription_id: subscriptionId ?? undefined,
-        subscription_status: normalizeStoredSubscriptionStatus(data.status),
+        // An unrecognized status value keeps the stored status instead of
+        // nulling it, mirroring the team handler.
+        subscription_status:
+          normalizeStoredSubscriptionStatus(data.status) ?? stored.subscription_status ?? "active",
         plan: "pro",
         request_limit: PRO_REQUEST_LIMIT,
-        period_start: currentPeriodStart,
-        period_end: currentPeriodEnd,
+        period_start: isStalePeriod ? undefined : currentPeriodStart,
+        period_end: isStalePeriod ? undefined : currentPeriodEnd,
         cancel_at_period_end:
           typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
-      });
+      };
+
+      // Every write is compare-and-swapped on the state that was read. This
+      // keeps two failure modes out: overlapping deliveries of the same
+      // renewal both zeroing requests_used (erasing usage captured between the
+      // writes), and an updated/active event read before a concurrent revoke
+      // resurrecting the revoked subscription's state after it. The loser's
+      // write matches no rows; events carry full state and Polar redelivers,
+      // so a skipped write converges on the next delivery.
+      let guarded = admin
+        .from("users")
+        .update(isNewSubscription || isRenewal ? { ...patch, requests_used: 0 } : patch)
+        .eq("id", userId);
+      guarded =
+        stored.polar_subscription_id === null
+          ? guarded.is("polar_subscription_id", null)
+          : guarded.eq("polar_subscription_id", stored.polar_subscription_id);
+      guarded =
+        stored.period_start === null
+          ? guarded.is("period_start", null)
+          : guarded.eq("period_start", stored.period_start);
+
+      const { error: guardedError } = await guarded;
+      if (guardedError) throw guardedError;
       return;
     }
 

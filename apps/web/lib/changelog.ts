@@ -15,13 +15,27 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.27.0";
+export const APP_VERSION = "0.28.0";
 export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.28.0",
+    date: "2026-08-19",
+    title: "Invite Anyone to Your Team by Email",
+    track: "web",
+    items: [
+      "Team invites no longer require the invitee to have an account: invite any email address, they get an invite email, and signing up with that address links the invite to their new account automatically",
+      "Invite emails tell the invitee who invited them, to which team, and where to accept",
+      "Clicking Subscribe again within 30 minutes reuses the open checkout session for the same seat count instead of creating a second one, and the billing webhook ignores events from a subscription the team doesn't hold",
+      "Pro renewals now reset the monthly request counter the moment the renewal lands instead of relying on a background sweep",
+      "When a member leaves or is removed, the endpoints they shared with the team are unshared so their traffic stops drawing from the team pool",
+      "Checkout failures now surface Polar's validation detail (e.g. a rejected billing email) instead of a bare error",
+    ],
+  },
   {
     version: "0.27.0",
     date: "2026-08-18",

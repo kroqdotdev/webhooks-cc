@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/database";
-import { TEAM_SEAT_REQUEST_LIMIT, applyTeamPolarWebhookEvent } from "@/lib/supabase/team-billing";
+import type { Database, Json } from "@/lib/supabase/database";
+import { createEndpointForUser } from "@/lib/supabase/endpoints";
+import {
+  TEAM_SEAT_REQUEST_LIMIT,
+  applyTeamPolarWebhookEvent,
+  claimPendingCheckoutSlot,
+  releasePendingCheckoutLease,
+} from "@/lib/supabase/team-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -35,6 +41,7 @@ let altOwnerId: string;
 
 const createdUserIds: string[] = [];
 const createdTeamIds: string[] = [];
+const createdEndpointIds: string[] = [];
 
 async function createTestUser(email: string, name: string): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({
@@ -116,6 +123,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (createdTeamIds.length > 0) {
     await admin.from("teams").delete().in("id", createdTeamIds);
+  }
+  if (createdEndpointIds.length > 0) {
+    await admin.from("endpoints").delete().in("id", createdEndpointIds);
   }
   for (const userId of createdUserIds) {
     await admin.auth.admin.deleteUser(userId);
@@ -406,6 +416,71 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     expect(team.subscription_status).toBe("active");
   });
 
+  it("ignores subscription events for a foreign subscription while another is live", async () => {
+    const customerId = `cus_foreign_${ts}`;
+    const teamId = await activatedTeam(`TB Foreign Sub ${ts}`, "sub_live", customerId, altOwnerId);
+
+    // A double-checkout's second subscription (or a stale cross-subscription
+    // event) must never overwrite the subscription the team actually tracks.
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_foreign",
+      customerId,
+      status: "active",
+      seats: 3,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+
+    const team = await getTeam(teamId);
+    expect(team.polar_subscription_id).toBe("sub_live");
+    expect(team.seats).toBe(8);
+  });
+
+  it("keeps a revoked team deactivated on stale updated/active, reactivates on created", async () => {
+    const customerId = `cus_postrevoke_${ts}`;
+    const teamId = await activatedTeam(`TB Post Revoke ${ts}`, "sub_gone", customerId, altOwnerId);
+
+    await applyTeamPolarWebhookEvent("subscription.revoked", teamId, { id: "sub_gone", customerId });
+
+    // Stale deliveries for the revoked subscription must not re-open the pool:
+    // the cron would renew a reactivated team unbilled forever.
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, {
+      id: "sub_gone",
+      customerId,
+      status: "active",
+      seats: 8,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+    await applyTeamPolarWebhookEvent("subscription.active", teamId, {
+      id: "sub_gone",
+      customerId,
+      status: "active",
+    });
+
+    let team = await getTeam(teamId);
+    expect(team.subscription_status).toBeNull();
+    expect(team.polar_subscription_id).toBeNull();
+
+    // A genuinely new subscription still activates.
+    await applyTeamPolarWebhookEvent("subscription.created", teamId, {
+      id: "sub_next",
+      customerId,
+      status: "active",
+      seats: 2,
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+
+    team = await getTeam(teamId);
+    expect(team.subscription_status).toBe("active");
+    expect(team.polar_subscription_id).toBe("sub_next");
+    expect(team.requests_used).toBe(0);
+  });
+
   it("activates with a one-seat pool when the payload carries no seat count", async () => {
     const teamId = await createTestTeam(ownerId, `TB Seatless ${ts}`);
 
@@ -423,6 +498,81 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     expect(team.subscription_status).toBe("active");
     expect(team.seats).toBeGreaterThanOrEqual(1);
     expect(team.request_limit).toBeGreaterThanOrEqual(TEAM_SEAT_REQUEST_LIMIT);
+  });
+});
+
+describe("pending-checkout claim", () => {
+  // Pins the PostgREST filter syntax claimPendingCheckoutSlot relies on
+  // (jsonb ->> paths and quoted values inside or()) against the real server.
+  let teamId: string;
+
+  beforeAll(async () => {
+    teamId = await createTestTeam(altOwnerId, `TB Claim ${ts}`);
+  });
+
+  async function setPending(value: Json | null) {
+    const { error } = await admin
+      .from("teams")
+      .update({ pending_checkout: value })
+      .eq("id", teamId);
+    if (error) throw error;
+  }
+
+  it("claims an empty slot, then refuses while the fresh lease is held", async () => {
+    await setPending(null);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).not.toBeNull();
+    // Second concurrent-style request for the same seat count: blocked.
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBeNull();
+  });
+
+  it("claims over an abandoned lease", async () => {
+    await setPending({
+      status: "creating",
+      seats: 3,
+      created_at: new Date(Date.now() - 2 * 60_000).toISOString(),
+    });
+    expect(await claimPendingCheckoutSlot(teamId, 3)).not.toBeNull();
+  });
+
+  it("refuses over an open same-seat session, claims for a different seat count", async () => {
+    const session: Json = {
+      id: "co_claim",
+      url: "https://example.com/checkout",
+      seats: 3,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    await setPending(session);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBeNull();
+    await setPending(session);
+    expect(await claimPendingCheckoutSlot(teamId, 5)).not.toBeNull();
+  });
+
+  it("claims over an expired session", async () => {
+    await setPending({
+      id: "co_claim",
+      url: "https://example.com/checkout",
+      seats: 3,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() - 1_000).toISOString(),
+    });
+    expect(await claimPendingCheckoutSlot(teamId, 3)).not.toBeNull();
+  });
+
+  it("fences the release on the lease token", async () => {
+    await setPending(null);
+    const token = await claimPendingCheckoutSlot(teamId, 3);
+    expect(token).not.toBeNull();
+
+    // A lost lease (wrong token) must not clear a slot it no longer holds.
+    await releasePendingCheckoutLease(teamId, "1970-01-01T00:00:00.000Z");
+    let { data } = await admin.from("teams").select("pending_checkout").eq("id", teamId).single();
+    expect(data!.pending_checkout).not.toBeNull();
+
+    // The holder's token releases it.
+    await releasePendingCheckoutLease(teamId, token!);
+    ({ data } = await admin.from("teams").select("pending_checkout").eq("id", teamId).single());
+    expect(data!.pending_checkout).toBeNull();
   });
 });
 
@@ -492,6 +642,37 @@ describe("applyTeamPolarWebhookEvent — seat events", () => {
     const ownerMembership = await getMembership(teamId, ownerId);
     expect(ownerMembership).not.toBeNull();
     expect(ownerMembership!.role).toBe("owner");
+  });
+
+  it("removes the revoked member's endpoint shares along with the membership", async () => {
+    const teamId = await createSeatTeam(`TB Seat Share Cleanup ${ts}`, "seat_shared");
+
+    const endpoint = await createEndpointForUser({
+      userId: memberId,
+      name: "TB Seat Share EP",
+    });
+    createdEndpointIds.push(endpoint.id);
+    const { error: shareError } = await admin.from("team_endpoints").insert({
+      team_id: teamId,
+      endpoint_id: endpoint.id,
+      shared_by: memberId,
+    });
+    if (shareError) throw shareError;
+
+    await applyTeamPolarWebhookEvent("customer_seat.revoked", teamId, {
+      id: "seat_shared",
+      seatMetadata: { userId: memberId, teamId },
+    });
+
+    expect(await getMembership(teamId, memberId)).toBeNull();
+
+    const { data: shares, error } = await admin
+      .from("team_endpoints")
+      .select("id")
+      .eq("team_id", teamId)
+      .eq("shared_by", memberId);
+    if (error) throw error;
+    expect(shares).toEqual([]);
   });
 
   it("ignores a revoked event for a seat the member no longer holds", async () => {

@@ -155,6 +155,31 @@ export async function unshareEndpointFromTeam(
 }
 
 // ---------------------------------------------------------------------------
+// removeMemberShares
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes the share rows a departing member created for this team, so their
+ * endpoints stop billing the team's pooled quota. Callers run this BEFORE
+ * deleting the membership row and let a failure propagate: aborting the
+ * removal is recoverable (retry), while a swallowed failure after the
+ * membership is gone would leave the departed member's traffic draining the
+ * pool with nothing left to retry it. On the seat-revocation webhook path the
+ * thrown error becomes a 500, which Polar redelivers, so cleanup is retried
+ * there automatically.
+ */
+export async function removeMemberShares(teamId: string, userId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("team_endpoints")
+    .delete()
+    .eq("team_id", teamId)
+    .eq("shared_by", userId);
+
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
 // getTeamSharesForEndpoint
 // ---------------------------------------------------------------------------
 

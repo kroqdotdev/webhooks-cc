@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   revokeTeamSeat: vi.fn(),
+  removeMemberShares: vi.fn(),
 }));
 
 vi.mock("./admin", () => ({
@@ -11,6 +12,10 @@ vi.mock("./admin", () => ({
 
 vi.mock("./team-billing", () => ({
   revokeTeamSeat: mockFns.revokeTeamSeat,
+}));
+
+vi.mock("./teams-endpoints", () => ({
+  removeMemberShares: mockFns.removeMemberShares,
 }));
 
 import { leaveTeam, removeTeamMember } from "./teams-members";
@@ -69,6 +74,7 @@ const MEMBER_MEMBERSHIP: QueryResult = { data: { role: "member" } };
 beforeEach(() => {
   vi.clearAllMocks();
   mockFns.revokeTeamSeat.mockResolvedValue(undefined);
+  mockFns.removeMemberShares.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -76,10 +82,14 @@ afterEach(() => {
 });
 
 describe("removeTeamMember", () => {
+  // Query order: owner check, target-membership check, share cleanup (mocked),
+  // membership delete, member-email lookup for the seat release.
+  const TARGET_MEMBERSHIP: QueryResult = { data: { id: "member_1" } };
+
   test("releases the removed member's Polar seat", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [OWNER_MEMBERSHIP],
+        "team_members:select": [OWNER_MEMBERSHIP, TARGET_MEMBERSHIP],
         "team_members:delete": [{ data: { id: "member_1", polar_seat_id: "seat_1" } }],
         "users:select": [{ data: { email: "member@example.com" } }],
       })
@@ -87,12 +97,14 @@ describe("removeTeamMember", () => {
 
     await expect(removeTeamMember("user_1", "team_1", "user_2")).resolves.toBe(true);
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_1", "member@example.com");
+    // The departed member's endpoint shares stop billing the team pool.
+    expect(mockFns.removeMemberShares).toHaveBeenCalledWith("team_1", "user_2");
   });
 
   test("still releases by email when the membership has no recorded seat", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [OWNER_MEMBERSHIP],
+        "team_members:select": [OWNER_MEMBERSHIP, TARGET_MEMBERSHIP],
         "team_members:delete": [{ data: { id: "member_1", polar_seat_id: null } }],
         "users:select": [{ data: { email: "member@example.com" } }],
       })
@@ -106,7 +118,7 @@ describe("removeTeamMember", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [OWNER_MEMBERSHIP],
+        "team_members:select": [OWNER_MEMBERSHIP, TARGET_MEMBERSHIP],
         "team_members:delete": [{ data: { id: "member_1", polar_seat_id: "seat_1" } }],
         "users:select": [{ error: new Error("db down") }],
       })
@@ -123,12 +135,28 @@ describe("removeTeamMember", () => {
   test("touches no seat when the target was not a member", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [OWNER_MEMBERSHIP],
-        "team_members:delete": [{ data: null }],
+        "team_members:select": [OWNER_MEMBERSHIP, { data: null }],
       })
     );
 
     await expect(removeTeamMember("user_1", "team_1", "user_2")).resolves.toBe(false);
+    expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+    expect(mockFns.removeMemberShares).not.toHaveBeenCalled();
+  });
+
+  test("aborts the removal when the share cleanup fails, before the membership is deleted", async () => {
+    const cleanupFailure = new Error("share delete failed");
+    mockFns.removeMemberShares.mockRejectedValue(cleanupFailure);
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP, TARGET_MEMBERSHIP],
+      })
+    );
+
+    // A swallowed cleanup failure after the membership delete would leave the
+    // departed member's endpoints draining the pool with nothing to retry it;
+    // aborting first keeps the removal retryable.
+    await expect(removeTeamMember("user_1", "team_1", "user_2")).rejects.toBe(cleanupFailure);
     expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
   });
 
@@ -154,6 +182,7 @@ describe("leaveTeam", () => {
 
     await expect(leaveTeam("user_2", "team_1")).resolves.toBe(true);
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_9", "leaver@example.com");
+    expect(mockFns.removeMemberShares).toHaveBeenCalledWith("team_1", "user_2");
   });
 
   test("keeps the owner's seat when they try to leave", async () => {
@@ -163,5 +192,6 @@ describe("leaveTeam", () => {
 
     await expect(leaveTeam("user_1", "team_1")).resolves.toBe(false);
     expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+    expect(mockFns.removeMemberShares).not.toHaveBeenCalled();
   });
 });

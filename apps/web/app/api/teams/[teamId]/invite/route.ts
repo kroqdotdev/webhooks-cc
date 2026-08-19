@@ -38,7 +38,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
         rateLimit
       );
     }
-    return applyRateLimitHeaders(Response.json(result.invite), rateLimit);
+    return applyRateLimitHeaders(
+      Response.json({ ...result.invite, warning: result.warning }),
+      rateLimit
+    );
   } catch (error) {
     console.error("Failed to create invite:", error);
     return applyRateLimitHeaders(
