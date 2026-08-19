@@ -195,12 +195,23 @@ function reusablePendingCheckoutUrl(pendingCheckout: unknown, seats: number): st
  * the slot is empty, holds an abandoned lease (older than the lease TTL), an
  * expired session, or a session for a different seat count — exactly the
  * states `createTeamCheckout` would mint over. Concurrent requests race this
- * single conditional UPDATE, so at most one of them mints; the losers reuse
- * the winner's session or report checkout_in_progress.
+ * single conditional UPDATE, so at most one of them mints while the lease
+ * holds; the losers reuse the winner's session or report checkout_in_progress.
+ *
+ * Returns the lease token (the lease's created_at) on success, else null. The
+ * holder's follow-up writes are fenced on the token (see
+ * `releasePendingCheckoutLease`). Bounded guarantee, not absolute: a request
+ * stalled past the lease TTL loses the slot and a new claimant can mint a
+ * second session — Polar exposes no idempotency key for checkouts — with the
+ * foreign-subscription guard in applyTeamSubscriptionState as the backstop if
+ * both are completed.
  *
  * Exported for the integration test that pins the PostgREST filter syntax.
  */
-export async function claimPendingCheckoutSlot(teamId: string, seats: number): Promise<boolean> {
+export async function claimPendingCheckoutSlot(
+  teamId: string,
+  seats: number
+): Promise<string | null> {
   const admin = createAdminClient();
   const now = Date.now();
   const leaseCutoff = new Date(now - CHECKOUT_LEASE_TTL_MS).toISOString();
@@ -225,7 +236,42 @@ export async function claimPendingCheckoutSlot(teamId: string, seats: number): P
     throw error;
   }
 
-  return data !== null;
+  return data !== null ? nowIso : null;
+}
+
+/**
+ * Writes `pending_checkout` only while the caller's lease (identified by its
+ * created_at token) is still in place. A request stalled past the lease TTL
+ * loses the slot to a new claimant; its follow-up writes must then no-op
+ * instead of overwriting the newer session, or nulling it (which would invite
+ * a third one).
+ */
+async function writePendingCheckoutIfLeaseHeld(
+  teamId: string,
+  leaseToken: string,
+  value: TeamUpdate["pending_checkout"]
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("teams")
+    .update({ pending_checkout: value })
+    .eq("id", teamId)
+    .eq("pending_checkout->>created_at", leaseToken);
+
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * Releases a checkout lease, fenced on the lease token. Exported for the
+ * integration test that pins the PostgREST jsonb-path filter syntax.
+ */
+export async function releasePendingCheckoutLease(
+  teamId: string,
+  leaseToken: string
+): Promise<void> {
+  await writePendingCheckoutIfLeaseHeld(teamId, leaseToken, null);
 }
 
 export async function createTeamCheckout(
@@ -252,8 +298,8 @@ export async function createTeamCheckout(
   // creates the Polar session. The foreign-subscription guard in
   // applyTeamSubscriptionState remains the backstop for sessions minted
   // before this lease existed (or across a lease expiry).
-  const claimed = await claimPendingCheckoutSlot(teamId, seats);
-  if (!claimed) {
+  const leaseToken = await claimPendingCheckoutSlot(teamId, seats);
+  if (leaseToken === null) {
     // Another request holds the slot. One re-read settles whether it already
     // finished (reuse its session) or is still minting (tell the caller to
     // retry in a moment rather than minting a double).
@@ -290,18 +336,18 @@ export async function createTeamCheckout(
     });
     const checkout = unwrapPolarResult(result, "team checkout creation");
 
-    // Replace the lease with the session for the reuse path. The session
-    // exists either way, so a failed cache write only costs the dedup (the
-    // lease TTL then reopens the slot) and must not fail the checkout.
+    // Replace the lease with the session for the reuse path, fenced on the
+    // lease token: a request stalled past the lease TTL must not overwrite a
+    // newer claimant's session. The session exists either way, so a failed
+    // cache write only costs the dedup (the lease TTL then reopens the slot)
+    // and must not fail the checkout.
     try {
-      await updateTeamById(team.id, {
-        pending_checkout: {
-          id: checkout.id,
-          url: checkout.url,
-          seats,
-          created_at: new Date().toISOString(),
-          expires_at: parseEventTimestamp(checkout.expiresAt),
-        },
+      await writePendingCheckoutIfLeaseHeld(team.id, leaseToken, {
+        id: checkout.id,
+        url: checkout.url,
+        seats,
+        created_at: new Date().toISOString(),
+        expires_at: parseEventTimestamp(checkout.expiresAt),
       });
     } catch (cacheError) {
       console.error("[team-billing] failed to cache pending checkout", { teamId, cacheError });
@@ -309,10 +355,11 @@ export async function createTeamCheckout(
 
     return checkout.url;
   } catch (error) {
-    // Release the lease so a retry can mint immediately instead of waiting
-    // out the lease TTL. Best effort: the TTL is the backstop.
+    // Release the lease (token-fenced) so a retry can mint immediately
+    // instead of waiting out the lease TTL. Best effort: the TTL is the
+    // backstop.
     try {
-      await updateTeamById(team.id, { pending_checkout: null });
+      await releasePendingCheckoutLease(team.id, leaseToken);
     } catch (releaseError) {
       console.error("[team-billing] failed to release checkout lease", { teamId, releaseError });
     }

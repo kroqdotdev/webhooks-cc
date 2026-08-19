@@ -451,7 +451,10 @@ function TeamDetailContent() {
     );
   }
 
-  if (loadError && !team) {
+  // A stale `team` from a previous route must never render under a new
+  // teamId: every action handler uses the route's teamId, so the user would
+  // act on a different team than the page displays.
+  if (loadError && (!team || team.id !== teamId)) {
     return (
       <main className="container mx-auto px-4 py-8 max-w-2xl space-y-4">
         <Link
@@ -487,8 +490,9 @@ function TeamDetailContent() {
 
       {/* A failed refresh after a successful load keeps the (stale) content
           visible; this banner is what makes the failure recoverable instead of
-          silently ignored. The no-data case renders the full-page card above. */}
-      {loadError && team && (
+          silently ignored. Only for the route's own team: a mismatched id
+          renders the full-page card above instead. */}
+      {loadError && team?.id === teamId && (
         <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 flex items-center justify-between gap-3">
           <p className="text-sm text-destructive">
             Failed to refresh team data. Some information may be out of date.

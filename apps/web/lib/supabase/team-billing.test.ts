@@ -280,6 +280,14 @@ describe("createTeamCheckout", () => {
       url: "https://sandbox.polar.sh/checkout/team",
       seats: 5,
     });
+    // The cache write is fenced on the lease token, so a stalled request that
+    // lost its lease cannot overwrite a newer claimant's session.
+    const cacheWriteIndex = recorded.indexOf(cacheWrite!);
+    expect(
+      recordedFilters[cacheWriteIndex].filters.some(
+        (f) => f[0] === "eq" && f[1] === "pending_checkout->>created_at"
+      )
+    ).toBe(true);
   });
 
   test("reuses the cached checkout session for the same seat count within the TTL", async () => {
@@ -518,6 +526,19 @@ describe("createTeamCheckout", () => {
       op: "update",
       payload: { pending_checkout: null },
     });
+    // The release is fenced on the lease token: a stalled request that lost
+    // its lease must not null a newer claimant's session.
+    const releaseIndex = recorded.findIndex(
+      (call) =>
+        call.table === "teams" &&
+        call.op === "update" &&
+        (call.payload as Record<string, unknown>)?.pending_checkout === null
+    );
+    expect(
+      recordedFilters[releaseIndex].filters.some(
+        (f) => f[0] === "eq" && f[1] === "pending_checkout->>created_at"
+      )
+    ).toBe(true);
   });
 });
 

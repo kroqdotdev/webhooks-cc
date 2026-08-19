@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/database";
-import type { Json } from "@/lib/supabase/database";
+import type { Database, Json } from "@/lib/supabase/database";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import {
   TEAM_SEAT_REQUEST_LIMIT,
   applyTeamPolarWebhookEvent,
   claimPendingCheckoutSlot,
+  releasePendingCheckoutLease,
 } from "@/lib/supabase/team-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
@@ -520,9 +520,9 @@ describe("pending-checkout claim", () => {
 
   it("claims an empty slot, then refuses while the fresh lease is held", async () => {
     await setPending(null);
-    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(true);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).not.toBeNull();
     // Second concurrent-style request for the same seat count: blocked.
-    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(false);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBeNull();
   });
 
   it("claims over an abandoned lease", async () => {
@@ -531,7 +531,7 @@ describe("pending-checkout claim", () => {
       seats: 3,
       created_at: new Date(Date.now() - 2 * 60_000).toISOString(),
     });
-    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(true);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).not.toBeNull();
   });
 
   it("refuses over an open same-seat session, claims for a different seat count", async () => {
@@ -543,9 +543,9 @@ describe("pending-checkout claim", () => {
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
     };
     await setPending(session);
-    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(false);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).toBeNull();
     await setPending(session);
-    expect(await claimPendingCheckoutSlot(teamId, 5)).toBe(true);
+    expect(await claimPendingCheckoutSlot(teamId, 5)).not.toBeNull();
   });
 
   it("claims over an expired session", async () => {
@@ -556,7 +556,23 @@ describe("pending-checkout claim", () => {
       created_at: new Date().toISOString(),
       expires_at: new Date(Date.now() - 1_000).toISOString(),
     });
-    expect(await claimPendingCheckoutSlot(teamId, 3)).toBe(true);
+    expect(await claimPendingCheckoutSlot(teamId, 3)).not.toBeNull();
+  });
+
+  it("fences the release on the lease token", async () => {
+    await setPending(null);
+    const token = await claimPendingCheckoutSlot(teamId, 3);
+    expect(token).not.toBeNull();
+
+    // A lost lease (wrong token) must not clear a slot it no longer holds.
+    await releasePendingCheckoutLease(teamId, "1970-01-01T00:00:00.000Z");
+    let { data } = await admin.from("teams").select("pending_checkout").eq("id", teamId).single();
+    expect(data!.pending_checkout).not.toBeNull();
+
+    // The holder's token releases it.
+    await releasePendingCheckoutLease(teamId, token!);
+    ({ data } = await admin.from("teams").select("pending_checkout").eq("id", teamId).single());
+    expect(data!.pending_checkout).toBeNull();
   });
 });
 
