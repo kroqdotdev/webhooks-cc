@@ -29,15 +29,23 @@ export function mapAuthError(error: unknown): string {
 }
 
 /**
- * The `?error=` query param on /login carries either a fixed message from our
- * own route handlers (/auth/confirm), an OAuth provider's error_description
- * (forwarded by /auth/callback), or the bare `auth_callback_error` code.
- * Returns display copy, or null when there is nothing to show.
+ * Codes our own route handlers put in `/login?error=` (OAuth callback and
+ * email-link confirm). Only these render; anything else (including free text)
+ * collapses to the generic message so the query string can never inject
+ * arbitrary copy into the page.
  */
+export const LOGIN_ERROR_CODES = {
+  auth_callback_error: "Sign in failed. Please try again.",
+  oauth_denied: "Sign in was cancelled. Try again when you're ready.",
+  oauth_error: "The sign-in provider returned an error. Please try again.",
+  link_invalid: "That link is invalid or has expired. Sign in, or request a new link.",
+} as const;
+
+export type LoginErrorCode = keyof typeof LOGIN_ERROR_CODES;
+
 export function describeLoginError(param: string | null): string | null {
   if (!param) return null;
   const value = param.trim();
   if (!value) return null;
-  if (value === "auth_callback_error") return "Sign in failed. Please try again.";
-  return value.length > 200 ? `${value.slice(0, 200)}…` : value;
+  return LOGIN_ERROR_CODES[value as LoginErrorCode] ?? LOGIN_ERROR_CODES.auth_callback_error;
 }

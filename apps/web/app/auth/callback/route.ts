@@ -9,10 +9,12 @@ export async function GET(request: Request) {
   // Validate next param to prevent open redirect
   const next = sanitizeNextPath(searchParams.get("next"));
 
-  // Surface OAuth provider errors (e.g. user denied consent)
-  const errorDescription = searchParams.get("error_description");
-  if (errorDescription) {
-    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(errorDescription)}`);
+  // Surface OAuth provider errors (e.g. user denied consent) as one of our
+  // own codes; the login page only renders known codes, never provider text.
+  const providerError = searchParams.get("error");
+  if (providerError || searchParams.get("error_description")) {
+    const code = providerError === "access_denied" ? "oauth_denied" : "oauth_error";
+    return NextResponse.redirect(`${origin}/login?error=${code}`);
   }
 
   if (code) {

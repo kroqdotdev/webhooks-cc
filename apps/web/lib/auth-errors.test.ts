@@ -41,15 +41,21 @@ describe("describeLoginError", () => {
     expect(describeLoginError("   ")).toBeNull();
   });
 
-  it("translates the bare callback error code", () => {
+  it("renders copy for the known codes", () => {
     expect(describeLoginError("auth_callback_error")).toBe("Sign in failed. Please try again.");
+    expect(describeLoginError("link_invalid")).toBe(
+      "That link is invalid or has expired. Sign in, or request a new link."
+    );
+    expect(describeLoginError("oauth_denied")).toMatch(/cancelled/);
+    expect(describeLoginError("oauth_error")).toMatch(/provider returned an error/);
   });
 
-  it("passes human-readable messages through, capped in length", () => {
-    expect(describeLoginError("That link is invalid or has expired.")).toBe(
-      "That link is invalid or has expired."
+  it("collapses unknown values and free text to the generic message", () => {
+    expect(describeLoginError("Your account is locked, call +1 555 0100")).toBe(
+      "Sign in failed. Please try again."
     );
-    const long = "x".repeat(300);
-    expect(describeLoginError(long)).toHaveLength(201);
+    expect(describeLoginError("<img src=x onerror=alert(1)>")).toBe(
+      "Sign in failed. Please try again."
+    );
   });
 });

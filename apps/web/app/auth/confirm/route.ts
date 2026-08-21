@@ -19,8 +19,6 @@ import { resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
  */
 const ALLOWED_TYPES = new Set<EmailOtpType>(["email", "signup", "recovery"]);
 
-const INVALID_LINK_MESSAGE = "That link is invalid or has expired. Sign in, or request a new link.";
-
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const tokenHash = searchParams.get("token_hash");
@@ -36,5 +34,6 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${base}/login?error=${encodeURIComponent(INVALID_LINK_MESSAGE)}`);
+  // Code, not copy: the login page maps it (see LOGIN_ERROR_CODES).
+  return NextResponse.redirect(`${base}/login?error=link_invalid`);
 }
