@@ -56,7 +56,7 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
   const items: FAQItem[] = [
     {
       question: `How do I test ${page.label} webhooks without deploying anything?`,
-      answer: `Create a free endpoint on webhooks.cc — sign in with GitHub or Google, or use a guest endpoint without an account — then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
+      answer: `Create a free endpoint on webhooks.cc — sign in with GitHub, Google, or email, or use a guest endpoint without an account — then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
     },
     {
       question: `Can I send a sample ${page.label} webhook without a ${page.label} account?`,
@@ -97,7 +97,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const howToSteps = [
     {
       name: "Create a webhook endpoint",
-      text: "Sign in free with GitHub or Google to create a persistent endpoint — or grab an instant guest URL at webhooks.cc without an account.",
+      text: "Sign in free with GitHub, Google, or email to create a persistent endpoint — or grab an instant guest URL at webhooks.cc without an account.",
       url: "https://webhooks.cc",
     },
     {

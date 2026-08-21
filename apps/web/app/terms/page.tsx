@@ -65,8 +65,9 @@ export default function TermsPage() {
           <h2 className="text-xl font-bold mb-3">Your Account</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              You authenticate via GitHub or Google OAuth. You are responsible for all activity
-              under your account and for keeping your credentials secure.
+              You authenticate via GitHub or Google OAuth, or with an email address and password.
+              You are responsible for all activity under your account and for keeping your
+              credentials secure.
             </p>
           </div>
         </section>
