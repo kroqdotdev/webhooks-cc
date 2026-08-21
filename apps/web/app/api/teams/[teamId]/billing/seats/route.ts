@@ -1,5 +1,5 @@
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { PolarConfigError } from "@/lib/polar";
+import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { TeamBillingError, updateTeamSeats } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
 
@@ -32,7 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Team seat update failed:", error);
-    return Response.json({ error: "Failed to update seats" }, { status: 502 });
+    console.error("Team seat update failed:", loggablePolarError(error));
+    return Response.json({ error: "Failed to update seats" }, { status: 500 });
   }
 }

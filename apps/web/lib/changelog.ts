@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.28.0";
+export const APP_VERSION = "0.28.1";
 export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.28.1",
+    date: "2026-08-21",
+    title: "Fix: Team Checkout for Owners Who Already Have a Polar Customer",
+    track: "web",
+    items: [
+      "Team checkout no longer fails for owners who already have a personal Pro subscription (or own another team): the team's Polar customer is now created as a team customer with the owner as its owner member, instead of a second customer on the owner's email, which Polar rejects",
+      "Team billing errors now reach the browser with their detail instead of being swallowed by Cloudflare's 502 page",
+      "Polar errors are logged without the request's authorization header",
+    ],
+  },
   {
     version: "0.28.0",
     date: "2026-08-19",

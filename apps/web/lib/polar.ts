@@ -1,4 +1,5 @@
 import { Polar } from "@polar-sh/sdk";
+import { PolarError } from "@polar-sh/sdk/models/errors/polarerror";
 import { publicEnv } from "./env";
 
 class PolarConfigError extends Error {
@@ -75,9 +76,7 @@ function messagesFromValidationDetail(detail: unknown): string | null {
   if (!Array.isArray(detail)) return null;
 
   const messages = detail
-    .map((entry) =>
-      entry && typeof entry === "object" ? (entry as { msg?: unknown }).msg : null
-    )
+    .map((entry) => (entry && typeof entry === "object" ? (entry as { msg?: unknown }).msg : null))
     .filter((msg): msg is string => typeof msg === "string" && msg.length > 0);
 
   return messages.length > 0 ? truncateDetail(messages.join("; ")) : null;
@@ -120,3 +119,30 @@ export function describePolarError(error: unknown): string | null {
 }
 
 export { PolarConfigError };
+
+/**
+ * Reduces a Polar SDK error to the parts that are safe to log. SDK errors keep
+ * the original Request (Authorization header included), so logging the error
+ * object itself writes the access token to the journal. Non-Polar errors pass
+ * through unchanged, so Supabase/Postgres errors keep their code/details/hint.
+ */
+export function loggablePolarError(error: unknown): unknown {
+  const isPolarError =
+    error instanceof PolarError ||
+    (!!error && typeof error === "object" && "rawResponse" in error && "statusCode" in error);
+  if (!isPolarError) return error;
+
+  const { name, message, statusCode, body } = error as {
+    name?: unknown;
+    message?: unknown;
+    statusCode?: unknown;
+    body?: unknown;
+  };
+  return {
+    name: typeof name === "string" ? name : "PolarError",
+    message: typeof message === "string" ? message : String(message),
+    statusCode: typeof statusCode === "number" ? statusCode : null,
+    body: typeof body === "string" ? body : null,
+    detail: describePolarError(error),
+  };
+}

@@ -1,5 +1,5 @@
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { PolarConfigError } from "@/lib/polar";
+import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { BillingActionError, createCheckoutForUser } from "@/lib/supabase/billing";
 
 export async function POST(request: Request) {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Billing checkout failed:", error);
+    console.error("Billing checkout failed:", loggablePolarError(error));
     return Response.json({ error: "Failed to start checkout" }, { status: 500 });
   }
 }

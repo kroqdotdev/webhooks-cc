@@ -1,4 +1,9 @@
-import { createPolarClient, getPolarTeamsCheckoutConfig, unwrapPolarResult } from "@/lib/polar";
+import {
+  createPolarClient,
+  getPolarTeamsCheckoutConfig,
+  loggablePolarError,
+  unwrapPolarResult,
+} from "@/lib/polar";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -124,7 +129,7 @@ async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<string> {
   const admin = createAdminClient();
   const { data: owner, error } = await admin
     .from("users")
-    .select("email")
+    .select("email, name")
     .eq("id", team.created_by)
     .maybeSingle();
 
@@ -133,19 +138,32 @@ async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<string> {
   }
 
   // maybeSingle() returns null data without an error when no user row matches.
-  // A Polar customer created with an empty email would bind the team to a
+  // A team customer whose owner member has no email would bind the team to a
   // billing contact that can never receive seat or invoice emails.
   if (!owner?.email) {
     throw new TeamBillingError("owner_not_found", "Team owner has no billing email");
   }
 
+  // Polar allows one customer per email per organization, and the owner very
+  // likely already is one (a personal Pro customer) or owns another team. So
+  // the team customer is a `team`-type customer with no email of its own; the
+  // owner is attached as its owner member instead. Polar prefills checkout,
+  // receipts, and customer-portal sign-in from the owner member's email, and
+  // member emails are only unique within a customer, so the same person can
+  // own any number of teams and still hold a personal customer. The team's
+  // own identity stays on `externalId` for webhook routing.
   const polar = createPolarClient();
   const result = await polar.customers.create({
-    email: owner.email,
+    type: "team",
     name: team.name,
     externalId: `team:${team.id}`,
     metadata: {
       teamId: team.id,
+    },
+    owner: {
+      email: owner.email,
+      name: owner.name ?? undefined,
+      externalId: team.created_by,
     },
   });
   const customer = unwrapPolarResult(result, "team customer creation");
@@ -602,7 +620,11 @@ export async function revokeTeamSeat(
     const revokeResult = await polar.customerSeats.revokeSeat({ seatId: targetSeatId });
     unwrapPolarResult(revokeResult, "team seat revoke");
   } catch (error) {
-    console.error("[team-billing] failed to revoke Polar seat", { teamId, seatId, error });
+    console.error("[team-billing] failed to revoke Polar seat", {
+      teamId,
+      seatId,
+      error: loggablePolarError(error),
+    });
   }
 }
 

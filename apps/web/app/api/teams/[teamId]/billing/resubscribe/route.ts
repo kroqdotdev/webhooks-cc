@@ -1,5 +1,5 @@
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { PolarConfigError } from "@/lib/polar";
+import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { resubscribeTeam, TeamBillingError } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
 
@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Team resubscribe failed:", error);
-    return Response.json({ error: "Failed to reactivate subscription" }, { status: 502 });
+    console.error("Team resubscribe failed:", loggablePolarError(error));
+    return Response.json({ error: "Failed to reactivate subscription" }, { status: 500 });
   }
 }
