@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Confirm your webhooks.cc account</title>
+  </head>
+  <body style="margin: 0; padding: 0; background: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #18181b;">
+    <!-- GoTrue Go template, not plain HTML: SiteURL, TokenHash and Email actions are filled in at send time. Keep each action on one line. -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #f4f4f5; padding: 32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 520px; background: #ffffff; border: 2px solid #18181b; padding: 32px;">
+            <tr>
+              <td style="font-size: 20px; font-weight: 700; padding-bottom: 16px;">webhooks.cc</td>
+            </tr>
+            <tr>
+              <td style="font-size: 16px; line-height: 24px; padding-bottom: 16px;">
+                Confirm {{ .Email }} to finish setting up your webhooks.cc account.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0 24px;">
+                <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/dashboard" style="display: inline-block; background: #18181b; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px; padding: 12px 20px; border: 2px solid #18181b;">Confirm my account</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="font-size: 14px; line-height: 22px; color: #52525b; padding-bottom: 16px;">
+                Or paste this into your browser:<br />
+                <span style="word-break: break-all;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/dashboard</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="font-size: 14px; line-height: 22px; color: #52525b; border-top: 1px solid #e4e4e7; padding-top: 16px;">
+                If you didn't create a webhooks.cc account, ignore this email.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
