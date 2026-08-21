@@ -20,3 +20,6 @@ pnpm-lock.yaml
 # Other
 .git/
 coverage/
+
+# GoTrue Go templates (not plain HTML): prettier splits {{ }} actions across lines
+apps/web/public/email-templates/

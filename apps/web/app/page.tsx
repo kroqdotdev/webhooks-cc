@@ -24,7 +24,7 @@ export const revalidate = 600; // re-render landing page every 10 min to pick up
 export const metadata = createPageMetadata({
   title: "Webhook Testing Platform — Instant URL, CLI, SDK & MCP",
   description:
-    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then one click with GitHub or Google unlocks the free plan: 50 requests/day, CLI, SDK & MCP.",
+    "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then sign up free with GitHub, Google, or email to unlock 50 requests/day, CLI, SDK & MCP.",
   path: "/",
   keywords: [
     "webhook testing",
@@ -95,12 +95,12 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Do I need an account to test webhooks?",
     answer:
-      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, one click with GitHub or Google creates a free account: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
+      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, create a free account, one click with GitHub or Google or a short email-and-password sign-up: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
   },
   {
     question: "What do I get when I sign up free?",
     answer:
-      "Everything on the free plan, with one click via GitHub or Google — no email forms, no credit card. You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
+      "Everything on the free plan, no credit card: one click via GitHub or Google, or sign up with an email and password (confirm the email and you are in). You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
   },
   {
     question: "How do I test webhooks locally?",
@@ -169,7 +169,7 @@ export default async function Home() {
           steps: [
             {
               name: "Get a URL",
-              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent.",
+              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
             },
             {
               name: "Point your service",
@@ -218,7 +218,7 @@ export default async function Home() {
           </h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
             Your free webhook URL is live below — point any service at it. No signup, no credit
-            card. One click with GitHub or Google{" "}
+            card. One click with GitHub or Google, or an email signup,{" "}
             <Link href="/login" className="font-bold text-foreground hover:text-primary">
               keeps it, free
             </Link>
@@ -238,9 +238,9 @@ export default async function Home() {
           <div className="text-center max-w-2xl">
             <h2 className="text-3xl md:text-4xl font-bold mb-3">One click keeps your endpoint</h2>
             <p className="text-lg text-muted-foreground">
-              The URL above is a guest endpoint. Sign in with GitHub or Google — a single click, no
-              email forms, no credit card — and it becomes a permanent free endpoint with everything
-              below.
+              The URL above is a guest endpoint. Sign in with GitHub or Google (a single click) or
+              with an email and password, no credit card, and it becomes a permanent free endpoint
+              with everything below.
             </p>
           </div>
 
@@ -268,7 +268,7 @@ export default async function Home() {
                 1 click away
               </div>
               <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
-                Free account — GitHub or Google
+                Free account — GitHub, Google, or email
               </p>
               <ul className="space-y-2 text-sm">
                 {[
@@ -337,7 +337,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google makes it permanent.",
+                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
               },
               {
                 step: "2",

@@ -20,7 +20,15 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
 
 function shouldNoIndexPath(pathname: string): boolean {
   if (pathname === "/login" || pathname === "/api-explorer") return true;
-  const privatePrefixes = ["/dashboard", "/account", "/endpoints", "/api", "/cli/verify", "/teams"];
+  const privatePrefixes = [
+    "/dashboard",
+    "/account",
+    "/endpoints",
+    "/api",
+    "/auth",
+    "/cli/verify",
+    "/teams",
+  ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
@@ -47,9 +55,15 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // Refresh session (skip for static assets and auth callback)
+  // Refresh session (skip for static assets and the auth handoff routes, which
+  // set their own cookies: /auth/callback exchanges the OAuth code and
+  // /auth/confirm verifies an email token hash).
   const pathname = request.nextUrl.pathname;
-  if (!pathname.startsWith("/_next") && !pathname.startsWith("/auth/callback")) {
+  if (
+    !pathname.startsWith("/_next") &&
+    !pathname.startsWith("/auth/callback") &&
+    !pathname.startsWith("/auth/confirm")
+  ) {
     await supabase.auth.getUser();
   }
 

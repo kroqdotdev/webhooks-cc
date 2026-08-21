@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.28.1";
+export const APP_VERSION = "0.29.0";
 export const CLI_VERSION = "1.1.3";
 export const SDK_VERSION = "1.9.0";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.29.0",
+    date: "2026-08-21",
+    title: "Sign In with Email and Password",
+    track: "web",
+    items: [
+      "Create an account with an email address and password, alongside GitHub and Google: sign-up sends a confirmation link, and the account is usable once the email is verified",
+      "Forgot password? Request a reset link from the login page and choose a new password on the reset page; the link works in any browser",
+      "Team invitees without a GitHub or Google account can now sign up with the invited email address and the invite is waiting for them",
+      "OAuth errors and invalid email links now show a message on the login page instead of being dropped",
+    ],
+  },
   {
     version: "0.28.1",
     date: "2026-08-21",

@@ -40,7 +40,7 @@ export default function TermsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Terms of Service</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: February 4, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: August 21, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -65,8 +65,9 @@ export default function TermsPage() {
           <h2 className="text-xl font-bold mb-3">Your Account</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              You authenticate via GitHub or Google OAuth. You are responsible for all activity
-              under your account and for keeping your credentials secure.
+              You authenticate via GitHub or Google OAuth, or with an email address and password.
+              You are responsible for all activity under your account and for keeping your
+              credentials secure.
             </p>
           </div>
         </section>

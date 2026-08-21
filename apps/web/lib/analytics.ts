@@ -20,7 +20,7 @@ export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq") {
 }
 
 // ── Auth ────────────────────────────────────────────────────────
-export function trackSignInStarted(provider: "github" | "google") {
+export function trackSignInStarted(provider: "github" | "google" | "email") {
   capture("sign_in_started", { provider });
 }
 

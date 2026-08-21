@@ -40,7 +40,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: August 13, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: August 21, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -56,7 +56,9 @@ export default function PrivacyPage() {
             <p>
               <span className="font-bold text-foreground">Account info.</span> When you sign in with
               GitHub or Google, we receive your email address, display name, and profile picture
-              from the OAuth provider.
+              from the OAuth provider. When you sign up with an email address and password, we
+              receive the email address you provide; the password is stored only as a salted hash by
+              our authentication system (Supabase GoTrue).
             </p>
             <p>
               <span className="font-bold text-foreground">Webhook data.</span> We store the requests
