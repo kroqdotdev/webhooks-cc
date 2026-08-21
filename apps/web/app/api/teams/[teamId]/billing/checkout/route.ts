@@ -1,5 +1,5 @@
 import { authenticateSessionRequest } from "@/lib/api-auth";
-import { PolarConfigError, describePolarError } from "@/lib/polar";
+import { describePolarError, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { createTeamCheckout, TeamBillingError } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
 
@@ -32,13 +32,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Team checkout failed:", error);
+    console.error("Team checkout failed:", loggablePolarError(error));
     // Surface Polar validation detail (e.g. an unroutable billing email) so
     // the owner sees why instead of a bare "failed".
     const detail = describePolarError(error);
     return Response.json(
-      detail ? { error: "Failed to start checkout", detail } : { error: "Failed to start checkout" },
-      { status: 502 }
+      detail
+        ? { error: "Failed to start checkout", detail }
+        : { error: "Failed to start checkout" },
+      { status: 500 }
     );
   }
 }

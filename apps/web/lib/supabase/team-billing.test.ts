@@ -9,6 +9,7 @@ const mockFns = vi.hoisted(() => ({
 vi.mock("@/lib/polar", () => ({
   createPolarClient: mockFns.createPolarClient,
   getPolarTeamsCheckoutConfig: mockFns.getPolarTeamsCheckoutConfig,
+  loggablePolarError: (error: unknown) => error,
   unwrapPolarResult: <T>(result: T) => result,
 }));
 
@@ -226,7 +227,7 @@ describe("createTeamCheckout", () => {
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow()],
-        "users:select": [{ data: { email: "owner@example.com" } }],
+        "users:select": [{ data: { email: "owner@example.com", name: "Owner" } }],
         // Lease claim, customer-id write, session cache write.
         "teams:update": [{ data: { id: "team_1" } }, {}, {}],
       })
@@ -245,11 +246,16 @@ describe("createTeamCheckout", () => {
       "https://sandbox.polar.sh/checkout/team"
     );
 
+    // A `team`-type customer without an email of its own: Polar allows one
+    // customer per email per organization, and the owner usually already is
+    // one (personal Pro) or owns another team. The owner rides along as the
+    // owner member, which is what Polar bills and emails.
     expect(customerCreate).toHaveBeenCalledWith({
-      email: "owner@example.com",
+      type: "team",
       name: "Acme",
       externalId: "team:team_1",
       metadata: { teamId: "team_1" },
+      owner: { email: "owner@example.com", name: "Owner", externalId: "user_1" },
     });
     expect(checkoutCreate).toHaveBeenCalledWith({
       products: ["prod_teams_123"],
@@ -270,9 +276,7 @@ describe("createTeamCheckout", () => {
         call.op === "update" &&
         (
           (call.payload as Record<string, unknown>)?.pending_checkout as
-            | Record<string, unknown>
-            | null
-            | undefined
+            Record<string, unknown> | null | undefined
         )?.url != null
     );
     expect(cacheWrite).toBeDefined();
@@ -776,7 +780,9 @@ describe("subscription management", () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
-        "teams:select": [teamRow({ polar_subscription_id: "sub_1", subscription_status: "active" })],
+        "teams:select": [
+          teamRow({ polar_subscription_id: "sub_1", subscription_status: "active" }),
+        ],
         "teams:update": [{}],
       })
     );
@@ -996,7 +1002,11 @@ describe("subscription event guards", () => {
       })
     );
 
-    await applyTeamPolarWebhookEvent("subscription.created", "team_1", subscriptionEvent("sub_new"));
+    await applyTeamPolarWebhookEvent(
+      "subscription.created",
+      "team_1",
+      subscriptionEvent("sub_new")
+    );
 
     expect(teamsUpdates()).toHaveLength(1);
     expect(teamsUpdates()[0].payload).toMatchObject({

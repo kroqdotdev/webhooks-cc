@@ -21,6 +21,7 @@ vi.mock("@/lib/polar", () => {
     createPolarClient: polarMocks.createPolarClient,
     getPolarCheckoutConfig: polarMocks.getPolarCheckoutConfig,
     getPolarWebhookSecret: polarMocks.getPolarWebhookSecret,
+    loggablePolarError: (error: unknown) => error,
     unwrapPolarResult: <T>(result: T) => result,
     PolarConfigError,
   };

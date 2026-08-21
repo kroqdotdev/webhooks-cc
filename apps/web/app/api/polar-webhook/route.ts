@@ -1,4 +1,4 @@
-import { PolarConfigError, getPolarWebhookSecret } from "@/lib/polar";
+import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { applyPolarWebhookEvent } from "@/lib/supabase/billing";
 import { applyTeamPolarWebhookEvent, extractTeamIdFromWebhook } from "@/lib/supabase/team-billing";
 import { SDKValidationError } from "@polar-sh/sdk/models/errors/sdkvalidationerror";
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Polar webhook processing failed:", error);
+    console.error("Polar webhook processing failed:", loggablePolarError(error));
     return Response.json({ error: "internal_error" }, { status: 500 });
   }
 }

@@ -86,13 +86,13 @@ describe("POST /api/teams/[teamId]/billing/seats", () => {
     });
   });
 
-  test("returns 502 when Polar fails unexpectedly", async () => {
+  test("returns 500 when Polar fails unexpectedly", async () => {
     mocks.updateTeamSeats.mockRejectedValue(new Error("polar exploded"));
 
     const { POST } = await import("./route");
     const response = await POST(seatsRequest({ seats: 5 }), params);
 
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({ error: "Failed to update seats" });
   });
 });
