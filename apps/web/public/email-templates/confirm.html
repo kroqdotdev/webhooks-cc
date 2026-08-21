@@ -21,13 +21,13 @@
             </tr>
             <tr>
               <td style="padding: 8px 0 24px;">
-                <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/dashboard" style="display: inline-block; background: #18181b; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px; padding: 12px 20px; border: 2px solid #18181b;">Confirm my account</a>
+                <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/dashboard&amp;redirect_to={{ .RedirectTo }}" style="display: inline-block; background: #18181b; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px; padding: 12px 20px; border: 2px solid #18181b;">Confirm my account</a>
               </td>
             </tr>
             <tr>
               <td style="font-size: 14px; line-height: 22px; color: #52525b; padding-bottom: 16px;">
                 Or paste this into your browser:<br />
-                <span style="word-break: break-all;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/dashboard</span>
+                <span style="word-break: break-all;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/dashboard&amp;redirect_to={{ .RedirectTo }}</span>
               </td>
             </tr>
             <tr>

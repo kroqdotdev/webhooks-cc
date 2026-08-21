@@ -23,8 +23,11 @@ export const PASSWORD_MIN_LENGTH = 8;
  */
 export function EmailPasswordForm({
   initialMode = "sign-in",
+  redirectTo = "/dashboard",
 }: {
   initialMode?: EmailPasswordMode;
+  /** Sanitized same-origin path the login page will land on after sign-in. */
+  redirectTo?: string;
 }) {
   const [mode, setMode] = useState<EmailPasswordMode>(initialMode);
   const [email, setEmail] = useState("");
@@ -34,6 +37,12 @@ export function EmailPasswordForm({
   const [notice, setNotice] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
+
+  // Sign-up confirmation happens out of band (email link, possibly another
+  // browser), so the login page's ?redirect= travels with it: GoTrue renders
+  // emailRedirectTo as redirect_to in the confirmation link and /auth/confirm
+  // lands there. Sign-in needs nothing: the page redirects on SIGNED_IN.
+  const emailRedirectTo = () => `${window.location.origin}${redirectTo}`;
 
   const switchMode = (next: EmailPasswordMode) => {
     setMode(next);
@@ -80,7 +89,11 @@ export function EmailPasswordForm({
       }
 
       if (mode === "sign-up") {
-        const { error } = await supabase.auth.signUp({ email: trimmedEmail, password });
+        const { error } = await supabase.auth.signUp({
+          email: trimmedEmail,
+          password,
+          options: { emailRedirectTo: emailRedirectTo() },
+        });
         if (error) {
           setError(mapAuthError(error));
           return;
@@ -111,7 +124,11 @@ export function EmailPasswordForm({
     setError(null);
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.resend({ type: "signup", email: email.trim() });
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: { emailRedirectTo: emailRedirectTo() },
+      });
       if (error) {
         setError(mapAuthError(error));
         return;

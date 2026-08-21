@@ -95,12 +95,12 @@ const LANDING_FAQ: FAQItem[] = [
   {
     question: "Do I need an account to test webhooks?",
     answer:
-      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, one click with GitHub or Google (or an email and password) creates a free account: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
+      "No. This page gives you a live guest webhook URL the moment you arrive — 25 requests, valid for 12 hours, no signup. When you want to keep it, create a free account, one click with GitHub or Google or a short email-and-password sign-up: your endpoint becomes permanent and you get 50 requests/day, unlimited endpoints, and 7-day history.",
   },
   {
     question: "What do I get when I sign up free?",
     answer:
-      "Everything on the free plan, with one click via GitHub or Google or an email and password — no credit card. You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
+      "Everything on the free plan, no credit card: one click via GitHub or Google, or sign up with an email and password (confirm the email and you are in). You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
   },
   {
     question: "How do I test webhooks locally?",
@@ -169,7 +169,7 @@ export default async function Home() {
           steps: [
             {
               name: "Get a URL",
-              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google (or an email signup) makes it permanent.",
+              text: "Open webhooks.cc — a live guest webhook URL is created the moment the page loads. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
             },
             {
               name: "Point your service",
@@ -337,7 +337,7 @@ export default async function Home() {
                 step: "1",
                 title: "Get a URL",
                 description:
-                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google (or an email signup) makes it permanent.",
+                  "You already have one — it went live the moment you opened this page. One click with GitHub or Google makes it permanent, or sign up with an email and password.",
               },
               {
                 step: "2",

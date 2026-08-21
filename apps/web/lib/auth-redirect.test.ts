@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveRedirectBase, sanitizeNextPath } from "./auth-redirect";
+import { nextFromRedirectTo, resolveRedirectBase, sanitizeNextPath } from "./auth-redirect";
 
 describe("sanitizeNextPath", () => {
   it("passes a same-origin path through", () => {
@@ -50,5 +50,31 @@ describe("resolveRedirectBase", () => {
   it("falls back to the origin when no forwarded host is present", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(resolveRedirectBase(req(), "https://webhooks.cc")).toBe("https://webhooks.cc");
+  });
+});
+
+describe("nextFromRedirectTo", () => {
+  const origins = ["https://webhooks.cc", "http://localhost:3000"];
+
+  it("keeps path + query of a same-origin redirect", () => {
+    expect(nextFromRedirectTo("https://webhooks.cc/cli/verify?code=ABCD", origins)).toBe(
+      "/cli/verify?code=ABCD"
+    );
+    expect(nextFromRedirectTo("http://localhost:3000/agent/claim?t=1&u=2", origins)).toBe(
+      "/agent/claim?t=1&u=2"
+    );
+  });
+
+  it("falls back for GoTrue's default (bare site root)", () => {
+    expect(nextFromRedirectTo("https://webhooks.cc", origins)).toBe("/dashboard");
+    expect(nextFromRedirectTo("https://webhooks.cc/", origins)).toBe("/dashboard");
+  });
+
+  it("falls back for foreign origins, garbage, and missing values", () => {
+    expect(nextFromRedirectTo("https://evil.com/cli/verify", origins)).toBe("/dashboard");
+    expect(nextFromRedirectTo("https://webhooks.cc.evil.com/x", origins)).toBe("/dashboard");
+    expect(nextFromRedirectTo("not a url", origins)).toBe("/dashboard");
+    expect(nextFromRedirectTo(null, origins)).toBe("/dashboard");
+    expect(nextFromRedirectTo("", origins, "/auth/reset-password")).toBe("/auth/reset-password");
   });
 });

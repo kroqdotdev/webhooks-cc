@@ -81,7 +81,7 @@ function LoginContent() {
         <div className="h-px flex-1 bg-border" />
       </div>
 
-      <EmailPasswordForm />
+      <EmailPasswordForm redirectTo={redirectTo} />
 
       <p className="text-center text-sm text-muted-foreground mt-8">
         By signing in, you agree to our{" "}

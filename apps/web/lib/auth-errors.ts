@@ -1,30 +1,43 @@
-import { isAuthError } from "@supabase/supabase-js";
+import { isAuthError, isAuthRetryableFetchError } from "@supabase/supabase-js";
 
 /**
- * User-facing copy for GoTrue error codes surfaced by the email/password
- * flows (sign-in, sign-up, forgot/reset password). Unknown codes fall back to
- * the error's own message so nothing is swallowed.
+ * User-facing copy for the GoTrue error codes the email/password flows
+ * (sign-in, sign-up, forgot/reset password) can surface. Strictly an
+ * allowlist: any other code, and any non-GoTrue failure, collapses to the
+ * generic message so backend detail never reaches the page.
  */
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   invalid_credentials: "Incorrect email or password",
+  user_not_found: "Incorrect email or password",
   email_not_confirmed: "Confirm your email first. Check your inbox for the link.",
   user_already_exists: "An account with this email already exists. Sign in instead.",
   email_exists: "An account with this email already exists. Sign in instead.",
   weak_password: "Password must be at least 8 characters",
   same_password: "Choose a password you haven't used before",
+  email_address_invalid: "Enter a valid email address",
+  email_address_not_authorized: "This email address can't be used to sign up",
+  validation_failed: "Check the email address and password and try again",
+  signup_disabled: "New sign-ups are turned off right now",
+  email_provider_disabled: "Email sign-in is not available right now",
+  otp_expired: "That link has expired. Request a new one.",
+  user_banned: "This account has been disabled",
+  session_expired: "Your session has expired. Sign in again.",
+  session_not_found: "Your session has expired. Sign in again.",
+  reauthentication_needed: "Sign in again before changing your password",
+  captcha_failed: "CAPTCHA verification failed. Try again.",
   over_email_send_rate_limit: "Too many emails sent. Wait a minute and try again.",
   over_request_rate_limit: "Too many attempts. Wait a moment and try again.",
 };
 
 const GENERIC_AUTH_ERROR = "Something went wrong. Please try again.";
+const OFFLINE_AUTH_ERROR =
+  "Couldn't reach the sign-in service. Check your connection and try again.";
 
 export function mapAuthError(error: unknown): string {
-  if (isAuthError(error)) {
-    const mapped = error.code ? AUTH_ERROR_MESSAGES[error.code] : undefined;
-    if (mapped) return mapped;
-    return error.message || GENERIC_AUTH_ERROR;
+  if (isAuthRetryableFetchError(error)) return OFFLINE_AUTH_ERROR;
+  if (isAuthError(error) && error.code) {
+    return AUTH_ERROR_MESSAGES[error.code] ?? GENERIC_AUTH_ERROR;
   }
-  if (error instanceof Error && error.message) return error.message;
   return GENERIC_AUTH_ERROR;
 }
 

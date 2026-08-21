@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
+import { nextFromRedirectTo, resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
 
 /**
  * Email link landing for signup confirmation and password recovery.
@@ -19,12 +19,34 @@ import { resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
  */
 const ALLOWED_TYPES = new Set<EmailOtpType>(["email", "signup", "recovery"]);
 
+/** Origins a redirect_to may point at: the resolved public base, the request origin, and the configured app URL. */
+function ownOrigins(base: string, origin: string): string[] {
+  const origins = new Set([base, origin]);
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (appUrl) {
+    try {
+      origins.add(new URL(appUrl).origin);
+    } catch {
+      // ignore a malformed NEXT_PUBLIC_APP_URL; the other two still apply
+    }
+  }
+  return [...origins];
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = sanitizeNextPath(searchParams.get("next"));
   const base = resolveRedirectBase(request, origin);
+  // Where to land: the sign-up form passes the login page's ?redirect= through
+  // GoTrue as emailRedirectTo, which the template renders as redirect_to (so a
+  // CLI-verify or agent-claim flow survives email confirmation); otherwise the
+  // template's static next (/dashboard, /auth/reset-password).
+  const next = nextFromRedirectTo(
+    searchParams.get("redirect_to"),
+    ownOrigins(base, origin),
+    sanitizeNextPath(searchParams.get("next"))
+  );
 
   if (tokenHash && type && ALLOWED_TYPES.has(type)) {
     const supabase = await createClient();

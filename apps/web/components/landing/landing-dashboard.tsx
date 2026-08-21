@@ -839,8 +839,8 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Guest URLs expire after 12 hours — one click with GitHub or Google (or an email signup)
-            keeps yours and unlocks the full free plan.
+            Guest URLs expire after 12 hours — one click with GitHub or Google keeps yours and
+            unlocks the full free plan (email and password sign-up works too).
           </p>
         </div>
       </div>

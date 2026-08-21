@@ -1,36 +1,44 @@
-import { AuthError } from "@supabase/supabase-js";
+import { AuthError, AuthRetryableFetchError } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import { describeLoginError, mapAuthError } from "./auth-errors";
 
 describe("mapAuthError", () => {
   it.each([
     ["invalid_credentials", "Incorrect email or password"],
+    ["user_not_found", "Incorrect email or password"],
     ["email_not_confirmed", "Confirm your email first. Check your inbox for the link."],
     ["user_already_exists", "An account with this email already exists. Sign in instead."],
     ["email_exists", "An account with this email already exists. Sign in instead."],
     ["weak_password", "Password must be at least 8 characters"],
     ["same_password", "Choose a password you haven't used before"],
+    ["email_address_invalid", "Enter a valid email address"],
+    ["otp_expired", "That link has expired. Request a new one."],
     ["over_email_send_rate_limit", "Too many emails sent. Wait a minute and try again."],
     ["over_request_rate_limit", "Too many attempts. Wait a moment and try again."],
   ])("maps %s", (code, copy) => {
     expect(mapAuthError(new AuthError("raw gotrue message", 400, code))).toBe(copy);
   });
 
-  it("falls back to the AuthError message for unknown codes", () => {
+  it("never exposes backend text for unmapped or missing codes", () => {
+    const generic = "Something went wrong. Please try again.";
     expect(
       mapAuthError(new AuthError("Database error saving new user", 500, "unexpected_failure"))
-    ).toBe("Database error saving new user");
-    expect(mapAuthError(new AuthError("no code at all", 400))).toBe("no code at all");
+    ).toBe(generic);
+    expect(mapAuthError(new AuthError("hook timeout details", 500, "hook_timeout"))).toBe(generic);
+    expect(mapAuthError(new AuthError("no code at all", 400))).toBe(generic);
   });
 
-  it("uses the message of a plain Error", () => {
-    expect(mapAuthError(new Error("fetch failed"))).toBe("fetch failed");
+  it("describes a network failure without exposing the error text", () => {
+    expect(mapAuthError(new AuthRetryableFetchError("fetch failed", 0))).toBe(
+      "Couldn't reach the sign-in service. Check your connection and try again."
+    );
   });
 
-  it("returns generic copy for non-errors", () => {
-    expect(mapAuthError("nope")).toBe("Something went wrong. Please try again.");
-    expect(mapAuthError(undefined)).toBe("Something went wrong. Please try again.");
-    expect(mapAuthError(new AuthError("", 400))).toBe("Something went wrong. Please try again.");
+  it("returns generic copy for plain errors and non-errors", () => {
+    const generic = "Something went wrong. Please try again.";
+    expect(mapAuthError(new Error("TypeError: internal detail"))).toBe(generic);
+    expect(mapAuthError("nope")).toBe(generic);
+    expect(mapAuthError(undefined)).toBe(generic);
   });
 });
 

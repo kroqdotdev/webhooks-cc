@@ -104,9 +104,12 @@ curl -s -H "apikey: <anon key>" <api url>/auth/v1/settings | jq '.external.email
 untouched. Env changes in `.env` also need this recreate to take effect.
 
 GoTrue caches fetched templates in an in-process worker. If the template
-host was unreachable when auth started (or the template files changed), run
-`docker restart supabase-auth` so the next email picks them up; a failed
-fetch otherwise sticks to the default template until the worker refreshes.
+host was unreachable when auth started, run `docker restart supabase-auth`
+so the next email picks them up; a failed fetch otherwise sticks to the
+default template until the worker refreshes. When the template files in
+`apps/web/public/email-templates/` change, deploy the web app **first**
+(`make deploy-web` on prod; the dev server serves `public/` live) and only
+then restart auth, otherwise GoTrue re-caches the previous build's templates.
 
 ## 4. Template fetch and fallback behavior
 

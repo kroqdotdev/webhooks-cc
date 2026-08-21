@@ -3,6 +3,7 @@ import {
   createTestUser,
   deleteTestUser,
   findUserIdByEmail,
+  generateMagicLinkTokenHash,
   generateRecoveryTokenHash,
   signInTestUser,
   type TestUser,
@@ -134,7 +135,7 @@ test.describe("Email/password authentication", () => {
       await expect(page).toHaveURL(/\/dashboard/, { timeout: 20000 });
 
       // Fresh browser context: the new password signs in through the form.
-      const context = await browser.newContext();
+      const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
       const fresh = await context.newPage();
       try {
         await fresh.goto("/login");
@@ -145,6 +146,34 @@ test.describe("Email/password authentication", () => {
       } finally {
         await context.close();
       }
+    } finally {
+      await deleteTestUser(user.id);
+    }
+  });
+
+  test("/auth/confirm honors a same-origin redirect_to and ignores a foreign one", async ({
+    page,
+  }) => {
+    // A magic-link hash verifies under type=email just like a signup
+    // confirmation does, so this exercises the redirect_to handling the
+    // confirmation template relies on without an SMTP round trip.
+    const base = test.info().project.use.baseURL!;
+    const user = await createTestUser();
+    try {
+      const ownHash = await generateMagicLinkTokenHash(user.email);
+      await page.goto(
+        `/auth/confirm?token_hash=${encodeURIComponent(ownHash)}&type=email&redirect_to=${encodeURIComponent(`${base}/account?from=email`)}`
+      );
+      await expect(page).toHaveURL(/\/account\?from=email/, { timeout: 20000 });
+      await expect(page.getByRole("main").getByText("E2E Test User")).toBeVisible({
+        timeout: 15000,
+      });
+
+      const foreignHash = await generateMagicLinkTokenHash(user.email);
+      await page.goto(
+        `/auth/confirm?token_hash=${encodeURIComponent(foreignHash)}&type=email&redirect_to=${encodeURIComponent("https://evil.example/steal")}`
+      );
+      await expect(page).toHaveURL(/\/dashboard/, { timeout: 20000 });
     } finally {
       await deleteTestUser(user.id);
     }

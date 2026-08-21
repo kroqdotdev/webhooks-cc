@@ -60,6 +60,13 @@ export async function generateRecoveryTokenHash(email: string): Promise<string> 
   return data.properties!.hashed_token;
 }
 
+/** Magic-link token hash: verifies under `type=email`, like a signup confirmation. */
+export async function generateMagicLinkTokenHash(email: string): Promise<string> {
+  const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  if (error) throw new Error(`generateLink failed: ${error.message}`);
+  return data.properties!.hashed_token;
+}
+
 /**
  * Sign in a test user by calling signInWithPassword via the Supabase REST API
  * from Node.js, then injecting the session tokens into the browser via cookies
