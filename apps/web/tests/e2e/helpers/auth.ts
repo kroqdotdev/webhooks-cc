@@ -39,6 +39,28 @@ export async function deleteTestUser(userId: string): Promise<void> {
 }
 
 /**
+ * Resolve the auth user id for an account created through the UI (sign-up
+ * form), via the public.users row the handle_new_user trigger writes at
+ * signup, so the spec can clean it up.
+ */
+export async function findUserIdByEmail(email: string): Promise<string | null> {
+  const { data } = await admin.from("users").select("id").eq("email", email).maybeSingle();
+  return data?.id ?? null;
+}
+
+/**
+ * Mint a recovery token hash without sending mail, for driving /auth/confirm
+ * directly. `properties.hashed_token` is what our email templates carry; the
+ * returned action_link points at GoTrue's own verify endpoint, which the app
+ * deliberately bypasses.
+ */
+export async function generateRecoveryTokenHash(email: string): Promise<string> {
+  const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email });
+  if (error) throw new Error(`generateLink failed: ${error.message}`);
+  return data.properties!.hashed_token;
+}
+
+/**
  * Sign in a test user by calling signInWithPassword via the Supabase REST API
  * from Node.js, then injecting the session tokens into the browser via cookies
  * and localStorage so the app picks them up.
