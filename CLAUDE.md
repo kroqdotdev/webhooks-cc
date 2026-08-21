@@ -246,15 +246,15 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 
 **Key stored procedures:**
 
-| Function                             | Purpose                                                                 |
-| ------------------------------------ | ----------------------------------------------------------------------- |
-| `capture_webhook()`                  | Hot path: endpoint lookup + quota + insert + counters in one call       |
-| `check_and_decrement_quota()`        | Atomic quota check + decrement for owned endpoints                      |
-| `check_and_increment_ephemeral()`    | Atomic request count check + increment for ephemeral endpoints (25 cap) |
-| `start_free_period()`                | Lazy 24h period activation for free users                               |
+| Function                             | Purpose                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `capture_webhook()`                  | Hot path: endpoint lookup + quota + insert + counters in one call                                |
+| `check_and_decrement_quota()`        | Atomic quota check + decrement for owned endpoints                                               |
+| `check_and_increment_ephemeral()`    | Atomic request count check + increment for ephemeral endpoints (25 cap)                          |
+| `start_free_period()`                | Lazy 24h period activation for free users                                                        |
 | `claim_device_code()`                | Atomic CLI device-code claim: cap check + device-auth key rotation + code consumption + key mint |
-| `increment_endpoint_request_count()` | Increment endpoint counter                                              |
-| `increment_user_requests_used()`     | Increment user usage counter                                            |
+| `increment_endpoint_request_count()` | Increment endpoint counter                                                                       |
+| `increment_user_requests_used()`     | Increment user usage counter                                                                     |
 
 **RLS policies:** All tables have row-level security enabled. Anonymous access is blocked on all tables except `blog_posts` (published only) and `endpoints` INSERT (ephemeral with bounded expiry only). Guest endpoint/request reads are mediated through server API routes using the service role.
 
@@ -274,7 +274,7 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 - The receiver writes directly to Postgres via `capture_webhook()` — no intermediary
 - Usage increments happen atomically inside the stored procedure (no race conditions)
 - Free user periods activate lazily on first request via `start_free_period()`
-- Supabase Auth handles GitHub + Google OAuth with auto-provisioning via `handle_new_user()` trigger
+- Supabase Auth handles GitHub + Google OAuth and email/password (verification required, min length 8) with auto-provisioning via `handle_new_user()` trigger; email links carry a `token_hash` to `/auth/confirm`, which verifies server-side and sets session cookies
 - API keys use SHA-256 hashed storage with `whcc_` prefix, validated by hash lookup
 - Device auth flow: create → authorize → poll → claim (API key generated at claim time)
 - Sensitive routes (account deletion, billing mutations) require Supabase session tokens — API keys are rejected
@@ -285,7 +285,7 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 
 Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono fonts).
 
-**Public routes:** `/` (landing), `/docs/*` (10 doc pages incl. MCP), `/installation` (CLI/SDK/MCP tabs), `/login`, `/privacy`, `/terms`, `/support`
+**Public routes:** `/` (landing), `/docs/*` (10 doc pages incl. MCP), `/installation` (CLI/SDK/MCP tabs), `/login` (GitHub/Google OAuth + email/password form), `/auth/confirm` (email token-hash landing: signup confirmation + recovery), `/auth/reset-password`, `/privacy`, `/terms`, `/support`
 
 **Authenticated routes:** `/dashboard` (split-pane request viewer), `/account` (profile, billing, API keys), `/endpoints/new`, `/endpoints/[slug]/settings`, `/cli/verify` (device auth)
 
@@ -439,6 +439,7 @@ The changelog has 4 tracks: `web`, `cli`, `sdk`, `mcp`. Each entry has a `track`
 - RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly — all guest reads go through server API routes with service role
 - Sensitive routes (account deletion, billing) require Supabase session tokens — API keys return 403
 - Supabase migrations are in `supabase/migrations/` and must be applied manually to the dev instance via psql
+- Email/password auth depends on GoTrue instance config (SMTP, `GOTRUE_PASSWORD_MIN_LENGTH=8`, custom template URLs + subjects via `docker-compose.override.yml`), not app env vars; see `infra/supabase/gotrue-email-auth.md`. Dev uses the Inbucket mail catcher at `http://localhost:9000`; if GoTrue couldn't fetch the templates at startup, `docker restart supabase-auth`
 
 ## Licensing
 
