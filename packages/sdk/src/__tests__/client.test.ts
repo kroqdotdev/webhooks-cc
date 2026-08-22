@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WebhooksCC } from "../client";
-import { WebhooksCCError, UnauthorizedError, NotFoundError } from "../errors";
+import { WebhooksCCError, UnauthorizedError, NotFoundError, TimeoutError } from "../errors";
 import { TEMPLATE_METADATA } from "../index";
 
 const API_KEY = "whcc_testkey123";
@@ -1408,6 +1408,227 @@ describe("WebhooksCC", () => {
           headers: { Authorization: `Bearer ${API_KEY}` },
         })
       );
+    });
+
+    function requestFrame(id: string, receivedAt: number) {
+      return `event: request\ndata: ${JSON.stringify({
+        _id: id,
+        endpointId: "ep1",
+        method: "POST",
+        path: "/hook",
+        headers: { "content-type": "application/json" },
+        body: `{"id":"${id}"}`,
+        queryParams: {},
+        contentType: "application/json",
+        ip: "127.0.0.1",
+        size: 10,
+        receivedAt,
+      })}\n\n`;
+    }
+
+    const CONNECTED_FRAME = 'event: connected\ndata: {"slug":"abc123","endpointId":"ep1"}\n\n';
+    const TIMEOUT_FRAME = 'event: timeout\ndata: {"reason":"max_duration"}\n\n';
+    const DELETED_FRAME = 'event: endpoint_deleted\ndata: {"slug":"abc123"}\n\n';
+    const KEEPALIVE_FRAME = ": keepalive\n\n";
+
+    /** An SSE response whose body stays open (like a live server) until cancelled. */
+    function hangingSSEStream(...frames: string[]) {
+      const encoder = new TextEncoder();
+      let streamController!: ReadableStreamDefaultController<Uint8Array>;
+      const state = { cancelled: false };
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          streamController = controller;
+          for (const frame of frames) {
+            controller.enqueue(encoder.encode(frame));
+          }
+        },
+        cancel() {
+          state.cancelled = true;
+        },
+      });
+      return {
+        response: {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "text/event-stream" }),
+          body,
+          text: () => Promise.resolve(""),
+        },
+        push: (frame: string) => streamController.enqueue(encoder.encode(frame)),
+        state,
+      };
+    }
+
+    it("follows the server's timeout rotation without consuming a reconnect attempt", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        // First connection: one request, then the server's 30-minute rotation
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), TIMEOUT_FRAME)
+        )
+        // Second connection closes without any frame (unexpected close)
+        .mockResolvedValueOnce(mockSSEStream())
+        // Third connection delivers the next request and ends the stream
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r2", 1001), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 1,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const second = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(second.value?.id).toBe("r2");
+      expect(done.done).toBe(true);
+      // With maxReconnectAttempts=1 the third connection only happens if the rotation
+      // did not count as an attempt; onReconnect fires for the unexpected close only.
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=999`,
+        expect.objectContaining({ headers: { Authorization: `Bearer ${API_KEY}` } })
+      );
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        3,
+        `${BASE_URL}/api/stream/abc123?since=999`,
+        expect.anything()
+      );
+    });
+
+    it("completes on the server's timeout event when reconnect is disabled", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), TIMEOUT_FRAME))
+        );
+
+      const iterator = createClient().requests.subscribe("abc123")[Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).done).toBe(true);
+      expect((await iterator.next()).done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats endpoint_deleted as terminal even with reconnect enabled", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(mockSSEStream(requestFrame("r1", 1000), DELETED_FRAME))
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { reconnect: true, reconnectBackoffMs: 0, onReconnect })
+        [Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).done).toBe(true);
+      expect(onReconnect).not.toHaveBeenCalled();
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops an idle connection and reconnects when reconnect is enabled", async () => {
+      vi.useFakeTimers();
+      const onReconnect = vi.fn();
+      const hanging = hangingSSEStream(CONNECTED_FRAME);
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce(hanging.response)
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000)));
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          reconnectBackoffMs: 100,
+          idleTimeout: "5s",
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const pending = iterator.next();
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(hanging.state.cancelled).toBe(false);
+      expect(onReconnect).not.toHaveBeenCalled();
+
+      // Idle watchdog trips: the dead connection is dropped and a backoff starts
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hanging.state.cancelled).toBe(true);
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      // Backoff elapses: reconnect and receive from the new connection
+      await vi.advanceTimersByTimeAsync(200);
+      const first = await pending;
+
+      expect(first.value?.id).toBe("r1");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      await iterator.return?.();
+    });
+
+    it("throws TimeoutError when the stream goes idle and reconnect is disabled", async () => {
+      vi.useFakeTimers();
+      const hanging = hangingSSEStream(CONNECTED_FRAME);
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(hanging.response);
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { idleTimeout: 5000 })
+        [Symbol.asyncIterator]();
+
+      const pending = iterator.next();
+      let settled = false;
+      const assertion = expect(pending).rejects.toBeInstanceOf(TimeoutError);
+      pending.then(
+        () => (settled = true),
+        () => (settled = true)
+      );
+
+      // A keepalive comment resets the watchdog
+      await vi.advanceTimersByTimeAsync(4000);
+      hanging.push(KEEPALIVE_FRAME);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await assertion;
+      expect(settled).toBe(true);
+      expect(hanging.state.cancelled).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      // The subscription is finished: no reconnect, no further fetch
+      expect((await iterator.next()).done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases the connection when the consumer breaks out of the loop", async () => {
+      const hanging = hangingSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000));
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(hanging.response);
+
+      const seen: string[] = [];
+      for await (const request of createClient().requests.subscribe("abc123", {
+        reconnect: true,
+      })) {
+        seen.push(request.id);
+        break;
+      }
+
+      expect(seen).toEqual(["r1"]);
+      expect(hanging.state.cancelled).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
   });
 

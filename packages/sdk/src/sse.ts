@@ -4,6 +4,16 @@ export interface SSEFrame {
   data: string;
 }
 
+/** Options for {@link parseSSE}. */
+export interface ParseSSEOptions {
+  /**
+   * Aborting this signal cancels the underlying reader: a pending read settles and
+   * the generator completes (without flushing partial frames) instead of hanging on
+   * a stream that never delivers another byte.
+   */
+  signal?: AbortSignal;
+}
+
 /**
  * Async generator that parses SSE frames from a ReadableStream.
  *
@@ -13,19 +23,41 @@ export interface SSEFrame {
  * - Comment lines (`: ...`) — yielded with event "comment"
  * - Empty data fields
  * - Frames terminated by blank lines
+ * - Early termination via `options.signal`
  */
 export async function* parseSSE(
-  stream: ReadableStream<Uint8Array>
+  stream: ReadableStream<Uint8Array>,
+  options: ParseSSEOptions = {}
 ): AsyncGenerator<SSEFrame, void, undefined> {
+  const { signal } = options;
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let currentEvent = "message";
   let dataLines: string[] = [];
 
+  const onAbort = () => {
+    reader.cancel().catch(() => {
+      // Stream may already be closed or errored
+    });
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      if (signal?.aborted) return;
+
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        // An aborted fetch rejects pending reads; that is the end of this stream.
+        if (signal?.aborted) return;
+        throw error;
+      }
+      if (signal?.aborted) return;
+
+      const { done, value } = result;
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -102,7 +134,12 @@ export async function* parseSSE(
       yield { event: currentEvent, data: dataLines.join("\n") };
     }
   } finally {
-    await reader.cancel();
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      await reader.cancel();
+    } catch {
+      // Stream may already be errored (e.g. an aborted fetch); nothing left to release
+    }
     reader.releaseLock();
   }
 }

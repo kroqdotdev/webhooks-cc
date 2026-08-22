@@ -1,6 +1,7 @@
 mod config;
 pub mod crypto;
 mod handlers;
+pub mod metrics;
 pub mod verification;
 
 use axum::Router;
@@ -24,13 +25,38 @@ pub struct AppState {
     pub redis: Option<redis::aio::MultiplexedConnection>,
 }
 
+/// Resource attributes shared by the trace and metric pipelines so AppSignal
+/// files both under the same app (service.name + appsignal.config.* + host.name).
+fn otel_resource(push_api_key: Option<&str>) -> opentelemetry_sdk::Resource {
+    use opentelemetry::KeyValue;
+
+    let hostname = gethostname::gethostname().to_string_lossy().into_owned();
+
+    let mut attrs = vec![
+        KeyValue::new("service.name", "webhooks-receiver"),
+        KeyValue::new("appsignal.config.name", "webhooks-cc-receiver"),
+        KeyValue::new("appsignal.config.environment", "production"),
+        KeyValue::new("appsignal.config.language_integration", "rust"),
+        KeyValue::new("host.name", hostname),
+    ];
+    if let Some(key) = push_api_key {
+        attrs.push(KeyValue::new(
+            "appsignal.config.push_api_key",
+            key.to_string(),
+        ));
+    }
+
+    opentelemetry_sdk::Resource::builder()
+        .with_attributes(attrs)
+        .build()
+}
+
 /// Build an OpenTelemetry tracer provider exporting spans to the given collector URL.
 /// Returns `None` on failure so the receiver can continue without tracing (fail-open).
 fn init_otel(
     collector_url: &str,
     push_api_key: Option<&str>,
 ) -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
-    use opentelemetry::KeyValue;
     use opentelemetry_otlp::SpanExporter;
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -49,30 +75,51 @@ fn init_otel(
         }
     };
 
-    let hostname = gethostname::gethostname().to_string_lossy().into_owned();
-
-    let mut attrs = vec![
-        KeyValue::new("service.name", "webhooks-receiver"),
-        KeyValue::new("appsignal.config.name", "webhooks-cc-receiver"),
-        KeyValue::new("appsignal.config.environment", "production"),
-        KeyValue::new("appsignal.config.language_integration", "rust"),
-        KeyValue::new("host.name", hostname),
-    ];
-    if let Some(key) = push_api_key {
-        attrs.push(KeyValue::new(
-            "appsignal.config.push_api_key",
-            key.to_string(),
-        ));
-    }
-
     let provider = SdkTracerProvider::builder()
         .with_batch_exporter(exporter)
-        .with_resource(
-            opentelemetry_sdk::Resource::builder()
-                .with_attributes(attrs)
-                .build(),
-        )
+        .with_resource(otel_resource(push_api_key))
         .build();
+
+    Some(provider)
+}
+
+/// Build an OpenTelemetry meter provider exporting metrics to the given collector URL
+/// and install it as the global provider (see `metrics.rs`).
+/// Returns `None` on failure so the receiver can continue without metrics (fail-open).
+fn init_metrics(
+    collector_url: &str,
+    push_api_key: Option<&str>,
+) -> Option<opentelemetry_sdk::metrics::SdkMeterProvider> {
+    use opentelemetry_otlp::MetricExporter;
+    use opentelemetry_otlp::WithExportConfig;
+    use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
+
+    let exporter = match MetricExporter::builder()
+        .with_http()
+        .with_endpoint(format!("{collector_url}/v1/metrics"))
+        .build()
+    {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "failed to create OTLP metric exporter: {e:?}, continuing without metrics export"
+            );
+            return None;
+        }
+    };
+
+    // PeriodicReader runs its own background thread and uses the blocking
+    // reqwest client (crate default), so it needs no Tokio runtime handle.
+    let reader = PeriodicReader::builder(exporter).build();
+
+    let provider = SdkMeterProvider::builder()
+        .with_reader(reader)
+        .with_resource(otel_resource(push_api_key))
+        .build();
+
+    // Must happen before the first handler call: metrics.rs caches instruments
+    // from whatever global provider is installed at first use.
+    opentelemetry::global::set_meter_provider(provider.clone());
 
     Some(provider)
 }
@@ -87,6 +134,13 @@ async fn main() {
         .otel_collector_url
         .as_deref()
         .and_then(|url| init_otel(url, config.appsignal_push_api_key.as_deref()));
+
+    // Initialize OTel metrics pipeline (no-op when collector URL is unset).
+    // Installs the global meter provider before any request handler runs.
+    let meter_provider = config
+        .otel_collector_url
+        .as_deref()
+        .and_then(|url| init_metrics(url, config.appsignal_push_api_key.as_deref()));
 
     // Initialize tracing — stdout + rotating log file + optional OTel
     let log_level = if config.debug { "debug" } else { "info" };
@@ -127,9 +181,15 @@ async fn main() {
     }
 
     // Connect to Postgres
+    // acquire_timeout bounds how long a capture waits for a pooled connection
+    // (sqlx default is 30s). A stalled DB then surfaces as PoolTimedOut, which
+    // the webhook handler maps to 503 + Retry-After instead of a false 200.
     let pool = PgPoolOptions::new()
         .min_connections(config.pool_min)
         .max_connections(config.pool_max)
+        .acquire_timeout(std::time::Duration::from_secs(
+            config.pg_acquire_timeout_secs,
+        ))
         .connect(&config.database_url)
         .await
         .expect("failed to connect to Postgres");
@@ -137,6 +197,7 @@ async fn main() {
     tracing::info!(
         pool_min = config.pool_min,
         pool_max = config.pool_max,
+        acquire_timeout_secs = config.pg_acquire_timeout_secs,
         "connected to Postgres"
     );
 
@@ -226,6 +287,13 @@ async fn main() {
         && let Err(e) = provider.shutdown()
     {
         eprintln!("OTel shutdown error: {e:?}");
+    }
+
+    // Flush any remaining OTel metrics on shutdown
+    if let Some(provider) = meter_provider
+        && let Err(e) = provider.shutdown()
+    {
+        eprintln!("OTel metrics shutdown error: {e:?}");
     }
 }
 

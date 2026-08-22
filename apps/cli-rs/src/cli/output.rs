@@ -51,6 +51,37 @@ pub fn method_color(method: &str) -> String {
     }
 }
 
+/// Announce a stream reconnect (emitted by `ApiClient::stream_requests`).
+pub fn print_reconnecting(json: bool, attempt: u32, delay_ms: u64, reason: &str) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "event": "reconnecting",
+                "attempt": attempt,
+                "delay_ms": delay_ms,
+                "reason": reason,
+            })
+        );
+    } else {
+        let secs = (delay_ms + 500) / 1000;
+        let line = format!(
+            "Reconnecting in {secs}s (attempt {attempt}): {}",
+            sanitize(reason)
+        );
+        println!("  {} {}", dim("●"), dim(&line));
+    }
+}
+
+/// Announce that a stream reconnect succeeded.
+pub fn print_reconnected(json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "event": "reconnected" }));
+    } else {
+        println!("  {} {}", green("●"), dim("Reconnected"));
+    }
+}
+
 pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
     if endpoints.is_empty() {
         println!("  No endpoints found.");

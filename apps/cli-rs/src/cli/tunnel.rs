@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, method_color, red};
-use crate::tunnel::{parse_target, Tunnel};
+use crate::api::stream::join_stream;
+use crate::cli::output::{
+    bold, dim, green, method_color, print_reconnected, print_reconnecting, red,
+};
+use crate::tunnel::{Tunnel, parse_target};
 use crate::types::{CreateEndpointRequest, SseEvent};
 
 pub async fn run(
@@ -61,16 +64,18 @@ pub async fn run(
 
     let tunnel = Tunnel::new(target_url, extra_headers)?;
 
-    // SSE stream
+    // SSE stream (reconnects on its own; see ApiClient::stream_requests)
     let (tx, mut rx) = mpsc::channel(64);
     let stream_client = client.clone();
     let stream_slug = slug.clone();
 
-    let stream_handle = tokio::spawn(async move {
-        stream_client.stream_requests(&stream_slug, tx).await
-    });
+    let stream_handle =
+        tokio::spawn(async move { stream_client.stream_requests(&stream_slug, tx).await });
 
-    // Process events until Ctrl+C or stream ends
+    let mut reconnecting = false;
+    let mut interrupted = false;
+
+    // Process events until Ctrl+C, endpoint deletion, or a terminal stream error
     loop {
         tokio::select! {
             event = rx.recv() => {
@@ -117,26 +122,52 @@ pub async fn run(
                         }
                         break;
                     }
-                    SseEvent::Timeout => {
-                        if !json {
-                            println!("\n  {} Stream timed out.", dim("●"));
+                    SseEvent::Reconnecting { attempt, delay_ms, reason } => {
+                        reconnecting = true;
+                        print_reconnecting(json, attempt, delay_ms, &reason);
+                    }
+                    SseEvent::Connected => {
+                        if reconnecting {
+                            reconnecting = false;
+                            print_reconnected(json);
                         }
                     }
-                    SseEvent::Connected => {}
+                    // The server rotates every stream after 30 minutes; the
+                    // stream layer reconnects transparently.
+                    SseEvent::Timeout => {}
                 }
             }
             _ = tokio::signal::ctrl_c() => {
+                interrupted = true;
                 break;
             }
         }
     }
 
-    stream_handle.abort();
+    // Make any in-flight send in the stream task fail fast, then collect its result.
+    drop(rx);
+    let stream_result = join_stream(stream_handle, interrupted).await;
 
-    // Cleanup — only delete endpoints we created
+    // Cleanup: only endpoints we created, and only when asked to (--ephemeral).
     if created {
-        let _ = client.delete_endpoint(&slug).await;
+        if ephemeral {
+            if let Err(e) = client.delete_endpoint(&slug).await {
+                eprintln!("  {} Could not delete endpoint {slug}: {e:#}", dim("●"));
+            }
+        } else if json {
+            println!(
+                "{}",
+                serde_json::json!({ "event": "endpoint_kept", "slug": slug })
+            );
+        } else {
+            println!("\n  {} Endpoint kept: {}", dim("●"), bold(&slug));
+            println!(
+                "    {} whk tunnel {target} --endpoint {slug}",
+                dim("Reuse: ")
+            );
+            println!("    {} whk delete {slug}", dim("Delete:"));
+        }
     }
 
-    Ok(())
+    stream_result
 }

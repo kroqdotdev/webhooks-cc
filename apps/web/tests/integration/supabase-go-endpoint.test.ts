@@ -3,6 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
 import { POST as createEndpointRoute } from "@/app/api/endpoints/route";
 import { POST as createGuestEndpointRoute } from "@/app/api/go/endpoint/route";
+import { GET as getGuestEndpointRoute } from "@/app/api/go/endpoint/[slug]/route";
+import { GET as getGuestRequestsRoute } from "@/app/api/go/endpoint/[slug]/requests/route";
+import { createEndpointForUser } from "@/lib/supabase/endpoints";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -212,5 +215,42 @@ describe("Supabase Guest Endpoint Integration", () => {
     const rateLimited = await createEndpointRoute(authRequest("/api/endpoints", accessToken, {}));
     expect(rateLimited.status).toBe(429);
     await expect(rateLimited.json()).resolves.toEqual({ error: "Too many requests" });
+  });
+
+  it("does not expose an owned ephemeral endpoint through the guest routes", async () => {
+    // Signed-in users (and the SDK's `ephemeral: true`) create ephemeral endpoints
+    // that have an owner; the guest routes must only serve unowned ones.
+    const owned = await createEndpointForUser({
+      userId: testUserId,
+      name: "Owned ephemeral",
+      isEphemeral: true,
+    });
+    guestEndpointIds.add(owned.id);
+
+    const params = Promise.resolve({ slug: owned.slug });
+
+    const metaResponse = await getGuestEndpointRoute(
+      new Request(`https://webhooks.cc/api/go/endpoint/${owned.slug}`),
+      { params }
+    );
+    expect(metaResponse.status).toBe(404);
+
+    const requestsResponse = await getGuestRequestsRoute(
+      new Request(`https://webhooks.cc/api/go/endpoint/${owned.slug}/requests`),
+      { params }
+    );
+    expect(requestsResponse.status).toBe(404);
+
+    // Sanity check: a real guest endpoint is still served by the same routes.
+    const guestResponse = await createGuestEndpointRoute(guestRequest("198.51.100.77"));
+    expect(guestResponse.status).toBe(200);
+    const guest = (await guestResponse.json()) as { id: string; slug: string };
+    guestEndpointIds.add(guest.id);
+
+    const guestMeta = await getGuestEndpointRoute(
+      new Request(`https://webhooks.cc/api/go/endpoint/${guest.slug}`),
+      { params: Promise.resolve({ slug: guest.slug }) }
+    );
+    expect(guestMeta.status).toBe(200);
   });
 });

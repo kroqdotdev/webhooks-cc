@@ -140,7 +140,7 @@ pub enum Command {
         #[arg(long)]
         endpoint: Option<String>,
 
-        /// Delete endpoint on exit
+        /// Create the endpoint as ephemeral and delete it on exit (default: keep it for reuse)
         #[arg(short, long)]
         ephemeral: bool,
 

@@ -1,6 +1,6 @@
 import { authenticateRequest } from "@/lib/api-auth";
 import { serverEnv } from "@/lib/env";
-import { checkRateLimitWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
+import { checkRateLimitWithInfo, applyRateLimitHeaders, getClientIp } from "@/lib/rate-limit";
 
 const SLUG_REGEX = /^[a-zA-Z0-9_-]{1,50}$/;
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -51,11 +51,8 @@ export async function POST(request: Request) {
   const url = `${serverEnv().RECEIVER_INTERNAL_URL}/w/${slug}${normalizedPath}`;
 
   // Forward the caller's real IP so the receiver stores it on the request
-  const clientIp =
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "";
+  const resolvedIp = getClientIp(request);
+  const clientIp = resolvedIp === "unknown" ? "" : resolvedIp;
 
   // Forward to the receiver
   const fetchHeaders: Record<string, string> = {

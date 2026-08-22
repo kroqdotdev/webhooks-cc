@@ -292,6 +292,11 @@ export async function createEndpointForUser({
   return normalizeEndpoint(data);
 }
 
+/**
+ * Guest-visible endpoint lookup. Only unowned ephemeral endpoints qualify:
+ * signed-in users (and the SDK's `ephemeral: true`) create owned ephemeral
+ * endpoints too, and those must never be readable without authentication.
+ */
 export async function getGuestEndpointBySlug(slug: string) {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -299,6 +304,7 @@ export async function getGuestEndpointBySlug(slug: string) {
     .select("id, slug, is_ephemeral, expires_at, request_count")
     .eq("slug", slug.toLowerCase())
     .eq("is_ephemeral", true)
+    .is("user_id", null)
     .maybeSingle();
 
   if (error) {

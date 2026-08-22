@@ -379,20 +379,47 @@ export interface WaitForAllOptions extends WaitForOptions {
 }
 
 /**
- * Options for subscribe() SSE streaming.
+ * Options for `requests.subscribe()`.
+ *
+ * The server caps every SSE connection at 30 minutes: it sends an `event: timeout`
+ * frame and closes. With `reconnect: true` the client follows that rotation
+ * transparently (immediately, without consuming a reconnect attempt) and resumes
+ * from the last received request. Without it, the iterator completes at the first
+ * rotation, after at most 30 minutes.
  */
 export interface SubscribeOptions {
   /** AbortSignal to cancel the subscription */
   signal?: AbortSignal;
   /** Maximum time to stream (ms or duration string like "30m") */
   timeout?: number | string;
-  /** Automatically reconnect when the SSE stream ends unexpectedly */
+  /**
+   * Reconnect automatically. Follows the server's scheduled 30-minute rotation
+   * immediately, and recovers from unexpected stream ends, transient errors, and
+   * idle timeouts with exponential backoff. Resumes from the last received request
+   * timestamp and deduplicates replayed events.
+   */
   reconnect?: boolean;
-  /** Maximum reconnect attempts before giving up (default: 5) */
+  /**
+   * Maximum recovery reconnect attempts before giving up (default: 5).
+   * Scheduled rotations are not counted.
+   */
   maxReconnectAttempts?: number;
-  /** Base backoff delay between reconnects */
+  /** Base backoff delay between recovery reconnects (default: 1000 ms) */
   reconnectBackoffMs?: number | string;
-  /** Callback invoked before each reconnect attempt */
+  /**
+   * Idle watchdog: how long to wait for any data (the server sends a keepalive
+   * every 30 s) before treating the connection as dead. Accepts ms or a duration
+   * string like "2m". Default: "90s" (three keepalive intervals). `0` disables it.
+   *
+   * With `reconnect: true` an idle connection is dropped and reconnected (counts
+   * as a reconnect attempt, with backoff). Without it, the iterator throws
+   * `TimeoutError`.
+   */
+  idleTimeout?: number | string;
+  /**
+   * Callback invoked before each recovery reconnect attempt. Not called for the
+   * server's scheduled rotations.
+   */
   onReconnect?: (attempt: number) => void;
 }
 

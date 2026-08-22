@@ -1,15 +1,18 @@
 use axum::body::Bytes;
 use axum::extract::{OriginalUri, Path, State};
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::rules::{self, RequestContext, ResponseRule};
 use crate::AppState; // ResponseRule needed for deserialization
+use crate::metrics;
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
@@ -82,19 +85,90 @@ fn real_ip(headers: &HeaderMap) -> String {
     }
 }
 
+/// True when the byte slice contains a NUL (0x00) byte.
+///
+/// Postgres rejects U+0000 in `text` and `jsonb` values ("invalid byte
+/// sequence for encoding UTF8: 0x00"), so anything bound to those columns
+/// must be checked and sanitized first.
+fn contains_nul(bytes: &[u8]) -> bool {
+    bytes.contains(&0)
+}
+
+/// Replace every NUL character with U+FFFD (replacement character).
+/// Returns `Cow::Borrowed` when there is nothing to replace.
+fn strip_nul(s: &str) -> Cow<'_, str> {
+    if s.contains('\0') {
+        Cow::Owned(s.replace('\0', "\u{FFFD}"))
+    } else {
+        Cow::Borrowed(s)
+    }
+}
+
+/// Decode a header value losslessly for storage: hyper accepts obs-text
+/// (bytes >= 0x80) in header values, which `HeaderValue::to_str` rejects,
+/// so decode with `from_utf8_lossy` instead of dropping the header.
+fn header_value_to_string(value: &HeaderValue) -> String {
+    let lossy = String::from_utf8_lossy(value.as_bytes());
+    strip_nul(&lossy).into_owned()
+}
+
 /// Filter request headers: remove proxy/CDN headers, collect into a HashMap.
+///
+/// Duplicate header names are joined with ", " in wire order (RFC 7230 list
+/// semantics) instead of keeping only the last occurrence.
 fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+    let mut map: HashMap<String, String> = HashMap::new();
     for (key, value) in headers.iter() {
         let name = key.as_str();
         if PROXY_HEADERS.contains(&name) {
             continue;
         }
-        if let Ok(v) = value.to_str() {
-            map.insert(name.to_string(), v.to_string());
+        let v = header_value_to_string(value);
+        match map.entry(name.to_string()) {
+            Entry::Occupied(mut existing) => {
+                let joined = existing.get_mut();
+                joined.push_str(", ");
+                joined.push_str(&v);
+            }
+            Entry::Vacant(slot) => {
+                slot.insert(v);
+            }
         }
     }
     map
+}
+
+/// Split the request body into the text copy bound to `requests.body` and the
+/// optional raw copy bound to `p_body_raw`.
+///
+/// - Valid UTF-8 without NUL: text only, no raw copy (the common case).
+/// - Valid UTF-8 with NUL: raw bytes preserved, NUL replaced by U+FFFD in the
+///   text copy so Postgres accepts it.
+/// - Invalid UTF-8: raw bytes preserved, lossy text (with NUL also replaced).
+fn classify_body(body: &[u8]) -> (String, Option<Vec<u8>>) {
+    match std::str::from_utf8(body) {
+        Ok(s) if !contains_nul(body) => (s.to_owned(), None),
+        Ok(s) => (strip_nul(s).into_owned(), Some(body.to_vec())),
+        Err(_) => {
+            let lossy = String::from_utf8_lossy(body);
+            (strip_nul(&lossy).into_owned(), Some(body.to_vec()))
+        }
+    }
+}
+
+/// Replace NUL in query keys and values (axum percent-decodes `%00`), since
+/// the map is bound as `jsonb`. Returns the map untouched when clean.
+fn sanitize_query(params: HashMap<String, String>) -> HashMap<String, String> {
+    if params
+        .iter()
+        .all(|(k, v)| !k.contains('\0') && !v.contains('\0'))
+    {
+        return params;
+    }
+    params
+        .into_iter()
+        .map(|(k, v)| (strip_nul(&k).into_owned(), strip_nul(&v).into_owned()))
+        .collect()
 }
 
 /// Shape returned by the capture_webhook stored procedure.
@@ -507,6 +581,96 @@ fn build_verification_request_url(
     url
 }
 
+/// How a failed `capture_webhook` query should be surfaced to the sender.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DbFailure {
+    /// Connection/pool/transaction-level failure that a retry can fix.
+    /// The sender gets 503 + Retry-After so its retry mechanism stays armed.
+    Transient,
+    /// Data/schema/privilege failure (or unclassifiable) that a retry cannot
+    /// fix. We fail open with 200 as a last resort, but log and count it.
+    Permanent,
+}
+
+/// SQLSTATE classes that indicate a transient, retryable condition:
+/// 08 connection exception, 40 transaction rollback (serialization failure,
+/// deadlock), 53 insufficient resources, 57 operator intervention (admin
+/// shutdown, crash shutdown), 58 system error.
+fn sqlstate_is_transient(code: &str) -> bool {
+    matches!(code.get(..2), Some("08" | "40" | "53" | "57" | "58"))
+}
+
+/// SQLSTATE of a database-reported error, if any.
+fn sqlstate_of(e: &sqlx::Error) -> Option<String> {
+    match e {
+        sqlx::Error::Database(db) => db.code().map(|c| c.into_owned()),
+        _ => None,
+    }
+}
+
+/// Classify a sqlx error from the capture query as transient or permanent.
+///
+/// `Database` errors without a SQLSTATE are treated as permanent (unknown);
+/// the caller logs the missing code.
+fn classify_db_error(e: &sqlx::Error) -> DbFailure {
+    match e {
+        sqlx::Error::PoolTimedOut
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::WorkerCrashed
+        | sqlx::Error::Io(_)
+        | sqlx::Error::Tls(_)
+        | sqlx::Error::Protocol(_) => DbFailure::Transient,
+        sqlx::Error::Database(db) => match db.code() {
+            Some(code) if sqlstate_is_transient(&code) => DbFailure::Transient,
+            _ => DbFailure::Permanent,
+        },
+        // Decode, ColumnNotFound, RowNotFound, TypeNotFound, ColumnDecode,
+        // Configuration, Encode, ... and any future variant (#[non_exhaustive]).
+        _ => DbFailure::Permanent,
+    }
+}
+
+/// Seconds advertised in Retry-After when the capture failed transiently.
+const TRANSIENT_RETRY_AFTER_SECS: &str = "5";
+
+/// Map a failed `capture_webhook` query to an HTTP response, logging and
+/// counting the failure. Request bodies are never logged.
+fn capture_failure_response(slug: &str, e: &sqlx::Error) -> Response {
+    let sqlstate = sqlstate_of(e);
+    let sqlstate = sqlstate.as_deref().unwrap_or("none");
+    match classify_db_error(e) {
+        DbFailure::Transient => {
+            metrics::capture_failed("transient");
+            tracing::error!(
+                slug,
+                kind = "transient",
+                sqlstate,
+                error = %e,
+                "capture_webhook query failed, asking sender to retry"
+            );
+            let mut response = (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response();
+            response.headers_mut().insert(
+                "retry-after",
+                HeaderValue::from_static(TRANSIENT_RETRY_AFTER_SECS),
+            );
+            response
+        }
+        DbFailure::Permanent => {
+            metrics::capture_failed("permanent");
+            // Fail open: a sender retry cannot fix this, so return 200 to stop
+            // redelivery storms, but make it loud and countable.
+            tracing::error!(
+                slug,
+                kind = "permanent",
+                sqlstate,
+                error = %e,
+                "capture_webhook query failed, failing open with 200"
+            );
+            (StatusCode::OK, "OK").into_response()
+        }
+    }
+}
+
 /// The main webhook handler: any method at /w/{slug}/{*path}
 pub async fn handle_webhook(
     State(state): State<AppState>,
@@ -575,7 +739,7 @@ async fn handle_webhook_inner(
             .into_response();
     }
 
-    // 2. Normalize path
+    // 2. Normalize path (axum percent-decodes %00, so strip NUL for Postgres)
     let path = target.path;
     let raw_query = target.raw_query;
     let req_path = if path.is_empty() {
@@ -585,30 +749,26 @@ async fn handle_webhook_inner(
     } else {
         format!("/{path}")
     };
+    let req_path = strip_nul(&req_path).into_owned();
 
     // 3. Extract request data
     let ip = real_ip(&headers);
     let filtered_headers = filter_headers(&headers);
-    // Try exact UTF-8 first; only store raw bytes when the payload isn't valid UTF-8
-    let (body_str, body_raw): (String, Option<Vec<u8>>) = match String::from_utf8(body.to_vec()) {
-        Ok(s) => (s, None),
-        Err(e) => {
-            let lossy = String::from_utf8_lossy(e.as_bytes()).into_owned();
-            (lossy, Some(e.into_bytes()))
-        }
-    };
+    // Text copy for `requests.body`; raw bytes only when the text copy is lossy
+    // (invalid UTF-8 or NUL bytes, which Postgres text columns reject).
+    let (body_str, body_raw) = classify_body(&body);
     let content_type = headers
         .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+        .map(header_value_to_string)
+        .unwrap_or_default();
+    let query_params = sanitize_query(query.0);
     let received_at = Utc::now();
 
     // Serialize headers and query params as JSON values
     let headers_json = serde_json::to_value(&filtered_headers)
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-    let query_json =
-        serde_json::to_value(&query.0).unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+    let query_json = serde_json::to_value(&query_params)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
     // 4. Call the stored procedure
     let result: Result<serde_json::Value, sqlx::Error> =
@@ -632,13 +792,18 @@ async fn handle_webhook_inner(
             let capture: CaptureResult = match serde_json::from_value(json_value) {
                 Ok(c) => c,
                 Err(e) => {
-                    tracing::error!(slug, error = %e, "failed to parse capture_webhook result");
+                    // The row was inserted but we cannot read the outcome; fail open
+                    // (the sender must not retry), but count and log it loudly.
+                    metrics::capture_failed("parse");
+                    tracing::error!(slug, kind = "parse", error = %e, "failed to parse capture_webhook result");
                     return (StatusCode::OK, "OK").into_response();
                 }
             };
 
             match capture.status.as_str() {
                 "ok" => {
+                    metrics::capture_result("ok");
+
                     // Fire-and-forget signature verification if configured
                     if let Some(ref provider) = capture.signing_provider
                         && let Some(ref encrypted_b64) = capture.signing_secret_encrypted
@@ -813,7 +978,7 @@ async fn handle_webhook_inner(
                             path: &req_path,
                             headers: &filtered_headers,
                             body: &body_str,
-                            query: &query.0,
+                            query: &query_params,
                         };
                         rules::evaluate_rules(rules, &ctx).or(capture.mock_response.clone())
                     } else {
@@ -832,17 +997,24 @@ async fn handle_webhook_inner(
                         (StatusCode::OK, "OK").into_response()
                     }
                 }
-                "not_found" => (
-                    StatusCode::NOT_FOUND,
-                    axum::Json(serde_json::json!({"error": "not_found"})),
-                )
-                    .into_response(),
-                "expired" => (
-                    StatusCode::GONE,
-                    axum::Json(serde_json::json!({"error": "expired"})),
-                )
-                    .into_response(),
+                "not_found" => {
+                    metrics::capture_result("not_found");
+                    (
+                        StatusCode::NOT_FOUND,
+                        axum::Json(serde_json::json!({"error": "not_found"})),
+                    )
+                        .into_response()
+                }
+                "expired" => {
+                    metrics::capture_result("expired");
+                    (
+                        StatusCode::GONE,
+                        axum::Json(serde_json::json!({"error": "expired"})),
+                    )
+                        .into_response()
+                }
                 "quota_exceeded" => {
+                    metrics::capture_result("quota_exceeded");
                     tracing::info!(slug, ip = %ip, "quota exceeded");
                     let mut response = (
                         StatusCode::TOO_MANY_REQUESTS,
@@ -862,16 +1034,16 @@ async fn handle_webhook_inner(
                     response
                 }
                 unknown => {
+                    metrics::capture_result("unknown");
+                    metrics::capture_failed("unknown_status");
                     tracing::warn!(slug, status = unknown, "unexpected capture_webhook status");
                     (StatusCode::OK, "OK").into_response()
                 }
             }
         }
-        Err(e) => {
-            // Fail open: return 200 so the sender doesn't retry
-            tracing::error!(slug, error = %e, "capture_webhook query failed");
-            (StatusCode::OK, "OK").into_response()
-        }
+        // Transient DB failures become 503 + Retry-After (sender retries);
+        // permanent ones fail open with 200 but are logged and counted.
+        Err(e) => capture_failure_response(&slug, &e),
     }
 }
 
@@ -935,8 +1107,6 @@ mod tests {
 
     #[test]
     fn header_filtering() {
-        use axum::http::HeaderValue;
-
         let mut headers = HeaderMap::new();
         headers.insert("content-type", HeaderValue::from_static("application/json"));
         headers.insert("x-custom", HeaderValue::from_static("hello"));
@@ -948,6 +1118,233 @@ mod tests {
         assert_eq!(filtered.get("x-custom").unwrap(), "hello");
         assert!(!filtered.contains_key("cf-ray"));
         assert!(!filtered.contains_key("x-forwarded-for"));
+    }
+
+    #[test]
+    fn header_filtering_keeps_non_ascii_values_via_lossy_decoding() {
+        let mut headers = HeaderMap::new();
+        // Valid UTF-8 but not visible ASCII: HeaderValue::to_str() rejects it.
+        headers.insert(
+            "x-utf8",
+            HeaderValue::from_bytes("caf\u{e9}".as_bytes()).unwrap(),
+        );
+        // Invalid UTF-8 obs-text byte: must be kept with U+FFFD, not dropped.
+        headers.insert("x-latin1", HeaderValue::from_bytes(b"caf\xe9").unwrap());
+        // Proxy headers are still filtered even with odd bytes.
+        headers.insert("cf-ray", HeaderValue::from_bytes(b"\xff").unwrap());
+
+        let filtered = filter_headers(&headers);
+        assert_eq!(filtered.get("x-utf8").unwrap(), "caf\u{e9}");
+        assert_eq!(filtered.get("x-latin1").unwrap(), "caf\u{FFFD}");
+        assert!(!filtered.contains_key("cf-ray"));
+    }
+
+    #[test]
+    fn header_filtering_joins_duplicates_in_wire_order() {
+        let mut headers = HeaderMap::new();
+        headers.append("x-dup", HeaderValue::from_static("first"));
+        headers.append("x-dup", HeaderValue::from_static("second"));
+        headers.append("x-dup", HeaderValue::from_static("third"));
+        headers.append("x-single", HeaderValue::from_static("only"));
+        // Duplicate proxy headers are filtered entirely.
+        headers.append("x-forwarded-for", HeaderValue::from_static("1.1.1.1"));
+        headers.append("x-forwarded-for", HeaderValue::from_static("2.2.2.2"));
+
+        let filtered = filter_headers(&headers);
+        assert_eq!(filtered.get("x-dup").unwrap(), "first, second, third");
+        assert_eq!(filtered.get("x-single").unwrap(), "only");
+        assert!(!filtered.contains_key("x-forwarded-for"));
+    }
+
+    #[test]
+    fn contains_nul_detects_zero_bytes() {
+        assert!(!contains_nul(b""));
+        assert!(!contains_nul(b"hello"));
+        assert!(!contains_nul("caf\u{e9}".as_bytes()));
+        assert!(contains_nul(b"\0"));
+        assert!(contains_nul(b"hel\0lo"));
+        assert!(contains_nul(b"trailing\0"));
+    }
+
+    #[test]
+    fn strip_nul_borrows_when_clean() {
+        let clean = "no nul here";
+        match strip_nul(clean) {
+            Cow::Borrowed(s) => assert_eq!(s, clean),
+            Cow::Owned(_) => panic!("expected Borrowed for a clean string"),
+        }
+        assert!(matches!(strip_nul(""), Cow::Borrowed("")));
+    }
+
+    #[test]
+    fn strip_nul_replaces_every_nul_with_replacement_char() {
+        match strip_nul("a\0b") {
+            Cow::Owned(s) => assert_eq!(s, "a\u{FFFD}b"),
+            Cow::Borrowed(_) => panic!("expected Owned when a NUL is present"),
+        }
+        assert_eq!(
+            strip_nul("\0start\0middle\0end\0").as_ref(),
+            "\u{FFFD}start\u{FFFD}middle\u{FFFD}end\u{FFFD}"
+        );
+        assert_eq!(strip_nul("\0\0\0").as_ref(), "\u{FFFD}\u{FFFD}\u{FFFD}");
+        // Result never contains a NUL
+        assert!(!strip_nul("x\0y\0z").contains('\0'));
+    }
+
+    #[test]
+    fn classify_body_valid_utf8_without_nul_has_no_raw_copy() {
+        let (text, raw) = classify_body(b"{\"hello\":\"world\"}");
+        assert_eq!(text, "{\"hello\":\"world\"}");
+        assert!(raw.is_none());
+
+        let (text, raw) = classify_body("caf\u{e9} \u{1F389}".as_bytes());
+        assert_eq!(text, "caf\u{e9} \u{1F389}");
+        assert!(raw.is_none());
+
+        let (text, raw) = classify_body(b"");
+        assert_eq!(text, "");
+        assert!(raw.is_none());
+    }
+
+    #[test]
+    fn classify_body_valid_utf8_with_nul_keeps_raw_and_replaces_nul() {
+        let input = b"abc\0def\0";
+        let (text, raw) = classify_body(input);
+        assert_eq!(text, "abc\u{FFFD}def\u{FFFD}");
+        assert!(!text.contains('\0'));
+        assert_eq!(raw.as_deref(), Some(&input[..]));
+    }
+
+    #[test]
+    fn classify_body_invalid_utf8_keeps_raw_and_lossy_text() {
+        let input = b"\xff\xfe binary \0 payload";
+        let (text, raw) = classify_body(input);
+        assert_eq!(raw.as_deref(), Some(&input[..]));
+        assert!(text.contains('\u{FFFD}'));
+        assert!(text.contains("binary"));
+        assert!(text.contains("payload"));
+        // NUL inside an invalid-UTF-8 body is also replaced (lossy alone keeps it)
+        assert!(!text.contains('\0'));
+    }
+
+    #[test]
+    fn sanitize_query_strips_nul_from_keys_and_values() {
+        let clean: HashMap<String, String> = HashMap::from([("a".to_string(), "1".to_string())]);
+        assert_eq!(sanitize_query(clean.clone()), clean);
+
+        let dirty: HashMap<String, String> = HashMap::from([
+            ("k\0ey".to_string(), "v\0al".to_string()),
+            ("plain".to_string(), "ok".to_string()),
+        ]);
+        let cleaned = sanitize_query(dirty);
+        assert_eq!(cleaned.get("k\u{FFFD}ey").unwrap(), "v\u{FFFD}al");
+        assert_eq!(cleaned.get("plain").unwrap(), "ok");
+        assert!(
+            cleaned
+                .iter()
+                .all(|(k, v)| !k.contains('\0') && !v.contains('\0'))
+        );
+    }
+
+    #[test]
+    fn sqlstate_transient_classes() {
+        // Transient: connection, transaction rollback, resources, operator intervention, system
+        assert!(sqlstate_is_transient("08006")); // connection_failure
+        assert!(sqlstate_is_transient("08003")); // connection_does_not_exist
+        assert!(sqlstate_is_transient("40001")); // serialization_failure
+        assert!(sqlstate_is_transient("40P01")); // deadlock_detected
+        assert!(sqlstate_is_transient("53300")); // too_many_connections
+        assert!(sqlstate_is_transient("53200")); // out_of_memory
+        assert!(sqlstate_is_transient("57P01")); // admin_shutdown
+        assert!(sqlstate_is_transient("57014")); // query_canceled (statement_timeout)
+        assert!(sqlstate_is_transient("58030")); // io_error
+
+        // Permanent: data, integrity, syntax/privilege, and anything unexpected
+        assert!(!sqlstate_is_transient("22021")); // character_not_in_repertoire (NUL byte)
+        assert!(!sqlstate_is_transient("22P05")); // untranslatable_character
+        assert!(!sqlstate_is_transient("23505")); // unique_violation
+        assert!(!sqlstate_is_transient("42501")); // insufficient_privilege
+        assert!(!sqlstate_is_transient("42883")); // undefined_function
+        assert!(!sqlstate_is_transient("P0001")); // raise_exception
+        assert!(!sqlstate_is_transient("XX000")); // internal_error
+        assert!(!sqlstate_is_transient(""));
+        assert!(!sqlstate_is_transient("4"));
+    }
+
+    #[test]
+    fn classify_db_error_transient_variants() {
+        assert_eq!(
+            classify_db_error(&sqlx::Error::PoolTimedOut),
+            DbFailure::Transient
+        );
+        assert_eq!(
+            classify_db_error(&sqlx::Error::PoolClosed),
+            DbFailure::Transient
+        );
+        assert_eq!(
+            classify_db_error(&sqlx::Error::WorkerCrashed),
+            DbFailure::Transient
+        );
+        let io = std::io::Error::new(std::io::ErrorKind::ConnectionReset, "reset by peer");
+        assert_eq!(
+            classify_db_error(&sqlx::Error::Io(io)),
+            DbFailure::Transient
+        );
+        assert_eq!(
+            classify_db_error(&sqlx::Error::Protocol("unexpected message".into())),
+            DbFailure::Transient
+        );
+        let tls: Box<dyn std::error::Error + Send + Sync> = Box::new(std::io::Error::other("tls"));
+        assert_eq!(
+            classify_db_error(&sqlx::Error::Tls(tls)),
+            DbFailure::Transient
+        );
+    }
+
+    #[test]
+    fn classify_db_error_permanent_variants() {
+        assert_eq!(
+            classify_db_error(&sqlx::Error::RowNotFound),
+            DbFailure::Permanent
+        );
+        assert_eq!(
+            classify_db_error(&sqlx::Error::ColumnNotFound("status".into())),
+            DbFailure::Permanent
+        );
+        let decode: Box<dyn std::error::Error + Send + Sync> =
+            Box::new(std::io::Error::other("bad json"));
+        assert_eq!(
+            classify_db_error(&sqlx::Error::Decode(decode)),
+            DbFailure::Permanent
+        );
+        assert_eq!(
+            classify_db_error(&sqlx::Error::TypeNotFound {
+                type_name: "jsonb".into()
+            }),
+            DbFailure::Permanent
+        );
+        assert_eq!(
+            sqlstate_of(&sqlx::Error::PoolTimedOut),
+            None,
+            "non-database errors carry no SQLSTATE"
+        );
+    }
+
+    #[test]
+    fn capture_failure_response_transient_is_503_with_retry_after() {
+        let response = capture_failure_response("abc", &sqlx::Error::PoolTimedOut);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get("retry-after").unwrap(),
+            TRANSIENT_RETRY_AFTER_SECS
+        );
+    }
+
+    #[test]
+    fn capture_failure_response_permanent_fails_open_with_200() {
+        let response = capture_failure_response("abc", &sqlx::Error::RowNotFound);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().get("retry-after").is_none());
     }
 
     #[test]

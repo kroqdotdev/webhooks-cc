@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
+use crate::api::stream::join_stream;
 use crate::tunnel::{parse_target, Tunnel};
 use crate::tui::{keys, theme};
 use crate::tui::widgets::request_list::{RequestList, RequestListState};
@@ -33,6 +34,8 @@ pub struct TunnelScreen {
     target_url: Option<String>,
     requests: RequestListState,
     forward_results: HashMap<String, ForwardResult>,
+    /// Stream status line (set while reconnecting, cleared on reconnect).
+    stream_status: Option<String>,
     webhook_url: String,
     tx: Option<mpsc::UnboundedSender<Message>>,
     client: Option<ApiClient>,
@@ -50,6 +53,7 @@ impl TunnelScreen {
             target_url: None,
             requests: RequestListState::new(),
             forward_results: HashMap::new(),
+            stream_status: None,
             webhook_url,
             tx: None,
             client: None,
@@ -149,21 +153,42 @@ impl Screen for TunnelScreen {
                     let handle = tokio::spawn(async move {
                         let (sse_tx, mut sse_rx) = mpsc::channel(64);
                         let stream_handle = tokio::spawn(async move {
-                            let _ = client.stream_requests(&stream_slug, sse_tx).await;
+                            client.stream_requests(&stream_slug, sse_tx).await
                         });
 
                         while let Some(event) = sse_rx.recv().await {
                             if tx.send(Message::SseEvent(event)).is_err() {
-                                break;
+                                // UI is gone: stop streaming.
+                                stream_handle.abort();
+                                return;
                             }
                         }
-                        stream_handle.abort();
+                        // Channel closed: the stream task finished. Surface its result.
+                        let result = join_stream(stream_handle, false).await;
+                        let _ = tx.send(Message::StreamClosed(result));
                     });
                     self.tasks.push(handle);
                 }
             }
             Message::EndpointCreated(Err(e)) => {
                 self.state = State::Error(e.to_string());
+            }
+            Message::SseEvent(SseEvent::Reconnecting {
+                attempt,
+                delay_ms,
+                reason,
+            }) => {
+                let secs = (delay_ms + 500) / 1000;
+                self.stream_status = Some(format!(
+                    "Reconnecting in {secs}s (attempt {attempt}): {reason}"
+                ));
+            }
+            Message::SseEvent(SseEvent::Connected) => {
+                self.stream_status = None;
+            }
+            Message::StreamClosed(Err(e)) => {
+                self.stream_status = None;
+                self.state = State::Error(format!("Stream failed: {e:#}"));
             }
             Message::SseEvent(SseEvent::Request(req)) => {
                 let req_id = req.id.clone();
@@ -245,7 +270,7 @@ impl Screen for TunnelScreen {
                 let url = self.webhook_url_str.as_deref().unwrap_or("—");
                 let target = self.target_url.as_deref().unwrap_or("—");
 
-                let info = Paragraph::new(vec![
+                let mut lines = vec![
                     Line::from(vec![
                         Span::styled("  ● ", theme::style_success()),
                         Span::styled("Tunnel active", theme::style_success()),
@@ -258,7 +283,14 @@ impl Screen for TunnelScreen {
                         Span::styled("  Forwarding to: ", theme::style_muted()),
                         Span::styled(target, theme::style()),
                     ]),
-                ]);
+                ];
+                if let Some(status) = &self.stream_status {
+                    lines.push(Line::from(vec![
+                        Span::styled("  ● ", theme::style_primary()),
+                        Span::styled(status.as_str(), theme::style_dim()),
+                    ]));
+                }
+                let info = Paragraph::new(lines);
                 frame.render_widget(info, chunks[0]);
 
                 // Request list with forward status
