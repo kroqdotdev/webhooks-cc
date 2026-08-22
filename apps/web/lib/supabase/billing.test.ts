@@ -92,8 +92,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
 
 function userUpdatePayload(): Record<string, unknown> | undefined {
   return recorded.find((call) => call.table === "users" && call.op === "update")?.payload as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
 }
 
 // A personal-customer payload: extractCustomerUserId resolves the user id from

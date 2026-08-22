@@ -314,7 +314,9 @@ describe("acceptInvite", () => {
     const admin = createFakeAdmin(
       {
         "team_invites:select": [
-          { data: { team_id: "team_1", invited_email: "member@example.com", invited_user_id: null } },
+          {
+            data: { team_id: "team_1", invited_email: "member@example.com", invited_user_id: null },
+          },
         ],
         "users:select": [{ data: { email: "Member@Example.com" } }],
         "team_invites:update": [{ data: { id: "invite_1" } }],
