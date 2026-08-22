@@ -275,7 +275,10 @@ function LandingDashboardInner() {
   // haven't loaded yet.
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
-    if (endpoint.requestCount === 0 || requests.length >= endpoint.requestCount) return;
+    // refreshRequests fetches at most REQUEST_LIMIT rows, so compare against the
+    // fetchable maximum or the poll would never stop once the counter passes it.
+    const fetchable = Math.min(endpoint.requestCount, REQUEST_LIMIT);
+    if (fetchable === 0 || requests.length >= fetchable) return;
 
     void refreshRequests(endpointSlug);
     const interval = window.setInterval(() => {

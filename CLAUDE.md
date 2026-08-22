@@ -161,7 +161,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 - **Axum + Tokio**: Async HTTP server
 - **sqlx + Postgres**: Direct database access via connection pool
 - **Single stored procedure**: `capture_webhook()` handles endpoint lookup, quota, insert, and counters in one transaction
-- **Fail-open**: On DB errors, returns 200 OK to avoid dropping webhooks from the sender's perspective
+- **Classified DB failures**: transient errors (pool timeout, connection loss, SQLSTATE 08/40/53/57/58) answer 503 + `Retry-After: 5` so the sender retries; permanent errors fail open with 200 (logged with the SQLSTATE and counted in `webhooks_capture_failed_total{kind}`)
 
 **Source files (`src/`):**
 

@@ -126,8 +126,11 @@ fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
         let v = header_value_to_string(value);
         match map.entry(name.to_string()) {
             Entry::Occupied(mut existing) => {
+                // RFC 7230 §3.2.2 comma folding, except `cookie`, whose
+                // multiple field lines fold with "; " (RFC 6265 §5.4).
+                let separator = if name == "cookie" { "; " } else { ", " };
                 let joined = existing.get_mut();
-                joined.push_str(", ");
+                joined.push_str(separator);
                 joined.push_str(&v);
             }
             Entry::Vacant(slot) => {
@@ -1146,6 +1149,9 @@ mod tests {
         headers.append("x-dup", HeaderValue::from_static("second"));
         headers.append("x-dup", HeaderValue::from_static("third"));
         headers.append("x-single", HeaderValue::from_static("only"));
+        // Cookie is the RFC exception: multiple Cookie lines fold with "; ".
+        headers.append("cookie", HeaderValue::from_static("a=1"));
+        headers.append("cookie", HeaderValue::from_static("b=2"));
         // Duplicate proxy headers are filtered entirely.
         headers.append("x-forwarded-for", HeaderValue::from_static("1.1.1.1"));
         headers.append("x-forwarded-for", HeaderValue::from_static("2.2.2.2"));
@@ -1153,6 +1159,7 @@ mod tests {
         let filtered = filter_headers(&headers);
         assert_eq!(filtered.get("x-dup").unwrap(), "first, second, third");
         assert_eq!(filtered.get("x-single").unwrap(), "only");
+        assert_eq!(filtered.get("cookie").unwrap(), "a=1; b=2");
         assert!(!filtered.contains_key("x-forwarded-for"));
     }
 

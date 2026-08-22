@@ -18,8 +18,12 @@ export class AccountDeletionBillingError extends Error {
 }
 
 function isAlreadyCanceledError(error: unknown): boolean {
-  const detail = describePolarError(error) ?? (error instanceof Error ? error.message : "");
-  return /already[\s_-]?(canceled|cancelled|revoked)/i.test(detail);
+  // Match against both the Polar detail and the error message: the detail can be
+  // present yet unrelated while the message carries the "already canceled" hint.
+  const haystack = [describePolarError(error), error instanceof Error ? error.message : null]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" ");
+  return /already[\s_-]?(canceled|cancelled|revoked)/i.test(haystack);
 }
 
 async function revokePersonalSubscription(polarSubscriptionId: string): Promise<void> {
@@ -57,6 +61,9 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
   const admin = createAdminClient();
 
   // 1. Teams this user owns: stop their billing before the cascade removes them.
+  // Ownership is `team_members.role = 'owner'`, but the cascade that deletes the
+  // team rows keys on `teams.created_by`; union both so a row that is out of sync
+  // (direct service-role write, partial migration) is still revoked.
   const { data: ownerRows, error: ownerError } = await admin
     .from("team_members")
     .select("team_id")
@@ -64,7 +71,18 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
     .eq("role", "owner");
   if (ownerError) throw ownerError;
 
-  const ownedTeamIds = (ownerRows ?? []).map((row) => row.team_id);
+  const { data: createdRows, error: createdError } = await admin
+    .from("teams")
+    .select("id")
+    .eq("created_by", userId);
+  if (createdError) throw createdError;
+
+  const ownedTeamIds = [
+    ...new Set([
+      ...(ownerRows ?? []).map((row) => row.team_id),
+      ...(createdRows ?? []).map((row) => row.id),
+    ]),
+  ];
   if (ownedTeamIds.length > 0) {
     const { data: teams, error: teamsError } = await admin
       .from("teams")

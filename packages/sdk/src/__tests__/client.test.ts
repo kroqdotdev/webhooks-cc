@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { WebhooksCC } from "../client";
+import { RecentIdSet, WebhooksCC } from "../client";
 import { WebhooksCCError, UnauthorizedError, NotFoundError, TimeoutError } from "../errors";
 import { TEMPLATE_METADATA } from "../index";
 
@@ -1506,6 +1506,95 @@ describe("WebhooksCC", () => {
         `${BASE_URL}/api/stream/abc123?since=999`,
         expect.anything()
       );
+    });
+
+    it("resumes from the first connection's server time when it drops before any request", async () => {
+      const serverDate = "Sat, 22 Aug 2026 10:00:00 GMT";
+      const floor = Date.parse(serverDate);
+      globalThis.fetch = vi
+        .fn()
+        // First connection: accepted (Date header present), then closes before
+        // delivering anything.
+        .mockResolvedValueOnce({
+          ...mockSSEStream(CONNECTED_FRAME),
+          headers: new Headers({ "content-type": "text/event-stream", date: serverDate }),
+        })
+        // Second connection replays from the floor and delivers the missed request
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", floor + 500), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { reconnect: true, reconnectBackoffMs: 0 })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(done.done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      // The very first connection sends no `since` (server default = its start time)
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        1,
+        `${BASE_URL}/api/stream/abc123`,
+        expect.anything()
+      );
+      // The reconnect resumes from the server's clock at the first connection
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=${floor}`,
+        expect.anything()
+      );
+    });
+
+    it("routes back-to-back rapid rotations through backoff instead of a tight loop", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        // Two rotations within seconds of connecting, then a healthy connection
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, TIMEOUT_FRAME))
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, TIMEOUT_FRAME))
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          reconnectBackoffMs: 5,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(done.done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      // First rapid rotation reconnects immediately; the second one is treated as
+      // a failure and consumes a backoff attempt.
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+    });
+
+    it("bounds the reconnect dedup window (RecentIdSet evicts FIFO)", () => {
+      const recent = new RecentIdSet(3);
+      recent.add("a");
+      recent.add("b");
+      recent.add("c");
+      expect(recent.has("a")).toBe(true);
+      recent.add("d"); // evicts "a"
+      expect(recent.has("a")).toBe(false);
+      expect(recent.has("b")).toBe(true);
+      expect(recent.has("d")).toBe(true);
+      recent.add("b"); // already present: no eviction, no duplicate slot
+      expect(recent.size).toBe(3);
+      recent.add("e"); // evicts "b" (oldest slot), not "c"
+      expect(recent.has("b")).toBe(false);
+      expect(recent.has("c")).toBe(true);
+      expect(recent.size).toBe(3);
     });
 
     it("completes on the server's timeout event when reconnect is disabled", async () => {

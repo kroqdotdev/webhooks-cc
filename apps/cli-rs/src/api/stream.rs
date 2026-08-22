@@ -19,6 +19,10 @@ const BACKOFF_BASE: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// How many request IDs to remember for de-duplicating replays after a reconnect.
 const RECENT_IDS_CAPACITY: usize = 256;
+/// A rotation (`event: timeout`) sooner than this after connecting counts as
+/// "rapid"; `RAPID_ROTATION_LIMIT` rapid rotations in a row go through backoff.
+const MIN_ROTATION_INTERVAL: Duration = Duration::from_secs(5);
+const RAPID_ROTATION_LIMIT: u32 = 2;
 
 /// Why a single stream connection ended.
 #[derive(Debug)]
@@ -63,6 +67,7 @@ impl ApiClient {
         let base_url = self.url(&format!("/api/stream/{}", urlencoding::encode(slug)));
         let mut cursor = ResumeCursor::default();
         let mut attempt: u32 = 0;
+        let mut rapid_rotations: u32 = 0;
 
         loop {
             if tx.is_closed() {
@@ -70,19 +75,45 @@ impl ApiClient {
             }
 
             let url = stream_url(&base_url, cursor.since());
+            let opened = std::time::Instant::now();
             let outcome = match connect(&sse_client, &url, &headers, slug).await {
                 Ok(resp) => {
-                    cursor.set_floor_once(server_time_ms(resp.headers()).unwrap_or_else(now_ms));
+                    // Floor for the resume cursor: the server's clock (at or before
+                    // the connection start) or, without a Date header, the client
+                    // clock with a one-second margin for skew.
+                    cursor.set_floor_once(
+                        server_time_ms(resp.headers()).unwrap_or_else(|| now_ms() - 1_000),
+                    );
                     read_stream(resp, &tx, &mut cursor, &mut attempt).await
                 }
                 Err(ConnectError::Terminal(msg)) => anyhow::bail!(msg),
                 Err(ConnectError::Transient(msg)) => StreamEnd::Failed(msg),
             };
 
+            // A scheduled rotation normally arrives after 30 minutes. Two in a row
+            // within seconds of connecting mean the server is bouncing us, so route
+            // that through the backoff path instead of a tight reconnect loop.
+            let outcome = match outcome {
+                StreamEnd::Rotated => {
+                    if opened.elapsed() < MIN_ROTATION_INTERVAL {
+                        rapid_rotations += 1;
+                    } else {
+                        rapid_rotations = 0;
+                    }
+                    if rapid_rotations >= RAPID_ROTATION_LIMIT {
+                        StreamEnd::Failed("stream rotated immediately after connecting".to_string())
+                    } else {
+                        StreamEnd::Rotated
+                    }
+                }
+                other => other,
+            };
+
             match outcome {
                 StreamEnd::Done => return Ok(()),
                 StreamEnd::Rotated => continue,
                 StreamEnd::Failed(reason) => {
+                    rapid_rotations = 0;
                     attempt += 1;
                     let delay = with_jitter(next_backoff(attempt));
                     let event = SseEvent::Reconnecting {
@@ -334,13 +365,15 @@ fn with_jitter(base: Duration) -> Duration {
     base + Duration::from_millis(rand::random_range(0..=max_jitter_ms))
 }
 
-/// Server clock from the `Date` response header, rounded up to the end of that
-/// second so a replay from here cannot include requests received before the
-/// connection opened.
+/// Server clock from the `Date` response header. The header has one-second
+/// precision, so this is the start of the second the connection opened in, i.e.
+/// at or before the server's own connection start: a replay floor here can
+/// only over-replay (handled by the recent-id dedup), never skip a request that
+/// was captured in the same second as the drop.
 fn server_time_ms(headers: &HeaderMap) -> Option<i64> {
     let raw = headers.get(DATE)?.to_str().ok()?;
     let parsed = chrono::DateTime::parse_from_rfc2822(raw).ok()?;
-    Some(parsed.timestamp() * 1000 + 999)
+    Some(parsed.timestamp() * 1000)
 }
 
 fn now_ms() -> i64 {
@@ -591,10 +624,10 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(DATE, "Sat, 22 Aug 2026 10:00:00 GMT".parse().unwrap());
         let ts = server_time_ms(&headers).unwrap();
+        // Start of the second (at or before the real connection time), not the end.
         let expected = chrono::DateTime::parse_from_rfc3339("2026-08-22T10:00:00Z")
             .unwrap()
-            .timestamp_millis()
-            + 999;
+            .timestamp_millis();
         assert_eq!(ts, expected);
         assert!(server_time_ms(&HeaderMap::new()).is_none());
     }

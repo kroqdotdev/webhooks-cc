@@ -319,6 +319,59 @@ function normalizeStreamIdleTimeout(value: number | string | undefined): number 
   return Math.max(0, parseDuration(value));
 }
 
+// Reconnect replay only needs the ids near the resume cursor, so a bounded
+// window keeps a days-long subscription from growing with total webhook count.
+const STREAM_DEDUP_WINDOW = 1000;
+// A rotation (`event: timeout`) sooner than this after connecting is "rapid";
+// RAPID_ROTATION_LIMIT rapid rotations in a row are routed through backoff.
+const STREAM_RAPID_ROTATION_MS = 5000;
+const STREAM_RAPID_ROTATION_LIMIT = 2;
+
+/**
+ * Fixed-capacity set of recently seen ids (FIFO eviction). Exported for tests;
+ * not part of the public API.
+ * @internal
+ */
+export class RecentIdSet {
+  private readonly ids = new Set<string>();
+  private readonly ring: (string | undefined)[];
+  private head = 0;
+
+  constructor(capacity: number) {
+    this.ring = new Array<string | undefined>(Math.max(1, Math.floor(capacity)));
+  }
+
+  has(id: string): boolean {
+    return this.ids.has(id);
+  }
+
+  add(id: string): void {
+    if (this.ids.has(id)) return;
+    const evicted = this.ring[this.head];
+    if (evicted !== undefined) {
+      this.ids.delete(evicted);
+    }
+    this.ring[this.head] = id;
+    this.head = (this.head + 1) % this.ring.length;
+    this.ids.add(id);
+  }
+
+  get size(): number {
+    return this.ids.size;
+  }
+}
+
+/**
+ * Server clock from a `Date` response header (one-second precision, so at or
+ * before the moment the server accepted the connection), or undefined.
+ */
+function serverDateMs(headers: Headers | undefined): number | undefined {
+  const raw = headers?.get("date");
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 /** Per-connection state for requests.subscribe(); replaced on every (re)connect. */
 interface StreamConnection {
   /** Aborting this tears down the fetch and body stream of this connection only. */
@@ -1381,7 +1434,13 @@ export class WebhooksCC {
           let iterator: AsyncGenerator<SSEFrame> | null = null;
           let reconnectAttempts = 0;
           let lastReceivedAt: number | undefined;
-          const seenRequestIds = new Set<string>();
+          // Resume floor for reconnects that happen before any request arrived:
+          // the server clock at the first successful connection, so the gap is
+          // replayed instead of the server starting from the new connection time.
+          let resumeFloor: number | undefined;
+          let connectedAt = 0;
+          let rapidRotations = 0;
+          const seenRequestIds = new RecentIdSet(STREAM_DEDUP_WINDOW);
 
           // Link external signal to our controller
           const onAbort = () => controller.abort();
@@ -1467,10 +1526,11 @@ export class WebhooksCC {
               detach: () => controller.signal.removeEventListener("abort", abortConnection),
             };
 
-            const url = `${baseUrl}${buildStreamPath(
-              slug,
-              lastReceivedAt !== undefined ? lastReceivedAt - 1 : undefined
-            )}`;
+            // Resume from the last request, or from the floor recorded at the first
+            // connection; the very first connection sends no `since` (server default).
+            const since = lastReceivedAt !== undefined ? lastReceivedAt - 1 : resumeFloor;
+            const url = `${baseUrl}${buildStreamPath(slug, since)}`;
+            const connectStartedAt = Date.now();
             // Bound the connect phase; the idle watchdog takes over once the stream is open
             const connectTimeout = setTimeout(
               () => connectionController.abort(),
@@ -1493,6 +1553,13 @@ export class WebhooksCC {
 
             if (!response.body) {
               throw new Error("SSE response has no body");
+            }
+
+            connectedAt = Date.now();
+            if (resumeFloor === undefined) {
+              // Server clock if available (at or before its connection start);
+              // otherwise the client clock with a one-second margin for skew.
+              resumeFloor = serverDateMs(response.headers) ?? connectStartedAt - 1000;
             }
 
             // Aborting the connection cancels the reader, so a pending read settles
@@ -1572,6 +1639,7 @@ export class WebhooksCC {
                       seenRequestIds.add(req.id);
                     }
                     lastReceivedAt = req.receivedAt;
+                    rapidRotations = 0;
                     return { done: false, value: req };
                   }
 
@@ -1579,8 +1647,18 @@ export class WebhooksCC {
                     // Scheduled rotation: the server caps every connection at 30
                     // minutes. Not a failure, so reconnect right away (no backoff, no
                     // attempt consumed, no onReconnect), resuming from the last request.
+                    // Guard: two rotations in a row within seconds of connecting mean
+                    // the server is bouncing us; route that through normal backoff.
+                    const rapid = Date.now() - connectedAt < STREAM_RAPID_ROTATION_MS;
+                    rapidRotations = rapid ? rapidRotations + 1 : 0;
                     void closeConnection();
                     if (!reconnect) {
+                      break;
+                    }
+                    if (rapidRotations >= STREAM_RAPID_ROTATION_LIMIT) {
+                      if (await prepareReconnect()) {
+                        continue;
+                      }
                       break;
                     }
                     continue;

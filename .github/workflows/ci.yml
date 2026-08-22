@@ -1,5 +1,9 @@
 name: CI
 
+# Every job only reads the repository; nothing here writes to GitHub.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
