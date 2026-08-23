@@ -1624,14 +1624,17 @@ export class WebhooksCC {
                     break;
                   }
 
-                  reconnectAttempts = 0;
-
                   // Only yield actual request events
                   if (value.event === "request") {
                     const req = parseStreamRequest(value.data);
                     if (!req) {
                       continue;
                     }
+                    // A delivered request (even a replayed one) proves the stream is
+                    // healthy. `connected` alone does not: a server that accepts and
+                    // immediately drops us would otherwise reset the counter forever
+                    // and maxReconnectAttempts could never stop the loop.
+                    reconnectAttempts = 0;
                     if (req.id && seenRequestIds.has(req.id)) {
                       continue;
                     }
@@ -1672,6 +1675,11 @@ export class WebhooksCC {
                   // The only terminal server event
                   if (value.event === "endpoint_deleted") {
                     break;
+                  }
+
+                  if (value.event === "comment") {
+                    // Server keepalive: the connection is alive and healthy
+                    reconnectAttempts = 0;
                   }
 
                   // Skip connected, keepalive comments, and other events

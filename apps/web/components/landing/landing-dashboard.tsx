@@ -100,6 +100,11 @@ function LandingDashboardInner() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const prevRequestCount = useRef(0);
+  // Guest request polling state (see refreshRequests below).
+  const activeSlugRef = useRef<string | null>(null);
+  const requestsInFlightSlug = useRef<string | null>(null);
+  const requestsRetryAt = useRef(0);
+  const requestsFailures = useRef(0);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
@@ -132,6 +137,11 @@ function LandingDashboardInner() {
     setDebouncedSearch("");
     setCreateError(nextError);
     prevRequestCount.current = 0;
+    // Drop any in-flight/stale request poll state so a replacement endpoint
+    // starts clean (no inherited backoff, no old-slug response applied).
+    activeSlugRef.current = null;
+    requestsRetryAt.current = 0;
+    requestsFailures.current = 0;
     // Re-arm auto-create only on the silent path — when an error is being
     // surfaced, an immediate re-create would clobber it (and could loop).
     if (nextError === null) {
@@ -171,26 +181,31 @@ function LandingDashboardInner() {
     [clearDemoEndpoint]
   );
 
-  // The catch-up poll ticks every 250 ms; never let ticks overlap, and back off
-  // (500 ms, 1 s, 2 s, ... capped at 5 s) while requests keep failing instead of
-  // hammering the guest API at full rate.
-  const requestsInFlight = useRef(false);
-  const requestsRetryAt = useRef(0);
-  const requestsFailures = useRef(0);
+  // The catch-up poll ticks every 250 ms; never let ticks for the same endpoint
+  // overlap, and back off (500 ms, 1 s, 2 s, ... capped at 5 s) while requests
+  // keep failing instead of hammering the guest API at full rate. Responses for
+  // an endpoint that was cleared or replaced while the fetch was pending are
+  // dropped, so an old slug can never populate the new endpoint's list.
+  useEffect(() => {
+    activeSlugRef.current = endpointSlug;
+  }, [endpointSlug]);
   const refreshRequests = useCallback(async (slug: string) => {
-    if (requestsInFlight.current || Date.now() < requestsRetryAt.current) return;
-    requestsInFlight.current = true;
+    if (requestsInFlightSlug.current === slug || Date.now() < requestsRetryAt.current) return;
+    requestsInFlightSlug.current = slug;
     try {
-      setRequests(await fetchGuestDashboardRequests(slug, REQUEST_LIMIT));
+      const next = await fetchGuestDashboardRequests(slug, REQUEST_LIMIT);
+      if (activeSlugRef.current !== slug) return; // stale: endpoint changed meanwhile
+      setRequests(next);
       requestsFailures.current = 0;
       requestsRetryAt.current = 0;
     } catch (error) {
+      if (activeSlugRef.current !== slug) return; // stale failure: do not penalise the new endpoint
       console.error("Failed to load guest requests:", error);
       requestsFailures.current += 1;
       const delay = Math.min(5000, 250 * 2 ** requestsFailures.current);
       requestsRetryAt.current = Date.now() + delay;
     } finally {
-      requestsInFlight.current = false;
+      if (requestsInFlightSlug.current === slug) requestsInFlightSlug.current = null;
     }
   }, []);
 

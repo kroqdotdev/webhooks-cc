@@ -1611,6 +1611,64 @@ describe("WebhooksCC", () => {
       );
     });
 
+    it("stops at maxReconnectAttempts when every replacement stream is connected-then-closed", async () => {
+      const onReconnect = vi.fn();
+      // The server accepts every connection (sends `connected`) and then closes
+      // without delivering anything: that must not reset the attempt counter.
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(mockSSEStream(CONNECTED_FRAME)));
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 2,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const done = await iterator.next();
+
+      expect(done.done).toBe(true);
+      // Initial connection + exactly two recovery attempts
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(onReconnect).toHaveBeenCalledTimes(2);
+      expect(onReconnect).toHaveBeenNthCalledWith(1, 1);
+      expect(onReconnect).toHaveBeenNthCalledWith(2, 2);
+    });
+
+    it("resets the attempt counter on a keepalive, not on connected", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        // closes right after connected: attempt 1
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME))
+        // proves itself alive with a keepalive, then closes: the keepalive reset
+        // the counter, so this close is attempt 1 again rather than attempt 2
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, KEEPALIVE_FRAME))
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 1,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).done).toBe(true);
+      // With maxReconnectAttempts=1 the third connection only happens because the
+      // keepalive on the second connection reset the counter; `connected` alone
+      // (first connection) did not.
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(onReconnect.mock.calls.map(([attempt]) => attempt)).toEqual([1, 1]);
+    });
+
     it("bounds the reconnect dedup window (RecentIdSet evicts FIFO)", () => {
       const recent = new RecentIdSet(3);
       recent.add("a");

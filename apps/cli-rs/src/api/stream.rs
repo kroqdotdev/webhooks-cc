@@ -264,8 +264,11 @@ async fn read_stream(
                 event_type = rest.trim().to_string();
             } else if let Some(rest) = line.strip_prefix("data:") {
                 data_lines.push(rest.trim_start().to_string());
+            } else if line.starts_with(':') {
+                // Comment line: the server's periodic keepalive. Proof of a live,
+                // healthy connection, so the backoff counter starts over.
+                *attempt = 0;
             }
-            // Comments (lines starting with ':') are silently ignored
         }
     }
 }
@@ -279,11 +282,12 @@ async fn dispatch(
     attempt: &mut u32,
 ) -> Option<StreamEnd> {
     let after = match &event {
-        SseEvent::Connected => {
-            *attempt = 0;
-            None
-        }
+        // `connected` arrives on every accept, including from a server that then
+        // drops us immediately, so it is not evidence of a healthy stream and
+        // must not reset the backoff counter (keepalives and requests do).
+        SseEvent::Connected => None,
         SseEvent::Request(req) => {
+            *attempt = 0;
             if !cursor.observe(&req.id, req.received_at) {
                 return None; // replayed duplicate after a reconnect
             }
@@ -792,11 +796,18 @@ mod live_tests {
     }
 
     #[tokio::test]
-    async fn transient_failures_back_off_and_reset_after_connect() {
+    async fn transient_failures_back_off_and_reset_after_keepalive() {
         let (base, shared) = start_server(vec![
             Script::Status(503),
-            // Connects, then the server closes without a timeout event.
+            // Accepts, then closes without delivering anything: `connected`
+            // alone must NOT reset the backoff counter.
             Script::Sse(vec![frame("connected", "{}")]),
+            // Accepts and proves it is alive with a keepalive comment, then
+            // closes: the keepalive resets the counter.
+            Script::Sse(vec![
+                frame("connected", "{}"),
+                ": keepalive\n\n".to_string(),
+            ]),
             Script::Sse(vec![
                 frame("connected", "{}"),
                 frame("endpoint_deleted", "{}"),
@@ -805,7 +816,7 @@ mod live_tests {
         .await;
 
         let started = std::time::Instant::now();
-        let (events, result) = tokio::time::timeout(Duration::from_secs(15), run_client(&base))
+        let (events, result) = tokio::time::timeout(Duration::from_secs(20), run_client(&base))
             .await
             .expect("stream should finish");
 
@@ -815,14 +826,16 @@ mod live_tests {
             vec![
                 "reconnecting:1",
                 "connected",
-                "reconnecting:1", // attempt counter reset by the successful connect
+                "reconnecting:2", // `connected` then close: no reset, backoff escalates
+                "connected",
+                "reconnecting:1", // keepalive proved the stream healthy: counter reset
                 "connected",
                 "endpoint_deleted"
             ]
         );
-        // Two backoffs of ~1s each (plus up to 10% jitter).
+        // Backoffs of ~1s, ~2s and ~1s (plus up to 10% jitter each).
         assert!(
-            started.elapsed() >= Duration::from_secs(2),
+            started.elapsed() >= Duration::from_secs(4),
             "{:?}",
             started.elapsed()
         );
@@ -838,21 +851,35 @@ mod live_tests {
             .collect();
         assert!(reasons[0].1.contains("503"), "{}", reasons[0].1);
         assert!(reasons[1].1.contains("closed"), "{}", reasons[1].1);
-        for (delay_ms, _) in &reasons {
-            assert!((1000..=1100).contains(delay_ms), "delay {delay_ms}");
-        }
+        assert!(reasons[2].1.contains("closed"), "{}", reasons[2].1);
+        // attempt 1 -> ~1s, attempt 2 -> ~2s, back to attempt 1 -> ~1s (+10% jitter)
+        assert!(
+            (1000..=1100).contains(&reasons[0].0),
+            "delay {}",
+            reasons[0].0
+        );
+        assert!(
+            (2000..=2200).contains(&reasons[1].0),
+            "delay {}",
+            reasons[1].0
+        );
+        assert!(
+            (1000..=1100).contains(&reasons[2].0),
+            "delay {}",
+            reasons[2].0
+        );
 
         // Before any request is seen, reconnects resume from the first
         // successful connection's server time (the floor), not from nothing.
         let seen = shared.lock().unwrap().seen_since.clone();
-        assert_eq!(seen.len(), 3);
+        assert_eq!(seen.len(), 4);
         assert!(seen[0].is_none());
         assert!(
             seen[1].is_none(),
             "no floor before the first successful connect"
         );
         assert!(
-            seen[2].is_some(),
+            seen[2].is_some() && seen[3].is_some(),
             "floor must be sent once a connect succeeded"
         );
     }
