@@ -42,7 +42,13 @@ export function DeleteAccountDialog({ accessToken }: { accessToken: string | nul
       router.push("/");
     } catch (err) {
       console.error("Delete account error:", err);
-      setError("Failed to delete account. Please try again.");
+      // The API explains billing-related refusals (e.g. a subscription that
+      // could not be cancelled); surface that text instead of a generic error.
+      const serverMessage =
+        err instanceof Error && err.message && !err.message.startsWith("Request failed")
+          ? err.message
+          : null;
+      setError(serverMessage ?? "Failed to delete account. Please try again.");
       setDeleting(false);
     }
   };
@@ -60,7 +66,8 @@ export function DeleteAccountDialog({ accessToken }: { accessToken: string | nul
             <AlertDialogTitle>Delete account?</AlertDialogTitle>
             <AlertDialogDescription>
               This permanently deletes your account, endpoints, API keys, device codes, and stored
-              requests. This action cannot be undone.
+              requests. Any Pro subscription and the subscriptions of teams you own are cancelled
+              immediately. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

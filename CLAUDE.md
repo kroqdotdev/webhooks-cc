@@ -161,7 +161,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 - **Axum + Tokio**: Async HTTP server
 - **sqlx + Postgres**: Direct database access via connection pool
 - **Single stored procedure**: `capture_webhook()` handles endpoint lookup, quota, insert, and counters in one transaction
-- **Fail-open**: On DB errors, returns 200 OK to avoid dropping webhooks from the sender's perspective
+- **Classified DB failures**: transient errors (pool timeout, connection loss, SQLSTATE 08/40/53/57/58) answer 503 + `Retry-After: 5` so the sender retries; permanent errors fail open with 200 (logged with the SQLSTATE and counted in `webhooks_capture_failed_total{kind}`)
 
 **Source files (`src/`):**
 
@@ -182,7 +182,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
    - `not_found` → 404
    - `expired` → 410
    - `quota_exceeded` → 429 with Retry-After header
-6. On DB error → 200 "ok" (fail open)
+6. On DB error → transient (pool timeout, connection, SQLSTATE 08/40/53/57/58) → 503 + `Retry-After: 5`; permanent → 200 "ok" (fail open, logged + counted)
 
 **Receiver env vars:**
 
@@ -195,6 +195,7 @@ The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connec
 | `RECEIVER_LOG_DIR`           | no       | logs/   | Rolling JSON log file directory                                                    |
 | `PG_POOL_MIN`                | no       | 5       | Min Postgres pool connections                                                      |
 | `PG_POOL_MAX`                | no       | 20      | Max Postgres pool connections                                                      |
+| `PG_ACQUIRE_TIMEOUT_SECS`    | no       | 5       | Max wait for a pooled connection; on timeout the capture answers 503 + Retry-After |
 | `APPSIGNAL_COLLECTOR_URL`    | no       |         | OTLP endpoint for AppSignal collector (e.g. `http://localhost:8099`)               |
 | `NOTIFY_PROXY_URL`           | no       |         | Cloudflare Worker URL for outbound notification proxy                              |
 | `NOTIFY_SECRET`              | no       |         | Shared secret for authenticating with the notify proxy                             |
@@ -300,7 +301,7 @@ Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono f
 
 ### SDK
 
-`@webhooks-cc/sdk` v0.3.0 - published to npm, MIT licensed.
+`@webhooks-cc/sdk` (version in `packages/sdk/package.json`, mirrored by `SDK_VERSION` in `apps/web/lib/changelog.ts`; a unit test keeps them in sync) - published to npm, MIT licensed.
 
 ```typescript
 const client = new WebhooksCC({ apiKey: "whcc_..." });
@@ -327,9 +328,9 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 ### MCP Server
 
-`@webhooks-cc/mcp` v0.1.0 - MCP server for AI coding agents, MIT licensed.
+`@webhooks-cc/mcp` (version in `packages/mcp/package.json`, mirrored by `MCP_VERSION` in `apps/web/lib/changelog.ts`) - MCP server for AI coding agents, MIT licensed.
 
-- 11 tools: `create_endpoint`, `list_endpoints`, `get_endpoint`, `update_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `send_webhook`, `wait_for_request`, `replay_request`, `describe`
+- 31 tools (see `packages/mcp/src/tools.ts`), including endpoint CRUD (`create_endpoint`, `list_endpoints`, `get_endpoint`, `update_endpoint`, `delete_endpoint`, plural variants), request access (`list_requests`, `get_request`, `search_requests`, `count_requests`, `compare_requests`, `extract_from_request`, `clear_requests`), sending (`send_webhook`, `send_to`, `preview_webhook`, `list_provider_templates`, `test_webhook_flow`), waiting (`wait_for_request`, `wait_for_requests`), `replay_request`, `verify_signature`, `get_usage`, `describe`, and the agent registration flow (`how_to_register`, `register_agent`, `register_agent_with_email`, `verify_agent_otp`, `register_agent_with_idjag`, `check_claim`)
 - Setup CLI: `npx @webhooks-cc/mcp setup <tool>` for Cursor, VS Code, Windsurf, Claude Desktop
 - Native install: `claude mcp add` (Claude Code), `codex mcp add` (Codex)
 - Transport: stdio via `@modelcontextprotocol/sdk`
@@ -433,10 +434,10 @@ The changelog has 4 tracks: `web`, `cli`, `sdk`, `mcp`. Each entry has a `track`
 ## Key Gotchas
 
 - The Rust receiver connects directly to Postgres via `DATABASE_URL` — use the Supabase session pooler URL, not the direct connection
-- Receiver fails open on DB errors: returns 200 OK so webhook senders don't retry
+- Receiver DB failures are classified: transient ones (pool timeout, connection/IO, SQLSTATE classes 08/40/53/57/58) return 503 + `Retry-After: 5` so senders retry; permanent ones still fail open with 200 but are logged with the SQLSTATE and counted in the `webhooks_capture_failed_total{kind}` OTel metric (alongside `webhooks_capture_total{status}`). Bodies/paths/queries containing NUL bytes are sanitised (raw bytes kept in `body_raw`) instead of failing the INSERT
 - Mock response changes take effect immediately (no caching layer)
 - Free user billing periods are lazy: `period_end` is unset until first request triggers `start_free_period()`
-- RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly — all guest reads go through server API routes with service role
+- RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly — all guest reads go through server API routes with service role. Client roles have no write access to `users` and no EXECUTE on any `public` function (migration 00037 revokes them and resets the default privileges; new functions are service-role only unless explicitly granted). `endpoints_select`/`requests_select` also admit members of an active team the endpoint is shared with (via `can_view_team_endpoint()`), which is what lets Realtime deliver to team members
 - Sensitive routes (account deletion, billing) require Supabase session tokens — API keys return 403
 - Supabase migrations are in `supabase/migrations/` and must be applied manually to the dev instance via psql
 - Email/password auth depends on GoTrue instance config (SMTP, `GOTRUE_PASSWORD_MIN_LENGTH=8`, custom template URLs + subjects via `docker-compose.override.yml`), not app env vars; see `infra/supabase/gotrue-email-auth.md`. Dev uses the Inbucket mail catcher at `http://localhost:9000`; if GoTrue couldn't fetch the templates at startup, `docker restart supabase-auth`

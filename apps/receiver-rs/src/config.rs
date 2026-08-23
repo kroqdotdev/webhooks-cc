@@ -9,6 +9,9 @@ pub struct Config {
     pub log_dir: String,
     pub pool_min: u32,
     pub pool_max: u32,
+    /// Max seconds to wait for a pooled Postgres connection before the capture
+    /// query fails with `PoolTimedOut` (mapped to 503 + Retry-After so senders retry).
+    pub pg_acquire_timeout_secs: u64,
     pub otel_collector_url: Option<String>,
     pub appsignal_push_api_key: Option<String>,
     pub notify_proxy_url: Option<String>,
@@ -35,6 +38,7 @@ impl std::fmt::Debug for Config {
             .field("log_dir", &self.log_dir)
             .field("pool_min", &self.pool_min)
             .field("pool_max", &self.pool_max)
+            .field("pg_acquire_timeout_secs", &self.pg_acquire_timeout_secs)
             .field(
                 "otel_collector_url",
                 &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"),
@@ -88,6 +92,13 @@ impl Config {
         let log_dir = env::var("RECEIVER_LOG_DIR").unwrap_or_else(|_| "logs".into());
         let pool_min: u32 = parse_env_or("PG_POOL_MIN", 5);
         let pool_max: u32 = parse_env_or("PG_POOL_MAX", 20);
+        let pg_acquire_timeout_secs: u64 = match parse_env_or("PG_ACQUIRE_TIMEOUT_SECS", 5) {
+            0 => {
+                tracing::warn!("PG_ACQUIRE_TIMEOUT_SECS must be > 0, using default 5");
+                5
+            }
+            v => v,
+        };
         let otel_collector_url = env::var("APPSIGNAL_COLLECTOR_URL")
             .ok()
             .filter(|v| !v.is_empty());
@@ -128,6 +139,7 @@ impl Config {
             log_dir,
             pool_min,
             pool_max,
+            pg_acquire_timeout_secs,
             otel_collector_url,
             appsignal_push_api_key,
             notify_proxy_url,

@@ -292,7 +292,15 @@ pub enum SseEvent {
     Connected,
     Request(Box<CapturedRequest>),
     EndpointDeleted,
+    /// The server rotated the stream (it closes every connection after 30 minutes).
+    /// The stream layer reconnects transparently; consumers can ignore this.
     Timeout,
+    /// The stream dropped and the stream layer is about to retry.
+    Reconnecting {
+        attempt: u32,
+        delay_ms: u64,
+        reason: String,
+    },
 }
 
 // ---------------------------------------------------------------------------

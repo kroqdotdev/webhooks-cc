@@ -29,10 +29,13 @@ export class NotFoundError extends WebhooksCCError {
   }
 }
 
-/** Thrown when the request times out. */
+/**
+ * Thrown when a request times out, or when a `requests.subscribe()` stream goes
+ * idle (no data or keepalive within `idleTimeout`) and `reconnect` is disabled.
+ */
 export class TimeoutError extends WebhooksCCError {
-  constructor(timeoutMs: number) {
-    super(0, `Request timed out after ${timeoutMs}ms`);
+  constructor(timeoutMs: number, message = `Request timed out after ${timeoutMs}ms`) {
+    super(0, message);
     this.name = "TimeoutError";
   }
 }

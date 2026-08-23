@@ -23,3 +23,6 @@ coverage/
 
 # GoTrue Go templates (not plain HTML): prettier splits {{ }} actions across lines
 apps/web/public/email-templates/
+
+# Internal planning docs (hand-written markdown, not part of the build)
+docs/

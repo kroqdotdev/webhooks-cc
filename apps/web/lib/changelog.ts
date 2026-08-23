@@ -15,13 +15,30 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.29.0";
-export const CLI_VERSION = "1.1.3";
-export const SDK_VERSION = "1.9.0";
+export const APP_VERSION = "0.29.1";
+export const CLI_VERSION = "1.2.0";
+export const SDK_VERSION = "1.9.1";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.29.1",
+    date: "2026-08-22",
+    title: "Security and Reliability Fixes from the Architecture Review",
+    track: "web",
+    items: [
+      "Database privileges hardened: signed-in users can no longer update their own plan or limits through the database API, and every stored procedure is callable by the server only (migration 00037)",
+      "Team members now receive live dashboard updates for endpoints shared with their team instead of having to refresh",
+      "Guest endpoint reads no longer expose ephemeral endpoints that belong to a signed-in user",
+      "Deleting an account now cancels the Pro subscription and the subscriptions of teams you own first, and refuses to delete if that fails, instead of leaving them billing",
+      "Endpoint lookups by slug use a proper index again (the hottest query in the receiver)",
+      "Webhooks whose body, path or query contain a NUL byte are stored (raw bytes preserved) instead of being silently dropped with a 200",
+      "The receiver answers 503 with Retry-After on transient database failures so senders retry, and reports capture outcomes as metrics",
+      "Rate limits are keyed on the Cloudflare client IP, so a forged X-Forwarded-For no longer bypasses them",
+      "The landing page syncs guest endpoints by polling instead of holding a Realtime channel that could never deliver",
+    ],
+  },
   {
     version: "0.29.0",
     date: "2026-08-21",
@@ -661,6 +678,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.2.0",
+    date: "2026-08-22",
+    title: "Tunnels That Stay Up",
+    track: "cli",
+    items: [
+      "`whk tunnel` and `whk listen` reconnect automatically: the server rotates stream connections every 30 minutes, and the CLI now resumes from the last request it saw instead of stopping silently",
+      "Network errors and stream drops retry with backoff and are reported; authentication and not-found errors exit non-zero with a message instead of exiting 0",
+      "A stream that goes quiet for 90 seconds (no keepalive) is treated as dead and reconnected",
+      "`whk tunnel` keeps the endpoint it created unless you pass `--ephemeral`, and prints how to reuse or delete it on exit",
+    ],
+  },
+  {
     version: "1.1.3",
     date: "2026-08-11",
     title: "Self-Update Rescue for v0.x Installs",
@@ -791,6 +820,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.9.1",
+    date: "2026-08-22",
+    title: "Streams Survive the 30-Minute Rotation",
+    track: "sdk",
+    items: [
+      "`requests.subscribe(slug, { reconnect: true })` now reconnects transparently when the server rotates the connection (every 30 minutes) and resumes from the last request it saw; previously the iterator ended silently",
+      "New `idleTimeout` option (default 90s): a stream with no keepalive for that long is reconnected (or ends with a TimeoutError when `reconnect` is off) instead of hanging forever",
+      "Reconnects no longer accumulate abort listeners on the outer signal",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-06-05",

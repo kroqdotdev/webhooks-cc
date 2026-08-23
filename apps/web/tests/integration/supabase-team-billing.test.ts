@@ -441,7 +441,10 @@ describe("applyTeamPolarWebhookEvent — stale subscription events", () => {
     const customerId = `cus_postrevoke_${ts}`;
     const teamId = await activatedTeam(`TB Post Revoke ${ts}`, "sub_gone", customerId, altOwnerId);
 
-    await applyTeamPolarWebhookEvent("subscription.revoked", teamId, { id: "sub_gone", customerId });
+    await applyTeamPolarWebhookEvent("subscription.revoked", teamId, {
+      id: "sub_gone",
+      customerId,
+    });
 
     // Stale deliveries for the revoked subscription must not re-open the pool:
     // the cron would renew a reactivated team unbilled forever.

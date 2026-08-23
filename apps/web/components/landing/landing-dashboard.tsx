@@ -13,13 +13,11 @@ import {
   createGuestDashboardEndpoint,
   fetchGuestDashboardEndpoint,
   fetchGuestDashboardRequests,
-  normalizeGuestEndpoint,
   GuestApiError,
   type GuestEndpointRecord,
 } from "@/lib/go-dashboard";
 import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
 import { useHumanSignal } from "@/lib/use-human-signal";
-import { subscribeToEndpointRow, subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
 import { trackGuestEndpointCreated } from "@/lib/analytics";
@@ -35,8 +33,8 @@ const COPY_FEEDBACK_MS = 2000;
 const SEND_FEEDBACK_MS = 3000;
 const BACKGROUND_SYNC_INTERVAL_MS = 2000;
 const REQUEST_SYNC_INTERVAL_MS = 250;
-const WATCHDOG_WAITING_MS = 3000;
-const WATCHDOG_IDLE_MS = 10_000;
+const WATCHDOG_WAITING_MS = 2000;
+const WATCHDOG_IDLE_MS = 5000;
 
 const RequestList = dynamic(
   () => import("@/components/dashboard/request-list").then((module) => module.RequestList),
@@ -102,6 +100,11 @@ function LandingDashboardInner() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const prevRequestCount = useRef(0);
+  // Guest request polling state (see refreshRequests below).
+  const activeSlugRef = useRef<string | null>(null);
+  const requestsInFlightSlug = useRef<string | null>(null);
+  const requestsRetryAt = useRef(0);
+  const requestsFailures = useRef(0);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
@@ -134,6 +137,11 @@ function LandingDashboardInner() {
     setDebouncedSearch("");
     setCreateError(nextError);
     prevRequestCount.current = 0;
+    // Drop any in-flight/stale request poll state so a replacement endpoint
+    // starts clean (no inherited backoff, no old-slug response applied).
+    activeSlugRef.current = null;
+    requestsRetryAt.current = 0;
+    requestsFailures.current = 0;
     // Re-arm auto-create only on the silent path — when an error is being
     // surfaced, an immediate re-create would clobber it (and could loop).
     if (nextError === null) {
@@ -173,11 +181,31 @@ function LandingDashboardInner() {
     [clearDemoEndpoint]
   );
 
+  // The catch-up poll ticks every 250 ms; never let ticks for the same endpoint
+  // overlap, and back off (500 ms, 1 s, 2 s, ... capped at 5 s) while requests
+  // keep failing instead of hammering the guest API at full rate. Responses for
+  // an endpoint that was cleared or replaced while the fetch was pending are
+  // dropped, so an old slug can never populate the new endpoint's list.
+  useEffect(() => {
+    activeSlugRef.current = endpointSlug;
+  }, [endpointSlug]);
   const refreshRequests = useCallback(async (slug: string) => {
+    if (requestsInFlightSlug.current === slug || Date.now() < requestsRetryAt.current) return;
+    requestsInFlightSlug.current = slug;
     try {
-      setRequests(await fetchGuestDashboardRequests(slug, REQUEST_LIMIT));
+      const next = await fetchGuestDashboardRequests(slug, REQUEST_LIMIT);
+      if (activeSlugRef.current !== slug) return; // stale: endpoint changed meanwhile
+      setRequests(next);
+      requestsFailures.current = 0;
+      requestsRetryAt.current = 0;
     } catch (error) {
+      if (activeSlugRef.current !== slug) return; // stale failure: do not penalise the new endpoint
       console.error("Failed to load guest requests:", error);
+      requestsFailures.current += 1;
+      const delay = Math.min(5000, 250 * 2 ** requestsFailures.current);
+      requestsRetryAt.current = Date.now() + delay;
+    } finally {
+      if (requestsInFlightSlug.current === slug) requestsInFlightSlug.current = null;
     }
   }, []);
 
@@ -266,34 +294,21 @@ function LandingDashboardInner() {
     return () => clearInterval(interval);
   }, [clearDemoEndpoint, expiresAt]);
 
-  // Realtime updates — the primary sync channel.
-  useEffect(() => {
-    if (!endpoint?.id || !endpointSlug) return;
-
-    const unsubscribeEndpoint = subscribeToEndpointRow(endpoint.id, (row) => {
-      if (!row) {
-        clearDemoEndpoint("Your test endpoint expired. Create a new one.");
-        return;
-      }
-      setEndpoint(normalizeGuestEndpoint(row));
-      void refreshRequests(endpointSlug);
-    });
-    const unsubscribeRequests = subscribeToEndpointRequestChanges(endpoint.id, () => {
-      void refreshRequests(endpointSlug);
-      void refreshEndpoint(endpointSlug);
-    });
-
-    return () => {
-      unsubscribeEndpoint();
-      unsubscribeRequests();
-    };
-  }, [clearDemoEndpoint, endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
+  // Sync model: guest endpoints have no owner, and Supabase Realtime filters
+  // postgres_changes through RLS (`endpoints_select` / `requests_select` are
+  // owner- or team-scoped), so an anonymous subscription can never receive an
+  // event. The landing page therefore syncs by polling the guest API: a cheap
+  // endpoint-row read (watchdog) notices the request counter moving, which arms
+  // the catch-up poll below to fetch the new requests.
 
   // Catch-up poll — only while the endpoint counter says requests exist that we
-  // haven't loaded yet (covers realtime events that arrived before subscription).
+  // haven't loaded yet.
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
-    if (endpoint.requestCount === 0 || requests.length >= endpoint.requestCount) return;
+    // refreshRequests fetches at most REQUEST_LIMIT rows, so compare against the
+    // fetchable maximum or the poll would never stop once the counter passes it.
+    const fetchable = Math.min(endpoint.requestCount, REQUEST_LIMIT);
+    if (fetchable === 0 || requests.length >= fetchable) return;
 
     void refreshRequests(endpointSlug);
     const interval = window.setInterval(() => {
@@ -321,8 +336,8 @@ function LandingDashboardInner() {
     };
   }, [endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
 
-  // Fallback sync while blurred — browsers deprioritize realtime delivery for
-  // background tabs.
+  // Slow sync while blurred — background tabs throttle timers anyway, and a
+  // blurred tab only needs to be roughly current when it comes back.
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;
 
@@ -334,10 +349,9 @@ function LandingDashboardInner() {
     return () => window.clearInterval(interval);
   }, [endpoint?.id, endpointSlug, refreshEndpoint, refreshRequests]);
 
-  // Focused watchdog — realtime is the primary channel, but if it silently drops
-  // (network proxies, degraded service) a focused tab must not look dead. A single
+  // Focused watchdog — the primary sync channel for guests (see above). A single
   // cheap endpoint-row read updates the request counter, which arms the catch-up
-  // poll above. Fast while waiting for the first request, slow once requests exist.
+  // poll above. Fast while waiting for the first request, slower once requests exist.
   const hasLoadedRequests = requests.length > 0;
   useEffect(() => {
     if (!endpoint?.id || !endpointSlug) return;

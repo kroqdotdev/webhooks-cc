@@ -36,10 +36,20 @@ export function applyRateLimitHeaders(response: Response, info: RateLimitInfo): 
   return response;
 }
 
-function getClientIp(request: Request): string {
+/**
+ * Best-effort client IP for rate-limit keying and audit headers.
+ *
+ * Production traffic arrives via Cloudflare, which sets `CF-Connecting-IP` to
+ * the real client and only *appends* to any `X-Forwarded-For` the client sent.
+ * Keying on the first XFF hop therefore let an attacker pick a fresh bucket per
+ * request by sending their own `X-Forwarded-For`. Prefer `CF-Connecting-IP`,
+ * then the first XFF hop (dev/direct traffic), then `X-Real-IP`.
+ */
+export function getClientIp(request: Request): string {
   return (
+    request.headers.get("cf-connecting-ip")?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
+    request.headers.get("x-real-ip")?.trim() ||
     "unknown"
   );
 }

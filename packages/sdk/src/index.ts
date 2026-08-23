@@ -139,7 +139,7 @@ export {
   verifyPayPalSignature,
   buildPayPalTransmissionMessage,
 } from "./verify";
-export type { SSEFrame } from "./sse";
+export type { SSEFrame, ParseSSEOptions } from "./sse";
 export type {
   DiffResult,
   DiffRequestsOptions,

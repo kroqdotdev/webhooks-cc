@@ -49,7 +49,7 @@ import {
 } from "./errors";
 import type { RateLimitMeta } from "./errors";
 import { parseDuration } from "./utils";
-import { parseSSE } from "./sse";
+import { parseSSE, type SSEFrame } from "./sse";
 import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "./templates";
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
@@ -74,6 +74,10 @@ const DEFAULT_RETRY_STATUSES = [429, 500, 502, 503, 504];
 declare const PKG_VERSION: string | undefined;
 const SDK_VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-dev";
 const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
+// requests.subscribe(): bound the connect phase, then watch for silence. The server
+// sends a keepalive comment every 30 s, so 90 s of silence means the socket is dead.
+const STREAM_CONNECT_TIMEOUT_MS = 30000;
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 90000;
 const DEFAULT_EXPORT_PAGE_SIZE = 100;
 const PROVIDER_PARAM_DESCRIPTION = TEMPLATE_PROVIDERS.map((provider) => `"${provider}"`).join("|");
 
@@ -308,9 +312,110 @@ function normalizeReconnectBackoff(value: number | string | undefined): number {
   return Math.max(0, parseDuration(value));
 }
 
+function normalizeStreamIdleTimeout(value: number | string | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+  }
+  return Math.max(0, parseDuration(value));
+}
+
+// Reconnect replay only needs the ids near the resume cursor, so a bounded
+// window keeps a days-long subscription from growing with total webhook count.
+const STREAM_DEDUP_WINDOW = 1000;
+// A rotation (`event: timeout`) sooner than this after connecting is "rapid";
+// RAPID_ROTATION_LIMIT rapid rotations in a row are routed through backoff.
+const STREAM_RAPID_ROTATION_MS = 5000;
+const STREAM_RAPID_ROTATION_LIMIT = 2;
+
+/**
+ * Fixed-capacity set of recently seen ids (FIFO eviction). Exported for tests;
+ * not part of the public API.
+ * @internal
+ */
+export class RecentIdSet {
+  private readonly ids = new Set<string>();
+  private readonly ring: (string | undefined)[];
+  private head = 0;
+
+  constructor(capacity: number) {
+    this.ring = new Array<string | undefined>(Math.max(1, Math.floor(capacity)));
+  }
+
+  has(id: string): boolean {
+    return this.ids.has(id);
+  }
+
+  add(id: string): void {
+    if (this.ids.has(id)) return;
+    const evicted = this.ring[this.head];
+    if (evicted !== undefined) {
+      this.ids.delete(evicted);
+    }
+    this.ring[this.head] = id;
+    this.head = (this.head + 1) % this.ring.length;
+    this.ids.add(id);
+  }
+
+  get size(): number {
+    return this.ids.size;
+  }
+}
+
+/**
+ * Server clock from a `Date` response header (one-second precision, so at or
+ * before the moment the server accepted the connection), or undefined.
+ */
+function serverDateMs(headers: Headers | undefined): number | undefined {
+  const raw = headers?.get("date");
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Per-connection state for requests.subscribe(); replaced on every (re)connect. */
+interface StreamConnection {
+  /** Aborting this tears down the fetch and body stream of this connection only. */
+  controller: AbortController;
+  /** Set by the idle watchdog right before it aborts the connection. */
+  idle: boolean;
+  /** Unlinks this connection from the subscription-wide abort signal. */
+  detach: () => void;
+}
+
+/**
+ * Translate an AbortError raised by our own per-connection controller (connect
+ * timeout or idle watchdog) into a TimeoutError. Other errors pass through.
+ */
+function normalizeStreamError(
+  error: unknown,
+  context: { connectionAborted: boolean; idle: boolean; idleTimeoutMs: number }
+): unknown {
+  if (!(error instanceof Error) || error.name !== "AbortError" || !context.connectionAborted) {
+    return error;
+  }
+  return context.idle
+    ? streamIdleTimeoutError(context.idleTimeoutMs)
+    : new TimeoutError(
+        STREAM_CONNECT_TIMEOUT_MS,
+        `Stream connection timed out after ${STREAM_CONNECT_TIMEOUT_MS}ms`
+      );
+}
+
+function streamIdleTimeoutError(idleTimeoutMs: number): TimeoutError {
+  return new TimeoutError(
+    idleTimeoutMs,
+    `Stream idle for ${idleTimeoutMs}ms: no data or keepalive received`
+  );
+}
+
 function shouldReconnectStreamError(error: unknown): boolean {
   if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
     return false;
+  }
+
+  // Connect and idle timeouts are transient by nature
+  if (error instanceof TimeoutError) {
+    return true;
   }
 
   if (error instanceof WebhooksCCError) {
@@ -750,6 +855,7 @@ export class WebhooksCC {
             reconnect: "boolean?",
             maxReconnectAttempts: "number?",
             reconnectBackoffMs: "number|string?",
+            idleTimeout: "number|string?",
             onReconnect: "function?",
           },
         },
@@ -1291,7 +1397,20 @@ export class WebhooksCC {
      * The connection is closed when the iterator is broken, the signal is aborted,
      * or the timeout expires.
      *
-     * Reconnection is opt-in and resumes from the last yielded request timestamp.
+     * The server rotates every stream connection after 30 minutes: it sends an
+     * `event: timeout` frame and closes. With `reconnect: true` the client follows
+     * that rotation transparently, reconnecting immediately and resuming from the
+     * last received request so nothing is missed; rotations do not count against
+     * `maxReconnectAttempts`. Without `reconnect`, the iterator completes at the
+     * first rotation (after at most 30 minutes).
+     *
+     * An idle watchdog (`idleTimeout`, default 90 s, three server keepalive
+     * intervals) guards against half-open sockets: when nothing arrives within that
+     * window while waiting, the connection is dropped. With `reconnect: true` this
+     * counts as a reconnect attempt (with backoff); without it, the iterator throws
+     * a {@link TimeoutError}.
+     *
+     * Only `endpoint_deleted` ends the stream on the server's initiative.
      */
     subscribe: (slug: string, options: SubscribeOptions = {}): AsyncIterable<Request> => {
       validatePathSegment(slug, "slug");
@@ -1299,18 +1418,29 @@ export class WebhooksCC {
       const baseUrl = this.baseUrl;
       const apiKey = this.apiKey;
       const timeoutMs = timeout !== undefined ? parseDuration(timeout) : undefined;
+      const idleTimeoutMs = normalizeStreamIdleTimeout(options.idleTimeout);
       const maxReconnectAttempts = Math.max(0, Math.floor(options.maxReconnectAttempts ?? 5));
       const reconnectBackoffMs = normalizeReconnectBackoff(options.reconnectBackoffMs);
 
       return {
         [Symbol.asyncIterator](): AsyncIterableIterator<Request> {
+          // Governs the whole subscription: aborted by the consumer's signal, the
+          // overall timeout, return(), or once the iterator has finished.
           const controller = new AbortController();
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
-          let iterator: AsyncGenerator<{ event: string; data: string }> | null = null;
-          let started = false;
+          let idleTimer: ReturnType<typeof setTimeout> | undefined;
+          // Per-connection state, replaced on every (re)connect.
+          let connection: StreamConnection | null = null;
+          let iterator: AsyncGenerator<SSEFrame> | null = null;
           let reconnectAttempts = 0;
           let lastReceivedAt: number | undefined;
-          const seenRequestIds = new Set<string>();
+          // Resume floor for reconnects that happen before any request arrived:
+          // the server clock at the first successful connection, so the gap is
+          // replayed instead of the server starting from the new connection time.
+          let resumeFloor: number | undefined;
+          let connectedAt = 0;
+          let rapidRotations = 0;
+          const seenRequestIds = new RecentIdSet(STREAM_DEDUP_WINDOW);
 
           // Link external signal to our controller
           const onAbort = () => controller.abort();
@@ -1326,28 +1456,91 @@ export class WebhooksCC {
             timeoutId = setTimeout(() => controller.abort(), timeoutMs);
           }
 
+          const clearIdleTimer = () => {
+            if (idleTimer !== undefined) {
+              clearTimeout(idleTimer);
+              idleTimer = undefined;
+            }
+          };
+
+          // Armed right before waiting on the stream and re-armed on every frame
+          // (keepalives included), so only time spent waiting with nothing arriving
+          // counts: a slow consumer never trips it.
+          const armIdleTimer = () => {
+            clearIdleTimer();
+            const current = connection;
+            if (idleTimeoutMs <= 0 || !current) return;
+            idleTimer = setTimeout(() => {
+              idleTimer = undefined;
+              current.idle = true;
+              current.controller.abort();
+            }, idleTimeoutMs);
+          };
+
+          // Tear down the current connection (if any) and release its resources.
+          const closeConnection = (): Promise<void> => {
+            clearIdleTimer();
+            const current = connection;
+            const currentIterator = iterator;
+            connection = null;
+            iterator = null;
+            if (current) {
+              current.detach();
+              current.controller.abort();
+            }
+            if (!currentIterator) return Promise.resolve();
+            return currentIterator.return(undefined).then(
+              () => undefined,
+              () => undefined
+            );
+          };
+
           const cleanup = () => {
             if (timeoutId !== undefined) clearTimeout(timeoutId);
+            clearIdleTimer();
             if (signal) signal.removeEventListener("abort", onAbort);
           };
 
-          const start = async () => {
-            const url = `${baseUrl}${buildStreamPath(
-              slug,
-              lastReceivedAt !== undefined ? lastReceivedAt - 1 : undefined
-            )}`;
-            // Use a separate signal for connection timeout so it doesn't conflict with stream duration
-            const connectController = new AbortController();
-            const connectTimeout = setTimeout(() => connectController.abort(), 30000);
-            // Abort connection timeout if the main controller aborts
-            controller.signal.addEventListener("abort", () => connectController.abort(), {
-              once: true,
-            });
+          // Ends the subscription for good.
+          const terminate = () => {
+            void closeConnection();
+            cleanup();
+            controller.abort();
+          };
+
+          const finish = (): IteratorResult<Request> => {
+            terminate();
+            return { done: true, value: undefined };
+          };
+
+          const connect = async (): Promise<AsyncGenerator<SSEFrame>> => {
+            // A per-connection controller chained to the subscription controller with
+            // a removable listener, so reconnects do not pile up listeners on the
+            // long-lived signal. Aborting it tears down this connection only.
+            const connectionController = new AbortController();
+            const abortConnection = () => connectionController.abort();
+            controller.signal.addEventListener("abort", abortConnection, { once: true });
+            connection = {
+              controller: connectionController,
+              idle: false,
+              detach: () => controller.signal.removeEventListener("abort", abortConnection),
+            };
+
+            // Resume from the last request, or from the floor recorded at the first
+            // connection; the very first connection sends no `since` (server default).
+            const since = lastReceivedAt !== undefined ? lastReceivedAt - 1 : resumeFloor;
+            const url = `${baseUrl}${buildStreamPath(slug, since)}`;
+            const connectStartedAt = Date.now();
+            // Bound the connect phase; the idle watchdog takes over once the stream is open
+            const connectTimeout = setTimeout(
+              () => connectionController.abort(),
+              STREAM_CONNECT_TIMEOUT_MS
+            );
             let response: globalThis.Response;
             try {
               response = await fetch(url, {
                 headers: { Authorization: `Bearer ${apiKey}` },
-                signal: connectController.signal,
+                signal: connectionController.signal,
               });
             } finally {
               clearTimeout(connectTimeout);
@@ -1362,27 +1555,26 @@ export class WebhooksCC {
               throw new Error("SSE response has no body");
             }
 
-            // Link main controller to response body so abort cancels the stream
-            controller.signal.addEventListener(
-              "abort",
-              () => {
-                response.body?.cancel().catch(() => {
-                  // Stream may already be locked/consumed by parseSSE — safe to ignore
-                });
-              },
-              { once: true }
-            );
+            connectedAt = Date.now();
+            if (resumeFloor === undefined) {
+              // Server clock if available (at or before its connection start);
+              // otherwise the client clock with a one-second margin for skew.
+              resumeFloor = serverDateMs(response.headers) ?? connectStartedAt - 1000;
+            }
 
-            return parseSSE(response.body);
+            // Aborting the connection cancels the reader, so a pending read settles
+            // instead of hanging on a half-open socket.
+            return parseSSE(response.body, { signal: connectionController.signal });
           };
 
-          const reconnectStream = async (): Promise<boolean> => {
+          // Book-keeping and backoff before a recovery reconnect. Returns true when
+          // the caller should open a new connection.
+          const prepareReconnect = async (): Promise<boolean> => {
             if (
               !reconnect ||
               reconnectAttempts >= maxReconnectAttempts ||
               controller.signal.aborted
             ) {
-              cleanup();
               return false;
             }
 
@@ -1394,12 +1586,7 @@ export class WebhooksCC {
             }
 
             await sleep(reconnectBackoffMs * 2 ** (reconnectAttempts - 1));
-            if (controller.signal.aborted) {
-              cleanup();
-              return false;
-            }
-            iterator = await start();
-            return true;
+            return !controller.signal.aborted;
           };
 
           return {
@@ -1408,22 +1595,34 @@ export class WebhooksCC {
             },
             async next(): Promise<IteratorResult<Request>> {
               try {
-                if (!started) {
-                  started = true;
-                  iterator = await start();
-                }
-
-                while (iterator) {
-                  const { done, value } = await iterator.next();
-                  if (done) {
-                    iterator = null;
-                    if (await reconnectStream()) {
-                      continue;
-                    }
-                    return { done: true, value: undefined };
+                while (!controller.signal.aborted) {
+                  if (!iterator) {
+                    iterator = await connect();
                   }
 
-                  reconnectAttempts = 0;
+                  armIdleTimer();
+                  const { done, value } = await iterator.next();
+                  clearIdleTimer();
+
+                  // Consumer abort, overall timeout, or return(): normal end
+                  if (controller.signal.aborted) {
+                    break;
+                  }
+
+                  if (done) {
+                    const idle = connection?.idle === true;
+                    void closeConnection();
+                    if (idle) {
+                      // Handled below like any other transient stream error
+                      throw streamIdleTimeoutError(idleTimeoutMs);
+                    }
+                    // Stream ended without a terminal event (network drop, server
+                    // restart): recover if allowed
+                    if (await prepareReconnect()) {
+                      continue;
+                    }
+                    break;
+                  }
 
                   // Only yield actual request events
                   if (value.event === "request") {
@@ -1431,49 +1630,90 @@ export class WebhooksCC {
                     if (!req) {
                       continue;
                     }
+                    // A delivered request (even a replayed one) proves the stream is
+                    // healthy. `connected` alone does not: a server that accepts and
+                    // immediately drops us would otherwise reset the counter forever
+                    // and maxReconnectAttempts could never stop the loop.
+                    reconnectAttempts = 0;
                     if (req.id && seenRequestIds.has(req.id)) {
                       continue;
                     }
                     if (req.id) {
                       seenRequestIds.add(req.id);
                     }
-                    lastReceivedAt = req.receivedAt;
+                    // Monotonic cursor: an out-of-order older request must not widen
+                    // the next replay (which could re-yield evicted ids).
+                    lastReceivedAt =
+                      lastReceivedAt === undefined
+                        ? req.receivedAt
+                        : Math.max(lastReceivedAt, req.receivedAt);
+                    rapidRotations = 0;
                     return { done: false, value: req };
                   }
 
-                  // Close on terminal events
-                  if (value.event === "timeout" || value.event === "endpoint_deleted") {
-                    cleanup();
-                    return { done: true, value: undefined };
+                  if (value.event === "timeout") {
+                    // Scheduled rotation: the server caps every connection at 30
+                    // minutes. Not a failure, so reconnect right away (no backoff, no
+                    // attempt consumed, no onReconnect), resuming from the last request.
+                    // Guard: two rotations in a row within seconds of connecting mean
+                    // the server is bouncing us; route that through normal backoff.
+                    const rapid = Date.now() - connectedAt < STREAM_RAPID_ROTATION_MS;
+                    rapidRotations = rapid ? rapidRotations + 1 : 0;
+                    void closeConnection();
+                    if (!reconnect) {
+                      break;
+                    }
+                    if (rapidRotations >= STREAM_RAPID_ROTATION_LIMIT) {
+                      if (await prepareReconnect()) {
+                        continue;
+                      }
+                      break;
+                    }
+                    continue;
                   }
 
-                  // Skip connected, keepalive, and other events
+                  // The only terminal server event
+                  if (value.event === "endpoint_deleted") {
+                    break;
+                  }
+
+                  if (value.event === "comment") {
+                    // Server keepalive: the connection is alive and healthy
+                    reconnectAttempts = 0;
+                  }
+
+                  // Skip connected, keepalive comments, and other events
                 }
 
-                cleanup();
-                return { done: true, value: undefined };
+                return finish();
               } catch (error) {
-                // AbortError means the consumer broke out or signal was aborted — that's normal
-                if (error instanceof Error && error.name === "AbortError") {
-                  cleanup();
-                  controller.abort();
-                  return { done: true, value: undefined };
+                // Consumer abort, overall timeout, or return(): normal end
+                if (controller.signal.aborted) {
+                  return finish();
                 }
-                iterator = null;
-                if (shouldReconnectStreamError(error) && (await reconnectStream())) {
+                const idle = connection?.idle === true;
+                const connectionAborted = connection?.controller.signal.aborted === true;
+                void closeConnection();
+                const streamError = normalizeStreamError(error, {
+                  connectionAborted,
+                  idle,
+                  idleTimeoutMs,
+                });
+                if (shouldReconnectStreamError(streamError) && (await prepareReconnect())) {
                   return this.next();
                 }
-                cleanup();
-                controller.abort();
-                throw error;
+                // Aborted while backing off
+                if (controller.signal.aborted) {
+                  return finish();
+                }
+                terminate();
+                throw streamError;
               }
             },
             async return(): Promise<IteratorResult<Request>> {
-              cleanup();
               controller.abort();
-              if (iterator) {
-                await iterator.return(undefined);
-              }
+              await closeConnection();
+              cleanup();
               return { done: true, value: undefined };
             },
           };

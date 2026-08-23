@@ -1,10 +1,19 @@
 import { authenticateRequest } from "@/lib/api-auth";
 import { serverEnv } from "@/lib/env";
-import { checkRateLimitWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
+import { checkRateLimitWithInfo, applyRateLimitHeaders, getClientIp } from "@/lib/rate-limit";
 
 const SLUG_REGEX = /^[a-zA-Z0-9_-]{1,50}$/;
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const MAX_BODY_LENGTH = 1_048_576; // 1MB, matches receiver limit
+// Headers the receiver reads the client IP from; callers must not be able to set them.
+const IP_HEADERS = new Set([
+  "x-real-ip",
+  "x-forwarded-for",
+  "cf-connecting-ip",
+  "true-client-ip",
+  "x-client-ip",
+  "forwarded",
+]);
 
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
@@ -51,15 +60,19 @@ export async function POST(request: Request) {
   const url = `${serverEnv().RECEIVER_INTERNAL_URL}/w/${slug}${normalizedPath}`;
 
   // Forward the caller's real IP so the receiver stores it on the request
-  const clientIp =
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "";
+  const resolvedIp = getClientIp(request);
+  const clientIp = resolvedIp === "unknown" ? "" : resolvedIp;
+
+  // Never let the caller dictate the stored client IP: drop any IP-carrying
+  // header from the user-supplied set (fetch would otherwise join a caller's
+  // `x-real-ip` with ours), then set ours.
+  const forwardedHeaders = Object.fromEntries(
+    Object.entries(headers ?? {}).filter(([name]) => !IP_HEADERS.has(name.toLowerCase()))
+  );
 
   // Forward to the receiver
   const fetchHeaders: Record<string, string> = {
-    ...headers,
+    ...forwardedHeaders,
     "X-Webhooks-CC-Test-Send": "1",
     ...(clientIp && { "X-Real-Ip": clientIp }),
   };

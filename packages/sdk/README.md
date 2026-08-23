@@ -155,6 +155,31 @@ for await (const request of client.requests.subscribe(endpoint.slug, { reconnect
 }
 ```
 
+`subscribe()` streams over SSE. The server rotates every stream connection after 30 minutes: it
+sends a `timeout` event and closes. With `reconnect: true` the client follows that rotation
+transparently, reconnecting immediately, resuming from the last received request, and deduplicating
+replayed events, so the loop above runs until you break out of it, abort the `signal`, the `timeout`
+expires, or the endpoint is deleted. Rotations do not count against `maxReconnectAttempts`
+(default 5), which only limits recovery from unexpected stream ends and transient errors (with
+exponential backoff from `reconnectBackoffMs`). Without `reconnect`, the loop ends at the first
+rotation, after at most 30 minutes.
+
+An idle watchdog (`idleTimeout`, default `"90s"`, three server keepalive intervals) detects
+half-open sockets: if nothing arrives within that window while waiting, the connection is dropped.
+With `reconnect: true` it is reconnected (counted as a reconnect attempt, with backoff); without it,
+the iterator throws `TimeoutError`. Pass `idleTimeout: 0` to disable the watchdog.
+
+```typescript
+for await (const request of client.requests.subscribe(endpoint.slug, {
+  reconnect: true,
+  maxReconnectAttempts: 10,
+  idleTimeout: "2m",
+  onReconnect: (attempt) => console.warn(`stream reconnect #${attempt}`),
+})) {
+  console.log(request.method, request.path);
+}
+```
+
 Replay, export, and clear requests:
 
 ```typescript
@@ -490,7 +515,7 @@ API failures throw typed errors:
 - `WebhooksCCError`
 - `UnauthorizedError`
 - `NotFoundError`
-- `TimeoutError`
+- `TimeoutError` (also thrown by `requests.subscribe()` when the idle watchdog trips without `reconnect`)
 - `RateLimitError`
 
 `ApiError` is still exported as a legacy alias of `WebhooksCCError`.

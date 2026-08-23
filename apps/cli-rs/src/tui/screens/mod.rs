@@ -31,6 +31,9 @@ pub enum Message {
 
     // SSE
     SseEvent(crate::types::SseEvent),
+    /// The stream task finished: `Ok` after endpoint deletion or shutdown,
+    /// `Err` for a terminal stream failure (not authenticated, no access, 404).
+    StreamClosed(anyhow::Result<()>),
 
     // Tunnel
     ForwardResult {

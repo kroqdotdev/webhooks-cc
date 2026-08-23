@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { WebhooksCC } from "../client";
-import { WebhooksCCError, UnauthorizedError, NotFoundError } from "../errors";
+import { RecentIdSet, WebhooksCC } from "../client";
+import { WebhooksCCError, UnauthorizedError, NotFoundError, TimeoutError } from "../errors";
 import { TEMPLATE_METADATA } from "../index";
 
 const API_KEY = "whcc_testkey123";
@@ -1408,6 +1408,406 @@ describe("WebhooksCC", () => {
           headers: { Authorization: `Bearer ${API_KEY}` },
         })
       );
+    });
+
+    function requestFrame(id: string, receivedAt: number) {
+      return `event: request\ndata: ${JSON.stringify({
+        _id: id,
+        endpointId: "ep1",
+        method: "POST",
+        path: "/hook",
+        headers: { "content-type": "application/json" },
+        body: `{"id":"${id}"}`,
+        queryParams: {},
+        contentType: "application/json",
+        ip: "127.0.0.1",
+        size: 10,
+        receivedAt,
+      })}\n\n`;
+    }
+
+    const CONNECTED_FRAME = 'event: connected\ndata: {"slug":"abc123","endpointId":"ep1"}\n\n';
+    const TIMEOUT_FRAME = 'event: timeout\ndata: {"reason":"max_duration"}\n\n';
+    const DELETED_FRAME = 'event: endpoint_deleted\ndata: {"slug":"abc123"}\n\n';
+    const KEEPALIVE_FRAME = ": keepalive\n\n";
+
+    /** An SSE response whose body stays open (like a live server) until cancelled. */
+    function hangingSSEStream(...frames: string[]) {
+      const encoder = new TextEncoder();
+      let streamController!: ReadableStreamDefaultController<Uint8Array>;
+      const state = { cancelled: false };
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          streamController = controller;
+          for (const frame of frames) {
+            controller.enqueue(encoder.encode(frame));
+          }
+        },
+        cancel() {
+          state.cancelled = true;
+        },
+      });
+      return {
+        response: {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "text/event-stream" }),
+          body,
+          text: () => Promise.resolve(""),
+        },
+        push: (frame: string) => streamController.enqueue(encoder.encode(frame)),
+        state,
+      };
+    }
+
+    it("follows the server's timeout rotation without consuming a reconnect attempt", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        // First connection: one request, then the server's 30-minute rotation
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), TIMEOUT_FRAME)
+        )
+        // Second connection closes without any frame (unexpected close)
+        .mockResolvedValueOnce(mockSSEStream())
+        // Third connection delivers the next request and ends the stream
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r2", 1001), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 1,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const second = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(second.value?.id).toBe("r2");
+      expect(done.done).toBe(true);
+      // With maxReconnectAttempts=1 the third connection only happens if the rotation
+      // did not count as an attempt; onReconnect fires for the unexpected close only.
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=999`,
+        expect.objectContaining({ headers: { Authorization: `Bearer ${API_KEY}` } })
+      );
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        3,
+        `${BASE_URL}/api/stream/abc123?since=999`,
+        expect.anything()
+      );
+    });
+
+    it("resumes from the first connection's server time when it drops before any request", async () => {
+      const serverDate = "Sat, 22 Aug 2026 10:00:00 GMT";
+      const floor = Date.parse(serverDate);
+      globalThis.fetch = vi
+        .fn()
+        // First connection: accepted (Date header present), then closes before
+        // delivering anything.
+        .mockResolvedValueOnce({
+          ...mockSSEStream(CONNECTED_FRAME),
+          headers: new Headers({ "content-type": "text/event-stream", date: serverDate }),
+        })
+        // Second connection replays from the floor and delivers the missed request
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", floor + 500), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { reconnect: true, reconnectBackoffMs: 0 })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(done.done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      // The very first connection sends no `since` (server default = its start time)
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        1,
+        `${BASE_URL}/api/stream/abc123`,
+        expect.anything()
+      );
+      // The reconnect resumes from the server's clock at the first connection
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=${floor}`,
+        expect.anything()
+      );
+    });
+
+    it("routes back-to-back rapid rotations through backoff instead of a tight loop", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        // Two rotations within seconds of connecting, then a healthy connection
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, TIMEOUT_FRAME))
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, TIMEOUT_FRAME))
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          reconnectBackoffMs: 5,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      const done = await iterator.next();
+
+      expect(first.value?.id).toBe("r1");
+      expect(done.done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      // First rapid rotation reconnects immediately; the second one is treated as
+      // a failure and consumes a backoff attempt.
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+    });
+
+    it("keeps the resume cursor monotonic when requests arrive out of order", async () => {
+      globalThis.fetch = vi
+        .fn()
+        // r2 arrives after r1 but carries an older receivedAt
+        .mockResolvedValueOnce(
+          mockSSEStream(
+            CONNECTED_FRAME,
+            requestFrame("r1", 2000),
+            requestFrame("r2", 1500),
+            TIMEOUT_FRAME
+          )
+        )
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r3", 2001), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { reconnect: true, reconnectBackoffMs: 0 })
+        [Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).value?.id).toBe("r2");
+      expect((await iterator.next()).value?.id).toBe("r3");
+      expect((await iterator.next()).done).toBe(true);
+      // Resume from the newest timestamp seen (2000 - 1), not the last delivered (1500 - 1)
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=1999`,
+        expect.anything()
+      );
+    });
+
+    it("stops at maxReconnectAttempts when every replacement stream is connected-then-closed", async () => {
+      const onReconnect = vi.fn();
+      // The server accepts every connection (sends `connected`) and then closes
+      // without delivering anything: that must not reset the attempt counter.
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(mockSSEStream(CONNECTED_FRAME)));
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 2,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const done = await iterator.next();
+
+      expect(done.done).toBe(true);
+      // Initial connection + exactly two recovery attempts
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(onReconnect).toHaveBeenCalledTimes(2);
+      expect(onReconnect).toHaveBeenNthCalledWith(1, 1);
+      expect(onReconnect).toHaveBeenNthCalledWith(2, 2);
+    });
+
+    it("resets the attempt counter on a keepalive, not on connected", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        // closes right after connected: attempt 1
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME))
+        // proves itself alive with a keepalive, then closes: the keepalive reset
+        // the counter, so this close is attempt 1 again rather than attempt 2
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, KEEPALIVE_FRAME))
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          maxReconnectAttempts: 1,
+          reconnectBackoffMs: 0,
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).done).toBe(true);
+      // With maxReconnectAttempts=1 the third connection only happens because the
+      // keepalive on the second connection reset the counter; `connected` alone
+      // (first connection) did not.
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      expect(onReconnect.mock.calls.map(([attempt]) => attempt)).toEqual([1, 1]);
+    });
+
+    it("bounds the reconnect dedup window (RecentIdSet evicts FIFO)", () => {
+      const recent = new RecentIdSet(3);
+      recent.add("a");
+      recent.add("b");
+      recent.add("c");
+      expect(recent.has("a")).toBe(true);
+      recent.add("d"); // evicts "a"
+      expect(recent.has("a")).toBe(false);
+      expect(recent.has("b")).toBe(true);
+      expect(recent.has("d")).toBe(true);
+      recent.add("b"); // already present: no eviction, no duplicate slot
+      expect(recent.size).toBe(3);
+      recent.add("e"); // evicts "b" (oldest slot), not "c"
+      expect(recent.has("b")).toBe(false);
+      expect(recent.has("c")).toBe(true);
+      expect(recent.size).toBe(3);
+    });
+
+    it("completes on the server's timeout event when reconnect is disabled", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000), TIMEOUT_FRAME))
+        );
+
+      const iterator = createClient().requests.subscribe("abc123")[Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).done).toBe(true);
+      expect((await iterator.next()).done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats endpoint_deleted as terminal even with reconnect enabled", async () => {
+      const onReconnect = vi.fn();
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(mockSSEStream(requestFrame("r1", 1000), DELETED_FRAME))
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { reconnect: true, reconnectBackoffMs: 0, onReconnect })
+        [Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).done).toBe(true);
+      expect(onReconnect).not.toHaveBeenCalled();
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops an idle connection and reconnects when reconnect is enabled", async () => {
+      vi.useFakeTimers();
+      const onReconnect = vi.fn();
+      const hanging = hangingSSEStream(CONNECTED_FRAME);
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce(hanging.response)
+        .mockResolvedValueOnce(mockSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000)));
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", {
+          reconnect: true,
+          reconnectBackoffMs: 100,
+          idleTimeout: "5s",
+          onReconnect,
+        })
+        [Symbol.asyncIterator]();
+
+      const pending = iterator.next();
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(hanging.state.cancelled).toBe(false);
+      expect(onReconnect).not.toHaveBeenCalled();
+
+      // Idle watchdog trips: the dead connection is dropped and a backoff starts
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hanging.state.cancelled).toBe(true);
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onReconnect).toHaveBeenCalledWith(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      // Backoff elapses: reconnect and receive from the new connection
+      await vi.advanceTimersByTimeAsync(200);
+      const first = await pending;
+
+      expect(first.value?.id).toBe("r1");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      await iterator.return?.();
+    });
+
+    it("throws TimeoutError when the stream goes idle and reconnect is disabled", async () => {
+      vi.useFakeTimers();
+      const hanging = hangingSSEStream(CONNECTED_FRAME);
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(hanging.response);
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { idleTimeout: 5000 })
+        [Symbol.asyncIterator]();
+
+      const pending = iterator.next();
+      let settled = false;
+      const assertion = expect(pending).rejects.toBeInstanceOf(TimeoutError);
+      pending.then(
+        () => (settled = true),
+        () => (settled = true)
+      );
+
+      // A keepalive comment resets the watchdog
+      await vi.advanceTimersByTimeAsync(4000);
+      hanging.push(KEEPALIVE_FRAME);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await assertion;
+      expect(settled).toBe(true);
+      expect(hanging.state.cancelled).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      // The subscription is finished: no reconnect, no further fetch
+      expect((await iterator.next()).done).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases the connection when the consumer breaks out of the loop", async () => {
+      const hanging = hangingSSEStream(CONNECTED_FRAME, requestFrame("r1", 1000));
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(hanging.response);
+
+      const seen: string[] = [];
+      for await (const request of createClient().requests.subscribe("abc123", {
+        reconnect: true,
+      })) {
+        seen.push(request.id);
+        break;
+      }
+
+      expect(seen).toEqual(["r1"]);
+      expect(hanging.state.cancelled).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
   });
 

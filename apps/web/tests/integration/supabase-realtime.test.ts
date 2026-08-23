@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
+import { createTeam } from "@/lib/supabase/teams-crud";
+import { shareEndpointWithTeam } from "@/lib/supabase/teams-endpoints";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -257,4 +259,118 @@ describe("Supabase Realtime Integration", () => {
     await anonClient.removeChannel(channel);
     await anonClient.auth.signOut();
   }, 20_000);
+
+  it("delivers request inserts on a team-shared endpoint to a team member (RLS via can_view_team_endpoint)", async () => {
+    // Second user: a member of a team the owner shares the endpoint with.
+    const memberEmail = `test-realtime-member-${Date.now()}@webhooks-test.local`;
+    const { data: memberData, error: memberError } = await admin.auth.admin.createUser({
+      email: memberEmail,
+      password: TEST_PASSWORD,
+      email_confirm: true,
+      user_metadata: { full_name: "Realtime Team Member" },
+    });
+    expect(memberError).toBeNull();
+    const memberId = memberData.user!.id;
+
+    let teamId = "";
+    try {
+      const created = await createTeam(testUserId, "Realtime Team");
+      if ("error" in created) throw new Error(created.error);
+      teamId = created.id;
+
+      // Active Teams subscription with a free seat (mirrors supabase-teams.test.ts).
+      const { error: activateError } = await admin
+        .from("teams")
+        .update({
+          subscription_status: "active",
+          seats: 2,
+          request_limit: 200_000,
+          requests_used: 0,
+          period_start: new Date().toISOString(),
+          period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+        })
+        .eq("id", teamId);
+      expect(activateError).toBeNull();
+
+      const { error: memberInsertError } = await admin
+        .from("team_members")
+        .insert({ team_id: teamId, user_id: memberId, role: "member" });
+      expect(memberInsertError).toBeNull();
+
+      const share = await shareEndpointWithTeam(testUserId, teamId, testEndpointId);
+      expect(share.success).toBe(true);
+
+      const memberClient = createAnonClient();
+      const signIn = await memberClient.auth.signInWithPassword({
+        email: memberEmail,
+        password: TEST_PASSWORD,
+      });
+      expect(signIn.error).toBeNull();
+
+      // The RLS-scoped read works for the member (this is what Realtime evaluates).
+      const { data: visibleEndpoint, error: visibleError } = await memberClient
+        .from("endpoints")
+        .select("id")
+        .eq("id", testEndpointId)
+        .maybeSingle();
+      expect(visibleError).toBeNull();
+      expect(visibleEndpoint?.id).toBe(testEndpointId);
+
+      const channel = memberClient.channel(`test-team-requests-${testEndpointId}`);
+      const requestPromise = new Promise<Database["public"]["Tables"]["requests"]["Row"]>(
+        (resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("Timed out waiting for team-shared request realtime insert"));
+          }, 10_000);
+
+          channel.on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "requests",
+              filter: `endpoint_id=eq.${testEndpointId}`,
+            },
+            (payload) => {
+              clearTimeout(timeout);
+              resolve(payload.new as Database["public"]["Tables"]["requests"]["Row"]);
+            }
+          );
+        }
+      );
+
+      await waitForSubscribed(channel);
+
+      // Rows are stamped with the OWNER's user_id (and the billed team), exactly
+      // as capture_webhook() writes them: the member is not the row owner.
+      const { error: insertError } = await admin.from("requests").insert({
+        endpoint_id: testEndpointId,
+        user_id: testUserId,
+        team_id: teamId,
+        method: "POST",
+        path: "/team-realtime-test",
+        headers: { "content-type": "application/json" },
+        body: '{"team":true}',
+        query_params: {},
+        content_type: "application/json",
+        ip: "127.0.0.1",
+        size: 13,
+      });
+      expect(insertError).toBeNull();
+
+      await expect(requestPromise).resolves.toMatchObject({
+        endpoint_id: testEndpointId,
+        user_id: testUserId,
+        path: "/team-realtime-test",
+      });
+
+      await memberClient.removeChannel(channel);
+      await memberClient.auth.signOut();
+    } finally {
+      if (teamId) {
+        await admin.from("teams").delete().eq("id", teamId);
+      }
+      await admin.auth.admin.deleteUser(memberId);
+    }
+  }, 30_000);
 });
