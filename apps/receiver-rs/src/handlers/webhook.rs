@@ -161,6 +161,12 @@ fn classify_body(body: &[u8]) -> (String, Option<Vec<u8>>) {
 
 /// Replace NUL in query keys and values (axum percent-decodes `%00`), since
 /// the map is bound as `jsonb`. Returns the map untouched when clean.
+///
+/// Two distinct keys can sanitise to the same key (`k\0ey` and `k\u{FFFD}ey`).
+/// Rather than letting HashMap iteration order decide which value survives,
+/// keys are visited in sorted order and colliding values are joined with ", "
+/// (list semantics, like duplicate headers), so the result is deterministic
+/// and nothing is dropped.
 fn sanitize_query(params: HashMap<String, String>) -> HashMap<String, String> {
     if params
         .iter()
@@ -168,10 +174,25 @@ fn sanitize_query(params: HashMap<String, String>) -> HashMap<String, String> {
     {
         return params;
     }
-    params
-        .into_iter()
-        .map(|(k, v)| (strip_nul(&k).into_owned(), strip_nul(&v).into_owned()))
-        .collect()
+    let mut sorted: Vec<(String, String)> = params.into_iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut out: HashMap<String, String> = HashMap::with_capacity(sorted.len());
+    for (k, v) in sorted {
+        let key = strip_nul(&k).into_owned();
+        let value = strip_nul(&v).into_owned();
+        match out.entry(key) {
+            Entry::Occupied(mut existing) => {
+                let joined = existing.get_mut();
+                joined.push_str(", ");
+                joined.push_str(&value);
+            }
+            Entry::Vacant(slot) => {
+                slot.insert(value);
+            }
+        }
+    }
+    out
 }
 
 /// Shape returned by the capture_webhook stored procedure.
@@ -1251,6 +1272,20 @@ mod tests {
                 .iter()
                 .all(|(k, v)| !k.contains('\0') && !v.contains('\0'))
         );
+    }
+
+    #[test]
+    fn sanitize_query_joins_values_when_sanitized_keys_collide() {
+        // "k\0ey" and "k\u{FFFD}ey" both sanitise to "k\u{FFFD}ey": neither value
+        // may be dropped, and the order is by original key ("\0" sorts first),
+        // so the result does not depend on HashMap iteration order.
+        let dirty: HashMap<String, String> = HashMap::from([
+            ("k\u{FFFD}ey".to_string(), "second".to_string()),
+            ("k\0ey".to_string(), "first".to_string()),
+        ]);
+        let cleaned = sanitize_query(dirty);
+        assert_eq!(cleaned.len(), 1);
+        assert_eq!(cleaned.get("k\u{FFFD}ey").unwrap(), "first, second");
     }
 
     #[test]

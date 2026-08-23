@@ -75,9 +75,12 @@ impl ApiClient {
             }
 
             let url = stream_url(&base_url, cursor.since());
-            let opened = std::time::Instant::now();
+            // Rotation age is measured from when the stream actually opened, so
+            // connection setup latency cannot disguise an immediate rotation.
+            let mut opened = std::time::Instant::now();
             let outcome = match connect(&sse_client, &url, &headers, slug).await {
                 Ok(resp) => {
+                    opened = std::time::Instant::now();
                     // Floor for the resume cursor: the server's clock (at or before
                     // the connection start) or, without a Date header, the client
                     // clock with a one-second margin for skew.

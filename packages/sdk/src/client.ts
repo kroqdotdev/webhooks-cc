@@ -1638,7 +1638,12 @@ export class WebhooksCC {
                     if (req.id) {
                       seenRequestIds.add(req.id);
                     }
-                    lastReceivedAt = req.receivedAt;
+                    // Monotonic cursor: an out-of-order older request must not widen
+                    // the next replay (which could re-yield evicted ids).
+                    lastReceivedAt =
+                      lastReceivedAt === undefined
+                        ? req.receivedAt
+                        : Math.max(lastReceivedAt, req.receivedAt);
                     rapidRotations = 0;
                     return { done: false, value: req };
                   }

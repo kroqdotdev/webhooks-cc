@@ -171,11 +171,26 @@ function LandingDashboardInner() {
     [clearDemoEndpoint]
   );
 
+  // The catch-up poll ticks every 250 ms; never let ticks overlap, and back off
+  // (500 ms, 1 s, 2 s, ... capped at 5 s) while requests keep failing instead of
+  // hammering the guest API at full rate.
+  const requestsInFlight = useRef(false);
+  const requestsRetryAt = useRef(0);
+  const requestsFailures = useRef(0);
   const refreshRequests = useCallback(async (slug: string) => {
+    if (requestsInFlight.current || Date.now() < requestsRetryAt.current) return;
+    requestsInFlight.current = true;
     try {
       setRequests(await fetchGuestDashboardRequests(slug, REQUEST_LIMIT));
+      requestsFailures.current = 0;
+      requestsRetryAt.current = 0;
     } catch (error) {
       console.error("Failed to load guest requests:", error);
+      requestsFailures.current += 1;
+      const delay = Math.min(5000, 250 * 2 ** requestsFailures.current);
+      requestsRetryAt.current = Date.now() + delay;
+    } finally {
+      requestsInFlight.current = false;
     }
   }, []);
 

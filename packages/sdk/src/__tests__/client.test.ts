@@ -1579,6 +1579,38 @@ describe("WebhooksCC", () => {
       expect(onReconnect).toHaveBeenCalledWith(1);
     });
 
+    it("keeps the resume cursor monotonic when requests arrive out of order", async () => {
+      globalThis.fetch = vi
+        .fn()
+        // r2 arrives after r1 but carries an older receivedAt
+        .mockResolvedValueOnce(
+          mockSSEStream(
+            CONNECTED_FRAME,
+            requestFrame("r1", 2000),
+            requestFrame("r2", 1500),
+            TIMEOUT_FRAME
+          )
+        )
+        .mockResolvedValueOnce(
+          mockSSEStream(CONNECTED_FRAME, requestFrame("r3", 2001), DELETED_FRAME)
+        );
+
+      const iterator = createClient()
+        .requests.subscribe("abc123", { reconnect: true, reconnectBackoffMs: 0 })
+        [Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.id).toBe("r1");
+      expect((await iterator.next()).value?.id).toBe("r2");
+      expect((await iterator.next()).value?.id).toBe("r3");
+      expect((await iterator.next()).done).toBe(true);
+      // Resume from the newest timestamp seen (2000 - 1), not the last delivered (1500 - 1)
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        2,
+        `${BASE_URL}/api/stream/abc123?since=1999`,
+        expect.anything()
+      );
+    });
+
     it("bounds the reconnect dedup window (RecentIdSet evicts FIFO)", () => {
       const recent = new RecentIdSet(3);
       recent.add("a");
