@@ -269,6 +269,7 @@ Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL`
 | Free user request cleanup   | Daily 01:30 UTC | Delete requests older than 7 days for free users (team-billed rows excluded)          |
 | Old request cleanup         | Daily 01:00 UTC | Delete all requests older than 31 days                                                |
 | Expired API key cleanup     | Daily 02:00 UTC | Delete expired API keys                                                               |
+| Site stats refresh          | 4x daily        | Recompute `site_stats` (landing-page totals: webhooks, endpoints, users)              |
 
 **Key patterns:**
 
@@ -436,6 +437,7 @@ The changelog has 4 tracks: `web`, `cli`, `sdk`, `mcp`. Each entry has a `track`
 - The Rust receiver connects directly to Postgres via `DATABASE_URL` — use the Supabase session pooler URL, not the direct connection
 - Receiver DB failures are classified: transient ones (pool timeout, connection/IO, SQLSTATE classes 08/40/53/57/58) return 503 + `Retry-After: 5` so senders retry; permanent ones still fail open with 200 but are logged with the SQLSTATE and counted in the `webhooks_capture_failed_total{kind}` OTel metric (alongside `webhooks_capture_total{status}`). Bodies/paths/queries containing NUL bytes are sanitised (raw bytes kept in `body_raw`) instead of failing the INSERT
 - Mock response changes take effect immediately (no caching layer)
+- `site_stats.total_webhooks` is `sum(endpoints.request_count) + site_stats.deleted_webhooks`. An AFTER DELETE trigger on `endpoints` (migration 00038) moves the counts of deleted rows into `deleted_webhooks`, so the total survives endpoint and account deletion; do not add a second accumulate step to any delete path
 - Free user billing periods are lazy: `period_end` is unset until first request triggers `start_free_period()`
 - RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly — all guest reads go through server API routes with service role. Client roles have no write access to `users` and no EXECUTE on any `public` function (migration 00037 revokes them and resets the default privileges; new functions are service-role only unless explicitly granted). `endpoints_select`/`requests_select` also admit members of an active team the endpoint is shared with (via `can_view_team_endpoint()`), which is what lets Realtime deliver to team members
 - Sensitive routes (account deletion, billing) require Supabase session tokens — API keys return 403
