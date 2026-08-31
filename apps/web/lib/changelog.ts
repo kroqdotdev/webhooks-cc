@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.29.1";
+export const APP_VERSION = "0.29.2";
 export const CLI_VERSION = "1.2.0";
 export const SDK_VERSION = "1.9.1";
 export const MCP_VERSION = "1.7.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.29.2",
+    date: "2026-08-31",
+    title: "Webhook Total No Longer Drops on Deletion",
+    track: "web",
+    items: [
+      "The webhooks-processed total on the landing page kept the counts of endpoints removed by the guest cleanup but lost them when you deleted an endpoint or your account; counts from every deleted endpoint are now preserved (migration 00038)",
+    ],
+  },
   {
     version: "0.29.1",
     date: "2026-08-22",
