@@ -21,6 +21,7 @@ const stats = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+/** Read the current site-wide deleted-webhooks counter from site_stats. */
 async function readDeletedWebhooks(): Promise<number> {
   const { data, error } = await stats
     .from("site_stats")
@@ -39,6 +40,7 @@ async function readDeletedWebhooks(): Promise<number> {
 // hundred at most, so a large marker count keeps the band unambiguous.
 const COUNT = 100_000;
 
+/** Assert the marker COUNT landed in deleted_webhooks exactly once (band-tolerant to concurrent tests). */
 function expectCountedExactlyOnce(before: number, after: number) {
   const delta = after - before;
   expect(delta).toBeGreaterThanOrEqual(COUNT);
@@ -66,12 +68,23 @@ describe("Supabase site_stats deleted-webhook accounting (migration 00038)", () 
       await admin.from("endpoints").delete().in("id", endpointIds);
     }
     if (accumulated > 0) {
-      const current = await readDeletedWebhooks();
-      const { error } = await stats
-        .from("site_stats")
-        .update({ deleted_webhooks: Math.max(0, current - accumulated) })
-        .eq("id", 1);
-      expect(error).toBeNull();
+      // Compare-and-retry: another test file's endpoint deletion can bump
+      // deleted_webhooks between the read and the write, and a blind write
+      // would erase that increment. The extra .eq() on the read value makes
+      // the update a no-op when the row moved; retry with the fresh value.
+      let compensated = false;
+      for (let attempt = 0; attempt < 5 && !compensated; attempt++) {
+        const current = await readDeletedWebhooks();
+        const { data, error } = await stats
+          .from("site_stats")
+          .update({ deleted_webhooks: Math.max(0, current - accumulated) })
+          .eq("id", 1)
+          .eq("deleted_webhooks", current)
+          .select("deleted_webhooks");
+        expect(error).toBeNull();
+        compensated = (data?.length ?? 0) > 0;
+      }
+      expect(compensated).toBe(true);
     }
   });
 

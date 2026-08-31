@@ -20,7 +20,11 @@
 -- request_count of every deleted row to deleted_webhooks, whatever the path
 -- and whichever role performs the delete (FK cascades included). The cleanup
 -- function loses its own accumulate step so ephemeral deletions are not
--- counted twice.
+-- counted twice. refresh_site_stats() now locks the site_stats row before
+-- reading either component: its two reads ran under separate READ COMMITTED
+-- snapshots, so a deletion committing between them was counted in both the
+-- live sum and deleted_webhooks, publishing a double-counted total until the
+-- next refresh (a pre-existing race the trigger makes more frequent).
 --
 -- Not done here: compensating for counts already lost. The rows are gone, so
 -- there is nothing to recompute from; bump deleted_webhooks by hand if the
@@ -122,5 +126,51 @@ $$;
 revoke all on function public.cleanup_expired_ephemeral_endpoints()
   from public, anon, authenticated;
 grant execute on function public.cleanup_expired_ephemeral_endpoints() to service_role;
+
+-- ----------------------------------------------------------------------------
+-- 3. Refresh: read both components under the site_stats row lock
+--
+-- Same body as 00013 except the deleted_webhooks read happens first and takes
+-- FOR UPDATE. A concurrent endpoint-delete trigger then blocks until this
+-- transaction commits (or, if it already holds the lock, is committed before
+-- either value is read), so an endpoint can never be counted in both the live
+-- sum and deleted_webhooks. The lock is held for the few milliseconds the
+-- counts take, 4x/day.
+-- ----------------------------------------------------------------------------
+
+create or replace function public.refresh_site_stats()
+returns void
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_live_webhooks bigint;
+  v_deleted       bigint;
+  v_endpoints     bigint;
+  v_users         bigint;
+begin
+  select deleted_webhooks into v_deleted
+    from public.site_stats
+   where id = 1
+     for update;
+
+  select coalesce(sum(request_count), 0) into v_live_webhooks
+    from public.endpoints;
+
+  select count(*) into v_endpoints from public.endpoints;
+  select count(*) into v_users from public.users;
+
+  update public.site_stats
+  set total_webhooks  = v_live_webhooks + v_deleted,
+      total_endpoints = v_endpoints,
+      total_users     = v_users,
+      updated_at      = now()
+  where id = 1;
+end;
+$$;
+
+revoke all on function public.refresh_site_stats()
+  from public, anon, authenticated;
+grant execute on function public.refresh_site_stats() to service_role;
 
 commit;
