@@ -1,343 +1,113 @@
 # AGENTS.md
 
-Guidance for coding agents (Codex, Copilot, Devin, etc.) working in this repository. See also `CLAUDE.md` for Claude Code-specific instructions.
+Guidance for coding agents working in this repository. Claude Code loads this file through `CLAUDE.md`; other agents read it directly.
 
-## Project Overview
+Keep this file to what an agent cannot learn by reading the code: commands, environment facts, conventions, decisions and the reasons behind them, and boundaries. Do not add lists of routes, tables, tools, files, or env vars. They drift, and the code is the source of truth.
 
-webhooks.cc is a production webhook inspection and testing service. Users capture incoming webhooks, inspect request details, configure mock responses, and forward requests to localhost via CLI tunneling. The service includes a TypeScript SDK (`@webhooks-cc/sdk`) for programmatic access and test assertions, and an MCP server (`@webhooks-cc/mcp`) for AI coding agent integration.
+## What this is
 
-**Production URLs:**
+webhooks.cc is a production webhook inspection and testing service. Users capture incoming webhooks, inspect requests, configure mock responses, verify provider signatures, and forward requests to localhost with the CLI. A TypeScript SDK (`@webhooks-cc/sdk`) and an MCP server (`@webhooks-cc/mcp`) give programmatic and AI-agent access. Teams share endpoints under a pooled, per-seat subscription.
 
-- App: `https://webhooks.cc`
-- Webhook receiver: `https://go.webhooks.cc`
+Production: `https://webhooks.cc` (app) and `https://go.webhooks.cc` (webhook receiver). The repository is public.
+
+## Layout
+
+| Path | What lives there |
+| --- | --- |
+| `apps/web/` | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui. Dashboard, marketing and SEO pages, API routes under `app/api/`, env validation in `lib/env.ts`. |
+| `content/docs/` | MDX source for `/docs/*`, rendered by the catch-all route in `apps/web/app/docs/`. |
+| `apps/receiver-rs/` | Rust (Axum, Tokio, sqlx) webhook receiver. Captures at `/w/{slug}`. Env vars are read in `src/config.rs`. |
+| `apps/cli-rs/` | Rust CLI `whk` (Clap, Ratatui). Subcommands live in `src/cli/`. |
+| `packages/sdk/` | `@webhooks-cc/sdk`, published to npm. Also the canonical provider catalog (`TEMPLATE_PROVIDERS`, `VERIFY_PROVIDERS`). |
+| `packages/mcp/` | `@webhooks-cc/mcp`, stdio MCP server. Tools in `src/tools.ts`; the test suite pins the tool and provider counts. |
+| `supabase/migrations/` | Numbered SQL files: schema, functions, RLS policies, pg_cron jobs. Applied by hand with psql. |
+| `infra/` | Cloudflare Worker notify proxy, GoTrue email-auth config notes, AppSignal collector systemd unit. |
+| `docs/`, `branch-docs/` | Local planning docs. Both are gitignored. |
 
 ## Commands
 
-### Development
+```bash
+pnpm install
+make dev                  # mprocs: web + receiver side by side
+pnpm dev:web              # web only
+make dev-receiver         # Rust receiver, sources .env.local
+make dev-cli ARGS="..."   # run the CLI from source
+
+pnpm typecheck && pnpm lint && pnpm build
+pnpm test                               # SDK + MCP + web unit tests
+cd apps/web && pnpm test:integration    # needs the local Supabase stack; some suites need the receiver running
+cd apps/receiver-rs && cargo test && cargo clippy -- -D warnings
+cd apps/cli-rs && cargo test
+pnpm test:full                          # everything, including integration and Playwright e2e
+```
+
+### Running in production
+
+On the app host, the web app and receiver are user-level systemd units named `webhooks-web` and `webhooks-receiver`. A build alone changes nothing: the old binary keeps running until the unit restarts. Use the deploy targets, which build and restart together.
 
 ```bash
-pnpm install              # Install all dependencies
-pnpm dev:web              # Start Next.js web app
-make dev-receiver         # Start Rust webhook receiver
-make dev-cli ARGS="..."   # Run CLI with arguments
+make deploy-receiver | make deploy-web | make deploy-all
+make prod-status | make prod-restart
+make prod                 # start services if needed and open the mprocs log viewer
+journalctl --user -u webhooks-receiver -f
 ```
 
-### Build & Verify
+The AppSignal collector (`appsignal-collector`, port 8099) is a system unit and needs sudo; `make deploy-collector` restarts it.
 
-```bash
-pnpm build                # Build all TypeScript packages (turbo)
-pnpm typecheck            # Type check all packages (turbo)
-make build                # Build everything including binaries
-make build-receiver       # Build Rust receiver (release) to dist/receiver
-make build-cli            # Build Rust CLI (release)
-```
+### Database changes
 
-**CRITICAL**: After building, you MUST restart the service. Use the deploy targets which build + restart atomically:
+Migrations are plain SQL files in `supabase/migrations/`, numbered sequentially. There is no migration runner. Apply each file with `psql "$SUPABASE_DB_URL" -f <file>` against dev first, then against prod as part of the deploy. Two rules that are easy to miss:
 
-```bash
-make deploy-receiver    # Build Rust receiver + restart service
-make deploy-web         # Build Next.js + restart service
-make deploy-all         # Deploy both
-```
+- After adding or changing an RPC, column, or policy, run `NOTIFY pgrst, 'reload schema';`. PostgREST caches the schema, and new RPCs return 404 until it reloads.
+- Run migrations with plain psql in autocommit mode, with `--set=ON_ERROR_STOP=1` and a short `lock_timeout` on prod. Some migrations use `CREATE INDEX CONCURRENTLY` and `NOT VALID` constraints that fail inside a transaction.
 
-Without restarting, the old binary/build continues running and code changes have no effect.
+## How it fits together
 
-### Test
+Web (3000), receiver (3001), collector (8099), a self-hosted Supabase instance (Postgres, Auth, Realtime), a Cloudflare Worker for outbound notifications, and optional Redis for distributed rate limiting.
 
-```bash
-make test                           # Run all tests (TS + Rust)
-cd apps/web && npx vitest run tests/integration/  # Supabase integration tests (42 cases)
-cd apps/receiver-rs && cargo test   # Rust receiver tests
-cd apps/cli-rs && cargo test        # CLI tests only
-```
+Capture path: a sender POSTs to `go.webhooks.cc/w/{slug}/...`. The receiver validates the slug, strips proxy headers, and calls the `capture_webhook()` stored procedure once. That single call looks up the endpoint, checks expiry, decrements quota atomically, inserts the request, bumps counters, and picks the billing pool. The receiver answers with the configured mock response or a plain 200. Dashboards update over Supabase Realtime; the CLI streams over SSE from `/api/stream/{slug}`.
 
-### Supabase
+Decisions worth knowing, with the reasons:
 
-Migrations live in `supabase/migrations/`. Apply to the dev instance:
+- **The receiver talks to Postgres directly** through the Supabase session pooler (`DATABASE_URL`), not through the web app. One fewer hop on the hot path, and the stored procedure keeps quota and counters atomic.
+- **DB failures are classified.** Transient errors (pool timeout, connection loss, SQLSTATE classes 08/40/53/57/58) return 503 with `Retry-After: 5` so senders retry; at-least-once delivery beats silent loss. Permanent errors fail open with 200 and are logged and counted in `webhooks_capture_failed_total{kind}`. NUL bytes in bodies and paths are sanitised (raw bytes kept in `body_raw`) instead of failing the insert.
+- **RLS is deny-by-default for client roles.** Anonymous users cannot read endpoints, requests, or device codes; they may only insert ephemeral endpoints with a bounded expiry and read published blog posts. Guest dashboard reads go through server routes using the service role. Client roles have no write access to `users` and no EXECUTE on `public` functions unless a migration grants it (migration 00037 revoked them and reset the default privileges). Team members can read shared endpoints through `can_view_team_endpoint()`, which is what lets Realtime deliver to them.
+- **Sensitive routes want a session, not an API key.** Account deletion and billing mutations reject API keys with 403.
+- **Teams are billed per team.** A Polar seat subscription on the `teams` row buys the member cap and a pooled quota of seats x 100,000 requests per 30 days. `users.plan` stays free or pro and does not gate team access. `capture_webhook()` bills an endpoint shared with an active team against that team and stamps `requests.team_id`; team-billed requests keep 31-day retention regardless of the owner's plan. Each team gets its own Polar customer of type team: Polar allows one customer per email per organisation, so the owner's personal customer is never reused. Never log a raw Polar SDK error, it embeds the bearer token; use `loggablePolarError()` from `lib/polar.ts`.
+- **Free periods are lazy.** `period_end` is unset until the first capture triggers `start_free_period()`.
+- **Guest endpoint creation is bot-gated.** `POST /api/go/endpoint` returns 403 for crawler or missing user agents, and the landing page only auto-creates an endpoint after a human input signal. Browsers with `navigator.webdriver` get a manual create button, so Playwright and agents must click it and tests must send a browser user agent.
+- **Site totals survive deletes.** `site_stats.total_webhooks` is `sum(endpoints.request_count) + deleted_webhooks`; an AFTER DELETE trigger on `endpoints` (migration 00038) moves the counts of deleted rows into `deleted_webhooks`. Do not add another accumulate step to any delete path.
+- **Outbound notifications hide the origin IP** by going through the Cloudflare Worker when `NOTIFY_PROXY_URL` is set; otherwise the receiver delivers directly with SSRF-safe DNS pinning.
+- **Email/password auth is GoTrue configuration, not app code.** SMTP, minimum password length 8, and the template URLs live in the Supabase instance's `docker-compose.override.yml`; see `infra/supabase/gotrue-email-auth.md`. Email links carry a `token_hash` to `/auth/confirm`, which verifies server-side. If GoTrue could not fetch the templates at startup it keeps serving its defaults until the auth container restarts.
+- **Agent registration follows the auth.md protocol.** Unclaimed agent API keys have `api_keys.user_id = NULL` and are confined to the sandbox routes until claimed, so every consumer of an API key must tolerate a null user. `AGENT_IDJAG_PROVIDERS` stays empty in production until a real ID-JAG issuer exists.
+- **Adding a webhook provider** touches the SDK catalog, the web editorial data in `apps/web/lib/webhook-provider-pages.ts`, the pinned counts in the MCP tests, and a migration that extends the `check_signing_config` CHECK constraint on `endpoints`. The constraint is the one people forget; the signature-verification integration test is what catches it.
 
-```bash
-psql "$SUPABASE_DB_URL" -f supabase/migrations/00010_capture_webhook.sql
-```
+## Environment
 
-### Systemd Services
+Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/receiver-rs/src/config.rs`; read those for the current list and defaults. `.env.example` documents the required set. Secrets live only in `.env.local`, which is gitignored. Three that trip people up:
 
-Both the web app and receiver run as **user** systemd services (no `sudo` needed). Service files live at `~/.config/systemd/user/webhooks-{web,receiver}.service`.
+- `DATABASE_URL` (receiver) must be the Supabase session pooler URL, not the direct connection. `SUPABASE_DB_URL` is the direct connection and is used for migrations.
+- `SIGNING_SECRET_KEY` (AES-256-GCM, base64, 32 bytes) is needed by both the receiver and the web app once signature verification is configured. Generate with `openssl rand -base64 32`.
+- Polar, SMTP, AppSignal, and Redis are optional in development.
 
-```bash
-# Manage services
-make prod-status                  # Check both services
-make prod-restart                 # Restart both services
-make prod-stop                    # Stop both services
+## Conventions
 
-# Individual service control
-systemctl --user restart webhooks-receiver
-systemctl --user restart webhooks-web
-systemctl --user status webhooks-receiver webhooks-web
+- **Branch and PR for every change.** `main` requires linear history, signed commits, and a PR; only squash or rebase merges are allowed. Commits are GPG-signed locally.
+- **Reviews.** CodeRabbit, Codex, and CodeQL comment on every PR; address their findings before merging. CI runs lint, typecheck, the web build, the SDK, MCP, and web unit suites, and the Rust build, test, and clippy jobs. Web integration tests and Playwright do not run in CI, so run them locally when you touch the web app.
+- **Version and changelog on every web PR.** Bump `APP_VERSION` in `apps/web/lib/changelog.ts` and `version` in `apps/web/package.json` (patch for fixes and small features, minor for significant features, major reserved for 1.0) and add a `track: "web"` entry at the top of the web section. CLI, SDK, and MCP releases bump `CLI_VERSION`, `SDK_VERSION`, or `MCP_VERSION` and add an entry on their own track when the tag is cut (`v*`, `sdk-v*`, `mcp-v*`). A unit test keeps the SDK and MCP constants in sync with the package versions.
+- **Tests live next to the code they cover.** Unit tests as `*.test.ts` beside the source, web integration suites in `apps/web/tests/integration/`, Rust tests in each crate. Scratch verification scripts stay out of the repo.
+- **Design system.** The UI is neobrutalist, built on the shadcn/ui primitives in `components/ui` with Space Grotesk and JetBrains Mono. Reuse those primitives rather than introducing new styling patterns.
+- **Formatting.** Prettier and ESLint are enforced in CI; run `pnpm format` before committing. `apps/web/public/email-templates/` is excluded because Prettier breaks Go template actions.
+- **No em dashes** anywhere: code, comments, docs, commit messages.
 
-# Logs
-journalctl --user -u webhooks-receiver -f                       # Follow receiver logs
-journalctl --user -u webhooks-web -f                            # Follow web logs
-journalctl --user -u webhooks-receiver --since "5 minutes ago"  # Recent logs
-```
+## Boundaries
 
-### Production Log Viewer
-
-```bash
-make prod                 # Ensure services are running + open mprocs log viewer
-pnpm start                # Same via pnpm (mprocs --config mprocs.yaml)
-```
-
-`mprocs.yaml` tails both service journals side-by-side. It is a **log viewer only** — it does not manage the processes.
-
-### Lint & Format
-
-```bash
-pnpm lint                 # ESLint across all packages
-pnpm format:check         # Prettier check
-pnpm format               # Prettier fix
-cd apps/receiver-rs && cargo clippy     # Rust receiver lint
-```
-
-## Architecture
-
-### Service Layout
-
-| Service   | Port | Stack                                | Purpose                                              |
-| --------- | ---- | ------------------------------------ | ---------------------------------------------------- |
-| Web app   | 3000 | Next.js 16, React 19, Tailwind v4    | Dashboard, docs, landing page, API routes            |
-| Receiver  | 3001 | Rust (Axum, Tokio, sqlx/Postgres)    | Captures webhooks at `/w/{slug}`                     |
-| Collector | 8099 | AppSignal Collector (Rust binary)    | Receives OTel traces from receiver, host metrics     |
-| Supabase  | —    | Self-hosted Postgres, Auth, Realtime | Database, auth, real-time subscriptions              |
-| CLI       | n/a  | Rust (Clap, Ratatui, Reqwest)        | `whk tunnel`, `whk listen`, device auth              |
-| SDK       | n/a  | TypeScript, tsup                     | `@webhooks-cc/sdk` on npm                            |
-| MCP       | n/a  | TypeScript, tsup                     | `@webhooks-cc/mcp` on npm — MCP server for AI agents |
-
-### Directory Structure
-
-```
-webhooks-cc/
-├── apps/
-│   ├── web/              # Next.js 16 App Router (Tailwind v4, shadcn/ui, AppSignal)
-│   ├── receiver-rs/      # Rust Axum webhook receiver (direct Postgres via sqlx)
-│   └── cli-rs/           # Rust CLI + TUI (`whk`)
-├── packages/
-│   ├── sdk/              # @webhooks-cc/sdk (TypeScript, tsup, vitest)
-│   └── mcp/              # @webhooks-cc/mcp (MCP server for AI agents)
-├── supabase/
-│   └── migrations/       # Postgres schema, functions, RLS policies, cron jobs
-├── docs/                 # Internal planning docs (gitignored)
-├── .github/workflows/    # CI, CLI release, SDK publish
-├── Makefile              # Build/dev/test orchestration
-├── turbo.json            # Monorepo task config
-├── docker-compose.yml    # Docker setup (web + receiver)
-└── pnpm-workspace.yaml   # pnpm workspaces: apps/*, packages/*
-```
-
-### Data Flow
-
-```
-External service -> POST /w/{slug}/path
-  -> Rust Receiver:
-     1. Validate slug, extract headers/body/IP
-     2. Call capture_webhook() stored procedure (single Postgres RPC)
-        - Look up endpoint, check expiry
-        - Check/decrement quota atomically
-        - INSERT request row
-        - Increment counters
-     3. Return mock response (if configured) or 200 OK
-  -> Dashboard: real-time update via Supabase Realtime (postgres_changes)
-  -> CLI: SSE stream at /api/stream/{slug} -> forward to localhost
-```
-
-### Receiver Internals (Rust)
-
-The Rust receiver (`apps/receiver-rs/`) handles all webhook ingestion. It connects directly to Postgres via sqlx — no Redis, no intermediary services.
-
-**Architecture:**
-
-- **Axum + Tokio**: Async HTTP server
-- **sqlx + Postgres**: Direct database access via connection pool
-- **Single stored procedure**: `capture_webhook()` handles endpoint lookup, quota, insert, and counters in one transaction
-- **Fail-open**: On DB errors, returns 200 OK to avoid dropping webhooks from the sender's perspective
-
-**Source files (`src/`):**
-
-- `main.rs` — Axum setup, PgPool creation, route registration, tracing
-- `config.rs` — Env var loading (`DATABASE_URL`, `CAPTURE_SHARED_SECRET`, `PORT`, pool sizing)
-- `handlers/webhook.rs` — Hot path: call stored procedure, map result to HTTP response
-- `handlers/health.rs` — Pool connectivity check
-
-**Receiver env vars:**
-
-| Variable                  | Required | Default | Purpose                                         |
-| ------------------------- | -------- | ------- | ----------------------------------------------- |
-| `DATABASE_URL`            | yes      |         | Postgres connection string (use session pooler) |
-| `CAPTURE_SHARED_SECRET`   | yes      |         | Shared secret (kept for future internal auth)   |
-| `PORT`                    | no       | 3001    | Listen port                                     |
-| `RECEIVER_DEBUG`          | no       |         | Enable debug logging                            |
-| `RECEIVER_LOG_DIR`        | no       | logs/   | Rolling JSON log file directory                 |
-| `PG_POOL_MIN`             | no       | 5       | Min Postgres pool connections                   |
-| `PG_POOL_MAX`             | no       | 20      | Max Postgres pool connections                   |
-| `APPSIGNAL_COLLECTOR_URL` | no       |         | OTLP endpoint for AppSignal collector           |
-
-### CLI Commands
-
-| Command             | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `whk auth login`    | Device auth flow (browser-based, generates 90-day API key) |
-| `whk auth status`   | Show current login status                                  |
-| `whk auth logout`   | Clear stored token                                         |
-| `whk tunnel <port>` | Create endpoint + forward webhooks to localhost            |
-| `whk listen <slug>` | Stream incoming requests to terminal                       |
-| `whk create [name]` | Create a new endpoint                                      |
-| `whk list`          | List user's endpoints                                      |
-| `whk delete <slug>` | Delete an endpoint                                         |
-| `whk replay <id>`   | Replay a captured request                                  |
-| `whk update`        | Self-update from GitHub releases (SHA256 verified)         |
-
-Config stored at `~/.config/whk/token.json`. Override API URL with `WHK_API_URL` env var. Debug logging via `WHK_DEBUG`.
-
-### Supabase Backend
-
-**Schema (6 tables + auth system):**
-
-| Table          | Key fields                                                                          | Notes                                                 |
-| -------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `users`        | email, plan (free/pro), requests_used, request_limit, polar_customer_id, period_end | Indexes: email, polar_customer, plan, plan+period_end |
-| `endpoints`    | slug (unique), user_id?, mock_response (jsonb)?, is_ephemeral, expires_at?          | Indexes: slug, user, expires, ephemeral+expires       |
-| `requests`     | endpoint_id, user_id, method, path, headers (jsonb), body, ip, received_at          | Indexes: endpoint+time, user+time, received_at        |
-| `api_keys`     | user_id, key_hash (SHA-256), key_prefix, expires_at                                 | Indexes: key_hash, user                               |
-| `device_codes` | device_code, user_code, status, user_id?, expires_at                                | Indexes: device_code, user_code, status               |
-| `blog_posts`   | slug (unique), title, content, status (draft/published)                             | Index: slug, status                                   |
-
-**Key stored procedures:**
-
-| Function                          | Purpose                                                                 |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| `capture_webhook()`               | Hot path: endpoint lookup + quota + insert + counters in one call       |
-| `check_and_decrement_quota()`     | Atomic quota check + decrement for owned endpoints                      |
-| `check_and_increment_ephemeral()` | Atomic request count check + increment for ephemeral endpoints (25 cap) |
-| `start_free_period()`             | Lazy 24h period activation for free users                               |
-
-**Key patterns:**
-
-- The receiver writes directly to Postgres via `capture_webhook()` — no intermediary
-- Free user periods activate lazily on first request via `start_free_period()`
-- Supabase Auth handles GitHub + Google OAuth
-- API keys use SHA-256 hashed storage with `whcc_` prefix
-- Sensitive routes (account deletion, billing) require Supabase session tokens — API keys are rejected
-- RLS is hardened: anonymous direct reads are blocked, guest data served via service role API routes
-
-### Web App Structure
-
-Next.js 16 App Router with neobrutalism design (Space Grotesk + JetBrains Mono fonts).
-
-**Public routes:** `/` (landing), `/docs/*` (10 doc pages incl. MCP), `/installation` (CLI/SDK/MCP tabs), `/login`, `/privacy`, `/terms`, `/support`
-
-**Authenticated routes:** `/dashboard` (split-pane request viewer), `/account` (profile, billing, API keys), `/endpoints/new`, `/endpoints/[slug]/settings`, `/cli/verify` (device auth)
-
-**API routes:** `/api/health`, `/api/auth/device-*` (4 routes), `/api/endpoints` (CRUD + PATCH), `/api/endpoints/[slug]/requests`, `/api/requests/[id]`, `/api/stream/[slug]` (SSE), `/api/api-keys` (CRUD), `/api/account` (DELETE), `/api/billing/*`, `/api/go/endpoint/*`
-
-### SDK
-
-`@webhooks-cc/sdk` v0.3.0 - published to npm, MIT licensed.
-
-```typescript
-const client = new WebhooksCC({ apiKey: "whcc_..." });
-const endpoint = await client.endpoints.create({ name: "test" });
-const req = await client.requests.waitFor(endpoint.slug, {
-  timeout: "30s",
-  match: matchAll(matchMethod("POST"), matchHeader("stripe-signature")),
-});
-```
-
-**Key methods:**
-
-- `endpoints.create/get/list/delete` — CRUD
-- `endpoints.update(slug, opts)` — rename, set/clear mock response
-- `endpoints.send(slug, {method, headers, body})` — send test webhook
-- `requests.list/waitFor` — list and poll for captured requests
-- `requests.replay(id, targetUrl)` — replay a captured request to any URL
-- `requests.subscribe(slug)` — SSE async iterator for real-time streaming
-- `client.describe()` — self-documenting introspection for AI agents
-
-### MCP Server
-
-`@webhooks-cc/mcp` v0.1.0 - MCP server for AI coding agents, MIT licensed.
-
-- 11 tools: `create_endpoint`, `list_endpoints`, `get_endpoint`, `update_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `send_webhook`, `wait_for_request`, `replay_request`, `describe`
-- Setup CLI: `npx @webhooks-cc/mcp setup <tool>` for Cursor, VS Code, Windsurf, Claude Desktop
-- Native install: `claude mcp add` (Claude Code), `codex mcp add` (Codex)
-- Transport: stdio via `@modelcontextprotocol/sdk`
-- Depends on `@webhooks-cc/sdk` (workspace link)
-
-## Environment Variables
-
-### Root `.env.local` (shared)
-
-| Variable                        | Required | Purpose                                           |
-| ------------------------------- | -------- | ------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | yes      | Supabase project URL                              |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes      | Supabase public anon key                          |
-| `SUPABASE_URL`                  | yes      | Supabase project URL (server-side)                |
-| `SUPABASE_SERVICE_ROLE_KEY`     | yes      | Supabase service role key                         |
-| `SUPABASE_DB_URL`               | yes      | Direct Postgres connection string                 |
-| `DATABASE_URL`                  | yes      | Postgres connection for receiver (session pooler) |
-| `NEXT_PUBLIC_WEBHOOK_URL`       | yes      | Webhook receiver base URL                         |
-| `NEXT_PUBLIC_APP_URL`           | yes      | App base URL                                      |
-| `CAPTURE_SHARED_SECRET`         | yes      | Shared secret for internal auth                   |
-
-### Optional
-
-| Variable                      | Purpose                                         |
-| ----------------------------- | ----------------------------------------------- |
-| `APPSIGNAL_PUSH_API_KEY`      | AppSignal API key (web app)                     |
-| `APPSIGNAL_APP_NAME`          | AppSignal app name (default: `webhooks-cc-web`) |
-| `APPSIGNAL_COLLECTOR_URL`     | OTel collector URL for receiver                 |
-| `RECEIVER_DEBUG`              | Enable receiver debug logging                   |
-| `WHK_DEBUG`                   | Enable CLI debug logging                        |
-| `PG_POOL_MIN` / `PG_POOL_MAX` | Receiver connection pool sizing                 |
-
-## CI/CD & Releases
-
-- **CI** (`.github/workflows/ci.yml`): lint, typecheck, build-web, build-cli, test-cli, lint-cli, build-rust, test-rust, lint-rust
-- **CLI release** (`cli-release.yml`): triggered by `v*` tags, cross-compiles the Rust CLI for linux/darwin/windows, signs checksums with cosign, and publishes GitHub release assets
-- **SDK publish** (`sdk-publish.yml`): triggered by `sdk-v*` tags, publishes `@webhooks-cc/sdk` to npm
-- **MCP publish**: triggered by `mcp-v*` tags, publishes `@webhooks-cc/mcp` to npm
-- **Security**: Dependabot, CodeQL analysis for JavaScript/TypeScript and Rust
-
-## Changelog & Versioning
-
-The web app version and changelog live in `apps/web/lib/changelog.ts`. The changelog page is at `/changelog`, linked from the footer and account page.
-
-The changelog has 4 tracks: `web`, `cli`, `sdk`, `mcp`. Each entry has a `track` field. Version constants: `APP_VERSION`, `CLI_VERSION`, `SDK_VERSION`, `MCP_VERSION`.
-
-**When merging a PR to main** (web app changes):
-
-1. Bump `APP_VERSION` in `apps/web/lib/changelog.ts` and `version` in `apps/web/package.json`
-2. Add a new entry with `track: "web"` to the CHANGELOG array
-
-**When publishing a CLI release** (`v*` tag): bump `CLI_VERSION`, add entry with `track: "cli"`
-
-**When publishing an SDK release** (`sdk-v*` tag): bump `SDK_VERSION`, add entry with `track: "sdk"`
-
-**When publishing an MCP release** (`mcp-v*` tag): bump `MCP_VERSION`, add entry with `track: "mcp"`
-
-Keep entries concise — focus on user-facing changes, not internal refactors.
-
-## Key Gotchas
-
-- The Rust receiver connects directly to Postgres via `DATABASE_URL` — use the Supabase session pooler URL, not the direct connection
-- Receiver fails open on DB errors: returns 200 OK so webhook senders don't retry
-- Mock response changes take effect immediately (no caching layer)
-- Free user billing periods are lazy: `period_end` is unset until first request triggers `start_free_period()`
-- RLS is hardened: anonymous users cannot read endpoints, requests, or device codes directly
-- Sensitive routes (account deletion, billing) require Supabase session tokens — API keys return 403
-- Supabase migrations are in `supabase/migrations/` and must be applied manually via psql
+- Production is real and serves paying users. Do not deploy, restart production services, apply migrations to production, publish packages, or change Polar or Supabase instance configuration unless the task explicitly asks for it. Production runs on separate hosts reached over ssh; the `make deploy-*` targets act on the machine they run on.
+- Ask before anything that costs money or sends real email: Polar checkouts, invites to real addresses, notification tests against third-party URLs.
+- Never source `.env.local` wholesale in shell scripts or paste secrets into logs, PR bodies, or commit messages. Extract single variables when needed.
+- New `public` functions are service-role only. Grant client EXECUTE in a migration only when the function is meant to be called from the browser.
+- Never add `revoke` or `grant` statements to `handle_new_user()`; it runs as `supabase_auth_admin` from an auth trigger.
 
 ## Licensing
 
-Split license model:
-
-- **AGPL-3.0**: `apps/web`, `apps/receiver-rs`, `supabase/`
-- **MIT**: `apps/cli-rs`, `packages/sdk`, `packages/mcp`
+Split model. AGPL-3.0: `apps/web`, `apps/receiver-rs`, `supabase/`. MIT: `apps/cli-rs`, `packages/sdk`, `packages/mcp`.
