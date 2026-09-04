@@ -47,7 +47,7 @@
     "rehype-pretty-code": "^0.14.5",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "resend": "^6.20.0",
+    "resend": "^6.24.0",
     "shiki": "^4.4.3",
     "simple-icons": "^16.27.0",
     "source-map-support": "^0.5.21",
