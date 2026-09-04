@@ -40,6 +40,7 @@ feat/
 
 # Documentation (internal planning docs)
 /branch-docs/
+/docs/
 
 # Pagefind search index (generated at build time)
 apps/web/public/_pagefind/
@@ -64,3 +65,5 @@ dump.rdb
 # Load test env
 .env.loadtest
 .claude/worktrees/
+.claude/settings.local.json
+CLAUDE.local.md
