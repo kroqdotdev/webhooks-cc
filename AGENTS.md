@@ -2,7 +2,7 @@
 
 Guidance for coding agents working in this repository. Claude Code loads this file through `CLAUDE.md`; other agents read it directly.
 
-Keep this file to what an agent cannot learn by reading the code: commands, environment facts, conventions, decisions and the reasons behind them, and boundaries. Do not add lists of routes, tables, tools, files, or env vars. They drift, and the code is the source of truth.
+Keep this file to what an agent cannot learn by reading the code: commands, environment facts, conventions, decisions and the reasons behind them, and boundaries. Do not add lists of routes, tables, tools, files, or env vars. They drift, and the code is the source of truth. The layout table below is the one map this file keeps: it names top-level directories and stays at that altitude.
 
 ## What this is
 
@@ -12,17 +12,17 @@ Production: `https://webhooks.cc` (app) and `https://go.webhooks.cc` (webhook re
 
 ## Layout
 
-| Path | What lives there |
-| --- | --- |
-| `apps/web/` | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui. Dashboard, marketing and SEO pages, API routes under `app/api/`, env validation in `lib/env.ts`. |
-| `content/docs/` | MDX source for `/docs/*`, rendered by the catch-all route in `apps/web/app/docs/`. |
-| `apps/receiver-rs/` | Rust (Axum, Tokio, sqlx) webhook receiver. Captures at `/w/{slug}`. Env vars are read in `src/config.rs`. |
-| `apps/cli-rs/` | Rust CLI `whk` (Clap, Ratatui). Subcommands live in `src/cli/`. |
-| `packages/sdk/` | `@webhooks-cc/sdk`, published to npm. Also the canonical provider catalog (`TEMPLATE_PROVIDERS`, `VERIFY_PROVIDERS`). |
-| `packages/mcp/` | `@webhooks-cc/mcp`, stdio MCP server. Tools in `src/tools.ts`; the test suite pins the tool and provider counts. |
-| `supabase/migrations/` | Numbered SQL files: schema, functions, RLS policies, pg_cron jobs. Applied by hand with psql. |
-| `infra/` | Cloudflare Worker notify proxy, GoTrue email-auth config notes, AppSignal collector systemd unit. |
-| `docs/`, `branch-docs/` | Local planning docs. Both are gitignored. |
+| Path                    | What lives there                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/`             | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui. Dashboard, marketing and SEO pages, API routes under `app/api/`, env validation in `lib/env.ts`. |
+| `content/docs/`         | MDX source for `/docs/*`, rendered by the catch-all route in `apps/web/app/docs/`.                                                                        |
+| `apps/receiver-rs/`     | Rust (Axum, Tokio, sqlx) webhook receiver. Captures at `/w/{slug}`. Env vars are read in `src/config.rs`.                                                 |
+| `apps/cli-rs/`          | Rust CLI `whk` (Clap, Ratatui). Subcommands live in `src/cli/`.                                                                                           |
+| `packages/sdk/`         | `@webhooks-cc/sdk`, published to npm. Also the canonical provider catalog (`TEMPLATE_PROVIDERS`, `VERIFY_PROVIDERS`).                                     |
+| `packages/mcp/`         | `@webhooks-cc/mcp`, stdio MCP server. Tools in `src/tools.ts`; the test suite pins the tool and provider counts.                                          |
+| `supabase/migrations/`  | Numbered SQL files: schema, functions, RLS policies, pg_cron jobs. Applied by hand with psql.                                                             |
+| `infra/`                | Cloudflare Worker notify proxy, GoTrue email-auth config notes, AppSignal collector systemd unit.                                                         |
+| `docs/`, `branch-docs/` | Local planning docs. Both are gitignored.                                                                                                                 |
 
 ## Commands
 
@@ -46,8 +46,11 @@ pnpm test:full                          # everything, including integration and 
 On the app host, the web app and receiver are user-level systemd units named `webhooks-web` and `webhooks-receiver`. A build alone changes nothing: the old binary keeps running until the unit restarts. Use the deploy targets, which build and restart together.
 
 ```bash
-make deploy-receiver | make deploy-web | make deploy-all
-make prod-status | make prod-restart
+make deploy-receiver      # build the receiver, then restart its unit
+make deploy-web           # build the web app, then restart its unit
+make deploy-all           # both of the above
+make prod-status
+make prod-restart
 make prod                 # start services if needed and open the mprocs log viewer
 journalctl --user -u webhooks-receiver -f
 ```
@@ -56,10 +59,17 @@ The AppSignal collector (`appsignal-collector`, port 8099) is a system unit and 
 
 ### Database changes
 
-Migrations are plain SQL files in `supabase/migrations/`, numbered sequentially. There is no migration runner. Apply each file with `psql "$SUPABASE_DB_URL" -f <file>` against dev first, then against prod as part of the deploy. Two rules that are easy to miss:
+Migrations are plain SQL files in `supabase/migrations/`, numbered sequentially. There is no migration runner. Apply each file against dev first, then against prod as part of the deploy:
 
-- After adding or changing an RPC, column, or policy, run `NOTIFY pgrst, 'reload schema';`. PostgREST caches the schema, and new RPCs return 404 until it reloads.
-- Run migrations with plain psql in autocommit mode, with `--set=ON_ERROR_STOP=1` and a short `lock_timeout` on prod. Some migrations use `CREATE INDEX CONCURRENTLY` and `NOT VALID` constraints that fail inside a transaction.
+```bash
+PGOPTIONS="-c lock_timeout=5s" psql "$SUPABASE_DB_URL" --set=ON_ERROR_STOP=1 -f supabase/migrations/<file>.sql
+psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+```
+
+Two rules that are easy to miss:
+
+- After adding or changing an RPC, column, or policy, run the `NOTIFY` above. PostgREST caches the schema, and new RPCs return 404 until it reloads.
+- Keep the psql invocation as shown: plain autocommit mode, because some migrations use `CREATE INDEX CONCURRENTLY` and `NOT VALID` constraints that fail inside a transaction; `ON_ERROR_STOP` so a failed statement halts the run instead of leaving a half-applied file; a short `lock_timeout` so a DDL lock wait cannot stall production traffic.
 
 ## How it fits together
 
