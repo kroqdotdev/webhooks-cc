@@ -60,7 +60,7 @@ create(options?: CreateEndpointOptions): Promise<Endpoint>
 
 <ApiMethod method="GET" path="/endpoints" title="client.endpoints.list">
 
-List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`), as one array.
+List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with), as one array.
 
 ```ts
 list(options?: ListEndpointsOptions): Promise<Endpoint[]>

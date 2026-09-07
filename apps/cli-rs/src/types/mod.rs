@@ -26,8 +26,12 @@ pub struct Endpoint {
     pub mock_response: Option<MockResponse>,
     #[serde(rename = "sharedWith", default)]
     pub shared_with: Vec<TeamShare>,
+    /// Oldest share among the caller's teams (present when shared with you).
     #[serde(rename = "fromTeam", default)]
     pub from_team: Option<TeamShare>,
+    /// Every subscribed team of the caller this endpoint is shared with.
+    #[serde(rename = "fromTeams", default)]
+    pub from_teams: Vec<TeamShare>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,6 +284,9 @@ pub struct TeamInvite {
     pub status: String,
     #[serde(rename = "createdAt", default)]
     pub created_at: Option<i64>,
+    /// Set when the invite row exists but the email could not be sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

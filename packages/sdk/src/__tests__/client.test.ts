@@ -332,6 +332,25 @@ describe("WebhooksCC", () => {
         expect(byOtherId.map((e) => e.slug)).toEqual(["theirs"]);
       });
 
+      it("matches every team in fromTeams, not only the oldest share", async () => {
+        const multi = [
+          {
+            id: "ep4",
+            slug: "both",
+            createdAt: 1,
+            fromTeam: { teamId: "t1", teamName: "Team A" },
+            fromTeams: [
+              { teamId: "t1", teamName: "Team A" },
+              { teamId: "t2", teamName: "Team B" },
+            ],
+          },
+        ];
+        globalThis.fetch = mockFetch({ body: { owned: [], shared: multi } });
+
+        const result = await createClient().endpoints.list({ team: "t2" });
+        expect(result.map((e) => e.slug)).toEqual(["both"]);
+      });
+
       it("matches a team name case-insensitively", async () => {
         globalThis.fetch = mockFetch({ body: { owned, shared } });
 

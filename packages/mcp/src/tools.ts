@@ -538,7 +538,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         ),
     },
     withErrorHandling(async ({ team }) => {
-      const endpoints = await client.endpoints.list(team === undefined ? {} : { team });
+      const endpoints = await client.endpoints.list({ team });
       return jsonContent(endpoints);
     })
   );
@@ -1163,10 +1163,25 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     "Check current request usage, remaining quota, plan, and period end, plus the pooled quota of every subscribed team you belong to.",
     {},
     withErrorHandling(async () => {
-      const [usage, teams] = await Promise.all([client.usage(), client.teams.list()]);
+      // Team pools are additive: a failing /api/teams must not turn a working
+      // personal-usage query into a tool error, so it degrades to teamsError.
+      const [usageResult, teamsResult] = await Promise.allSettled([
+        client.usage(),
+        client.teams.list(),
+      ]);
+      if (usageResult.status === "rejected") throw usageResult.reason;
+      const usage = usageResult.value;
+      const teams = teamsResult.status === "fulfilled" ? teamsResult.value : [];
+      const teamsError =
+        teamsResult.status === "rejected"
+          ? teamsResult.reason instanceof Error
+            ? teamsResult.reason.message
+            : String(teamsResult.reason)
+          : undefined;
       return jsonContent({
         ...usage,
         periodEnd: usage.periodEnd ? new Date(usage.periodEnd).toISOString() : null,
+        ...(teamsError ? { teamsError } : {}),
         teams: teams
           .filter((team) => !team.suspended)
           .map((team) => ({

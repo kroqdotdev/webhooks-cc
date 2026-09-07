@@ -31,8 +31,10 @@ export interface Endpoint {
   createdAt: number;
   /** Teams this endpoint is shared with (present when you own it) */
   sharedWith?: TeamShare[];
-  /** Team this endpoint was shared from (present when shared with you) */
+  /** Oldest share among your teams (present when shared with you) */
   fromTeam?: TeamShare;
+  /** Every subscribed team of yours this endpoint is shared with (present when shared with you) */
+  fromTeams?: TeamShare[];
   /** Signing provider for automatic signature verification (e.g., "stripe", "github") */
   signingProvider?: string | null;
   /** Whether a signing secret is configured (the secret itself is never returned) */
@@ -244,6 +246,12 @@ export interface TeamInvite {
   status: "pending" | "accepted" | "declined";
   /** Unix timestamp (ms) when the invite was created */
   createdAt: number;
+  /**
+   * Set by `teams.invite()` when the invite row was created but the email
+   * could not be sent. The invitee still finds the invite in-app after
+   * signing up with that address; tell them another way.
+   */
+  warning?: string;
 }
 
 /** Members of a team plus the invites that have not been answered yet. */

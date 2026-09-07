@@ -264,11 +264,14 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
   const activeTeamIds = activeTeams.map((t) => t.id);
   const teamMap = new Map(activeTeams.map((t) => [t.id, t.name]));
 
-  // Fetch all shared endpoints for active (non-suspended) teams
+  // Fetch all shared endpoints for active (non-suspended) teams. Ordered by
+  // share time so `fromTeam` (the first share seen per endpoint) is stable
+  // across calls and matches the team capture_webhook() bills.
   const { data: sharesData, error: sharesError } = await admin
     .from("team_endpoints")
     .select("team_id, endpoint_id, shared_by")
-    .in("team_id", activeTeamIds);
+    .in("team_id", activeTeamIds)
+    .order("shared_at", { ascending: true });
 
   if (sharesError) throw sharesError;
   if (!sharesData || sharesData.length === 0) return [];
@@ -299,17 +302,25 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
 
   const endpointMap = new Map((endpointsData as EndpointMinRow[]).map((e) => [e.id, e]));
 
-  // Build result — one entry per (endpoint, team) share, deduplicated to first team per endpoint
-  const seen = new Set<string>();
-  const results: SharedEndpoint[] = [];
+  // One entry per endpoint. `fromTeam` is the oldest share; `fromTeams` lists
+  // every one of the caller's subscribed teams the endpoint is shared with, so
+  // a team filter on the client side can match any of them.
+  const byEndpoint = new Map<string, SharedEndpoint>();
 
   for (const share of shares) {
     const ep = endpointMap.get(share.endpoint_id);
     if (!ep) continue;
-    if (seen.has(share.endpoint_id)) continue;
-    seen.add(share.endpoint_id);
 
-    results.push({
+    const team = { teamId: share.team_id, teamName: teamMap.get(share.team_id) ?? "" };
+    const existing = byEndpoint.get(share.endpoint_id);
+    if (existing) {
+      if (!existing.fromTeams.some((t) => t.teamId === team.teamId)) {
+        existing.fromTeams.push(team);
+      }
+      continue;
+    }
+
+    byEndpoint.set(share.endpoint_id, {
       id: ep.id,
       slug: ep.slug,
       name: ep.name,
@@ -317,15 +328,13 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
       mockResponse: normalizeMockResponse(ep.mock_response),
       isEphemeral: ep.is_ephemeral,
       createdAt: parseMillis(ep.created_at),
-      fromTeam: {
-        teamId: share.team_id,
-        teamName: teamMap.get(share.team_id) ?? "",
-      },
+      fromTeam: team,
+      fromTeams: [team],
       ownerId: ep.user_id ?? "",
     });
   }
 
-  return results;
+  return [...byEndpoint.values()];
 }
 
 // ---------------------------------------------------------------------------

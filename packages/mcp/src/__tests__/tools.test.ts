@@ -829,6 +829,32 @@ describe("registerTools", () => {
     ]);
   });
 
+  it("keeps personal usage and reports teamsError when the team list fails", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        usage: vi.fn(async () => ({
+          used: 1,
+          limit: 50,
+          remaining: 49,
+          plan: "free" as const,
+          periodEnd: null,
+        })),
+        teams: {
+          list: vi.fn(async () => {
+            throw new WebhooksCCError(500, "teams unavailable");
+          }),
+        } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    const result = await tools.get_usage.handler({});
+    expect(result.isError).toBeUndefined();
+    const usage = parseJsonResult(result);
+    expect(usage.used).toBe(1);
+    expect(usage.teams).toEqual([]);
+    expect(usage.teamsError).toBe("teams unavailable");
+  });
+
   it("passes the team filter through list_endpoints", async () => {
     const list = vi.fn(async () => []);
     const tools = getRegisteredTools(

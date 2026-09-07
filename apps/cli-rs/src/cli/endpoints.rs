@@ -82,27 +82,22 @@ pub async fn create(
     Ok(())
 }
 
-/// True when the endpoint is tied to the team: shared with the caller from
-/// it, or owned by the caller and shared with it. `team` is an id (exact) or
-/// a name (case-insensitive).
-pub fn endpoint_matches_team(endpoint: &crate::types::Endpoint, team: &str) -> bool {
-    let needle = team.trim();
-    let lowered = needle.to_lowercase();
-    let matches = |share: &crate::types::TeamShare| {
-        share.team_id == needle || share.team_name.to_lowercase() == lowered
-    };
-    endpoint.from_team.as_ref().is_some_and(matches) || endpoint.shared_with.iter().any(matches)
-}
-
 pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<()> {
+    // Resolve `--team` the same way `whk teams` does (id, or unique name),
+    // so an unknown or ambiguous name is an error rather than an empty list.
+    let team = match team {
+        Some(needle) => Some(crate::cli::teams::find_team(client, needle).await?),
+        None => None,
+    };
     let mut list = client.list_endpoints().await?;
 
-    if let Some(team) = team {
-        if team.trim().is_empty() {
-            anyhow::bail!("--team needs a team id or name (see `whk teams list`)");
-        }
-        list.owned.retain(|ep| endpoint_matches_team(ep, team));
-        list.shared.retain(|ep| endpoint_matches_team(ep, team));
+    if let Some(team) = &team {
+        let tied = |ep: &crate::types::Endpoint| {
+            ep.from_teams.iter().chain(ep.from_team.iter()).chain(ep.shared_with.iter())
+                .any(|share| share.team_id == team.id)
+        };
+        list.owned.retain(tied);
+        list.shared.retain(tied);
     }
 
     if json {
@@ -112,10 +107,10 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
 
     let mut all: Vec<_> = list.owned.iter().chain(list.shared.iter()).collect();
     if all.is_empty() {
-        match team {
+        match &team {
             Some(team) => println!(
                 "  No endpoints tied to team {}. Share one with {}",
-                bold(team),
+                bold(&team.name),
                 bold("whk teams share <slug> --team <team>")
             ),
             None => println!("  No endpoints found. Create one with {}", bold("whk create")),
@@ -254,49 +249,3 @@ fn build_mock_response(
     }))
 }
 
-#[cfg(test)]
-mod team_filter_tests {
-    use super::endpoint_matches_team;
-    use crate::types::{Endpoint, TeamShare};
-
-    fn endpoint(from: Option<(&str, &str)>, shared: &[(&str, &str)]) -> Endpoint {
-        Endpoint {
-            id: "ep".into(),
-            slug: "slug".into(),
-            name: None,
-            url: None,
-            is_ephemeral: false,
-            expires_at: None,
-            created_at: None,
-            request_count: None,
-            mock_response: None,
-            shared_with: shared
-                .iter()
-                .map(|(id, name)| TeamShare { team_id: id.to_string(), team_name: name.to_string() })
-                .collect(),
-            from_team: from.map(|(id, name)| TeamShare { team_id: id.to_string(), team_name: name.to_string() }),
-        }
-    }
-
-    #[test]
-    fn matches_from_team_by_id_and_name() {
-        let ep = endpoint(Some(("t1", "Payments")), &[]);
-        assert!(endpoint_matches_team(&ep, "t1"));
-        assert!(endpoint_matches_team(&ep, "payments"));
-        assert!(!endpoint_matches_team(&ep, "t2"));
-    }
-
-    #[test]
-    fn matches_any_shared_with_entry() {
-        let ep = endpoint(None, &[("t1", "Payments"), ("t2", "Platform")]);
-        assert!(endpoint_matches_team(&ep, "PLATFORM"));
-        assert!(endpoint_matches_team(&ep, "t1"));
-        assert!(!endpoint_matches_team(&ep, "Billing"));
-    }
-
-    #[test]
-    fn unshared_endpoints_never_match() {
-        let ep = endpoint(None, &[]);
-        assert!(!endpoint_matches_team(&ep, "t1"));
-    }
-}

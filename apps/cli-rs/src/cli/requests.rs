@@ -72,6 +72,9 @@ pub async fn search(
     order: &str,
     json: bool,
 ) -> Result<()> {
+    // The route clamps limit to 1..=200; mirror it so the footer describes the
+    // page that actually came back.
+    let limit = limit.clamp(1, 200);
     let result = client
         .search_requests(slug, method, q, from, to, Some(limit), Some(offset), Some(order))
         .await?;
@@ -89,13 +92,18 @@ pub async fn search(
     for hit in &result.requests {
         print_search_hit(hit);
     }
-    println!(
-        "\n  {} {} (page of {}; use {} for the total)",
-        dim("Shown:"),
-        result.requests.len(),
-        limit,
-        bold("whk requests count")
-    );
+    let shown = result.requests.len();
+    if shown as u32 >= limit {
+        println!(
+            "\n  {} {} (a full page; more may exist: use --offset {} or {} for the total)",
+            dim("Shown:"),
+            shown,
+            offset + limit,
+            bold("whk requests count")
+        );
+    } else {
+        println!("\n  {} {}", dim("Shown:"), shown);
+    }
 
     Ok(())
 }

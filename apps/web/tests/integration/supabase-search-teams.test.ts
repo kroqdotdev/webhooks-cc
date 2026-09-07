@@ -147,6 +147,15 @@ describe("Search across team-shared endpoints", () => {
       path: "/shared/owner-billed",
       receivedAt: now - 120_000,
     });
+    // Owner-billed and older than the free owner's 7-day window: the request
+    // routes hide it from everyone, so search must too, whatever the
+    // searcher's own plan.
+    await insertRequest({
+      endpointId: sharedEndpointId,
+      userId: ownerId,
+      path: "/shared/owner-billed-expired",
+      receivedAt: now - 10 * 86_400_000,
+    });
     // A row on the owner's unshared endpoint must never reach the member.
     await insertRequest({
       endpointId: priv.id,
@@ -195,6 +204,29 @@ describe("Search across team-shared endpoints", () => {
       "/shared/recent",
     ]);
     expect(await countSearchRequestsForUser({ userId: ownerId, plan: "free", q: MARKER })).toBe(4);
+  });
+
+  it("applies the endpoint owner's retention to shared rows, not the searcher's plan", async () => {
+    // A Pro member still does not see the free owner's expired owner-billed row.
+    const asPro = await searchRequestsForUser({ userId: memberId, plan: "pro", q: MARKER });
+    expect(asPro.map((r) => r.path)).not.toContain("/shared/owner-billed-expired");
+    expect(asPro).toHaveLength(3);
+
+    // Once the owner is on Pro, the same row is inside the owner's window.
+    // The owner is deleted in afterAll, so a failed assertion cannot leak the
+    // plan change past this file.
+    const { error } = await admin.from("users").update({ plan: "pro" }).eq("id", ownerId);
+    if (error) throw error;
+    const results = await searchRequestsForUser({ userId: memberId, plan: "free", q: MARKER });
+    const count = await countSearchRequestsForUser({ userId: memberId, q: MARKER });
+    const { error: resetError } = await admin
+      .from("users")
+      .update({ plan: "free" })
+      .eq("id", ownerId);
+    if (resetError) throw resetError;
+
+    expect(results.map((r) => r.path)).toContain("/shared/owner-billed-expired");
+    expect(count).toBe(4);
   });
 
   it("shows a non-member nothing", async () => {

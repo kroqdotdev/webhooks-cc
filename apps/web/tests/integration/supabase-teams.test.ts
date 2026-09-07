@@ -1142,10 +1142,16 @@ describe("Teams Integration", () => {
       expect(result.success).toBe(true);
     });
 
-    it("getSharedEndpointsForUser returns endpoint only once", async () => {
+    it("getSharedEndpointsForUser returns endpoint only once, listing both teams", async () => {
       const shared = await getSharedEndpointsForUser(memberId);
       const matching = shared.filter((e) => e.id === endpointId);
       expect(matching.length).toBe(1);
+
+      // fromTeam is the oldest share; fromTeams carries every share so a team
+      // filter in the clients can match either team.
+      const ep = matching[0];
+      expect(ep.fromTeam.teamId).toBe(teamId);
+      expect(ep.fromTeams.map((t) => t.teamId).sort()).toEqual([teamId, secondTeamId].sort());
     });
 
     it("cleanup second team", async () => {

@@ -207,8 +207,10 @@ function filterEndpointsByTeam(endpoints: Endpoint[], team: string): Endpoint[] 
     share.teamId === needle || share.teamName.toLowerCase() === lowered;
 
   return endpoints.filter((endpoint) => {
-    if (endpoint.fromTeam && matches(endpoint.fromTeam)) return true;
-    return (endpoint.sharedWith ?? []).some(matches);
+    // fromTeams carries every share; fromTeam alone is the oldest one and
+    // would miss an endpoint shared with two of the caller's teams.
+    const from = endpoint.fromTeams ?? (endpoint.fromTeam ? [endpoint.fromTeam] : []);
+    return from.some(matches) || (endpoint.sharedWith ?? []).some(matches);
   });
 }
 

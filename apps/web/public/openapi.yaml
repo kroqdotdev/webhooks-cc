@@ -1203,7 +1203,12 @@ components:
           description: Teams this endpoint is shared with (present when you own it)
         fromTeam:
           $ref: "#/components/schemas/TeamShare"
-          description: Team this endpoint was shared from (present when shared with you)
+          description: Oldest share among your teams (present when shared with you)
+        fromTeams:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamShare"
+          description: Every subscribed team of yours this endpoint is shared with (present when shared with you)
 
     MockResponse:
       type: object

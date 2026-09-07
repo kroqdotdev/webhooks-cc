@@ -6,12 +6,13 @@ use crate::types::Team;
 use crate::util::format::format_timestamp;
 
 pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
-    let usage = client.get_usage().await?;
+    let (usage, teams_result) = tokio::join!(client.get_usage(), client.list_teams());
+    let usage = usage?;
     // Team pools are additive information; a failure there must not hide the
     // personal quota. Text output notes the failure; JSON output carries it
     // as `teamsError` so an empty `teams` is never mistaken for "no teams".
     let mut teams_error: Option<String> = None;
-    let teams: Vec<Team> = match client.list_teams().await {
+    let teams: Vec<Team> = match teams_result {
         Ok(teams) => teams.into_iter().filter(|t| !t.suspended).collect(),
         Err(e) => {
             if !json {

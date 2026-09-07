@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, sanitize};
+use crate::cli::output::{bold, dim, green, red, sanitize};
 use crate::types::{Team, TeamInvite};
 use crate::util::format::format_timestamp;
 
@@ -37,7 +37,7 @@ pub fn resolve_team<'a>(teams: &'a [Team], needle: &str) -> Result<&'a Team> {
     }
 }
 
-async fn find_team(client: &ApiClient, needle: &str) -> Result<Team> {
+pub async fn find_team(client: &ApiClient, needle: &str) -> Result<Team> {
     let teams = client.list_teams().await?;
     resolve_team(&teams, needle).cloned()
 }
@@ -55,15 +55,14 @@ fn status_label(team: &Team) -> String {
 }
 
 pub fn print_team_table(teams: &[Team]) {
+    // Pad before dimming: the escape codes would otherwise count toward the
+    // column width and shift every header right of NAME.
     println!(
-        "  {:<24} {:<8} {:<6} {:<8} {:<22} {:<12} {}",
-        dim("NAME"),
-        dim("ROLE"),
-        dim("SEATS"),
-        dim("MEMBERS"),
-        dim("REQUESTS"),
-        dim("STATUS"),
-        dim("ID"),
+        "  {}",
+        dim(&format!(
+            "{:<24} {:<8} {:<6} {:<8} {:<22} {:<12} {}",
+            "NAME", "ROLE", "SEATS", "MEMBERS", "REQUESTS", "STATUS", "ID"
+        ))
     );
     for team in teams {
         let requests = if team.suspended {
@@ -87,19 +86,13 @@ pub fn print_team_table(teams: &[Team]) {
 fn print_invite_table(invites: &[TeamInvite], show_team: bool) {
     if show_team {
         println!(
-            "  {:<24} {:<28} {:<20} {}",
-            dim("TEAM"),
-            dim("FROM"),
-            dim("SENT"),
-            dim("INVITE ID"),
+            "  {}",
+            dim(&format!("{:<24} {:<28} {:<20} {}", "TEAM", "FROM", "SENT", "INVITE ID"))
         );
     } else {
         println!(
-            "  {:<32} {:<28} {:<20} {}",
-            dim("EMAIL"),
-            dim("FROM"),
-            dim("SENT"),
-            dim("INVITE ID"),
+            "  {}",
+            dim(&format!("{:<32} {:<28} {:<20} {}", "EMAIL", "FROM", "SENT", "INVITE ID"))
         );
     }
     for invite in invites {
@@ -155,11 +148,8 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
 
     println!("{} ({})", bold(&sanitize(&team.name)), status_label(&team));
     println!(
-        "  {:<32} {:<24} {:<8} {}",
-        dim("EMAIL"),
-        dim("NAME"),
-        dim("ROLE"),
-        dim("JOINED"),
+        "  {}",
+        dim(&format!("{:<32} {:<24} {:<8} {}", "EMAIL", "NAME", "ROLE", "JOINED"))
     );
     for member in &result.members {
         let joined = member
@@ -184,8 +174,7 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
 }
 
 pub async fn share(client: &ApiClient, slug: &str, team: &str, json: bool) -> Result<()> {
-    let team = find_team(client, team).await?;
-    let endpoint = client.get_endpoint(slug).await?;
+    let (team, endpoint) = tokio::try_join!(find_team(client, team), client.get_endpoint(slug))?;
     client.share_endpoint(&team.id, &endpoint.id).await?;
 
     if json {
@@ -209,8 +198,7 @@ pub async fn share(client: &ApiClient, slug: &str, team: &str, json: bool) -> Re
 }
 
 pub async fn unshare(client: &ApiClient, slug: &str, team: &str, json: bool) -> Result<()> {
-    let team = find_team(client, team).await?;
-    let endpoint = client.get_endpoint(slug).await?;
+    let (team, endpoint) = tokio::try_join!(find_team(client, team), client.get_endpoint(slug))?;
     client.unshare_endpoint(&team.id, &endpoint.id).await?;
 
     if json {
@@ -242,10 +230,19 @@ pub async fn invite(client: &ApiClient, team: &str, email: &str, json: bool) -> 
             bold(&sanitize(&invite.invited_email)),
             bold(&sanitize(&team.name))
         );
-        println!(
-            "{}",
-            dim("They get an email; accepting claims one of the team's seats.")
-        );
+        match &invite.warning {
+            // The route answers 200 with a warning when the invite row exists
+            // but the email did not go out; the invitee only finds it in-app.
+            Some(warning) => println!(
+                "{} {} Tell them to sign up with that address and accept from their Teams page.",
+                red("!"),
+                sanitize(warning)
+            ),
+            None => println!(
+                "{}",
+                dim("They get an email; accepting claims one of the team's seats.")
+            ),
+        }
     }
     Ok(())
 }
