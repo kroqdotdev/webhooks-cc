@@ -47,6 +47,7 @@ export async function GET(request: Request) {
       isEphemeral: ep.isEphemeral ?? undefined,
       createdAt: ep.createdAt,
       fromTeam: ep.fromTeam,
+      fromTeams: ep.fromTeams,
     }));
 
     return Response.json({ owned, shared });

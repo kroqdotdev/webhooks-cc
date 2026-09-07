@@ -1140,12 +1140,27 @@ describe("Teams Integration", () => {
       // Share same endpoint with second team
       const result = await shareEndpointWithTeam(ownerId, secondTeamId, endpointId);
       expect(result.success).toBe(true);
+
+      // Make the first team's share unambiguously the oldest so the
+      // fromTeam assertion below does not depend on insert timing.
+      const { error } = await admin
+        .from("team_endpoints")
+        .update({ shared_at: new Date(Date.now() + 60_000).toISOString() })
+        .eq("team_id", secondTeamId)
+        .eq("endpoint_id", endpointId);
+      if (error) throw error;
     });
 
-    it("getSharedEndpointsForUser returns endpoint only once", async () => {
+    it("getSharedEndpointsForUser returns endpoint only once, listing both teams", async () => {
       const shared = await getSharedEndpointsForUser(memberId);
       const matching = shared.filter((e) => e.id === endpointId);
       expect(matching.length).toBe(1);
+
+      // fromTeam is the oldest share; fromTeams carries every share so a team
+      // filter in the clients can match either team.
+      const ep = matching[0];
+      expect(ep.fromTeam.teamId).toBe(teamId);
+      expect(ep.fromTeams.map((t) => t.teamId).sort()).toEqual([teamId, secondTeamId].sort());
     });
 
     it("cleanup second team", async () => {

@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { NotFoundError, RateLimitError, WebhooksCC, type Request } from "@webhooks-cc/sdk";
+import {
+  NotFoundError,
+  RateLimitError,
+  WebhooksCC,
+  WebhooksCCError,
+  type Request,
+} from "@webhooks-cc/sdk";
 import { registerTools, registerAgentRegistrationTools } from "../tools";
 
 const EXPECTED_TOOLS = [
@@ -30,6 +36,10 @@ const EXPECTED_TOOLS = [
   "get_usage",
   "test_webhook_flow",
   "describe",
+  "list_teams",
+  "list_team_members",
+  "share_endpoint",
+  "unshare_endpoint",
   "how_to_register",
   "register_agent",
   "check_claim",
@@ -130,6 +140,15 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       ...(overrides.templates ?? {}),
     },
     usage: vi.fn(),
+    teams: {
+      list: vi.fn(async () => []),
+      members: vi.fn(),
+      share: vi.fn(),
+      unshare: vi.fn(),
+      invite: vi.fn(),
+      invites: { list: vi.fn(), accept: vi.fn(), decline: vi.fn() },
+      ...(overrides.teams ?? {}),
+    },
     flow: vi.fn(),
     sendTo: vi.fn(),
     buildRequest: vi.fn(),
@@ -165,7 +184,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(31);
+    expect(Object.keys(tools)).toHaveLength(35);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -755,6 +774,162 @@ describe("registerTools", () => {
 
     const usage = parseJsonResult(await tools.get_usage.handler({}));
     expect(usage.periodEnd).toBe("2023-11-14T22:13:20.000Z");
+    expect(usage.teams).toEqual([]);
+  });
+
+  it("adds the pooled quota of subscribed teams to get_usage", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        usage: vi.fn(async () => ({
+          used: 10,
+          limit: 100,
+          remaining: 90,
+          plan: "free" as const,
+          periodEnd: null,
+        })),
+        teams: {
+          list: vi.fn(async () => [
+            {
+              id: "t1",
+              name: "Team A",
+              role: "member",
+              suspended: false,
+              seats: 2,
+              requestsUsed: 150000,
+              requestLimit: 200000,
+              periodEnd: 1700000000000,
+            },
+            {
+              id: "t2",
+              name: "Lapsed",
+              role: "owner",
+              suspended: true,
+              seats: 0,
+              requestsUsed: 0,
+              requestLimit: 0,
+              periodEnd: null,
+            },
+          ]),
+        } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    const usage = parseJsonResult(await tools.get_usage.handler({}));
+    expect(usage.teams).toEqual([
+      {
+        id: "t1",
+        name: "Team A",
+        role: "member",
+        seats: 2,
+        used: 150000,
+        limit: 200000,
+        remaining: 50000,
+        periodEnd: "2023-11-14T22:13:20.000Z",
+      },
+    ]);
+  });
+
+  it("keeps personal usage and reports teamsError when the team list fails", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        usage: vi.fn(async () => ({
+          used: 1,
+          limit: 50,
+          remaining: 49,
+          plan: "free" as const,
+          periodEnd: null,
+        })),
+        teams: {
+          list: vi.fn(async () => {
+            throw new WebhooksCCError(500, "teams unavailable");
+          }),
+        } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    const result = await tools.get_usage.handler({});
+    expect(result.isError).toBeUndefined();
+    const usage = parseJsonResult(result);
+    expect(usage.used).toBe(1);
+    expect(usage.teams).toEqual([]);
+    expect(usage.teamsError).toBe("teams unavailable");
+  });
+
+  it("passes the team filter through list_endpoints", async () => {
+    const list = vi.fn(async () => []);
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { list } as unknown as WebhooksCC["endpoints"] })
+    );
+
+    await tools.list_endpoints.handler({});
+    await tools.list_endpoints.handler({ team: "Team A" });
+
+    expect(list.mock.calls).toEqual([[{}], [{ team: "Team A" }]]);
+  });
+
+  it("lists teams with ISO period ends", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        teams: {
+          list: vi.fn(async () => [
+            { id: "t1", name: "Team A", role: "owner", periodEnd: 1700000000000 },
+            { id: "t2", name: "Lapsed", role: "member", periodEnd: null },
+          ]),
+        } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    const teams = parseJsonResult(await tools.list_teams.handler({}));
+    expect(teams.map((t: { periodEnd: string | null }) => t.periodEnd)).toEqual([
+      "2023-11-14T22:13:20.000Z",
+      null,
+    ]);
+  });
+
+  it("lists team members and shares or unshares by slug", async () => {
+    const members = vi.fn(async () => ({
+      members: [{ userId: "u1", role: "owner" }],
+      pendingInvites: [],
+    }));
+    const share = vi.fn(async () => undefined);
+    const unshare = vi.fn(async () => undefined);
+    const tools = getRegisteredTools(
+      createMockClient({
+        teams: { members, share, unshare } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    const listed = parseJsonResult(await tools.list_team_members.handler({ teamId: "t1" }));
+    expect(listed.members).toHaveLength(1);
+    expect(members).toHaveBeenCalledWith("t1");
+
+    const shared = parseJsonResult(
+      await tools.share_endpoint.handler({ slug: "abc", teamId: "t1" })
+    );
+    expect(shared).toEqual({ shared: true, slug: "abc", teamId: "t1" });
+    expect(share).toHaveBeenCalledWith("t1", "abc");
+
+    const unshared = parseJsonResult(
+      await tools.unshare_endpoint.handler({ slug: "abc", teamId: "t1" })
+    );
+    expect(unshared).toEqual({ shared: false, slug: "abc", teamId: "t1" });
+    expect(unshare).toHaveBeenCalledWith("t1", "abc");
+  });
+
+  it("surfaces the API error when sharing with a suspended team", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        teams: {
+          share: vi.fn(async () => {
+            throw new WebhooksCCError(400, "This team needs an active Teams subscription");
+          }),
+        } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    const result = await tools.share_endpoint.handler({ slug: "abc", teamId: "t1" });
+    expect(result.isError).toBe(true);
+    expect(parseJsonResult(result).message).toContain("active Teams subscription");
   });
 
   it("runs the composite flow tool and summarizes replay output", async () => {

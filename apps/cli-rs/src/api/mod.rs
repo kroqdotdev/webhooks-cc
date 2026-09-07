@@ -4,6 +4,7 @@ pub mod endpoints;
 pub mod requests;
 pub mod send;
 pub mod stream;
+pub mod teams;
 pub mod usage;
 pub mod update;
 

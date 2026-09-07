@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.29.2";
-export const CLI_VERSION = "1.2.0";
-export const SDK_VERSION = "1.9.1";
-export const MCP_VERSION = "1.7.0";
+export const APP_VERSION = "0.30.0";
+export const CLI_VERSION = "1.3.0";
+export const SDK_VERSION = "1.10.0";
+export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.30.0",
+    date: "2026-09-07",
+    title: "Search Finds Requests on Shared Endpoints",
+    track: "web",
+    items: [
+      "Searching and counting requests now covers endpoints shared with you through a subscribed team, in the dashboard and through the API, instead of only endpoints you own (migration 00039)",
+      "Requests on shared endpoints follow the endpoint owner's retention, not the searcher's plan, matching what the request list already shows team members",
+      "Endpoints shared with you now also carry `fromTeams`, every one of your subscribed teams the endpoint is shared with, alongside the existing `fromTeam` (the oldest share)",
+      "Teams docs gained a section on working with shared endpoints from the CLI, SDK, and MCP server; the OpenAPI description of endpoint listing no longer says shared endpoints need a Pro plan",
+    ],
+  },
   {
     version: "0.29.2",
     date: "2026-08-31",
@@ -687,6 +699,20 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.3.0",
+    date: "2026-09-07",
+    title: "Teams from the Terminal",
+    track: "cli",
+    items: [
+      "New `whk teams` commands: `list` shows your teams with seats, pooled usage, and status; `members <team>` lists members and pending invites; `share <slug> --team <team>` and `unshare` manage sharing; `invite <team> <email>`, `invites`, `accept`, and `decline` handle invites. Teams are addressed by id or by name",
+      "`whk list --team <team>` keeps only the endpoints tied to one team, whether shared with you from it or yours shared with it; the team is resolved the same way as in `whk teams`, so an unknown or ambiguous name is an error",
+      "`whk teams invite` reports when the invite was created but its email could not be sent, instead of claiming the invitee was notified",
+      "`whk usage` prints the pooled quota of every subscribed team you belong to under your personal plan, and `--json` adds a `teams` array (plus `teamsError` if the pools could not be loaded)",
+      "`whk requests search` and `count` now find requests on endpoints shared with you (server-side change in web 0.30.0)",
+      "Fixed `whk requests search`, which failed to parse the search response since the API started returning a plain array; each hit now shows its endpoint slug",
+    ],
+  },
+  {
     version: "1.2.0",
     date: "2026-08-22",
     title: "Tunnels That Stay Up",
@@ -829,6 +855,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.10.0",
+    date: "2026-09-07",
+    title: "Teams Namespace",
+    track: "sdk",
+    items: [
+      "New `client.teams` namespace: `list()` returns your teams with seats and pooled `requestsUsed`/`requestLimit`; `members(teamId)`, `share(teamId, slug)`, `unshare(teamId, slug)`, `invite(teamId, email)`, and `invites.list/accept/decline` mirror the team routes. Share and unshare take a slug and resolve the endpoint id for you",
+      "`endpoints.list({ team })` keeps only endpoints tied to a team id or unique name (resolved through `teams.list()`, so an unknown or ambiguous name throws), matched against `fromTeams`, `fromTeam`, and `sharedWith`; `Endpoint.fromTeams` is new and lists every one of your teams a shared endpoint belongs to",
+      "New `Team`, `TeamMember`, `TeamInvite`, `TeamMembers`, and `ListEndpointsOptions` types; `TeamInvite.warning` is set when the invite was created but its email could not be sent; `describe()` documents the teams operations",
+      "`requests.search` and `requests.count` now return requests on endpoints shared with you (server-side change in web 0.30.0)",
+    ],
+  },
   {
     version: "1.9.1",
     date: "2026-08-22",
@@ -1038,6 +1076,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.8.0",
+    date: "2026-09-07",
+    title: "Team Tools",
+    track: "mcp",
+    items: [
+      "Four new tools: `list_teams` (seats, pooled usage, status), `list_team_members`, `share_endpoint`, and `unshare_endpoint`, bringing the tool count to 35. Invites stay out of MCP because accepting one claims a paid seat",
+      "`list_endpoints` accepts an optional `team` (id or name) to keep only that team's endpoints",
+      "`get_usage` adds a `teams` array with the pooled quota of every subscribed team you belong to; if the team list cannot be loaded the personal usage is still returned with a `teamsError`",
+      "`search_requests` and `count_requests` now find requests on endpoints shared with you (server-side change in web 0.30.0)",
+    ],
+  },
   {
     version: "1.7.0",
     date: "2026-06-05",

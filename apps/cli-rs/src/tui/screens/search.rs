@@ -89,8 +89,10 @@ impl SearchScreen {
             let slug = if self.slug.is_empty() { None } else { Some(self.slug.clone()) };
 
             let handle = tokio::spawn(async move {
-                let result = client
-                    .search_requests(
+                // The search route returns one page and no total, so the
+                // total comes from the count route, fetched alongside.
+                let (result, count) = tokio::join!(
+                    client.search_requests(
                         slug.as_deref(),
                         method.as_deref(),
                         q.as_deref(),
@@ -99,15 +101,16 @@ impl SearchScreen {
                         Some(50),
                         None,
                         Some("desc"),
-                    )
-                    .await;
+                    ),
+                    client.count_requests(slug.as_deref(), method.as_deref(), q.as_deref(), None, None)
+                );
 
                 match result {
                     Ok(sr) => {
                         // Reuse RequestsLoaded for simplicity
                         let _ = tx.send(Message::RequestsLoaded(Ok(crate::types::RequestList {
-                            requests: sr.requests,
-                            count: Some(sr.total),
+                            requests: sr.requests.into_iter().map(CapturedRequest::from).collect(),
+                            count: count.ok().map(|c| c.count),
                         })));
                     }
                     Err(e) => {
@@ -398,7 +401,12 @@ fn render_results(
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme::BORDER))
                 .title(Span::styled(
-                    format!(" Results ({total}) "),
+                    // The screen shows one page; say so when more matches exist.
+                    if total > results.len() as u64 {
+                        format!(" Results (first {} of {total}) ", results.len())
+                    } else {
+                        format!(" Results ({total}) ")
+                    },
                     theme::style_bold(),
                 )),
         )

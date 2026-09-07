@@ -82,8 +82,23 @@ pub async fn create(
     Ok(())
 }
 
-pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
-    let list = client.list_endpoints().await?;
+pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<()> {
+    // Resolve `--team` the same way `whk teams` does (id, or unique name),
+    // so an unknown or ambiguous name is an error rather than an empty list.
+    let team = match team {
+        Some(needle) => Some(crate::cli::teams::find_team(client, needle).await?),
+        None => None,
+    };
+    let mut list = client.list_endpoints().await?;
+
+    if let Some(team) = &team {
+        let tied = |ep: &crate::types::Endpoint| {
+            ep.from_teams.iter().chain(ep.from_team.iter()).chain(ep.shared_with.iter())
+                .any(|share| share.team_id == team.id)
+        };
+        list.owned.retain(tied);
+        list.shared.retain(tied);
+    }
 
     if json {
         println!("{}", serde_json::to_string_pretty(&list)?);
@@ -92,7 +107,14 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
 
     let mut all: Vec<_> = list.owned.iter().chain(list.shared.iter()).collect();
     if all.is_empty() {
-        println!("  No endpoints found. Create one with {}", bold("whk create"));
+        match &team {
+            Some(team) => println!(
+                "  No endpoints tied to team {}. Share one with {}",
+                bold(&team.name),
+                bold("whk teams share <slug> --team <team>")
+            ),
+            None => println!("  No endpoints found. Create one with {}", bold("whk create")),
+        }
         return Ok(());
     }
 
@@ -226,3 +248,4 @@ fn build_mock_response(
         delay: None,
     }))
 }
+

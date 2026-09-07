@@ -52,6 +52,7 @@ export interface TeamEndpointShare {
 export interface DashboardEndpointWithSharing extends DashboardEndpoint {
   sharedWith?: TeamEndpointShare[];
   fromTeam?: { teamId: string; teamName: string };
+  fromTeams?: { teamId: string; teamName: string }[];
 }
 
 export interface DashboardEndpointsResponse {

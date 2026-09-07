@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use whk::api::ApiClient;
-use whk::cli::{self, AuthAction, Cli, Command, RequestsAction};
+use whk::cli::{self, AuthAction, Cli, Command, RequestsAction, TeamsAction};
 use whk::tui;
 
 #[tokio::main]
@@ -38,8 +38,8 @@ async fn main() -> Result<()> {
             cli::endpoints::create(&client, name, ephemeral, expires_in, mock_status, mock_body, mock_headers, signing_provider, signing_secret, args.json).await?;
         }
 
-        Some(Command::List) => {
-            cli::endpoints::list(&client, args.json).await?;
+        Some(Command::List { team }) => {
+            cli::endpoints::list(&client, team.as_deref(), args.json).await?;
         }
 
         Some(Command::Get { slug }) => {
@@ -93,6 +93,17 @@ async fn main() -> Result<()> {
             RequestsAction::Export { slug, format, limit, since, output } => {
                 cli::requests::export(&client, &slug, &format, limit, since, output.as_deref(), args.json).await?;
             }
+        },
+
+        Some(Command::Teams { action }) => match action {
+            TeamsAction::List => cli::teams::list(&client, args.json).await?,
+            TeamsAction::Members { team } => cli::teams::members(&client, &team, args.json).await?,
+            TeamsAction::Share { slug, team } => cli::teams::share(&client, &slug, &team, args.json).await?,
+            TeamsAction::Unshare { slug, team } => cli::teams::unshare(&client, &slug, &team, args.json).await?,
+            TeamsAction::Invite { team, email } => cli::teams::invite(&client, &team, &email, args.json).await?,
+            TeamsAction::Invites => cli::teams::invites(&client, args.json).await?,
+            TeamsAction::Accept { invite_id } => cli::teams::accept(&client, &invite_id, args.json).await?,
+            TeamsAction::Decline { invite_id } => cli::teams::decline(&client, &invite_id, args.json).await?,
         },
 
         Some(Command::Usage) => {

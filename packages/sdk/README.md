@@ -88,6 +88,7 @@ const client = new WebhooksCC({
 - `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `send`, `sendTemplate`
 - `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `count`, `clear`, `export`
 - `client.templates`: `listProviders`, `get`
+- `client.teams`: `list`, `members`, `share`, `unshare`, `invite`, `invites.list`, `invites.accept`, `invites.decline`
 - top-level client methods: `usage()`, `sendTo()`, `buildRequest()`, `flow()`, `describe()`
 
 ## Endpoints
@@ -490,6 +491,29 @@ const result = await client
   .run();
 
 console.log(result.request?.id, result.verification?.valid, result.cleanedUp);
+```
+
+## Teams
+
+A key has exactly the team access of the account it belongs to. Endpoints shared with you through a subscribed team appear in `endpoints.list()` with `fromTeam` set and work with every request method by slug except `requests.clear`, which stays with the owner. The `teams` namespace manages the teams themselves:
+
+```typescript
+const teams = await client.teams.list();
+// [{ id, name, role, seats, requestsUsed, requestLimit, periodEnd, suspended, ... }]
+
+// Only endpoints tied to one team (id or name), shared either way
+const payments = await client.endpoints.list({ team: "Payments" });
+
+// Owner-only: share an endpoint you own, by slug. Its requests then bill the team pool.
+await client.teams.share(teams[0].id, "my-stripe");
+await client.teams.unshare(teams[0].id, "my-stripe");
+
+const { members, pendingInvites } = await client.teams.members(teams[0].id);
+
+// Invites: sending one emails the address; accepting claims a paid seat.
+await client.teams.invite(teams[0].id, "dev@example.com");
+const invites = await client.teams.invites.list();
+await client.teams.invites.accept(invites[0].id);
 ```
 
 ## Usage and self-description

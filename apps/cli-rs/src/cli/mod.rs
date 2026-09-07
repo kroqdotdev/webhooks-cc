@@ -5,6 +5,7 @@ pub mod output;
 pub mod replay;
 pub mod requests;
 pub mod send;
+pub mod teams;
 pub mod tunnel;
 pub mod usage;
 pub mod update;
@@ -85,8 +86,12 @@ pub enum Command {
         signing_secret: Option<String>,
     },
 
-    /// List all endpoints
-    List,
+    /// List all endpoints, yours and those shared with you through teams
+    List {
+        /// Only endpoints tied to this team (id or name): shared with you from it, or yours shared with it
+        #[arg(long)]
+        team: Option<String>,
+    },
 
     /// Get endpoint details
     Get {
@@ -208,7 +213,13 @@ pub enum Command {
         action: RequestsAction,
     },
 
-    /// Show usage and quota info
+    /// Manage teams: sharing, members, and invites
+    Teams {
+        #[command(subcommand)]
+        action: TeamsAction,
+    },
+
+    /// Show usage and quota info, including team pools
     Usage,
 
     /// Update whk to the latest version
@@ -229,6 +240,62 @@ pub enum AuthAction {
     Status,
     /// Log out and clear stored token
     Logout,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TeamsAction {
+    /// List your teams with seats, pooled usage, and status
+    List,
+
+    /// List a team's members and pending invites
+    Members {
+        /// Team id or name
+        team: String,
+    },
+
+    /// Share an endpoint you own with a team
+    Share {
+        /// Endpoint slug
+        slug: String,
+
+        /// Team id or name
+        #[arg(long)]
+        team: String,
+    },
+
+    /// Stop sharing an endpoint you own with a team
+    Unshare {
+        /// Endpoint slug
+        slug: String,
+
+        /// Team id or name
+        #[arg(long)]
+        team: String,
+    },
+
+    /// Invite an email address to a team you own (sends an email; acceptance claims a seat)
+    Invite {
+        /// Team id or name
+        team: String,
+
+        /// Email address to invite
+        email: String,
+    },
+
+    /// List invites waiting for you
+    Invites,
+
+    /// Accept a team invite
+    Accept {
+        /// Invite id (from `whk teams invites`)
+        invite_id: String,
+    },
+
+    /// Decline a team invite
+    Decline {
+        /// Invite id (from `whk teams invites`)
+        invite_id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]

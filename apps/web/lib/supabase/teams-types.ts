@@ -70,6 +70,9 @@ export interface SharedEndpoint {
   } | null;
   isEphemeral: boolean;
   createdAt: number;
+  /** Oldest share among the caller's subscribed teams. */
   fromTeam: { teamId: string; teamName: string };
+  /** Every subscribed team of the caller this endpoint is shared with. */
+  fromTeams: { teamId: string; teamName: string }[];
   ownerId: string;
 }

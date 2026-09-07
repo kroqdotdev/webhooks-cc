@@ -58,7 +58,7 @@ Get your API key at [webhooks.cc/account](https://webhooks.cc/account).
 
 ## What it exposes
 
-The server exposes `25` tools, `3` prompts, and `3` resource surfaces.
+The server exposes `35` tools, `3` prompts, and `3` resource surfaces.
 
 ### Endpoint tools
 
@@ -91,11 +91,31 @@ The server exposes `25` tools, `3` prompts, and `3` resource surfaces.
 - `preview_webhook`
 - `test_webhook_flow`
 
+### Team tools
+
+- `list_teams`
+- `list_team_members`
+- `share_endpoint`
+- `unshare_endpoint`
+
+Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) and work with every request tool except `clear_requests`, which stays with the owner. Invites are not exposed: accepting one claims a paid seat.
+
 ### Discovery and account tools
 
 - `list_provider_templates`
-- `get_usage`
+- `get_usage` (personal plan plus each subscribed team's pool)
 - `describe`
+
+### Agent registration tools
+
+Registered on every server, with or without an API key, so an agent that has no credential yet can obtain one (auth.md):
+
+- `how_to_register`
+- `register_agent`
+- `check_claim`
+- `register_agent_with_email`
+- `verify_agent_otp`
+- `register_agent_with_idjag`
 
 ## Prompts
 

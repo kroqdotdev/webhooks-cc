@@ -37,13 +37,13 @@ tags:
   - name: Streaming
     description: Real-time Server-Sent Events stream of incoming webhooks.
   - name: Search
-    description: Search retained requests (pro plan required).
+    description: Search retained requests across your endpoints and endpoints shared with you through teams.
   - name: Send
     description: Send test webhooks to your endpoints.
   - name: Usage
     description: Request quota and billing information.
   - name: Teams
-    description: Team management and endpoint sharing (pro plan required).
+    description: Team management and endpoint sharing. Any account can create a team; the team needs its own Teams subscription before it can invite members or share endpoints.
   - name: Invites
     description: Team invitation management.
 
@@ -56,8 +56,10 @@ paths:
       tags: [Endpoints]
       summary: List endpoints
       description: |
-        Returns all endpoints owned by the authenticated user, plus any endpoints
-        shared with them via teams (pro plan only).
+        Returns all endpoints owned by the authenticated user (`owned`, each with
+        `sharedWith`), plus endpoints shared with them through a team that has an
+        active Teams subscription (`shared`, each with `fromTeam`). Personal plans
+        do not affect team access.
       responses:
         "200":
           description: Endpoint listing
@@ -389,7 +391,9 @@ paths:
       tags: [Search]
       summary: Search requests
       description: |
-        Search retained requests across endpoints. Requires a pro plan.
+        Search retained requests across endpoints you own and endpoints shared
+        with you through a subscribed team. Rows on shared endpoints are bounded
+        by the owner's retention, not the caller's plan.
         Rate limited to 60 requests per 10 minutes.
       parameters:
         - name: slug
@@ -456,7 +460,7 @@ paths:
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
-          description: Pro plan required
+          description: Claimed account required (an unowned agent key is rejected)
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -480,7 +484,7 @@ paths:
       summary: Count search results
       description: |
         Count retained requests matching search filters without returning them.
-        Requires a pro plan. Rate limited to 120 requests per 10 minutes.
+        Covers endpoints shared with you through a subscribed team. Rate limited to 120 requests per 10 minutes.
         Accepts the same query parameters as search (except `limit`, `offset`, `order`).
       parameters:
         - name: slug
@@ -525,7 +529,7 @@ paths:
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
-          description: Pro plan required
+          description: Claimed account required (an unowned agent key is rejected)
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -672,7 +676,7 @@ paths:
       tags: [Teams]
       summary: Create team
       description: |
-        Create a new team. Requires a pro plan.
+        Create a new team. Any account can create one; it is suspended until it has a Teams subscription.
         Rate limited to 10 requests per 10 minutes.
       requestBody:
         required: true
@@ -1199,7 +1203,12 @@ components:
           description: Teams this endpoint is shared with (present when you own it)
         fromTeam:
           $ref: "#/components/schemas/TeamShare"
-          description: Team this endpoint was shared from (present when shared with you)
+          description: Oldest share among your teams (present when shared with you)
+        fromTeams:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamShare"
+          description: Every subscribed team of yours this endpoint is shared with (present when shared with you)
 
     MockResponse:
       type: object

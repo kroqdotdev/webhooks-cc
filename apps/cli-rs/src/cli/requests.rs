@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::io::{self, Write};
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line};
+use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line, print_search_hit};
 use crate::cli::ExportFormat;
 
 pub async fn list(
@@ -72,6 +72,9 @@ pub async fn search(
     order: &str,
     json: bool,
 ) -> Result<()> {
+    // The route clamps limit to 1..=200; mirror it so the footer describes the
+    // page that actually came back.
+    let limit = limit.clamp(1, 200);
     let result = client
         .search_requests(slug, method, q, from, to, Some(limit), Some(offset), Some(order))
         .await?;
@@ -86,10 +89,21 @@ pub async fn search(
         return Ok(());
     }
 
-    for req in &result.requests {
-        print_request_line(req);
+    for hit in &result.requests {
+        print_search_hit(hit);
     }
-    println!("\n  {} {}", dim("Total matches:"), result.total);
+    let shown = result.requests.len();
+    if shown as u32 >= limit {
+        println!(
+            "\n  {} {} (a full page; more may exist: use --offset {} or {} for the total)",
+            dim("Shown:"),
+            shown,
+            offset + limit,
+            bold("whk requests count")
+        );
+    } else {
+        println!("\n  {} {}", dim("Shown:"), shown);
+    }
 
     Ok(())
 }

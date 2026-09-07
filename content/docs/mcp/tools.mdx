@@ -1,14 +1,14 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 25 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
+description: "Complete reference for all 35 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-05-15
+lastUpdated: 2026-09-07
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 25 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
+  ogDescription: "Complete reference for all 35 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
 ---
 
 ## Endpoint management
@@ -51,7 +51,11 @@ Create 1--20 endpoints in a single call. Returns an array of created endpoints.
 
 ### list_endpoints
 
-List all your endpoints. No parameters.
+List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with).
+
+| Parameter | Type     | Required | Description                                                                                                               |
+| --------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `team`    | `string` | no       | Team id or unique name; keeps only endpoints tied to that team via `fromTeams`, `fromTeam`, or `sharedWith`. Ambiguous names are an error |
 
 ### get_endpoint
 
@@ -291,7 +295,40 @@ Verify the webhook signature on a captured request. Supports two modes:
 | `url`       | `string` | no       | Request URL (required for Twilio, Square, and HubSpot signature verification)                                                                                                                                                                                                                                                                                                                |
 | `method`    | `string` | no       | HTTP method used when the signature was generated (used by HubSpot v3; the SDK assumes `POST` when omitted)                                                                                                                                                                                                                                                                                  |
 
+## Teams
+
+An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug except `clear_requests`, which only the owner may call; these tools manage the teams. Invites are not exposed: accepting one claims a paid seat and inviting sends email, so those stay with people (dashboard, `whk teams`, or the SDK).
+
+### list_teams
+
+List the teams you own or belong to: role, seats, `requestsUsed` and `requestLimit` of the pooled quota, `periodEnd`, and whether the team is suspended. No parameters.
+
+### list_team_members
+
+List a team's members and pending invites.
+
+| Parameter | Type     | Required | Description               |
+| --------- | -------- | -------- | ------------------------- |
+| `teamId`  | `string` | yes      | Team id from `list_teams` |
+
+### share_endpoint
+
+Share an endpoint you own with a team. The team needs an active subscription; the endpoint's requests then draw from the team's pooled quota.
+
+| Parameter | Type     | Required | Description                 |
+| --------- | -------- | -------- | --------------------------- |
+| `slug`    | `string` | yes      | Slug of an endpoint you own |
+| `teamId`  | `string` | yes      | Team id from `list_teams`   |
+
+### unshare_endpoint
+
+Stop sharing an endpoint you own with a team. Same parameters as `share_endpoint`.
+
 ## Utilities
+
+### get_usage
+
+Your plan's request usage, remaining quota, and period end, plus a `teams` array with the pooled quota of every subscribed team you belong to. No parameters.
 
 ### list_provider_templates
 

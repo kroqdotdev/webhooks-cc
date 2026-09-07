@@ -527,11 +527,70 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "list_endpoints",
-    "List all webhook endpoints for the authenticated user.",
+    "List webhook endpoints: those you own (with sharedWith) and those shared with you through teams (with fromTeam). Optionally keep only one team's endpoints.",
+    {
+      team: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Team id or name (case-insensitive). Keeps endpoints shared with you from that team and endpoints you own that are shared with it."
+        ),
+    },
+    withErrorHandling(async ({ team }) => {
+      const endpoints = await client.endpoints.list({ team });
+      return jsonContent(endpoints);
+    })
+  );
+
+  server.tool(
+    "list_teams",
+    "List the teams you own or belong to, with role, seats, pooled request usage (requestsUsed/requestLimit), period end, and whether the team is suspended for lack of a subscription.",
     {},
     withErrorHandling(async () => {
-      const endpoints = await client.endpoints.list();
-      return jsonContent(endpoints);
+      const teams = await client.teams.list();
+      return jsonContent(
+        teams.map((team) => ({
+          ...team,
+          periodEnd: team.periodEnd ? new Date(team.periodEnd).toISOString() : null,
+        }))
+      );
+    })
+  );
+
+  server.tool(
+    "list_team_members",
+    "List a team's members and pending invites. Any member of the team may call this.",
+    { teamId: z.string().min(1).describe("Team id (from list_teams)") },
+    withErrorHandling(async ({ teamId }) => {
+      const result = await client.teams.members(teamId);
+      return jsonContent(result);
+    })
+  );
+
+  server.tool(
+    "share_endpoint",
+    "Share an endpoint you own with a team so its members can inspect, stream, and edit it. The team needs an active subscription; the endpoint's requests then bill the team's pooled quota.",
+    {
+      slug: z.string().describe("Slug of an endpoint you own"),
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+    },
+    withErrorHandling(async ({ slug, teamId }) => {
+      await client.teams.share(teamId, slug);
+      return jsonContent({ shared: true, slug, teamId });
+    })
+  );
+
+  server.tool(
+    "unshare_endpoint",
+    "Stop sharing an endpoint you own with a team. Works even when the team is suspended.",
+    {
+      slug: z.string().describe("Slug of an endpoint you own"),
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+    },
+    withErrorHandling(async ({ slug, teamId }) => {
+      await client.teams.unshare(teamId, slug);
+      return jsonContent({ shared: false, slug, teamId });
     })
   );
 
@@ -1101,13 +1160,40 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "get_usage",
-    "Check current request usage, remaining quota, plan, and period end.",
+    "Check current request usage, remaining quota, plan, and period end, plus the pooled quota of every subscribed team you belong to.",
     {},
     withErrorHandling(async () => {
-      const usage = await client.usage();
+      // Team pools are additive: a failing /api/teams must not turn a working
+      // personal-usage query into a tool error, so it degrades to teamsError.
+      const [usageResult, teamsResult] = await Promise.allSettled([
+        client.usage(),
+        client.teams.list(),
+      ]);
+      if (usageResult.status === "rejected") throw usageResult.reason;
+      const usage = usageResult.value;
+      const teams = teamsResult.status === "fulfilled" ? teamsResult.value : [];
+      const teamsError =
+        teamsResult.status === "rejected"
+          ? teamsResult.reason instanceof Error
+            ? teamsResult.reason.message
+            : String(teamsResult.reason)
+          : undefined;
       return jsonContent({
         ...usage,
         periodEnd: usage.periodEnd ? new Date(usage.periodEnd).toISOString() : null,
+        ...(teamsError ? { teamsError } : {}),
+        teams: teams
+          .filter((team) => !team.suspended)
+          .map((team) => ({
+            id: team.id,
+            name: team.name,
+            role: team.role,
+            seats: team.seats,
+            used: team.requestsUsed,
+            limit: team.requestLimit,
+            remaining: Math.max(0, team.requestLimit - team.requestsUsed),
+            periodEnd: team.periodEnd ? new Date(team.periodEnd).toISOString() : null,
+          })),
       });
     })
   );
