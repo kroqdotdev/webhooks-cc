@@ -320,51 +320,81 @@ describe("WebhooksCC", () => {
           createdAt: 1,
           fromTeam: { teamId: "t2", teamName: "Team B" },
         },
+        {
+          id: "ep4",
+          slug: "both",
+          createdAt: 1,
+          fromTeam: { teamId: "t1", teamName: "Team A" },
+          fromTeams: [
+            { teamId: "t1", teamName: "Team A" },
+            { teamId: "t2", teamName: "Team B" },
+          ],
+        },
+      ];
+      const teams = [
+        { id: "t1", name: "Team A" },
+        { id: "t2", name: "Team B" },
+        { id: "t3", name: "Dup" },
+        { id: "t4", name: "dup" },
       ];
 
-      it("matches a team id against fromTeam and sharedWith", async () => {
-        globalThis.fetch = mockFetch({ body: { owned, shared } });
+      // The filter resolves the team through GET /api/teams, so route by URL.
+      function mockRoutes() {
+        return vi.fn(async (url: string) => {
+          const body = url.endsWith("/api/teams") ? teams : { owned, shared };
+          return {
+            ok: true,
+            status: 200,
+            headers: new Headers({ "content-type": "application/json" }),
+            json: () => Promise.resolve(body),
+            text: () => Promise.resolve(JSON.stringify(body)),
+          };
+        });
+      }
+
+      it("matches a team id against fromTeams, fromTeam, and sharedWith", async () => {
+        const fetchMock = mockRoutes();
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
 
         const byId = await createClient().endpoints.list({ team: "t1" });
-        expect(byId.map((e) => e.slug)).toEqual(["mine-shared"]);
+        expect(byId.map((e) => e.slug)).toEqual(["mine-shared", "both"]);
+        expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+          `${BASE_URL}/api/endpoints`,
+          `${BASE_URL}/api/teams`,
+        ]);
 
         const byOtherId = await createClient().endpoints.list({ team: "t2" });
-        expect(byOtherId.map((e) => e.slug)).toEqual(["theirs"]);
+        expect(byOtherId.map((e) => e.slug)).toEqual(["theirs", "both"]);
       });
 
-      it("matches every team in fromTeams, not only the oldest share", async () => {
-        const multi = [
-          {
-            id: "ep4",
-            slug: "both",
-            createdAt: 1,
-            fromTeam: { teamId: "t1", teamName: "Team A" },
-            fromTeams: [
-              { teamId: "t1", teamName: "Team A" },
-              { teamId: "t2", teamName: "Team B" },
-            ],
-          },
-        ];
-        globalThis.fetch = mockFetch({ body: { owned: [], shared: multi } });
-
-        const result = await createClient().endpoints.list({ team: "t2" });
-        expect(result.map((e) => e.slug)).toEqual(["both"]);
-      });
-
-      it("matches a team name case-insensitively", async () => {
-        globalThis.fetch = mockFetch({ body: { owned, shared } });
+      it("matches a unique team name case-insensitively", async () => {
+        globalThis.fetch = mockRoutes() as unknown as typeof fetch;
 
         const result = await createClient().endpoints.list({ team: "team b" });
-        expect(result.map((e) => e.slug)).toEqual(["theirs"]);
+        expect(result.map((e) => e.slug)).toEqual(["theirs", "both"]);
       });
 
-      it("returns nothing for an unknown team and rejects a blank one", async () => {
-        globalThis.fetch = mockFetch({ body: { owned, shared } });
+      it("rejects unknown, ambiguous, and blank team selectors", async () => {
+        globalThis.fetch = mockRoutes() as unknown as typeof fetch;
 
-        expect(await createClient().endpoints.list({ team: "nope" })).toEqual([]);
+        await expect(createClient().endpoints.list({ team: "nope" })).rejects.toThrow(
+          'No team named or with id "nope"'
+        );
+        await expect(createClient().endpoints.list({ team: "DUP" })).rejects.toThrow(
+          "2 teams are named"
+        );
         await expect(createClient().endpoints.list({ team: "  " })).rejects.toThrow(
           "team must be a team id or name"
         );
+      });
+
+      it("does not call the teams route without a filter", async () => {
+        const fetchMock = mockRoutes();
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+        const all = await createClient().endpoints.list();
+        expect(all).toHaveLength(4);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
       });
     });
   });
@@ -1541,7 +1571,7 @@ describe("WebhooksCC", () => {
       expect(description.requests.clear).toBeDefined();
       expect(description.requests.subscribe.params.reconnect).toBe("boolean?");
       expect(Object.keys(description.requests)).toHaveLength(11);
-      expect(description.endpoints.list.params.team).toContain("team id or name");
+      expect(description.endpoints.list.params.team).toContain("team id or unique name");
       expect(Object.keys(description.teams)).toHaveLength(8);
       expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });
     });

@@ -7,7 +7,7 @@
  * searcher's personal 7-day window applies only to their own non-team-billed
  * rows; rows on shared endpoints are bounded by the owner's cleanup instead.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import { countSearchRequestsForUser, searchRequestsForUser } from "@/lib/supabase/search";
@@ -163,6 +163,18 @@ describe("Search across team-shared endpoints", () => {
       path: "/private/recent",
       receivedAt: now - 30_000,
     });
+  });
+
+  // Every test assumes the share exists; the last one removes it. Restoring
+  // it after each test keeps the suite order-independent (--sequence.shuffle).
+  afterEach(async () => {
+    const { error } = await admin
+      .from("team_endpoints")
+      .upsert(
+        { team_id: teamId, endpoint_id: sharedEndpointId, shared_by: ownerId },
+        { onConflict: "team_id,endpoint_id", ignoreDuplicates: true }
+      );
+    if (error) throw error;
   });
 
   afterAll(async () => {

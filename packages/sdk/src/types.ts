@@ -171,8 +171,10 @@ export interface UsageInfo {
 export interface ListEndpointsOptions {
   /**
    * Keep only endpoints tied to this team: those shared with you from it
-   * (`fromTeam`) and those you own and shared with it (`sharedWith`).
-   * Matches a team id exactly or a team name case-insensitively.
+   * (`fromTeams`, `fromTeam`) and those you own and shared with it
+   * (`sharedWith`). A team id (exact) or a team name (case-insensitive),
+   * resolved against `teams.list()`; a name that matches several teams
+   * throws, so pass the id in that case.
    */
   team?: string;
 }

@@ -29,7 +29,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "Searching and counting requests now covers endpoints shared with you through a subscribed team, in the dashboard and through the API, instead of only endpoints you own (migration 00039)",
-      "Rows on a shared endpoint follow the endpoint owner's retention, not the searcher's plan, matching what the request list already shows team members; the owned and shared populations are queried on their own indexes so search stays cheap for accounts with no teams",
+      "Requests on shared endpoints follow the endpoint owner's retention, not the searcher's plan, matching what the request list already shows team members",
       "Endpoints shared with you now also carry `fromTeams`, every one of your subscribed teams the endpoint is shared with, alongside the existing `fromTeam` (the oldest share)",
       "Teams docs gained a section on working with shared endpoints from the CLI, SDK, and MCP server; the OpenAPI description of endpoint listing no longer says shared endpoints need a Pro plan",
     ],
@@ -862,7 +862,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "sdk",
     items: [
       "New `client.teams` namespace: `list()` returns your teams with seats and pooled `requestsUsed`/`requestLimit`; `members(teamId)`, `share(teamId, slug)`, `unshare(teamId, slug)`, `invite(teamId, email)`, and `invites.list/accept/decline` mirror the team routes. Share and unshare take a slug and resolve the endpoint id for you",
-      "`endpoints.list({ team })` keeps only endpoints tied to a team id or name, matched against `fromTeams`, `fromTeam`, and `sharedWith`; `Endpoint.fromTeams` is new and lists every one of your teams a shared endpoint belongs to",
+      "`endpoints.list({ team })` keeps only endpoints tied to a team id or unique name (resolved through `teams.list()`, so an unknown or ambiguous name throws), matched against `fromTeams`, `fromTeam`, and `sharedWith`; `Endpoint.fromTeams` is new and lists every one of your teams a shared endpoint belongs to",
       "New `Team`, `TeamMember`, `TeamInvite`, `TeamMembers`, and `ListEndpointsOptions` types; `TeamInvite.warning` is set when the invite was created but its email could not be sent; `describe()` documents the teams operations",
       "`requests.search` and `requests.count` now return requests on endpoints shared with you (server-side change in web 0.30.0)",
     ],

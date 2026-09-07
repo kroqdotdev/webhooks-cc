@@ -106,6 +106,17 @@ Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) a
 - `get_usage` (personal plan plus each subscribed team's pool)
 - `describe`
 
+### Agent registration tools
+
+Registered on every server, with or without an API key, so an agent that has no credential yet can obtain one (auth.md):
+
+- `how_to_register`
+- `register_agent`
+- `check_claim`
+- `register_agent_with_email`
+- `verify_agent_otp`
+- `register_agent_with_idjag`
+
 ## Prompts
 
 The server exposes MCP prompts for common workflows:

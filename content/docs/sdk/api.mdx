@@ -70,7 +70,7 @@ list(options?: ListEndpointsOptions): Promise<Endpoint[]>
 
 | Param  | Type     | Required | Description                                                                                  |
 | ------ | -------- | -------- | -------------------------------------------------------------------------------------------- |
-| `team` | `string` | no       | Keep only endpoints tied to this team id or name (case-insensitive), via `fromTeam` or `sharedWith` |
+| `team` | `string` | no       | Keep only endpoints tied to this team, matched via `fromTeams`, `fromTeam`, or `sharedWith`. A team id or a unique name (case-insensitive), resolved through `teams.list()`; an ambiguous name throws |
 
 </ParamTable>
 </ApiMethod>

@@ -193,19 +193,37 @@ function validatePathSegment(segment: string, name: string): void {
 }
 
 /**
- * Keeps the endpoints tied to one team: shared with the caller from it, or
- * owned by the caller and shared with it. `team` is a team id (exact) or a
- * team name (case-insensitive).
+ * Picks one of the caller's teams by id (exact) or name (case-insensitive).
+ * Team names are not unique, so a name that matches several teams is an
+ * error rather than a guess; the CLI resolves `--team` the same way.
  */
-function filterEndpointsByTeam(endpoints: Endpoint[], team: string): Endpoint[] {
+function resolveTeam(teams: Team[], team: string): Team {
   const needle = team.trim();
   if (needle.length === 0) {
     throw new Error("team must be a team id or name");
   }
-  const lowered = needle.toLowerCase();
-  const matches = (share: { teamId: string; teamName: string }) =>
-    share.teamId === needle || share.teamName.toLowerCase() === lowered;
+  const byId = teams.find((t) => t.id === needle);
+  if (byId) return byId;
 
+  const lowered = needle.toLowerCase();
+  const byName = teams.filter((t) => t.name.toLowerCase() === lowered);
+  if (byName.length === 1) return byName[0]!;
+  if (byName.length === 0) {
+    throw new NotFoundError(`No team named or with id "${needle}": see client.teams.list()`);
+  }
+  throw new Error(
+    `${byName.length} teams are named "${needle}"; pass the team id instead (${byName
+      .map((t) => t.id)
+      .join(", ")})`
+  );
+}
+
+/**
+ * Keeps the endpoints tied to one team: shared with the caller from it, or
+ * owned by the caller and shared with it.
+ */
+function filterEndpointsByTeamId(endpoints: Endpoint[], teamId: string): Endpoint[] {
+  const matches = (share: { teamId: string }) => share.teamId === teamId;
   return endpoints.filter((endpoint) => {
     // fromTeams carries every share; fromTeam alone is the oldest one and
     // would miss an endpoint shared with two of the caller's teams.
@@ -765,7 +783,9 @@ export class WebhooksCC {
         list: {
           description:
             "List all endpoints you own plus those shared with you through teams (each carries fromTeam or sharedWith)",
-          params: { team: "string?: keep only endpoints tied to this team id or name" },
+          params: {
+            team: "string?: keep only endpoints tied to this team id or unique name (resolved via teams.list(); ambiguous names throw)",
+          },
         },
         get: {
           description: "Get endpoint by slug",
@@ -1009,12 +1029,16 @@ export class WebhooksCC {
     },
 
     list: async (options: ListEndpointsOptions = {}): Promise<Endpoint[]> => {
-      const response = await this.request<{ owned: Endpoint[]; shared: Endpoint[] }>(
-        "GET",
-        "/endpoints"
-      );
+      // The team filter resolves the selector against the caller's teams so an
+      // unknown or ambiguous name is an error, not an empty or merged list.
+      const [response, team] = await Promise.all([
+        this.request<{ owned: Endpoint[]; shared: Endpoint[] }>("GET", "/endpoints"),
+        options.team === undefined
+          ? Promise.resolve(undefined)
+          : this.teams.list().then((teams) => resolveTeam(teams, options.team!)),
+      ]);
       const all = [...(response.owned ?? []), ...(response.shared ?? [])];
-      return options.team === undefined ? all : filterEndpointsByTeam(all, options.team);
+      return team === undefined ? all : filterEndpointsByTeamId(all, team.id);
     },
 
     get: async (slug: string): Promise<Endpoint> => {

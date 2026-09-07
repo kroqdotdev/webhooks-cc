@@ -271,7 +271,8 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
     .from("team_endpoints")
     .select("team_id, endpoint_id, shared_by")
     .in("team_id", activeTeamIds)
-    .order("shared_at", { ascending: true });
+    .order("shared_at", { ascending: true })
+    .order("team_id", { ascending: true });
 
   if (sharesError) throw sharesError;
   if (!sharesData || sharesData.length === 0) return [];

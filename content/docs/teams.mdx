@@ -82,7 +82,7 @@ Sharing an endpoint with an active team moves its billing to that team:
 
 An API key carries exactly the team access of the account it belongs to, so everything below works with a key from your account page or with `whk auth login`. Unclaimed agent keys have no team access until a human claims them.
 
-**Shared endpoints behave like your own.** Any endpoint shared with you through a subscribed team can be listed, inspected, streamed, searched, and forwarded by slug. Each endpoint carries `fromTeam` (shared with you) or `sharedWith` (yours, shared with a team) so you can tell them apart.
+**Shared endpoints behave like your own.** Any endpoint shared with you through a subscribed team can be listed, inspected, streamed, searched, and forwarded by slug. Each endpoint carries `sharedWith` (yours, shared with a team) or `fromTeams` (shared with you: every one of your teams it is shared with, with `fromTeam` naming the oldest share) so you can tell them apart. A team filter matches any of those; it takes a team id or a unique team name.
 
 ```bash
 whk list --team Payments          # endpoints tied to one team, by name or id

@@ -51,11 +51,11 @@ Create 1--20 endpoints in a single call. Returns an array of created endpoints.
 
 ### list_endpoints
 
-List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`).
+List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`, the oldest share, and `fromTeams`, every one of your teams it is shared with).
 
-| Parameter | Type     | Required | Description                                                                  |
-| --------- | -------- | -------- | ---------------------------------------------------------------------------- |
-| `team`    | `string` | no       | Team id or name; keeps only endpoints tied to that team                      |
+| Parameter | Type     | Required | Description                                                                                                               |
+| --------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `team`    | `string` | no       | Team id or unique name; keeps only endpoints tied to that team via `fromTeams`, `fromTeam`, or `sharedWith`. Ambiguous names are an error |
 
 ### get_endpoint
 
