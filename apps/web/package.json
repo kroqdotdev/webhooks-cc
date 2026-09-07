@@ -69,7 +69,7 @@
     "@types/react-dom": "^19.2.5",
     "@types/source-map-support": "^0.5.10",
     "dotenv": "^17.4.2",
-    "postcss": "^8.5.26",
+    "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
   }
