@@ -495,7 +495,7 @@ console.log(result.request?.id, result.verification?.valid, result.cleanedUp);
 
 ## Teams
 
-A key has exactly the team access of the account it belongs to. Endpoints shared with you through a subscribed team appear in `endpoints.list()` with `fromTeam` set and work with every request method by slug. The `teams` namespace manages the teams themselves:
+A key has exactly the team access of the account it belongs to. Endpoints shared with you through a subscribed team appear in `endpoints.list()` with `fromTeam` set and work with every request method by slug except `requests.clear`, which stays with the owner. The `teams` namespace manages the teams themselves:
 
 ```typescript
 const teams = await client.teams.list();

@@ -98,7 +98,7 @@ The server exposes `35` tools, `3` prompts, and `3` resource surfaces.
 - `share_endpoint`
 - `unshare_endpoint`
 
-Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) and work with every request tool. Invites are not exposed: accepting one claims a paid seat.
+Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) and work with every request tool except `clear_requests`, which stays with the owner. Invites are not exposed: accepting one claims a paid seat.
 
 ### Discovery and account tools
 

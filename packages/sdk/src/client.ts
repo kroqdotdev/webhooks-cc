@@ -1011,7 +1011,7 @@ export class WebhooksCC {
         "GET",
         "/endpoints"
       );
-      const all = [...response.owned, ...response.shared];
+      const all = [...(response.owned ?? []), ...(response.shared ?? [])];
       return options.team === undefined ? all : filterEndpointsByTeam(all, options.team);
     },
 

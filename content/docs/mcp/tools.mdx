@@ -1,14 +1,14 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 25 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
+description: "Complete reference for all 35 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-05-15
+lastUpdated: 2026-09-07
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 25 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
+  ogDescription: "Complete reference for all 35 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, and webhook operations."
 ---
 
 ## Endpoint management
@@ -297,7 +297,7 @@ Verify the webhook signature on a captured request. Supports two modes:
 
 ## Teams
 
-An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug; these tools manage the teams. Invites are not exposed: accepting one claims a paid seat and inviting sends email, so those stay with people (dashboard, `whk teams`, or the SDK).
+An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug except `clear_requests`, which only the owner may call; these tools manage the teams. Invites are not exposed: accepting one claims a paid seat and inviting sends email, so those stay with people (dashboard, `whk teams`, or the SDK).
 
 ### list_teams
 

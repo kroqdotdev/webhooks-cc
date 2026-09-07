@@ -105,10 +105,11 @@ impl SearchScreen {
                 match result {
                     Ok(sr) => {
                         // Reuse RequestsLoaded for simplicity
-                        let count = sr.requests.len() as u64;
+                        // The search route returns one page and no total; the
+                        // screen falls back to the page length when count is None.
                         let _ = tx.send(Message::RequestsLoaded(Ok(crate::types::RequestList {
                             requests: sr.requests.into_iter().map(CapturedRequest::from).collect(),
-                            count: Some(count),
+                            count: None,
                         })));
                     }
                     Err(e) => {

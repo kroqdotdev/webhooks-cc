@@ -8,19 +8,25 @@ use crate::util::format::format_timestamp;
 pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
     let usage = client.get_usage().await?;
     // Team pools are additive information; a failure there must not hide the
-    // personal quota, so it degrades to an empty list with a note.
+    // personal quota. Text output notes the failure; JSON output carries it
+    // as `teamsError` so an empty `teams` is never mistaken for "no teams".
+    let mut teams_error: Option<String> = None;
     let teams: Vec<Team> = match client.list_teams().await {
         Ok(teams) => teams.into_iter().filter(|t| !t.suspended).collect(),
         Err(e) => {
             if !json {
                 eprintln!("  {} {}", dim("Could not load team pools:"), e);
             }
+            teams_error = Some(e.to_string());
             Vec::new()
         }
     };
 
     if json {
         let mut value = serde_json::to_value(&usage)?;
+        if let Some(err) = &teams_error {
+            value["teamsError"] = serde_json::Value::String(err.clone());
+        }
         value["teams"] = serde_json::to_value(
             teams
                 .iter()

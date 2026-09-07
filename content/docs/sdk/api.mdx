@@ -435,7 +435,7 @@ usage(): Promise<UsageInfo>
 
 ## Teams
 
-A key has exactly the team access of the account it belongs to. Endpoints shared with you already show up in `endpoints.list()` and work with every request method by slug; this namespace manages the teams themselves.
+A key has exactly the team access of the account it belongs to. Endpoints shared with you already show up in `endpoints.list()` and work with every request method by slug except `requests.clear`, which stays with the owner; this namespace manages the teams themselves.
 
 <ApiMethod method="GET" path="/teams" title="client.teams.list">
 
