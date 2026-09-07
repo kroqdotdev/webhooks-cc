@@ -140,11 +140,65 @@ pub struct PaginatedRequestList {
     pub next_cursor: Option<String>,
 }
 
+/// One row from `GET /api/search/requests`. Search rows carry the endpoint
+/// slug instead of an endpoint id because a search spans endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub requests: Vec<CapturedRequest>,
+pub struct SearchHit {
+    pub id: String,
+    pub slug: String,
+    pub method: String,
+    pub path: String,
     #[serde(default)]
-    pub total: u64,
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(rename = "queryParams", default)]
+    pub query_params: HashMap<String, String>,
+    #[serde(rename = "contentType", default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub ip: String,
+    #[serde(default)]
+    pub size: usize,
+    #[serde(rename = "receivedAt")]
+    pub received_at: i64,
+    #[serde(rename = "detectedProvider", default)]
+    pub detected_provider: Option<String>,
+    #[serde(rename = "detectedEvent", default)]
+    pub detected_event: Option<String>,
+}
+
+impl From<SearchHit> for CapturedRequest {
+    /// Search rows have no endpoint id (only a slug), so `endpoint_id` is left
+    /// empty; the TUI shows search hits through the request views, which never
+    /// read it.
+    fn from(hit: SearchHit) -> Self {
+        CapturedRequest {
+            id: hit.id,
+            endpoint_id: String::new(),
+            method: hit.method,
+            path: hit.path,
+            headers: hit.headers,
+            body: hit.body,
+            body_raw: None,
+            query_params: hit.query_params,
+            content_type: hit.content_type,
+            ip: hit.ip,
+            size: hit.size,
+            received_at: hit.received_at,
+            signature_verified: None,
+            signature_error: None,
+            signing_provider: None,
+        }
+    }
+}
+
+/// The search route returns a bare JSON array (one page), so this wraps it
+/// transparently. Use `count_requests` for the total across pages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SearchResult {
+    pub requests: Vec<SearchHit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +218,76 @@ pub struct UsageInfo {
     pub plan: String,
     #[serde(rename = "periodEnd", default)]
     pub period_end: Option<i64>,
+}
+
+// ---------------------------------------------------------------------------
+// Teams
+// ---------------------------------------------------------------------------
+
+/// A team the user owns or belongs to. Seats are both the member cap and the
+/// pooled request quota (seats x 100,000 per 30-day period).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Team {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub role: String,
+    #[serde(rename = "memberCount", default)]
+    pub member_count: u32,
+    /// True while the team has no subscription; a suspended team shares nothing.
+    #[serde(default)]
+    pub suspended: bool,
+    #[serde(rename = "subscriptionStatus", default)]
+    pub subscription_status: Option<String>,
+    #[serde(default)]
+    pub seats: u32,
+    #[serde(rename = "requestsUsed", default)]
+    pub requests_used: u64,
+    #[serde(rename = "requestLimit", default)]
+    pub request_limit: u64,
+    #[serde(rename = "periodEnd", default)]
+    pub period_end: Option<i64>,
+    #[serde(rename = "cancelAtPeriodEnd", default)]
+    pub cancel_at_period_end: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamMember {
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub role: String,
+    #[serde(rename = "joinedAt", default)]
+    pub joined_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamInvite {
+    pub id: String,
+    #[serde(rename = "teamId", default)]
+    pub team_id: String,
+    #[serde(rename = "teamName", default)]
+    pub team_name: String,
+    #[serde(rename = "inviterEmail", default)]
+    pub inviter_email: String,
+    #[serde(rename = "invitedEmail", default)]
+    pub invited_email: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(rename = "createdAt", default)]
+    pub created_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamMembersResponse {
+    #[serde(default)]
+    pub members: Vec<TeamMember>,
+    #[serde(rename = "pendingInvites", default)]
+    pub pending_invites: Vec<TeamInvite>,
 }
 
 // ---------------------------------------------------------------------------
@@ -490,5 +614,22 @@ mod tests {
         };
         assert!(r.to_string().contains("FAILED"));
         assert!(r.to_string().contains("connection refused"));
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::SearchResult;
+
+    #[test]
+    fn search_result_parses_the_bare_array_the_api_returns() {
+        let json = r#"[{"id":"r1","slug":"abc","method":"POST","path":"/hook","headers":{},"queryParams":{},"ip":"::1","size":3,"receivedAt":1700000000000,"detectedProvider":null,"detectedEvent":null}]"#;
+        let result: SearchResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.requests.len(), 1);
+        assert_eq!(result.requests[0].slug, "abc");
+        assert!(result.requests[0].detected_provider.is_none());
+
+        let empty: SearchResult = serde_json::from_str("[]").unwrap();
+        assert!(empty.requests.is_empty());
     }
 }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::io::{self, Write};
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line};
+use crate::cli::output::{bold, dim, green, print_request_detail, print_request_line, print_search_hit};
 use crate::cli::ExportFormat;
 
 pub async fn list(
@@ -86,10 +86,16 @@ pub async fn search(
         return Ok(());
     }
 
-    for req in &result.requests {
-        print_request_line(req);
+    for hit in &result.requests {
+        print_search_hit(hit);
     }
-    println!("\n  {} {}", dim("Total matches:"), result.total);
+    println!(
+        "\n  {} {} (page of {}; use {} for the total)",
+        dim("Shown:"),
+        result.requests.len(),
+        limit,
+        bold("whk requests count")
+    );
 
     Ok(())
 }

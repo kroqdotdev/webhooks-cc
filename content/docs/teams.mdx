@@ -3,7 +3,7 @@ title: Teams
 description: "Share webhook endpoints across your team. Invite members, assign roles, manage permissions, and inspect incoming requests together in a shared real-time dashboard."
 section: features
 order: 20
-lastUpdated: 2026-08-06
+lastUpdated: 2026-09-07
 schema: none
 seo:
   ogTitle: "Team Collaboration for Webhooks"
@@ -78,9 +78,44 @@ Sharing an endpoint with an active team moves its billing to that team:
 - **Suspended teams don't bill** — while a team has no active subscription, requests on its shared endpoints fall back to the endpoint owner's personal quota and retention
 - When the pool is exhausted the receiver returns `429 Too Many Requests` with a `Retry-After` pointing at the team's period reset
 
+## From the CLI, SDK, and MCP Server
+
+An API key carries exactly the team access of the account it belongs to, so everything below works with a key from your account page or with `whk auth login`. Unclaimed agent keys have no team access until a human claims them.
+
+**Shared endpoints behave like your own.** Any endpoint shared with you through a subscribed team can be listed, inspected, streamed, searched, and forwarded by slug. Each endpoint carries `fromTeam` (shared with you) or `sharedWith` (yours, shared with a team) so you can tell them apart.
+
+```bash
+whk list --team Payments          # endpoints tied to one team, by name or id
+whk listen <shared-slug>          # stream a teammate's endpoint
+whk tunnel 3000 --endpoint <shared-slug>
+whk requests search --q invoice   # covers shared endpoints too
+```
+
+**Manage sharing and membership without the browser.** `whk teams` mirrors the team page; the SDK exposes the same operations under `client.teams`; the MCP server exposes `list_teams`, `list_team_members`, `share_endpoint`, and `unshare_endpoint`.
+
+```bash
+whk teams list                              # seats, pooled usage, status
+whk teams members Payments
+whk teams share my-stripe --team Payments   # owner only; needs an active team
+whk teams unshare my-stripe --team Payments
+whk teams invite Payments dev@example.com   # sends an email; acceptance claims a seat
+whk teams invites                           # invites waiting for you
+whk teams accept <invite-id>
+```
+
+```ts
+const teams = await client.teams.list();
+await client.teams.share(teams[0].id, "my-stripe");
+const shared = await client.endpoints.list({ team: teams[0].name });
+```
+
+Invites are deliberately not exposed as MCP tools: accepting one claims a paid seat and inviting sends real email, so those stay with people. Creating, renaming, or deleting teams, removing members, and billing remain dashboard actions; billing routes reject API keys.
+
+**Quota.** `whk usage` and the MCP `get_usage` tool show each subscribed team's pool under your personal plan. In the SDK, `teams.list()` returns `requestsUsed`, `requestLimit`, `seats`, and `periodEnd` per team.
+
 ## How It Works
 
-- Sharing is **view and edit only** — team members can see requests and change settings, but cannot delete endpoints
+- Sharing is **view and edit only**: team members can see requests and change settings, but cannot delete endpoints or clear their requests
 - **Real-time updates** work for shared endpoints — team members see new requests instantly via SSE
-- Shared endpoints work with the CLI (`whk listen`) and SDK (`requests.subscribe`) using the endpoint owner's access
+- A stream that is open when a team's subscription lapses keeps running until the 30-minute rotation; the reconnect is then refused
 - Deleting a team cancels its subscription and releases every seat; the endpoints themselves are untouched and stay with their owners

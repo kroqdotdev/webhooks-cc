@@ -105,9 +105,10 @@ impl SearchScreen {
                 match result {
                     Ok(sr) => {
                         // Reuse RequestsLoaded for simplicity
+                        let count = sr.requests.len() as u64;
                         let _ = tx.send(Message::RequestsLoaded(Ok(crate::types::RequestList {
-                            requests: sr.requests,
-                            count: Some(sr.total),
+                            requests: sr.requests.into_iter().map(CapturedRequest::from).collect(),
+                            count: Some(count),
                         })));
                     }
                     Err(e) => {

@@ -70,11 +70,16 @@ whk create my-stripe --signing-provider stripe --signing-secret whsec_...
 
 ## list
 
-List all your endpoints with their slugs, names, and URLs.
+List your endpoints and those shared with you through teams, with slug, name, team, and URL.
 
 ```bash
 whk list
+whk list --team Payments
 ```
+
+| Flag     | Description                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------- |
+| `--team` | Only endpoints tied to this team (id or name): shared with you from it, or yours that are shared with it |
 
 ## delete
 
@@ -138,6 +143,31 @@ whk replay <request-id>
 | Flag   | Description                                              |
 | ------ | -------------------------------------------------------- |
 | `--to` | Target URL for replay (default: `http://localhost:8080`) |
+
+## teams
+
+Manage teams: sharing, members, and invites. Wherever a command takes `<team>`, pass a team id or a team name (case-insensitive). A name that matches several teams is rejected; pass the id instead.
+
+```bash
+whk teams list                              # your teams: role, seats, members, pooled usage, status
+whk teams members <team>                    # members and pending invites
+whk teams share <slug> --team <team>        # share an endpoint you own (needs an active team)
+whk teams unshare <slug> --team <team>
+whk teams invite <team> <email>             # sends an invite email; accepting claims a seat
+whk teams invites                           # invites waiting for you
+whk teams accept <invite-id>
+whk teams decline <invite-id>
+```
+
+Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can invite. Every subcommand supports `--json`.
+
+## usage
+
+Show your plan's request usage and, below it, the pooled quota of every subscribed team you belong to. With `--json` the team pools are returned in a `teams` array.
+
+```bash
+whk usage
+```
 
 ## update
 

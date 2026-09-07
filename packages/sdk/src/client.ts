@@ -19,6 +19,10 @@ import type {
   Endpoint,
   Request,
   UsageInfo,
+  ListEndpointsOptions,
+  Team,
+  TeamInvite,
+  TeamMembers,
   CreateEndpointOptions,
   UpdateEndpointOptions,
   SendOptions,
@@ -186,6 +190,26 @@ function validatePathSegment(segment: string, name: string): void {
       `Invalid ${name}: must contain only alphanumeric characters, hyphens, and underscores`
     );
   }
+}
+
+/**
+ * Keeps the endpoints tied to one team: shared with the caller from it, or
+ * owned by the caller and shared with it. `team` is a team id (exact) or a
+ * team name (case-insensitive).
+ */
+function filterEndpointsByTeam(endpoints: Endpoint[], team: string): Endpoint[] {
+  const needle = team.trim();
+  if (needle.length === 0) {
+    throw new Error("team must be a team id or name");
+  }
+  const lowered = needle.toLowerCase();
+  const matches = (share: { teamId: string; teamName: string }) =>
+    share.teamId === needle || share.teamName.toLowerCase() === lowered;
+
+  return endpoints.filter((endpoint) => {
+    if (endpoint.fromTeam && matches(endpoint.fromTeam)) return true;
+    return (endpoint.sharedWith ?? []).some(matches);
+  });
 }
 
 function resolveTimestampFilter(value: number | string, now: number): number {
@@ -737,8 +761,9 @@ export class WebhooksCC {
           },
         },
         list: {
-          description: "List all endpoints",
-          params: {},
+          description:
+            "List all endpoints you own plus those shared with you through teams (each carries fromTeam or sharedWith)",
+          params: { team: "string?: keep only endpoints tied to this team id or name" },
         },
         get: {
           description: "Get endpoint by slug",
@@ -903,6 +928,43 @@ export class WebhooksCC {
           },
         },
       },
+      teams: {
+        list: {
+          description:
+            "List teams you own or belong to, with seats, pooled requestsUsed/requestLimit, and periodEnd",
+          params: {},
+        },
+        members: {
+          description: "List a team's members and pending invites",
+          params: { teamId: "string" },
+        },
+        share: {
+          description:
+            "Share an endpoint you own with a subscribed team (its requests then bill the team pool)",
+          params: { teamId: "string", slug: "string" },
+        },
+        unshare: {
+          description: "Stop sharing an endpoint you own with a team",
+          params: { teamId: "string", slug: "string" },
+        },
+        invite: {
+          description:
+            "Invite an email address to a team you own (sends an email; acceptance claims a paid seat)",
+          params: { teamId: "string", email: "string" },
+        },
+        "invites.list": {
+          description: "List invites waiting for you",
+          params: {},
+        },
+        "invites.accept": {
+          description: "Accept a team invite",
+          params: { inviteId: "string" },
+        },
+        "invites.decline": {
+          description: "Decline a team invite",
+          params: { inviteId: "string" },
+        },
+      },
     };
   }
 
@@ -944,12 +1006,13 @@ export class WebhooksCC {
       return this.request<Endpoint>("POST", "/endpoints", body);
     },
 
-    list: async (): Promise<Endpoint[]> => {
+    list: async (options: ListEndpointsOptions = {}): Promise<Endpoint[]> => {
       const response = await this.request<{ owned: Endpoint[]; shared: Endpoint[] }>(
         "GET",
         "/endpoints"
       );
-      return [...response.owned, ...response.shared];
+      const all = [...response.owned, ...response.shared];
+      return options.team === undefined ? all : filterEndpointsByTeam(all, options.team);
     },
 
     get: async (slug: string): Promise<Endpoint> => {
@@ -1031,6 +1094,72 @@ export class WebhooksCC {
 
   usage = async (): Promise<UsageInfo> => {
     return this.request<UsageInfo>("GET", "/usage");
+  };
+
+  /**
+   * Teams: pooled seats and quota, membership, and endpoint sharing. A key
+   * has exactly the team access of the user it belongs to; an unclaimed
+   * agent key has none until a human claims it.
+   */
+  teams = {
+    /** List the teams you own or belong to, with seats and pooled usage. */
+    list: async (): Promise<Team[]> => {
+      return this.request<Team[]>("GET", "/teams");
+    },
+
+    /** List a team's members and its unanswered invites. Any member may call this. */
+    members: async (teamId: string): Promise<TeamMembers> => {
+      validatePathSegment(teamId, "teamId");
+      return this.request<TeamMembers>("GET", `/teams/${teamId}/members`);
+    },
+
+    /**
+     * Share an endpoint you own with a team. The team needs an active
+     * subscription; requests on the endpoint then bill the team's pool.
+     */
+    share: async (teamId: string, slug: string): Promise<void> => {
+      validatePathSegment(teamId, "teamId");
+      const endpoint = await this.endpoints.get(slug);
+      await this.request("POST", `/teams/${teamId}/endpoints`, { endpointId: endpoint.id });
+    },
+
+    /** Stop sharing an endpoint you own with a team. Works on suspended teams too. */
+    unshare: async (teamId: string, slug: string): Promise<void> => {
+      validatePathSegment(teamId, "teamId");
+      const endpoint = await this.endpoints.get(slug);
+      await this.request("DELETE", `/teams/${teamId}/endpoints/${endpoint.id}`);
+    },
+
+    /**
+     * Invite an email address to a team you own. Sends an invite email; an
+     * accepted invite claims one of the team's paid seats.
+     */
+    invite: async (teamId: string, email: string): Promise<TeamInvite> => {
+      validatePathSegment(teamId, "teamId");
+      if (!email || typeof email !== "string" || !email.includes("@")) {
+        throw new Error("invite requires a valid email address");
+      }
+      return this.request<TeamInvite>("POST", `/teams/${teamId}/invite`, { email });
+    },
+
+    invites: {
+      /** Invites waiting for you to accept or decline. */
+      list: async (): Promise<TeamInvite[]> => {
+        return this.request<TeamInvite[]>("GET", "/invites");
+      },
+
+      /** Accept an invite. Fails when the team is full or suspended. */
+      accept: async (inviteId: string): Promise<void> => {
+        validatePathSegment(inviteId, "inviteId");
+        await this.request("POST", `/invites/${inviteId}/accept`);
+      },
+
+      /** Decline an invite. */
+      decline: async (inviteId: string): Promise<void> => {
+        validatePathSegment(inviteId, "inviteId");
+        await this.request("POST", `/invites/${inviteId}/decline`);
+      },
+    },
   };
 
   flow = (): WebhookFlowBuilder => {

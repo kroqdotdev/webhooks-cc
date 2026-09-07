@@ -58,7 +58,7 @@ Get your API key at [webhooks.cc/account](https://webhooks.cc/account).
 
 ## What it exposes
 
-The server exposes `25` tools, `3` prompts, and `3` resource surfaces.
+The server exposes `35` tools, `3` prompts, and `3` resource surfaces.
 
 ### Endpoint tools
 
@@ -91,10 +91,19 @@ The server exposes `25` tools, `3` prompts, and `3` resource surfaces.
 - `preview_webhook`
 - `test_webhook_flow`
 
+### Team tools
+
+- `list_teams`
+- `list_team_members`
+- `share_endpoint`
+- `unshare_endpoint`
+
+Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) and work with every request tool. Invites are not exposed: accepting one claims a paid seat.
+
 ### Discovery and account tools
 
 - `list_provider_templates`
-- `get_usage`
+- `get_usage` (personal plan plus each subscribed team's pool)
 - `describe`
 
 ## Prompts

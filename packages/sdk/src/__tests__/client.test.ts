@@ -302,6 +302,183 @@ describe("WebhooksCC", () => {
 
       expect(result).toEqual([]);
     });
+
+    describe("team filter", () => {
+      const owned = [
+        { id: "ep1", slug: "mine", createdAt: 1, sharedWith: [] },
+        {
+          id: "ep2",
+          slug: "mine-shared",
+          createdAt: 1,
+          sharedWith: [{ teamId: "t1", teamName: "Team A" }],
+        },
+      ];
+      const shared = [
+        {
+          id: "ep3",
+          slug: "theirs",
+          createdAt: 1,
+          fromTeam: { teamId: "t2", teamName: "Team B" },
+        },
+      ];
+
+      it("matches a team id against fromTeam and sharedWith", async () => {
+        globalThis.fetch = mockFetch({ body: { owned, shared } });
+
+        const byId = await createClient().endpoints.list({ team: "t1" });
+        expect(byId.map((e) => e.slug)).toEqual(["mine-shared"]);
+
+        const byOtherId = await createClient().endpoints.list({ team: "t2" });
+        expect(byOtherId.map((e) => e.slug)).toEqual(["theirs"]);
+      });
+
+      it("matches a team name case-insensitively", async () => {
+        globalThis.fetch = mockFetch({ body: { owned, shared } });
+
+        const result = await createClient().endpoints.list({ team: "team b" });
+        expect(result.map((e) => e.slug)).toEqual(["theirs"]);
+      });
+
+      it("returns nothing for an unknown team and rejects a blank one", async () => {
+        globalThis.fetch = mockFetch({ body: { owned, shared } });
+
+        expect(await createClient().endpoints.list({ team: "nope" })).toEqual([]);
+        await expect(createClient().endpoints.list({ team: "  " })).rejects.toThrow(
+          "team must be a team id or name"
+        );
+      });
+    });
+  });
+
+  describe("teams", () => {
+    it("lists teams with GET /api/teams", async () => {
+      const teams = [
+        {
+          id: "t1",
+          name: "Team A",
+          role: "owner",
+          seats: 3,
+          requestsUsed: 10,
+          requestLimit: 300000,
+        },
+      ];
+      const fetchMock = mockFetch({ body: teams });
+      globalThis.fetch = fetchMock;
+
+      const result = await createClient().teams.list();
+
+      expect(result).toEqual(teams);
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/teams`);
+      expect(opts.method).toBe("GET");
+    });
+
+    it("lists members with GET /api/teams/{id}/members", async () => {
+      const body = { members: [{ userId: "u1", role: "owner" }], pendingInvites: [] };
+      const fetchMock = mockFetch({ body });
+      globalThis.fetch = fetchMock;
+
+      const result = await createClient().teams.members("t1");
+
+      expect(result).toEqual(body);
+      expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/teams/t1/members`);
+    });
+
+    it("share resolves the slug to an endpoint id, then POSTs it", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve({ id: "ep9", slug: "abc", createdAt: 1 }),
+          text: () => Promise.resolve(""),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve({ success: true }),
+          text: () => Promise.resolve(""),
+        });
+      globalThis.fetch = fetchMock;
+
+      await createClient().teams.share("t1", "abc");
+
+      expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/endpoints/abc`);
+      const [url, opts] = fetchMock.mock.calls[1];
+      expect(url).toBe(`${BASE_URL}/api/teams/t1/endpoints`);
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body)).toEqual({ endpointId: "ep9" });
+    });
+
+    it("unshare resolves the slug, then DELETEs the share", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve({ id: "ep9", slug: "abc", createdAt: 1 }),
+          text: () => Promise.resolve(""),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 204,
+          headers: new Headers(),
+          json: () => Promise.resolve(undefined),
+          text: () => Promise.resolve(""),
+        });
+      globalThis.fetch = fetchMock;
+
+      await createClient().teams.unshare("t1", "abc");
+
+      const [url, opts] = fetchMock.mock.calls[1];
+      expect(url).toBe(`${BASE_URL}/api/teams/t1/endpoints/ep9`);
+      expect(opts.method).toBe("DELETE");
+    });
+
+    it("rejects unsafe team ids before any request", async () => {
+      const fetchMock = mockFetch({ body: {} });
+      globalThis.fetch = fetchMock;
+
+      await expect(createClient().teams.members("../admin")).rejects.toThrow("Invalid teamId");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("invite POSTs the email and validates it locally", async () => {
+      const invite = { id: "inv1", teamId: "t1", invitedEmail: "a@b.co", status: "pending" };
+      const fetchMock = mockFetch({ body: invite });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await expect(client.teams.invite("t1", "not-an-email")).rejects.toThrow(
+        "valid email address"
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const result = await client.teams.invite("t1", "a@b.co");
+      expect(result).toEqual(invite);
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/teams/t1/invite`);
+      expect(JSON.parse(opts.body)).toEqual({ email: "a@b.co" });
+    });
+
+    it("invites.list, accept, and decline hit the invite routes", async () => {
+      const fetchMock = mockFetch({ body: [] });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      await client.teams.invites.list();
+      await client.teams.invites.accept("inv1");
+      await client.teams.invites.decline("inv2");
+
+      expect(fetchMock.mock.calls.map((call) => [call[0], call[1].method])).toEqual([
+        [`${BASE_URL}/api/invites`, "GET"],
+        [`${BASE_URL}/api/invites/inv1/accept`, "POST"],
+        [`${BASE_URL}/api/invites/inv2/decline`, "POST"],
+      ]);
+    });
   });
 
   describe("templates", () => {
@@ -1345,6 +1522,9 @@ describe("WebhooksCC", () => {
       expect(description.requests.clear).toBeDefined();
       expect(description.requests.subscribe.params.reconnect).toBe("boolean?");
       expect(Object.keys(description.requests)).toHaveLength(11);
+      expect(description.endpoints.list.params.team).toContain("team id or name");
+      expect(Object.keys(description.teams)).toHaveLength(8);
+      expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });
     });
   });
 

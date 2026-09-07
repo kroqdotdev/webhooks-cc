@@ -1,13 +1,13 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::types::{CapturedRequest, Endpoint, UsageInfo};
+use crate::types::{CapturedRequest, Endpoint, SearchHit, UsageInfo};
 use crate::util::format::{format_bytes, format_timestamp};
 
 static NO_COLOR: AtomicBool = AtomicBool::new(false);
 
 /// Strip ANSI control characters from untrusted text to prevent terminal injection.
 /// Preserves normal whitespace (space, tab, newline, carriage return).
-fn sanitize(s: &str) -> String {
+pub fn sanitize(s: &str) -> String {
     s.chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\r' || *c == '\t' || *c == ' ')
         .collect()
@@ -104,6 +104,22 @@ pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
         };
         println!("  {:<20} {:<20} {:<16} {}", bold(&slug), dim(&name), dim(&team), dim(&url));
     }
+}
+
+/// One search row: like `print_request_line`, plus the endpoint slug because
+/// a search spans endpoints, including ones shared through teams.
+pub fn print_search_hit(hit: &SearchHit) {
+    let time = format_timestamp(hit.received_at);
+    let method = method_color(&hit.method);
+    let size = format_bytes(hit.size);
+    println!(
+        "  {} {} {} {} {}",
+        dim(&time),
+        method,
+        bold(&sanitize(&hit.slug)),
+        sanitize(&hit.path),
+        dim(&size)
+    );
 }
 
 pub fn print_request_line(req: &CapturedRequest) {

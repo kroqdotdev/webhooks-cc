@@ -164,6 +164,95 @@ export interface UsageInfo {
 }
 
 /**
+ * Options for listing endpoints.
+ */
+export interface ListEndpointsOptions {
+  /**
+   * Keep only endpoints tied to this team: those shared with you from it
+   * (`fromTeam`) and those you own and shared with it (`sharedWith`).
+   * Matches a team id exactly or a team name case-insensitively.
+   */
+  team?: string;
+}
+
+/**
+ * A team you own or belong to. Seats are both the member cap and the
+ * pooled request quota (seats x 100,000 per 30-day period).
+ */
+export interface Team {
+  /** Team identifier */
+  id: string;
+  /** Team display name */
+  name: string;
+  /** User id of the owner */
+  createdBy: string;
+  /** Unix timestamp (ms) when the team was created */
+  createdAt: number;
+  /** Current member count, owner included */
+  memberCount: number;
+  /** Your role on this team */
+  role: "owner" | "member";
+  /** True while the team has no subscription; a suspended team shares nothing */
+  suspended: boolean;
+  /** Subscription state, or null when unsubscribed */
+  subscriptionStatus: "active" | "canceled" | "past_due" | null;
+  /** Purchased seats */
+  seats: number;
+  /** Requests consumed from the pooled quota in the current period */
+  requestsUsed: number;
+  /** Pooled request quota for the current period */
+  requestLimit: number;
+  /** End of the current billing period (ms), or null when unsubscribed */
+  periodEnd: number | null;
+  /** True when the subscription ends at the current period end */
+  cancelAtPeriodEnd: boolean;
+}
+
+/** A member of a team. */
+export interface TeamMember {
+  /** Membership row id */
+  id: string;
+  /** User id */
+  userId: string;
+  /** Member email */
+  email: string;
+  /** Display name, if set */
+  name: string | null;
+  /** Avatar URL, if set */
+  image: string | null;
+  /** Role on the team */
+  role: "owner" | "member";
+  /** Unix timestamp (ms) when the member joined */
+  joinedAt: number;
+}
+
+/** A pending team invite. */
+export interface TeamInvite {
+  /** Invite id */
+  id: string;
+  /** Team the invite is for */
+  teamId: string;
+  /** Team display name */
+  teamName: string;
+  /** User id of the inviter */
+  invitedBy: string;
+  /** Email of the inviter */
+  inviterEmail: string;
+  /** Email the invite was sent to */
+  invitedEmail: string;
+  /** Invite state */
+  status: "pending" | "accepted" | "declined";
+  /** Unix timestamp (ms) when the invite was created */
+  createdAt: number;
+}
+
+/** Members of a team plus the invites that have not been answered yet. */
+export interface TeamMembers {
+  members: TeamMember[];
+  pendingInvites: TeamInvite[];
+}
+
+/**
  * Options for creating a new endpoint.
  */
 export interface CreateEndpointOptions {
@@ -656,4 +745,5 @@ export interface SDKDescription {
   buildRequest: OperationDescription;
   flow: OperationDescription;
   requests: Record<string, OperationDescription>;
+  teams: Record<string, OperationDescription>;
 }

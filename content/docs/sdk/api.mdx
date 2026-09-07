@@ -60,12 +60,19 @@ create(options?: CreateEndpointOptions): Promise<Endpoint>
 
 <ApiMethod method="GET" path="/endpoints" title="client.endpoints.list">
 
-List all endpoints for your account.
+List the endpoints you own (each with `sharedWith`) and those shared with you through a subscribed team (each with `fromTeam`), as one array.
 
 ```ts
-list(): Promise<Endpoint[]>
+list(options?: ListEndpointsOptions): Promise<Endpoint[]>
 ```
 
+<ParamTable>
+
+| Param  | Type     | Required | Description                                                                                  |
+| ------ | -------- | -------- | -------------------------------------------------------------------------------------------- |
+| `team` | `string` | no       | Keep only endpoints tied to this team id or name (case-insensitive), via `fromTeam` or `sharedWith` |
+
+</ParamTable>
 </ApiMethod>
 
 <ApiMethod method="GET" path="/endpoints/:slug" title="client.endpoints.get">
@@ -422,6 +429,75 @@ Get current request quota and usage.
 ```ts
 usage(): Promise<UsageInfo>
 // Returns: { used, limit, remaining, plan, periodEnd }
+```
+
+</ApiMethod>
+
+## Teams
+
+A key has exactly the team access of the account it belongs to. Endpoints shared with you already show up in `endpoints.list()` and work with every request method by slug; this namespace manages the teams themselves.
+
+<ApiMethod method="GET" path="/teams" title="client.teams.list">
+
+List the teams you own or belong to, with role, seats, pooled usage, and subscription state.
+
+```ts
+list(): Promise<Team[]>
+// Team: { id, name, role, seats, memberCount, suspended, subscriptionStatus,
+//         requestsUsed, requestLimit, periodEnd, cancelAtPeriodEnd, ... }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/teams/:teamId/members" title="client.teams.members">
+
+List a team's members and pending invites. Any member may call this.
+
+```ts
+members(teamId: string): Promise<TeamMembers>
+// Returns: { members: TeamMember[], pendingInvites: TeamInvite[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/teams/:teamId/endpoints" title="client.teams.share">
+
+Share an endpoint you own with a team. Resolves the slug to an endpoint id for you. The team needs an active subscription; the endpoint's requests then draw from the team's pooled quota.
+
+```ts
+share(teamId: string, slug: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/teams/:teamId/endpoints/:endpointId" title="client.teams.unshare">
+
+Stop sharing an endpoint you own with a team. Works on suspended teams too.
+
+```ts
+unshare(teamId: string, slug: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/teams/:teamId/invite" title="client.teams.invite">
+
+Invite an email address to a team you own. Sends an invite email; accepting claims one of the team's paid seats.
+
+```ts
+invite(teamId: string, email: string): Promise<TeamInvite>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/invites" title="client.teams.invites">
+
+Invites waiting for you, and the calls to answer them.
+
+```ts
+invites.list(): Promise<TeamInvite[]>
+invites.accept(inviteId: string): Promise<void>
+invites.decline(inviteId: string): Promise<void>
 ```
 
 </ApiMethod>
