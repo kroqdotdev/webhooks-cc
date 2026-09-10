@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.30.0";
+export const APP_VERSION = "0.30.1";
 export const CLI_VERSION = "1.3.0";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.30.1",
+    date: "2026-09-10",
+    title: "Dependency Security Updates",
+    track: "web",
+    items: [
+      "Nodemailer moved to 10.x, closing the address-parser denial of service, the recipient-domain validation bypasses, and the file-access bypass reported against earlier releases",
+      "Transitive dependency floors raised for hono (4.13.5), js-yaml (3.15.2 and 4.3.2), and @ai-sdk/provider-utils (4.0.33) to pick up their security fixes",
+      "Routine dependency bumps: Next, jose, Supabase SSR, zod, lucide-react, posthog-js, resend, simple-icons, vitest 5, swagger-parser 13, Playwright, tsx, postcss, plus tower-http, constant_time_eq, and open on the Rust side",
+    ],
+  },
   {
     version: "0.30.0",
     date: "2026-09-07",
