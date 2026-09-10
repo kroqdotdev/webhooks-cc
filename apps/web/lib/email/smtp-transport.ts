@@ -85,7 +85,7 @@ export async function sendViaSmtp(
     });
     return {
       messageId: info.messageId,
-      accepted: (info.accepted ?? []).map((a) => (typeof a === "string" ? a : a.address)),
+      accepted: info.accepted ?? [],
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
