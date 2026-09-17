@@ -81,15 +81,27 @@ describe("visual style experiment events", () => {
 
   it("records the completed signup", () => {
     trackAccountCreated("github");
-    expect(capture).toHaveBeenCalledWith("account_created", { provider: "github" });
-    trackAccountCreated(undefined);
-    expect(capture).toHaveBeenCalledWith("account_created", { provider: "unknown" });
+    expect(capture).toHaveBeenCalledWith("account_created", {
+      provider: "github",
+      signal: "confirmed",
+    });
+    trackAccountCreated(undefined, "new_account");
+    expect(capture).toHaveBeenCalledWith("account_created", {
+      provider: "unknown",
+      signal: "new_account",
+    });
   });
 });
 
 /** The shared auth store calls this on every session change, so it has to be idempotent. */
 describe("reportAuthenticatedUser", () => {
-  const user = { id: "user-1", email: "new@example.com", app_metadata: { provider: "github" } };
+  const user = {
+    id: "user-1",
+    email: "new@example.com",
+    created_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+    app_metadata: { provider: "github" },
+  };
+  const oldUser = { ...user, created_at: new Date(Date.now() - 40 * 86_400_000).toISOString() };
 
   function browser(cookie: string) {
     const store = new Map<string, string>();
@@ -118,14 +130,26 @@ describe("reportAuthenticatedUser", () => {
     browser("whk_signup=1");
     reportAuthenticatedUser(user);
     expect(identify).toHaveBeenCalledWith("user-1", { email: "new@example.com" });
-    expect(capture).toHaveBeenCalledWith("account_created", { provider: "github" });
+    expect(capture).toHaveBeenCalledWith("account_created", {
+      provider: "github",
+      signal: "confirmed",
+    });
   });
 
   it("identifies a returning sign-in without recording a signup", () => {
     browser("theme=dark");
-    reportAuthenticatedUser(user);
+    reportAuthenticatedUser(oldUser);
     expect(identify).toHaveBeenCalledTimes(1);
     expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("still records a signup when GoTrue's fallback link skipped our auth routes", () => {
+    browser("theme=dark");
+    reportAuthenticatedUser(user);
+    expect(capture).toHaveBeenCalledWith("account_created", {
+      provider: "github",
+      signal: "new_account",
+    });
   });
 
   it("does nothing on repeat calls for the same user", () => {

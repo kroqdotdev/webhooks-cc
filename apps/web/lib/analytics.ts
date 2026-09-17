@@ -96,8 +96,8 @@ export function trackSignInStarted(provider: "github" | "google" | "email") {
  * It is the completed side of sign_in_started: without it a funnel cannot tie
  * a signup back to the anonymous visitor who was assigned a style.
  */
-export function trackAccountCreated(provider?: string) {
-  capture("account_created", { provider: provider ?? "unknown" });
+export function trackAccountCreated(provider?: string, signal: SignupSignal = "confirmed") {
+  capture("account_created", { provider: provider ?? "unknown", signal });
 }
 
 // ── Dashboard ───────────────────────────────────────────────────
@@ -269,10 +269,32 @@ export function identifyUser(userId: string, properties?: Record<string, unknown
 interface AuthedUser {
   id: string;
   email?: string | null;
+  created_at?: string;
   app_metadata?: { provider?: string };
 }
 
+/** How the signup was spotted, so a fallback count can be told apart later. */
+type SignupSignal = "confirmed" | "new_account";
+
 let reportedUserId: string | null = null;
+
+/**
+ * GoTrue falls back to its own verify link when it cannot fetch our email
+ * template (infra/supabase/gotrue-email-auth.md). That flow confirms the
+ * address without passing through our auth routes and leaves the user to sign
+ * in by hand, so the cookie never appears. An account this young reaching its
+ * first authenticated page is a signup either way.
+ */
+const NEW_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function signupSignalFor(user: AuthedUser): SignupSignal | null {
+  if (consumeSignupSignal()) return "confirmed";
+  const createdAt = Date.parse(user.created_at ?? "");
+  if (Number.isFinite(createdAt) && Date.now() - createdAt < NEW_ACCOUNT_WINDOW_MS) {
+    return "new_account";
+  }
+  return null;
+}
 
 /**
  * Identifies the person and, when this sign-in created the account, records the
@@ -285,7 +307,8 @@ export function reportAuthenticatedUser(user: AuthedUser) {
   reportedUserId = user.id;
   identifyUser(user.id, { email: user.email ?? undefined });
 
-  if (!consumeSignupSignal()) return;
+  const signal = signupSignalFor(user);
+  if (!signal) return;
   const key = `account-created-tracked:${user.id}`;
   try {
     if (localStorage.getItem(key)) return;
@@ -293,7 +316,7 @@ export function reportAuthenticatedUser(user: AuthedUser) {
   } catch {
     // Blocked storage: better a possible duplicate than a missing signup.
   }
-  trackAccountCreated(user.app_metadata?.provider);
+  trackAccountCreated(user.app_metadata?.provider, signal);
 }
 
 export function resetUser() {
