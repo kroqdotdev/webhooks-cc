@@ -63,17 +63,6 @@ export function storeChosenUiStyle(style: UiStyle): void {
 }
 
 /**
- * Percentage of brand-new visitors the split sends to the clean style.
- * Server-only and read at request time, so changing UI_STYLE_SPLIT on the host
- * takes effect on restart: a NEXT_PUBLIC_ var would be inlined at build time.
- */
-export function resolveUiStyleSplit(raw: string | undefined): number {
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.min(100, Math.max(0, Math.round(parsed)));
-}
-
-/**
  * Source of the script that runs before first paint: dark mode class, then
  * the style, assigning one to brand-new browsers when splitPercent is above 0.
  */
@@ -82,11 +71,15 @@ export function appearanceBootstrapScript(splitPercent: number): string {
 
   return `(function(){
   var root = document.documentElement;
+  var storedTheme = null;
   try {
-    var storedTheme = localStorage.getItem('theme');
-    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (storedTheme === 'dark' || (storedTheme !== 'light' && prefersDark)) root.classList.add('dark');
+    storedTheme = localStorage.getItem('theme');
   } catch (e) {}
+  var prefersDark = false;
+  try {
+    prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch (e) {}
+  if (storedTheme === 'dark' || (storedTheme !== 'light' && prefersDark)) root.classList.add('dark');
   var style = 'classic';
   try {
     var stored = localStorage.getItem('${UI_STYLE_STORAGE_KEY}');

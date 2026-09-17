@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   appearanceBootstrapScript,
-  resolveUiStyleSplit,
   UI_STYLE_ASSIGNED_STORAGE_KEY,
   UI_STYLE_SOURCE_STORAGE_KEY,
   UI_STYLE_STORAGE_KEY,
@@ -14,10 +13,14 @@ function run(options: {
   cookie?: string;
   random?: number;
   prefersDark?: boolean;
+  blockStorage?: boolean;
 }) {
   const store = new Map(Object.entries(options.storage ?? {}));
   const localStorage = {
-    getItem: (key: string) => store.get(key) ?? null,
+    getItem: (key: string) => {
+      if (options.blockStorage) throw new Error("storage blocked");
+      return store.get(key) ?? null;
+    },
     setItem: (key: string, value: string) => void store.set(key, value),
     key: (index: number) => [...store.keys()][index] ?? null,
     get length() {
@@ -51,6 +54,12 @@ describe("appearanceBootstrapScript", () => {
     expect(
       run({ split: 0, storage: { theme: "light" }, prefersDark: true }).classes.has("dark")
     ).toBe(false);
+  });
+
+  it("still honors the system theme when storage is blocked", () => {
+    const result = run({ split: 100, blockStorage: true, prefersDark: true, random: 0 });
+    expect(result.classes.has("dark")).toBe(true);
+    expect(result.style).toBe("classic");
   });
 
   it("keeps a style the visitor already has", () => {
@@ -89,16 +98,6 @@ describe("appearanceBootstrapScript", () => {
     const result = run({ split: 0, random: 0 });
     expect(result.style).toBe("classic");
     expect(result.stored[UI_STYLE_STORAGE_KEY]).toBeUndefined();
-  });
-
-  it("reads the split from the environment, clamped", () => {
-    expect(resolveUiStyleSplit("50")).toBe(50);
-    expect(resolveUiStyleSplit(undefined)).toBe(0);
-    expect(resolveUiStyleSplit("")).toBe(0);
-    expect(resolveUiStyleSplit("off")).toBe(0);
-    expect(resolveUiStyleSplit("140")).toBe(100);
-    expect(resolveUiStyleSplit("-5")).toBe(0);
-    expect(resolveUiStyleSplit("12.6")).toBe(13);
   });
 
   it("clamps the split percentage", () => {
