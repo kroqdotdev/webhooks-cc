@@ -7,9 +7,9 @@ export function Steps({ children }: { children: React.ReactNode }) {
       {steps.map((child, i) => (
         <div
           key={i}
-          className="relative pl-10 pb-8 border-l-2 border-foreground/20 last:border-l-0 last:pb-0"
+          className="relative pl-10 pb-8 border-l-strong border-foreground/20 last:border-l-0 last:pb-0"
         >
-          <div className="absolute left-0 -translate-x-1/2 w-8 h-8 border-2 border-foreground bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
+          <div className="absolute left-0 -translate-x-1/2 w-8 h-8 rounded-md border-strong border-line bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
             {i + 1}
           </div>
           {child}

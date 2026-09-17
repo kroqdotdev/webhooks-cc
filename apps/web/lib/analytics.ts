@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import { UI_STYLE_FLAG_KEY, type UiStyle, type UiStyleSource } from "./ui-style";
 
 /**
  * Track custom analytics events via PostHog.
@@ -19,9 +20,60 @@ export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq") {
   capture("landing_cta_clicked", { cta });
 }
 
+// ── Visual style experiment ────────────────────────────
+
+/**
+ * Tells PostHog which arm of the style split this browser is in. The variant
+ * stays the one the split assigned even after the visitor switches styles, so
+ * a switch does not move their later events into the other arm.
+ */
+export function registerStyleVariant(assigned: UiStyle) {
+  if (typeof window === "undefined") return;
+  try {
+    posthog.register({ [`$feature/${UI_STYLE_FLAG_KEY}`]: assigned });
+  } catch {
+    // PostHog not initialized
+  }
+}
+
+/** Exposure event PostHog counts experiment participants from. Once per session. */
+export function trackStyleExposure(assigned: UiStyle, active: UiStyle) {
+  capture("$feature_flag_called", {
+    $feature_flag: UI_STYLE_FLAG_KEY,
+    $feature_flag_response: assigned,
+    ui_style_active: active,
+  });
+}
+
+/** The metric that moves fastest: how many people leave the style they landed on. */
+export function trackUiStyleChanged(params: {
+  from: UiStyle;
+  to: UiStyle;
+  sourceBefore: UiStyleSource | null;
+  assigned: UiStyle | null;
+}) {
+  capture("ui_style_changed", {
+    from: params.from,
+    to: params.to,
+    source_before: params.sourceBefore ?? "default",
+    assigned_variant: params.assigned ?? "none",
+    left_assigned_style: params.assigned != null && params.from === params.assigned,
+    $set: { ui_style: params.to },
+  });
+}
+
 // ── Auth ────────────────────────────────────────────────────────
 export function trackSignInStarted(provider: "github" | "google" | "email") {
   capture("sign_in_started", { provider });
+}
+
+/**
+ * Fired once per account, on the first authenticated page load after signup.
+ * It is the completed side of sign_in_started: without it a funnel cannot tie
+ * a signup back to the anonymous visitor who was assigned a style.
+ */
+export function trackAccountCreated(provider?: string) {
+  capture("account_created", { provider: provider ?? "unknown" });
 }
 
 // ── Dashboard ───────────────────────────────────────────────────

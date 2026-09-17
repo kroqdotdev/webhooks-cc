@@ -22,13 +22,13 @@ function buildCursorUrl(apiKey: string) {
 }
 
 const BTN =
-  "inline-flex items-center gap-2 px-4 py-2 border-2 border-foreground bg-background font-bold text-sm shadow-neo-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all";
+  "inline-flex items-center gap-2 px-4 py-2 rounded-md border-strong border-line bg-background font-bold text-sm shadow-raised-sm hover:translate-x-(--press) hover:translate-y-(--press) hover:shadow-none clean:hover:bg-muted transition-all";
 
 function CodeBlock({ children, copyText }: { children: string; copyText?: string }) {
   return (
     <div className="relative">
       <CopyButton text={copyText ?? children} />
-      <pre className="neo-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
+      <pre className="ui-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
         {children}
       </pre>
     </div>
@@ -54,7 +54,7 @@ export function McpInstallGuide() {
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="whcc_..."
-          className="w-full px-3 py-2 border-2 border-foreground bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+          className="w-full px-3 py-2 rounded-md border-strong border-line bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
           autoComplete="off"
           spellCheck={false}
           aria-label="webhooks.cc API key"

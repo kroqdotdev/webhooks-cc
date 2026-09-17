@@ -109,15 +109,15 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
       <DialogTrigger asChild>
         <button
           data-shortcut="replay"
-          className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
         >
           <Play className="h-3 w-3" />
           Replay
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo">
+      <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
-          <DialogTitle className="font-bold uppercase tracking-wide">Replay Request</DialogTitle>
+          <DialogTitle className="font-bold caps">Replay Request</DialogTitle>
           <DialogDescription>
             Send this captured request to another URL. Requests are made from your browser, so
             localhost URLs work for local development testing.
@@ -126,10 +126,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
 
         <div className="space-y-4">
           <div>
-            <label
-              htmlFor="replay-url"
-              className="text-sm font-bold uppercase tracking-wide mb-2 block"
-            >
+            <label htmlFor="replay-url" className="text-sm font-bold caps mb-2 block">
               Target URL
             </label>
             <input
@@ -138,7 +135,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
               placeholder="http://localhost:3000/webhook"
-              className="neo-input w-full text-sm"
+              className="ui-input w-full text-sm"
             />
           </div>
 
@@ -148,13 +145,13 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
           </div>
 
           {status === "done" && response && (
-            <div className="neo-code p-3!">
+            <div className="ui-code p-3!">
               <span className="font-bold">{response.status}</span> {response.statusText}
             </div>
           )}
 
           {status === "error" && (
-            <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
               {errorMsg}
             </div>
           )}
@@ -162,7 +159,7 @@ export function ReplayDialog({ method, headers, body }: ReplayDialogProps) {
           <Button
             onClick={handleReplay}
             disabled={!targetUrl || status === "sending"}
-            className="w-full neo-btn-primary rounded-none!"
+            className="w-full ui-btn-primary"
           >
             {status === "sending" ? "Sending..." : "Send Request"}
           </Button>

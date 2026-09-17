@@ -72,13 +72,13 @@ function MemberAvatar({ member }: { member: Member }) {
       <img
         src={member.image}
         alt=""
-        className="h-8 w-8 rounded-full border-2 border-foreground"
+        className="h-8 w-8 rounded-full border-strong border-line"
         onError={() => setImgFailed(true)}
       />
     );
   }
   return (
-    <div className="h-8 w-8 rounded-full border-2 border-foreground bg-muted flex items-center justify-center text-[10px] font-bold leading-none">
+    <div className="h-8 w-8 rounded-full border-strong border-line bg-muted flex items-center justify-center text-[10px] font-bold leading-none">
       {initials}
     </div>
   );
@@ -575,7 +575,7 @@ function TeamDetailContent() {
           {pendingInvites.length > 0 && (
             <>
               <div className="border-t mt-4 pt-4">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                <p className="text-xs font-medium text-muted-foreground caps mb-3">
                   Pending Invites
                 </p>
                 <div className="space-y-3">

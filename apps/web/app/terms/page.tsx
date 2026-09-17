@@ -13,7 +13,7 @@ export const metadata: Metadata = createPageMetadata({
 export default function TermsPage() {
   return (
     <div className="min-h-screen">
-      <header className="border-b-2 border-foreground shrink-0 bg-background sticky top-0 z-50">
+      <header className="border-b-strong border-line shrink-0 bg-background sticky top-0 z-50">
         <div className="container mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="font-bold text-lg">
@@ -50,7 +50,7 @@ export default function TermsPage() {
         </div>
 
         {/* The Service */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">The Service</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -61,7 +61,7 @@ export default function TermsPage() {
         </section>
 
         {/* Your Account */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Your Account</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -73,7 +73,7 @@ export default function TermsPage() {
         </section>
 
         {/* Acceptable Use */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Acceptable Use</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>You agree not to:</p>
@@ -88,7 +88,7 @@ export default function TermsPage() {
         </section>
 
         {/* Webhook Data */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Webhook Data</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -104,7 +104,7 @@ export default function TermsPage() {
         </section>
 
         {/* Service Availability */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Service Availability</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -115,7 +115,7 @@ export default function TermsPage() {
         </section>
 
         {/* Changes */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Changes</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -127,7 +127,7 @@ export default function TermsPage() {
         </section>
 
         {/* Contact */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Contact</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>

@@ -3,13 +3,13 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import type { AnyRequestSummary } from "@/types/request";
 
-/** Method to fill color for SVG dots */
+/** Method to fill color for SVG dots, from the --method-* tokens in globals.css */
 const METHOD_FILL: Record<string, string> = {
-  GET: "hsl(162, 100%, 41%)", // primary
-  POST: "hsl(52, 100%, 50%)", // secondary
-  PUT: "hsl(280, 100%, 65%)", // accent
-  PATCH: "hsl(280, 100%, 65%)", // accent
-  DELETE: "hsl(0, 84%, 60%)", // destructive
+  GET: "hsl(var(--method-get))",
+  POST: "hsl(var(--method-post))",
+  PUT: "hsl(var(--method-put))",
+  PATCH: "hsl(var(--method-put))",
+  DELETE: "hsl(var(--method-delete))",
 };
 const DEFAULT_FILL = "hsl(0, 0%, 60%)";
 
@@ -122,7 +122,7 @@ export function RequestTimeline({ requests, selectedId, onSelect }: RequestTimel
 
   if (requests.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground font-bold uppercase tracking-wide">
+      <div className="flex items-center justify-center h-full text-xs text-muted-foreground font-bold caps">
         No requests to display
       </div>
     );

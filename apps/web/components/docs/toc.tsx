@@ -42,9 +42,7 @@ export function TableOfContents({ headings }: { headings: TocItem[] }) {
     <>
       {/* Desktop: sticky sidebar */}
       <aside className="hidden xl:block w-48 shrink-0 sticky top-24 self-start max-h-[calc(100vh-7rem)] overflow-y-auto">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
-          On this page
-        </p>
+        <p className="text-xs font-bold caps-wide text-muted-foreground mb-3">On this page</p>
         <nav aria-label="Table of contents">
           <ul className="space-y-1.5 text-sm">
             {headings.map((h) => (
@@ -79,7 +77,7 @@ function MobileToc({ headings, activeId }: { headings: TocItem[]; activeId: stri
   if (headings.length < 3) return null;
 
   return (
-    <div className="hidden md:block xl:hidden mb-6 border-2 border-foreground bg-card">
+    <div className="hidden md:block xl:hidden mb-6 rounded-lg border-strong border-line bg-card">
       <button
         onClick={() => setOpen(!open)}
         type="button"
@@ -89,7 +87,7 @@ function MobileToc({ headings, activeId }: { headings: TocItem[]; activeId: stri
         <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <nav className="px-4 pb-3 border-t-2 border-foreground" aria-label="Table of contents">
+        <nav className="px-4 pb-3 border-t-strong border-line" aria-label="Table of contents">
           <ul className="space-y-1.5 text-sm pt-2">
             {headings.map((h) => (
               <li key={h.id}>

@@ -190,8 +190,8 @@ function TeamSharingSection({
   if (loading || (teams.length === 0 && !teamError)) return null;
 
   return (
-    <div className="border-2 border-foreground p-4 space-y-2">
-      <p className="font-bold uppercase tracking-wide text-xs">Team Sharing</p>
+    <div className="border-strong border-line rounded-lg p-4 space-y-2">
+      <p className="font-bold caps text-xs">Team Sharing</p>
       <p className="text-xs text-muted-foreground">Share this endpoint with your teams.</p>
       {teamError && <p className="text-xs text-destructive">{teamError}</p>}
       <div className="space-y-1.5">
@@ -203,8 +203,8 @@ function TeamSharingSection({
               <button
                 onClick={() => handleToggle(team.id, isShared)}
                 disabled={toggling === team.id}
-                className={`text-xs px-2.5 py-1 border-2 border-foreground transition-colors ${
-                  isShared ? "bg-foreground text-background" : "hover:bg-muted"
+                className={`text-xs px-2.5 py-1 border-strong border-line rounded-md transition-colors ${
+                  isShared ? "bg-selected text-selected-foreground" : "hover:bg-muted"
                 }`}
               >
                 {toggling === team.id ? "..." : isShared ? "Shared" : "Share"}
@@ -404,16 +404,16 @@ export const EndpointSettingsDialog = forwardRef<
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button
-          className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground"
+          className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-strong border-line rounded-md"
           title="Endpoint settings"
           aria-label="Endpoint settings"
         >
           <Settings className="h-3.5 w-3.5" />
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo max-h-[90vh] overflow-y-auto max-w-[90vw] sm:max-w-[85vw] lg:max-w-5xl">
+      <DialogContent className="border-strong border-line shadow-raised max-h-[90vh] overflow-y-auto max-w-[90vw] sm:max-w-[85vw] lg:max-w-5xl">
         <DialogHeader>
-          <DialogTitle className="font-bold uppercase tracking-wide">Endpoint Settings</DialogTitle>
+          <DialogTitle className="font-bold caps">Endpoint Settings</DialogTitle>
           <DialogDescription>Configure {endpointName || slug}</DialogDescription>
         </DialogHeader>
 
@@ -423,7 +423,7 @@ export const EndpointSettingsDialog = forwardRef<
           <div className="space-y-4">
             {/* Name */}
             <div className="space-y-2">
-              <Label htmlFor="settings-name" className="font-bold uppercase tracking-wide text-xs">
+              <Label htmlFor="settings-name" className="font-bold caps text-xs">
                 Name
               </Label>
               <input
@@ -431,19 +431,19 @@ export const EndpointSettingsDialog = forwardRef<
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Webhook"
-                className="neo-input w-full text-sm"
+                className="ui-input w-full text-sm"
               />
             </div>
 
             {/* Response Rules */}
-            <div className="border-2 border-foreground p-4">
+            <div className="border-strong border-line rounded-lg p-4">
               <ResponseRulesEditor rules={responseRules} onChange={setResponseRules} />
             </div>
 
             {/* Default Mock Response */}
-            <div className="border-2 border-foreground p-4 space-y-4">
+            <div className="border-strong border-line rounded-lg p-4 space-y-4">
               <div>
-                <p className="font-bold uppercase tracking-wide text-xs mb-1">
+                <p className="font-bold caps text-xs mb-1">
                   {responseRules.length > 0 ? "Default Response" : "Mock Response"}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -465,10 +465,7 @@ export const EndpointSettingsDialog = forwardRef<
               />
 
               <div className="space-y-2">
-                <Label
-                  htmlFor="settings-body"
-                  className="font-bold uppercase tracking-wide text-xs"
-                >
+                <Label htmlFor="settings-body" className="font-bold caps text-xs">
                   Response Body
                 </Label>
                 <Textarea
@@ -477,7 +474,7 @@ export const EndpointSettingsDialog = forwardRef<
                   onChange={(e) => setMockBody(e.target.value)}
                   placeholder='{"status": "ok"}'
                   rows={3}
-                  className="border-2 border-foreground rounded-none text-sm font-mono"
+                  className="border-strong border-line text-sm font-mono"
                 />
                 <p className="text-xs text-muted-foreground">
                   Edit freely &mdash; the suggestion above is just a starting point.
@@ -495,7 +492,7 @@ export const EndpointSettingsDialog = forwardRef<
                     }}
                     className="accent-foreground"
                   />
-                  <span className="font-bold uppercase tracking-wide text-xs">Response Delay</span>
+                  <span className="font-bold caps text-xs">Response Delay</span>
                 </label>
                 {delayEnabled && (
                   <>
@@ -514,7 +511,7 @@ export const EndpointSettingsDialog = forwardRef<
                         else if (n > 30000) setMockDelay("30000");
                       }}
                       placeholder="0-30000ms"
-                      className="neo-input w-full text-sm"
+                      className="ui-input w-full text-sm"
                     />
                     <p className="text-xs text-muted-foreground">
                       Delay before sending the response (max 30s). Useful for testing timeouts.
@@ -527,16 +524,14 @@ export const EndpointSettingsDialog = forwardRef<
 
           {/* Right column: Advanced settings */}
           <div className="space-y-4">
-            <p className="font-bold uppercase tracking-wide text-xs">Advanced Settings</p>
+            <p className="font-bold caps text-xs">Advanced Settings</p>
 
             <div className="space-y-4">
               {/* Notification Webhook — only shown for owned endpoints */}
               {initialNotificationUrl !== undefined && (
-                <div className="border-2 border-foreground p-4 space-y-2">
+                <div className="border-strong border-line rounded-lg p-4 space-y-2">
                   <div>
-                    <p className="font-bold uppercase tracking-wide text-xs mb-1">
-                      Notification Webhook
-                    </p>
+                    <p className="font-bold caps text-xs mb-1">Notification Webhook</p>
                     <p className="text-xs text-muted-foreground">
                       POST a JSON summary to Slack, Discord, or any URL when a request arrives.
                     </p>
@@ -547,7 +542,7 @@ export const EndpointSettingsDialog = forwardRef<
                     value={notificationUrl}
                     onChange={(e) => setNotificationUrl(e.target.value)}
                     placeholder="https://hooks.slack.com/services/..."
-                    className="neo-input w-full text-sm"
+                    className="ui-input w-full text-sm"
                   />
                 </div>
               )}
@@ -562,21 +557,16 @@ export const EndpointSettingsDialog = forwardRef<
 
               {/* Signature Verification — only for owned endpoints */}
               {initialNotificationUrl !== undefined && (
-                <div className="border-2 border-foreground p-4 space-y-3">
+                <div className="border-strong border-line rounded-lg p-4 space-y-3">
                   <div>
-                    <p className="font-bold uppercase tracking-wide text-xs mb-1">
-                      Signature Verification
-                    </p>
+                    <p className="font-bold caps text-xs mb-1">Signature Verification</p>
                     <p className="text-xs text-muted-foreground">
                       Automatically verify webhook signatures on every request.
                     </p>
                   </div>
 
                   <div className="space-y-1">
-                    <label
-                      htmlFor="settings-signing-provider"
-                      className="font-bold uppercase tracking-wide text-xs"
-                    >
+                    <label htmlFor="settings-signing-provider" className="font-bold caps text-xs">
                       Provider
                     </label>
                     <select
@@ -597,7 +587,7 @@ export const EndpointSettingsDialog = forwardRef<
                             : ""
                         );
                       }}
-                      className="neo-input w-full text-sm"
+                      className="ui-input w-full text-sm"
                     >
                       <option value="">None</option>
                       {WEB_VERIFICATION_PROVIDER_OPTIONS.map((provider) => (
@@ -615,10 +605,7 @@ export const EndpointSettingsDialog = forwardRef<
                   {signingProvider && (
                     <>
                       <div className="space-y-1">
-                        <label
-                          htmlFor="settings-signing-secret"
-                          className="font-bold uppercase tracking-wide text-xs"
-                        >
+                        <label htmlFor="settings-signing-secret" className="font-bold caps text-xs">
                           {getWebProviderCredentialLabel(signingProvider)}
                         </label>
                         <div className="flex gap-2">
@@ -632,7 +619,7 @@ export const EndpointSettingsDialog = forwardRef<
                                 ? "Enter new secret to replace"
                                 : (signingProviderInfo?.secretPlaceholder ?? "Paste secret here")
                             }
-                            className="neo-input flex-1 text-sm font-mono"
+                            className="ui-input flex-1 text-sm font-mono"
                           />
                           {hasSigningSecret && (
                             <button
@@ -642,7 +629,7 @@ export const EndpointSettingsDialog = forwardRef<
                                 setSigningSecret("");
                                 setHasSigningSecret(false);
                               }}
-                              className="neo-btn-outline py-1.5! px-3! text-xs shrink-0"
+                              className="ui-btn-outline py-1.5! px-3! text-xs shrink-0"
                             >
                               Clear
                             </button>
@@ -659,7 +646,7 @@ export const EndpointSettingsDialog = forwardRef<
                         <div className="space-y-1">
                           <label
                             htmlFor="settings-signing-header"
-                            className="font-bold uppercase tracking-wide text-xs"
+                            className="font-bold caps text-xs"
                           >
                             Signature Header
                           </label>
@@ -668,7 +655,7 @@ export const EndpointSettingsDialog = forwardRef<
                             value={signingHeader}
                             onChange={(e) => setSigningHeader(e.target.value)}
                             placeholder="x-my-signature"
-                            className="neo-input w-full text-sm font-mono"
+                            className="ui-input w-full text-sm font-mono"
                           />
                         </div>
                       )}
@@ -678,7 +665,7 @@ export const EndpointSettingsDialog = forwardRef<
                   {hasSigningSecret && signingProvider && (
                     <div className="flex items-center gap-1.5 text-xs text-primary">
                       <ShieldCheck className="h-3.5 w-3.5" />
-                      <span className="font-bold uppercase tracking-wide">
+                      <span className="font-bold caps">
                         Configured &middot;{" "}
                         {getWebProviderLabel(signingProvider) ?? signingProvider}
                       </span>
@@ -691,7 +678,7 @@ export const EndpointSettingsDialog = forwardRef<
         </div>
 
         {error && (
-          <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+          <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
             {error}
           </div>
         )}
@@ -700,7 +687,7 @@ export const EndpointSettingsDialog = forwardRef<
           <button
             onClick={handleDelete}
             disabled={isDeleting}
-            className={`neo-btn-outline py-1.5! px-3! text-xs ${
+            className={`ui-btn-outline py-1.5! px-3! text-xs ${
               confirmDelete
                 ? "bg-destructive! text-destructive-foreground! border-destructive!"
                 : "text-destructive"
@@ -709,16 +696,13 @@ export const EndpointSettingsDialog = forwardRef<
             {isDeleting ? "Deleting..." : confirmDelete ? "Confirm Delete" : "Delete Endpoint"}
           </button>
           <div className="flex gap-2">
-            <button
-              onClick={() => setOpen(false)}
-              className="neo-btn-outline py-1.5! px-3! text-xs"
-            >
+            <button onClick={() => setOpen(false)} className="ui-btn-outline py-1.5! px-3! text-xs">
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving || !session?.access_token}
-              className="neo-btn-primary py-1.5! px-3! text-xs"
+              className="ui-btn-primary py-1.5! px-3! text-xs"
             >
               {isSaving ? "Saving..." : "Save Changes"}
             </button>

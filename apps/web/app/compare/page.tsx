@@ -87,7 +87,7 @@ export default function CompareIndexPage() {
             <Link
               key={item.href}
               href={item.href}
-              className="neo-card neo-card-static block transition-colors hover:bg-muted"
+              className="ui-card ui-card-static block transition-colors hover:bg-muted"
             >
               <h2 className="text-xl font-bold mb-2">{item.title}</h2>
               <p className="text-muted-foreground">{item.summary}</p>

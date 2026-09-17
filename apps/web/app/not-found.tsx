@@ -18,13 +18,13 @@ export default function NotFound() {
             This page doesn&apos;t exist or has been moved.
           </p>
           <nav className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/" className="neo-btn neo-btn-primary px-6 py-3 font-bold">
+            <Link href="/" className="ui-btn-primary">
               Home
             </Link>
-            <Link href="/docs" className="neo-btn px-6 py-3 font-bold">
+            <Link href="/docs" className="ui-btn">
               Docs
             </Link>
-            <Link href="/blog" className="neo-btn px-6 py-3 font-bold">
+            <Link href="/blog" className="ui-btn">
               Blog
             </Link>
           </nav>

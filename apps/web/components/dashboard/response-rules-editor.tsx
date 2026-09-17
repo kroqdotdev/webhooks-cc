@@ -125,7 +125,7 @@ function ConditionRow({
             path: undefined,
           });
         }}
-        className="neo-input text-xs py-1! px-2!"
+        className="ui-input text-xs py-1! px-2!"
       >
         {CONDITION_FIELDS.map((f) => (
           <option key={f.value} value={f.value}>
@@ -141,7 +141,7 @@ function ConditionRow({
           onChange={(e) => onChange({ ...condition, name: e.target.value })}
           placeholder={condition.field === "header" ? "header-name" : "param-name"}
           aria-label={condition.field === "header" ? "Header name" : "Query parameter name"}
-          className="neo-input text-xs py-1! px-2! w-24"
+          className="ui-input text-xs py-1! px-2! w-24"
         />
       )}
 
@@ -152,7 +152,7 @@ function ConditionRow({
           onChange={(e) => onChange({ ...condition, path: e.target.value })}
           placeholder="data.type"
           aria-label="JSON path"
-          className="neo-input text-xs py-1! px-2! w-24"
+          className="ui-input text-xs py-1! px-2! w-24"
         />
       )}
 
@@ -163,7 +163,7 @@ function ConditionRow({
         onChange={(e) =>
           onChange({ ...condition, op: e.target.value as ResponseRuleCondition["op"] })
         }
-        className="neo-input text-xs py-1! px-2!"
+        className="ui-input text-xs py-1! px-2!"
       >
         {ops.map((o) => (
           <option key={o.value} value={o.value}>
@@ -178,7 +178,7 @@ function ConditionRow({
           <select
             value={condition.value || "POST"}
             onChange={(e) => onChange({ ...condition, value: e.target.value })}
-            className="neo-input text-xs py-1! px-2!"
+            className="ui-input text-xs py-1! px-2!"
           >
             {METHODS.map((m) => (
               <option key={m} value={m}>
@@ -192,7 +192,7 @@ function ConditionRow({
             onChange={(e) => onChange({ ...condition, value: e.target.value })}
             placeholder="value"
             aria-label="Condition value"
-            className="neo-input text-xs py-1! px-2! flex-1 min-w-20"
+            className="ui-input text-xs py-1! px-2! flex-1 min-w-20"
           />
         ))}
 
@@ -254,9 +254,11 @@ function RuleCard({
     `Rule ${index + 1}: ${rule.conditions.length} condition${rule.conditions.length !== 1 ? "s" : ""}`;
 
   return (
-    <div className={`border-2 border-foreground ${!rule.enabled ? "opacity-50" : ""}`}>
+    <div className={`border-strong border-line rounded-lg ${!rule.enabled ? "opacity-50" : ""}`}>
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
+      <div
+        className={`flex items-center gap-2 px-3 py-2 bg-muted/30 ${collapsed ? "rounded-lg" : "rounded-t-lg"}`}
+      >
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
 
         {/* Move buttons */}
@@ -284,7 +286,7 @@ function RuleCard({
         {/* Name / Summary */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex-1 text-left text-xs font-bold uppercase tracking-wide truncate cursor-pointer"
+          className="flex-1 text-left text-xs font-bold caps truncate cursor-pointer"
           aria-expanded={!collapsed}
           aria-label={`${collapsed ? "Expand" : "Collapse"} ${summary}`}
         >
@@ -324,7 +326,7 @@ function RuleCard({
             value={rule.name || ""}
             onChange={(e) => onChange({ ...rule, name: e.target.value })}
             placeholder="Rule name (optional)"
-            className="neo-input w-full text-xs py-1! px-2!"
+            className="ui-input w-full text-xs py-1! px-2!"
           />
 
           {/* Logic toggle */}
@@ -333,7 +335,7 @@ function RuleCard({
             <select
               value={rule.logic || "and"}
               onChange={(e) => onChange({ ...rule, logic: e.target.value as "and" | "or" })}
-              className="neo-input text-xs py-0.5! px-2!"
+              className="ui-input text-xs py-0.5! px-2!"
             >
               <option value="and">ALL conditions (AND)</option>
               <option value="or">ANY condition (OR)</option>
@@ -342,7 +344,7 @@ function RuleCard({
 
           {/* Conditions */}
           <div className="space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wide">Conditions</p>
+            <p className="text-xs font-bold caps">Conditions</p>
             {keyedConditions.map((cond, i) => (
               <ConditionRow
                 key={cond._key}
@@ -363,8 +365,8 @@ function RuleCard({
           </div>
 
           {/* Response */}
-          <div className="space-y-2 border-t-2 border-foreground pt-3">
-            <p className="text-xs font-bold uppercase tracking-wide">Response</p>
+          <div className="space-y-2 border-t-strong border-line pt-3">
+            <p className="text-xs font-bold caps">Response</p>
             <div className="flex items-center gap-2">
               <StatusCodePicker
                 id={`rule-${rule.id}-status`}
@@ -391,7 +393,7 @@ function RuleCard({
               }
               placeholder="Response body"
               rows={2}
-              className="border-2 border-foreground rounded-none text-xs font-mono"
+              className="border-strong border-line text-xs font-mono"
             />
           </div>
         </div>
@@ -440,7 +442,7 @@ export function ResponseRulesEditor({ rules, onChange }: ResponseRulesEditorProp
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-bold uppercase tracking-wide text-xs">Response Rules</p>
+          <p className="font-bold caps text-xs">Response Rules</p>
           <p className="text-xs text-muted-foreground">
             First matching rule wins. Falls back to the default mock response below.
           </p>
@@ -467,7 +469,7 @@ export function ResponseRulesEditor({ rules, onChange }: ResponseRulesEditorProp
       {rules.length < 50 && (
         <button
           onClick={addRule}
-          className="neo-btn-outline py-1.5! px-3! text-xs w-full flex items-center justify-center gap-1.5"
+          className="ui-btn-outline py-1.5! px-3! text-xs w-full flex items-center justify-center gap-1.5"
         >
           <Plus className="h-3.5 w-3.5" /> Add Rule
         </button>

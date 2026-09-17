@@ -68,20 +68,20 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="border-b-2 border-foreground px-4 py-3 shrink-0">
+      <div className="border-b-strong border-line px-4 py-3 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="text-xs font-bold uppercase tracking-wide">Comparing</span>
+            <span className="text-xs font-bold caps">Comparing</span>
             <span className="font-mono text-xs text-muted-foreground">#{leftId.slice(-6)}</span>
             <span className="text-xs text-muted-foreground">vs</span>
             <span className="font-mono text-xs text-muted-foreground">#{rightId.slice(-6)}</span>
-            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border-2 border-foreground bg-muted">
+            <span className="px-2 py-0.5 text-[10px] font-bold caps rounded-sm border-strong border-line bg-muted">
               {changedCount} difference{changedCount !== 1 ? "s" : ""}
             </span>
           </div>
           <button
             onClick={onExit}
-            className="neo-btn-outline py-1! px-2! text-xs flex items-center gap-1"
+            className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1"
           >
             <X className="h-3 w-3" />
             Exit
@@ -197,10 +197,8 @@ export function RequestDiff({ left, right, onExit }: RequestDiffProps) {
 function DiffSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">
-        {title}
-      </h3>
-      <div className="neo-code p-3 space-y-0.5">{children}</div>
+      <h3 className="text-xs font-bold caps text-muted-foreground mb-2">{title}</h3>
+      <div className="ui-code p-3 space-y-0.5">{children}</div>
     </div>
   );
 }

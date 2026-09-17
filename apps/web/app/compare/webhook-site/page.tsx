@@ -79,7 +79,7 @@ export default function CompareWebhookSitePage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+        <p className="text-xs font-bold caps text-muted-foreground mb-3">
           Comparison · Updated March 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Webhook.site</h1>
@@ -93,10 +93,10 @@ export default function CompareWebhookSitePage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="neo-code overflow-x-auto mb-10">
+        <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-foreground">
+              <tr className="border-b-strong border-line">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -125,29 +125,30 @@ export default function CompareWebhookSitePage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">SDK for automated testing</h3>
             <p className="text-muted-foreground">
               webhooks.cc publishes{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5">@webhooks-cc/sdk</code> on npm. Use{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> to poll for incoming
-              requests during integration tests, match on method, headers, or JSON body paths, and
-              assert directly in Vitest or Jest. Webhook.site offers an API but no first-party SDK
-              with built-in test helpers.
+              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/sdk</code> on
+              npm. Use <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>{" "}
+              to poll for incoming requests during integration tests, match on method, headers, or
+              JSON body paths, and assert directly in Vitest or Jest. Webhook.site offers an API but
+              no first-party SDK with built-in test helpers.
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">MCP server for AI agents</h3>
             <p className="text-muted-foreground">
-              <code className="text-sm bg-muted px-1.5 py-0.5">@webhooks-cc/mcp</code> exposes 11
-              tools — create endpoints, send test payloads, inspect captured requests, replay, and
-              more — so Cursor, Claude Code, Windsurf, or any MCP-compatible agent can drive webhook
-              workflows without leaving the editor. Webhook.site does not offer MCP support.
+              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
+              exposes 11 tools — create endpoints, send test payloads, inspect captured requests,
+              replay, and more — so Cursor, Claude Code, Windsurf, or any MCP-compatible agent can
+              drive webhook workflows without leaving the editor. Webhook.site does not offer MCP
+              support.
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Pricing model</h3>
             <p className="text-muted-foreground">
               Every individual feature is included on both free and paid tiers. Teams (invite
@@ -162,7 +163,7 @@ export default function CompareWebhookSitePage() {
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Webhook assertions in CI pipelines (SDK waitFor)</li>
@@ -172,7 +173,7 @@ export default function CompareWebhookSitePage() {
               <li>Open-source codebase you can inspect and self-host</li>
             </ul>
           </div>
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose Webhook.site when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>A well-established tool with a large existing user base</li>
@@ -186,7 +187,7 @@ export default function CompareWebhookSitePage() {
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="neo-card neo-card-static">
+            <div key={item.question} className="ui-card ui-card-static">
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
             </div>

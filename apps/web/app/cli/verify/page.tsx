@@ -80,17 +80,14 @@ function CliVerifyContent() {
         className="fixed left-4 right-4 z-50"
         style={{ top: `calc(${getMaintenanceTopOffset()} + var(--ann-h, 0px))` }}
       >
-        <div className="max-w-6xl mx-auto border-2 border-foreground bg-background shadow-neo">
+        <div className="max-w-6xl mx-auto rounded-lg border-strong border-line bg-background shadow-raised">
           <div className="px-6 h-16 flex items-center justify-between">
             <Link href="/" className="font-bold text-xl tracking-tight">
               webhooks.cc
             </Link>
             <div className="flex items-center gap-6">
               <ThemeToggle />
-              <Link
-                href="/dashboard"
-                className="neo-btn-outline text-sm py-2 px-4 w-28 text-center"
-              >
+              <Link href="/dashboard" className="ui-btn-outline text-sm py-2 px-4 w-28 text-center">
                 Dashboard
               </Link>
             </div>
@@ -130,7 +127,7 @@ function CliVerifyContent() {
                   value={code}
                   onChange={(e) => setCode(formatCode(e.target.value))}
                   placeholder="XXXX-XXXX"
-                  className="w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3 border-2 border-foreground bg-background focus:outline-none focus:ring-2 focus:ring-foreground/20"
+                  className="w-full text-center text-2xl tracking-[0.3em] font-mono px-4 py-3 rounded-md border-strong border-line bg-background focus:outline-none focus:ring-2 focus:ring-foreground/20"
                   maxLength={9}
                   autoFocus
                   disabled={status === "submitting"}
