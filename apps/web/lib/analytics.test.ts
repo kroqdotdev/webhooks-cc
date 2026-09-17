@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const capture = vi.fn();
 const register = vi.fn();
 const identify = vi.fn();
+const reset = vi.fn();
 vi.mock("posthog-js", () => ({
   default: {
     capture: (...args: unknown[]) => capture(...args),
     register: (...args: unknown[]) => register(...args),
     identify: (...args: unknown[]) => identify(...args),
-    reset: vi.fn(),
+    reset: (...args: unknown[]) => reset(...args),
   },
 }));
 
@@ -16,6 +17,7 @@ vi.mock("posthog-js", () => ({
 vi.stubGlobal("window", {});
 
 const {
+  applyStyleExperiment,
   registerStyleVariant,
   reportAuthenticatedUser,
   resetUser,
@@ -141,5 +143,67 @@ describe("reportAuthenticatedUser", () => {
     resetUser();
     reportAuthenticatedUser(user);
     expect(identify).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** posthog.reset() on sign out drops super properties and starts a new identity. */
+describe("applyStyleExperiment", () => {
+  function browser(storage: Record<string, string>) {
+    const local = new Map(Object.entries(storage));
+    const session = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => local.get(k) ?? null,
+      setItem: (k: string, v: string) => void local.set(k, v),
+    });
+    vi.stubGlobal("sessionStorage", {
+      getItem: (k: string) => session.get(k) ?? null,
+      setItem: (k: string, v: string) => void session.set(k, v),
+      removeItem: (k: string) => void session.delete(k),
+    });
+  }
+
+  beforeEach(() => {
+    capture.mockClear();
+    register.mockClear();
+    reset.mockClear();
+  });
+
+  it("registers the variant and sends one exposure per session", () => {
+    browser({ "ui-style": "clean", "ui-style-source": "assigned", "ui-style-assigned": "clean" });
+    applyStyleExperiment();
+    applyStyleExperiment();
+    expect(register).toHaveBeenCalledWith({ "$feature/ui-style": "clean" });
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledWith(
+      "$feature_flag_called",
+      expect.objectContaining({ $feature_flag_response: "clean" })
+    );
+  });
+
+  it("leaves browsers that were never assigned out of the experiment", () => {
+    browser({ "ui-style": "clean", "ui-style-source": "chosen" });
+    applyStyleExperiment();
+    expect(register).not.toHaveBeenCalled();
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("restores the variant and exposes the new identity after a sign out", () => {
+    browser({
+      "ui-style": "classic",
+      "ui-style-source": "assigned",
+      "ui-style-assigned": "classic",
+    });
+    applyStyleExperiment();
+    register.mockClear();
+    capture.mockClear();
+
+    resetUser();
+
+    expect(reset).toHaveBeenCalled();
+    expect(register).toHaveBeenCalledWith({ "$feature/ui-style": "classic" });
+    expect(capture).toHaveBeenCalledWith(
+      "$feature_flag_called",
+      expect.objectContaining({ $feature_flag_response: "classic" })
+    );
   });
 });

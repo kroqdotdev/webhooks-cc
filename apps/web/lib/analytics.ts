@@ -1,6 +1,6 @@
 import posthog from "posthog-js";
 import { consumeSignupSignal } from "./signup-signal";
-import { UI_STYLE_FLAG_KEY, type UiStyle, type UiStyleSource } from "./ui-style";
+import { readUiStyleState, UI_STYLE_FLAG_KEY, type UiStyle, type UiStyleSource } from "./ui-style";
 
 /**
  * Track custom analytics events via PostHog.
@@ -37,13 +37,36 @@ export function registerStyleVariant(assigned: UiStyle) {
   }
 }
 
-/** Exposure event PostHog counts experiment participants from. Once per session. */
+/** Exposure event PostHog counts experiment participants from. */
 export function trackStyleExposure(assigned: UiStyle, active: UiStyle) {
   capture("$feature_flag_called", {
     $feature_flag: UI_STYLE_FLAG_KEY,
     $feature_flag_response: assigned,
     ui_style_active: active,
   });
+}
+
+const STYLE_EXPOSURE_SESSION_KEY = "ui-style-exposure-sent";
+
+/**
+ * Puts the experiment metadata on the current PostHog identity: the variant as
+ * a super property, and one exposure. Called after init and again after a
+ * reset, which drops super properties and starts a new anonymous identity.
+ * Browsers that were never assigned a style stay out of the experiment.
+ */
+export function applyStyleExperiment() {
+  if (typeof window === "undefined") return;
+  const { style, assigned } = readUiStyleState();
+  if (!assigned) return;
+  registerStyleVariant(assigned);
+  try {
+    if (sessionStorage.getItem(STYLE_EXPOSURE_SESSION_KEY)) return;
+    sessionStorage.setItem(STYLE_EXPOSURE_SESSION_KEY, "1");
+  } catch {
+    // Blocked storage: skip the exposure rather than sending one per page view.
+    return;
+  }
+  trackStyleExposure(assigned, style);
 }
 
 /** The metric that moves fastest: how many people leave the style they landed on. */
@@ -281,4 +304,12 @@ export function resetUser() {
   } catch {
     // PostHog not initialized
   }
+  // reset() clears super properties and starts a new anonymous identity, so the
+  // variant has to go back on and that identity needs an exposure of its own.
+  try {
+    sessionStorage.removeItem(STYLE_EXPOSURE_SESSION_KEY);
+  } catch {
+    // Blocked storage: applyStyleExperiment skips the exposure below.
+  }
+  applyStyleExperiment();
 }
