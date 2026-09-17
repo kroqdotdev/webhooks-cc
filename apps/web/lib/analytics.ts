@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import { consumeSignupSignal } from "./signup-signal";
 import { UI_STYLE_FLAG_KEY, type UiStyle, type UiStyleSource } from "./ui-style";
 
 /**
@@ -242,8 +243,39 @@ export function identifyUser(userId: string, properties?: Record<string, unknown
   }
 }
 
+interface AuthedUser {
+  id: string;
+  email?: string | null;
+  app_metadata?: { provider?: string };
+}
+
+let reportedUserId: string | null = null;
+
+/**
+ * Identifies the person and, when this sign-in created the account, records the
+ * signup. The shared auth store calls it on every session change, so it runs on
+ * whatever page the user lands on, including the CLI verify and agent claim
+ * pages that never mount RequireAuth. Repeat calls for the same user do nothing.
+ */
+export function reportAuthenticatedUser(user: AuthedUser) {
+  if (typeof window === "undefined" || user.id === reportedUserId) return;
+  reportedUserId = user.id;
+  identifyUser(user.id, { email: user.email ?? undefined });
+
+  if (!consumeSignupSignal()) return;
+  const key = `account-created-tracked:${user.id}`;
+  try {
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+  } catch {
+    // Blocked storage: better a possible duplicate than a missing signup.
+  }
+  trackAccountCreated(user.app_metadata?.provider);
+}
+
 export function resetUser() {
   if (typeof window === "undefined") return;
+  reportedUserId = null;
   try {
     posthog.reset();
   } catch {
