@@ -49,7 +49,7 @@ export function AnnouncementBanner() {
         aria-live="polite"
         className={`fixed left-0 right-0 z-[55] ${maintenanceActive ? "top-[42px]" : "top-0"}`}
       >
-        <div className="bg-primary border-b-2 border-foreground text-primary-foreground px-4 py-2 text-center text-sm font-medium">
+        <div className="bg-primary border-b-strong border-line text-primary-foreground px-4 py-2 text-center text-sm font-medium">
           <div className="flex items-center justify-center gap-2">
             <span>
               <span className="font-bold">New:</span> {announcement.text}{" "}

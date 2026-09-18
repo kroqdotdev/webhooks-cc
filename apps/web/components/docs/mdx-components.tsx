@@ -37,15 +37,12 @@ export const mdxComponents: MDXComponents = {
   },
 
   table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
-    <div className="my-6 overflow-x-auto border-2 border-foreground shadow-neo-sm">
+    <div className="my-6 overflow-x-auto rounded-lg border-strong border-line shadow-raised-sm">
       <table className="w-full text-sm" {...props} />
     </div>
   ),
   th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
-    <th
-      className="text-left font-bold py-2 px-3 border-b-2 border-foreground bg-muted"
-      {...props}
-    />
+    <th className="text-left font-bold py-2 px-3 border-b-strong border-line bg-muted" {...props} />
   ),
   td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => (
     <td className="py-2 px-3 border-b border-foreground/20" {...props} />

@@ -86,7 +86,7 @@ export function EndpointSwitcher() {
 
   const hasSections = sharedByMe.length > 0 || sharedWithMe.length > 0;
 
-  const labelClass = "text-xs font-bold uppercase tracking-wide text-muted-foreground";
+  const labelClass = "text-xs font-bold caps text-muted-foreground";
 
   return (
     <Select value={defaultSlug} onValueChange={handleChange}>

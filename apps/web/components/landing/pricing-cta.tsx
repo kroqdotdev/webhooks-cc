@@ -23,7 +23,7 @@ function PricingCTAInner() {
   // HTML; authenticated visitors see it swap to the dashboard link.
   if (isAuthenticated) {
     return (
-      <Link href="/dashboard" className="neo-btn-primary w-full text-center block">
+      <Link href="/dashboard" className="ui-btn-primary w-full text-center block">
         Go to Dashboard
         <ArrowRight className="inline-block ml-2 h-5 w-5" />
       </Link>
@@ -35,7 +35,7 @@ function PricingCTAInner() {
       <OAuthSignInButtons
         redirectTo="/dashboard"
         layout="horizontal"
-        buttonClassName="h-10 text-sm px-4 neo-btn-outline cursor-pointer flex-1"
+        buttonClassName="h-10 text-sm px-4 ui-btn-outline cursor-pointer flex-1"
       />
     </div>
   );

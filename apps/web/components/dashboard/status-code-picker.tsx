@@ -106,7 +106,7 @@ export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps)
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={id} className="font-bold uppercase tracking-wide text-xs">
+      <Label htmlFor={id} className="font-bold caps text-xs">
         Status Code
       </Label>
       <div className="flex gap-2">
@@ -114,24 +114,24 @@ export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps)
           <SelectTrigger
             id={id}
             className={cn(
-              "border-2 border-foreground rounded-none text-sm font-mono h-auto py-2",
+              "border-strong border-line text-sm font-mono h-auto py-2",
               isCustom ? "w-36 shrink-0" : "w-full"
             )}
           >
             <SelectValue placeholder="Select status" />
           </SelectTrigger>
-          <SelectContent className="border-2 border-foreground rounded-none shadow-neo">
+          <SelectContent className="border-strong border-line shadow-raised">
             {STATUS_CODES.map((group, i) => (
               <SelectGroup key={group.group}>
                 {i > 0 && <SelectSeparator className="bg-foreground/20" />}
-                <SelectLabel className="font-bold uppercase tracking-wide text-xs text-muted-foreground">
+                <SelectLabel className="font-bold caps text-xs text-muted-foreground">
                   {group.group}
                 </SelectLabel>
                 {group.codes.map((code) => (
                   <SelectItem
                     key={code.value}
                     value={code.value}
-                    className="font-mono text-sm cursor-pointer rounded-none"
+                    className="font-mono text-sm cursor-pointer"
                   >
                     {code.label}
                   </SelectItem>
@@ -140,10 +140,7 @@ export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps)
             ))}
             <SelectSeparator className="bg-foreground/20" />
             <SelectGroup>
-              <SelectItem
-                value={CUSTOM_VALUE}
-                className="font-bold text-sm cursor-pointer rounded-none"
-              >
+              <SelectItem value={CUSTOM_VALUE} className="font-bold text-sm cursor-pointer">
                 Custom...
               </SelectItem>
             </SelectGroup>
@@ -157,7 +154,7 @@ export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps)
             value={customValue}
             onChange={(e) => handleCustomInput(e.target.value)}
             placeholder="418"
-            className="neo-input flex-1 text-sm font-mono"
+            className="ui-input flex-1 text-sm font-mono"
             autoFocus
           />
         )}

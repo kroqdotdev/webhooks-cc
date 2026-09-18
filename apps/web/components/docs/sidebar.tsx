@@ -52,11 +52,11 @@ function SidebarContent({
       <button
         onClick={onSearchClick}
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 mb-4 text-sm text-muted-foreground border-2 border-foreground/30 hover:border-foreground hover:text-foreground transition-colors cursor-pointer"
+        className="flex w-full items-center gap-2 px-3 py-2 mb-4 text-sm text-muted-foreground rounded-md border-strong border-foreground/30 hover:border-line clean:hover:border-foreground/50 hover:text-foreground transition-colors cursor-pointer"
       >
         <Search className="h-4 w-4" />
         <span>Search</span>
-        <kbd className="ml-auto text-xs border border-foreground/30 px-1.5 py-0.5 font-mono hidden sm:inline">
+        <kbd className="ml-auto text-xs rounded-sm border border-foreground/30 px-1.5 py-0.5 font-mono hidden sm:inline">
           ⌘K
         </kbd>
       </button>
@@ -75,7 +75,7 @@ function SidebarContent({
             <button
               onClick={() => toggle(section.id)}
               type="button"
-              className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer"
+              className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-bold caps-wide text-muted-foreground hover:text-foreground cursor-pointer"
             >
               {section.title}
               <ChevronDown
@@ -99,13 +99,13 @@ function SidebarContent({
                           "flex items-center gap-2 py-1.5 text-sm font-medium border-l-4 transition-colors",
                           item.depth ? "pl-6 pr-3" : "px-3",
                           isActive
-                            ? "bg-foreground text-background border-l-primary font-bold"
+                            ? "bg-selected text-selected-foreground border-l-primary font-bold"
                             : "border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
                         )}
                       >
                         {item.title}
                         {item.isNew && (
-                          <span className="text-[10px] font-bold uppercase bg-primary text-primary-foreground px-1.5 py-0.5 border border-foreground">
+                          <span className="text-[10px] font-bold uppercase clean:normal-case bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm border border-line">
                             New
                           </span>
                         )}
@@ -157,7 +157,7 @@ export function DocsSidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="md:hidden fixed left-4 z-40 p-2 border-2 border-foreground bg-background shadow-neo-sm cursor-pointer"
+        className="md:hidden fixed left-4 z-40 p-2 rounded-md border-strong border-line bg-background shadow-raised-sm cursor-pointer"
         style={{ top: s.toggle }}
         aria-label="Toggle docs navigation"
       >
@@ -180,7 +180,7 @@ export function DocsSidebar() {
         aria-label="Documentation navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "md:hidden fixed left-4 bottom-4 z-[35] w-64 border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2 transition-transform",
+          "md:hidden fixed left-4 bottom-4 z-[35] w-64 rounded-lg border-strong border-line bg-background shadow-raised overflow-y-auto py-6 px-2 transition-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ top: s.panel }}
@@ -190,7 +190,7 @@ export function DocsSidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:block w-64 shrink-0 sticky self-start border-2 border-foreground bg-background shadow-neo overflow-y-auto py-6 px-2"
+        className="hidden md:block w-64 shrink-0 sticky self-start rounded-lg border-strong border-line bg-background shadow-raised overflow-y-auto py-6 px-2"
         style={{ top: s.desktop, maxHeight: s.maxH }}
       >
         <SidebarContent onSearchClick={handleSearchClick} />

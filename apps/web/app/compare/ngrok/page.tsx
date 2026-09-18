@@ -80,7 +80,7 @@ export default function CompareNgrokPage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+        <p className="text-xs font-bold caps text-muted-foreground mb-3">
           Comparison · Updated March 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs ngrok</h1>
@@ -93,10 +93,10 @@ export default function CompareNgrokPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="neo-code overflow-x-auto mb-10">
+        <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-foreground">
+              <tr className="border-b-strong border-line">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -125,7 +125,7 @@ export default function CompareNgrokPage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Webhook history and inspection</h3>
             <p className="text-muted-foreground">
               ngrok tunnels traffic to your local server, but does not store or index incoming
@@ -136,18 +136,18 @@ export default function CompareNgrokPage() {
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Testing and CI integration</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides a TypeScript SDK with{" "}
-              <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> — create an
-              endpoint, trigger your integration, and assert on the captured webhook in your test
+              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code> — create
+              an endpoint, trigger your integration, and assert on the captured webhook in your test
               suite. This works in CI without opening any tunnels. ngrok is designed for runtime
               tunneling, not test-time assertions.
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Scope and complexity</h3>
             <p className="text-muted-foreground">
               ngrok supports TCP tunnels, custom domains, traffic policies, IP restrictions, and
@@ -162,7 +162,7 @@ export default function CompareNgrokPage() {
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Full webhook request history with search and replay</li>
@@ -172,7 +172,7 @@ export default function CompareNgrokPage() {
               <li>A tunnel that captures and inspects, not just forwards</li>
             </ul>
           </div>
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose ngrok when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>General-purpose tunneling for any protocol (HTTP, TCP, TLS)</li>
@@ -187,7 +187,7 @@ export default function CompareNgrokPage() {
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="neo-card neo-card-static">
+            <div key={item.question} className="ui-card ui-card-static">
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
             </div>

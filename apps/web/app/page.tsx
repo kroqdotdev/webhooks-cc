@@ -185,7 +185,7 @@ export default async function Home() {
       <JsonLd data={videoObjectSchema()} />
 
       {/* Navigation — solid app header, same chrome as the real dashboard */}
-      <header className="border-b-2 border-foreground bg-background sticky top-[var(--ann-h,0px)] z-50">
+      <header className="border-b-strong border-line bg-background sticky top-[var(--ann-h,0px)] z-50">
         <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
@@ -211,10 +211,12 @@ export default async function Home() {
       {/* Hero — the landing screen IS the dashboard, webhook.site style */}
       <section className="h-[calc(100svh-3.5rem-var(--ann-h,0px))] flex flex-col">
         {/* Title strip inside the app chrome — the page's H1 lives here */}
-        <div className="shrink-0 border-b-2 border-foreground bg-muted px-4 py-2 text-center">
+        <div className="shrink-0 border-b-strong border-line bg-muted px-4 py-2 text-center">
           <h1 className="text-base md:text-xl font-bold tracking-tight leading-snug">
             The fastest way to{" "}
-            <span className="bg-primary text-primary-foreground px-1.5">test webhooks</span>
+            <span className="bg-primary text-primary-foreground px-1.5 clean:bg-transparent clean:px-0 clean:text-primary">
+              test webhooks
+            </span>
           </h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
             Your free webhook URL is live below — point any service at it. No signup, no credit
@@ -245,8 +247,8 @@ export default async function Home() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
-            <div className="neo-card neo-card-static">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+            <div className="ui-card ui-card-static">
+              <p className="text-xs font-bold caps text-muted-foreground mb-3">
                 Guest URL — what you have now
               </p>
               <ul className="space-y-2 text-sm">
@@ -263,11 +265,11 @@ export default async function Home() {
               </ul>
             </div>
 
-            <div className="neo-card neo-card-static border-primary relative">
-              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-2 border-foreground shadow-neo-sm">
+            <div className="ui-card ui-card-static border-primary relative">
+              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
                 1 click away
               </div>
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+              <p className="text-xs font-bold caps text-muted-foreground mb-3">
                 Free account — GitHub, Google, or email
               </p>
               <ul className="space-y-2 text-sm">
@@ -353,7 +355,7 @@ export default async function Home() {
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
-                <div className="w-10 h-10 border-2 border-foreground bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-neo-sm">
+                <div className="w-10 h-10 border-strong border-line rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg shrink-0 shadow-raised-sm">
                   {item.step}
                 </div>
                 <div>
@@ -377,9 +379,9 @@ export default async function Home() {
           </p>
 
           <div className="grid md:grid-cols-3 gap-6">
-            <div className="neo-card">
-              <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
-                <Eye className="h-6 w-6 text-primary-foreground" />
+            <div className="ui-card">
+              <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                <Eye className="h-6 w-6 text-primary-foreground clean:text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">See requests the moment they arrive</h3>
               <p className="text-muted-foreground">
@@ -388,9 +390,9 @@ export default async function Home() {
               </p>
             </div>
 
-            <div className="neo-card">
-              <div className="w-12 h-12 border-2 border-foreground bg-secondary flex items-center justify-center mb-4 shadow-neo-sm">
-                <Zap className="h-6 w-6 text-secondary-foreground" />
+            <div className="ui-card">
+              <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                <Zap className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Send signed provider test webhooks</h3>
               <p className="text-muted-foreground">
@@ -414,8 +416,8 @@ export default async function Home() {
               </p>
             </div>
 
-            <div className="neo-card">
-              <div className="w-12 h-12 border-2 border-foreground bg-muted flex items-center justify-center mb-4 shadow-neo-sm">
+            <div className="ui-card">
+              <div className="w-12 h-12 border-strong border-line rounded-md bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
                 <Reply className="h-6 w-6" />
               </div>
               <h3 className="font-bold text-xl mb-2">Return custom mock responses</h3>
@@ -425,9 +427,9 @@ export default async function Home() {
               </p>
             </div>
 
-            <div className="neo-card">
-              <div className="w-12 h-12 border-2 border-foreground bg-accent flex items-center justify-center mb-4 shadow-neo-sm">
-                <Terminal className="h-6 w-6 text-accent-foreground" />
+            <div className="ui-card">
+              <div className="w-12 h-12 border-strong border-line rounded-md bg-accent clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                <Terminal className="h-6 w-6 text-accent-foreground clean:text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Forward to localhost. Assert in CI.</h3>
               <p className="text-muted-foreground">
@@ -437,9 +439,9 @@ export default async function Home() {
               </p>
             </div>
 
-            <div className="neo-card">
-              <div className="w-12 h-12 border-2 border-foreground bg-foreground flex items-center justify-center mb-4 shadow-neo-sm">
-                <Bot className="h-6 w-6 text-background" />
+            <div className="ui-card">
+              <div className="w-12 h-12 border-strong border-line rounded-md bg-foreground clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                <Bot className="h-6 w-6 text-background clean:text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">Let your AI agent debug webhooks</h3>
               <p className="text-muted-foreground">
@@ -448,13 +450,13 @@ export default async function Home() {
               </p>
             </div>
 
-            <div className="neo-card">
-              <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
-                <Users className="h-6 w-6 text-primary-foreground" />
+            <div className="ui-card">
+              <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                <Users className="h-6 w-6 text-primary-foreground clean:text-foreground" />
               </div>
               <h3 className="font-bold text-xl mb-2">
                 Collaborate with your team{" "}
-                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border-2 border-foreground align-middle shadow-neo-sm">
+                <span className="inline-block text-xs bg-secondary text-secondary-foreground px-2 py-0.5 border-strong border-line rounded-md align-middle shadow-raised-sm">
                   Teams
                 </span>
               </h3>
@@ -481,7 +483,7 @@ export default async function Home() {
 
           <InstallCards />
 
-          <div className="mt-6 neo-code overflow-x-auto">
+          <div className="mt-6 ui-code overflow-x-auto">
             <pre className="text-sm md:text-base">
               <code>
                 <span className="text-muted-foreground"># Send manually with curl</span>
@@ -532,15 +534,13 @@ export default async function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-4">
-                Teams
-              </p>
+              <p className="text-xs font-bold caps text-muted-foreground mb-4">Teams</p>
               <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for teams</h2>
               <p className="text-xl text-muted-foreground mb-8">
                 Create a team, invite your colleagues, and share endpoints. Everyone sees the same
                 incoming webhooks in real time — no more pasting URLs in Slack.
               </p>
-              <Link href="/teams" className="neo-btn-primary inline-block">
+              <Link href="/teams" className="ui-btn-primary inline-block">
                 Try Teams
               </Link>
               <p className="text-sm text-muted-foreground mt-3">
@@ -548,7 +548,7 @@ export default async function Home() {
                 pool
               </p>
             </div>
-            <div className="neo-card neo-card-static p-0! overflow-hidden">
+            <div className="ui-card ui-card-static p-0! overflow-hidden">
               <TeamsVideo />
             </div>
           </div>
@@ -567,7 +567,7 @@ export default async function Home() {
 
           <div className="grid md:grid-cols-3 gap-8">
             {/* Free Plan */}
-            <div className="neo-card">
+            <div className="ui-card">
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Free</h3>
                 <p className="text-5xl font-bold">
@@ -593,8 +593,8 @@ export default async function Home() {
             </div>
 
             {/* Pro Plan */}
-            <div className="neo-card border-primary relative">
-              <div className="absolute -top-3 -right-3 bg-secondary text-secondary-foreground px-3 py-1 text-sm font-bold border-2 border-foreground shadow-neo-sm">
+            <div className="ui-card border-primary relative">
+              <div className="absolute -top-3 -right-3 bg-secondary text-secondary-foreground px-3 py-1 text-sm font-bold border-strong border-line rounded-md shadow-raised-sm">
                 Popular
               </div>
               <div className="mb-6">
@@ -625,7 +625,7 @@ export default async function Home() {
             </div>
 
             {/* Teams Plan */}
-            <div className="neo-card">
+            <div className="ui-card">
               <div className="mb-6">
                 <h3 className="font-bold text-2xl mb-2">Teams</h3>
                 <p className="text-5xl font-bold">
@@ -650,7 +650,7 @@ export default async function Home() {
               <p className="text-sm text-muted-foreground mb-3 text-center">
                 Any account can create a team
               </p>
-              <Link href="/teams" className="neo-btn-outline w-full text-center block">
+              <Link href="/teams" className="ui-btn-outline w-full text-center block">
                 Create a team
                 <ArrowRight className="inline-block ml-2 h-5 w-5" />
               </Link>
@@ -704,7 +704,7 @@ export default async function Home() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="neo-card block transition-colors hover:bg-muted group"
+                className="ui-card block transition-colors hover:bg-muted group"
               >
                 <h3 className="font-bold text-xl mb-2">{item.title}</h3>
                 <p className="text-muted-foreground mb-4">{item.summary}</p>
@@ -732,7 +732,7 @@ export default async function Home() {
       {/* CTA */}
       <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto">
-          <div className="neo-card bg-foreground text-background text-center py-16">
+          <div className="ui-card bg-foreground text-background text-center py-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
               Your next webhook is one URL away
             </h2>
@@ -750,7 +750,7 @@ export default async function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t-2 border-foreground py-12 px-4">
+      <footer className="border-t-strong border-line py-12 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-8">
             <div>
@@ -860,7 +860,7 @@ export default async function Home() {
               </ul>
             </div>
           </div>
-          <div className="border-t-2 border-foreground mt-12 pt-8 text-center text-muted-foreground text-sm">
+          <div className="border-t-strong border-line mt-12 pt-8 text-center text-muted-foreground text-sm">
             <p>&copy; {new Date().getFullYear()} webhooks.cc. All rights reserved.</p>
           </div>
         </div>

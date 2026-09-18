@@ -65,9 +65,9 @@ test.afterAll(async () => {
 
 async function openDashboard(page: import("@playwright/test").Page) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.uppercase", { hasText: "Sig Verify E2E" })).toBeVisible(
-    { timeout: 10000 }
-  );
+  await expect(page.locator("span.font-bold.caps", { hasText: "Sig Verify E2E" })).toBeVisible({
+    timeout: 10000,
+  });
 }
 
 async function openSettings(page: import("@playwright/test").Page) {
@@ -298,9 +298,9 @@ test("configure signing secret and save", async ({ page }) => {
 
   // Navigate again so endpoint settings are read back from persisted state.
   await page.goto(`/dashboard?endpoint=${endpointSlug}`);
-  await expect(page.locator("span.font-bold.uppercase", { hasText: "Sig Verify E2E" })).toBeVisible(
-    { timeout: 10000 }
-  );
+  await expect(page.locator("span.font-bold.caps", { hasText: "Sig Verify E2E" })).toBeVisible({
+    timeout: 10000,
+  });
 
   // Reopen and verify status shows configured
   await page
@@ -388,7 +388,7 @@ test("client-side verification form shown when no config", async ({ page }) => {
   await new Promise((r) => setTimeout(r, 500));
 
   await openDashboard(page);
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await page.locator('[class*="border-b-strong"]').filter({ hasText: "POST" }).first().click();
   await signatureTabButton(page).click();
 
   // Should show the client-side verification form
@@ -413,7 +413,7 @@ test("detected provider preselects manual verification when server-side verifica
   await new Promise((r) => setTimeout(r, 1000));
 
   await openDashboard(page);
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await page.locator('[class*="border-b-strong"]').filter({ hasText: "POST" }).first().click();
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Detected:").first()).toBeVisible({ timeout: 5000 });
@@ -506,7 +506,7 @@ test("Square webhook verifies server-side end-to-end (URL-aware scheme)", async 
     .toBe("valid");
 
   await openDashboard(page);
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await page.locator('[class*="border-b-strong"]').filter({ hasText: "POST" }).first().click();
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });
@@ -537,7 +537,7 @@ test("Calendly webhook verifies server-side end-to-end (Stripe-style t=,v1= sche
     .toBe("valid");
 
   await openDashboard(page);
-  await page.locator('[class*="border-b-2"]').filter({ hasText: "POST" }).first().click();
+  await page.locator('[class*="border-b-strong"]').filter({ hasText: "POST" }).first().click();
   await signatureTabButton(page).click();
 
   await expect(page.locator("text=Signature Valid").first()).toBeVisible({ timeout: 5000 });

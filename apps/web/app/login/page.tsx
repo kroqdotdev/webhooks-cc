@@ -77,7 +77,7 @@ function LoginContent() {
 
       <div className="flex items-center gap-3 my-6" aria-hidden="true">
         <div className="h-px flex-1 bg-border" />
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">or</span>
+        <span className="text-xs caps text-muted-foreground">or</span>
         <div className="h-px flex-1 bg-border" />
       </div>
 

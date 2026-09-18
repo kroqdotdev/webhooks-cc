@@ -6,7 +6,7 @@ export default function WebhooksLayout({ children }: { children: React.ReactNode
     <>
       <FloatingNavbar>
         <BackButton />
-        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground border-2 border-foreground px-2 py-0.5">
+        <span className="text-xs font-bold caps text-muted-foreground border-strong border-line rounded-md px-2 py-0.5">
           Providers
         </span>
       </FloatingNavbar>

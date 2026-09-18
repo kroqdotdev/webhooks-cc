@@ -995,7 +995,7 @@ export default function DashboardPage() {
             )}
             {/* Drag handle / divider */}
             <div
-              className="shrink-0 border-r-2 border-foreground relative group cursor-col-resize select-none"
+              className="shrink-0 border-r-strong border-line relative group cursor-col-resize select-none"
               onMouseDown={handleDragStart}
               onDoubleClick={toggleCollapse}
               title={paneCollapsed ? "Expand sidebar" : "Drag to resize, double-click to collapse"}
@@ -1030,7 +1030,7 @@ export default function DashboardPage() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <button
                   onClick={() => setMobileDetail(false)}
-                  className="border-b-2 border-foreground px-4 py-2 text-sm font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors shrink-0"
+                  className="border-b-strong border-line px-4 py-2 text-sm font-bold caps hover:bg-muted cursor-pointer transition-colors shrink-0"
                 >
                   &larr; Back to list
                 </button>
@@ -1118,20 +1118,20 @@ function ExportDropdown({
     <div className="relative shrink-0" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+        className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
       >
         <Download className="h-3.5 w-3.5" />
         Export
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 border-2 border-foreground bg-background shadow-neo z-50 min-w-[140px]">
+        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised z-50 min-w-[140px]">
           <button
             onClick={() => {
               onExportJson();
               setOpen(false);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors border-b-2 border-foreground"
+            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line"
           >
             Export JSON
           </button>
@@ -1140,7 +1140,7 @@ function ExportDropdown({
               onExportCsv();
               setOpen(false);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors"
+            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors"
           >
             Export CSV
           </button>
@@ -1154,7 +1154,7 @@ function DashboardSkeleton() {
   return (
     <div className="flex-1 flex flex-col">
       {/* URL bar skeleton */}
-      <div className="border-b-2 border-foreground bg-card px-4 py-3 shrink-0">
+      <div className="border-b-strong border-line bg-card px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
           <Skeleton className="h-5 w-24" />
           <Skeleton className="h-5 flex-1 max-w-md" />
@@ -1163,8 +1163,8 @@ function DashboardSkeleton() {
       {/* Content skeleton */}
       <div className="flex-1 flex">
         {/* List skeleton */}
-        <div className="w-80 shrink-0 border-r-2 border-foreground hidden md:block">
-          <div className="border-b-2 border-foreground px-3 py-2">
+        <div className="w-80 shrink-0 border-r-strong border-line hidden md:block">
+          <div className="border-b-strong border-line px-3 py-2">
             <Skeleton className="h-5 w-20" />
           </div>
           <div className="p-3 space-y-3">
@@ -1256,12 +1256,12 @@ function WaitingForRequests({ slug }: { slug: string }) {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <p className="font-bold uppercase tracking-wide">Waiting for first request...</p>
+          <p className="font-bold caps">Waiting for first request...</p>
         </div>
 
         <div className="text-left">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            <span className="text-xs font-bold caps text-muted-foreground">
               Send a test webhook
             </span>
             <button
@@ -1279,13 +1279,13 @@ function WaitingForRequests({ slug }: { slug: string }) {
               )}
             </button>
           </div>
-          <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
+          <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
         </div>
 
         <button
           onClick={handleSendTest}
           disabled={sending}
-          className="neo-btn-primary w-full flex items-center justify-center gap-2"
+          className="ui-btn-primary w-full flex items-center justify-center gap-2"
         >
           <Send className="h-4 w-4" />
           {sending ? "Sending..." : sent ? "Sent!" : "Send test request"}
@@ -1335,12 +1335,12 @@ function AutoCreateEndpoint({
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 border-2 border-foreground bg-muted flex items-center justify-center mx-auto mb-2">
+          <div className="w-16 h-16 rounded-md border-strong border-line bg-muted flex items-center justify-center mx-auto mb-2">
             <Send className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h2 className="text-xl font-bold uppercase tracking-wide">No endpoints yet</h2>
+          <h2 className="text-xl font-bold caps">No endpoints yet</h2>
           <p className="text-muted-foreground max-w-sm">{error}</p>
-          <button onClick={handleRetry} className="neo-btn-primary">
+          <button onClick={handleRetry} className="ui-btn-primary">
             Try again
           </button>
         </div>

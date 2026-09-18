@@ -57,7 +57,7 @@ export function UrlBar({
   };
 
   return (
-    <div className="border-b-2 border-foreground bg-card px-4 py-3 shrink-0">
+    <div className="border-b-strong border-line bg-card px-4 py-3 shrink-0">
       <div className="flex items-center gap-3">
         {/* Settings + Name */}
         <EndpointSettingsDialog
@@ -72,7 +72,7 @@ export function UrlBar({
           hasSigningSecret={hasSigningSecret}
           signingHeader={signingHeader}
         />
-        <span className="font-bold text-sm uppercase tracking-wide shrink-0">{endpointName}</span>
+        <span className="font-bold text-sm caps shrink-0">{endpointName}</span>
 
         {/* URL + Copy */}
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -85,7 +85,7 @@ export function UrlBar({
           </code>
           <button
             onClick={copyUrl}
-            className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground shrink-0"
+            className="p-1.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line shrink-0"
             title="Copy URL"
             aria-label="Copy webhook URL"
           >

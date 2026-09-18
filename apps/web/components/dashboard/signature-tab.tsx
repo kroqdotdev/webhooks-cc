@@ -130,19 +130,17 @@ function ServerSideResult({
 
   if (verified) {
     return (
-      <div className="border-2 border-foreground border-l-4 border-l-primary p-4 space-y-2">
+      <div className="border-strong border-line border-l-4 border-l-primary rounded-lg p-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            <span className="font-bold uppercase tracking-wide text-xs text-primary">
-              Signature Valid
-            </span>
+            <span className="font-bold caps text-xs text-primary">Signature Valid</span>
           </div>
           {providerInfo && (
             <span className="text-xs font-mono text-muted-foreground">{providerInfo.label}</span>
           )}
         </div>
-        <div className="neo-code p-3 text-sm">
+        <div className="ui-code p-3 text-sm">
           <table className="font-mono w-full">
             <tbody>
               <Row label="Provider" value={providerInfo?.label ?? provider ?? "Unknown"} />
@@ -160,13 +158,11 @@ function ServerSideResult({
 
   if (isSkipped) {
     return (
-      <div className="border-2 border-foreground border-l-4 border-l-yellow-500 p-4 space-y-2">
+      <div className="border-strong border-line border-l-4 border-l-yellow-500 rounded-lg p-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-yellow-600" />
-            <span className="font-bold uppercase tracking-wide text-xs text-yellow-600">
-              Verification Skipped
-            </span>
+            <span className="font-bold caps text-xs text-yellow-600">Verification Skipped</span>
           </div>
           {providerInfo && (
             <span className="text-xs font-mono text-muted-foreground">{providerInfo.label}</span>
@@ -178,11 +174,11 @@ function ServerSideResult({
   }
 
   return (
-    <div className="border-2 border-foreground border-l-4 border-l-destructive p-4 space-y-3">
+    <div className="border-strong border-line border-l-4 border-l-destructive rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldAlert className="h-4 w-4 text-destructive" />
-          <span className="font-bold uppercase tracking-wide text-xs text-destructive">
+          <span className="font-bold caps text-xs text-destructive">
             {errorData?.code === "mismatch" ? "Signature Mismatch" : "Signature Invalid"}
           </span>
         </div>
@@ -192,7 +188,7 @@ function ServerSideResult({
       </div>
 
       {(errorData?.expected || errorData?.received) && (
-        <div className="neo-code p-3 text-sm space-y-1">
+        <div className="ui-code p-3 text-sm space-y-1">
           <table className="font-mono w-full">
             <tbody>
               {errorData?.expected && <CopyableRow label="Expected" value={errorData.expected} />}
@@ -213,8 +209,8 @@ function ServerSideResult({
       )}
 
       {tip && (
-        <div className="bg-muted border border-foreground/20 p-3 text-xs text-muted-foreground">
-          <span className="font-bold uppercase tracking-wide">Tip: </span>
+        <div className="bg-muted border border-foreground/20 rounded-lg p-3 text-xs text-muted-foreground">
+          <span className="font-bold caps">Tip: </span>
           {tip}
         </div>
       )}
@@ -316,7 +312,7 @@ function ClientSideVerification({
     return (
       <div className="space-y-4">
         <ServerSideResult verified={result.verified} error={result.error} provider={provider} />
-        <button onClick={() => setResult(null)} className="neo-btn-outline py-1.5! px-3! text-xs">
+        <button onClick={() => setResult(null)} className="ui-btn-outline py-1.5! px-3! text-xs">
           Verify Again
         </button>
       </div>
@@ -326,7 +322,7 @@ function ClientSideVerification({
   return (
     <div className="space-y-4">
       <div>
-        <p className="font-bold uppercase tracking-wide text-xs mb-1">Verify Signature</p>
+        <p className="font-bold caps text-xs mb-1">Verify Signature</p>
         <p className="text-xs text-muted-foreground">
           Paste the provider credential to verify this request&apos;s signature. Verification runs
           in your browser, and the credential is never sent to our servers.
@@ -335,14 +331,14 @@ function ClientSideVerification({
 
       {detectedProvider && (
         <div className="text-xs text-muted-foreground">
-          <span className="font-bold uppercase tracking-wide">Detected: </span>
+          <span className="font-bold caps">Detected: </span>
           {getWebProviderLabel(detectedProvider) ?? detectedProvider}
         </div>
       )}
 
       <div className="space-y-3">
         <div className="space-y-1">
-          <label htmlFor="sig-provider" className="font-bold uppercase tracking-wide text-xs">
+          <label htmlFor="sig-provider" className="font-bold caps text-xs">
             Provider
           </label>
           <select
@@ -352,7 +348,7 @@ function ClientSideVerification({
               setProvider(e.target.value);
               setResult(null);
             }}
-            className="neo-input w-full text-sm"
+            className="ui-input w-full text-sm"
           >
             <option value="">Select provider...</option>
             {Object.entries(WEB_PROVIDER_CATALOG).map(([key, info]) => (
@@ -365,7 +361,7 @@ function ClientSideVerification({
 
         {provider && getWebProviderInfo(provider)?.verificationMode !== "unsupported" && (
           <div className="space-y-1">
-            <label htmlFor="sig-secret" className="font-bold uppercase tracking-wide text-xs">
+            <label htmlFor="sig-secret" className="font-bold caps text-xs">
               {getWebProviderCredentialLabel(provider)}
             </label>
             <input
@@ -374,7 +370,7 @@ function ClientSideVerification({
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               placeholder={providerInfo?.secretPlaceholder ?? "your secret"}
-              className="neo-input w-full text-sm font-mono"
+              className="ui-input w-full text-sm font-mono"
               disabled={verifying}
             />
           </div>
@@ -382,7 +378,7 @@ function ClientSideVerification({
 
         {needsUrl && (
           <div className="space-y-1">
-            <label htmlFor="sig-url" className="font-bold uppercase tracking-wide text-xs">
+            <label htmlFor="sig-url" className="font-bold caps text-xs">
               Request URL
             </label>
             <input
@@ -391,7 +387,7 @@ function ClientSideVerification({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://go.webhooks.cc/w/your-slug"
-              className="neo-input w-full text-sm font-mono"
+              className="ui-input w-full text-sm font-mono"
               disabled={verifying}
             />
             <p className="text-xs text-muted-foreground">
@@ -402,7 +398,7 @@ function ClientSideVerification({
 
         {needsMethod && (
           <div className="space-y-1">
-            <label htmlFor="sig-method" className="font-bold uppercase tracking-wide text-xs">
+            <label htmlFor="sig-method" className="font-bold caps text-xs">
               HTTP Method
             </label>
             <input
@@ -411,7 +407,7 @@ function ClientSideVerification({
               value={method}
               onChange={(e) => setMethod(e.target.value.toUpperCase())}
               placeholder="POST"
-              className="neo-input w-full text-sm font-mono"
+              className="ui-input w-full text-sm font-mono"
               disabled={verifying}
             />
           </div>
@@ -429,7 +425,7 @@ function ClientSideVerification({
           <button
             onClick={handleVerify}
             disabled={verifying || !secret || (needsUrl && !url)}
-            className="neo-btn-primary py-1.5! px-4! text-xs flex items-center gap-1.5"
+            className="ui-btn-primary py-1.5! px-4! text-xs flex items-center gap-1.5"
           >
             {verifying ? (
               <>
@@ -450,7 +446,7 @@ function ClientSideVerification({
             <p className="text-xs text-muted-foreground">
               Want automatic verification on every request?
             </p>
-            <button onClick={onOpenSettings} className="neo-btn-outline py-1.5! px-3! text-xs">
+            <button onClick={onOpenSettings} className="ui-btn-outline py-1.5! px-3! text-xs">
               Save to Endpoint Settings
             </button>
           </div>

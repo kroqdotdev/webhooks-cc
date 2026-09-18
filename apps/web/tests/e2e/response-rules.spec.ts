@@ -58,9 +58,9 @@ test.afterAll(async () => {
 async function openSettings(page: import("@playwright/test").Page) {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
   // Wait for the URL bar to show the endpoint name
-  await expect(page.locator("span.font-bold.uppercase", { hasText: "Rules E2E Test" })).toBeVisible(
-    { timeout: 15000 }
-  );
+  await expect(page.locator("span.font-bold.caps", { hasText: "Rules E2E Test" })).toBeVisible({
+    timeout: 15000,
+  });
   // Click the settings gear button
   await page.getByLabel("Endpoint settings").click();
   // Wait for dialog to open

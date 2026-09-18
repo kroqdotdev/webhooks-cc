@@ -31,10 +31,11 @@ function StartFreeCTAInner({
 }: StartFreeCTAProps) {
   const isAuthenticated = useIsAuthenticated();
   const alignClass = align === "center" ? "items-center text-center" : "items-start";
-  // bg/text utilities repeated after neo-btn-primary so they survive the Button
+  // bg/text utilities repeated after ui-btn-primary so they survive the Button
   // outline variant's bg-background (utilities beat the components-layer class).
+  // The clean: utilities restore the action border and hover tint those utilities mask.
   const primaryOverride =
-    "neo-btn-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground cursor-pointer";
+    "ui-btn-primary bg-action text-action-foreground hover:bg-action hover:text-action-foreground clean:border-action clean:hover:bg-action/90 cursor-pointer";
   const buttonClass =
     size === "lg"
       ? `h-12 text-base px-6 ${primaryOverride}`
@@ -47,7 +48,7 @@ function StartFreeCTAInner({
       <div className={`flex flex-col gap-3 ${alignClass}`}>
         <Link
           href="/dashboard"
-          className={`neo-btn-primary inline-block ${size === "lg" ? "text-lg px-6 py-3" : ""}`}
+          className={`ui-btn-primary inline-block ${size === "lg" ? "text-lg px-6 py-3" : ""}`}
         >
           Go to Dashboard
           <ArrowRight className="inline-block ml-2 h-5 w-5" />

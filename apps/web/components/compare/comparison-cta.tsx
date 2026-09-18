@@ -23,10 +23,10 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
   // HTML; authenticated visitors see it swap to the dashboard link.
   if (compact) {
     return (
-      <div className="neo-card neo-card-static bg-card mb-10 flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="ui-card ui-card-static bg-card mb-10 flex flex-col sm:flex-row sm:items-center gap-4">
         <p className="font-bold shrink-0">Try it yourself</p>
         {isAuthenticated ? (
-          <Link href="/dashboard" className="neo-btn-primary text-sm">
+          <Link href="/dashboard" className="ui-btn-primary text-sm">
             Go to Dashboard
             <ArrowRight className="inline-block ml-1.5 h-4 w-4" />
           </Link>
@@ -35,7 +35,7 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
             <OAuthSignInButtons
               redirectTo="/dashboard"
               layout="horizontal"
-              buttonClassName="h-10 text-sm px-4 neo-btn-outline cursor-pointer"
+              buttonClassName="h-10 text-sm px-4 ui-btn-outline cursor-pointer"
             />
             <span className="text-sm text-muted-foreground">
               or{" "}
@@ -53,14 +53,14 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
   }
 
   return (
-    <section className="neo-card neo-card-static bg-card mt-12">
+    <section className="ui-card ui-card-static bg-card mt-12">
       <h2 className="text-2xl font-bold mb-2">Start testing webhooks in under a minute</h2>
       <p className="text-muted-foreground mb-5">
         Sign up with one click. No credit card, no setup wizard, no trial limits on core features.
       </p>
 
       {isAuthenticated ? (
-        <Link href="/dashboard" className="neo-btn-primary">
+        <Link href="/dashboard" className="ui-btn-primary">
           Go to Dashboard
           <ArrowRight className="inline-block ml-2 h-5 w-5" />
         </Link>
@@ -69,7 +69,7 @@ function ComparisonCTAInner({ compact }: { compact: boolean }) {
           <OAuthSignInButtons
             redirectTo="/dashboard"
             layout="horizontal"
-            buttonClassName="h-11 text-base px-5 neo-btn-outline cursor-pointer"
+            buttonClassName="h-11 text-base px-5 ui-btn-outline cursor-pointer"
           />
           <p className="text-sm text-muted-foreground">
             or{" "}

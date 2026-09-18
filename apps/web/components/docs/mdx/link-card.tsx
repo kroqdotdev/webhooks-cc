@@ -13,7 +13,7 @@ export function LinkCard({
   return (
     <Link
       href={href}
-      className="block my-3 p-4 border-2 border-foreground bg-card shadow-neo-sm hover:shadow-neo hover:translate-x-[-2px] hover:translate-y-[-2px] transition-all no-underline"
+      className="block my-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm hover:shadow-raised hover:-translate-x-(--press) hover:-translate-y-(--press) transition-all no-underline"
     >
       <div className="flex items-center justify-between">
         <div>

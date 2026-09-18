@@ -79,7 +79,7 @@ export default function CompareRequestBinPage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+        <p className="text-xs font-bold caps text-muted-foreground mb-3">
           Comparison · Updated March 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
@@ -94,10 +94,10 @@ export default function CompareRequestBinPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="neo-code overflow-x-auto mb-10">
+        <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-foreground">
+              <tr className="border-b-strong border-line">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -126,7 +126,7 @@ export default function CompareRequestBinPage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Testing tool vs automation platform</h3>
             <p className="text-muted-foreground">
               webhooks.cc is built for development and testing: capture a webhook from Stripe,
@@ -137,12 +137,12 @@ export default function CompareRequestBinPage() {
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
               webhooks.cc includes a native CLI for tunneling webhooks to localhost, a TypeScript
-              SDK with <code className="text-sm bg-muted px-1.5 py-0.5">waitFor()</code> for test
-              assertions, and an MCP server for AI agent integration. Team collaboration on
+              SDK with <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">waitFor()</code>{" "}
+              for test assertions, and an MCP server for AI agent integration. Team collaboration on
               webhooks.cc costs $12/seat/month, with each seat adding 100,000 pooled requests per 30
               days; Pipedream includes team features on all plans with unlimited members. RequestBin
               focuses on the Pipedream workflow editor and API — it does not offer webhook-specific
@@ -150,7 +150,7 @@ export default function CompareRequestBinPage() {
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Open source and self-hosting</h3>
             <p className="text-muted-foreground">
               webhooks.cc is fully open source. You can self-host the web app, receiver, CLI, SDK,
@@ -162,7 +162,7 @@ export default function CompareRequestBinPage() {
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>A focused webhook testing and debugging tool</li>
@@ -172,7 +172,7 @@ export default function CompareRequestBinPage() {
               <li>Self-hosted, open-source deployment</li>
             </ul>
           </div>
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose RequestBin (Pipedream) when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Workflow automation triggered by webhooks</li>
@@ -187,7 +187,7 @@ export default function CompareRequestBinPage() {
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="neo-card neo-card-static">
+            <div key={item.question} className="ui-card ui-card-static">
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
             </div>

@@ -10,7 +10,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
       <FloatingNavbar>
         <div className="hidden md:flex items-center gap-4">
           <BackButton />
-          <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground border-2 border-foreground px-2 py-0.5">
+          <span className="text-xs font-bold caps text-muted-foreground rounded-md border-strong border-line px-2 py-0.5">
             Docs
           </span>
         </div>

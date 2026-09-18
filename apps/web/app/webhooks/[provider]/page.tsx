@@ -139,7 +139,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <div className="flex items-center gap-4 mb-6">
             {icon && (
               <span
-                className="w-14 h-14 border-2 flex items-center justify-center shrink-0 shadow-neo-sm"
+                className="w-14 h-14 border-strong rounded-md flex items-center justify-center shrink-0 shadow-raised-sm"
                 style={{
                   backgroundColor: icon.background,
                   color: icon.foreground,
@@ -177,7 +177,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <ol className="space-y-4">
             {howToSteps.map((step, i) => (
               <li key={step.name} className="flex gap-4">
-                <span className="w-9 h-9 border-2 border-foreground bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-neo-sm">
+                <span className="w-9 h-9 border-strong border-line rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0 shadow-raised-sm">
                   {i + 1}
                 </span>
                 <div>
@@ -192,11 +192,11 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
         {/* Signature details */}
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-6">{page.label} webhook signature</h2>
-          <div className="neo-card neo-card-static overflow-x-auto">
+          <div className="ui-card ui-card-static overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {page.signatureHeader && (
-                  <tr className="border-b-2 border-foreground/10">
+                  <tr className="border-b-strong border-foreground/10">
                     <th className="text-left py-2 pr-6 font-bold whitespace-nowrap">
                       Signature header
                     </th>
@@ -204,7 +204,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                   </tr>
                 )}
                 {page.signatureAlgorithmLabel && (
-                  <tr className="border-b-2 border-foreground/10">
+                  <tr className="border-b-strong border-foreground/10">
                     <th className="text-left py-2 pr-6 font-bold whitespace-nowrap">Algorithm</th>
                     <td className="py-2">{page.signatureAlgorithmLabel}</td>
                   </tr>
@@ -260,13 +260,13 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               {page.templates.map((template) => (
                 <code
                   key={template}
-                  className="text-sm border-2 border-foreground bg-muted px-2 py-1 font-mono"
+                  className="text-sm border-strong border-line rounded-md bg-muted px-2 py-1 font-mono"
                 >
                   {template}
                 </code>
               ))}
             </div>
-            <div className="neo-code overflow-x-auto">
+            <div className="ui-code overflow-x-auto">
               <pre className="text-sm">
                 <code>
                   <span className="text-muted-foreground">
@@ -324,7 +324,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           <h2 className="text-2xl font-bold mb-6">More providers</h2>
           <div className="grid sm:grid-cols-3 gap-4">
             {related.map((p) => (
-              <Link key={p.slug} href={`/webhooks/${p.slug}`} className="neo-card block group">
+              <Link key={p.slug} href={`/webhooks/${p.slug}`} className="ui-card block group">
                 <h3 className="font-bold group-hover:text-primary transition-colors">
                   {p.label} webhooks
                 </h3>
@@ -341,7 +341,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
         </section>
 
         {/* CTA */}
-        <div className="neo-card bg-foreground text-background text-center py-12">
+        <div className="ui-card bg-foreground text-background text-center py-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-3">
             Your {page.label} webhook URL is seconds away
           </h2>

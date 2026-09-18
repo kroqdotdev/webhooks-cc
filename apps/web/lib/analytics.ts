@@ -1,4 +1,6 @@
 import posthog from "posthog-js";
+import { consumeSignupSignal } from "./signup-signal";
+import { readUiStyleState, UI_STYLE_FLAG_KEY, type UiStyle, type UiStyleSource } from "./ui-style";
 
 /**
  * Track custom analytics events via PostHog.
@@ -19,9 +21,97 @@ export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq") {
   capture("landing_cta_clicked", { cta });
 }
 
+// ── Visual style experiment ────────────────────────────
+
+/**
+ * PostHog experiments name their variants control and test, and its results
+ * read those keys off $feature/<flag>. The readable style name rides along as
+ * ui_style_assigned so raw events stay legible.
+ */
+const POSTHOG_VARIANT: Record<UiStyle, "control" | "test"> = {
+  classic: "control",
+  clean: "test",
+};
+
+/**
+ * Tells PostHog which arm of the style split this browser is in. The variant
+ * stays the one the split assigned even after the visitor switches styles, so
+ * a switch does not move their later events into the other arm.
+ */
+export function registerStyleVariant(assigned: UiStyle) {
+  if (typeof window === "undefined") return;
+  try {
+    posthog.register({
+      [`$feature/${UI_STYLE_FLAG_KEY}`]: POSTHOG_VARIANT[assigned],
+      ui_style_assigned: assigned,
+    });
+  } catch {
+    // PostHog not initialized
+  }
+}
+
+/** Exposure event PostHog counts experiment participants from. */
+export function trackStyleExposure(assigned: UiStyle, active: UiStyle) {
+  capture("$feature_flag_called", {
+    $feature_flag: UI_STYLE_FLAG_KEY,
+    $feature_flag_response: POSTHOG_VARIANT[assigned],
+    ui_style_assigned: assigned,
+    ui_style_active: active,
+  });
+}
+
+const STYLE_EXPOSURE_SESSION_KEY = "ui-style-exposure-sent";
+
+/**
+ * Puts the experiment metadata on the current PostHog identity: the variant as
+ * a super property, and one exposure. Called after init and again after a
+ * reset, which drops super properties and starts a new anonymous identity.
+ * Browsers that were never assigned a style stay out of the experiment.
+ */
+export function applyStyleExperiment() {
+  if (typeof window === "undefined") return;
+  const { style, assigned } = readUiStyleState();
+  if (!assigned) return;
+  registerStyleVariant(assigned);
+  try {
+    if (sessionStorage.getItem(STYLE_EXPOSURE_SESSION_KEY)) return;
+    sessionStorage.setItem(STYLE_EXPOSURE_SESSION_KEY, "1");
+  } catch {
+    // Blocked storage: skip the exposure rather than sending one per page view.
+    return;
+  }
+  trackStyleExposure(assigned, style);
+}
+
+/** The metric that moves fastest: how many people leave the style they landed on. */
+export function trackUiStyleChanged(params: {
+  from: UiStyle;
+  to: UiStyle;
+  sourceBefore: UiStyleSource | null;
+  assigned: UiStyle | null;
+}) {
+  capture("ui_style_changed", {
+    from: params.from,
+    to: params.to,
+    source_before: params.sourceBefore ?? "default",
+    assigned_variant: params.assigned ?? "none",
+    left_assigned_style: params.assigned != null && params.from === params.assigned,
+    $set: { ui_style: params.to },
+  });
+}
+
 // ── Auth ────────────────────────────────────────────────────────
 export function trackSignInStarted(provider: "github" | "google" | "email") {
   capture("sign_in_started", { provider });
+}
+
+/**
+ * Fired once per account, on the first authenticated page load after signup.
+ * It is the completed side of sign_in_started: without it a funnel cannot tie
+ * a signup back to the anonymous visitor who was assigned a style.
+ */
+export function trackAccountCreated(provider?: string, signal: SignupSignal = "confirmed") {
+  capture("account_created", { provider: provider ?? "unknown", signal });
 }
 
 // ── Dashboard ───────────────────────────────────────────────────
@@ -190,11 +280,73 @@ export function identifyUser(userId: string, properties?: Record<string, unknown
   }
 }
 
+interface AuthedUser {
+  id: string;
+  email?: string | null;
+  created_at?: string;
+  app_metadata?: { provider?: string };
+}
+
+/** How the signup was spotted, so a fallback count can be told apart later. */
+type SignupSignal = "confirmed" | "new_account";
+
+let reportedUserId: string | null = null;
+
+/**
+ * GoTrue falls back to its own verify link when it cannot fetch our email
+ * template (infra/supabase/gotrue-email-auth.md). That flow confirms the
+ * address without passing through our auth routes and leaves the user to sign
+ * in by hand, so the cookie never appears. An account this young reaching its
+ * first authenticated page is a signup either way.
+ */
+const NEW_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function signupSignalFor(user: AuthedUser): SignupSignal | null {
+  if (consumeSignupSignal()) return "confirmed";
+  const createdAt = Date.parse(user.created_at ?? "");
+  if (Number.isFinite(createdAt) && Date.now() - createdAt < NEW_ACCOUNT_WINDOW_MS) {
+    return "new_account";
+  }
+  return null;
+}
+
+/**
+ * Identifies the person and, when this sign-in created the account, records the
+ * signup. The shared auth store calls it on every session change, so it runs on
+ * whatever page the user lands on, including the CLI verify and agent claim
+ * pages that never mount RequireAuth. Repeat calls for the same user do nothing.
+ */
+export function reportAuthenticatedUser(user: AuthedUser) {
+  if (typeof window === "undefined" || user.id === reportedUserId) return;
+  reportedUserId = user.id;
+  identifyUser(user.id, { email: user.email ?? undefined });
+
+  const signal = signupSignalFor(user);
+  if (!signal) return;
+  const key = `account-created-tracked:${user.id}`;
+  try {
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+  } catch {
+    // Blocked storage: better a possible duplicate than a missing signup.
+  }
+  trackAccountCreated(user.app_metadata?.provider, signal);
+}
+
 export function resetUser() {
   if (typeof window === "undefined") return;
+  reportedUserId = null;
   try {
     posthog.reset();
   } catch {
     // PostHog not initialized
   }
+  // reset() clears super properties and starts a new anonymous identity, so the
+  // variant has to go back on and that identity needs an exposure of its own.
+  try {
+    sessionStorage.removeItem(STYLE_EXPOSURE_SESSION_KEY);
+  } catch {
+    // Blocked storage: applyStyleExperiment skips the exposure below.
+  }
+  applyStyleExperiment();
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Geist, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import {
   DEFAULT_OG_IMAGE_PATH,
@@ -15,15 +15,25 @@ import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { ANNOUNCEMENTS } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
+import { appearanceBootstrapScript } from "@/lib/ui-style";
+import { publicEnv } from "@/lib/env";
 
+// Font variables live on <html> so globals.css can pick the face for the active style.
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-space-grotesk",
+});
+
+// Only the clean style uses Geist, so classic visitors never download it.
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist",
+  preload: false,
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-jetbrains-mono",
 });
 
 const googleSiteVerification =
@@ -87,7 +97,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${spaceGrotesk.variable} ${geist.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <link
           rel="alternate"
@@ -106,14 +120,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                const stored = localStorage.getItem('theme');
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                const isDark = stored === 'dark' || (stored !== 'light' && prefersDark);
-                if (isDark) document.documentElement.classList.add('dark');
-              })();
-            `,
+            __html: appearanceBootstrapScript(publicEnv().NEXT_PUBLIC_UI_STYLE_SPLIT),
           }}
         />
         {ANNOUNCEMENTS.length > 0 && (
@@ -125,10 +132,10 @@ export default function RootLayout({
         )}
         <JsonLd data={organizationSchema()} />
       </head>
-      <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}>
+      <body className="font-sans">
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-background focus:border-2 focus:border-foreground focus:px-4 focus:py-2 focus:font-bold"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-background focus:border-strong focus:border-line focus:px-4 focus:py-2 focus:font-bold"
         >
           Skip to content
         </a>

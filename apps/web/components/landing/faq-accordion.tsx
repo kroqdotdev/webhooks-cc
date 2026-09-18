@@ -19,13 +19,11 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
         return (
           <div
             key={item.question}
-            className="border-2 border-foreground bg-card transition-all"
-            style={{
-              boxShadow: isOpen
-                ? "6px 6px 0 0 hsl(var(--foreground))"
-                : "4px 4px 0 0 hsl(var(--foreground))",
-              transform: isOpen ? "translate(-2px, -2px)" : "none",
-            }}
+            className={`border-strong border-line rounded-lg bg-card transition-all ${
+              isOpen
+                ? "shadow-[6px_6px_0_0_hsl(var(--foreground))] clean:shadow-raised -translate-x-(--press) -translate-y-(--press)"
+                : "shadow-[4px_4px_0_0_hsl(var(--foreground))] clean:shadow-raised-sm"
+            }`}
           >
             <button
               id={buttonId}

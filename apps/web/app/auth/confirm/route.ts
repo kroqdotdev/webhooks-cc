@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nextFromRedirectTo, resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
+import { SIGNUP_SIGNAL_COOKIE, SIGNUP_SIGNAL_COOKIE_OPTIONS } from "@/lib/signup-signal";
 
 /**
  * Email link landing for signup confirmation and password recovery.
@@ -52,7 +53,12 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
-      return NextResponse.redirect(`${base}${next}`);
+      const response = NextResponse.redirect(`${base}${next}`);
+      // "recovery" is a password reset; the other two confirm a new account.
+      if (type !== "recovery") {
+        response.cookies.set(SIGNUP_SIGNAL_COOKIE, "1", SIGNUP_SIGNAL_COOKIE_OPTIONS);
+      }
+      return response;
     }
   }
 
