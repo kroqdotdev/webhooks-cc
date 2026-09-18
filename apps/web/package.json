@@ -16,7 +16,7 @@
     "indexnow": "node scripts/indexnow.mjs"
   },
   "dependencies": {
-    "@appsignal/nodejs": "^3.8.1",
+    "@appsignal/nodejs": "^3.9.1",
     "@polar-sh/sdk": "^0.49.0",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-dialog": "^1.1.23",
