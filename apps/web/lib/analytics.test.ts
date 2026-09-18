@@ -36,16 +36,25 @@ describe("visual style experiment events", () => {
     register.mockClear();
   });
 
-  it("registers the assigned variant as the experiment property", () => {
+  it("registers the assigned variant under PostHog's variant keys", () => {
     registerStyleVariant("clean");
-    expect(register).toHaveBeenCalledWith({ "$feature/ui-style": "clean" });
+    expect(register).toHaveBeenCalledWith({
+      "$feature/ui-style": "test",
+      ui_style_assigned: "clean",
+    });
+    registerStyleVariant("classic");
+    expect(register).toHaveBeenCalledWith({
+      "$feature/ui-style": "control",
+      ui_style_assigned: "classic",
+    });
   });
 
   it("sends an exposure PostHog can count", () => {
     trackStyleExposure("clean", "classic");
     expect(capture).toHaveBeenCalledWith("$feature_flag_called", {
       $feature_flag: "ui-style",
-      $feature_flag_response: "clean",
+      $feature_flag_response: "test",
+      ui_style_assigned: "clean",
       ui_style_active: "classic",
     });
   });
@@ -196,11 +205,11 @@ describe("applyStyleExperiment", () => {
     browser({ "ui-style": "clean", "ui-style-source": "assigned", "ui-style-assigned": "clean" });
     applyStyleExperiment();
     applyStyleExperiment();
-    expect(register).toHaveBeenCalledWith({ "$feature/ui-style": "clean" });
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ "$feature/ui-style": "test" }));
     expect(capture).toHaveBeenCalledTimes(1);
     expect(capture).toHaveBeenCalledWith(
       "$feature_flag_called",
-      expect.objectContaining({ $feature_flag_response: "clean" })
+      expect.objectContaining({ $feature_flag_response: "test", ui_style_assigned: "clean" })
     );
   });
 
@@ -224,10 +233,12 @@ describe("applyStyleExperiment", () => {
     resetUser();
 
     expect(reset).toHaveBeenCalled();
-    expect(register).toHaveBeenCalledWith({ "$feature/ui-style": "classic" });
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ "$feature/ui-style": "control" })
+    );
     expect(capture).toHaveBeenCalledWith(
       "$feature_flag_called",
-      expect.objectContaining({ $feature_flag_response: "classic" })
+      expect.objectContaining({ $feature_flag_response: "control", ui_style_assigned: "classic" })
     );
   });
 });
