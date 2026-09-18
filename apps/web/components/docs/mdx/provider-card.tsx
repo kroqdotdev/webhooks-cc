@@ -12,7 +12,7 @@ export function ProviderCard({
   docsUrl: string;
 }) {
   return (
-    <div className="my-3 p-4 border-2 border-foreground bg-card shadow-neo-sm">
+    <div className="my-3 p-4 rounded-lg border-strong border-line bg-card shadow-raised-sm">
       <p className="font-bold text-foreground mb-2">{name}</p>
       <dl className="text-sm space-y-1 m-0">
         <div className="flex gap-2">

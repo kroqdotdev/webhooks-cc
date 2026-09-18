@@ -33,7 +33,7 @@ function CodeBlock({ children, copyText }: { children: string; copyText?: string
   return (
     <div className="relative">
       <CopyButton text={copyText ?? children} />
-      <pre className="neo-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
+      <pre className="ui-code text-sm overflow-x-auto whitespace-pre-wrap break-words pr-10">
         {children}
       </pre>
     </div>
@@ -65,7 +65,10 @@ export default function InstallationPage() {
             </p>
 
             {/* Tab switcher */}
-            <div role="tablist" className="border-2 border-foreground flex mb-8">
+            <div
+              role="tablist"
+              className="border-strong border-line rounded-md overflow-hidden flex mb-8"
+            >
               {TABS.map((t) => (
                 <button
                   key={t}
@@ -89,8 +92,10 @@ export default function InstallationPage() {
                     }
                   }}
                   className={cn(
-                    "flex-1 px-4 py-2.5 text-sm font-bold uppercase tracking-wide cursor-pointer transition-colors border-r-2 border-foreground last:border-r-0",
-                    tab === t ? "bg-foreground text-background" : "bg-background hover:bg-muted"
+                    "flex-1 px-4 py-2.5 text-sm font-bold caps clean:uppercase cursor-pointer transition-colors border-r-strong border-line last:border-r-0",
+                    tab === t
+                      ? "bg-selected text-selected-foreground"
+                      : "bg-background hover:bg-muted"
                   )}
                 >
                   {t}
@@ -239,7 +244,7 @@ console.log(endpoint.url);`}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder="whcc_..."
-                    className="w-full px-3 py-2 border-2 border-foreground bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-3 py-2 border-strong border-line rounded-md bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                     autoComplete="off"
                     spellCheck={false}
                     aria-label="webhooks.cc API key"
@@ -261,7 +266,7 @@ console.log(endpoint.url);`}
                         href={cursorUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 border-2 border-foreground bg-background font-bold text-sm shadow-neo-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
+                        className="inline-flex items-center gap-2 px-4 py-2 border-strong border-line rounded-md bg-background font-bold text-sm shadow-raised-sm hover:translate-x-(--press) hover:translate-y-(--press) hover:shadow-none clean:hover:bg-muted transition-all"
                       >
                         Add to Cursor
                       </a>
@@ -276,7 +281,7 @@ console.log(endpoint.url);`}
                         href={VSCODE_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 border-2 border-foreground bg-background font-bold text-sm shadow-neo-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
+                        className="inline-flex items-center gap-2 px-4 py-2 border-strong border-line rounded-md bg-background font-bold text-sm shadow-raised-sm hover:translate-x-(--press) hover:translate-y-(--press) hover:shadow-none clean:hover:bg-muted transition-all"
                       >
                         Add to VS Code
                       </a>

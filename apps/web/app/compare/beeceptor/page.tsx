@@ -78,7 +78,7 @@ export default function CompareBeeceptorPage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+        <p className="text-xs font-bold caps text-muted-foreground mb-3">
           Comparison · Updated March 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Beeceptor</h1>
@@ -91,10 +91,10 @@ export default function CompareBeeceptorPage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="neo-code overflow-x-auto mb-10">
+        <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-foreground">
+              <tr className="border-b-strong border-line">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -123,7 +123,7 @@ export default function CompareBeeceptorPage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">API mocking vs webhook inspection</h3>
             <p className="text-muted-foreground">
               Beeceptor&apos;s strength is simulating APIs you depend on — define URL patterns, set
@@ -133,7 +133,7 @@ export default function CompareBeeceptorPage() {
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling depth</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides three integration layers beyond the dashboard: a CLI for
@@ -145,7 +145,7 @@ export default function CompareBeeceptorPage() {
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Request replay</h3>
             <p className="text-muted-foreground">
               webhooks.cc lets you replay any captured request to a target URL — useful for
@@ -157,7 +157,7 @@ export default function CompareBeeceptorPage() {
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Capture and inspect real webhook payloads from live services</li>
@@ -167,7 +167,7 @@ export default function CompareBeeceptorPage() {
               <li>CLI tunnel that captures + forwards in one step</li>
             </ul>
           </div>
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose Beeceptor when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Full API mocking with routing rules and conditions</li>
@@ -182,7 +182,7 @@ export default function CompareBeeceptorPage() {
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="neo-card neo-card-static">
+            <div key={item.question} className="ui-card ui-card-static">
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
             </div>

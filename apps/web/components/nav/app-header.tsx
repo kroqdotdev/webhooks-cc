@@ -42,7 +42,7 @@ export function AppHeader({
   };
 
   return (
-    <header className="border-b-2 border-foreground shrink-0 bg-background sticky top-0 z-50 relative">
+    <header className="border-b-strong border-line shrink-0 bg-background sticky top-0 z-50 relative">
       <div className="container mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="font-bold text-lg">
@@ -52,7 +52,7 @@ export function AppHeader({
           {showBackToDashboard && (
             <Link
               href="/dashboard"
-              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Dashboard
@@ -62,7 +62,7 @@ export function AppHeader({
           {showBackButton && (
             <button
               onClick={() => router.back()}
-              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back
@@ -99,7 +99,7 @@ export function AppHeader({
           <ThemeToggle />
           <button
             onClick={() => setOpen((prev) => !prev)}
-            className="p-2 border-2 border-foreground hover:bg-muted transition-colors cursor-pointer"
+            className="p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
           >
@@ -110,7 +110,7 @@ export function AppHeader({
 
       {/* Mobile dropdown */}
       {open && (
-        <div className="absolute md:hidden top-full left-0 right-0 border-t-2 border-foreground bg-background shadow-neo z-50">
+        <div className="absolute md:hidden top-full left-0 right-0 border-t-strong border-line bg-background shadow-raised z-50">
           <div className="px-4 py-4 flex flex-col gap-3">
             <Link
               href="/docs"
@@ -149,7 +149,7 @@ export function AppHeader({
             >
               Teams
             </Link>
-            <div className="pt-3 border-t-2 border-foreground/20">
+            <div className="pt-3 border-t-strong border-foreground/20">
               <Button
                 variant="ghost"
                 size="sm"

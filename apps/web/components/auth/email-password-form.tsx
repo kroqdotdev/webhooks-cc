@@ -145,7 +145,7 @@ export function EmailPasswordForm({
   if (done) {
     return (
       <div className="space-y-4" role="status" aria-live="polite">
-        <div className="border-2 border-foreground bg-background p-4 text-sm">{done}</div>
+        <div className="rounded-lg border-strong border-line bg-background p-4 text-sm">{done}</div>
         <button
           type="button"
           onClick={() => switchMode("sign-in")}
@@ -182,7 +182,10 @@ export function EmailPasswordForm({
       ) : null}
 
       {notice ? (
-        <div className="text-sm border-2 border-foreground bg-background p-3" role="status">
+        <div
+          className="text-sm rounded-lg border-strong border-line bg-background p-3"
+          role="status"
+        >
           {notice}
         </div>
       ) : null}

@@ -1,11 +1,12 @@
 import { cn } from "@/lib/utils";
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: "bg-primary text-primary-foreground",
-  POST: "bg-secondary text-secondary-foreground",
-  PUT: "bg-accent text-accent-foreground",
-  PATCH: "bg-accent text-accent-foreground",
-  DELETE: "bg-destructive text-destructive-foreground",
+  GET: "bg-primary text-primary-foreground clean:bg-method-get/15 clean:text-method-get",
+  POST: "bg-secondary text-secondary-foreground clean:bg-method-post/15 clean:text-method-post",
+  PUT: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
+  PATCH: "bg-accent text-accent-foreground clean:bg-method-put/15 clean:text-method-put",
+  DELETE:
+    "bg-destructive text-destructive-foreground clean:bg-method-delete/15 clean:text-method-delete",
 };
 
 export function ApiMethod({
@@ -22,12 +23,12 @@ export function ApiMethod({
   const color = METHOD_COLORS[method.toUpperCase()] ?? "bg-muted text-foreground";
 
   return (
-    <div className="my-8 border-2 border-foreground bg-card shadow-neo-sm">
-      <div className="border-b-2 border-foreground p-4">
+    <div className="my-8 rounded-lg border-strong border-line bg-card shadow-raised-sm">
+      <div className="border-b-strong border-line p-4">
         <div className="flex items-center gap-3 mb-1">
           <span
             className={cn(
-              "px-2 py-0.5 text-xs font-bold uppercase border-2 border-foreground",
+              "px-2 py-0.5 text-xs font-bold uppercase rounded-sm border-strong border-line clean:border-transparent",
               color
             )}
           >
@@ -44,7 +45,7 @@ export function ApiMethod({
 
 export function ParamTable({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-x-auto my-4 [&>table]:w-full [&>table]:text-sm [&_th]:text-left [&_th]:font-bold [&_th]:py-2 [&_th]:px-3 [&_th]:border-b-2 [&_th]:border-foreground [&_td]:py-2 [&_td]:px-3 [&_td]:border-b [&_td]:border-foreground/20 [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono [&_code]:border [&_code]:border-foreground/20">
+    <div className="overflow-x-auto my-4 [&>table]:w-full [&>table]:text-sm [&_th]:text-left [&_th]:font-bold [&_th]:py-2 [&_th]:px-3 [&_th]:border-b-strong [&_th]:border-line [&_td]:py-2 [&_td]:px-3 [&_td]:border-b [&_td]:border-foreground/20 [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono [&_code]:border [&_code]:border-foreground/20">
       {children}
     </div>
   );

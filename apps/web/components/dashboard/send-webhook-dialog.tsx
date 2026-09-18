@@ -207,14 +207,14 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogTrigger asChild>
-        <button className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+        <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
           <Send className="h-3.5 w-3.5" />
           Send
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="border-strong border-line shadow-raised max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-bold uppercase tracking-wide">Send Webhook</DialogTitle>
+          <DialogTitle className="font-bold caps">Send Webhook</DialogTitle>
           <DialogDescription className="sr-only">
             Send a test webhook to this endpoint
           </DialogDescription>
@@ -223,11 +223,11 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide mb-2">Mode</p>
+              <p className="text-xs font-bold caps mb-2">Mode</p>
               <select
                 value={mode}
                 onChange={(e) => handleModeChange(e.target.value as SendMode)}
-                className="neo-input text-sm w-full"
+                className="ui-input text-sm w-full"
               >
                 <option value="manual">Manual request</option>
                 {WEB_TEMPLATE_PROVIDER_OPTIONS.map((provider) => (
@@ -239,11 +239,11 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
             </div>
             {isTemplateMode && (
               <div>
-                <p className="text-xs font-bold uppercase tracking-wide mb-2">Template preset</p>
+                <p className="text-xs font-bold caps mb-2">Template preset</p>
                 <select
                   value={selectedTemplateId}
                   onChange={(e) => handleTemplateChange(mode, e.target.value)}
-                  className="neo-input text-sm w-full"
+                  className="ui-input text-sm w-full"
                 >
                   {providerPresets.map((preset) => (
                     <option key={preset.id} value={preset.id}>
@@ -259,13 +259,13 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
             <>
               {isSecretRequired(mode) && (
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide mb-2">
+                  <p className="text-xs font-bold caps mb-2">
                     {mode === "gitlab" ? "Mock webhook token" : "Mock webhook secret"}
                   </p>
                   <Input
                     value={mockWebhookSecret}
                     onChange={(e) => setMockWebhookSecret(e.target.value)}
-                    className="neo-input text-sm"
+                    className="ui-input text-sm"
                     placeholder={mode === "gitlab" ? "gl_token_..." : "whsec_..."}
                   />
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -277,18 +277,16 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
               )}
 
               <div>
-                <p className="text-xs font-bold uppercase tracking-wide mb-2">
-                  Event/topic override (optional)
-                </p>
+                <p className="text-xs font-bold caps mb-2">Event/topic override (optional)</p>
                 <Input
                   value={templateEventOverride}
                   onChange={(e) => setTemplateEventOverride(e.target.value)}
-                  className="neo-input text-sm"
+                  className="ui-input text-sm"
                   placeholder={selectedTemplate?.event ?? "event.name"}
                 />
               </div>
 
-              <div className="neo-code p-3! text-xs space-y-1">
+              <div className="ui-code p-3! text-xs space-y-1">
                 <p>
                   <span className="font-bold">Template:</span> {selectedTemplate?.description}
                 </p>
@@ -312,7 +310,7 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
             <select
               value={method}
               onChange={(e) => setMethod(e.target.value as HttpMethod)}
-              className="neo-input text-sm"
+              className="ui-input text-sm"
               disabled={isTemplateMode}
             >
               <option value="GET">GET</option>
@@ -326,33 +324,31 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="/"
-                className="neo-input text-sm"
+                className="ui-input text-sm"
               />
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide mb-2">Endpoint</p>
-            <pre className="neo-code text-xs overflow-x-auto">{endpointUrl}</pre>
+            <p className="text-xs font-bold caps mb-2">Endpoint</p>
+            <pre className="ui-code text-xs overflow-x-auto">{endpointUrl}</pre>
           </div>
 
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide mb-2">
-              Headers (one per line: Key: Value)
-            </p>
+            <p className="text-xs font-bold caps mb-2">Headers (one per line: Key: Value)</p>
             <Textarea
               value={headersInput}
               onChange={(e) => setHeadersInput(e.target.value)}
-              className="neo-input min-h-24 font-mono text-sm"
+              className="ui-input min-h-24 font-mono text-sm"
             />
           </div>
 
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide mb-2">Body</p>
+            <p className="text-xs font-bold caps mb-2">Body</p>
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="neo-input min-h-28 font-mono text-sm"
+              className="ui-input min-h-28 font-mono text-sm"
               placeholder='{"event":"test"}'
               disabled={method === "GET" || isTemplateMode}
             />
@@ -362,8 +358,8 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
             <div
               className={
                 status === "error"
-                  ? "border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive"
-                  : "neo-code p-3! text-sm"
+                  ? "border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+                  : "ui-code p-3! text-sm"
               }
             >
               {status === "sending" ? "Sending..." : statusText || "Sent"}
@@ -373,7 +369,7 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
           <Button
             onClick={handleSend}
             disabled={status === "sending"}
-            className="w-full neo-btn-primary rounded-none!"
+            className="w-full ui-btn-primary"
           >
             {status === "sending" ? "Sending..." : "Send webhook"}
           </Button>

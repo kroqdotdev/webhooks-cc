@@ -93,7 +93,7 @@ function ResetPasswordContent() {
           <p className="text-muted-foreground">
             Request a new one from the sign-in page with &ldquo;Forgot password?&rdquo;.
           </p>
-          <Link href="/login" className="neo-btn-outline inline-block text-sm py-2 px-4">
+          <Link href="/login" className="ui-btn-outline inline-block text-sm py-2 px-4">
             Go to sign in
           </Link>
         </div>
@@ -109,7 +109,10 @@ function ResetPasswordContent() {
       </div>
 
       {done ? (
-        <div className="border-2 border-foreground bg-background p-4 text-sm" role="status">
+        <div
+          className="rounded-lg border-strong border-line bg-background p-4 text-sm"
+          role="status"
+        >
           Password updated. Taking you to your dashboard...
         </div>
       ) : (

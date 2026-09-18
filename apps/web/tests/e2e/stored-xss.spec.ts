@@ -181,7 +181,7 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
   await test.step("raw tab keeps the hostile body inert", async () => {
     await page.getByRole("button", { name: /^raw$/i }).click();
 
-    const rawBody = page.locator("pre.neo-code").first();
+    const rawBody = page.locator("pre.ui-code").first();
     await expect(rawBody).toBeVisible();
     await expect(rawBody).toContainText(BODY_MARKER);
     await expect(rawBody).toContainText(BODY_SCRIPT_MARKER);

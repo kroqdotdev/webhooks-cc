@@ -75,9 +75,9 @@ export function GettingStarted({ hasReceivedWebhook }: { hasReceivedWebhook: boo
   if (dismissed) return null;
 
   return (
-    <div className="border-b-2 border-foreground bg-card px-4 py-3 shrink-0">
+    <div className="border-b-strong border-line bg-card px-4 py-3 shrink-0">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-bold caps text-muted-foreground">
           Getting started ({progress}/{total})
         </p>
         <button
@@ -99,7 +99,7 @@ export function GettingStarted({ hasReceivedWebhook }: { hasReceivedWebhook: boo
                 key={item.id}
                 href={item.href}
                 onClick={() => markVisited(item.id)}
-                className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 border-2 border-foreground transition-colors cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border-strong border-line transition-colors cursor-pointer ${
                   done
                     ? "bg-primary/15 text-muted-foreground line-through"
                     : "bg-background hover:bg-muted"
@@ -114,7 +114,7 @@ export function GettingStarted({ hasReceivedWebhook }: { hasReceivedWebhook: boo
           return (
             <span
               key={item.id}
-              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 border-2 border-foreground ${
+              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border-strong border-line ${
                 done ? "bg-primary/15 text-muted-foreground line-through" : "bg-background"
               }`}
             >

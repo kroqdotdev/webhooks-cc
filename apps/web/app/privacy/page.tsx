@@ -13,7 +13,7 @@ export const metadata: Metadata = createPageMetadata({
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen">
-      <header className="border-b-2 border-foreground shrink-0 bg-background sticky top-0 z-50">
+      <header className="border-b-strong border-line shrink-0 bg-background sticky top-0 z-50">
         <div className="container mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="font-bold text-lg">
@@ -50,7 +50,7 @@ export default function PrivacyPage() {
         </div>
 
         {/* What We Collect */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">What We Collect</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -74,7 +74,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* How We Use It */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">How We Use It</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>We use your data for three purposes:</p>
@@ -88,7 +88,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Third-Party Services */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Third-Party Services</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -108,7 +108,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Analytics */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Analytics</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -161,7 +161,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Data Retention */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Data Retention</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -185,7 +185,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Cookies & Storage */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Cookies & Storage</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -197,7 +197,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Your Data */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Your Data</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
@@ -212,7 +212,7 @@ export default function PrivacyPage() {
         </section>
 
         {/* Contact */}
-        <section className="border-t-2 border-foreground pt-8 mt-8">
+        <section className="border-t-strong border-line pt-8 mt-8">
           <h2 className="text-xl font-bold mb-3">Contact</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>

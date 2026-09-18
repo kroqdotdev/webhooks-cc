@@ -9,7 +9,7 @@ export function MaintenanceBanner() {
   if (!isMaintenanceBannerEnabled()) return null;
 
   const content = (
-    <div className="bg-yellow-100 border-b-2 border-yellow-400 text-yellow-900 dark:bg-yellow-900/30 dark:border-yellow-600 dark:text-yellow-200 px-4 py-2 text-center text-sm font-medium">
+    <div className="bg-yellow-100 border-b-strong border-yellow-400 text-yellow-900 dark:bg-yellow-900/30 dark:border-yellow-600 dark:text-yellow-200 px-4 py-2 text-center text-sm font-medium">
       {process.env.NEXT_PUBLIC_MAINTENANCE_BANNER_TEXT}
     </div>
   );

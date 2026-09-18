@@ -51,7 +51,7 @@ const RequestDetailEmpty = dynamic(
 
 function PaneLoading({ label }: { label: string }) {
   return (
-    <div className="h-full flex items-center justify-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
+    <div className="h-full flex items-center justify-center text-xs font-bold caps text-muted-foreground">
       {label}
     </div>
   );
@@ -451,7 +451,7 @@ function LandingDashboardInner() {
             Your persistent endpoints live in the dashboard — guest URLs are for first-time
             visitors.
           </p>
-          <Link href="/dashboard" className="neo-btn-primary inline-block">
+          <Link href="/dashboard" className="ui-btn-primary inline-block">
             Go to dashboard
             <ArrowRight className="inline-block ml-2 h-4 w-4" />
           </Link>
@@ -470,11 +470,11 @@ function LandingDashboardInner() {
             <button
               onClick={() => void handleCreateEndpoint()}
               disabled={isCreating}
-              className="neo-btn-primary"
+              className="ui-btn-primary"
             >
               {isCreating ? "Creating..." : "Try again"}
             </button>
-            <Link href="/login" className="neo-btn-secondary">
+            <Link href="/login" className="ui-btn-secondary">
               Sign up free instead
             </Link>
           </div>
@@ -496,7 +496,7 @@ function LandingDashboardInner() {
                 ? "Guest endpoints are created on demand in automated sessions."
                 : "Your free guest URL is created the moment you interact with the page — or right now:"}
             </p>
-            <button onClick={() => void handleCreateEndpoint()} className="neo-btn-primary">
+            <button onClick={() => void handleCreateEndpoint()} className="ui-btn-primary">
               Get your webhook URL
             </button>
           </div>
@@ -508,10 +508,10 @@ function LandingDashboardInner() {
       <DashboardFrame>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
           <span
-            className="h-3 w-3 bg-primary border-2 border-foreground animate-pulse motion-reduce:animate-none"
+            className="h-3 w-3 bg-primary border-strong border-line animate-pulse motion-reduce:animate-none"
             aria-hidden
           />
-          <p className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+          <p className="text-sm font-bold caps text-muted-foreground">
             Creating your webhook URL...
           </p>
         </div>
@@ -523,10 +523,8 @@ function LandingDashboardInner() {
     <DashboardFrame>
       <ErrorBoundary resetKey={endpoint?.id}>
         {/* URL bar — same layout as the real dashboard */}
-        <div className="shrink-0 border-b-2 border-foreground bg-card px-4 py-2.5 flex items-center gap-3">
-          <span className="font-bold text-sm uppercase tracking-wide shrink-0 hidden sm:inline">
-            Your endpoint
-          </span>
+        <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex items-center gap-3">
+          <span className="font-bold text-sm caps shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
           <div className="hidden md:flex items-center gap-4 shrink-0 text-xs text-muted-foreground ml-auto">
             <span className="flex items-center gap-1.5">
@@ -550,7 +548,7 @@ function LandingDashboardInner() {
 
         {/* Registration push — appears once the first webhook lands */}
         {hasRequests && !upgradeDismissed ? (
-          <div className="shrink-0 border-b-2 border-foreground bg-primary/10 px-4 py-2.5 flex items-center justify-between gap-4">
+          <div className="shrink-0 border-b-strong border-line bg-primary/10 px-4 py-2.5 flex items-center justify-between gap-4">
             <p className="text-sm font-medium">
               Webhook received! One click keeps this endpoint — free: 50 requests/day, unlimited
               endpoints, CLI, SDK &amp; MCP. No credit card.
@@ -577,7 +575,7 @@ function LandingDashboardInner() {
           {hasRequests ? (
             <>
               <div className="hidden md:flex h-full overflow-hidden">
-                <div className="w-80 shrink-0 border-r-2 border-foreground overflow-hidden">
+                <div className="w-80 shrink-0 border-r-strong border-line overflow-hidden">
                   <RequestList
                     requests={filteredSummaries}
                     selectedId={selectedId}
@@ -611,7 +609,7 @@ function LandingDashboardInner() {
                   <div className="flex-1 flex flex-col overflow-hidden">
                     <button
                       onClick={() => setMobileDetail(false)}
-                      className="border-b-2 border-foreground px-4 py-2 text-sm font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors shrink-0"
+                      className="border-b-strong border-line px-4 py-2 text-sm font-bold caps hover:bg-muted cursor-pointer transition-colors shrink-0"
                     >
                       &larr; Back to list
                     </button>
@@ -652,7 +650,7 @@ function LandingDashboardInner() {
         </div>
 
         {/* Frame footer */}
-        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t-2 border-foreground px-4 py-2 bg-muted">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t-strong border-line px-4 py-2 bg-muted">
           <p className="text-xs text-muted-foreground font-bold">
             Guest endpoint &middot; no account needed &middot; {REQUEST_LIMIT} requests, 12 hours
           </p>
@@ -694,7 +692,7 @@ function UrlCopy({ url }: { url: string }) {
       </code>
       <button
         onClick={handleCopy}
-        className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground shrink-0"
+        className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-strong border-line rounded-md shrink-0"
         title="Copy URL"
         aria-label="Copy webhook URL"
       >
@@ -793,20 +791,20 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
               <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
             </span>
-            <p className="font-bold uppercase tracking-wide">Waiting for first request...</p>
+            <p className="font-bold caps">Waiting for first request...</p>
           </div>
 
           <button
             onClick={() => void handleSendTest()}
             disabled={sending}
-            className="neo-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
+            className="ui-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
           >
             <Send className="h-5 w-5" />
             {sending ? "Sending..." : sent ? "Sent!" : "Send your first webhook"}
           </button>
 
           <div className="space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs font-bold caps text-muted-foreground">
               Or try a signed provider payload
             </p>
             <div className="flex items-center justify-center gap-2">
@@ -819,7 +817,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
                     )
                   }
                   disabled={sending}
-                  className="neo-btn-outline text-sm py-2 px-4 cursor-pointer"
+                  className="ui-btn-outline text-sm py-2 px-4 cursor-pointer"
                 >
                   {provider}
                 </button>
@@ -829,9 +827,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
 
           <div className="text-left">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                Or use curl
-              </span>
+              <span className="text-xs font-bold caps text-muted-foreground">Or use curl</span>
               <button
                 onClick={() => void handleCopy()}
                 className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
@@ -847,9 +843,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
                 )}
               </button>
             </div>
-            <pre className="neo-code text-sm whitespace-pre-wrap break-all text-left">
-              {curlCmd}
-            </pre>
+            <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -866,7 +860,7 @@ function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
  *  Top edge is provided by the title strip above it. */
 function DashboardFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full border-b-2 border-foreground bg-background flex flex-col overflow-hidden">
+    <div className="h-full border-b-strong border-line bg-background flex flex-col overflow-hidden">
       {children}
     </div>
   );

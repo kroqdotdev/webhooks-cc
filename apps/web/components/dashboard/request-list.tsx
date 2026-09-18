@@ -194,7 +194,7 @@ export function RequestList({
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="border-b-2 border-foreground px-3 py-2 flex items-center justify-between shrink-0">
+      <div className="border-b-strong border-line px-3 py-2 flex items-center justify-between shrink-0">
         <span className="text-sm font-bold">
           {displayCount} request{displayCount !== 1 ? "s" : ""}
         </span>
@@ -202,7 +202,7 @@ export function RequestList({
           {onViewModeChange && (
             <button
               onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
-              className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground"
+              className="p-1.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
               title={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-label={viewMode === "list" ? "Switch to timeline view" : "Switch to list view"}
               aria-pressed={viewMode === "timeline"}
@@ -216,7 +216,7 @@ export function RequestList({
           )}
           <button
             onClick={onToggleSort}
-            className="p-1.5 hover:bg-muted transition-colors cursor-pointer border-2 border-foreground"
+            className="p-1.5 hover:bg-muted transition-colors cursor-pointer rounded-md border-strong border-line"
             title={sortNewest ? "Showing newest first" : "Showing oldest first"}
           >
             <ArrowUpDown className="h-3.5 w-3.5" />
@@ -224,7 +224,7 @@ export function RequestList({
           <button
             onClick={onToggleLiveMode}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 text-xs font-bold uppercase tracking-wide border-2 border-foreground cursor-pointer transition-colors",
+              "flex items-center gap-1.5 px-2 py-1 text-xs font-bold caps rounded-md border-strong border-line cursor-pointer transition-colors",
               liveMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             )}
             title={
@@ -245,11 +245,11 @@ export function RequestList({
       </div>
 
       {/* Filter bar */}
-      <div className="border-b-2 border-foreground px-3 py-2 flex items-center gap-2 shrink-0">
+      <div className="border-b-strong border-line px-3 py-2 flex items-center gap-2 shrink-0">
         <select
           value={methodFilter}
           onChange={(e) => onMethodFilterChange(e.target.value)}
-          className="text-xs font-bold uppercase tracking-wide border-2 border-foreground bg-background px-2 py-1 cursor-pointer"
+          className="text-xs font-bold caps rounded-md border-strong border-line bg-background px-2 py-1 cursor-pointer"
         >
           {METHODS.map((m) => (
             <option key={m} value={m}>
@@ -257,7 +257,7 @@ export function RequestList({
             </option>
           ))}
         </select>
-        <div className="flex-1 flex items-center gap-1 border-2 border-foreground px-2 py-1 bg-background">
+        <div className="flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -290,7 +290,7 @@ export function RequestList({
 
       {/* Compare hint */}
       {compareId && (
-        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b-2 border-foreground">
+        <div className="bg-amber-100 dark:bg-amber-900/30 text-xs font-bold text-center py-1 shrink-0 border-b-strong border-line">
           Shift-click another request to compare
         </div>
       )}
@@ -300,12 +300,12 @@ export function RequestList({
         {viewMode === "timeline" && timelineSlot ? (
           timelineSlot
         ) : searchLoading ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold uppercase tracking-wide flex items-center justify-center gap-2">
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps flex items-center justify-center gap-2">
             <Loader2 className="h-3 w-3 animate-spin" />
             Searching...
           </div>
         ) : pinned.length === 0 && unpinned.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold uppercase tracking-wide">
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps">
             {searchError ? "Search unavailable" : "No matching requests"}
           </div>
         ) : (
@@ -313,13 +313,13 @@ export function RequestList({
             {/* Pinned section */}
             {pinned.length > 0 && (
               <>
-                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1">
+                <div className="px-3 py-1 text-[10px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 flex items-center gap-1">
                   <Star className="h-2.5 w-2.5 fill-current" />
                   Pinned
                 </div>
                 {pinned.map((request) => renderRow(request))}
                 {unpinned.length > 0 && (
-                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10">
+                  <div className="px-3 py-1 text-[10px] font-bold caps text-muted-foreground bg-muted/50 border-b border-foreground/10 border-t border-t-foreground/10">
                     All requests
                   </div>
                 )}
@@ -335,7 +335,7 @@ export function RequestList({
                   onClick={onLoadMore}
                   disabled={loadingMore}
                   className={cn(
-                    "neo-btn-outline py-1.5! px-4! text-xs font-bold uppercase tracking-wide flex items-center gap-2",
+                    "ui-btn-outline py-1.5! px-4! text-xs flex items-center gap-2",
                     loadingMore && "opacity-60 cursor-not-allowed"
                   )}
                 >
@@ -358,7 +358,7 @@ export function RequestList({
       {ctxMenu && (
         <div
           ref={ctxRef}
-          className="fixed z-50 border-2 border-foreground bg-background shadow-neo min-w-[160px]"
+          className="fixed z-50 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised min-w-[160px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
           {onTogglePin && (
@@ -367,7 +367,7 @@ export function RequestList({
                 onTogglePin(ctxMenu.id);
                 setCtxMenu(null);
               }}
-              className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors border-b-2 border-foreground flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line flex items-center gap-2"
             >
               <Star className={cn("h-3 w-3", pinnedIds?.has(ctxMenu.id) && "fill-current")} />
               {pinnedIds?.has(ctxMenu.id) ? "Unpin" : "Pin"}
@@ -379,7 +379,7 @@ export function RequestList({
                 onCompareSelect(ctxMenu.id);
                 setCtxMenu(null);
               }}
-              className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors border-b-2 border-foreground flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors border-b-strong border-line flex items-center gap-2"
             >
               <GitCompareArrows className="h-3 w-3" />
               Compare
@@ -390,7 +390,7 @@ export function RequestList({
               void copyToClipboard(ctxMenu.id);
               setCtxMenu(null);
             }}
-            className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors flex items-center gap-2"
           >
             <Clipboard className="h-3 w-3" />
             Copy ID
@@ -424,7 +424,7 @@ export function RequestList({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground shrink-0 w-14 text-center",
+              "px-1.5 py-0.5 text-[10px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 w-14 text-center",
               getMethodColor(request.method)
             )}
           >

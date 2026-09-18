@@ -148,9 +148,9 @@ export function SearchModal() {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-xl mx-4 border-2 border-foreground bg-background shadow-neo">
+      <div className="relative w-full max-w-xl mx-4 rounded-lg border-strong border-line bg-background shadow-raised">
         {/* Input */}
-        <div className="flex items-center border-b-2 border-foreground px-4">
+        <div className="flex items-center border-b-strong border-line px-4">
           <Search className="h-5 w-5 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -185,9 +185,7 @@ export function SearchModal() {
                 >
                   <p className="font-bold text-sm">{result.title}</p>
                   {result.section && (
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                      {result.section}
-                    </p>
+                    <p className="text-xs text-muted-foreground caps">{result.section}</p>
                   )}
                   <p
                     className="text-sm text-muted-foreground mt-1 line-clamp-2 [&>mark]:bg-primary/20 [&>mark]:text-foreground"
@@ -214,15 +212,18 @@ export function SearchModal() {
         )}
 
         {/* Footer hint */}
-        <div className="flex items-center gap-4 px-4 py-2 border-t-2 border-foreground text-xs text-muted-foreground">
+        <div className="flex items-center gap-4 px-4 py-2 border-t-strong border-line text-xs text-muted-foreground">
           <span>
-            <kbd className="border border-foreground/30 px-1 py-0.5 font-mono">↑↓</kbd> navigate
+            <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↑↓</kbd>{" "}
+            navigate
           </span>
           <span>
-            <kbd className="border border-foreground/30 px-1 py-0.5 font-mono">↵</kbd> open
+            <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">↵</kbd>{" "}
+            open
           </span>
           <span>
-            <kbd className="border border-foreground/30 px-1 py-0.5 font-mono">esc</kbd> close
+            <kbd className="rounded-sm border border-foreground/30 px-1 py-0.5 font-mono">esc</kbd>{" "}
+            close
           </span>
         </div>
       </div>

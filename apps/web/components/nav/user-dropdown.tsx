@@ -41,14 +41,14 @@ function UserAvatar({ profile }: { profile: UserProfile }) {
       <img
         src={profile.image}
         alt=""
-        className="h-7 w-7 rounded-full border-2 border-foreground"
+        className="h-7 w-7 rounded-full border-strong border-line"
         onError={() => setImgFailed(true)}
       />
     );
   }
 
   return (
-    <div className="h-7 w-7 rounded-full border-2 border-foreground bg-muted flex items-center justify-center text-[10px] font-bold leading-none">
+    <div className="h-7 w-7 rounded-full border-strong border-line bg-muted flex items-center justify-center text-[10px] font-bold leading-none">
       {initials}
     </div>
   );

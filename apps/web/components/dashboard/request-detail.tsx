@@ -184,7 +184,7 @@ export function RequestDetail({
   return (
     <div className="flex flex-col h-full">
       {/* Summary bar */}
-      <div className="border-b-2 border-foreground px-4 py-3 shrink-0">
+      <div className="border-b-strong border-line px-4 py-3 shrink-0">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="font-mono font-bold text-sm truncate">
@@ -210,7 +210,7 @@ export function RequestDetail({
             <button
               ref={curlBtnRef}
               onClick={() => handleCopy(curlCommand, "curl")}
-              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               {copied === "curl" ? (
                 <>
@@ -233,7 +233,7 @@ export function RequestDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs */}
-      <div className="border-b-2 border-foreground flex shrink-0">
+      <div className="border-b-strong border-line flex shrink-0">
         {TABS.map((t) => (
           <button
             key={t}
@@ -243,8 +243,8 @@ export function RequestDetail({
               trackRequestDetailTabChanged(t);
             }}
             className={cn(
-              "px-4 py-2 text-xs font-bold uppercase tracking-wide border-r-2 border-foreground last:border-r-0 cursor-pointer transition-colors",
-              tab === t ? "bg-foreground text-background" : "bg-background hover:bg-muted"
+              "px-4 py-2 text-xs font-bold caps clean:capitalize border-r-strong border-line last:border-r-0 cursor-pointer transition-colors",
+              tab === t ? "bg-selected text-selected-foreground" : "bg-background hover:bg-muted"
             )}
           >
             {t}
@@ -257,16 +257,18 @@ export function RequestDetail({
         {tab === "body" && (
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border-2 border-foreground bg-muted">
+              <span className="px-2 py-0.5 text-[10px] font-bold caps rounded-sm border-strong border-line bg-muted">
                 {getFormatLabel(bodyFormat)}
               </span>
               {parsedJson !== null && (
-                <div className="flex items-center border-2 border-foreground">
+                <div className="flex items-center overflow-hidden rounded-sm border-strong border-line">
                   <button
                     onClick={() => setBodyView("tree")}
                     className={cn(
-                      "px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide cursor-pointer transition-colors",
-                      bodyView === "tree" ? "bg-foreground text-background" : "hover:bg-muted"
+                      "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                      bodyView === "tree"
+                        ? "bg-selected text-selected-foreground"
+                        : "hover:bg-muted"
                     )}
                   >
                     Tree
@@ -274,8 +276,10 @@ export function RequestDetail({
                   <button
                     onClick={() => setBodyView("formatted")}
                     className={cn(
-                      "px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide cursor-pointer transition-colors border-l-2 border-foreground",
-                      bodyView === "formatted" ? "bg-foreground text-background" : "hover:bg-muted"
+                      "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors border-l-strong border-line",
+                      bodyView === "formatted"
+                        ? "bg-selected text-selected-foreground"
+                        : "hover:bg-muted"
                     )}
                   >
                     Formatted
@@ -293,11 +297,11 @@ export function RequestDetail({
               />
             )}
             {parsedJson !== null && bodyView === "tree" ? (
-              <div className="neo-code overflow-x-auto p-3">
+              <div className="ui-code overflow-x-auto p-3">
                 <JsonTree data={parsedJson} />
               </div>
             ) : (
-              <pre className="neo-code syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words">
+              <pre className="ui-code syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words">
                 {/* Safe: highlightBody escapes plain/form/text/binary output and Prism.highlight encodes token text for json/xml. */}
                 <code
                   className={`language-${highlightLanguage}`}
@@ -309,7 +313,7 @@ export function RequestDetail({
         )}
 
         {tab === "headers" && (
-          <div className="neo-code overflow-x-auto">
+          <div className="ui-code overflow-x-auto">
             <table className="text-sm font-mono w-full">
               <tbody>
                 {Object.entries(request.headers).map(([key, value]) => (
@@ -326,7 +330,7 @@ export function RequestDetail({
         )}
 
         {tab === "query" && (
-          <div className="neo-code overflow-x-auto">
+          <div className="ui-code overflow-x-auto">
             {Object.keys(request.queryParams).length > 0 ? (
               <table className="text-sm font-mono w-full">
                 <tbody>
@@ -347,7 +351,7 @@ export function RequestDetail({
         )}
 
         {tab === "raw" && (
-          <pre className="neo-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
+          <pre className="ui-code overflow-x-auto text-sm whitespace-pre-wrap break-all">
             {request.body || "(empty body)"}
           </pre>
         )}
@@ -464,14 +468,14 @@ function BodyCopyDropdown({
     <div className="absolute top-0 right-0" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="neo-btn-outline py-1! px-2! text-xs flex items-center gap-1"
+        className="ui-btn-outline py-1! px-2! text-xs flex items-center gap-1"
       >
         {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {isCopied ? "Copied!" : "Copy"}
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 border-2 border-foreground bg-background shadow-neo z-50 min-w-[180px]">
+        <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised z-50 min-w-[180px]">
           {options.map((opt, i) => (
             <button
               key={opt.key}
@@ -480,8 +484,8 @@ function BodyCopyDropdown({
                 setOpen(false);
               }}
               className={cn(
-                "w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wide hover:bg-muted cursor-pointer transition-colors",
-                i < options.length - 1 && "border-b-2 border-foreground"
+                "w-full px-3 py-2 text-left text-xs font-bold caps hover:bg-muted cursor-pointer transition-colors",
+                i < options.length - 1 && "border-b-strong border-line"
               )}
             >
               {opt.label}
@@ -520,7 +524,7 @@ function NoteBar({ note, onChange }: { note: string | null; onChange: (note: str
     return (
       <button
         onClick={() => setEditing(true)}
-        className="border-b-2 border-foreground px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
+        className="border-b-strong border-line px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 w-full text-left"
       >
         <StickyNote className="h-3 w-3" />
         Add note...
@@ -530,7 +534,7 @@ function NoteBar({ note, onChange }: { note: string | null; onChange: (note: str
 
   if (editing) {
     return (
-      <div className="border-b-2 border-foreground px-4 py-1.5 flex items-center gap-2 shrink-0">
+      <div className="border-b-strong border-line px-4 py-1.5 flex items-center gap-2 shrink-0">
         <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
         <input
           ref={inputRef}
@@ -555,7 +559,7 @@ function NoteBar({ note, onChange }: { note: string | null; onChange: (note: str
   }
 
   return (
-    <div className="border-b-2 border-foreground px-4 py-1.5 flex items-center gap-2 shrink-0 group">
+    <div className="border-b-strong border-line px-4 py-1.5 flex items-center gap-2 shrink-0 group">
       <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
       <button
         type="button"
@@ -600,9 +604,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
   if (!slug) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p className="font-bold uppercase tracking-wide text-sm">
-          Select a request to view details
-        </p>
+        <p className="font-bold caps text-sm">Select a request to view details</p>
       </div>
     );
   }
@@ -610,7 +612,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
   return (
     <div className="flex items-center justify-center h-full p-6">
       <div className="max-w-sm w-full space-y-5 text-center">
-        <p className="font-bold uppercase tracking-wide text-sm text-muted-foreground">
+        <p className="font-bold caps text-sm text-muted-foreground">
           Select a request to view details
         </p>
 
@@ -619,7 +621,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
           {onSendTest && (
             <button
               onClick={onSendTest}
-              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               <Send className="h-3 w-3" />
               Send Test
@@ -628,7 +630,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
           {url && (
             <button
               onClick={handleCopy}
-              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               {copied ? <Check className="h-3 w-3" /> : <LinkIcon className="h-3 w-3" />}
               {copied ? "Copied!" : "Copy URL"}
@@ -637,7 +639,7 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
             >
               <Settings className="h-3 w-3" />
               Settings
@@ -646,9 +648,9 @@ export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: Request
         </div>
 
         {/* Keyboard hint */}
-        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+        <p className="text-[10px] text-muted-foreground caps">
           Press{" "}
-          <kbd className="px-1 py-0.5 border border-foreground/30 bg-muted font-mono text-[10px]">
+          <kbd className="px-1 py-0.5 rounded-sm border border-foreground/30 bg-muted font-mono text-[10px]">
             ?
           </kbd>{" "}
           for keyboard shortcuts

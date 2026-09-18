@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.30.1";
+export const APP_VERSION = "0.31.0";
 export const CLI_VERSION = "1.3.0";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.31.0",
+    date: "2026-09-14",
+    title: "A Clean Visual Style",
+    track: "web",
+    items: [
+      "A second visual style: switch between the bold classic look and a clean one with thin borders, rounded corners, soft shadows, and sentence-case labels",
+      "The style switch sits next to the light and dark mode switch in the header, works with both modes, and is remembered in your browser",
+    ],
+  },
   {
     version: "0.30.1",
     date: "2026-09-10",

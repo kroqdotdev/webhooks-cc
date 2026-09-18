@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
+import { applyStyleExperiment } from "@/lib/analytics";
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -20,6 +21,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
         if (process.env.NODE_ENV === "development") ph.debug();
       },
     });
+
+    applyStyleExperiment();
   }, []);
 
   return <PHProvider client={posthog}>{children}</PHProvider>;

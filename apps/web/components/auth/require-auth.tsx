@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
-import { identifyUser } from "@/lib/analytics";
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   return (
@@ -14,7 +13,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function RequireAuthInner({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -22,14 +21,6 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
       router.push("/login");
     }
   }, [isAuthenticated, isLoading, router]);
-
-  useEffect(() => {
-    if (user) {
-      identifyUser(user.id, {
-        email: user.email ?? undefined,
-      });
-    }
-  }, [user]);
 
   if (isLoading) {
     return (

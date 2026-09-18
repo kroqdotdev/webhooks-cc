@@ -16,16 +16,14 @@ interface GitHubCardProps {
 
 export function GitHubCard({ stars }: GitHubCardProps) {
   return (
-    <div className="neo-card neo-card-static shrink-0 lg:mt-12 flex flex-col items-center text-center w-full lg:w-auto">
-      <div className="w-14 h-14 border-2 border-foreground bg-foreground flex items-center justify-center mb-4 shadow-neo-sm">
+    <div className="ui-card ui-card-static shrink-0 lg:mt-12 flex flex-col items-center text-center w-full lg:w-auto">
+      <div className="w-14 h-14 border-strong border-line rounded-md bg-foreground flex items-center justify-center mb-4 shadow-raised-sm">
         <GitHubIcon className="h-7 w-7 text-background" />
       </div>
-      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1">
-        Open Source
-      </p>
+      <p className="text-xs font-bold caps text-muted-foreground mb-1">Open Source</p>
       {stars !== null && (
         <p className="text-2xl font-bold mb-1 flex items-center gap-1.5">
-          <Star className="h-5 w-5 text-secondary fill-secondary" />
+          <Star className="h-5 w-5 text-secondary fill-secondary clean:text-amber-500 clean:fill-amber-500" />
           {formatCount(stars)}
         </p>
       )}
@@ -38,7 +36,7 @@ export function GitHubCard({ stars }: GitHubCardProps) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label="View the webhooks-cc repository on GitHub"
-          className="neo-btn-outline text-sm py-2 text-center flex items-center justify-center gap-2"
+          className="ui-btn-outline text-sm py-2 text-center flex items-center justify-center gap-2"
         >
           <GitHubIcon className="h-4 w-4" />
           View Repo
@@ -48,14 +46,14 @@ export function GitHubCard({ stars }: GitHubCardProps) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Star webhooks-cc on GitHub"
-          className="neo-btn-secondary text-sm py-2 text-center flex items-center justify-center gap-2"
+          className="ui-btn-secondary text-sm py-2 text-center flex items-center justify-center gap-2"
         >
           <Star className="h-4 w-4" />
           Star on GitHub
         </a>
         <Link
           href="/changelog"
-          className="neo-btn-outline text-sm py-2 text-center flex items-center justify-center gap-2"
+          className="ui-btn-outline text-sm py-2 text-center flex items-center justify-center gap-2"
         >
           <FileText className="h-4 w-4" />
           View Changelog

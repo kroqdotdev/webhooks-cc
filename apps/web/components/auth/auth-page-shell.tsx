@@ -16,7 +16,7 @@ export function AuthPageShell({ children }: { children: ReactNode }) {
         className="fixed left-4 right-4 z-50"
         style={{ top: `calc(${getMaintenanceTopOffset()} + var(--ann-h, 0px))` }}
       >
-        <div className="max-w-6xl mx-auto border-2 border-foreground bg-background shadow-neo">
+        <div className="max-w-6xl mx-auto rounded-lg border-strong border-line bg-background shadow-raised">
           <div className="px-6 h-16 flex items-center justify-between">
             <Link href="/" className="font-bold text-xl tracking-tight">
               webhooks.cc
@@ -35,7 +35,7 @@ export function AuthPageShell({ children }: { children: ReactNode }) {
                 Install
               </Link>
               <ThemeToggle />
-              <Link href="/" className="neo-btn-outline text-sm py-2 px-4 text-center">
+              <Link href="/" className="ui-btn-outline text-sm py-2 px-4 text-center">
                 Home
               </Link>
             </div>

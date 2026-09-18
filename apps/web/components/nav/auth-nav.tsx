@@ -39,7 +39,7 @@ function AuthNavContent() {
   const authButton = isAuthenticated ? (
     <Link
       href="/dashboard"
-      className="neo-btn-primary text-sm py-2 px-4 w-28 text-center"
+      className="ui-btn-primary text-sm py-2 px-4 w-28 text-center"
       onClick={() => setOpen(false)}
     >
       Dashboard
@@ -47,7 +47,7 @@ function AuthNavContent() {
   ) : (
     <Link
       href="/login"
-      className="neo-btn-outline text-sm py-2 px-4 w-28 text-center"
+      className="ui-btn-outline text-sm py-2 px-4 w-28 text-center"
       onClick={() => setOpen(false)}
     >
       Sign In
@@ -76,7 +76,7 @@ function AuthNavContent() {
         <ThemeToggle />
         <button
           onClick={() => setOpen((prev) => !prev)}
-          className="p-2 border-2 border-foreground hover:bg-muted transition-colors cursor-pointer"
+          className="p-2 rounded-md border-strong border-line hover:bg-muted transition-colors cursor-pointer"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
         >
@@ -86,7 +86,7 @@ function AuthNavContent() {
 
       {/* Mobile dropdown */}
       {open && (
-        <div className="absolute md:hidden top-full left-0 right-0 border-t-2 border-foreground bg-background shadow-neo">
+        <div className="absolute md:hidden top-full left-0 right-0 border-t-strong border-line bg-background shadow-raised">
           <div className="px-6 py-4 flex flex-col gap-4">
             {filteredLinks.map((link) => (
               <Link
@@ -98,7 +98,7 @@ function AuthNavContent() {
                 {link.label}
               </Link>
             ))}
-            <div className="pt-2 border-t-2 border-foreground/20">{authButton}</div>
+            <div className="pt-2 border-t-strong border-foreground/20">{authButton}</div>
           </div>
         </div>
       )}

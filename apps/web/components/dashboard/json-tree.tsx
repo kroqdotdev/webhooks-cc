@@ -45,7 +45,7 @@ export function JsonTree({ data, defaultExpandDepth = 2 }: JsonTreeProps) {
       <div className="flex items-center justify-end mb-2">
         <button
           onClick={toggleAll}
-          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors uppercase tracking-wide font-bold font-sans"
+          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors caps font-bold font-sans"
         >
           <ChevronsUpDown className="h-3 w-3" />
           {expandTarget ? "Collapse all" : "Expand all"}

@@ -88,7 +88,7 @@ test("dashboard shows detected provider, event, and preselects manual verificati
 }) => {
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
 
-  await expect(page.locator("span.font-bold.uppercase", { hasText: ENDPOINT_NAME })).toBeVisible({
+  await expect(page.locator("span.font-bold.caps", { hasText: ENDPOINT_NAME })).toBeVisible({
     timeout: 15_000,
   });
 

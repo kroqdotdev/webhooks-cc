@@ -80,7 +80,7 @@ export default function CompareSmeePage() {
       <JsonLd data={faqSchema(FAQ_ITEMS)} />
 
       <article className="max-w-4xl mx-auto">
-        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+        <p className="text-xs font-bold caps text-muted-foreground mb-3">
           Comparison · Updated March 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Smee.io</h1>
@@ -93,10 +93,10 @@ export default function CompareSmeePage() {
 
         {/* Feature table */}
         <h2 className="text-2xl font-bold mb-4">Feature comparison</h2>
-        <div className="neo-code overflow-x-auto mb-10">
+        <div className="ui-code overflow-x-auto mb-10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-foreground">
+              <tr className="border-b-strong border-line">
                 <th scope="col" className="text-left py-2.5 pr-4 font-bold">
                   Feature
                 </th>
@@ -125,7 +125,7 @@ export default function CompareSmeePage() {
         {/* Key differences */}
         <h2 className="text-2xl font-bold mb-4">Key differences</h2>
         <div className="space-y-6 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Proxy vs platform</h3>
             <p className="text-muted-foreground">
               Smee.io does one thing: forward incoming webhooks to your local machine via SSE. It
@@ -136,19 +136,19 @@ export default function CompareSmeePage() {
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Developer tooling</h3>
             <p className="text-muted-foreground">
               webhooks.cc provides a TypeScript SDK for programmatic access and CI test assertions,
               a native CLI with built-in tunneling, and an MCP server for AI coding agents. For
               teams, webhooks.cc shares endpoints across a team at $12/seat/month; Smee.io has no
               team or collaboration features. Smee.io provides a small npm client (
-              <code className="text-sm bg-muted px-1.5 py-0.5">smee-client</code>) for forwarding —
-              no SDK, no test helpers, no MCP.
+              <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">smee-client</code>) for
+              forwarding — no SDK, no test helpers, no MCP.
             </p>
           </div>
 
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">GitHub App development</h3>
             <p className="text-muted-foreground">
               Smee.io was built specifically for GitHub App webhook development and is recommended
@@ -162,7 +162,7 @@ export default function CompareSmeePage() {
 
         {/* When to choose */}
         <div className="grid md:grid-cols-2 gap-4 mb-10">
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose webhooks.cc when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>Persistent request history with search and export</li>
@@ -173,7 +173,7 @@ export default function CompareSmeePage() {
               <li>Multiple webhook sources beyond GitHub</li>
             </ul>
           </div>
-          <div className="neo-card neo-card-static">
+          <div className="ui-card ui-card-static">
             <h2 className="text-xl font-bold mb-3">Choose Smee.io when you need</h2>
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>The simplest possible localhost forwarding</li>
@@ -188,7 +188,7 @@ export default function CompareSmeePage() {
         <h2 className="text-2xl font-bold mb-4">Frequently asked questions</h2>
         <div className="space-y-4 mb-4">
           {FAQ_ITEMS.map((item) => (
-            <div key={item.question} className="neo-card neo-card-static">
+            <div key={item.question} className="ui-card ui-card-static">
               <h3 className="font-bold mb-2">{item.question}</h3>
               <p className="text-muted-foreground text-sm">{item.answer}</p>
             </div>
