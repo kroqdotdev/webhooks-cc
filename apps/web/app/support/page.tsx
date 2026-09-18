@@ -26,9 +26,12 @@ export default function SupportPage() {
 
         <h2 className="sr-only">Contact options</h2>
         <div className="grid sm:grid-cols-2 gap-6 mb-12">
-          <a href="mailto:support@webhooks.cc" className="neo-card transition-neo group">
-            <div className="w-12 h-12 border-2 border-foreground bg-primary flex items-center justify-center mb-4 shadow-neo-sm">
-              <Bug className="h-6 w-6 text-primary-foreground" />
+          <a
+            href="mailto:support@webhooks.cc"
+            className="ui-card transition-all duration-150 ease-out group"
+          >
+            <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+              <Bug className="h-6 w-6 text-primary-foreground clean:text-foreground" />
             </div>
             <h3 className="font-bold text-lg mb-1">Bug Reports</h3>
             <p className="text-sm text-muted-foreground">
@@ -38,10 +41,10 @@ export default function SupportPage() {
 
           <a
             href="mailto:support@webhooks.cc?subject=Billing"
-            className="neo-card transition-neo group"
+            className="ui-card transition-all duration-150 ease-out group"
           >
-            <div className="w-12 h-12 border-2 border-foreground bg-secondary flex items-center justify-center mb-4 shadow-neo-sm">
-              <CreditCard className="h-6 w-6 text-secondary-foreground" />
+            <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+              <CreditCard className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
             </div>
             <h3 className="font-bold text-lg mb-1">Billing</h3>
             <p className="text-sm text-muted-foreground">
@@ -51,10 +54,10 @@ export default function SupportPage() {
 
           <a
             href="mailto:support@webhooks.cc?subject=Question"
-            className="neo-card transition-neo group"
+            className="ui-card transition-all duration-150 ease-out group"
           >
-            <div className="w-12 h-12 border-2 border-foreground bg-accent flex items-center justify-center mb-4 shadow-neo-sm">
-              <MessageSquare className="h-6 w-6 text-accent-foreground" />
+            <div className="w-12 h-12 border-strong border-line rounded-md bg-accent clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+              <MessageSquare className="h-6 w-6 text-accent-foreground clean:text-foreground" />
             </div>
             <h3 className="font-bold text-lg mb-1">General Questions</h3>
             <p className="text-sm text-muted-foreground">
@@ -64,9 +67,9 @@ export default function SupportPage() {
 
           <a
             href="mailto:support@webhooks.cc"
-            className="neo-card transition-neo group bg-foreground text-background"
+            className="ui-card transition-all duration-150 ease-out group bg-foreground text-background"
           >
-            <div className="w-12 h-12 border-2 border-background bg-background flex items-center justify-center mb-4">
+            <div className="w-12 h-12 border-strong border-background rounded-md bg-background clean:bg-muted flex items-center justify-center mb-4">
               <Mail className="h-6 w-6 text-foreground" />
             </div>
             <h3 className="font-bold text-lg mb-1">Email Us Directly</h3>
@@ -76,7 +79,7 @@ export default function SupportPage() {
           </a>
         </div>
 
-        <section className="border-t-2 border-foreground pt-8">
+        <section className="border-t-strong border-line pt-8">
           <h2 className="text-xl font-bold mb-3">Before You Write</h2>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>

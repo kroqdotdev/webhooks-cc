@@ -19,15 +19,15 @@ export function CodeBlock({
   }
 
   return (
-    <div className="relative my-6 border-2 border-foreground shadow-neo-sm overflow-hidden">
+    <div className="relative my-6 rounded-lg border-strong border-line shadow-raised-sm overflow-hidden">
       {title && (
-        <div className="border-b-2 border-foreground bg-muted px-4 py-1.5 text-xs font-mono font-bold text-muted-foreground">
+        <div className="border-b-strong border-line bg-muted px-4 py-1.5 text-xs font-mono font-bold text-muted-foreground">
           {title}
         </div>
       )}
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 p-1.5 border-2 border-foreground bg-background hover:bg-muted transition-colors cursor-pointer z-10"
+        className="absolute top-2 right-2 p-1.5 rounded-md border-strong border-line bg-background hover:bg-muted transition-colors cursor-pointer z-10"
         aria-label="Copy code"
         type="button"
       >

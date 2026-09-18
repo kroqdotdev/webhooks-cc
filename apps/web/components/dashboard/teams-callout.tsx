@@ -26,7 +26,7 @@ export function DashboardAnnouncement() {
   }
 
   return (
-    <div className="bg-card border-2 border-primary px-4 py-3">
+    <div className="bg-card border-strong border-primary px-4 py-3">
       <div className="flex items-start gap-3">
         <Megaphone className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
         <div className="flex-1 space-y-1">

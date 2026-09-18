@@ -13,8 +13,8 @@ export function Tabs({ items, children }: { items?: string[]; children: React.Re
   const labels = items ?? tabs.map((tab, i) => tab.props.label ?? `Tab ${i + 1}`);
 
   return (
-    <div className="my-6 border-2 border-foreground shadow-neo-sm">
-      <div className="flex border-b-2 border-foreground">
+    <div className="my-6 rounded-lg border-strong border-line shadow-raised-sm clean:overflow-hidden">
+      <div className="flex border-b-strong border-line clean:overflow-x-auto">
         {labels.map((label, i) => (
           <button
             key={label}
@@ -23,7 +23,7 @@ export function Tabs({ items, children }: { items?: string[]; children: React.Re
             className={cn(
               "px-4 py-2 text-sm font-bold transition-colors cursor-pointer",
               i === active
-                ? "bg-foreground text-background"
+                ? "bg-selected text-selected-foreground"
                 : "bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
           >
@@ -31,7 +31,7 @@ export function Tabs({ items, children }: { items?: string[]; children: React.Re
           </button>
         ))}
       </div>
-      <div className="[&>div>pre]:my-0 [&>div>pre]:border-0 [&>div>pre]:shadow-none [&>div>div]:my-0 [&>div>div]:border-0 [&>div>div]:shadow-none">
+      <div className="[&>div>pre]:my-0 [&>div>pre]:rounded-none [&>div>pre]:border-0 [&>div>pre]:shadow-none [&>div>div]:my-0 [&>div>div]:rounded-none [&>div>div]:border-0 [&>div>div]:shadow-none">
         {tabs[active]}
       </div>
     </div>

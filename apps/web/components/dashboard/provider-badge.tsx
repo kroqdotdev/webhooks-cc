@@ -21,7 +21,7 @@ export function ProviderBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 border border-foreground/25 bg-muted px-1 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground",
+        "inline-flex items-center gap-1 rounded-sm border border-foreground/25 bg-muted px-1 py-0.5 text-[10px] font-bold caps text-muted-foreground",
         className
       )}
       aria-label={`Detected provider: ${label}`}

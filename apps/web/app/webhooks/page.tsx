@@ -72,12 +72,12 @@ export default function WebhooksHubPage() {
                     <Link
                       key={provider.slug}
                       href={`/webhooks/${provider.slug}`}
-                      className="neo-card block group"
+                      className="ui-card block group"
                     >
                       <div className="flex items-center gap-3 mb-2">
                         {icon && (
                           <span
-                            className="w-8 h-8 border-2 flex items-center justify-center shrink-0"
+                            className="w-8 h-8 border-strong rounded-md flex items-center justify-center shrink-0"
                             style={{
                               backgroundColor: icon.background,
                               color: icon.foreground,
@@ -104,7 +104,7 @@ export default function WebhooksHubPage() {
           );
         })}
 
-        <div className="neo-card neo-card-static bg-muted mt-4">
+        <div className="ui-card ui-card-static bg-muted mt-4">
           <h2 className="font-bold text-xl mb-2">Using a provider we don&apos;t list?</h2>
           <p className="text-muted-foreground">
             Every webhooks.cc endpoint accepts any HTTP webhook — the provider pages just add signed

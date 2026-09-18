@@ -1,6 +1,29 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/*
+ * Two visual styles share one component tree. "classic" (neobrutalist) is the
+ * default; "clean" is set by data-style="clean" on <html> (see ThemeProvider
+ * and the inline script in app/layout.tsx). Light and dark mode are a separate
+ * axis on the .dark class, so there are four token sets below.
+ *
+ * Components never hardcode one style's look. Use the style-aware vocabulary:
+ *   border-strong, border-{t,r,b,l,x,y}-strong   structural border width
+ *   border-line (and side, divide, ring colors)   structural line color
+ *   shadow-raised-sm | shadow-raised | shadow-raised-lg
+ *   caps, caps-wide                               label casing and tracking
+ *   rounded-sm | rounded-md | rounded-lg          zero in classic
+ *   bg-action / text-action-foreground            primary buttons
+ *   bg-selected / text-selected-foreground        active tab or toggle segment
+ *   translate-x-(--press) / translate-y-(--press) hover press distance
+ *   ui-card, ui-btn-*, ui-input, ui-code          component classes
+ * For the rare case that differs by more than tokens, use the clean: and
+ * classic: variants. lib/ui-style-contract.test.ts rejects classic-only
+ * utilities such as border-2 or border-foreground.
+ */
+@custom-variant clean (&:where([data-style="clean"] *));
+@custom-variant classic (&:where(html:not([data-style="clean"]) *));
+
 /* Offset anchor scroll targets so they clear the fixed navbar */
 html {
   scroll-padding-top: 6rem;
@@ -9,9 +32,9 @@ html {
 }
 
 @theme {
-  /* Font families */
-  --font-sans: var(--font-sans), system-ui, sans-serif;
-  --font-mono: var(--font-mono), monospace;
+  /* Font families: next/font variables are set on <html>, the active style picks one */
+  --font-sans: var(--app-font-sans);
+  --font-mono: var(--app-font-mono);
 
   /* Border radius */
   --radius-lg: var(--radius);
@@ -47,15 +70,27 @@ html {
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
 
-  /* Box shadows — use --shadow-color so dark mode can soften them */
-  --shadow-neo: 4px 4px 0 0 hsl(var(--shadow-color));
-  --shadow-neo-sm: 2px 2px 0 0 hsl(var(--shadow-color));
-  --shadow-neo-lg: 6px 6px 0 0 hsl(var(--shadow-color));
+  /* Style-aware roles */
+  --color-line: hsl(var(--line));
+  --color-action: hsl(var(--action));
+  --color-action-foreground: hsl(var(--action-foreground));
+  --color-selected: hsl(var(--selected));
+  --color-selected-foreground: hsl(var(--selected-foreground));
+  --color-method-get: hsl(var(--method-get));
+  --color-method-post: hsl(var(--method-post));
+  --color-method-put: hsl(var(--method-put));
+  --color-method-delete: hsl(var(--method-delete));
+
+  --border-width-strong: var(--line-width);
+
+  --shadow-raised-sm: var(--elevation-sm);
+  --shadow-raised: var(--elevation);
+  --shadow-raised-lg: var(--elevation-lg);
 }
 
 @layer base {
   :root {
-    /* Neubrutalism Light Theme */
+    /* Classic light */
     --background: 60 9% 98%;
     --foreground: 0 0% 0%;
     --card: 0 0% 100%;
@@ -77,10 +112,44 @@ html {
     --ring: 162 100% 41%;
     --radius: 0;
     --shadow-color: 0 0% 0%;
+
+    /* Classic roles, resolved against the light or dark palette */
+    --line: var(--foreground);
+    --line-width: 2px;
+    --action: var(--primary);
+    --action-foreground: var(--primary-foreground);
+    --selected: var(--foreground);
+    --selected-foreground: var(--background);
+    --caps-transform: uppercase;
+    --caps-tracking: 0.025em;
+    --caps-tracking-wide: 0.1em;
+    --press: 2px;
+    --elevation-sm: 2px 2px 0 0 hsl(var(--shadow-color));
+    --elevation: 4px 4px 0 0 hsl(var(--shadow-color));
+    --elevation-lg: 6px 6px 0 0 hsl(var(--shadow-color));
+    --page-pattern: radial-gradient(
+      circle at center,
+      hsl(var(--foreground) / 0.05) 2px,
+      transparent 2px
+    );
+
+    --syntax-key: var(--primary);
+    --syntax-string: 45 100% 35%;
+    --syntax-number: var(--accent);
+    --syntax-punctuation: var(--muted-foreground);
+
+    /* HTTP method accents (badges use them only in clean; timeline dots in both) */
+    --method-get: 162 100% 41%;
+    --method-post: 52 100% 50%;
+    --method-put: 280 100% 65%;
+    --method-delete: 0 84% 60%;
+
+    --app-font-sans: var(--font-space-grotesk), system-ui, sans-serif;
+    --app-font-mono: var(--font-jetbrains-mono), monospace;
   }
 
   .dark {
-    /* Neubrutalism Dark Theme */
+    /* Classic dark */
     --background: 240 6% 10%;
     --foreground: 60 9% 98%;
     --card: 240 6% 14%;
@@ -102,6 +171,109 @@ html {
     --ring: 162 100% 45%;
     --radius: 0;
     --shadow-color: 60 9% 70%;
+
+    --page-pattern: radial-gradient(
+      circle at center,
+      hsl(var(--foreground) / 0.08) 2px,
+      transparent 2px
+    );
+    --syntax-string: var(--secondary);
+  }
+
+  :root[data-style="clean"] {
+    /* Clean light: zinc neutrals, emerald kept as the brand accent */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 163 94% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 161 94% 30%;
+    --radius: 0.625rem;
+    --shadow-color: 240 10% 3.9%;
+
+    --line: var(--border);
+    --line-width: 1px;
+    --action: 240 5.9% 10%;
+    --action-foreground: 0 0% 98%;
+    --selected: 240 5.9% 90%;
+    --selected-foreground: 240 10% 3.9%;
+    --caps-transform: none;
+    --caps-tracking: normal;
+    --caps-tracking-wide: normal;
+    --press: 0px;
+    --elevation-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --elevation: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    --elevation-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+    --page-pattern: none;
+
+    --syntax-key: 163 94% 24%;
+    --syntax-string: 26 90% 37%;
+    --syntax-number: 262 83% 58%;
+    --syntax-punctuation: 240 3.8% 46.1%;
+
+    --method-get: 163 94% 24%;
+    --method-post: 26 90% 37%;
+    --method-put: 263 70% 50%;
+    --method-delete: 0 74% 42%;
+
+    /* Bold renders as semibold; Geist at 700 is heavier than the look calls for */
+    --font-weight-bold: 600;
+    --app-font-sans: var(--font-geist), system-ui, sans-serif;
+  }
+
+  :root[data-style="clean"].dark {
+    /* Clean dark */
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 5% 6.5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 5% 6.5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 158 64% 52%;
+    --primary-foreground: 240 10% 3.9%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 158 64% 52%;
+    --shadow-color: 0 0% 0%;
+
+    --action: 0 0% 98%;
+    --action-foreground: 240 5.9% 10%;
+    --selected: 240 5.2% 26%;
+    --selected-foreground: 0 0% 98%;
+    --elevation-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --elevation: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --elevation-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.35);
+
+    --syntax-key: 158 64% 52%;
+    --syntax-string: 43 96% 56%;
+    --syntax-number: 255 92% 76%;
+    --syntax-punctuation: 240 5% 64.9%;
+
+    --method-get: 158 64% 52%;
+    --method-post: 43 96% 56%;
+    --method-put: 255 92% 76%;
+    --method-delete: 0 91% 71%;
   }
 }
 
@@ -114,25 +286,25 @@ html {
   }
   body {
     @apply bg-background text-foreground;
-    /* Ben-Day dot pattern */
-    background-image: radial-gradient(
-      circle at center,
-      hsl(var(--foreground) / 0.05) 2px,
-      transparent 2px
-    );
+    /* Ben-Day dots in classic, nothing in clean */
+    background-image: var(--page-pattern);
     background-size: 8px 8px;
-  }
-  :is(.dark) body {
-    background-image: radial-gradient(
-      circle at center,
-      hsl(var(--foreground) / 0.08) 2px,
-      transparent 2px
-    );
   }
 }
 
+/* Label casing: uppercase and tracked in classic, sentence case in clean */
+@utility caps {
+  text-transform: var(--caps-transform);
+  letter-spacing: var(--caps-tracking);
+}
+
+@utility caps-wide {
+  text-transform: var(--caps-transform);
+  letter-spacing: var(--caps-tracking-wide);
+}
+
 @layer components {
-  /* Docs content spacing — no color opinions, inherits from theme.
+  /* Docs content spacing: no color opinions, inherits from theme.
      Uses descendant selectors (not >) so styles persist inside
      wrapper components like Tabs, Steps, FAQ, etc. */
   .docs-content h2 {
@@ -163,163 +335,184 @@ html {
     @apply border-l-4 border-foreground/20 pl-4 my-4 italic text-muted-foreground;
   }
   .docs-content :not(pre) > code {
-    @apply text-sm font-mono bg-muted px-1.5 py-0.5 border border-foreground/20;
+    @apply text-sm font-mono bg-muted px-1.5 py-0.5 border border-foreground/20 rounded-sm;
   }
 
-  /* Neubrutalism card with hard shadow */
-  .neo-card {
-    @apply border-2 border-foreground bg-card p-6;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
+  /* Card: hard shadow that lifts on hover in classic, hairline and soft shadow in clean */
+  .ui-card {
+    @apply border-strong border-line rounded-lg bg-card p-6;
+    box-shadow: var(--elevation);
   }
 
-  .neo-card:hover {
-    box-shadow: 6px 6px 0 0 hsl(var(--shadow-color));
-    transform: translate(-2px, -2px);
+  .ui-card:hover {
+    box-shadow: var(--elevation-lg);
+    transform: translate(calc(var(--press) * -1), calc(var(--press) * -1));
   }
 
-  .neo-card-static:hover {
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
+  .ui-card-static:hover {
+    box-shadow: var(--elevation);
     transform: none;
   }
 
-  /* Neubrutalism button base styles */
-  .neo-btn {
-    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
+  /* Buttons: press into the shadow in classic */
+  .ui-btn,
+  .ui-btn-primary,
+  .ui-btn-secondary,
+  .ui-btn-outline {
+    @apply border-strong border-line rounded-md px-6 py-3 font-bold caps transition-all cursor-pointer;
+    box-shadow: var(--elevation);
   }
 
-  .neo-btn:hover {
-    box-shadow: 2px 2px 0 0 hsl(var(--shadow-color));
-    transform: translate(2px, 2px);
+  :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline):hover {
+    box-shadow: var(--elevation-sm);
+    transform: translate(var(--press), var(--press));
   }
 
-  .neo-btn:active {
-    box-shadow: 0 0 0 0 hsl(var(--shadow-color));
-    transform: translate(4px, 4px);
+  :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline):active {
+    box-shadow: none;
+    transform: translate(calc(var(--press) * 2), calc(var(--press) * 2));
   }
 
-  .neo-btn-primary {
-    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer bg-primary text-primary-foreground;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
+  .ui-btn-primary {
+    @apply bg-action text-action-foreground;
   }
 
-  .neo-btn-primary:hover {
-    box-shadow: 2px 2px 0 0 hsl(var(--shadow-color));
-    transform: translate(2px, 2px);
+  .ui-btn-secondary {
+    @apply bg-secondary text-secondary-foreground;
   }
 
-  .neo-btn-primary:active {
-    box-shadow: 0 0 0 0 hsl(var(--shadow-color));
-    transform: translate(4px, 4px);
-  }
-
-  .neo-btn-secondary {
-    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer bg-secondary text-secondary-foreground;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
-  }
-
-  .neo-btn-secondary:hover {
-    box-shadow: 2px 2px 0 0 hsl(var(--shadow-color));
-    transform: translate(2px, 2px);
-  }
-
-  .neo-btn-secondary:active {
-    box-shadow: 0 0 0 0 hsl(var(--shadow-color));
-    transform: translate(4px, 4px);
-  }
-
-  .neo-btn-outline {
-    @apply border-2 border-foreground px-6 py-3 font-bold uppercase tracking-wide transition-all cursor-pointer bg-background;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
-  }
-
-  .neo-btn-outline:hover {
-    box-shadow: 2px 2px 0 0 hsl(var(--shadow-color));
-    transform: translate(2px, 2px);
-  }
-
-  .neo-btn-outline:active {
-    box-shadow: 0 0 0 0 hsl(var(--shadow-color));
-    transform: translate(4px, 4px);
+  .ui-btn-outline {
+    @apply bg-background;
   }
 
   /* Code blocks */
-  .neo-code {
-    @apply border-2 border-foreground bg-muted p-4 font-mono text-sm;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
+  .ui-code {
+    @apply border-strong border-line rounded-lg bg-muted p-4 font-mono text-sm;
+    box-shadow: var(--elevation);
   }
 
   /* Input fields */
-  .neo-input {
-    @apply border-2 border-foreground bg-background px-4 py-3 outline-none;
-    box-shadow: 4px 4px 0 0 hsl(var(--shadow-color));
+  .ui-input {
+    @apply border-strong border-line rounded-md bg-background px-4 py-3 outline-none;
+    box-shadow: var(--elevation);
   }
 
-  .neo-input:focus {
-    box-shadow: 2px 2px 0 0 hsl(var(--shadow-color));
-    transform: translate(2px, 2px);
+  .ui-input:focus {
+    box-shadow: var(--elevation-sm);
+    transform: translate(var(--press), var(--press));
+  }
+
+  /* Clean overrides for what tokens alone cannot express. Kept after the
+     classic rules so equal-specificity :hover and :active rules lose. */
+  [data-style="clean"] .ui-card {
+    box-shadow: var(--elevation-sm);
+  }
+
+  [data-style="clean"] .ui-card:hover {
+    box-shadow: var(--elevation);
+  }
+
+  [data-style="clean"] .ui-card-static:hover {
+    box-shadow: var(--elevation-sm);
+  }
+
+  [data-style="clean"] :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline) {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 500;
+    box-shadow: var(--elevation-sm);
+  }
+
+  [data-style="clean"]
+    :is(.ui-btn, .ui-btn-primary, .ui-btn-secondary, .ui-btn-outline):is(:hover, :active) {
+    box-shadow: var(--elevation-sm);
+    transform: none;
+  }
+
+  [data-style="clean"] .ui-btn-primary {
+    border-color: hsl(var(--action));
+  }
+
+  [data-style="clean"] .ui-btn-primary:hover {
+    background-color: hsl(var(--action) / 0.9);
+  }
+
+  [data-style="clean"] .ui-btn-secondary {
+    border-color: transparent;
+  }
+
+  [data-style="clean"] .ui-btn-secondary:hover {
+    background-color: hsl(var(--secondary) / 0.8);
+  }
+
+  [data-style="clean"] :is(.ui-btn, .ui-btn-outline):hover {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+
+  [data-style="clean"] .ui-code {
+    box-shadow: none;
+  }
+
+  [data-style="clean"] .ui-input {
+    padding: 0.5rem 0.75rem;
+    border-color: hsl(var(--input));
+    box-shadow: var(--elevation-sm);
+    transition:
+      border-color 150ms,
+      box-shadow 150ms;
+  }
+
+  [data-style="clean"] .ui-input:focus {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.2);
+    transform: none;
   }
 }
 
-/* Smooth transitions */
-@utility transition-neo {
-  transition-property: all;
-  transition-duration: 150ms;
-  transition-timing-function: ease-out;
-}
-
-/* Code syntax highlighting - darker yellow for light mode readability */
+/* Code syntax highlighting */
 @utility text-code-string {
-  color: hsl(45 100% 35%);
-}
-.dark .text-code-string {
-  color: hsl(var(--secondary));
+  color: hsl(var(--syntax-string));
 }
 
 /* Prism syntax highlighting inside request/detail code blocks */
 .syntax-highlight .token.property,
 .syntax-highlight .token.tag,
 .syntax-highlight .token.attr-name {
-  color: hsl(var(--primary));
+  color: hsl(var(--syntax-key));
 }
 
 .syntax-highlight .token.string,
 .syntax-highlight .token.attr-value {
-  color: hsl(45 100% 35%);
-}
-.dark .syntax-highlight .token.string,
-.dark .syntax-highlight .token.attr-value {
-  color: hsl(var(--secondary));
+  color: hsl(var(--syntax-string));
 }
 
 .syntax-highlight .token.number,
 .syntax-highlight .token.boolean,
 .syntax-highlight .token.constant {
-  color: hsl(var(--accent));
+  color: hsl(var(--syntax-number));
 }
 
 .syntax-highlight .token.punctuation {
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--syntax-punctuation));
 }
 
-/* JSON tree syntax colors — reuse the Prism palette */
+/* JSON tree syntax colors: reuse the Prism palette */
 .syntax-property {
-  color: hsl(var(--primary));
+  color: hsl(var(--syntax-key));
 }
 .syntax-string {
-  color: hsl(45 100% 35%);
-}
-:is(.dark) .syntax-string {
-  color: hsl(var(--secondary));
+  color: hsl(var(--syntax-string));
 }
 .syntax-number {
-  color: hsl(var(--accent));
+  color: hsl(var(--syntax-number));
 }
 .syntax-keyword {
-  color: hsl(var(--accent));
+  color: hsl(var(--syntax-number));
 }
 .syntax-punctuation {
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--syntax-punctuation));
 }
 
 /* Fade-in animation for new requests and page content */

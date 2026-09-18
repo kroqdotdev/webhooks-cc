@@ -21,8 +21,8 @@ function DocsCTAInner() {
   if (isLoading || isAuthenticated) return null;
 
   return (
-    <div className="mt-16 pt-8 border-t-2 border-foreground">
-      <div className="neo-card neo-card-static bg-muted">
+    <div className="mt-16 pt-8 border-t-strong border-line">
+      <div className="ui-card ui-card-static bg-muted">
         <p className="font-bold text-lg mb-1">Start testing webhooks</p>
         <p className="text-sm text-muted-foreground mb-4">
           Free account. 50 requests/day. CLI, SDK, and MCP included.
@@ -31,7 +31,7 @@ function DocsCTAInner() {
           <OAuthSignInButtons
             redirectTo="/dashboard"
             layout="horizontal"
-            buttonClassName="h-9 text-sm px-4 neo-btn-outline cursor-pointer"
+            buttonClassName="h-9 text-sm px-4 ui-btn-outline cursor-pointer"
           />
         </div>
         <p className="text-sm text-muted-foreground mt-3">

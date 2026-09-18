@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { reportAuthenticatedUser } from "@/lib/analytics";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -33,6 +34,7 @@ function setAuthSession(session: Session | null) {
     isAuthenticated: !!session?.user,
   };
   storeListeners.forEach((listener) => listener());
+  if (authState.user) reportAuthenticatedUser(authState.user);
 }
 
 function startAuthListener() {

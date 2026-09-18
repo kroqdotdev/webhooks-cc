@@ -24,7 +24,7 @@ export function ProviderStrip() {
               <Link
                 key={provider.slug}
                 href={`/webhooks/${provider.slug}`}
-                className="inline-flex items-center gap-2 border-2 border-foreground bg-card px-3 py-2 font-bold text-sm shadow-neo-sm hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-neo-lg transition-all"
+                className="inline-flex items-center gap-2 border-strong border-line rounded-md bg-card px-3 py-2 font-bold text-sm shadow-raised-sm hover:-translate-x-(--press) hover:-translate-y-(--press) hover:shadow-raised-lg transition-all"
               >
                 {icon && (
                   <span
@@ -40,7 +40,7 @@ export function ProviderStrip() {
           })}
           <Link
             href="/webhooks"
-            className="inline-flex items-center gap-1 border-2 border-foreground bg-primary text-primary-foreground px-3 py-2 font-bold text-sm shadow-neo-sm hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-neo-lg transition-all"
+            className="inline-flex items-center gap-1 border-strong border-line rounded-md bg-action text-action-foreground px-3 py-2 font-bold text-sm shadow-raised-sm hover:-translate-x-(--press) hover:-translate-y-(--press) hover:shadow-raised-lg transition-all"
           >
             All providers
             <ArrowRight className="h-4 w-4" />

@@ -83,21 +83,21 @@ export function NewEndpointDialog() {
       <DialogTrigger asChild>
         <button
           data-shortcut="new-endpoint"
-          className="neo-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
+          className="ui-btn-primary py-1.5! px-3! text-xs flex items-center gap-1.5"
         >
           <Plus className="h-3.5 w-3.5" />
           New Endpoint
         </button>
       </DialogTrigger>
-      <DialogContent className="border-2 border-foreground shadow-neo">
+      <DialogContent className="border-strong border-line shadow-raised">
         <DialogHeader>
-          <DialogTitle className="font-bold uppercase tracking-wide">Create Endpoint</DialogTitle>
+          <DialogTitle className="font-bold caps">Create Endpoint</DialogTitle>
           <DialogDescription>Create a new webhook endpoint to capture requests.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="ep-name" className="font-bold uppercase tracking-wide text-xs">
+            <Label htmlFor="ep-name" className="font-bold caps text-xs">
               Name (optional)
             </Label>
             <input
@@ -105,15 +105,13 @@ export function NewEndpointDialog() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My Webhook"
-              className="neo-input w-full text-sm"
+              className="ui-input w-full text-sm"
             />
           </div>
 
-          <div className="border-2 border-foreground p-4 space-y-4">
+          <div className="border-strong border-line rounded-lg p-4 space-y-4">
             <div>
-              <p className="font-bold uppercase tracking-wide text-xs mb-1">
-                Mock Response (optional)
-              </p>
+              <p className="font-bold caps text-xs mb-1">Mock Response (optional)</p>
               <p className="text-xs text-muted-foreground">
                 Configure what this endpoint returns when it receives a request.
               </p>
@@ -122,7 +120,7 @@ export function NewEndpointDialog() {
             <StatusCodePicker id="ep-status" value={mockStatus} onChange={setMockStatus} />
 
             <div className="space-y-2">
-              <Label htmlFor="ep-body" className="font-bold uppercase tracking-wide text-xs">
+              <Label htmlFor="ep-body" className="font-bold caps text-xs">
                 Response Body
               </Label>
               <Textarea
@@ -131,13 +129,13 @@ export function NewEndpointDialog() {
                 onChange={(e) => setMockBody(e.target.value)}
                 placeholder='{"success": true}'
                 rows={3}
-                className="border-2 border-foreground rounded-none text-sm font-mono"
+                className="border-strong border-line text-sm font-mono"
               />
             </div>
           </div>
 
           {error && (
-            <div className="border-2 border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-strong border-destructive rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -146,7 +144,7 @@ export function NewEndpointDialog() {
             <Button
               type="submit"
               disabled={isSubmitting || !session?.access_token}
-              className="neo-btn-primary rounded-none! flex-1"
+              className="ui-btn-primary flex-1"
             >
               {isSubmitting ? "Creating..." : "Create Endpoint"}
             </Button>
@@ -154,7 +152,7 @@ export function NewEndpointDialog() {
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
-              className="neo-btn-outline rounded-none!"
+              className="ui-btn-outline"
             >
               Cancel
             </Button>

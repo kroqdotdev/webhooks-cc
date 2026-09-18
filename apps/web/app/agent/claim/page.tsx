@@ -124,17 +124,14 @@ function AgentClaimContent() {
         className="fixed left-4 right-4 z-50"
         style={{ top: `calc(${getMaintenanceTopOffset()} + var(--ann-h, 0px))` }}
       >
-        <div className="max-w-6xl mx-auto border-2 border-foreground bg-background shadow-neo">
+        <div className="max-w-6xl mx-auto rounded-lg border-strong border-line bg-background shadow-raised">
           <div className="px-6 h-16 flex items-center justify-between">
             <Link href="/" className="font-bold text-xl tracking-tight">
               webhooks.cc
             </Link>
             <div className="flex items-center gap-6">
               <ThemeToggle />
-              <Link
-                href="/dashboard"
-                className="neo-btn-outline text-sm py-2 px-4 w-28 text-center"
-              >
+              <Link href="/dashboard" className="ui-btn-outline text-sm py-2 px-4 w-28 text-center">
                 Dashboard
               </Link>
             </div>
@@ -153,7 +150,7 @@ function AgentClaimContent() {
               </p>
               <Link
                 href="/account"
-                className="neo-btn-outline text-sm py-2 px-4 inline-block text-center"
+                className="ui-btn-outline text-sm py-2 px-4 inline-block text-center"
               >
                 View API keys
               </Link>
@@ -194,7 +191,7 @@ function AgentClaimContent() {
                         handleConfirm();
                       }
                     }}
-                    className="mt-1 w-full h-12 border-2 border-foreground bg-background px-3 text-center text-lg font-mono tracking-widest uppercase"
+                    className="mt-1 w-full h-12 rounded-md border-strong border-line bg-background px-3 text-center text-lg font-mono tracking-widest uppercase"
                   />
                 </label>
               )}

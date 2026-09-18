@@ -445,7 +445,7 @@ const SECTIONS: Section[] = [
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold border-2 border-foreground bg-muted inline-block">
+    <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold border-strong border-line rounded-sm bg-muted inline-block">
       {children}
     </kbd>
   );
@@ -474,7 +474,7 @@ export function DashboardGuideDialog() {
       <DialogTrigger asChild>
         <button
           data-shortcut="guide"
-          className="neo-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
         >
           <HelpCircle className="h-3.5 w-3.5" />
           Guide
@@ -483,9 +483,9 @@ export function DashboardGuideDialog() {
       <DialogContent className="max-w-4xl h-[640px] max-h-[85vh] p-0 overflow-hidden">
         <div className="flex h-full">
           {/* Sidebar */}
-          <nav className="w-52 shrink-0 border-r-2 border-foreground overflow-y-auto py-4">
+          <nav className="w-52 shrink-0 border-r-strong border-line overflow-y-auto py-4">
             <DialogHeader className="px-4 pb-3">
-              <DialogTitle className="text-sm uppercase tracking-wide">Dashboard Guide</DialogTitle>
+              <DialogTitle className="text-sm caps">Dashboard Guide</DialogTitle>
             </DialogHeader>
             <div className="space-y-0.5">
               {SECTIONS.map((section) => (
@@ -493,9 +493,9 @@ export function DashboardGuideDialog() {
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
                   className={cn(
-                    "w-full px-4 py-1.5 text-left text-xs font-bold uppercase tracking-wide flex items-center gap-2 cursor-pointer transition-colors",
+                    "w-full px-4 py-1.5 text-left text-xs font-bold caps flex items-center gap-2 cursor-pointer transition-colors",
                     activeSection === section.id
-                      ? "bg-foreground text-background"
+                      ? "bg-selected text-selected-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                 >
@@ -508,7 +508,7 @@ export function DashboardGuideDialog() {
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-bold uppercase tracking-wide mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold caps mb-4 flex items-center gap-2">
               {current.icon}
               {current.title}
             </h2>
