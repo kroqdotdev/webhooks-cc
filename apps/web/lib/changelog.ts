@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.31.0";
+export const APP_VERSION = "0.31.1";
 export const CLI_VERSION = "1.3.0";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.31.1",
+    date: "2026-09-18",
+    title: "Style Experiment Reporting",
+    track: "web",
+    items: [
+      "The visual-style split now reports its arm under the variant keys PostHog expects, so the experiment results line up",
+    ],
+  },
   {
     version: "0.31.0",
     date: "2026-09-14",

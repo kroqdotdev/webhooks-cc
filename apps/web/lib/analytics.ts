@@ -24,6 +24,16 @@ export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq") {
 // ── Visual style experiment ────────────────────────────
 
 /**
+ * PostHog experiments name their variants control and test, and its results
+ * read those keys off $feature/<flag>. The readable style name rides along as
+ * ui_style_assigned so raw events stay legible.
+ */
+const POSTHOG_VARIANT: Record<UiStyle, "control" | "test"> = {
+  classic: "control",
+  clean: "test",
+};
+
+/**
  * Tells PostHog which arm of the style split this browser is in. The variant
  * stays the one the split assigned even after the visitor switches styles, so
  * a switch does not move their later events into the other arm.
@@ -31,7 +41,10 @@ export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq") {
 export function registerStyleVariant(assigned: UiStyle) {
   if (typeof window === "undefined") return;
   try {
-    posthog.register({ [`$feature/${UI_STYLE_FLAG_KEY}`]: assigned });
+    posthog.register({
+      [`$feature/${UI_STYLE_FLAG_KEY}`]: POSTHOG_VARIANT[assigned],
+      ui_style_assigned: assigned,
+    });
   } catch {
     // PostHog not initialized
   }
@@ -41,7 +54,8 @@ export function registerStyleVariant(assigned: UiStyle) {
 export function trackStyleExposure(assigned: UiStyle, active: UiStyle) {
   capture("$feature_flag_called", {
     $feature_flag: UI_STYLE_FLAG_KEY,
-    $feature_flag_response: assigned,
+    $feature_flag_response: POSTHOG_VARIANT[assigned],
+    ui_style_assigned: assigned,
     ui_style_active: active,
   });
 }
