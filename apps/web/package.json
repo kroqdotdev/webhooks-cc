@@ -40,7 +40,7 @@
     "next": "16.3.5",
     "next-mdx-remote": "^6.0.0",
     "nodemailer": "^10.0.10",
-    "posthog-js": "^1.433.4",
+    "posthog-js": "^1.434.0",
     "prismjs": "^1.30.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
