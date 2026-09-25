@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.31.1";
-export const CLI_VERSION = "1.3.0";
+export const APP_VERSION = "0.31.2";
+export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.31.2",
+    date: "2026-09-25",
+    title: "Dependency Updates",
+    track: "web",
+    items: [
+      "The Scalar API reference upgrade pulls in undici, which is now held at 7.29 or later so it does not arrive with four high-severity advisories",
+      "Routine dependency bumps: React and React DOM, Supabase JS, zod, posthog-js, resend, AppSignal, lucide-react, tailwind-merge, simple-icons, Scalar API reference, swagger-parser, and dotenv 18, plus redis and crc32fast on the Rust side",
+    ],
+  },
   {
     version: "0.31.1",
     date: "2026-09-18",
@@ -728,6 +738,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.3.1",
+    date: "2026-09-25",
+    title: "Dependency Updates",
+    track: "cli",
+    items: [
+      "Rebuilt on current dependencies: clap 4.6.7, clap_complete 4.6.11, open 5.4.4, and dirs 7",
+      "No behaviour changes: your saved login stays where it was, since dirs 7 resolves the config directory the same way as before",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-09-07",
