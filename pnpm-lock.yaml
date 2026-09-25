@@ -218,8 +218,8 @@ importers:
         version: 4.6.5
     devDependencies:
       '@apidevtools/swagger-parser':
-        specifier: ^13.0.0
-        version: 13.0.0(openapi-types@12.1.3)
+        specifier: ^13.1.0
+        version: 13.1.0(openapi-types@12.1.3)
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
@@ -335,9 +335,9 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@apidevtools/json-schema-ref-parser@15.3.6':
-    resolution: {integrity: sha512-oPFDSviRrreUmCZn09LCD4S9QQa6j7zfEwBM1pkGa/kXY0O4sXsEXn4emLP/Tt6tik2+BtgwKk2eldAeOWZ2Rw==}
-    engines: {node: '>=20'}
+  '@apidevtools/json-schema-ref-parser@16.0.3':
+    resolution: {integrity: sha512-7lZp4XCTZhU/AgiGpIG+j4uJeWPdGbpQ+8wqXrzuHy+tboKsjSacjGH9/kNThRDIFhMWHF3ba+ejS8J3PeSI1Q==}
+    engines: {node: '>=22.19.0'}
     peerDependencies:
       '@types/json-schema': ^7.0.15
 
@@ -348,9 +348,9 @@ packages:
   '@apidevtools/swagger-methods@3.0.2':
     resolution: {integrity: sha512-QAkD5kK2b1WfjDS/UQn/qQkbwF31uqRjPTrsCs5ZG9BQGAkjwvqGFjjPqAuzac/IYzpPtRzjCP1WrTuAIjMrXg==}
 
-  '@apidevtools/swagger-parser@13.0.0':
-    resolution: {integrity: sha512-TcvnmBzJD7DBREkc/2qaxMqbKpttOaHhOFsYRYKdYAv6HGY+iNlWY2IUA209C2/NmvL9z8RBZhkrESqvGkjqmw==}
-    engines: {node: ^20.19.0 || >=22.12.0}
+  '@apidevtools/swagger-parser@13.1.0':
+    resolution: {integrity: sha512-dkCuqCWh5U7u0aurmmc/qvel2KeKDxHTwVtUdYonndIpD7mXV6AVaWNdvaja2HAy628z7FT/Qdz8sCgzwhgwKg==}
+    engines: {node: '>=22.19.0'}
     peerDependencies:
       openapi-types: '>=7'
 
@@ -3521,8 +3521,8 @@ packages:
   fast-sha256@1.3.0:
     resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
 
-  fast-uri@4.1.4:
-    resolution: {integrity: sha512-dODXrIxlS9JSdgAnhIUKOosKV1oMtU2VtVw87QRaHzyl5jxO290Ii5tEZfCfzfWNHi3jKWwBSdQj0qIyshdZdQ==}
+  fast-uri@4.2.1:
+    resolution: {integrity: sha512-TmHQgewjHtMq1E5QKA0tOE0yeYGQs25KZC/ziJpubRtWI15W92e6vPFydWOeZBVROSHBYw/QhD9d5OefdD6LDg==}
 
   fastq@1.20.3:
     resolution: {integrity: sha512-XKv5nnLs6nLF71NgiKJLIZFLkPyIEuOselLG7ujZnGrRfQK8HpvY+WqKhAJUAdLomwVHErVS4LfxFlPq0/FTAw==}
@@ -4066,6 +4066,10 @@ packages:
 
   js-yaml@4.3.2:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
+    hasBin: true
+
+  js-yaml@5.4.2:
+    resolution: {integrity: sha512-m+aqu+LwO1O6sIopafj8HUVl5aawITwZQe/yHpMCKjaWBaA/d07B/QdMb3529REftiU+RMMHL3Vlsw3hON7vWg==}
     hasBin: true
 
   jsesc@3.1.0:
@@ -5518,9 +5522,13 @@ packages:
     resolution: {integrity: sha512-zWpdTVD54H48CIybL0rWQ3ukpb9d23wM7eH5RtfdmeP70cWHNjtfo7P4vZX+5CoDcO53J4Pu5uXp7lNfjc6DRA==}
     engines: {node: '>=18.17'}
 
-  undici@7.30.0:
-    resolution: {integrity: sha512-dkrQXeHSaoamnItlYbmzG0wFYrM0ZwDxCIg0A7aKjTyyhh9svRzCNFEzV+Vm05/yehjCzjDZ31KXfGEjYSztDQ==}
+  undici@7.29.1:
+    resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
+
+  undici@8.11.0:
+    resolution: {integrity: sha512-AdzuGcAkzhbha3GgCSoUBx2P0quwym6qdFNCQz/fDGZc8w9XJ741wHUbt2kTmfPz+ZIOMkySFkiY7RXmiDDC8w==}
+    engines: {node: '>=22.19.0'}
 
   unhead@2.1.17:
     resolution: {integrity: sha512-HLMKXOszRhAPBrr6VlqCeVeJq2kbC4kXwzGLEZvvojPLWNYTJw22xG7Bfwhsvs31+IBet3Wl8ADg9dwYdyphfQ==}
@@ -5878,18 +5886,19 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@apidevtools/json-schema-ref-parser@15.3.6(@types/json-schema@7.0.15)':
+  '@apidevtools/json-schema-ref-parser@16.0.3(@types/json-schema@7.0.15)':
     dependencies:
       '@types/json-schema': 7.0.15
-      js-yaml: 4.3.2
+      js-yaml: 5.4.2
+      undici: 8.11.0
 
   '@apidevtools/openapi-schemas@2.1.0': {}
 
   '@apidevtools/swagger-methods@3.0.2': {}
 
-  '@apidevtools/swagger-parser@13.0.0(openapi-types@12.1.3)':
+  '@apidevtools/swagger-parser@13.1.0(openapi-types@12.1.3)':
     dependencies:
-      '@apidevtools/json-schema-ref-parser': 15.3.6(@types/json-schema@7.0.15)
+      '@apidevtools/json-schema-ref-parser': 16.0.3(@types/json-schema@7.0.15)
       '@apidevtools/openapi-schemas': 2.1.0
       '@apidevtools/swagger-methods': 3.0.2
       '@types/json-schema': 7.0.15
@@ -8008,7 +8017,7 @@ snapshots:
     dependencies:
       '@scalar/helpers': 0.12.0
       pathe: 2.0.3
-      undici: 7.30.0
+      undici: 7.29.1
       yaml: 2.9.1
 
   '@scalar/localization@0.2.0(typescript@6.0.3)':
@@ -8665,7 +8674,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 4.1.4
+      fast-uri: 4.2.1
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -9489,7 +9498,7 @@ snapshots:
 
   fast-sha256@1.3.0: {}
 
-  fast-uri@4.1.4: {}
+  fast-uri@4.2.1: {}
 
   fastq@1.20.3:
     dependencies:
@@ -10146,6 +10155,10 @@ snapshots:
       esprima: 4.0.1
 
   js-yaml@4.3.2:
+    dependencies:
+      argparse: 2.0.1
+
+  js-yaml@5.4.2:
     dependencies:
       argparse: 2.0.1
 
@@ -12048,7 +12061,9 @@ snapshots:
 
   undici@6.28.1: {}
 
-  undici@7.30.0: {}
+  undici@7.29.1: {}
+
+  undici@8.11.0: {}
 
   unhead@2.1.17:
     dependencies:
