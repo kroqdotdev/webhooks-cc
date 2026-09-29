@@ -15,13 +15,20 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.0";
+export const APP_VERSION = "0.32.1";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.1",
+    date: "2026-09-29",
+    title: "Quota Email Fix",
+    track: "web",
+    items: ["Quota emails now go out: the setting that turns them on was not being read"],
+  },
   {
     version: "0.32.0",
     date: "2026-09-29",
