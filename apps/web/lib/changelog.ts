@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.31.3";
+export const APP_VERSION = "0.32.0";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.0",
+    date: "2026-09-29",
+    title: "Quota Alerts and 26 New Provider Pages",
+    track: "web",
+    items: [
+      "When your request limit runs out, the dashboard now says so: a banner shows that new webhooks are rejected with HTTP 429 and when the limit resets",
+      "Free accounts also get an email when their daily limit runs out, at most once a week",
+      "Webhook guides for 26 more providers, including Resend, Zoom, Jira, Notion, WorkOS, WooCommerce, Paystack, and Checkout.com, with setup steps and how each one authenticates deliveries",
+    ],
+  },
   {
     version: "0.31.3",
     date: "2026-09-29",

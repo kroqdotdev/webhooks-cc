@@ -10,9 +10,9 @@ import {
 } from "@/lib/webhook-provider-pages";
 
 export const metadata = createPageMetadata({
-  title: "Test Webhooks From 30+ Providers — Stripe, GitHub, Shopify & More",
+  title: "Test Webhooks From 50+ Providers: Stripe, GitHub, Shopify & More",
   description:
-    "Capture, inspect, and test webhooks from Stripe, GitHub, Shopify, Slack, PayPal, and 30+ other providers. Free endpoint, signed sample payloads, signature verification.",
+    "Capture, inspect, and test webhooks from Stripe, GitHub, Shopify, Slack, PayPal, and 50+ other providers. Free endpoint, signed sample payloads, signature verification.",
   path: "/webhooks",
   keywords: [
     "webhook tester",
