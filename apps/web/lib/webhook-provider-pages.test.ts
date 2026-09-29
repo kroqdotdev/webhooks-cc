@@ -32,7 +32,7 @@ describe("webhook provider pages", () => {
     for (const page of captureOnly) {
       expect(WEBHOOK_PROVIDER_CATEGORIES).toContain(page.category);
       const copy = [page.blurb, page.configHint, page.signatureNote ?? ""].join(" ");
-      expect(copy).not.toContain("—");
+      expect(copy).not.toContain(String.fromCharCode(0x2014));
     }
   });
 });

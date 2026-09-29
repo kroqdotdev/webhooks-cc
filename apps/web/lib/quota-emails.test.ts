@@ -17,8 +17,20 @@ vi.mock("@/lib/env", () => ({
 const { sendQuotaExhaustedEmails } = await import("./quota-emails");
 
 const claimed = [
-  { id: "u1", email: "a@example.com", request_limit: 50, period_end: "2026-09-29T18:00:00Z" },
-  { id: "u2", email: "b@example.com", request_limit: 50, period_end: "2026-09-29T19:00:00Z" },
+  {
+    id: "u1",
+    email: "a@example.com",
+    request_limit: 50,
+    period_end: "2026-09-29T18:00:00Z",
+    team_billed_endpoints: 0,
+  },
+  {
+    id: "u2",
+    email: "b@example.com",
+    request_limit: 50,
+    period_end: "2026-09-29T19:00:00Z",
+    team_billed_endpoints: 1,
+  },
 ];
 
 describe("sendQuotaExhaustedEmails", () => {
@@ -27,24 +39,32 @@ describe("sendQuotaExhaustedEmails", () => {
     eq.mockResolvedValue({ error: null });
   });
 
-  it("emails every claimed user", async () => {
-    rpc.mockResolvedValue({ data: claimed, error: null });
+  it("emails every claimed user and marks each one sent", async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users" ? { data: claimed, error: null } : { error: null }
+    );
     sendEmail.mockResolvedValue(undefined);
 
     await expect(sendQuotaExhaustedEmails()).resolves.toEqual({ sent: 2, failed: 0 });
     expect(rpc).toHaveBeenCalledWith("claim_quota_exhausted_users", { p_limit: 50 });
     expect(sendEmail.mock.calls.map(([m]) => m.to)).toEqual(["a@example.com", "b@example.com"]);
+    expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u1" });
+    expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u2" });
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("clears the stamp when a send fails so the next poll retries", async () => {
-    rpc.mockResolvedValue({ data: claimed, error: null });
+  it("releases the lease and does not mark sent when a send fails", async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === "claim_quota_exhausted_users" ? { data: claimed, error: null } : { error: null }
+    );
     sendEmail.mockRejectedValueOnce(new Error("smtp down")).mockResolvedValueOnce(undefined);
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(sendQuotaExhaustedEmails()).resolves.toEqual({ sent: 1, failed: 1 });
-    expect(update).toHaveBeenCalledWith({ quota_email_sent_at: null });
+    expect(update).toHaveBeenCalledWith({ quota_email_claimed_at: null });
     expect(eq).toHaveBeenCalledWith("id", "u1");
+    expect(rpc).not.toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u1" });
+    expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u2" });
   });
 
   it("throws when the claim fails", async () => {

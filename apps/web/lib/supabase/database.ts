@@ -365,6 +365,7 @@ export interface Database {
           request_limit: number;
           created_at: string;
           quota_email_sent_at: string | null;
+          quota_email_claimed_at: string | null;
         };
         Insert: {
           id: string;
@@ -382,6 +383,7 @@ export interface Database {
           request_limit?: number;
           created_at?: string;
           quota_email_sent_at?: string | null;
+          quota_email_claimed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -399,6 +401,7 @@ export interface Database {
           request_limit?: number;
           created_at?: string;
           quota_email_sent_at?: string | null;
+          quota_email_claimed_at?: string | null;
         };
         Relationships: [];
       };
@@ -616,7 +619,16 @@ export interface Database {
           email: string;
           request_limit: number;
           period_end: string;
+          team_billed_endpoints: number;
         }>;
+      };
+      mark_quota_email_sent: {
+        Args: { p_user_id: string };
+        Returns: undefined;
+      };
+      count_team_billed_endpoints: {
+        Args: { p_user_id: string };
+        Returns: number;
       };
     };
     Enums: Record<string, never>;

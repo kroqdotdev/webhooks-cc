@@ -6,6 +6,7 @@ describe("buildQuotaExhaustedEmail", () => {
     to: "dev@example.com",
     requestLimit: 50,
     periodEnd: new Date("2026-09-29T18:30:00Z"),
+    teamBilledEndpoints: 0,
     appUrl: "https://webhooks.cc",
   });
 
@@ -14,6 +15,19 @@ describe("buildQuotaExhaustedEmail", () => {
     expect(message.text).toContain("all 50 requests");
     expect(message.text).toContain("2026-09-29 18:30 UTC");
     expect(message.html).toContain("2026-09-29 18:30 UTC");
+  });
+
+  it("names team-shared endpoints as unaffected only when there are any", () => {
+    expect(message.text).not.toContain("team's quota");
+    const withTeam = buildQuotaExhaustedEmail({
+      to: "dev@example.com",
+      requestLimit: 50,
+      periodEnd: new Date("2026-09-29T18:30:00Z"),
+      teamBilledEndpoints: 2,
+      appUrl: "https://webhooks.cc",
+    });
+    expect(withTeam.text).toContain("Endpoints shared with a team use the team's quota");
+    expect(withTeam.html).toContain("Endpoints shared with a team use the team's quota");
   });
 
   it("links to the upgrade and team pages", () => {

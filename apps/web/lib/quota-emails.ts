@@ -7,10 +7,11 @@ const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const BATCH_SIZE = 50;
 
 /**
- * Emails free users whose quota ran out. claim_quota_exhausted_users()
- * stamps each user before returning it, so a user is never emailed twice for
- * one claim even with several web processes polling. A failed send clears the
- * stamp so the next poll retries it.
+ * Emails free users whose quota ran out. claim_quota_exhausted_users() takes
+ * a 15-minute lease on each user it returns, so concurrent polls never email
+ * the same user. Only a successful send starts the 7-day resend window
+ * (mark_quota_email_sent); a failed send releases the lease so the next poll
+ * retries, and a poll that dies mid-batch simply lets its leases expire.
  */
 export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed: number }> {
   const admin = createAdminClient();
@@ -30,18 +31,23 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
           to: user.email,
           requestLimit: user.request_limit,
           periodEnd: new Date(user.period_end),
+          teamBilledEndpoints: user.team_billed_endpoints,
           appUrl,
         })
       );
       sent++;
+      const { error: markError } = await admin.rpc("mark_quota_email_sent", {
+        p_user_id: user.id,
+      });
+      if (markError) console.error("[quota-emails] mark sent failed:", markError.message);
     } catch (sendError) {
       failed++;
       console.error("[quota-emails] send failed:", sendError);
-      const { error: resetError } = await admin
+      const { error: releaseError } = await admin
         .from("users")
-        .update({ quota_email_sent_at: null })
+        .update({ quota_email_claimed_at: null })
         .eq("id", user.id);
-      if (resetError) console.error("[quota-emails] stamp reset failed:", resetError.message);
+      if (releaseError) console.error("[quota-emails] lease release failed:", releaseError.message);
     }
   }
 

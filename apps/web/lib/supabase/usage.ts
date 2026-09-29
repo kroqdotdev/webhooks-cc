@@ -7,6 +7,11 @@ export interface UsageInfo {
   remaining: number;
   plan: UserPlan;
   periodEnd: number | null;
+  /**
+   * Owned endpoints shared with a subscribed team. capture_webhook() bills
+   * those to the team, so they keep capturing when this quota is used up.
+   */
+  teamBilledEndpoints: number;
 }
 
 export async function getUsageForUser(userId: string): Promise<UsageInfo | null> {
@@ -25,6 +30,14 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     return null;
   }
 
+  const { data: teamBilledEndpoints, error: countError } = await admin.rpc(
+    "count_team_billed_endpoints",
+    { p_user_id: userId }
+  );
+  if (countError) {
+    throw countError;
+  }
+
   const now = Date.now();
   const periodEndMs = user.period_end ? Date.parse(user.period_end) : NaN;
   const periodActive = Number.isFinite(periodEndMs) && periodEndMs > now;
@@ -36,5 +49,6 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     remaining: Math.max(0, user.request_limit - used),
     plan: user.plan,
     periodEnd: periodActive ? periodEndMs : null,
+    teamBilledEndpoints: teamBilledEndpoints ?? 0,
   };
 }

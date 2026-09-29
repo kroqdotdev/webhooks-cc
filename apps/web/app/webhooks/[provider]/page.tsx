@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   return createPageMetadata({
     title: page.inSdk
-      ? `Test ${page.label} Webhooks — Free Endpoint & Signed Samples`
+      ? `Test ${page.label} Webhooks: Free Endpoint & Signed Samples`
       : `Test ${page.label} Webhooks: Free Endpoint & Live Inspector`,
     description: page.inSdk
       ? `Capture and inspect ${page.label} webhooks on a free endpoint, send signed sample payloads, and verify ${page.signatureHeader ?? "signature"} headers. No account required to start.`
@@ -175,8 +175,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             {page.label} sends
             {page.inSdk ? (
               <>
-                {" "}
-                — or fire realistic{page.secretRequired ? ", correctly signed" : ""} sample payloads
+                , or fire realistic{page.secretRequired ? ", correctly signed" : ""} sample payloads
                 at your own handler without touching a production account.
               </>
             ) : (
@@ -261,7 +260,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             !page.signatureHeader && (
               <p className="text-sm text-muted-foreground mt-3">
                 {page.label} does not use a conventional signature header
-                {page.slug === "adyen" ? " — the HMAC is embedded in the notification body" : ""}.
+                {page.slug === "adyen" ? "; the HMAC is embedded in the notification body" : ""}.
                 Capture a real delivery to inspect exactly what is sent.
               </p>
             )

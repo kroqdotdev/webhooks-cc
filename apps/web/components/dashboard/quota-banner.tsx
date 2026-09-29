@@ -13,12 +13,16 @@ import { subscribeToUserRow } from "@/lib/supabase/realtime";
 /**
  * Shown while the receiver is rejecting the user's webhooks with 429. Without
  * it a capped user only sees captures stop arriving; usage lives on /account.
+ * Endpoints shared with a subscribed team bill to the team and keep capturing,
+ * so the copy names them as unaffected when the user has any.
  */
 export function QuotaBanner() {
   const { user, session } = useAuth();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [teamBilledEndpoints, setTeamBilledEndpoints] = useState(0);
   const userId = user?.id;
+  const accessToken = session?.access_token ?? null;
 
   useEffect(() => {
     if (!userId) {
@@ -50,6 +54,21 @@ export function QuotaBanner() {
   const exhausted = isQuotaExhausted(profile, nowMs);
   const periodEnd = profile?.period_end ?? null;
 
+  // team_endpoints is not readable by clients, so ask the usage route.
+  useEffect(() => {
+    if (!exhausted || !accessToken) return;
+    let cancelled = false;
+    void fetch("/api/usage", { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((usage: { teamBilledEndpoints?: number } | null) => {
+        if (!cancelled) setTeamBilledEndpoints(usage?.teamBilledEndpoints ?? 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [exhausted, accessToken]);
+
   // Hide the banner when the period resets, even if no row update arrives.
   useEffect(() => {
     if (!exhausted || !periodEnd) return;
@@ -73,8 +92,10 @@ export function QuotaBanner() {
         <div className="flex-1 min-w-64 space-y-1">
           <p className="text-sm font-medium">
             <span className="font-bold">Request limit reached.</span> You have used all{" "}
-            {profile.request_limit.toLocaleString()} requests in this period. New webhooks are
-            rejected with HTTP 429 until {resetsAt}.
+            {profile.request_limit.toLocaleString()} requests in this period. New webhooks to your
+            endpoints are rejected with HTTP 429 until {resetsAt}.
+            {teamBilledEndpoints > 0 &&
+              " Endpoints shared with a team use the team's quota and keep capturing."}
           </p>
           <p className="text-sm text-muted-foreground">
             {isFree
@@ -87,7 +108,7 @@ export function QuotaBanner() {
             for a pooled quota of 100,000 requests per seat.
           </p>
         </div>
-        {isFree && <UpgradeButton accessToken={session?.access_token ?? null} />}
+        {isFree && <UpgradeButton accessToken={accessToken} />}
       </div>
     </div>
   );
