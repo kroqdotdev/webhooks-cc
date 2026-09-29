@@ -5,7 +5,8 @@ import { getWebProviderInfo } from "@/lib/provider-catalog";
 import { getAllWebhookProviderPages } from "@/lib/webhook-provider-pages";
 
 export function ProviderStrip() {
-  const providers = getAllWebhookProviderPages();
+  // The strip promises signed samples, so it lists SDK providers only.
+  const providers = getAllWebhookProviderPages().filter((provider) => provider.inSdk);
 
   return (
     <section className="py-20 px-4 bg-muted">

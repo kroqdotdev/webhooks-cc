@@ -38,8 +38,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!page) return {};
 
   return createPageMetadata({
-    title: `Test ${page.label} Webhooks — Free Endpoint & Signed Samples`,
-    description: `Capture and inspect ${page.label} webhooks on a free endpoint, send signed sample payloads, and verify ${page.signatureHeader ?? "signature"} headers. No account required to start.`,
+    title: page.inSdk
+      ? `Test ${page.label} Webhooks: Free Endpoint & Signed Samples`
+      : `Test ${page.label} Webhooks: Free Endpoint & Live Inspector`,
+    description: page.inSdk
+      ? `Capture and inspect ${page.label} webhooks on a free endpoint, send signed sample payloads, and verify ${page.signatureHeader ?? "signature"} headers. No account required to start.`
+      : `Capture and inspect ${page.label} webhooks on a free endpoint, see every header and payload live, replay deliveries, and forward them to localhost. No account required to start.`,
     path: `/webhooks/${page.slug}`,
     keywords: [
       `test ${page.label.toLowerCase()} webhooks`,
@@ -58,16 +62,29 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
       question: `How do I test ${page.label} webhooks without deploying anything?`,
       answer: `Create a free endpoint on webhooks.cc — sign in with GitHub, Google, or email, or use a guest endpoint without an account — then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
     },
-    {
-      question: `Can I send a sample ${page.label} webhook without a ${page.label} account?`,
-      answer:
-        page.templates.length > 0
-          ? `Yes. webhooks.cc ships ${page.label} templates (${page.templates.slice(0, 3).join(", ")}) with realistic payloads${page.secretRequired ? " and correctly computed signature headers" : ""}. Send them from the dashboard, the SDK, or the MCP server to exercise your handler end-to-end.`
-          : `Yes. webhooks.cc can send signed test payloads following the ${page.label} signing scheme from the dashboard, the SDK, or the MCP server.`,
-    },
+    page.inSdk
+      ? {
+          question: `Can I send a sample ${page.label} webhook without a ${page.label} account?`,
+          answer:
+            page.templates.length > 0
+              ? `Yes. webhooks.cc ships ${page.label} templates (${page.templates.slice(0, 3).join(", ")}) with realistic payloads${page.secretRequired ? " and correctly computed signature headers" : ""}. Send them from the dashboard, the SDK, or the MCP server to exercise your handler end-to-end.`
+              : `Yes. webhooks.cc can send signed test payloads following the ${page.label} signing scheme from the dashboard, the SDK, or the MCP server.`,
+        }
+      : {
+          question: `Can I replay a ${page.label} webhook against my local server?`,
+          answer: `Yes. Capture one real delivery from ${page.label}, then replay it to any URL from the dashboard, or run whk tunnel <port> to forward live deliveries to localhost. webhooks.cc has no built-in ${page.label} sample templates, but the Send button posts any payload and headers you paste in.`,
+        },
   ];
 
-  if (page.signatureHeader) {
+  if (page.signatureHeader && !page.inSdk) {
+    // Capture-only providers include Basic auth and shared-token schemes, so
+    // this wording does not claim the delivery is signed.
+    const scheme = page.signatureAlgorithmLabel ? ` (${page.signatureAlgorithmLabel})` : "";
+    items.push({
+      question: `How do I verify ${page.label} webhooks?`,
+      answer: `${page.label} authenticates each delivery with the ${page.signatureHeader} header${scheme}. ${page.signatureNote ? `${page.signatureNote} ` : ""}Capture a real delivery on webhooks.cc to inspect the exact header value, then implement the check in your handler.`,
+    });
+  } else if (page.signatureHeader) {
     items.push({
       question: `How do I verify ${page.label} webhook signatures?`,
       answer: `${page.label} signs each delivery with the ${page.signatureHeader} header using ${page.signatureAlgorithmLabel ?? page.signatureAlgorithm}. ${page.verifySupported ? `webhooks.cc verifies these signatures for you: add your ${page.credentialLabel.toLowerCase()} to the endpoint and every captured request is marked valid or invalid in the dashboard.` : `Capture a real delivery on webhooks.cc to inspect the exact header value, then implement verification in your handler.`}`,
@@ -155,8 +172,15 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
           </div>
           <p className="text-xl text-muted-foreground mb-6">
             {page.blurb} Capture them on a free webhooks.cc endpoint to see exactly what{" "}
-            {page.label} sends — or fire realistic{page.secretRequired ? ", correctly signed" : ""}{" "}
-            sample payloads at your own handler without touching a production account.
+            {page.label} sends
+            {page.inSdk ? (
+              <>
+                , or fire realistic{page.secretRequired ? ", correctly signed" : ""} sample payloads
+                at your own handler without touching a production account.
+              </>
+            ) : (
+              <>, then replay deliveries or forward them to your local handler.</>
+            )}
           </p>
           <StartFreeCTA goCta="get a guest URL without an account" />
           <p className="text-sm text-muted-foreground mt-4">
@@ -191,14 +215,16 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
 
         {/* Signature details */}
         <section className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold mb-6">{page.label} webhook signature</h2>
+          <h2 className="text-2xl md:text-3xl font-bold mb-6">
+            {page.label} webhook {page.inSdk ? "signature" : "authentication"}
+          </h2>
           <div className="ui-card ui-card-static overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {page.signatureHeader && (
                   <tr className="border-b-strong border-foreground/10">
                     <th className="text-left py-2 pr-6 font-bold whitespace-nowrap">
-                      Signature header
+                      {page.inSdk ? "Signature header" : "Auth header"}
                     </th>
                     <td className="py-2 font-mono">{page.signatureHeader}</td>
                   </tr>
@@ -228,12 +254,16 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               </tbody>
             </table>
           </div>
-          {!page.signatureHeader && (
-            <p className="text-sm text-muted-foreground mt-3">
-              {page.label} does not use a conventional signature header
-              {page.slug === "adyen" ? " — the HMAC is embedded in the notification body" : ""}.
-              Capture a real delivery to inspect exactly what is sent.
-            </p>
+          {page.signatureNote ? (
+            <p className="text-sm text-muted-foreground mt-3">{page.signatureNote}</p>
+          ) : (
+            !page.signatureHeader && (
+              <p className="text-sm text-muted-foreground mt-3">
+                {page.label} does not use a conventional signature header
+                {page.slug === "adyen" ? "; the HMAC is embedded in the notification body" : ""}.
+                Capture a real delivery to inspect exactly what is sent.
+              </p>
+            )
           )}
           <p className="text-sm text-muted-foreground mt-3">
             New to signature verification? Read the{" "}
