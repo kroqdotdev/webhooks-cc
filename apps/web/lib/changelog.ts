@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.31.2";
+export const APP_VERSION = "0.31.3";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.31.3",
+    date: "2026-09-29",
+    title: "Single Sitemap",
+    track: "web",
+    items: [
+      "The sitemap index and its three child sitemaps are replaced by one /sitemap.xml, which robots.txt now points to; the old sitemap URLs redirect to it",
+    ],
+  },
   {
     version: "0.31.2",
     date: "2026-09-25",

@@ -42,6 +42,17 @@ const nextConfig: NextConfig = {
         destination: "/",
         permanent: true,
       },
+      {
+        // The sitemap index and its child sitemaps were folded into one /sitemap.xml.
+        source: "/sitemap-index.xml",
+        destination: "/sitemap.xml",
+        permanent: true,
+      },
+      {
+        source: "/sitemaps/:file",
+        destination: "/sitemap.xml",
+        permanent: true,
+      },
     ];
   },
 };
