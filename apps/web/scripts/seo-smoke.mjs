@@ -36,28 +36,11 @@ async function main() {
   const errors = [];
   const warnings = [];
 
-  // Fetch the sitemap index and extract child sitemap URLs
-  const sitemapIndex = await fetchText(`${baseUrl}/sitemap-index.xml`);
-  if (!sitemapIndex.response.ok) {
-    throw new Error(
-      `Failed to fetch sitemap-index.xml from ${baseUrl}: ${sitemapIndex.response.status}`
-    );
+  const sitemap = await fetchText(`${baseUrl}/sitemap.xml`);
+  if (!sitemap.response.ok) {
+    throw new Error(`Failed to fetch sitemap.xml from ${baseUrl}: ${sitemap.response.status}`);
   }
-
-  const childSitemapUrls = [...sitemapIndex.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-
-  // Collect all page URLs from child sitemaps
-  const sitemapUrls = [];
-  for (const childUrl of childSitemapUrls) {
-    const childPath = normalizePath(childUrl);
-    const child = await fetchText(`${baseUrl}${childPath}`);
-    if (!child.response.ok) {
-      errors.push(`Sitemap ${childPath}: HTTP ${child.response.status}`);
-      continue;
-    }
-    const urls = [...child.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-    sitemapUrls.push(...urls);
-  }
+  const sitemapUrls = [...sitemap.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 
   if (sitemapUrls.length === 0) {
     throw new Error("No URLs found in sitemaps");
@@ -155,14 +138,14 @@ async function main() {
     errors.push("/teams: missing noindex robots meta");
   }
 
-  // Check /sitemap.xml redirects (use redirect: manual to observe the 301)
-  const sitemapXml = await fetchText(`${baseUrl}/sitemap.xml`, { redirect: "manual" });
-  if (sitemapXml.response.status !== 301) {
-    warnings.push(`/sitemap.xml: expected 301, got ${sitemapXml.response.status}`);
-  } else {
-    const location = sitemapXml.response.headers.get("location") || "";
-    if (!location.endsWith("/sitemap-index.xml")) {
-      warnings.push(`/sitemap.xml: redirect target is "${location}", expected /sitemap-index.xml`);
+  // The retired sitemap index and child sitemaps should redirect to /sitemap.xml
+  for (const oldPath of ["/sitemap-index.xml", "/sitemaps/pages.xml"]) {
+    const old = await fetchText(`${baseUrl}${oldPath}`, { redirect: "manual" });
+    const location = old.response.headers.get("location") || "";
+    if (![301, 308].includes(old.response.status) || !location.endsWith("/sitemap.xml")) {
+      warnings.push(
+        `${oldPath}: expected a permanent redirect to /sitemap.xml, got ${old.response.status} ${location}`
+      );
     }
   }
 
