@@ -20,9 +20,9 @@ export interface SitemapPageDefinition {
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
   // /go permanently redirects to / (the landing page is the guest dashboard now)
-  // Individual /webhooks/[provider] pages are appended in sitemaps/pages.xml
+  // Individual /webhooks/[provider] pages are appended in app/sitemap.ts
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
-  // Docs pages are auto-generated from content/docs/ in sitemaps/docs.xml
+  // Docs pages are auto-generated from content/docs/ in app/sitemap.ts
   { path: "/compare", changeFrequency: "monthly", priority: 0.7 },
   { path: "/compare/webhook-site", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/ngrok", changeFrequency: "monthly", priority: 0.6 },
@@ -31,7 +31,7 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   { path: "/compare/hookdeck", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/smee", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/localtunnel", changeFrequency: "monthly", priority: 0.6 },
-  // Blog pages are dynamically generated from Supabase in sitemaps/blog.xml
+  // Blog pages are dynamically generated from Supabase in app/sitemap.ts
   // /api-explorer is noindexed — client-only Scalar viewer, /docs/api owns this query
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
   // /login is noindexed — excluded from sitemap intentionally

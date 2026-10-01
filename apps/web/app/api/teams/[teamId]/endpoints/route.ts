@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { shareEndpointWithTeam } from "@/lib/supabase/teams";
@@ -25,6 +26,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 
   try {
     const result = await shareEndpointWithTeam(auth.userId, teamId, endpointId);
+    await auditUserAction(request, auth.userId, {
+      action: "team.endpoint_shared",
+      status: result.success ? 200 : 400,
+      reason: result.success ? undefined : result.error,
+      teamId,
+      targetId: endpointId,
+    });
     if (!result.success) {
       return applyRateLimitHeaders(
         Response.json({ error: result.error }, { status: 400 }),
@@ -34,6 +42,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
     return applyRateLimitHeaders(Response.json({ success: true }), rateLimit);
   } catch (error) {
     console.error("Failed to share endpoint:", error);
+    await auditUserAction(request, auth.userId, {
+      action: "team.endpoint_shared",
+      status: 500,
+      teamId,
+      targetId: endpointId,
+    });
     return applyRateLimitHeaders(
       Response.json({ error: "Internal server error" }, { status: 500 }),
       rateLimit

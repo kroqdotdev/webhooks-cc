@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
@@ -120,6 +121,12 @@ export async function POST(request: Request) {
           : undefined,
     });
 
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.created",
+      status: 200,
+      targetId: created.slug,
+      metadata: { endpoint_id: created.id, ephemeral: isEphemeral },
+    });
     return applyRateLimitHeaders(Response.json(created), rateLimit);
   } catch (error) {
     if (error instanceof Error && error.message.includes("Too many active demo endpoints")) {
@@ -130,6 +137,7 @@ export async function POST(request: Request) {
     }
 
     console.error("Failed to create endpoint:", error);
+    await auditUserAction(request, auth.userId, { action: "endpoint.created", status: 500 });
     return applyRateLimitHeaders(
       Response.json({ error: "Internal server error" }, { status: 500 }),
       rateLimit

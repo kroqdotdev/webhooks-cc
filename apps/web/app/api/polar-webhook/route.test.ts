@@ -4,6 +4,11 @@ const mockFns = vi.hoisted(() => ({
   validateEvent: vi.fn(),
   applyPolarWebhookEvent: vi.fn(),
   applyTeamPolarWebhookEvent: vi.fn(),
+  auditPolarEvent: vi.fn(),
+}));
+
+vi.mock("@/lib/audit", () => ({
+  auditPolarEvent: mockFns.auditPolarEvent,
 }));
 
 vi.mock("@polar-sh/sdk/webhooks", async (importOriginal) => {
@@ -72,6 +77,12 @@ describe("POST /api/polar-webhook", () => {
       data
     );
     expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
+    expect(mockFns.auditPolarEvent).toHaveBeenCalledWith({
+      eventType: "subscription.updated",
+      teamId: "team_meta",
+      data,
+      outcome: "ok",
+    });
   });
 
   test("routes team: externalId events to the team handler", async () => {
@@ -140,6 +151,12 @@ describe("POST /api/polar-webhook", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({ error: "internal_error" });
+    expect(mockFns.auditPolarEvent).toHaveBeenCalledWith({
+      eventType: "subscription.canceled",
+      teamId: "team_meta",
+      data,
+      outcome: "error",
+    });
     consoleError.mockRestore();
   });
 
@@ -170,5 +187,6 @@ describe("POST /api/polar-webhook", () => {
     await expect(response.json()).resolves.toEqual({ error: "invalid_signature" });
     expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
     expect(mockFns.applyTeamPolarWebhookEvent).not.toHaveBeenCalled();
+    expect(mockFns.auditPolarEvent).not.toHaveBeenCalled();
   });
 });

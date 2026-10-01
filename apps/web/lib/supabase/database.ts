@@ -364,6 +364,8 @@ export interface Database {
           requests_used: number;
           request_limit: number;
           created_at: string;
+          quota_email_sent_at: string | null;
+          quota_email_claimed_at: string | null;
         };
         Insert: {
           id: string;
@@ -380,6 +382,8 @@ export interface Database {
           requests_used?: number;
           request_limit?: number;
           created_at?: string;
+          quota_email_sent_at?: string | null;
+          quota_email_claimed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -396,6 +400,8 @@ export interface Database {
           requests_used?: number;
           request_limit?: number;
           created_at?: string;
+          quota_email_sent_at?: string | null;
+          quota_email_claimed_at?: string | null;
         };
         Relationships: [];
       };
@@ -496,6 +502,8 @@ export interface Database {
           period_end: string | null;
           cancel_at_period_end: boolean;
           pending_checkout: Json | null;
+          pending_seats: number | null;
+          pending_seats_as_of: string | null;
         };
         Insert: {
           id?: string;
@@ -512,6 +520,8 @@ export interface Database {
           period_end?: string | null;
           cancel_at_period_end?: boolean;
           pending_checkout?: Json | null;
+          pending_seats?: number | null;
+          pending_seats_as_of?: string | null;
         };
         Update: {
           id?: string;
@@ -528,7 +538,55 @@ export interface Database {
           period_end?: string | null;
           cancel_at_period_end?: boolean;
           pending_checkout?: Json | null;
+          pending_seats?: number | null;
+          pending_seats_as_of?: string | null;
         };
+        Relationships: [];
+      };
+      audit_events: {
+        Row: {
+          id: number;
+          occurred_at: string;
+          actor_type: "user" | "polar" | "system";
+          actor_user_id: string | null;
+          via: "session" | "api_key" | null;
+          user_agent: string | null;
+          action: string;
+          outcome: "ok" | "refused" | "error";
+          team_id: string | null;
+          target_user_id: string | null;
+          target_id: string | null;
+          metadata: Json;
+        };
+        Insert: {
+          occurred_at?: string;
+          actor_type: "user" | "polar" | "system";
+          actor_user_id?: string | null;
+          via?: "session" | "api_key" | null;
+          user_agent?: string | null;
+          action: string;
+          outcome?: "ok" | "refused" | "error";
+          team_id?: string | null;
+          target_user_id?: string | null;
+          target_id?: string | null;
+          metadata?: Json;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      endpoint_daily_stats: {
+        Row: {
+          endpoint_id: string;
+          day: string;
+          user_id: string | null;
+          team_id: string | null;
+          captured: number;
+          team_billed: number;
+          quota_rejected: number;
+          bytes: number;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
         Relationships: [];
       };
     };
@@ -550,6 +608,13 @@ export interface Database {
         Returns: Json;
       };
       update_team_seats: {
+        Args: {
+          p_team_id: string;
+          p_seats: number;
+        };
+        Returns: Json;
+      };
+      schedule_team_seat_reduction: {
         Args: {
           p_team_id: string;
           p_seats: number;
@@ -604,6 +669,24 @@ export interface Database {
           p_from_ms?: number | null;
           p_to_ms?: number | null;
         };
+        Returns: number;
+      };
+      claim_quota_exhausted_users: {
+        Args: { p_limit?: number };
+        Returns: Array<{
+          id: string;
+          email: string;
+          request_limit: number;
+          period_end: string;
+          team_billed_endpoints: number;
+        }>;
+      };
+      mark_quota_email_sent: {
+        Args: { p_user_id: string };
+        Returns: undefined;
+      };
+      count_team_billed_endpoints: {
+        Args: { p_user_id: string };
         Returns: number;
       };
     };
