@@ -1,8 +1,4 @@
-.PHONY: dev dev-all dev-web dev-receiver dev-cli build build-receiver build-cli test test-full lint clean prod prod-web prod-receiver start
-
-# Ensure user systemd bus is reachable (needed in Proxmox xterm.js / non-login shells)
-export XDG_RUNTIME_DIR ?= /run/user/$(shell id -u)
-export DBUS_SESSION_BUS_ADDRESS ?= unix:path=$(XDG_RUNTIME_DIR)/bus
+.PHONY: dev dev-all dev-web dev-receiver dev-cli build build-receiver build-cli test test-full lint clean
 
 # Development
 dev:
@@ -17,26 +13,6 @@ dev-receiver:
 dev-cli:
 	cd apps/cli-rs && cargo run -- $(ARGS)
 
-# Production (systemd services + mprocs log viewer)
-prod:
-	@echo "Ensuring services are running..."
-	@systemctl --user start webhooks-web webhooks-receiver
-	@sudo systemctl start appsignal-collector
-	@echo "Opening log viewer (mprocs)..."
-	mprocs --config mprocs.yaml
-
-prod-status:
-	@systemctl --user status webhooks-web webhooks-receiver
-	@sudo systemctl status appsignal-collector
-
-prod-stop:
-	@systemctl --user stop webhooks-web webhooks-receiver
-	@sudo systemctl stop appsignal-collector
-
-prod-restart:
-	@systemctl --user restart webhooks-web webhooks-receiver
-	@sudo systemctl restart appsignal-collector
-
 # Build
 build:
 	mkdir -p dist
@@ -47,34 +23,6 @@ build:
 build-receiver:
 	mkdir -p dist
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release && cp target/release/webhooks-receiver ../../dist/receiver
-
-# Deploy (build + restart)
-deploy-receiver:
-	@mkdir -p dist
-	@echo "Building receiver..."
-	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo build --release
-	@echo "Stopping receiver (draining requests)..."
-	-@systemctl --user stop webhooks-receiver
-	@cp apps/receiver-rs/target/release/webhooks-receiver dist/receiver
-	@echo "Starting receiver..."
-	@systemctl --user start webhooks-receiver
-	@echo "Receiver deployed."
-
-deploy-web:
-	@echo "Building web app..."
-	pnpm build
-	@echo "Restarting web server..."
-	@systemctl --user restart webhooks-web
-	@echo "Submitting URLs to IndexNow..."
-	-pnpm --filter web indexnow
-	@echo "Web deployed."
-
-deploy-collector:
-	@echo "Restarting collector..."
-	@sudo systemctl restart appsignal-collector
-	@echo "Collector restarted."
-
-deploy-all: deploy-receiver deploy-web
 
 build-cli:
 	cd apps/cli-rs && cargo build --release
@@ -96,10 +44,6 @@ test-full:
 lint:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
 	cd apps/cli-rs && cargo clippy -- -D warnings
-
-# Start (alias for prod — ensures services are running + opens log viewer)
-start:
-	@make prod
 
 # Clean
 clean:
