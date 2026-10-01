@@ -698,9 +698,16 @@ export async function revokeTeamSeat(
   }
 }
 
-function isSeatAlreadyAssigned(error: unknown): boolean {
+/** The `error` code from a Polar API error body, e.g. "SeatNotAvailable". */
+export function polarErrorCode(error: unknown): string | null {
   const body = (error as { body?: unknown } | null)?.body;
-  return typeof body === "string" && body.includes("SeatAlreadyAssigned");
+  if (typeof body !== "string") return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    return typeof parsed.error === "string" ? parsed.error : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -725,7 +732,7 @@ export async function ensureOwnerSeat(teamId: string): Promise<void> {
       .eq("role", "owner")
       .maybeSingle();
     if (ownerError) throw ownerError;
-    if (!owner || owner.polar_seat_id) return;
+    if (!owner) return;
 
     const { data: team, error: teamError } = await admin
       .from("teams")
@@ -746,27 +753,42 @@ export async function ensureOwnerSeat(teamId: string): Promise<void> {
     const email = user.email;
 
     const polar = createPolarClient();
-    const findOwnerSeatId = async (): Promise<string | null> => {
+    const wanted = email.toLowerCase();
+    const listOwnerSeats = async () => {
       const list = unwrapPolarResult(
         await polar.customerSeats.listSeats({ subscriptionId }),
         "team seat list"
       );
-      const wanted = email.toLowerCase();
-      const match = list.seats.find(
+      return list.seats.filter(
         (seat) =>
           seat.status !== "revoked" &&
           (seat.customerEmail?.toLowerCase() === wanted || seat.email?.toLowerCase() === wanted)
       );
-      return match?.id ?? null;
     };
 
-    let seatId = await findOwnerSeatId();
+    const ownerSeats = await listOwnerSeats();
+    if (owner.polar_seat_id) {
+      // The stored id must still be the owner's live seat in THIS subscription:
+      // a revoked subscription leaves the old id behind, and Polar hands
+      // revoked seat ids to other people when it recycles them.
+      if (ownerSeats.some((seat) => seat.id === owner.polar_seat_id)) return;
+
+      const { error: clearError } = await admin
+        .from("team_members")
+        .update({ polar_seat_id: null })
+        .eq("team_id", teamId)
+        .eq("user_id", owner.user_id)
+        .eq("polar_seat_id", owner.polar_seat_id);
+      if (clearError) throw clearError;
+    }
+
+    let seatId: string | null = ownerSeats[0]?.id ?? null;
     if (!seatId) {
       try {
         seatId = await assignTeamSeat(teamId, email, owner.user_id);
       } catch (error) {
-        if (!isSeatAlreadyAssigned(error)) throw error;
-        seatId = await findOwnerSeatId();
+        if (polarErrorCode(error) !== "SeatAlreadyAssigned") throw error;
+        seatId = (await listOwnerSeats())[0]?.id ?? null;
       }
     }
     if (!seatId) return;

@@ -881,22 +881,66 @@ describe("ensureOwnerSeat", () => {
     expect(memberUpdates()[0].payload).toEqual({ polar_seat_id: "seat_auto" });
   });
 
-  test("does nothing when the owner already has a seat or the team is inactive", async () => {
+  test("does nothing for an inactive team", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
-        "team_members:select": [
-          { data: { user_id: "user_owner", polar_seat_id: "seat_1" } },
-          ownerRow,
-        ],
+        "team_members:select": [ownerRow],
         "teams:select": [{ data: { polar_subscription_id: null, subscription_status: null } }],
       })
     );
 
     await ensureOwnerSeat("team_1");
-    await ensureOwnerSeat("team_1");
 
     expect(mockFns.createPolarClient).not.toHaveBeenCalled();
     expect(memberUpdates()).toEqual([]);
+  });
+
+  test("keeps a stored seat that is still the owner's live seat", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { user_id: "user_owner", polar_seat_id: "seat_1" } }],
+        "teams:select": [activeTeam],
+        "users:select": [ownerUser],
+      })
+    );
+    const listSeats = vi.fn().mockResolvedValue({
+      seats: [{ id: "seat_1", status: "claimed", email: "owner@example.com" }],
+    });
+    const assignSeat = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(assignSeat).not.toHaveBeenCalled();
+    expect(memberUpdates()).toEqual([]);
+  });
+
+  test("replaces a stale seat id left by an earlier subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { user_id: "user_owner", polar_seat_id: "seat_old" } }],
+        "teams:select": [activeTeam, { data: { polar_subscription_id: "sub_1" } }],
+        "users:select": [ownerUser],
+        "team_members:update": [{}, {}],
+      })
+    );
+    // seat_old is not in the current subscription (or was recycled to someone
+    // else), so it must be cleared and a fresh seat assigned.
+    const listSeats = vi.fn().mockResolvedValue({
+      seats: [{ id: "seat_old", status: "claimed", email: "someone-else@example.com" }],
+    });
+    const assignSeat = vi.fn().mockResolvedValue({ id: "seat_new" });
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(assignSeat).toHaveBeenCalled();
+    expect(memberUpdates().map((call) => call.payload)).toEqual([
+      { polar_seat_id: null },
+      { polar_seat_id: "seat_new" },
+    ]);
+    const clear = recordedFilters.find((c) => c.table === "team_members" && c.op === "update");
+    expect(clear!.filters).toContainEqual(["eq", "polar_seat_id", "seat_old"]);
   });
 
   test("treats SeatAlreadyAssigned from a concurrent delivery as success", async () => {

@@ -2,7 +2,7 @@ import { sendEmail } from "@/lib/email/mailer";
 import { buildTeamInviteEmail } from "@/lib/email/team-invite-email";
 import { publicEnv } from "@/lib/env";
 import { createAdminClient } from "./admin";
-import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
+import { assignTeamSeat, polarErrorCode, revokeTeamSeat } from "./team-billing";
 import { requireActiveTeam, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
 import type { TeamInvite, TeamInviteRow } from "./teams-types";
 
@@ -468,9 +468,20 @@ export async function acceptInvite(
 
   if (memberError) throw memberError;
 
-  const seatId = existingMember
-    ? null
-    : await assignTeamSeat(invite.team_id, invite.invited_email, userId);
+  let seatId: string | null = null;
+  if (!existingMember) {
+    try {
+      seatId = await assignTeamSeat(invite.team_id, invite.invited_email, userId);
+    } catch (error) {
+      // Polar's seat count matches ours (the owner holds one), so a full team
+      // is refused here, before the RPC's own capacity check runs. The invite
+      // is untouched and stays pending, as the RPC's "full" path leaves it.
+      if (polarErrorCode(error) === "SeatNotAvailable") {
+        return { accepted: false, error: NO_SEATS_MESSAGE, teamId: invite.team_id };
+      }
+      throw error;
+    }
+  }
 
   // Atomic: claim invite + enforce the seat cap + insert member in one transaction
   let result: { status: string };
