@@ -1,7 +1,0 @@
-procs:
-  web:
-    cmd: ["journalctl", "--user", "-u", "webhooks-web", "-f", "--no-hostname", "-o", "cat"]
-  receiver:
-    cmd: ["journalctl", "--user", "-u", "webhooks-receiver", "-f", "--no-hostname", "-o", "cat"]
-  collector:
-    cmd: ["sudo", "journalctl", "-u", "appsignal-collector", "-f", "--no-hostname", "-o", "cat"]

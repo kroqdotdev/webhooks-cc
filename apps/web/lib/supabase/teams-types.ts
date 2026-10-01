@@ -29,6 +29,8 @@ export interface Team {
   /** End of the current billing period in millis; null when unsubscribed. */
   periodEnd: number | null;
   cancelAtPeriodEnd: boolean;
+  /** Seat count a scheduled reduction applies at the next renewal; null when none. */
+  pendingSeats: number | null;
 }
 
 export interface TeamMember {

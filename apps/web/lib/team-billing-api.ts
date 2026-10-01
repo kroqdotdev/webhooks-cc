@@ -1,5 +1,7 @@
 "use client";
 
+import type { SeatChangeQuote } from "@/lib/team-pricing";
+
 /**
  * Browser-side wrappers for `/api/teams/[teamId]/billing/*`.
  *
@@ -74,4 +76,18 @@ export async function updateTeamSeats(
     billingRequest(accessToken, { seats })
   );
   if (!response.ok) throw new Error(await readError(response));
+}
+
+/** Exact charge or credit for changing to `seats`, priced by the server from Polar's data. */
+export async function quoteTeamSeats(
+  accessToken: string,
+  teamId: string,
+  seats: number
+): Promise<SeatChangeQuote> {
+  const response = await fetch(
+    `/api/teams/${teamId}/billing/seats?seats=${encodeURIComponent(String(seats))}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()) as SeatChangeQuote;
 }
