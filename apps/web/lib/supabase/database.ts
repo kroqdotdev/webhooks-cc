@@ -503,6 +503,7 @@ export interface Database {
           cancel_at_period_end: boolean;
           pending_checkout: Json | null;
           pending_seats: number | null;
+          pending_seats_as_of: string | null;
         };
         Insert: {
           id?: string;
@@ -520,6 +521,7 @@ export interface Database {
           cancel_at_period_end?: boolean;
           pending_checkout?: Json | null;
           pending_seats?: number | null;
+          pending_seats_as_of?: string | null;
         };
         Update: {
           id?: string;
@@ -537,6 +539,7 @@ export interface Database {
           cancel_at_period_end?: boolean;
           pending_checkout?: Json | null;
           pending_seats?: number | null;
+          pending_seats_as_of?: string | null;
         };
         Relationships: [];
       };

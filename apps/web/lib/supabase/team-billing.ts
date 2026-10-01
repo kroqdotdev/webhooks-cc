@@ -474,7 +474,10 @@ export async function updateTeamSeats(
       }
       throw error;
     }
-    unwrapPolarResult(result, "team seat update");
+    const increased = unwrapPolarResult(result, "team seat update") as unknown as Record<
+      string,
+      unknown
+    >;
 
     const { data, error } = await admin.rpc("update_team_seats", {
       p_team_id: teamId,
@@ -496,6 +499,18 @@ export async function updateTeamSeats(
         throw error;
       }
       throw new TeamBillingError("seat_update_failed", "Failed to update seats");
+    }
+
+    // Adding seats drops any pending reduction in Polar (update_team_seats
+    // already cleared the row); record the version so a late event for the
+    // dropped schedule cannot bring it back.
+    try {
+      await syncPendingSeats(teamId, team.polar_subscription_id, increased);
+    } catch (syncError) {
+      console.error("[team-billing] failed to record the seat schedule from Polar", {
+        teamId,
+        syncError,
+      });
     }
 
     return;
@@ -535,37 +550,49 @@ export async function updateTeamSeats(
 
   const previousPending =
     typeof rpcResult?.previous_pending_seats === "number" ? rpcResult.previous_pending_seats : null;
+  // What the RPC stored: the current count clears the schedule.
+  const recordedPending = seats === team.seats ? null : seats;
 
+  let updated: Record<string, unknown>;
   try {
     const polar = createPolarClient();
     const result = await polar.subscriptions.update({
       id: team.polar_subscription_id,
       subscriptionUpdate: { seats, prorationBehavior: "next_period" },
     });
-    unwrapPolarResult(result, "team seat update");
+    updated = unwrapPolarResult(result, "team seat update") as unknown as Record<string, unknown>;
   } catch (polarError) {
-    // Polar never saw the change, so put the previous schedule back (the same
-    // RPC, so the restore also serializes against invite accepts). If the
-    // restore fails, the next subscription webhook rewrites pending_seats from
-    // Polar; surface the original Polar error either way.
-    const { data: restoreData, error: restoreError } = await admin.rpc(
-      "schedule_team_seat_reduction",
-      { p_team_id: teamId, p_seats: previousPending ?? team.seats }
-    );
-
-    const restoreStatus = asRecord(restoreData)
-      ? asNonEmptyString(asRecord(restoreData)!.status)
-      : null;
-    if (restoreError || restoreStatus !== "ok") {
+    // Polar never saw the change, so put the previous schedule back, but only
+    // while the row still holds this request's value: an overlapping request
+    // that has since scheduled something else (and told Polar) must not be
+    // undone. If the restore fails, the next subscription webhook rewrites
+    // pending_seats from Polar; surface the original Polar error either way.
+    let restore = admin.from("teams").update({ pending_seats: previousPending }).eq("id", teamId);
+    restore =
+      recordedPending === null
+        ? restore.is("pending_seats", null)
+        : restore.eq("pending_seats", recordedPending);
+    const { error: restoreError } = await restore;
+    if (restoreError) {
       console.error("[team-billing] failed to restore the seat schedule after a Polar error", {
         teamId,
         previousPending,
         restoreError,
-        restoreStatus,
       });
     }
 
     throw polarError;
+  }
+
+  // Record Polar's own view (and its version) now rather than waiting for the
+  // webhook, so a late event for an earlier change is already outdated.
+  try {
+    await syncPendingSeats(teamId, team.polar_subscription_id, updated);
+  } catch (syncError) {
+    console.error("[team-billing] failed to record the seat schedule from Polar", {
+      teamId,
+      syncError,
+    });
   }
 }
 
@@ -892,6 +919,36 @@ function pendingSeatsFromEvent(data: Record<string, unknown>): number | null {
   return typeof seats === "number" && Number.isInteger(seats) && seats > 0 ? seats : null;
 }
 
+/**
+ * Mirrors a Polar subscription's scheduled seat change into
+ * `teams.pending_seats`, accepting only a newer `modifiedAt` than the one
+ * already applied: a late or retried event for an earlier change must not
+ * restore a schedule (and with it a looser member cap) that Polar has since
+ * replaced. `subscription` is a webhook payload or an API response.
+ */
+async function syncPendingSeats(
+  teamId: string,
+  subscriptionId: string,
+  subscription: Record<string, unknown>
+): Promise<void> {
+  const asOf = parseEventTimestamp(subscription.modifiedAt);
+  if (asOf === null) {
+    return;
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("teams")
+    .update({ pending_seats: pendingSeatsFromEvent(subscription), pending_seats_as_of: asOf })
+    .eq("id", teamId)
+    .eq("polar_subscription_id", subscriptionId)
+    .or(`pending_seats_as_of.is.null,pending_seats_as_of.lt."${asOf}"`);
+
+  if (error) {
+    throw error;
+  }
+}
+
 async function applyTeamSubscriptionState(
   eventType: string,
   teamId: string,
@@ -1020,9 +1077,6 @@ async function applyTeamSubscriptionState(
       typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
     // The checkout that produced this subscription is no longer pending.
     pending_checkout: null,
-    // Mirror Polar's scheduled seat change (a reduction booked with
-    // "next_period"). It clears itself when the renewal applies it.
-    pending_seats: pendingSeatsFromEvent(data),
   };
 
   // Every write is compare-and-swapped on the state that was read. This keeps
@@ -1047,6 +1101,13 @@ async function applyTeamSubscriptionState(
 
   const { error: guardedError } = await guarded;
   if (guardedError) throw guardedError;
+
+  // Separately from the guarded write above: seat changes within one period
+  // share its subscription id and period start, so the pending schedule is
+  // versioned by the subscription's modified_at instead.
+  if (subscriptionId !== null) {
+    await syncPendingSeats(teamId, subscriptionId, data);
+  }
 }
 
 /**
@@ -1255,6 +1316,8 @@ export async function applyTeamPolarWebhookEvent(
         // A pre-revoke checkout session must not be resurrected by the reuse
         // path after a resubscribe.
         pending_checkout: null,
+        pending_seats: null,
+        pending_seats_as_of: null,
       });
       return;
     }

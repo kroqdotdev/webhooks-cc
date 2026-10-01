@@ -9,9 +9,12 @@
 -- pending update. Polar applies it when the next period starts.
 --
 --  1. teams.pending_seats mirrors that pending update (null when none). The
---     web app writes it when a reduction is scheduled or cancelled, and every
---     subscription webhook overwrites it from Polar's pending_update, so the
---     row converges on Polar either way.
+--     web app writes it when a reduction is scheduled or cancelled, and
+--     subscription webhooks overwrite it from Polar's pending_update, so the
+--     row converges on Polar. pending_seats_as_of is the Polar subscription's
+--     modified_at that the value came from: several seat changes in one
+--     period share the subscription id and period start, so only this
+--     version can tell a late or retried event from the latest state.
 --
 --  2. schedule_team_seat_reduction() records a reduction under the same row
 --     lock accept_team_invite takes, refusing a count below the current
@@ -29,7 +32,8 @@
 
 alter table public.teams
   add column if not exists pending_seats integer
-    check (pending_seats is null or (pending_seats >= 1 and pending_seats <= 1000));
+    check (pending_seats is null or (pending_seats >= 1 and pending_seats <= 1000)),
+  add column if not exists pending_seats_as_of timestamptz;
 
 -- ----------------------------------------------------------------------------
 -- 2. schedule_team_seat_reduction

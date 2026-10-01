@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
+import { applyTeamPolarWebhookEvent } from "@/lib/supabase/team-billing";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -138,5 +139,39 @@ describe("scheduled seat reductions", () => {
     if (error) throw error;
     expect((data as { status: string }).status).toBe("ok");
     expect(await team()).toEqual({ seats: 5, pending_seats: null, request_limit: 500_000 });
+  });
+
+  it("ignores a late webhook for an earlier schedule", async () => {
+    const subscriptionId = `sub_seat_schedule_${ts}`;
+    const event = (modifiedAt: string, pendingSeats: number | null) => ({
+      id: subscriptionId,
+      status: "active",
+      seats: 5,
+      modifiedAt: new Date(modifiedAt),
+      pendingUpdate: pendingSeats === null ? null : { seats: pendingSeats },
+    });
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      teamId,
+      event("2026-10-01T10:00:02.000Z", 3)
+    );
+    expect((await team()).pending_seats).toBe(3);
+
+    // The retried event for the earlier reduction to 4 must not loosen the cap.
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      teamId,
+      event("2026-10-01T10:00:01.000Z", 4)
+    );
+    expect((await team()).pending_seats).toBe(3);
+
+    // A newer event (e.g. the reduction was cancelled) still applies.
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      teamId,
+      event("2026-10-01T10:00:03.000Z", null)
+    );
+    expect((await team()).pending_seats).toBeNull();
   });
 });

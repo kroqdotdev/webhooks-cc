@@ -755,16 +755,13 @@ describe("updateTeamSeats", () => {
     expect(consoleError).toHaveBeenCalled();
   });
 
-  test("reduction: restores the previous schedule when Polar rejects the update", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  test("reduction: restores the previous schedule only while it still holds this request", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
         "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6, pending_seats: 4 })],
-        "rpc:schedule_team_seat_reduction": [
-          { data: { status: "ok", previous_pending_seats: 4 } },
-          { data: { status: "ok", previous_pending_seats: 3 } },
-        ],
+        "rpc:schedule_team_seat_reduction": [{ data: { status: "ok", previous_pending_seats: 4 } }],
+        "teams:update": [{}],
       })
     );
 
@@ -773,12 +770,52 @@ describe("updateTeamSeats", () => {
 
     await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toThrow("polar down");
 
+    const restore = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
     expect(recorded).toContainEqual({
-      table: "rpc:schedule_team_seat_reduction",
-      op: "rpc",
-      payload: { p_team_id: "team_1", p_seats: 4 },
+      table: "teams",
+      op: "update",
+      payload: { pending_seats: 4 },
     });
-    expect(consoleError).not.toHaveBeenCalled();
+    // An overlapping request that scheduled something else since must win.
+    expect(restore!.filters).toContainEqual(["eq", "pending_seats", 3]);
+  });
+
+  test("reduction: records Polar's resulting schedule with its version", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({ polar_subscription_id: "sub_1", seats: 6, pending_seats: null }),
+        ],
+        "rpc:schedule_team_seat_reduction": [
+          { data: { status: "ok", previous_pending_seats: null } },
+        ],
+        "teams:update": [{}],
+      })
+    );
+    const modifiedAt = new Date("2026-10-01T14:00:00.123Z");
+    const subscriptionUpdate = vi.fn().mockResolvedValue({
+      id: "sub_1",
+      seats: 6,
+      modifiedAt,
+      pendingUpdate: { seats: 3, appliesAt: new Date("2026-11-01T00:00:00Z") },
+    });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await updateTeamSeats("user_1", "team_1", 3);
+
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: { pending_seats: 3, pending_seats_as_of: modifiedAt.toISOString() },
+    });
+    const sync = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
+    expect(sync!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
+    expect(sync!.filters).toContainEqual([
+      "or",
+      `pending_seats_as_of.is.null,pending_seats_as_of.lt."${modifiedAt.toISOString()}"`,
+      null,
+    ]);
   });
 });
 
@@ -1326,7 +1363,7 @@ describe("subscription event guards", () => {
     });
   });
 
-  test("mirrors Polar's scheduled seat change into pending_seats", async () => {
+  test("mirrors Polar's scheduled seat change, versioned by modifiedAt", async () => {
     const liveRow = {
       data: {
         polar_subscription_id: "sub_1",
@@ -1336,28 +1373,56 @@ describe("subscription event guards", () => {
       },
     };
     mockFns.createAdminClient.mockReturnValue(
-      createFakeAdmin({ "teams:select": [liveRow, liveRow], "teams:update": [{}, {}] })
+      createFakeAdmin({ "teams:select": [liveRow], "teams:update": [{}, {}] })
     );
+    const modifiedAt = new Date("2026-08-10T12:00:00.000Z");
 
     await applyTeamPolarWebhookEvent(
       "subscription.updated",
       "team_1",
       subscriptionEvent("sub_1", {
         seats: 5,
+        modifiedAt,
         pendingUpdate: { seats: 3, appliesAt: new Date("2026-08-31T00:00:00Z") },
       })
     );
+
+    // The state write keeps the paid seats; the schedule is a separate,
+    // version-guarded write so a late event for an earlier change loses.
+    expect(teamsUpdates()[0].payload).toMatchObject({ seats: 5, request_limit: 500_000 });
+    expect(teamsUpdates()[0].payload).not.toHaveProperty("pending_seats");
+    expect(teamsUpdates()[1].payload).toEqual({
+      pending_seats: 3,
+      pending_seats_as_of: modifiedAt.toISOString(),
+    });
+    const sync = recordedFilters.filter((c) => c.table === "teams" && c.op === "update")[1];
+    expect(sync.filters).toContainEqual([
+      "or",
+      `pending_seats_as_of.is.null,pending_seats_as_of.lt."${modifiedAt.toISOString()}"`,
+      null,
+    ]);
+  });
+
+  test("an event without modifiedAt leaves the schedule alone", async () => {
+    const liveRow = {
+      data: {
+        polar_subscription_id: "sub_1",
+        subscription_status: "active",
+        seats: 5,
+        period_start: "2026-08-01T00:00:00.000Z",
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [liveRow], "teams:update": [{}] })
+    );
+
     await applyTeamPolarWebhookEvent(
       "subscription.updated",
       "team_1",
-      subscriptionEvent("sub_1", { seats: 5, pendingUpdate: null })
+      subscriptionEvent("sub_1", { pendingUpdate: { seats: 3 } })
     );
 
-    expect(
-      teamsUpdates().map((call) => (call.payload as { pending_seats: unknown }).pending_seats)
-    ).toEqual([3, null]);
-    // The paid seats and pool stay until the renewal applies the change.
-    expect(teamsUpdates()[0].payload).toMatchObject({ seats: 5, request_limit: 500_000 });
+    expect(teamsUpdates()).toHaveLength(1);
   });
 
   test("the renewal reset is conditioned on the observed subscription id and period start", async () => {
