@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.6";
+export const APP_VERSION = "0.32.7";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.7",
+    date: "2026-10-01",
+    title: "Dependency Security Updates",
+    track: "web",
+    items: [
+      "Next.js moved to 16.3.6 for the critical advisory GHSA-vcvr-r3jv-pc5j",
+      "Transitive dependency floors raised for @grpc/grpc-js (1.14.5), dompurify (3.4.16), ip-address (10.7.1), and brace-expansion (1.1.21, 2.1.7, and 5.0.12) to pick up their security fixes",
+      "Routine dependency bumps: Supabase JS, resend, lucide-react, simple-icons, the development tooling group, plus the OpenTelemetry crates, redis, thiserror, and rand on the Rust side",
+    ],
+  },
   {
     version: "0.32.6",
     date: "2026-10-01",
