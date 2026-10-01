@@ -49,7 +49,7 @@
     "remark-gfm": "^4.0.1",
     "resend": "^6.30.0",
     "shiki": "^4.4.3",
-    "simple-icons": "^16.31.0",
+    "simple-icons": "^16.33.0",
     "source-map-support": "^0.5.21",
     "tailwind-merge": "^3.7.0",
     "unist-util-visit": "^5.1.0",
