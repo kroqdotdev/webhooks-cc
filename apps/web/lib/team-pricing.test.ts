@@ -5,7 +5,9 @@ import {
   MAX_TEAM_SEATS,
   MIN_TEAM_SEATS,
   clampSeats,
+  estimateSeatProration,
   formatSeatPricing,
+  formatUsd,
 } from "./team-pricing";
 
 describe("formatSeatPricing", () => {
@@ -42,5 +44,38 @@ describe("clampSeats", () => {
   test("falls back to the default when the input is not a number", () => {
     expect(clampSeats(NaN)).toBe(DEFAULT_TEAM_SEATS);
     expect(clampSeats(Infinity)).toBe(DEFAULT_TEAM_SEATS);
+  });
+});
+
+describe("estimateSeatProration", () => {
+  const periodEnd = Date.parse("2026-10-30T00:41:48Z");
+
+  test("charges a full seat at the start of the period", () => {
+    const start = Date.parse("2026-09-30T00:41:48Z");
+    expect(estimateSeatProration(1, periodEnd, start)).toBeCloseTo(12, 5);
+  });
+
+  test("prorates by the time left in the billing month", () => {
+    // Kargo's fourth seat: added 20:40 UTC on the first day of a 30-day month.
+    const added = Date.parse("2026-09-30T20:40:32Z");
+    expect(estimateSeatProration(1, periodEnd, added)).toBeCloseTo(11.67, 2);
+  });
+
+  test("scales with the number of seats and ignores direction", () => {
+    const midway = Date.parse("2026-10-15T00:41:48Z");
+    expect(estimateSeatProration(3, periodEnd, midway)).toBeCloseTo(18, 5);
+    expect(estimateSeatProration(-3, periodEnd, midway)).toBeCloseTo(18, 5);
+  });
+
+  test("is zero once the period has ended and unknown without a period", () => {
+    expect(estimateSeatProration(1, periodEnd, periodEnd + 1000)).toBe(0);
+    expect(estimateSeatProration(1, null)).toBeNull();
+  });
+});
+
+describe("formatUsd", () => {
+  test("always shows cents", () => {
+    expect(formatUsd(11.666)).toBe("$11.67");
+    expect(formatUsd(12)).toBe("$12.00");
   });
 });

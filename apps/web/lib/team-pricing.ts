@@ -23,3 +23,31 @@ export function clampSeats(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_TEAM_SEATS;
   return Math.min(MAX_TEAM_SEATS, Math.max(MIN_TEAM_SEATS, Math.trunc(value)));
 }
+
+/**
+ * Approximate prorated price, in US dollars, of changing a subscription by
+ * `seatDelta` seats for the rest of the billing period ending at
+ * `periodEndMs`. Polar prorates per second over the billing month, so the
+ * period is taken as the calendar month before `periodEndMs`. Display only:
+ * the charged amount comes from Polar and excludes tax.
+ */
+export function estimateSeatProration(
+  seatDelta: number,
+  periodEndMs: number | null,
+  nowMs: number = Date.now()
+): number | null {
+  if (periodEndMs === null || !Number.isFinite(periodEndMs)) return null;
+
+  const periodStart = new Date(periodEndMs);
+  periodStart.setUTCMonth(periodStart.getUTCMonth() - 1);
+  const periodLength = periodEndMs - periodStart.getTime();
+  if (periodLength <= 0) return null;
+
+  const remaining = Math.min(1, Math.max(0, (periodEndMs - nowMs) / periodLength));
+  return Math.abs(seatDelta) * TEAM_SEAT_PRICE_USD * remaining;
+}
+
+/** `$11.67`, always with cents. */
+export function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}

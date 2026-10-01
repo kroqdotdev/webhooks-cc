@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.2";
+export const APP_VERSION = "0.32.3";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.3",
+    date: "2026-10-01",
+    title: "Seat Changes Are Confirmed and Charged Up Front",
+    track: "web",
+    items: [
+      "Changing a team's seat count now asks for confirmation first and shows the approximate prorated charge or credit",
+      "Added seats are charged right away for the rest of the billing period instead of on the next invoice; a declined card adds no seats and says so",
+      "The team owner now holds one of the team's seats in the billing system too, matching the member count shown on the team page",
+    ],
+  },
   {
     version: "0.32.2",
     date: "2026-10-01",
