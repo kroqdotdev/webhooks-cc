@@ -12,10 +12,14 @@ vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
 }));
 
-vi.mock("./team-billing", () => ({
-  assignTeamSeat: mockFns.assignTeamSeat,
-  revokeTeamSeat: mockFns.revokeTeamSeat,
-}));
+vi.mock("./team-billing", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./team-billing")>();
+  return {
+    assignTeamSeat: mockFns.assignTeamSeat,
+    revokeTeamSeat: mockFns.revokeTeamSeat,
+    polarErrorCode: actual.polarErrorCode,
+  };
+});
 
 vi.mock("./teams-gating", () => ({
   requireActiveTeam: mockFns.requireActiveTeam,
@@ -144,6 +148,45 @@ describe("acceptInvite", () => {
       admin.rpc.mock.invocationCallOrder[0]
     );
     expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+  });
+
+  test("answers a full team when Polar has no seat left, without touching the invite", async () => {
+    mockFns.assignTeamSeat.mockRejectedValue(
+      Object.assign(new Error("API error occurred"), {
+        body: '{"error":"SeatNotAvailable","detail":"No available seats for sub_1"}',
+      })
+    );
+    const admin = createFakeAdmin(
+      {
+        "team_invites:select": [PENDING_INVITE],
+        "team_members:select": [{ data: null }],
+      },
+      { status: "accepted" }
+    );
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: false,
+      error: NO_SEATS,
+      teamId: "team_1",
+    });
+    expect(admin.rpc).not.toHaveBeenCalled();
+    expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+  });
+
+  test("still throws other Polar seat errors", async () => {
+    mockFns.assignTeamSeat.mockRejectedValue(new Error("polar down"));
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin(
+        {
+          "team_invites:select": [PENDING_INVITE],
+          "team_members:select": [{ data: null }],
+        },
+        { status: "accepted" }
+      )
+    );
+
+    await expect(acceptInvite("user_1", "invite_1")).rejects.toThrow("polar down");
   });
 
   test("releases the seat it just assigned when the team turns out to be full", async () => {

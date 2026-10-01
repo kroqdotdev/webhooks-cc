@@ -17,13 +17,16 @@ vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
 }));
 
+import { PaymentFailed } from "@polar-sh/sdk/models/errors/paymentfailed";
 import {
   TeamBillingError,
   applyTeamPolarWebhookEvent,
   assignTeamSeat,
   cancelTeamSubscription,
   createTeamCheckout,
+  ensureOwnerSeat,
   extractTeamIdFromWebhook,
+  quoteTeamSeatChange,
   resubscribeTeam,
   revokeTeamSeat,
   revokeTeamSubscription,
@@ -602,7 +605,7 @@ describe("updateTeamSeats", () => {
 
     expect(subscriptionUpdate).toHaveBeenCalledWith({
       id: "sub_1",
-      subscriptionUpdate: { seats: 3 },
+      subscriptionUpdate: { seats: 3, prorationBehavior: "invoice" },
     });
     expect(recorded).toContainEqual(rpcWrite);
   });
@@ -633,7 +636,7 @@ describe("updateTeamSeats", () => {
 
     expect(subscriptionUpdate).toHaveBeenCalledWith({
       id: "sub_1",
-      subscriptionUpdate: { seats: 6 },
+      subscriptionUpdate: { seats: 6, prorationBehavior: "invoice" },
     });
     expect(recorded).toContainEqual(rpcWrite);
   });
@@ -651,6 +654,36 @@ describe("updateTeamSeats", () => {
 
     await expect(updateTeamSeats("user_1", "team_1", 6)).rejects.toThrow("polar down");
 
+    expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
+  });
+
+  test("increase: a declined charge becomes payment_failed and adds no seats", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 2 })],
+      })
+    );
+
+    const body = JSON.stringify({
+      error: "PaymentFailed",
+      detail: "Payment failed with reason: card_error.",
+    });
+    const declined = new PaymentFailed(
+      { error: "PaymentFailed", detail: "Payment failed with reason: card_error." },
+      {
+        response: new Response(body, { status: 402 }),
+        request: new Request("https://api.polar.sh/v1/subscriptions/sub_1"),
+        body,
+      }
+    );
+    const subscriptionUpdate = vi.fn().mockRejectedValue(declined);
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toMatchObject({
+      name: "TeamBillingError",
+      code: "payment_failed",
+    });
     expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
   });
 
@@ -725,6 +758,232 @@ describe("seat assignment", () => {
       immediateClaim: true,
       metadata: { userId: "user_2", teamId: "team_1" },
     });
+  });
+});
+
+describe("quoteTeamSeatChange", () => {
+  function pages<T>(items: T[]) {
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { result: { items } };
+      },
+    };
+  }
+
+  test("prices the change from Polar's live subscription and spends unused credit", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 4 })],
+      })
+    );
+    const get = vi.fn().mockResolvedValue({
+      customerId: "cus_team",
+      seats: 4,
+      amount: 4800,
+      currentPeriodStart: new Date(Date.now() - 15 * 86_400_000),
+      currentPeriodEnd: new Date(Date.now() + 15 * 86_400_000),
+    });
+    const list = vi.fn().mockResolvedValue(
+      pages([
+        { totalAmount: 4800, appliedBalanceAmount: 0 },
+        { totalAmount: -300, appliedBalanceAmount: 0 },
+      ])
+    );
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { get }, orders: { list } });
+
+    const quote = await quoteTeamSeatChange("user_1", "team_1", 5);
+
+    expect(get).toHaveBeenCalledWith({ id: "sub_1" });
+    expect(list).toHaveBeenCalledWith({ customerId: "cus_team", limit: 100 });
+    expect(quote.pricePerSeatCents).toBe(1200);
+    // Half the period left: one seat is $6.00 (give or take the test's runtime),
+    // $3.00 of it paid from credit.
+    expect(quote.prorationCents).toBeGreaterThanOrEqual(599);
+    expect(quote.prorationCents).toBeLessThanOrEqual(600);
+    expect(quote.creditAppliedCents).toBe(300);
+    expect(quote.dueNowCents).toBe(quote.prorationCents - 300);
+    expect(quote.renewalCents).toBe(6000);
+  });
+
+  test("refuses non-owners and teams without a subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: null }, OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+      })
+    );
+
+    await expect(quoteTeamSeatChange("user_2", "team_1", 5)).rejects.toMatchObject({
+      code: "not_owner",
+    });
+    await expect(quoteTeamSeatChange("user_1", "team_1", 5)).rejects.toMatchObject({
+      code: "no_subscription",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("ensureOwnerSeat", () => {
+  const ownerRow = { data: { user_id: "user_owner", polar_seat_id: null } };
+  const activeTeam = { data: { polar_subscription_id: "sub_1", subscription_status: "active" } };
+  const ownerUser = { data: { email: "Owner@Example.com" } };
+
+  const memberUpdates = () =>
+    recorded.filter((call) => call.table === "team_members" && call.op === "update");
+
+  test("assigns a claimed seat to an owner without one and records it", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [ownerRow],
+        "teams:select": [activeTeam, { data: { polar_subscription_id: "sub_1" } }],
+        "users:select": [ownerUser],
+        "team_members:update": [{}],
+      })
+    );
+    const listSeats = vi.fn().mockResolvedValue({ seats: [] });
+    const assignSeat = vi.fn().mockResolvedValue({ id: "seat_owner" });
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(assignSeat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscriptionId: "sub_1",
+        email: "Owner@Example.com",
+        immediateClaim: true,
+        metadata: { userId: "user_owner", teamId: "team_1" },
+      })
+    );
+    expect(memberUpdates()).toEqual([
+      { table: "team_members", op: "update", payload: { polar_seat_id: "seat_owner" } },
+    ]);
+  });
+
+  test("records a seat Polar already gave the owner instead of assigning another", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [ownerRow],
+        "teams:select": [activeTeam],
+        "users:select": [ownerUser],
+        "team_members:update": [{}],
+      })
+    );
+    const listSeats = vi.fn().mockResolvedValue({
+      seats: [{ id: "seat_auto", status: "claimed", customerEmail: "owner@example.com" }],
+    });
+    const assignSeat = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(assignSeat).not.toHaveBeenCalled();
+    expect(memberUpdates()[0].payload).toEqual({ polar_seat_id: "seat_auto" });
+  });
+
+  test("does nothing for an inactive team", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [ownerRow],
+        "teams:select": [{ data: { polar_subscription_id: null, subscription_status: null } }],
+      })
+    );
+
+    await ensureOwnerSeat("team_1");
+
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+    expect(memberUpdates()).toEqual([]);
+  });
+
+  test("keeps a stored seat that is still the owner's live seat", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { user_id: "user_owner", polar_seat_id: "seat_1" } }],
+        "teams:select": [activeTeam],
+        "users:select": [ownerUser],
+      })
+    );
+    const listSeats = vi.fn().mockResolvedValue({
+      seats: [{ id: "seat_1", status: "claimed", email: "owner@example.com" }],
+    });
+    const assignSeat = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(assignSeat).not.toHaveBeenCalled();
+    expect(memberUpdates()).toEqual([]);
+  });
+
+  test("replaces a stale seat id left by an earlier subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { user_id: "user_owner", polar_seat_id: "seat_old" } }],
+        "teams:select": [activeTeam, { data: { polar_subscription_id: "sub_1" } }],
+        "users:select": [ownerUser],
+        "team_members:update": [{}, {}],
+      })
+    );
+    // seat_old is not in the current subscription (or was recycled to someone
+    // else), so it must be cleared and a fresh seat assigned.
+    const listSeats = vi.fn().mockResolvedValue({
+      seats: [{ id: "seat_old", status: "claimed", email: "someone-else@example.com" }],
+    });
+    const assignSeat = vi.fn().mockResolvedValue({ id: "seat_new" });
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(assignSeat).toHaveBeenCalled();
+    expect(memberUpdates().map((call) => call.payload)).toEqual([
+      { polar_seat_id: null },
+      { polar_seat_id: "seat_new" },
+    ]);
+    const clear = recordedFilters.find((c) => c.table === "team_members" && c.op === "update");
+    expect(clear!.filters).toContainEqual(["eq", "polar_seat_id", "seat_old"]);
+  });
+
+  test("treats SeatAlreadyAssigned from a concurrent delivery as success", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [ownerRow],
+        "teams:select": [activeTeam, { data: { polar_subscription_id: "sub_1" } }],
+        "users:select": [ownerUser],
+        "team_members:update": [{}],
+      })
+    );
+    const listSeats = vi
+      .fn()
+      .mockResolvedValueOnce({ seats: [] })
+      .mockResolvedValueOnce({
+        seats: [{ id: "seat_raced", status: "claimed", email: "owner@example.com" }],
+      });
+    const assignSeat = vi.fn().mockRejectedValue(
+      Object.assign(new Error("API error occurred"), {
+        body: '{"error":"SeatAlreadyAssigned","detail":"Seat already assigned"}',
+      })
+    );
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
+
+    await ensureOwnerSeat("team_1");
+
+    expect(memberUpdates()[0].payload).toEqual({ polar_seat_id: "seat_raced" });
+  });
+
+  test("logs instead of throwing when Polar fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [ownerRow],
+        "teams:select": [activeTeam],
+        "users:select": [ownerUser],
+      })
+    );
+    const listSeats = vi.fn().mockRejectedValue(new Error("polar down"));
+    mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats } });
+
+    await expect(ensureOwnerSeat("team_1")).resolves.toBeUndefined();
+    expect(consoleError).toHaveBeenCalled();
   });
 });
 
