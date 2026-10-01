@@ -21,7 +21,7 @@ Production: `https://webhooks.cc` (app) and `https://go.webhooks.cc` (webhook re
 | `packages/sdk/`         | `@webhooks-cc/sdk`, published to npm. Also the canonical provider catalog (`TEMPLATE_PROVIDERS`, `VERIFY_PROVIDERS`).                                     |
 | `packages/mcp/`         | `@webhooks-cc/mcp`, stdio MCP server. Tools in `src/tools.ts`; the test suite pins the tool and provider counts.                                          |
 | `supabase/migrations/`  | Numbered SQL files: schema, functions, RLS policies, pg_cron jobs. Applied by hand with psql.                                                             |
-| `infra/`                | Cloudflare Worker notify proxy, GoTrue email-auth config notes, AppSignal collector systemd unit.                                                         |
+| `infra/`                | Cloudflare Worker notify proxy, GoTrue email-auth config notes.                                                                                           |
 | `docs/`, `branch-docs/` | Local planning docs. Both are gitignored.                                                                                                                 |
 
 ## Commands
@@ -46,8 +46,6 @@ pnpm test:full                          # everything, including integration and 
 Production runs as containers on a single host: the web app and receiver images built from this repository (`apps/web/Dockerfile`, `apps/receiver-rs/Dockerfile`), Caddy, Redis, the AppSignal collector, and a self-hosted Supabase project, all under Docker Compose. Images are built in CI and shipped to the host; the host never builds. The deploy workflow, compose files, and host configuration live in a separate private operations repository, not here.
 
 A deploy builds both images for a given ref of this repository, loads them on the host, and recreates the web and receiver containers. `NEXT_PUBLIC_*` values are build arguments, so changing one means a new build, not a restart. The CI job "Build Docker Images" checks on every PR that both images still build.
-
-The `make deploy-*` and `make prod*` targets belong to the earlier host-installed setup (systemd units on the host) and are not how production is deployed.
 
 ### Database changes
 
