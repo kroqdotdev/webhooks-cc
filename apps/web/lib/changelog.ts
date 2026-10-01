@@ -28,8 +28,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Seat Changes Are Confirmed and Charged Up Front",
     track: "web",
     items: [
-      "Changing a team's seat count now asks for confirmation first and shows the approximate prorated charge or credit",
+      "Changing a team's seat count now asks for confirmation first and shows the exact amount charged to your card, or credited to your account, before anything happens",
       "Added seats are charged right away for the rest of the billing period instead of on the next invoice; a declined card adds no seats and says so",
+      "Removed seats become account credit straight away, spent on your next charge before your card",
       "The team owner now holds one of the team's seats in the billing system too, matching the member count shown on the team page",
     ],
   },

@@ -5,6 +5,7 @@ import {
   unwrapPolarResult,
 } from "@/lib/polar";
 import { PaymentFailed } from "@polar-sh/sdk/models/errors/paymentfailed";
+import { creditBalanceFromOrders, quoteSeatChange, type SeatChangeQuote } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -527,13 +528,15 @@ export async function updateTeamSeats(
     typeof rpcResult?.previous_seats === "number" ? rpcResult.previous_seats : team.seats;
 
   try {
-    // Explicit so a change to the organization default cannot start refunding
-    // reductions immediately: the credit lands on the next invoice and nets
-    // against any later increase.
+    // "invoice" books the unused time as a credit note right away. Polar keeps
+    // it as account balance and spends it on the next charge before the card,
+    // and the balance is readable from the order history, so quotes stay exact.
+    // Under "prorate" the credit would instead wait, invisible, inside the next
+    // invoice.
     const polar = createPolarClient();
     const result = await polar.subscriptions.update({
       id: team.polar_subscription_id,
-      subscriptionUpdate: { seats, prorationBehavior: "prorate" },
+      subscriptionUpdate: { seats, prorationBehavior: "invoice" },
     });
     unwrapPolarResult(result, "team seat update");
   } catch (polarError) {
@@ -560,6 +563,52 @@ export async function updateTeamSeats(
 
     throw polarError;
   }
+}
+
+/**
+ * Prices a seat change for the confirmation dialog: the exact amount Polar
+ * charges (or credits) if the owner confirms now, after spending any unused
+ * credit. Reads the live subscription and the customer's order history from
+ * Polar so the quote uses Polar's own period bounds and seat count.
+ */
+export async function quoteTeamSeatChange(
+  userId: string,
+  teamId: string,
+  seats: number
+): Promise<SeatChangeQuote> {
+  assertValidSeatCount(seats);
+
+  const team = await getTeamForOwner(userId, teamId);
+  if (!team.polar_subscription_id) {
+    throw new TeamBillingError("no_subscription", "No active subscription");
+  }
+
+  const polar = createPolarClient();
+  const subscription = unwrapPolarResult(
+    await polar.subscriptions.get({ id: team.polar_subscription_id }),
+    "team subscription get"
+  );
+  const currentSeats = subscription.seats ?? team.seats;
+  if (!currentSeats || currentSeats <= 0) {
+    throw new TeamBillingError("seat_update_failed", "Could not read the current seat count");
+  }
+
+  const orders: Array<{ totalAmount: number; appliedBalanceAmount: number }> = [];
+  for await (const page of await polar.orders.list({
+    customerId: subscription.customerId,
+    limit: 100,
+  })) {
+    orders.push(...page.result.items);
+  }
+
+  return quoteSeatChange({
+    currentSeats,
+    newSeats: seats,
+    pricePerSeatCents: Math.round(subscription.amount / currentSeats),
+    periodStartMs: subscription.currentPeriodStart.getTime(),
+    periodEndMs: subscription.currentPeriodEnd.getTime(),
+    creditBalanceCents: creditBalanceFromOrders(orders),
+  });
 }
 
 /** Cancels immediately. Used by team deletion, which revokes before deleting the row. */

@@ -5,9 +5,10 @@ import {
   MAX_TEAM_SEATS,
   MIN_TEAM_SEATS,
   clampSeats,
-  estimateSeatProration,
+  creditBalanceFromOrders,
+  formatCents,
   formatSeatPricing,
-  formatUsd,
+  quoteSeatChange,
 } from "./team-pricing";
 
 describe("formatSeatPricing", () => {
@@ -47,35 +48,109 @@ describe("clampSeats", () => {
   });
 });
 
-describe("estimateSeatProration", () => {
-  const periodEnd = Date.parse("2026-10-30T00:41:48Z");
+// Sandbox subscription used to pin Polar's arithmetic (2026-10-01, tax-inclusive).
+const PERIOD_START = Date.parse("2026-10-01T13:26:22.426Z");
+const PERIOD_END = Date.parse("2026-11-01T13:26:22.426Z");
+const base = {
+  pricePerSeatCents: 1200,
+  periodStartMs: PERIOD_START,
+  periodEndMs: PERIOD_END,
+  creditBalanceCents: 0,
+};
 
-  test("charges a full seat at the start of the period", () => {
-    const start = Date.parse("2026-09-30T00:41:48Z");
-    expect(estimateSeatProration(1, periodEnd, start)).toBeCloseTo(12, 5);
+describe("quoteSeatChange", () => {
+  test("matches Polar: one seat 22 seconds in costs $11.99, rounded down", () => {
+    const quote = quoteSeatChange({
+      ...base,
+      currentSeats: 2,
+      newSeats: 3,
+      nowMs: Date.parse("2026-10-01T13:26:44.266Z"),
+    });
+    expect(quote.prorationCents).toBe(1199);
+    expect(quote.dueNowCents).toBe(1199);
+    expect(quote.renewalCents).toBe(3600);
   });
 
-  test("prorates by the time left in the billing month", () => {
-    // Kargo's fourth seat: added 20:40 UTC on the first day of a 30-day month.
-    const added = Date.parse("2026-09-30T20:40:32Z");
-    expect(estimateSeatProration(1, periodEnd, added)).toBeCloseTo(11.67, 2);
+  test("matches Polar: rounds the total down, not each seat", () => {
+    const quote = quoteSeatChange({
+      ...base,
+      currentSeats: 3,
+      newSeats: 5,
+      nowMs: Date.parse("2026-10-01T13:26:52.094Z"),
+    });
+    expect(quote.prorationCents).toBe(2399);
   });
 
-  test("scales with the number of seats and ignores direction", () => {
-    const midway = Date.parse("2026-10-15T00:41:48Z");
-    expect(estimateSeatProration(3, periodEnd, midway)).toBeCloseTo(18, 5);
-    expect(estimateSeatProration(-3, periodEnd, midway)).toBeCloseTo(18, 5);
+  test("matches Polar: a reduction books the amount as credit and charges nothing", () => {
+    const quote = quoteSeatChange({
+      ...base,
+      currentSeats: 5,
+      newSeats: 4,
+      nowMs: Date.parse("2026-10-01T13:26:59.645Z"),
+    });
+    expect(quote.prorationCents).toBe(-1199);
+    expect(quote.dueNowCents).toBe(0);
+    expect(quote.creditAppliedCents).toBe(0);
   });
 
-  test("is zero once the period has ended and unknown without a period", () => {
-    expect(estimateSeatProration(1, periodEnd, periodEnd + 1000)).toBe(0);
-    expect(estimateSeatProration(1, null)).toBeNull();
+  test("matches Polar: unused credit is spent before the card", () => {
+    const quote = quoteSeatChange({
+      ...base,
+      currentSeats: 4,
+      newSeats: 5,
+      creditBalanceCents: 1199,
+      nowMs: Date.parse("2026-10-01T13:27:06.735Z"),
+    });
+    expect(quote.prorationCents).toBe(1199);
+    expect(quote.creditAppliedCents).toBe(1199);
+    expect(quote.dueNowCents).toBe(0);
+  });
+
+  test("charges the full price at the start of the period and nothing after it ends", () => {
+    expect(
+      quoteSeatChange({ ...base, currentSeats: 1, newSeats: 2, nowMs: PERIOD_START }).dueNowCents
+    ).toBe(1200);
+    expect(
+      quoteSeatChange({ ...base, currentSeats: 1, newSeats: 2, nowMs: PERIOD_END + 1000 })
+        .dueNowCents
+    ).toBe(0);
+  });
+
+  test("Kargo's fourth seat would have cost $11.66", () => {
+    const quote = quoteSeatChange({
+      currentSeats: 3,
+      newSeats: 4,
+      pricePerSeatCents: 1200,
+      periodStartMs: Date.parse("2026-09-30T00:41:48.478Z"),
+      periodEndMs: Date.parse("2026-10-30T00:41:48.478Z"),
+      creditBalanceCents: 0,
+      nowMs: Date.parse("2026-09-30T20:40:32.260Z"),
+    });
+    expect(quote.dueNowCents).toBe(1166);
   });
 });
 
-describe("formatUsd", () => {
-  test("always shows cents", () => {
-    expect(formatUsd(11.666)).toBe("$11.67");
-    expect(formatUsd(12)).toBe("$12.00");
+describe("creditBalanceFromOrders", () => {
+  test("adds credit notes and subtracts credit already spent", () => {
+    const orders = [
+      { totalAmount: 2400, appliedBalanceAmount: 0 },
+      { totalAmount: -1199, appliedBalanceAmount: 0 },
+    ];
+    expect(creditBalanceFromOrders(orders)).toBe(1199);
+    expect(
+      creditBalanceFromOrders([...orders, { totalAmount: 1199, appliedBalanceAmount: -1199 }])
+    ).toBe(0);
+  });
+
+  test("never goes negative", () => {
+    expect(creditBalanceFromOrders([{ totalAmount: 100, appliedBalanceAmount: -50 }])).toBe(0);
+  });
+});
+
+describe("formatCents", () => {
+  test("formats cents as dollars", () => {
+    expect(formatCents(1166)).toBe("$11.66");
+    expect(formatCents(1200)).toBe("$12.00");
+    expect(formatCents(-1199)).toBe("-$11.99");
   });
 });

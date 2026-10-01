@@ -20,6 +20,7 @@ import type { Team } from "@/lib/supabase/teams-types";
 import { trackTeamSubscribeClicked } from "@/lib/analytics";
 import {
   cancelTeamSubscription,
+  quoteTeamSeats,
   resubscribeTeamSubscription,
   startTeamCheckout,
   updateTeamSeats,
@@ -29,9 +30,9 @@ import {
   MAX_TEAM_SEATS,
   MIN_TEAM_SEATS,
   clampSeats,
-  estimateSeatProration,
+  formatCents,
   formatSeatPricing,
-  formatUsd,
+  type SeatChangeQuote,
 } from "@/lib/team-pricing";
 
 const SESSION_EXPIRED = "Your session expired. Please sign in again.";
@@ -128,6 +129,8 @@ export function TeamSubscriptionCard({
   const [resubscribing, setResubscribing] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [confirmSeatsOpen, setConfirmSeatsOpen] = useState(false);
+  const [seatQuote, setSeatQuote] = useState<SeatChangeQuote | null>(null);
+  const [seatQuoteError, setSeatQuoteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -152,6 +155,26 @@ export function TeamSubscriptionCard({
       console.error("Team checkout error:", err);
       setError(err instanceof Error ? err.message : "Failed to start checkout. Please try again.");
       setSubscribing(false);
+    }
+  };
+
+  // The dialog shows Polar's exact amount, priced server-side when it opens.
+  const openSeatConfirmation = async () => {
+    if (!accessToken) {
+      setError(SESSION_EXPIRED);
+      return;
+    }
+
+    setSeatQuote(null);
+    setSeatQuoteError(null);
+    setConfirmSeatsOpen(true);
+    try {
+      setSeatQuote(await quoteTeamSeats(accessToken, team.id, seatDraft));
+    } catch (err) {
+      console.error("Team seat quote error:", err);
+      setSeatQuoteError(
+        err instanceof Error ? err.message : "Could not price the seat change. Please try again."
+      );
     }
   };
 
@@ -304,8 +327,22 @@ export function TeamSubscriptionCard({
   const addingSeats = seatDelta > 0;
   const seatChangeCount = Math.abs(seatDelta);
   const seatChangeNoun = seatChangeCount === 1 ? "seat" : "seats";
-  const seatProration = estimateSeatProration(seatDelta, team.periodEnd);
-  const seatProrationLabel = seatProration === null ? null : formatUsd(seatProration);
+
+  let seatQuoteText: string | null = null;
+  if (seatQuote) {
+    const renewsOn = formatDate(Date.parse(seatQuote.periodEnd));
+    const renewal = `From ${renewsOn} the subscription renews at ${formatSeatPricing(seatQuote.newSeats)}. VAT is included where it applies.`;
+    const amount = formatCents(Math.abs(seatQuote.prorationCents));
+    if (!addingSeats) {
+      seatQuoteText = `You get ${amount} of account credit for the rest of this billing period. It is spent on your next charge before your card. ${renewal}`;
+    } else if (seatQuote.creditAppliedCents === 0) {
+      seatQuoteText = `Your card is charged ${formatCents(seatQuote.dueNowCents)} now for the rest of this billing period. ${renewal}`;
+    } else if (seatQuote.dueNowCents === 0) {
+      seatQuoteText = `The rest of this billing period costs ${amount}, fully covered by your account credit, so your card is not charged. ${renewal}`;
+    } else {
+      seatQuoteText = `The rest of this billing period costs ${amount}. ${formatCents(seatQuote.creditAppliedCents)} of account credit covers part of it, so your card is charged ${formatCents(seatQuote.dueNowCents)} now. ${renewal}`;
+    }
+  }
 
   // UsageDisplay renders an AccountProfile; the team's pooled quota is fed
   // through the same shape so both bars look and behave identically.
@@ -374,7 +411,7 @@ export function TeamSubscriptionCard({
               />
               <Button
                 variant="outline"
-                onClick={() => setConfirmSeatsOpen(true)}
+                onClick={() => void openSeatConfirmation()}
                 disabled={savingSeats || seatDraft === team.seats || !accessToken}
               >
                 {savingSeats ? "Updating..." : "Update seats"}
@@ -418,10 +455,9 @@ export function TeamSubscriptionCard({
                 : `Remove ${seatChangeCount} ${seatChangeNoun}?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {addingSeats
-                ? `Your card is charged ${seatProrationLabel ? `about ${seatProrationLabel}` : "the prorated price"} now for the rest of this period, plus VAT where it applies. Any earlier seat change that has not been billed yet is included in the same charge.`
-                : `You get a prorated credit of ${seatProrationLabel ? `about ${seatProrationLabel}` : "the unused time"} on your next invoice.`}{" "}
-              From {periodEndLabel} the subscription renews at {formatSeatPricing(seatDraft)}.
+              {seatQuoteError
+                ? seatQuoteError
+                : (seatQuoteText ?? "Calculating the exact amount...")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -434,12 +470,14 @@ export function TeamSubscriptionCard({
                 event.preventDefault();
                 void handleUpdateSeats();
               }}
-              disabled={savingSeats}
+              disabled={savingSeats || seatQuote === null}
             >
               {savingSeats
                 ? "Updating..."
                 : addingSeats
-                  ? `Add ${seatChangeNoun} and pay`
+                  ? seatQuote && seatQuote.dueNowCents > 0
+                    ? `Pay ${formatCents(seatQuote.dueNowCents)} and add ${seatChangeNoun}`
+                    : `Add ${seatChangeNoun}`
                   : `Remove ${seatChangeNoun}`}
             </AlertDialogAction>
           </AlertDialogFooter>

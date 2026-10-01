@@ -26,6 +26,7 @@ import {
   createTeamCheckout,
   ensureOwnerSeat,
   extractTeamIdFromWebhook,
+  quoteTeamSeatChange,
   resubscribeTeam,
   revokeTeamSeat,
   revokeTeamSubscription,
@@ -604,7 +605,7 @@ describe("updateTeamSeats", () => {
 
     expect(subscriptionUpdate).toHaveBeenCalledWith({
       id: "sub_1",
-      subscriptionUpdate: { seats: 3, prorationBehavior: "prorate" },
+      subscriptionUpdate: { seats: 3, prorationBehavior: "invoice" },
     });
     expect(recorded).toContainEqual(rpcWrite);
   });
@@ -757,6 +758,69 @@ describe("seat assignment", () => {
       immediateClaim: true,
       metadata: { userId: "user_2", teamId: "team_1" },
     });
+  });
+});
+
+describe("quoteTeamSeatChange", () => {
+  function pages<T>(items: T[]) {
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { result: { items } };
+      },
+    };
+  }
+
+  test("prices the change from Polar's live subscription and spends unused credit", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 4 })],
+      })
+    );
+    const get = vi.fn().mockResolvedValue({
+      customerId: "cus_team",
+      seats: 4,
+      amount: 4800,
+      currentPeriodStart: new Date(Date.now() - 15 * 86_400_000),
+      currentPeriodEnd: new Date(Date.now() + 15 * 86_400_000),
+    });
+    const list = vi.fn().mockResolvedValue(
+      pages([
+        { totalAmount: 4800, appliedBalanceAmount: 0 },
+        { totalAmount: -300, appliedBalanceAmount: 0 },
+      ])
+    );
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { get }, orders: { list } });
+
+    const quote = await quoteTeamSeatChange("user_1", "team_1", 5);
+
+    expect(get).toHaveBeenCalledWith({ id: "sub_1" });
+    expect(list).toHaveBeenCalledWith({ customerId: "cus_team", limit: 100 });
+    expect(quote.pricePerSeatCents).toBe(1200);
+    // Half the period left: one seat is $6.00 (give or take the test's runtime),
+    // $3.00 of it paid from credit.
+    expect(quote.prorationCents).toBeGreaterThanOrEqual(599);
+    expect(quote.prorationCents).toBeLessThanOrEqual(600);
+    expect(quote.creditAppliedCents).toBe(300);
+    expect(quote.dueNowCents).toBe(quote.prorationCents - 300);
+    expect(quote.renewalCents).toBe(6000);
+  });
+
+  test("refuses non-owners and teams without a subscription", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: null }, OWNER_MEMBERSHIP],
+        "teams:select": [teamRow()],
+      })
+    );
+
+    await expect(quoteTeamSeatChange("user_2", "team_1", 5)).rejects.toMatchObject({
+      code: "not_owner",
+    });
+    await expect(quoteTeamSeatChange("user_1", "team_1", 5)).rejects.toMatchObject({
+      code: "no_subscription",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
   });
 });
 
