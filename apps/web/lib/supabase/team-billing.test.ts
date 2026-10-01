@@ -550,12 +550,16 @@ describe("createTeamCheckout", () => {
 });
 
 describe("updateTeamSeats", () => {
-  test("refuses to shrink the subscription below the current member count", async () => {
+  test("refuses to schedule a reduction below the current member count", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
-        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 5 })],
-        "rpc:update_team_seats": [{ data: { status: "below_members", member_count: 4 } }],
+        "teams:select": [
+          teamRow({ polar_subscription_id: "sub_1", seats: 5, pending_seats: null }),
+        ],
+        "rpc:schedule_team_seat_reduction": [
+          { data: { status: "below_members", member_count: 4 } },
+        ],
       })
     );
 
@@ -579,23 +583,27 @@ describe("updateTeamSeats", () => {
     });
   });
 
-  test("reduction: writes the seat change through the locking RPC before calling Polar", async () => {
+  test("reduction: schedules it under the row lock, then asks Polar for next_period", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
-        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6 })],
-        "rpc:update_team_seats": [{ data: { status: "ok", previous_seats: 6 } }],
+        "teams:select": [
+          teamRow({ polar_subscription_id: "sub_1", seats: 6, pending_seats: null }),
+        ],
+        "rpc:schedule_team_seat_reduction": [
+          { data: { status: "ok", previous_pending_seats: null } },
+        ],
       })
     );
 
     const rpcWrite = {
-      table: "rpc:update_team_seats",
+      table: "rpc:schedule_team_seat_reduction",
       op: "rpc",
       payload: { p_team_id: "team_1", p_seats: 3 },
     };
     const subscriptionUpdate = vi.fn().mockImplementation(() => {
-      // For a reduction the DB write must land before Polar is told: the RPC's
-      // row lock is what serializes it against concurrent invite accepts.
+      // The RPC's row lock is what serializes the reduction against concurrent
+      // invite accepts, so it must land before Polar is told.
       expect(recorded).toContainEqual(rpcWrite);
       return Promise.resolve({ id: "sub_1" });
     });
@@ -605,9 +613,50 @@ describe("updateTeamSeats", () => {
 
     expect(subscriptionUpdate).toHaveBeenCalledWith({
       id: "sub_1",
-      subscriptionUpdate: { seats: 3, prorationBehavior: "invoice" },
+      subscriptionUpdate: { seats: 3, prorationBehavior: "next_period" },
     });
-    expect(recorded).toContainEqual(rpcWrite);
+    // Seats, member cap and pool stay as paid until the renewal.
+    expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
+  });
+
+  test("keeping the current seats cancels a scheduled reduction", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 5, pending_seats: 3 })],
+        "rpc:schedule_team_seat_reduction": [{ data: { status: "ok", previous_pending_seats: 3 } }],
+      })
+    );
+    const subscriptionUpdate = vi.fn().mockResolvedValue({ id: "sub_1" });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    await updateTeamSeats("user_1", "team_1", 5);
+
+    expect(recorded).toContainEqual({
+      table: "rpc:schedule_team_seat_reduction",
+      op: "rpc",
+      payload: { p_team_id: "team_1", p_seats: 5 },
+    });
+    expect(subscriptionUpdate).toHaveBeenCalledWith({
+      id: "sub_1",
+      subscriptionUpdate: { seats: 5, prorationBehavior: "next_period" },
+    });
+  });
+
+  test("the current seat count with nothing scheduled is a no-op", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [
+          teamRow({ polar_subscription_id: "sub_1", seats: 5, pending_seats: null }),
+        ],
+      })
+    );
+
+    await updateTeamSeats("user_1", "team_1", 5);
+
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+    expect(recorded.filter((call) => call.op === "rpc")).toEqual([]);
   });
 
   test("increase: confirms with Polar before exposing capacity in the database", async () => {
@@ -706,15 +755,15 @@ describe("updateTeamSeats", () => {
     expect(consoleError).toHaveBeenCalled();
   });
 
-  test("reduction: restores the previous seat count when Polar rejects the update", async () => {
+  test("reduction: restores the previous schedule when Polar rejects the update", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "team_members:select": [OWNER_MEMBERSHIP],
-        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6 })],
-        "rpc:update_team_seats": [
-          { data: { status: "ok", previous_seats: 6 } },
-          { data: { status: "ok", previous_seats: 3 } },
+        "teams:select": [teamRow({ polar_subscription_id: "sub_1", seats: 6, pending_seats: 4 })],
+        "rpc:schedule_team_seat_reduction": [
+          { data: { status: "ok", previous_pending_seats: 4 } },
+          { data: { status: "ok", previous_pending_seats: 3 } },
         ],
       })
     );
@@ -725,9 +774,9 @@ describe("updateTeamSeats", () => {
     await expect(updateTeamSeats("user_1", "team_1", 3)).rejects.toThrow("polar down");
 
     expect(recorded).toContainEqual({
-      table: "rpc:update_team_seats",
+      table: "rpc:schedule_team_seat_reduction",
       op: "rpc",
-      payload: { p_team_id: "team_1", p_seats: 6 },
+      payload: { p_team_id: "team_1", p_seats: 4 },
     });
     expect(consoleError).not.toHaveBeenCalled();
   });
@@ -1275,6 +1324,40 @@ describe("subscription event guards", () => {
       // The checkout that produced this subscription stops being reusable.
       pending_checkout: null,
     });
+  });
+
+  test("mirrors Polar's scheduled seat change into pending_seats", async () => {
+    const liveRow = {
+      data: {
+        polar_subscription_id: "sub_1",
+        subscription_status: "active",
+        seats: 5,
+        period_start: "2026-08-01T00:00:00.000Z",
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [liveRow, liveRow], "teams:update": [{}, {}] })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", {
+        seats: 5,
+        pendingUpdate: { seats: 3, appliesAt: new Date("2026-08-31T00:00:00Z") },
+      })
+    );
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", { seats: 5, pendingUpdate: null })
+    );
+
+    expect(
+      teamsUpdates().map((call) => (call.payload as { pending_seats: unknown }).pending_seats)
+    ).toEqual([3, null]);
+    // The paid seats and pool stay until the renewal applies the change.
+    expect(teamsUpdates()[0].payload).toMatchObject({ seats: 5, request_limit: 500_000 });
   });
 
   test("the renewal reset is conditioned on the observed subscription id and period start", async () => {

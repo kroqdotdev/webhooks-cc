@@ -81,16 +81,33 @@ describe("quoteSeatChange", () => {
     expect(quote.prorationCents).toBe(2399);
   });
 
-  test("matches Polar: a reduction books the amount as credit and charges nothing", () => {
+  test("a reduction waits for the renewal: nothing charged or credited now", () => {
     const quote = quoteSeatChange({
       ...base,
       currentSeats: 5,
+      pendingSeats: null,
       newSeats: 4,
       nowMs: Date.parse("2026-10-01T13:26:59.645Z"),
     });
-    expect(quote.prorationCents).toBe(-1199);
+    expect(quote.appliesAtRenewal).toBe(true);
+    expect(quote.prorationCents).toBe(0);
     expect(quote.dueNowCents).toBe(0);
     expect(quote.creditAppliedCents).toBe(0);
+    expect(quote.renewalCents).toBe(4800);
+  });
+
+  test("carries a pending reduction through so the dialog can mention it", () => {
+    const quote = quoteSeatChange({
+      ...base,
+      currentSeats: 5,
+      pendingSeats: 3,
+      newSeats: 6,
+      nowMs: PERIOD_START,
+    });
+    expect(quote.pendingSeats).toBe(3);
+    expect(quote.appliesAtRenewal).toBe(false);
+    // Polar charges an increase from the current seats, not the pending ones.
+    expect(quote.dueNowCents).toBe(1200);
   });
 
   test("matches Polar: unused credit is spent before the card", () => {

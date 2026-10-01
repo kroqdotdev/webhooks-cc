@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.4";
+export const APP_VERSION = "0.32.5";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.5",
+    date: "2026-10-01",
+    title: "Seat Removals Take Effect at Renewal",
+    track: "web",
+    items: [
+      "Removing team seats now takes effect when the billing period ends: you keep the seats you paid for until then, and the subscription renews at the lower count",
+      "The team page shows a scheduled seat reduction with a button to keep your current seats instead",
+    ],
+  },
   {
     version: "0.32.4",
     date: "2026-10-01",
