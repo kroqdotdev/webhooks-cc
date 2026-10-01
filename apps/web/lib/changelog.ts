@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.3";
+export const APP_VERSION = "0.32.4";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.4",
+    date: "2026-10-01",
+    title: "CI Guide Fix",
+    track: "web",
+    items: [
+      "The CI/CD guide now names the hosts CI must reach, webhooks.cc and go.webhooks.cc, instead of a retired API hostname",
+    ],
+  },
   {
     version: "0.32.3",
     date: "2026-10-01",

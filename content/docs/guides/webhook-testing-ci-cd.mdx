@@ -319,7 +319,7 @@ Three possible causes:
 
 **"Tests pass locally but fail in CI"**
 
-CI environments often have restricted outbound network access. Verify that your CI environment can reach `https://api.webhooks.cc`. If your CI uses a proxy, configure the SDK's HTTP client accordingly.
+CI environments often have restricted outbound network access. Verify that your CI environment can reach `https://webhooks.cc` (the API the SDK calls) and `https://go.webhooks.cc` (where test webhooks are sent). If your CI uses a proxy, configure the SDK's HTTP client accordingly.
 
 ## FAQ
 
