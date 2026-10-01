@@ -7,9 +7,11 @@ use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 use tokio::sync::Mutex;
 
+use super::log_throttle::LogThrottle;
 use super::rules::{self, RequestContext, ResponseRule};
 use crate::AppState; // ResponseRule needed for deserialization
 use crate::metrics;
@@ -267,6 +269,16 @@ const BLOCKED_NOTIFICATION_PORTS: &[u16] = &[
 /// Per-endpoint rate limiter: tracks last notification time per slug.
 /// Wrapped in Arc<Mutex<>> and stored in AppState so it's shared across requests.
 pub type NotificationLimiter = Arc<Mutex<HashMap<String, std::time::Instant>>>;
+
+/// One `quota exceeded` line per slug per window; the rest are counted in
+/// `suppressed` on the next line and in the capture metrics.
+const QUOTA_LOG_WINDOW: std::time::Duration = std::time::Duration::from_secs(300);
+const QUOTA_LOG_MAX_SLUGS: usize = 10_000;
+
+fn quota_log_throttle() -> &'static LogThrottle {
+    static THROTTLE: OnceLock<LogThrottle> = OnceLock::new();
+    THROTTLE.get_or_init(|| LogThrottle::new(QUOTA_LOG_WINDOW, QUOTA_LOG_MAX_SLUGS))
+}
 
 pub fn new_notification_limiter() -> NotificationLimiter {
     Arc::new(Mutex::new(HashMap::new()))
@@ -1039,7 +1051,9 @@ async fn handle_webhook_inner(
                 }
                 "quota_exceeded" => {
                     metrics::capture_result("quota_exceeded");
-                    tracing::info!(slug, ip = %ip, "quota exceeded");
+                    if let Some(suppressed) = quota_log_throttle().check(&slug, Instant::now()) {
+                        tracing::info!(slug, ip = %ip, suppressed, "quota exceeded");
+                    }
                     let mut response = (
                         StatusCode::TOO_MANY_REQUESTS,
                         axum::Json(serde_json::json!({"error": "quota_exceeded"})),

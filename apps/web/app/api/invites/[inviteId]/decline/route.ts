@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { declineInvite } from "@/lib/supabase/teams";
 
@@ -12,6 +13,12 @@ export async function POST(
 
   try {
     const declined = await declineInvite(auth.userId, inviteId);
+    await auditUserAction(request, auth.userId, {
+      action: "team.invite_declined",
+      status: declined ? 200 : 404,
+      targetUserId: auth.userId,
+      targetId: inviteId,
+    });
     if (!declined) {
       return Response.json({ error: "Invite not found" }, { status: 404 });
     }

@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { describePolarError, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { createTeamCheckout, TeamBillingError } from "@/lib/supabase/team-billing";
@@ -21,11 +22,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 
   try {
     const url = await createTeamCheckout(auth.userId, teamId, seats);
+    await auditUserAction(request, auth.userId, {
+      action: "team.checkout_started",
+      status: 200,
+      teamId,
+      metadata: { seats },
+    });
     return Response.json({ url });
   } catch (error) {
     if (error instanceof TeamBillingError) {
-      return Response.json({ error: error.message }, { status: ERROR_STATUS[error.code] ?? 400 });
+      const status = ERROR_STATUS[error.code] ?? 400;
+      await auditUserAction(request, auth.userId, {
+        action: "team.checkout_started",
+        status,
+        reason: error.message,
+        teamId,
+        metadata: { code: error.code, seats },
+      });
+      return Response.json({ error: error.message }, { status });
     }
+
+    await auditUserAction(request, auth.userId, {
+      action: "team.checkout_started",
+      status: 500,
+      teamId,
+      metadata: { seats },
+    });
 
     if (error instanceof PolarConfigError) {
       console.error("Team checkout misconfigured:", error);
