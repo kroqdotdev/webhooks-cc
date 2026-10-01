@@ -281,6 +281,7 @@ describe("Supabase Control Plane Integration", () => {
       remaining: 38,
       plan: "free",
       periodEnd: expect.any(Number),
+      teamBilledEndpoints: 0,
     });
   });
 });

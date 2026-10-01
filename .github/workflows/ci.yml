@@ -267,3 +267,36 @@ jobs:
       - name: Run clippy
         run: cargo clippy -- -D warnings
         working-directory: apps/cli-rs
+
+  docker-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    # Production runs these images, built by the deploy in a separate
+    # repository. This job only checks that both still build; nothing is
+    # pushed.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: web
+            context: .
+            file: apps/web/Dockerfile
+          - image: receiver
+            context: apps/receiver-rs
+            file: apps/receiver-rs/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=https://ci-placeholder.supabase.co
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-placeholder-anon-key
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
