@@ -15,13 +15,65 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.2";
+export const APP_VERSION = "0.32.7";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.7",
+    date: "2026-10-01",
+    title: "Dependency Security Updates",
+    track: "web",
+    items: [
+      "Next.js moved to 16.3.6 for the critical advisory GHSA-vcvr-r3jv-pc5j",
+      "Transitive dependency floors raised for @grpc/grpc-js (1.14.5), dompurify (3.4.16), ip-address (10.7.1), and brace-expansion (1.1.21, 2.1.7, and 5.0.12) to pick up their security fixes",
+      "Routine dependency bumps: Supabase JS, resend, lucide-react, simple-icons, the development tooling group, plus the OpenTelemetry crates, redis, thiserror, and rand on the Rust side",
+    ],
+  },
+  {
+    version: "0.32.6",
+    date: "2026-10-01",
+    title: "Container Images",
+    track: "web",
+    items: [
+      "The web app and the receiver now build as self-contained Docker images, with the public URLs set at build time",
+      "Both images run as a non-root user and report their own health",
+    ],
+  },
+  {
+    version: "0.32.5",
+    date: "2026-10-01",
+    title: "Seat Removals Take Effect at Renewal",
+    track: "web",
+    items: [
+      "Removing team seats now takes effect when the billing period ends: you keep the seats you paid for until then, and the subscription renews at the lower count",
+      "The team page shows a scheduled seat reduction with a button to keep your current seats instead",
+    ],
+  },
+  {
+    version: "0.32.4",
+    date: "2026-10-01",
+    title: "CI Guide Fix",
+    track: "web",
+    items: [
+      "The CI/CD guide now names the hosts CI must reach, webhooks.cc and go.webhooks.cc, instead of a retired API hostname",
+    ],
+  },
+  {
+    version: "0.32.3",
+    date: "2026-10-01",
+    title: "Seat Changes Are Confirmed and Charged Up Front",
+    track: "web",
+    items: [
+      "Changing a team's seat count now asks for confirmation first and shows the exact amount charged to your card, or credited to your account, before anything happens",
+      "Added seats are charged right away for the rest of the billing period instead of on the next invoice; a declined card adds no seats and says so",
+      "Removed seats become account credit straight away, spent on your next charge before your card",
+      "The team owner now holds one of the team's seats in the billing system too, matching the member count shown on the team page",
+    ],
+  },
   {
     version: "0.32.2",
     date: "2026-10-01",

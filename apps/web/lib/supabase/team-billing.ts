@@ -4,6 +4,8 @@ import {
   loggablePolarError,
   unwrapPolarResult,
 } from "@/lib/polar";
+import { PaymentFailed } from "@polar-sh/sdk/models/errors/paymentfailed";
+import { creditBalanceFromOrders, quoteSeatChange, type SeatChangeQuote } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -43,10 +45,11 @@ type BillingTeam = Pick<
   | "seats"
   | "cancel_at_period_end"
   | "pending_checkout"
+  | "pending_seats"
 >;
 
 const BILLING_TEAM_COLUMNS =
-  "id, name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, cancel_at_period_end, pending_checkout";
+  "id, name, created_by, polar_customer_id, polar_subscription_id, subscription_status, seats, cancel_at_period_end, pending_checkout, pending_seats";
 
 class TeamBillingError extends Error {
   code: string;
@@ -436,24 +439,45 @@ export async function updateTeamSeats(
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
 
+  // Increases are charged now and raise capacity now. Reductions take effect
+  // at the next renewal: the paid seats, member cap and request pool stay until
+  // then, and Polar records the change as the subscription's pending update.
+  //
   // Ordering is direction-specific. An increase tells Polar first: writing the
   // higher limit to the database before Polar confirms would expose capacity a
-  // concurrent invite accept can fill, and a Polar rejection then leaves the
-  // team above its paid seat count with a rollback that fails on
-  // below_members. A reduction writes the database first, through an RPC that
-  // takes the same row lock as accept_team_invite and re-counts members under
-  // it; checking the count out here and lowering seats only after Polar
-  // returned would leave a window where a concurrent invite accept admits a
-  // member onto a seat this reduction is removing.
+  // concurrent invite accept can fill. A reduction is recorded in the database
+  // first, through an RPC that takes the same row lock as accept_team_invite
+  // and re-counts members under it, so no accept can admit a member the
+  // renewal would have no seat for.
   const admin = createAdminClient();
 
   if (seats > team.seats) {
+    // "invoice" charges the prorated price of the added seats right away,
+    // together with any earlier change still waiting for the next invoice.
+    // Under the organization default ("prorate") the charge waited for the
+    // renewal and was never collected if the subscription ended first. A
+    // declined charge leaves the Polar subscription unchanged, so the database
+    // write below is skipped too.
     const polar = createPolarClient();
-    const result = await polar.subscriptions.update({
-      id: team.polar_subscription_id,
-      subscriptionUpdate: { seats },
-    });
-    unwrapPolarResult(result, "team seat update");
+    let result;
+    try {
+      result = await polar.subscriptions.update({
+        id: team.polar_subscription_id,
+        subscriptionUpdate: { seats, prorationBehavior: "invoice" },
+      });
+    } catch (error) {
+      if (error instanceof PaymentFailed) {
+        throw new TeamBillingError(
+          "payment_failed",
+          "Your payment method was declined, so no seats were added. Update the card from the link in your Polar receipt email and try again."
+        );
+      }
+      throw error;
+    }
+    const increased = unwrapPolarResult(result, "team seat update") as unknown as Record<
+      string,
+      unknown
+    >;
 
     const { data, error } = await admin.rpc("update_team_seats", {
       p_team_id: teamId,
@@ -477,10 +501,29 @@ export async function updateTeamSeats(
       throw new TeamBillingError("seat_update_failed", "Failed to update seats");
     }
 
+    // Adding seats drops any pending reduction in Polar (update_team_seats
+    // already cleared the row); record the version so a late event for the
+    // dropped schedule cannot bring it back.
+    try {
+      await syncPendingSeats(teamId, team.polar_subscription_id, increased);
+    } catch (syncError) {
+      console.error("[team-billing] failed to record the seat schedule from Polar", {
+        teamId,
+        syncError,
+      });
+    }
+
     return;
   }
 
-  const { data, error } = await admin.rpc("update_team_seats", {
+  if (seats === team.seats && team.pending_seats === null) {
+    return;
+  }
+
+  // A reduction, or `seats === team.seats` with a reduction pending, which
+  // cancels it. Polar treats both the same way: "next_period" with the current
+  // count clears the pending update.
+  const { data, error } = await admin.rpc("schedule_team_seat_reduction", {
     p_team_id: teamId,
     p_seats: seats,
   });
@@ -497,7 +540,7 @@ export async function updateTeamSeats(
       typeof rpcResult?.member_count === "number" ? rpcResult.member_count : seats;
     throw new TeamBillingError(
       "seats_below_members",
-      `Team has ${memberCount} members — remove members before reducing to ${seats} seats`
+      `Team has ${memberCount} members, so it needs at least ${memberCount} seats. Remove members first.`
     );
   }
 
@@ -505,40 +548,101 @@ export async function updateTeamSeats(
     throw new TeamBillingError("seat_update_failed", "Failed to update seats");
   }
 
-  const previousSeats =
-    typeof rpcResult?.previous_seats === "number" ? rpcResult.previous_seats : team.seats;
+  const previousPending =
+    typeof rpcResult?.previous_pending_seats === "number" ? rpcResult.previous_pending_seats : null;
+  // What the RPC stored: the current count clears the schedule.
+  const recordedPending = seats === team.seats ? null : seats;
 
+  let updated: Record<string, unknown>;
   try {
     const polar = createPolarClient();
     const result = await polar.subscriptions.update({
       id: team.polar_subscription_id,
-      subscriptionUpdate: { seats },
+      subscriptionUpdate: { seats, prorationBehavior: "next_period" },
     });
-    unwrapPolarResult(result, "team seat update");
+    updated = unwrapPolarResult(result, "team seat update") as unknown as Record<string, unknown>;
   } catch (polarError) {
-    // Polar never saw the change, so put the previous count back (the same RPC,
-    // so the restore also serializes against invite accepts). If the restore
-    // itself is refused or fails, the subscription.updated webhook remains the
-    // reconciler of record; surface the original Polar error either way.
-    const { data: restoreData, error: restoreError } = await admin.rpc("update_team_seats", {
-      p_team_id: teamId,
-      p_seats: previousSeats,
-    });
-
-    const restoreStatus = asRecord(restoreData)
-      ? asNonEmptyString(asRecord(restoreData)!.status)
-      : null;
-    if (restoreError || restoreStatus !== "ok") {
-      console.error("[team-billing] failed to restore seats after Polar error", {
+    // Polar never saw the change, so put the previous schedule back, but only
+    // while the row still holds this request's value: an overlapping request
+    // that has since scheduled something else (and told Polar) must not be
+    // undone. If the restore fails, the next subscription webhook rewrites
+    // pending_seats from Polar; surface the original Polar error either way.
+    let restore = admin.from("teams").update({ pending_seats: previousPending }).eq("id", teamId);
+    restore =
+      recordedPending === null
+        ? restore.is("pending_seats", null)
+        : restore.eq("pending_seats", recordedPending);
+    const { error: restoreError } = await restore;
+    if (restoreError) {
+      console.error("[team-billing] failed to restore the seat schedule after a Polar error", {
         teamId,
-        previousSeats,
+        previousPending,
         restoreError,
-        restoreStatus,
       });
     }
 
     throw polarError;
   }
+
+  // Record Polar's own view (and its version) now rather than waiting for the
+  // webhook, so a late event for an earlier change is already outdated.
+  try {
+    await syncPendingSeats(teamId, team.polar_subscription_id, updated);
+  } catch (syncError) {
+    console.error("[team-billing] failed to record the seat schedule from Polar", {
+      teamId,
+      syncError,
+    });
+  }
+}
+
+/**
+ * Prices a seat change for the confirmation dialog: the exact amount Polar
+ * charges (or credits) if the owner confirms now, after spending any unused
+ * credit. Reads the live subscription and the customer's order history from
+ * Polar so the quote uses Polar's own period bounds and seat count.
+ */
+export async function quoteTeamSeatChange(
+  userId: string,
+  teamId: string,
+  seats: number
+): Promise<SeatChangeQuote> {
+  assertValidSeatCount(seats);
+
+  const team = await getTeamForOwner(userId, teamId);
+  if (!team.polar_subscription_id) {
+    throw new TeamBillingError("no_subscription", "No active subscription");
+  }
+
+  const polar = createPolarClient();
+  const subscription = unwrapPolarResult(
+    await polar.subscriptions.get({ id: team.polar_subscription_id }),
+    "team subscription get"
+  );
+  const currentSeats = subscription.seats ?? team.seats;
+  if (!currentSeats || currentSeats <= 0) {
+    throw new TeamBillingError("seat_update_failed", "Could not read the current seat count");
+  }
+
+  const orders: Array<{ totalAmount: number; appliedBalanceAmount: number }> = [];
+  for await (const page of await polar.orders.list({
+    customerId: subscription.customerId,
+    limit: 100,
+  })) {
+    orders.push(...page.result.items);
+  }
+
+  const pendingSeats = subscription.pendingUpdate?.seats ?? null;
+
+  return quoteSeatChange({
+    currentSeats,
+    pendingSeats,
+    newSeats: seats,
+    pricePerSeatCents: Math.round(subscription.amount / currentSeats),
+    periodStartMs: subscription.currentPeriodStart.getTime(),
+    periodEndMs: subscription.currentPeriodEnd.getTime(),
+    creditBalanceCents: creditBalanceFromOrders(orders),
+  });
 }
 
 /** Cancels immediately. Used by team deletion, which revokes before deleting the row. */
@@ -628,6 +732,116 @@ export async function revokeTeamSeat(
   }
 }
 
+/** The `error` code from a Polar API error body, e.g. "SeatNotAvailable". */
+export function polarErrorCode(error: unknown): string | null {
+  const body = (error as { body?: unknown } | null)?.body;
+  if (typeof body !== "string") return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    return typeof parsed.error === "string" ? parsed.error : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Gives the team owner a claimed Polar seat, so Polar's assigned seats match
+ * our member count (the owner occupies one of the purchased seats). Polar
+ * assigns the owner member a seat at checkout for some customers and not for
+ * others, so this records an existing seat when there is one and assigns one
+ * otherwise. Assigning twice answers SeatAlreadyAssigned, which makes
+ * concurrent webhook deliveries harmless.
+ *
+ * Best effort: billing does not depend on it (Polar charges for the seat
+ * count, not for assignments), so failures are logged and the next
+ * subscription event retries.
+ */
+export async function ensureOwnerSeat(teamId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { data: owner, error: ownerError } = await admin
+      .from("team_members")
+      .select("user_id, polar_seat_id")
+      .eq("team_id", teamId)
+      .eq("role", "owner")
+      .maybeSingle();
+    if (ownerError) throw ownerError;
+    if (!owner) return;
+
+    const { data: team, error: teamError } = await admin
+      .from("teams")
+      .select("polar_subscription_id, subscription_status")
+      .eq("id", teamId)
+      .maybeSingle();
+    if (teamError) throw teamError;
+    if (!team?.polar_subscription_id || team.subscription_status === null) return;
+    const subscriptionId = team.polar_subscription_id;
+
+    const { data: user, error: userError } = await admin
+      .from("users")
+      .select("email")
+      .eq("id", owner.user_id)
+      .maybeSingle();
+    if (userError) throw userError;
+    if (!user?.email) return;
+    const email = user.email;
+
+    const polar = createPolarClient();
+    const wanted = email.toLowerCase();
+    const listOwnerSeats = async () => {
+      const list = unwrapPolarResult(
+        await polar.customerSeats.listSeats({ subscriptionId }),
+        "team seat list"
+      );
+      return list.seats.filter(
+        (seat) =>
+          seat.status !== "revoked" &&
+          (seat.customerEmail?.toLowerCase() === wanted || seat.email?.toLowerCase() === wanted)
+      );
+    };
+
+    const ownerSeats = await listOwnerSeats();
+    if (owner.polar_seat_id) {
+      // The stored id must still be the owner's live seat in THIS subscription:
+      // a revoked subscription leaves the old id behind, and Polar hands
+      // revoked seat ids to other people when it recycles them.
+      if (ownerSeats.some((seat) => seat.id === owner.polar_seat_id)) return;
+
+      const { error: clearError } = await admin
+        .from("team_members")
+        .update({ polar_seat_id: null })
+        .eq("team_id", teamId)
+        .eq("user_id", owner.user_id)
+        .eq("polar_seat_id", owner.polar_seat_id);
+      if (clearError) throw clearError;
+    }
+
+    let seatId: string | null = ownerSeats[0]?.id ?? null;
+    if (!seatId) {
+      try {
+        seatId = await assignTeamSeat(teamId, email, owner.user_id);
+      } catch (error) {
+        if (polarErrorCode(error) !== "SeatAlreadyAssigned") throw error;
+        seatId = (await listOwnerSeats())[0]?.id ?? null;
+      }
+    }
+    if (!seatId) return;
+
+    const { error: updateError } = await admin
+      .from("team_members")
+      .update({ polar_seat_id: seatId })
+      .eq("team_id", teamId)
+      .eq("user_id", owner.user_id)
+      .is("polar_seat_id", null);
+    if (updateError) throw updateError;
+  } catch (error) {
+    console.error("[team-billing] failed to give the team owner a Polar seat", {
+      teamId,
+      error: loggablePolarError(error),
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Webhook apply
 // ---------------------------------------------------------------------------
@@ -696,6 +910,43 @@ async function resolveSeatMemberId(data: Record<string, unknown>): Promise<strin
   }
 
   return findUserIdByEmail(email);
+}
+
+/** Seats in the subscription's pending update, or null when nothing is scheduled. */
+function pendingSeatsFromEvent(data: Record<string, unknown>): number | null {
+  const pending = asRecord(data.pendingUpdate);
+  const seats = pending?.seats;
+  return typeof seats === "number" && Number.isInteger(seats) && seats > 0 ? seats : null;
+}
+
+/**
+ * Mirrors a Polar subscription's scheduled seat change into
+ * `teams.pending_seats`, accepting only a newer `modifiedAt` than the one
+ * already applied: a late or retried event for an earlier change must not
+ * restore a schedule (and with it a looser member cap) that Polar has since
+ * replaced. `subscription` is a webhook payload or an API response.
+ */
+async function syncPendingSeats(
+  teamId: string,
+  subscriptionId: string,
+  subscription: Record<string, unknown>
+): Promise<void> {
+  const asOf = parseEventTimestamp(subscription.modifiedAt);
+  if (asOf === null) {
+    return;
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("teams")
+    .update({ pending_seats: pendingSeatsFromEvent(subscription), pending_seats_as_of: asOf })
+    .eq("id", teamId)
+    .eq("polar_subscription_id", subscriptionId)
+    .or(`pending_seats_as_of.is.null,pending_seats_as_of.lt."${asOf}"`);
+
+  if (error) {
+    throw error;
+  }
 }
 
 async function applyTeamSubscriptionState(
@@ -850,6 +1101,13 @@ async function applyTeamSubscriptionState(
 
   const { error: guardedError } = await guarded;
   if (guardedError) throw guardedError;
+
+  // Separately from the guarded write above: seat changes within one period
+  // share its subscription id and period start, so the pending schedule is
+  // versioned by the subscription's modified_at instead.
+  if (subscriptionId !== null) {
+    await syncPendingSeats(teamId, subscriptionId, data);
+  }
 }
 
 /**
@@ -1011,6 +1269,7 @@ export async function applyTeamPolarWebhookEvent(
     case "subscription.updated":
     case "subscription.active":
       await applyTeamSubscriptionState(eventType, teamId, data);
+      await ensureOwnerSeat(teamId);
       return;
 
     case "subscription.canceled": {
@@ -1057,6 +1316,8 @@ export async function applyTeamPolarWebhookEvent(
         // A pre-revoke checkout session must not be resurrected by the reuse
         // path after a resubscribe.
         pending_checkout: null,
+        pending_seats: null,
+        pending_seats_as_of: null,
       });
       return;
     }

@@ -20,6 +20,7 @@ import type { Team } from "@/lib/supabase/teams-types";
 import { trackTeamSubscribeClicked } from "@/lib/analytics";
 import {
   cancelTeamSubscription,
+  quoteTeamSeats,
   resubscribeTeamSubscription,
   startTeamCheckout,
   updateTeamSeats,
@@ -29,7 +30,9 @@ import {
   MAX_TEAM_SEATS,
   MIN_TEAM_SEATS,
   clampSeats,
+  formatCents,
   formatSeatPricing,
+  type SeatChangeQuote,
 } from "@/lib/team-pricing";
 
 const SESSION_EXPIRED = "Your session expired. Please sign in again.";
@@ -125,6 +128,9 @@ export function TeamSubscriptionCard({
   const [canceling, setCanceling] = useState(false);
   const [resubscribing, setResubscribing] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const [confirmSeatsOpen, setConfirmSeatsOpen] = useState(false);
+  const [seatQuote, setSeatQuote] = useState<SeatChangeQuote | null>(null);
+  const [seatQuoteError, setSeatQuoteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -152,6 +158,26 @@ export function TeamSubscriptionCard({
     }
   };
 
+  // The dialog shows Polar's exact amount, priced server-side when it opens.
+  const openSeatConfirmation = async () => {
+    if (!accessToken) {
+      setError(SESSION_EXPIRED);
+      return;
+    }
+
+    setSeatQuote(null);
+    setSeatQuoteError(null);
+    setConfirmSeatsOpen(true);
+    try {
+      setSeatQuote(await quoteTeamSeats(accessToken, team.id, seatDraft));
+    } catch (err) {
+      console.error("Team seat quote error:", err);
+      setSeatQuoteError(
+        err instanceof Error ? err.message : "Could not price the seat change. Please try again."
+      );
+    }
+  };
+
   const handleUpdateSeats = async () => {
     if (!accessToken) {
       setError(SESSION_EXPIRED);
@@ -163,11 +189,45 @@ export function TeamSubscriptionCard({
     setNotice(null);
     try {
       await updateTeamSeats(accessToken, team.id, seatDraft);
-      setNotice(`Seats updated to ${seatDraft}.`);
+      setConfirmSeatsOpen(false);
+      if (seatDraft < team.seats) {
+        // The seat count itself only changes at renewal, so put the stepper
+        // back on the seats the team still has.
+        setNotice(
+          `Seats drop to ${seatDraft} on ${formatDate(team.periodEnd)}. You keep ${team.seats} seats until then.`
+        );
+        setSeatDraft(team.seats);
+      } else {
+        setNotice(`Seats updated to ${seatDraft}.`);
+      }
       await onChanged?.();
     } catch (err) {
       console.error("Team seat update error:", err);
+      setConfirmSeatsOpen(false);
       setError(err instanceof Error ? err.message : "Failed to update seats. Please try again.");
+    } finally {
+      setSavingSeats(false);
+    }
+  };
+
+  // Undoing a scheduled reduction costs nothing, so it needs no confirmation.
+  const handleKeepSeats = async () => {
+    if (!accessToken) {
+      setError(SESSION_EXPIRED);
+      return;
+    }
+
+    setSavingSeats(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await updateTeamSeats(accessToken, team.id, team.seats);
+      setSeatDraft(team.seats);
+      setNotice(`Scheduled reduction cancelled. You keep ${team.seats} seats.`);
+      await onChanged?.();
+    } catch (err) {
+      console.error("Team seat reduction cancel error:", err);
+      setError(err instanceof Error ? err.message : "Failed to keep your seats. Please try again.");
     } finally {
       setSavingSeats(false);
     }
@@ -295,6 +355,36 @@ export function TeamSubscriptionCard({
       ? "Cancels at period end"
       : "Active";
   const periodEndLabel = formatDate(team.periodEnd);
+  const seatDelta = seatDraft - team.seats;
+  const addingSeats = seatDelta > 0;
+  const seatChangeCount = Math.abs(seatDelta);
+  const seatChangeNoun = seatChangeCount === 1 ? "seat" : "seats";
+
+  const scheduledReduction =
+    team.pendingSeats !== null && team.pendingSeats < team.seats ? team.pendingSeats : null;
+
+  let seatQuoteText: string | null = null;
+  if (seatQuote) {
+    const renewsOn = formatDate(Date.parse(seatQuote.periodEnd));
+    const renewal = `From ${renewsOn} the subscription renews at ${formatSeatPricing(seatQuote.newSeats)}. VAT is included where it applies.`;
+    const amount = formatCents(seatQuote.prorationCents);
+    const pending =
+      seatQuote.pendingSeats !== null && seatQuote.pendingSeats < seatQuote.currentSeats
+        ? seatQuote.pendingSeats
+        : null;
+    if (seatQuote.appliesAtRenewal) {
+      seatQuoteText = `You keep ${seatQuote.currentSeats} seats until ${renewsOn}, so nothing is charged or credited now. ${renewal}${pending !== null ? ` This replaces the scheduled reduction to ${pending} seats.` : ""}`;
+    } else if (seatQuote.creditAppliedCents === 0) {
+      seatQuoteText = `Your card is charged ${formatCents(seatQuote.dueNowCents)} now for the rest of this billing period. ${renewal}`;
+    } else if (seatQuote.dueNowCents === 0) {
+      seatQuoteText = `The rest of this billing period costs ${amount}, fully covered by your account credit, so your card is not charged. ${renewal}`;
+    } else {
+      seatQuoteText = `The rest of this billing period costs ${amount}. ${formatCents(seatQuote.creditAppliedCents)} of account credit covers part of it, so your card is charged ${formatCents(seatQuote.dueNowCents)} now. ${renewal}`;
+    }
+    if (!seatQuote.appliesAtRenewal && pending !== null) {
+      seatQuoteText += ` This also cancels the scheduled reduction to ${pending} seats.`;
+    }
+  }
 
   // UsageDisplay renders an AccountProfile; the team's pooled quota is fed
   // through the same shape so both bars look and behave identically.
@@ -349,6 +439,25 @@ export function TeamSubscriptionCard({
           </p>
         )}
 
+        {scheduledReduction !== null && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <p className="text-muted-foreground">
+              Seats drop from {team.seats} to {scheduledReduction} on {periodEndLabel}. You keep{" "}
+              {team.seats} seats until then.
+            </p>
+            {isOwner && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleKeepSeats()}
+                disabled={savingSeats || !accessToken}
+              >
+                Keep {team.seats} seats
+              </Button>
+            )}
+          </div>
+        )}
+
         <UsageDisplay profile={pooledUsage} />
 
         {isOwner && (
@@ -363,7 +472,7 @@ export function TeamSubscriptionCard({
               />
               <Button
                 variant="outline"
-                onClick={() => void handleUpdateSeats()}
+                onClick={() => void openSeatConfirmation()}
                 disabled={savingSeats || seatDraft === team.seats || !accessToken}
               >
                 {savingSeats ? "Updating..." : "Update seats"}
@@ -392,6 +501,49 @@ export function TeamSubscriptionCard({
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={confirmSeatsOpen}
+        onOpenChange={(isOpen) => {
+          if (!savingSeats) setConfirmSeatsOpen(isOpen);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {addingSeats
+                ? `Add ${seatChangeCount} ${seatChangeNoun}?`
+                : `Remove ${seatChangeCount} ${seatChangeNoun} at renewal?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {seatQuoteError
+                ? seatQuoteError
+                : (seatQuoteText ?? "Calculating the exact amount...")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingSeats}>
+              Keep {team.seats} {team.seats === 1 ? "seat" : "seats"}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                // Stay open until the request settles so a decline shows in context.
+                event.preventDefault();
+                void handleUpdateSeats();
+              }}
+              disabled={savingSeats || seatQuote === null}
+            >
+              {savingSeats
+                ? "Updating..."
+                : addingSeats
+                  ? seatQuote && seatQuote.dueNowCents > 0
+                    ? `Pay ${formatCents(seatQuote.dueNowCents)} and add ${seatChangeNoun}`
+                    : `Add ${seatChangeNoun}`
+                  : `Remove at renewal`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={confirmCancelOpen}
