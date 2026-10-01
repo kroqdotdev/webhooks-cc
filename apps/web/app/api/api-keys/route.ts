@@ -115,10 +115,14 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Failed to delete API key" }, { status: 500 });
   }
 
+  // The route answers 200 even when no key matched, so the audit row does too;
+  // `deleted` records whether a key was actually removed.
+  const deletedPrefix = deletedKeys?.[0]?.key_prefix ?? null;
   await auditUserAction(request, auth.userId, {
     action: "api_key.deleted",
-    status: deletedKeys && deletedKeys.length > 0 ? 200 : 404,
-    targetId: deletedKeys?.[0]?.key_prefix ?? keyId,
+    status: 200,
+    targetId: deletedPrefix ?? keyId,
+    metadata: { deleted: deletedPrefix !== null },
   });
   return Response.json({ success: true });
 }

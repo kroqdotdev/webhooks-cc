@@ -31,7 +31,7 @@
 -- contention profile as the existing endpoints.request_count increment.
 --
 -- Backfill: days before today (UTC) are rebuilt from the requests still
--- retained. Rejections were never stored, so backfilled rows show 0 for them,
+-- retained, merged with any row already written (see section 4). Rejections were never stored, so backfilled rows show 0 for them,
 -- and today's row only counts captures made after this migration.
 -- ============================================================================
 
@@ -90,6 +90,9 @@ $$;
 revoke all on function public.prune_audit_events() from public, anon, authenticated;
 grant execute on function public.prune_audit_events() to service_role;
 
+-- pg_cron 1.3+ already upserts named jobs; unscheduling first keeps a re-run
+-- from ever leaving a duplicate.
+select cron.unschedule(jobid) from cron.job where jobname = 'prune-audit-events-daily';
 select cron.schedule(
   'prune-audit-events-daily',
   '17 3 * * *',
@@ -328,7 +331,7 @@ begin
     end if;
 
   end if;
-  -- else: owned endpoint with null user_id but not ephemeral — allow through (no quota)
+  -- else: owned endpoint with null user_id but not ephemeral: allow through (no quota)
 
   -- 4. Insert the request (capture generated ID for post-response verification)
   v_size := coalesce(octet_length(p_body_raw), octet_length(p_body), 0);
@@ -400,6 +403,17 @@ select r.endpoint_id,
   from public.requests r
  where r.received_at < (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC')
  group by r.endpoint_id, (r.received_at at time zone 'UTC')::date
-on conflict (endpoint_id, day) do nothing;
+on conflict (endpoint_id, day) do update
+   -- A capture landing between the function swap above and this statement
+   -- (only possible across UTC midnight) already created the row. requests
+   -- holds every capture of that day, so take the larger of the two counts;
+   -- greatest() also keeps a later re-run from shrinking days whose requests
+   -- retention has since pruned. quota_rejected is not in requests and is
+   -- left as recorded.
+   set captured    = greatest(endpoint_daily_stats.captured, excluded.captured),
+       team_billed = greatest(endpoint_daily_stats.team_billed, excluded.team_billed),
+       bytes       = greatest(endpoint_daily_stats.bytes, excluded.bytes),
+       user_id     = coalesce(endpoint_daily_stats.user_id, excluded.user_id),
+       team_id     = coalesce(endpoint_daily_stats.team_id, excluded.team_id);
 
 notify pgrst, 'reload schema';

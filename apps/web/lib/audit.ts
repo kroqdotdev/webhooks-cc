@@ -20,6 +20,7 @@ export type AuditAction =
   | "billing.subscription_canceled"
   | "billing.subscription_resumed"
   | "endpoint.created"
+  | "endpoint.updated"
   | "endpoint.deleted"
   | "endpoint.claimed"
   | "team.created"
