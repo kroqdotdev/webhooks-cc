@@ -190,12 +190,44 @@ export function TeamSubscriptionCard({
     try {
       await updateTeamSeats(accessToken, team.id, seatDraft);
       setConfirmSeatsOpen(false);
-      setNotice(`Seats updated to ${seatDraft}.`);
+      if (seatDraft < team.seats) {
+        // The seat count itself only changes at renewal, so put the stepper
+        // back on the seats the team still has.
+        setNotice(
+          `Seats drop to ${seatDraft} on ${formatDate(team.periodEnd)}. You keep ${team.seats} seats until then.`
+        );
+        setSeatDraft(team.seats);
+      } else {
+        setNotice(`Seats updated to ${seatDraft}.`);
+      }
       await onChanged?.();
     } catch (err) {
       console.error("Team seat update error:", err);
       setConfirmSeatsOpen(false);
       setError(err instanceof Error ? err.message : "Failed to update seats. Please try again.");
+    } finally {
+      setSavingSeats(false);
+    }
+  };
+
+  // Undoing a scheduled reduction costs nothing, so it needs no confirmation.
+  const handleKeepSeats = async () => {
+    if (!accessToken) {
+      setError(SESSION_EXPIRED);
+      return;
+    }
+
+    setSavingSeats(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await updateTeamSeats(accessToken, team.id, team.seats);
+      setSeatDraft(team.seats);
+      setNotice(`Scheduled reduction cancelled. You keep ${team.seats} seats.`);
+      await onChanged?.();
+    } catch (err) {
+      console.error("Team seat reduction cancel error:", err);
+      setError(err instanceof Error ? err.message : "Failed to keep your seats. Please try again.");
     } finally {
       setSavingSeats(false);
     }
@@ -328,19 +360,29 @@ export function TeamSubscriptionCard({
   const seatChangeCount = Math.abs(seatDelta);
   const seatChangeNoun = seatChangeCount === 1 ? "seat" : "seats";
 
+  const scheduledReduction =
+    team.pendingSeats !== null && team.pendingSeats < team.seats ? team.pendingSeats : null;
+
   let seatQuoteText: string | null = null;
   if (seatQuote) {
     const renewsOn = formatDate(Date.parse(seatQuote.periodEnd));
     const renewal = `From ${renewsOn} the subscription renews at ${formatSeatPricing(seatQuote.newSeats)}. VAT is included where it applies.`;
-    const amount = formatCents(Math.abs(seatQuote.prorationCents));
-    if (!addingSeats) {
-      seatQuoteText = `You get ${amount} of account credit for the rest of this billing period. It is spent on your next charge before your card. ${renewal}`;
+    const amount = formatCents(seatQuote.prorationCents);
+    const pending =
+      seatQuote.pendingSeats !== null && seatQuote.pendingSeats < seatQuote.currentSeats
+        ? seatQuote.pendingSeats
+        : null;
+    if (seatQuote.appliesAtRenewal) {
+      seatQuoteText = `You keep ${seatQuote.currentSeats} seats until ${renewsOn}, so nothing is charged or credited now. ${renewal}${pending !== null ? ` This replaces the scheduled reduction to ${pending} seats.` : ""}`;
     } else if (seatQuote.creditAppliedCents === 0) {
       seatQuoteText = `Your card is charged ${formatCents(seatQuote.dueNowCents)} now for the rest of this billing period. ${renewal}`;
     } else if (seatQuote.dueNowCents === 0) {
       seatQuoteText = `The rest of this billing period costs ${amount}, fully covered by your account credit, so your card is not charged. ${renewal}`;
     } else {
       seatQuoteText = `The rest of this billing period costs ${amount}. ${formatCents(seatQuote.creditAppliedCents)} of account credit covers part of it, so your card is charged ${formatCents(seatQuote.dueNowCents)} now. ${renewal}`;
+    }
+    if (!seatQuote.appliesAtRenewal && pending !== null) {
+      seatQuoteText += ` This also cancels the scheduled reduction to ${pending} seats.`;
     }
   }
 
@@ -395,6 +437,25 @@ export function TeamSubscriptionCard({
             This subscription ends on {periodEndLabel}. Members lose access to shared endpoints
             after that date.
           </p>
+        )}
+
+        {scheduledReduction !== null && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <p className="text-muted-foreground">
+              Seats drop from {team.seats} to {scheduledReduction} on {periodEndLabel}. You keep{" "}
+              {team.seats} seats until then.
+            </p>
+            {isOwner && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleKeepSeats()}
+                disabled={savingSeats || !accessToken}
+              >
+                Keep {team.seats} seats
+              </Button>
+            )}
+          </div>
         )}
 
         <UsageDisplay profile={pooledUsage} />
@@ -452,7 +513,7 @@ export function TeamSubscriptionCard({
             <AlertDialogTitle>
               {addingSeats
                 ? `Add ${seatChangeCount} ${seatChangeNoun}?`
-                : `Remove ${seatChangeCount} ${seatChangeNoun}?`}
+                : `Remove ${seatChangeCount} ${seatChangeNoun} at renewal?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {seatQuoteError
@@ -478,7 +539,7 @@ export function TeamSubscriptionCard({
                   ? seatQuote && seatQuote.dueNowCents > 0
                     ? `Pay ${formatCents(seatQuote.dueNowCents)} and add ${seatChangeNoun}`
                     : `Add ${seatChangeNoun}`
-                  : `Remove ${seatChangeNoun}`}
+                  : `Remove at renewal`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

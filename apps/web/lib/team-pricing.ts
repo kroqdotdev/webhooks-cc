@@ -28,8 +28,15 @@ export function clampSeats(value: number): number {
 export interface SeatChangeQuote {
   currentSeats: number;
   newSeats: number;
+  /** Seat count of a reduction already scheduled for the renewal; null when none. */
+  pendingSeats: number | null;
+  /**
+   * True for a reduction: nothing is charged or credited now, the current
+   * seats stay until `periodEnd`, and the subscription renews at `newSeats`.
+   */
+  appliesAtRenewal: boolean;
   pricePerSeatCents: number;
-  /** Prorated price of the change for the rest of the period; negative for a reduction. */
+  /** Prorated price of an increase for the rest of the period; 0 for a reduction. */
   prorationCents: number;
   /** Unused account credit Polar spends on this charge first. */
   creditAppliedCents: number;
@@ -42,18 +49,20 @@ export interface SeatChangeQuote {
 }
 
 /**
- * Prices a seat change exactly as Polar's "invoice" proration does, verified
- * against the sandbox: the prorated amount is the per-second share of the
- * remaining period, rounded down to the cent on the total (not per seat). A
- * reduction books the same amount as a credit, which Polar keeps as account
- * balance and spends on the next charge before the card. Prices include VAT
- * (the organization is tax-inclusive), so the card pays exactly this.
+ * Prices a seat change exactly as Polar bills it, verified against the
+ * sandbox. An increase uses "invoice": the per-second share of the remaining
+ * period, rounded down to the cent on the total (not per seat), with any
+ * unused account credit spent before the card. A reduction uses
+ * "next_period": nothing changes until the renewal, so it costs and credits
+ * nothing now. Prices include VAT (the organization is tax-inclusive), so the
+ * card pays exactly this.
  *
  * Time only shrinks the amount, so a charge made after the quote is never
  * higher than quoted.
  */
 export function quoteSeatChange(input: {
   currentSeats: number;
+  pendingSeats?: number | null;
   newSeats: number;
   pricePerSeatCents: number;
   periodStartMs: number;
@@ -65,21 +74,21 @@ export function quoteSeatChange(input: {
   const delta = input.newSeats - input.currentSeats;
   const periodMs = input.periodEndMs - input.periodStartMs;
   const remainingMs = Math.min(periodMs, Math.max(0, input.periodEndMs - nowMs));
-  const magnitude =
-    periodMs > 0
-      ? Math.floor((Math.abs(delta) * input.pricePerSeatCents * remainingMs) / periodMs)
+  const prorationCents =
+    delta > 0 && periodMs > 0
+      ? Math.floor((delta * input.pricePerSeatCents * remainingMs) / periodMs)
       : 0;
-  const prorationCents = delta < 0 ? -magnitude : magnitude;
-  const credit = Math.max(0, input.creditBalanceCents);
-  const creditAppliedCents = delta > 0 ? Math.min(credit, magnitude) : 0;
+  const creditAppliedCents = Math.min(Math.max(0, input.creditBalanceCents), prorationCents);
 
   return {
     currentSeats: input.currentSeats,
     newSeats: input.newSeats,
+    pendingSeats: input.pendingSeats ?? null,
+    appliesAtRenewal: delta < 0,
     pricePerSeatCents: input.pricePerSeatCents,
     prorationCents,
     creditAppliedCents,
-    dueNowCents: delta > 0 ? magnitude - creditAppliedCents : 0,
+    dueNowCents: prorationCents - creditAppliedCents,
     renewalCents: input.newSeats * input.pricePerSeatCents,
     periodEnd: new Date(input.periodEndMs).toISOString(),
   };
@@ -87,7 +96,8 @@ export function quoteSeatChange(input: {
 
 /**
  * Unused account credit from a customer's Polar orders: credit notes (negative
- * totals, from seat reductions) minus what later orders already spent
+ * totals, e.g. from refunds or seat reductions billed before reductions moved
+ * to the renewal) minus what later orders already spent
  * (`appliedBalanceAmount` is negative when credit was used). Polar exposes no
  * balance endpoint, so the order history is the source of truth.
  */

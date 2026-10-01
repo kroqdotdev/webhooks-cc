@@ -458,6 +458,18 @@ describe("createInvite", () => {
     });
   });
 
+  test("a scheduled reduction caps invites at the renewal seat count", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER, { count: 3 }],
+        "teams:select": [{ data: { seats: 5, pending_seats: 3 } }],
+      })
+    );
+
+    const result = await createInvite("user_1", "team_1", "new@example.com");
+    expect(result.error).toMatch(/seat reduction is scheduled/);
+  });
+
   // Queue order for a full createInvite run: owner check (team_members),
   // member count (team_members), seats (teams), inviter email (users),
   // team name (teams), invited user (users), [member check (team_members)

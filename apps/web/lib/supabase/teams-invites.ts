@@ -8,6 +8,8 @@ import type { TeamInvite, TeamInviteRow } from "./teams-types";
 
 /** Every purchased seat is occupied — membership is capped by seats, not plan. */
 const NO_SEATS_MESSAGE = "Team has no available seats — ask the owner to add seats";
+const SCHEDULED_REDUCTION_MESSAGE =
+  "A seat reduction is scheduled for the next renewal. Keep your current seats on the team page to invite more members.";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,13 +59,23 @@ export async function createInvite(
 
   const { data: teamSeats, error: seatsError } = await admin
     .from("teams")
-    .select("seats")
+    .select("seats, pending_seats")
     .eq("id", teamId)
     .maybeSingle();
 
   if (seatsError) throw seatsError;
-  if ((memberCount ?? 0) >= (teamSeats?.seats ?? 0)) {
-    return { error: NO_SEATS_MESSAGE };
+  // A scheduled reduction caps members now, matching accept_team_invite.
+  const seatCap = Math.min(
+    teamSeats?.seats ?? 0,
+    teamSeats?.pending_seats ?? teamSeats?.seats ?? 0
+  );
+  if ((memberCount ?? 0) >= seatCap) {
+    return {
+      error:
+        teamSeats?.pending_seats != null && teamSeats.pending_seats < teamSeats.seats
+          ? SCHEDULED_REDUCTION_MESSAGE
+          : NO_SEATS_MESSAGE,
+    };
   }
 
   // Inviter email and team name are needed for the self-invite check, the
