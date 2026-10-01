@@ -14,6 +14,9 @@ ENV PNPM_HOME=/pnpm \
 RUN corepack enable
 
 FROM base AS builder
+# @appsignal/nodejs compiles its native extension with node-gyp on install.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # Fetch dependencies from the lockfile alone, so this layer survives source
@@ -38,10 +41,11 @@ ARG NEXT_PUBLIC_BING_SITE_VERIFICATION=
 
 # ARGs reach RUN as environment variables. An empty one is unset rather than
 # passed as "", which lib/env.ts would reject as an invalid URL.
-# The build script also copies public/ and .next/static into the standalone
+# "web..." builds the workspace packages web depends on (the SDK) first. The
+# web build script also copies public/ and .next/static into the standalone
 # output.
 RUN for v in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Z_]*\)=$/\1/p'); do unset "$v"; done; \
-    pnpm --filter web build
+    pnpm --filter "web..." build
 
 FROM node:24-slim AS runner
 WORKDIR /app
