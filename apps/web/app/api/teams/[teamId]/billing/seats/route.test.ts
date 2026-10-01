@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
   return {
     TeamBillingError,
     authenticateSessionRequest: vi.fn(),
+    quoteTeamSeatChange: vi.fn(),
     updateTeamSeats: vi.fn(),
   };
 });
@@ -24,6 +25,7 @@ vi.mock("@/lib/api-auth", () => ({
 
 vi.mock("@/lib/supabase/team-billing", () => ({
   TeamBillingError: mocks.TeamBillingError,
+  quoteTeamSeatChange: mocks.quoteTeamSeatChange,
   updateTeamSeats: mocks.updateTeamSeats,
 }));
 
@@ -94,5 +96,51 @@ describe("POST /api/teams/[teamId]/billing/seats", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({ error: "Failed to update seats" });
+  });
+});
+
+describe("GET /api/teams/[teamId]/billing/seats", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.authenticateSessionRequest.mockResolvedValue({ success: true, userId: "user_123" });
+  });
+
+  const quoteRequest = (query: string) =>
+    new Request(`https://webhooks.cc/api/teams/team_123/billing/seats${query}`);
+
+  test("returns the quote for the requested seat count", async () => {
+    const quote = { currentSeats: 4, newSeats: 5, dueNowCents: 1166 };
+    mocks.quoteTeamSeatChange.mockResolvedValue(quote);
+
+    const { GET } = await import("./route");
+    const response = await GET(quoteRequest("?seats=5"), params);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(quote);
+    expect(mocks.quoteTeamSeatChange).toHaveBeenCalledWith("user_123", "team_123", 5);
+  });
+
+  test("passes a missing seat count through as NaN for validation", async () => {
+    mocks.quoteTeamSeatChange.mockRejectedValue(
+      new mocks.TeamBillingError("invalid_seats", "Seats must be between 1 and 1000")
+    );
+
+    const { GET } = await import("./route");
+    const response = await GET(quoteRequest(""), params);
+
+    expect(response.status).toBe(400);
+    expect(mocks.quoteTeamSeatChange).toHaveBeenCalledWith("user_123", "team_123", NaN);
+  });
+
+  test("returns 500 when Polar fails unexpectedly", async () => {
+    mocks.quoteTeamSeatChange.mockRejectedValue(new Error("polar down"));
+
+    const { GET } = await import("./route");
+    const response = await GET(quoteRequest("?seats=5"), params);
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "Could not price the seat change" });
   });
 });

@@ -21,7 +21,7 @@ Production: `https://webhooks.cc` (app) and `https://go.webhooks.cc` (webhook re
 | `packages/sdk/`         | `@webhooks-cc/sdk`, published to npm. Also the canonical provider catalog (`TEMPLATE_PROVIDERS`, `VERIFY_PROVIDERS`).                                     |
 | `packages/mcp/`         | `@webhooks-cc/mcp`, stdio MCP server. Tools in `src/tools.ts`; the test suite pins the tool and provider counts.                                          |
 | `supabase/migrations/`  | Numbered SQL files: schema, functions, RLS policies, pg_cron jobs. Applied by hand with psql.                                                             |
-| `infra/`                | Cloudflare Worker notify proxy, GoTrue email-auth config notes, AppSignal collector systemd unit.                                                         |
+| `infra/`                | Cloudflare Worker notify proxy, GoTrue email-auth config notes.                                                                                           |
 | `docs/`, `branch-docs/` | Local planning docs. Both are gitignored.                                                                                                                 |
 
 ## Commands
@@ -43,23 +43,13 @@ pnpm test:full                          # everything, including integration and 
 
 ### Running in production
 
-On the app host, the web app and receiver are user-level systemd units named `webhooks-web` and `webhooks-receiver`. A build alone changes nothing: the old binary keeps running until the unit restarts. Use the deploy targets, which build and restart together.
+Production runs as containers on a single host: the web app and receiver images built from this repository (`apps/web/Dockerfile`, `apps/receiver-rs/Dockerfile`), Caddy, Redis, the AppSignal collector, and a self-hosted Supabase project, all under Docker Compose. Images are built in CI and shipped to the host; the host never builds. The deploy workflow, compose files, and host configuration live in a separate private operations repository, not here.
 
-```bash
-make deploy-receiver      # build the receiver, then restart its unit
-make deploy-web           # build the web app, then restart its unit
-make deploy-all           # both of the above
-make prod-status
-make prod-restart
-make prod                 # start services if needed and open the mprocs log viewer
-journalctl --user -u webhooks-receiver -f
-```
-
-The AppSignal collector (`appsignal-collector`, port 8099) is a system unit and needs sudo; `make deploy-collector` restarts it.
+A deploy builds both images for a given ref of this repository, loads them on the host, and recreates the web and receiver containers. `NEXT_PUBLIC_*` values are build arguments, so changing one means a new build, not a restart. The CI job "Build Docker Images" checks on every PR that both images still build.
 
 ### Database changes
 
-Migrations are plain SQL files in `supabase/migrations/`, numbered sequentially. There is no migration runner. Apply each file against dev first, then against prod as part of the deploy:
+Migrations are plain SQL files in `supabase/migrations/`, numbered sequentially. There is no migration runner. Apply each file against dev first, then against prod before deploying the release that needs it (the production database is only reachable from its host):
 
 ```bash
 PGOPTIONS="-c lock_timeout=5s" psql "$SUPABASE_DB_URL" --set=ON_ERROR_STOP=1 -f supabase/migrations/<file>.sql
@@ -79,11 +69,11 @@ Capture path: a sender POSTs to `go.webhooks.cc/w/{slug}/...`. The receiver vali
 
 Decisions worth knowing, with the reasons:
 
-- **The receiver talks to Postgres directly** through the Supabase session pooler (`DATABASE_URL`), not through the web app. One fewer hop on the hot path, and the stored procedure keeps quota and counters atomic.
+- **The receiver talks to Postgres directly** (`DATABASE_URL`), not through the web app. One fewer hop on the hot path, and the stored procedure keeps quota and counters atomic. In production it connects to Postgres on the same Docker network rather than through Supavisor: on one host the pooler only costs CPU, and a load test sustained about twice the throughput without it.
 - **DB failures are classified.** Transient errors (pool timeout, connection loss, SQLSTATE classes 08/40/53/57/58) return 503 with `Retry-After: 5` so senders retry; at-least-once delivery beats silent loss. Permanent errors fail open with 200 and are logged and counted in `webhooks_capture_failed_total{kind}`. NUL bytes in bodies and paths are sanitised (raw bytes kept in `body_raw`) instead of failing the insert.
 - **RLS is deny-by-default for client roles.** Anonymous users cannot read endpoints, requests, or device codes; they may only insert ephemeral endpoints with a bounded expiry and read published blog posts. Guest dashboard reads go through server routes using the service role. Client roles have no write access to `users` and no EXECUTE on `public` functions unless a migration grants it (migration 00037 revoked them and reset the default privileges). Team members can read shared endpoints through `can_view_team_endpoint()`, which is what lets Realtime deliver to them.
 - **Sensitive routes want a session, not an API key.** Account deletion and billing mutations reject API keys with 403.
-- **Teams are billed per team.** A Polar seat subscription on the `teams` row buys the member cap and a pooled quota of seats x 100,000 requests per 30 days. `users.plan` stays free or pro and does not gate team access. `capture_webhook()` bills an endpoint shared with an active team against that team and stamps `requests.team_id`; team-billed requests keep 31-day retention regardless of the owner's plan. Each team gets its own Polar customer of type team: Polar allows one customer per email per organisation, so the owner's personal customer is never reused. Never log a raw Polar SDK error, it embeds the bearer token; use `loggablePolarError()` from `lib/polar.ts`.
+- **Teams are billed per team.** A Polar seat subscription on the `teams` row buys the member cap and a pooled quota of seats x 100,000 requests per 30 days. `users.plan` stays free or pro and does not gate team access. `capture_webhook()` bills an endpoint shared with an active team against that team and stamps `requests.team_id`; team-billed requests keep 31-day retention regardless of the owner's plan. Each team gets its own Polar customer of type team: Polar allows one customer per email per organisation, so the owner's personal customer is never reused. Seat increases are billed at once (Polar `invoice`); seat reductions take effect at the next renewal (`next_period`), mirrored in `teams.pending_seats`, which also caps members until then. Never log a raw Polar SDK error, it embeds the bearer token; use `loggablePolarError()` from `lib/polar.ts`.
 - **The visual-style A/B split is a local coin flip, PostHog only analyses it.** posthog-js resolves feature flags after first paint, so a flag-driven style would re-skin the page in front of the visitor. `appearanceBootstrapScript()` in `apps/web/lib/ui-style.ts` assigns the variant before paint and the app reports it to PostHog as `$feature/ui-style` plus one `$feature_flag_called` exposure per session, which is what the Experiments UI reads. PostHog names experiment variants `control` and `test`, so classic and clean are mapped onto those keys and the readable name rides along as `ui_style_assigned`. Traffic lives in `NEXT_PUBLIC_UI_STYLE_SPLIT` (0 disables). It is inlined at build time on purpose: most routes are prerendered, and a request-time value would leave them serving a stale split while dynamic routes used the new one. Changing the split means a rebuild and restart. Browsers with any trace of an earlier visit keep classic and stay out of the experiment, and a visitor's own pick is never overwritten.
 - **Free periods are lazy.** `period_end` is unset until the first capture triggers `start_free_period()`.
 - **Guest endpoint creation is bot-gated.** `POST /api/go/endpoint` returns 403 for crawler or missing user agents, and the landing page only auto-creates an endpoint after a human input signal. Browsers with `navigator.webdriver` get a manual create button, so Playwright and agents must click it and tests must send a browser user agent.
@@ -98,7 +88,7 @@ Decisions worth knowing, with the reasons:
 
 Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/receiver-rs/src/config.rs`; read those for the current list and defaults. `.env.example` documents the required set. Secrets live only in `.env.local`, which is gitignored. Three that trip people up:
 
-- `DATABASE_URL` (receiver) must be the Supabase session pooler URL, not the direct connection. `SUPABASE_DB_URL` is the direct connection and is used for migrations.
+- `DATABASE_URL` (receiver) is the session pooler in development and a direct same-host connection in production. Keep `PG_POOL_MAX` small (about 20) whenever it bypasses a pooler: every capture updates the same user and endpoint rows, and hundreds of direct connections only queue on those row locks. `SUPABASE_DB_URL` is the direct connection used for migrations.
 - `SIGNING_SECRET_KEY` (AES-256-GCM, base64, 32 bytes) is needed by both the receiver and the web app once signature verification is configured. Generate with `openssl rand -base64 32`.
 - Polar, SMTP, AppSignal, and Redis are optional in development.
 
@@ -114,7 +104,7 @@ Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/rec
 
 ## Boundaries
 
-- Production is real and serves paying users. Do not deploy, restart production services, apply migrations to production, publish packages, or change Polar or Supabase instance configuration unless the task explicitly asks for it. Production runs on separate hosts reached over ssh; the `make deploy-*` targets act on the machine they run on.
+- Production is real and serves paying users. Do not deploy, restart production services, apply migrations to production, publish packages, or change Polar or Supabase instance configuration unless the task explicitly asks for it. Production runs on a separate host and deploys through the private operations repository; do not build or deploy from a development machine.
 - Ask before anything that costs money or sends real email: Polar checkouts, invites to real addresses, notification tests against third-party URLs.
 - Never source `.env.local` wholesale in shell scripts or paste secrets into logs, PR bodies, or commit messages. Extract single variables when needed.
 - New `public` functions are service-role only. Grant client EXECUTE in a migration only when the function is meant to be called from the browser.
