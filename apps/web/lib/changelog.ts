@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.5";
+export const APP_VERSION = "0.32.6";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.6",
+    date: "2026-10-01",
+    title: "Container Images",
+    track: "web",
+    items: [
+      "The web app and the receiver now build as self-contained Docker images, with the public URLs set at build time",
+      "Both images run as a non-root user and report their own health",
+    ],
+  },
   {
     version: "0.32.5",
     date: "2026-10-01",
