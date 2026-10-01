@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { NextResponse } from "next/server";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { claimGuestEndpoint } from "@/lib/supabase/endpoints";
@@ -22,6 +23,11 @@ export async function POST(request: Request) {
   }
 
   const endpoint = await claimGuestEndpoint(auth.userId, body.slug);
+  await auditUserAction(request, auth.userId, {
+    action: "endpoint.claimed",
+    status: endpoint ? 200 : 404,
+    targetId: body.slug,
+  });
   if (!endpoint) {
     return NextResponse.json({ error: "Endpoint not found or already claimed" }, { status: 404 });
   }

@@ -61,6 +61,7 @@ export async function createTeam(userId: string, name: string): Promise<Team | {
     requestLimit: 0,
     periodEnd: null,
     cancelAtPeriodEnd: false,
+    pendingSeats: null,
   };
 }
 
@@ -89,7 +90,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
   const { data: teamsData, error: teamsError } = await admin
     .from("teams")
     .select(
-      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, period_end, cancel_at_period_end"
+      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, period_end, cancel_at_period_end, pending_seats"
     )
     .in("id", teamIds);
 
@@ -125,6 +126,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
     requestLimit: team.request_limit,
     periodEnd: team.period_end ? parseMillis(team.period_end) : null,
     cancelAtPeriodEnd: team.cancel_at_period_end,
+    pendingSeats: team.pending_seats,
   }));
 }
 

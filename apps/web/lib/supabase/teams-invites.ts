@@ -2,12 +2,14 @@ import { sendEmail } from "@/lib/email/mailer";
 import { buildTeamInviteEmail } from "@/lib/email/team-invite-email";
 import { publicEnv } from "@/lib/env";
 import { createAdminClient } from "./admin";
-import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
+import { assignTeamSeat, polarErrorCode, revokeTeamSeat } from "./team-billing";
 import { requireActiveTeam, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
 import type { TeamInvite, TeamInviteRow } from "./teams-types";
 
 /** Every purchased seat is occupied — membership is capped by seats, not plan. */
 const NO_SEATS_MESSAGE = "Team has no available seats — ask the owner to add seats";
+const SCHEDULED_REDUCTION_MESSAGE =
+  "A seat reduction is scheduled for the next renewal. Keep your current seats on the team page to invite more members.";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,13 +59,23 @@ export async function createInvite(
 
   const { data: teamSeats, error: seatsError } = await admin
     .from("teams")
-    .select("seats")
+    .select("seats, pending_seats")
     .eq("id", teamId)
     .maybeSingle();
 
   if (seatsError) throw seatsError;
-  if ((memberCount ?? 0) >= (teamSeats?.seats ?? 0)) {
-    return { error: NO_SEATS_MESSAGE };
+  // A scheduled reduction caps members now, matching accept_team_invite.
+  const seatCap = Math.min(
+    teamSeats?.seats ?? 0,
+    teamSeats?.pending_seats ?? teamSeats?.seats ?? 0
+  );
+  if ((memberCount ?? 0) >= seatCap) {
+    return {
+      error:
+        teamSeats?.pending_seats != null && teamSeats.pending_seats < teamSeats.seats
+          ? SCHEDULED_REDUCTION_MESSAGE
+          : NO_SEATS_MESSAGE,
+    };
   }
 
   // Inviter email and team name are needed for the self-invite check, the
@@ -411,7 +423,7 @@ export async function listPendingInvitesForTeam(
 export async function acceptInvite(
   userId: string,
   inviteId: string
-): Promise<{ accepted: boolean; error?: string }> {
+): Promise<{ accepted: boolean; error?: string; teamId?: string }> {
   const admin = createAdminClient();
 
   // The Polar seat has to be assigned before the membership row exists, so read
@@ -432,7 +444,7 @@ export async function acceptInvite(
     // account that owns the invited email; anything else is not the caller's
     // invite. Claiming here is what makes the linking durable: the RPC below
     // requires invited_user_id = caller.
-    if (invite.invited_user_id !== null) return { accepted: false };
+    if (invite.invited_user_id !== null) return { accepted: false, teamId: invite.team_id };
 
     const { data: caller, error: callerError } = await admin
       .from("users")
@@ -442,7 +454,7 @@ export async function acceptInvite(
 
     if (callerError) throw callerError;
     if (!caller?.email || caller.email.toLowerCase() !== invite.invited_email.toLowerCase()) {
-      return { accepted: false };
+      return { accepted: false, teamId: invite.team_id };
     }
 
     const { data: claimed, error: claimError } = await admin
@@ -454,7 +466,7 @@ export async function acceptInvite(
       .maybeSingle();
 
     if (claimError) throw claimError;
-    if (!claimed) return { accepted: false };
+    if (!claimed) return { accepted: false, teamId: invite.team_id };
   }
 
   // An existing member re-accepting must not consume a second seat: the RPC's
@@ -468,9 +480,20 @@ export async function acceptInvite(
 
   if (memberError) throw memberError;
 
-  const seatId = existingMember
-    ? null
-    : await assignTeamSeat(invite.team_id, invite.invited_email, userId);
+  let seatId: string | null = null;
+  if (!existingMember) {
+    try {
+      seatId = await assignTeamSeat(invite.team_id, invite.invited_email, userId);
+    } catch (error) {
+      // Polar's seat count matches ours (the owner holds one), so a full team
+      // is refused here, before the RPC's own capacity check runs. The invite
+      // is untouched and stays pending, as the RPC's "full" path leaves it.
+      if (polarErrorCode(error) === "SeatNotAvailable") {
+        return { accepted: false, error: NO_SEATS_MESSAGE, teamId: invite.team_id };
+      }
+      throw error;
+    }
+  }
 
   // Atomic: claim invite + enforce the seat cap + insert member in one transaction
   let result: { status: string };
@@ -500,7 +523,7 @@ export async function acceptInvite(
     throw rpcError;
   }
 
-  if (result.status === "accepted") return { accepted: true };
+  if (result.status === "accepted") return { accepted: true, teamId: invite.team_id };
 
   // The RPC refused and rolled the invite back — release the seat we just took.
   // Only ever the seat this call assigned: a null seat id would make
@@ -511,13 +534,13 @@ export async function acceptInvite(
   }
 
   if (result.status === "inactive") {
-    return { accepted: false, error: TEAM_INACTIVE_MESSAGE };
+    return { accepted: false, error: TEAM_INACTIVE_MESSAGE, teamId: invite.team_id };
   }
   if (result.status === "full") {
-    return { accepted: false, error: NO_SEATS_MESSAGE };
+    return { accepted: false, error: NO_SEATS_MESSAGE, teamId: invite.team_id };
   }
 
-  return { accepted: false };
+  return { accepted: false, teamId: invite.team_id };
 }
 
 // ---------------------------------------------------------------------------

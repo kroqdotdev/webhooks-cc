@@ -61,6 +61,10 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    # Production runs Node 24 LTS; move to a new major on purpose, not by bot.
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/apps/receiver-rs"

@@ -1,3 +1,4 @@
+import { auditPolarEvent } from "@/lib/audit";
 import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { applyPolarWebhookEvent } from "@/lib/supabase/billing";
 import { applyTeamPolarWebhookEvent, extractTeamIdFromWebhook } from "@/lib/supabase/team-billing";
@@ -26,12 +27,20 @@ export async function POST(request: Request) {
     // Pass the raw event data through — reshaping it would strip seat routing keys.
     const data = event.data as Record<string, unknown>;
     const teamId = extractTeamIdFromWebhook(data);
-    if (teamId) {
-      await applyTeamPolarWebhookEvent(event.type, teamId, data);
-    } else {
-      await applyPolarWebhookEvent(event.type, event.data);
+    try {
+      if (teamId) {
+        await applyTeamPolarWebhookEvent(event.type, teamId, data);
+      } else {
+        await applyPolarWebhookEvent(event.type, event.data);
+      }
+    } catch (applyError) {
+      // Polar redelivers on a 5xx, so a failed apply shows up as an error row
+      // followed by the retry's row.
+      await auditPolarEvent({ eventType: event.type, teamId, data, outcome: "error" });
+      throw applyError;
     }
 
+    await auditPolarEvent({ eventType: event.type, teamId, data, outcome: "ok" });
     return Response.json({ received: true });
   } catch (error) {
     if (error instanceof WebhookVerificationError) {

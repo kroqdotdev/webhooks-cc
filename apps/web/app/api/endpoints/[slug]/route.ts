@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
@@ -45,6 +46,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   }
 }
 
+const AUDITED_ENDPOINT_FIELDS = [
+  "name",
+  "mockResponse",
+  "responseRules",
+  "notificationUrl",
+  "signingProvider",
+  "signingSecret",
+  "signingHeader",
+] as const;
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -91,6 +102,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json({ error: "Invalid signing secret" }, { status: 400 });
     }
   }
+
+  // Field names only: values can include signing secrets and notification URLs.
+  const updatedFields = AUDITED_ENDPOINT_FIELDS.filter((field) => body[field] !== undefined);
 
   try {
     // Allow team members to edit (they can rename + change mock response)
@@ -206,6 +220,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.signingHeader === undefined ? undefined : (body.signingHeader as string | null),
     });
 
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.updated",
+      status: endpoint ? 200 : 404,
+      targetId: slug,
+      targetUserId: access.isOwner ? null : access.ownerId,
+      metadata: { fields: updatedFields },
+    });
+
     if (!endpoint) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
@@ -213,6 +235,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     return Response.json(endpoint);
   } catch (error) {
     console.error("Failed to update endpoint:", error);
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.updated",
+      status: 500,
+      targetId: slug,
+      metadata: { fields: updatedFields },
+    });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -225,6 +253,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
   try {
     const deleted = await deleteEndpointBySlugForUser(auth.userId, slug);
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.deleted",
+      status: deleted ? 204 : 404,
+      targetId: slug,
+    });
     if (!deleted) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
@@ -232,6 +265,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
     return new Response(null, { status: 204 });
   } catch (error) {
     console.error("Failed to delete endpoint:", error);
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.deleted",
+      status: 500,
+      targetId: slug,
+    });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

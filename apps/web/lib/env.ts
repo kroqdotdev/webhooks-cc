@@ -64,6 +64,13 @@ const serverEnvSchema = z
       z.string().optional()
     ),
     AGENT_EMAIL_FROM: z.string().default("webhooks.cc <noreply@webhooks.cc>"),
+    // Emails free users whose quota ran out (lib/quota-emails.ts). Opt-in so a
+    // local production build, which sends real SMTP mail, never emails users
+    // in the dev database. Set it on the production host only.
+    QUOTA_EMAILS_ENABLED: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => (typeof v === "string" ? v === "true" || v === "1" : v))
+      .default(false),
     AGENT_REGISTER_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
     AGENT_REGISTER_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(3_600_000),
     AGENT_IDJAG_RATE_LIMIT: z.coerce.number().int().min(1).default(60),
@@ -134,6 +141,7 @@ export function serverEnv() {
       SMTP_PASS: process.env.SMTP_PASS,
       EMAIL_FROM: process.env.EMAIL_FROM,
       AGENT_EMAIL_FROM: process.env.AGENT_EMAIL_FROM,
+      QUOTA_EMAILS_ENABLED: process.env.QUOTA_EMAILS_ENABLED,
       AGENT_REGISTER_RATE_LIMIT: process.env.AGENT_REGISTER_RATE_LIMIT,
       AGENT_REGISTER_RATE_WINDOW_MS: process.env.AGENT_REGISTER_RATE_WINDOW_MS,
       AGENT_IDJAG_RATE_LIMIT: process.env.AGENT_IDJAG_RATE_LIMIT,
