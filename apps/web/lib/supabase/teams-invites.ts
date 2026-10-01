@@ -411,7 +411,7 @@ export async function listPendingInvitesForTeam(
 export async function acceptInvite(
   userId: string,
   inviteId: string
-): Promise<{ accepted: boolean; error?: string }> {
+): Promise<{ accepted: boolean; error?: string; teamId?: string }> {
   const admin = createAdminClient();
 
   // The Polar seat has to be assigned before the membership row exists, so read
@@ -432,7 +432,7 @@ export async function acceptInvite(
     // account that owns the invited email; anything else is not the caller's
     // invite. Claiming here is what makes the linking durable: the RPC below
     // requires invited_user_id = caller.
-    if (invite.invited_user_id !== null) return { accepted: false };
+    if (invite.invited_user_id !== null) return { accepted: false, teamId: invite.team_id };
 
     const { data: caller, error: callerError } = await admin
       .from("users")
@@ -442,7 +442,7 @@ export async function acceptInvite(
 
     if (callerError) throw callerError;
     if (!caller?.email || caller.email.toLowerCase() !== invite.invited_email.toLowerCase()) {
-      return { accepted: false };
+      return { accepted: false, teamId: invite.team_id };
     }
 
     const { data: claimed, error: claimError } = await admin
@@ -454,7 +454,7 @@ export async function acceptInvite(
       .maybeSingle();
 
     if (claimError) throw claimError;
-    if (!claimed) return { accepted: false };
+    if (!claimed) return { accepted: false, teamId: invite.team_id };
   }
 
   // An existing member re-accepting must not consume a second seat: the RPC's
@@ -500,7 +500,7 @@ export async function acceptInvite(
     throw rpcError;
   }
 
-  if (result.status === "accepted") return { accepted: true };
+  if (result.status === "accepted") return { accepted: true, teamId: invite.team_id };
 
   // The RPC refused and rolled the invite back — release the seat we just took.
   // Only ever the seat this call assigned: a null seat id would make
@@ -511,13 +511,13 @@ export async function acceptInvite(
   }
 
   if (result.status === "inactive") {
-    return { accepted: false, error: TEAM_INACTIVE_MESSAGE };
+    return { accepted: false, error: TEAM_INACTIVE_MESSAGE, teamId: invite.team_id };
   }
   if (result.status === "full") {
-    return { accepted: false, error: NO_SEATS_MESSAGE };
+    return { accepted: false, error: NO_SEATS_MESSAGE, teamId: invite.team_id };
   }
 
-  return { accepted: false };
+  return { accepted: false, teamId: invite.team_id };
 }
 
 // ---------------------------------------------------------------------------

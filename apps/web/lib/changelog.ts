@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.1";
+export const APP_VERSION = "0.32.2";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.2",
+    date: "2026-10-01",
+    title: "Support Audit Trail",
+    track: "web",
+    items: [
+      'Team, billing, API key, and endpoint changes are now recorded in an internal audit trail, so support questions like "what happened to my invite" can be answered precisely',
+      "Daily request counts per endpoint are kept after request history expires, including how many webhooks were rejected because a quota ran out",
+    ],
+  },
   {
     version: "0.32.1",
     date: "2026-09-29",

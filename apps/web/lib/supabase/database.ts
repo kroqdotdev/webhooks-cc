@@ -537,6 +537,52 @@ export interface Database {
         };
         Relationships: [];
       };
+      audit_events: {
+        Row: {
+          id: number;
+          occurred_at: string;
+          actor_type: "user" | "polar" | "system";
+          actor_user_id: string | null;
+          via: "session" | "api_key" | null;
+          user_agent: string | null;
+          action: string;
+          outcome: "ok" | "refused" | "error";
+          team_id: string | null;
+          target_user_id: string | null;
+          target_id: string | null;
+          metadata: Json;
+        };
+        Insert: {
+          occurred_at?: string;
+          actor_type: "user" | "polar" | "system";
+          actor_user_id?: string | null;
+          via?: "session" | "api_key" | null;
+          user_agent?: string | null;
+          action: string;
+          outcome?: "ok" | "refused" | "error";
+          team_id?: string | null;
+          target_user_id?: string | null;
+          target_id?: string | null;
+          metadata?: Json;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      endpoint_daily_stats: {
+        Row: {
+          endpoint_id: string;
+          day: string;
+          user_id: string | null;
+          team_id: string | null;
+          captured: number;
+          team_billed: number;
+          quota_rejected: number;
+          bytes: number;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

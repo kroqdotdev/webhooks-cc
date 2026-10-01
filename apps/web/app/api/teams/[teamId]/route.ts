@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { updateTeam, deleteTeam } from "@/lib/supabase/teams";
 
@@ -21,12 +22,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
 
   try {
     const updated = await updateTeam(auth.userId, teamId, name);
+    await auditUserAction(request, auth.userId, {
+      action: "team.renamed",
+      status: updated ? 200 : 404,
+      teamId,
+      metadata: { name },
+    });
     if (!updated) {
       return Response.json({ error: "Team not found or not owner" }, { status: 404 });
     }
     return Response.json({ success: true });
   } catch (error) {
     console.error("Failed to update team:", error);
+    await auditUserAction(request, auth.userId, { action: "team.renamed", status: 500, teamId });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -42,12 +50,18 @@ export async function DELETE(
 
   try {
     const deleted = await deleteTeam(auth.userId, teamId);
+    await auditUserAction(request, auth.userId, {
+      action: "team.deleted",
+      status: deleted ? 204 : 404,
+      teamId,
+    });
     if (!deleted) {
       return Response.json({ error: "Team not found or not owner" }, { status: 404 });
     }
     return new Response(null, { status: 204 });
   } catch (error) {
     console.error("Failed to delete team:", error);
+    await auditUserAction(request, auth.userId, { action: "team.deleted", status: 500, teamId });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

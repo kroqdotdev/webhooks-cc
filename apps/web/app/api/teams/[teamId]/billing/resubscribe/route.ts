@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { resubscribeTeam, TeamBillingError } from "@/lib/supabase/team-billing";
@@ -11,11 +12,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 
   try {
     await resubscribeTeam(auth.userId, teamId);
+    await auditUserAction(request, auth.userId, {
+      action: "team.subscription_resumed",
+      status: 204,
+      teamId,
+    });
     return new Response(null, { status: 204 });
   } catch (error) {
     if (error instanceof TeamBillingError) {
-      return Response.json({ error: error.message }, { status: ERROR_STATUS[error.code] ?? 400 });
+      const status = ERROR_STATUS[error.code] ?? 400;
+      await auditUserAction(request, auth.userId, {
+        action: "team.subscription_resumed",
+        status,
+        reason: error.message,
+        teamId,
+        metadata: { code: error.code },
+      });
+      return Response.json({ error: error.message }, { status });
     }
+
+    await auditUserAction(request, auth.userId, {
+      action: "team.subscription_resumed",
+      status: 500,
+      teamId,
+    });
 
     if (error instanceof PolarConfigError) {
       console.error("Team resubscribe misconfigured:", error);

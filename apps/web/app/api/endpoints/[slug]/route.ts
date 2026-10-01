@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   parseJsonBody,
@@ -225,6 +226,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
   try {
     const deleted = await deleteEndpointBySlugForUser(auth.userId, slug);
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.deleted",
+      status: deleted ? 204 : 404,
+      targetId: slug,
+    });
     if (!deleted) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
@@ -232,6 +238,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
     return new Response(null, { status: 204 });
   } catch (error) {
     console.error("Failed to delete endpoint:", error);
+    await auditUserAction(request, auth.userId, {
+      action: "endpoint.deleted",
+      status: 500,
+      targetId: slug,
+    });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

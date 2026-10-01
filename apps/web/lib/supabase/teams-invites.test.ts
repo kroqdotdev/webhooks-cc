@@ -128,7 +128,10 @@ describe("acceptInvite", () => {
     );
     mockFns.createAdminClient.mockReturnValue(admin);
 
-    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: true });
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: true,
+      teamId: expect.any(String),
+    });
 
     expect(mockFns.assignTeamSeat).toHaveBeenCalledWith("team_1", "member@example.com", "user_1");
     expect(admin.rpc).toHaveBeenCalledWith("accept_team_invite", {
@@ -158,6 +161,7 @@ describe("acceptInvite", () => {
     await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
       accepted: false,
       error: NO_SEATS,
+      teamId: "team_1",
     });
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_1", "member@example.com");
   });
@@ -177,6 +181,7 @@ describe("acceptInvite", () => {
     await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
       accepted: false,
       error: INACTIVE,
+      teamId: "team_1",
     });
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_2", "member@example.com");
   });
@@ -193,7 +198,10 @@ describe("acceptInvite", () => {
       )
     );
 
-    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: false });
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: false,
+      teamId: "team_1",
+    });
     expect(mockFns.revokeTeamSeat).toHaveBeenCalledWith("team_1", "seat_3", "member@example.com");
   });
 
@@ -275,6 +283,7 @@ describe("acceptInvite", () => {
     await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
       accepted: false,
       error: INACTIVE,
+      teamId: "team_1",
     });
     expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
   });
@@ -289,7 +298,10 @@ describe("acceptInvite", () => {
     );
     mockFns.createAdminClient.mockReturnValue(admin);
 
-    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: true });
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: true,
+      teamId: expect.any(String),
+    });
 
     expect(mockFns.assignTeamSeat).not.toHaveBeenCalled();
     expect(admin.rpc).toHaveBeenCalledWith("accept_team_invite", {
@@ -326,7 +338,10 @@ describe("acceptInvite", () => {
     );
     mockFns.createAdminClient.mockReturnValue(admin);
 
-    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: true });
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: true,
+      teamId: expect.any(String),
+    });
     expect(recorded).toContainEqual({
       table: "team_invites",
       op: "update",
@@ -343,7 +358,10 @@ describe("acceptInvite", () => {
     });
     mockFns.createAdminClient.mockReturnValue(admin);
 
-    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: false });
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: false,
+      teamId: "team_1",
+    });
     expect(mockFns.assignTeamSeat).not.toHaveBeenCalled();
     expect(admin.rpc).not.toHaveBeenCalled();
   });
@@ -362,7 +380,10 @@ describe("acceptInvite", () => {
     });
     mockFns.createAdminClient.mockReturnValue(admin);
 
-    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({ accepted: false });
+    await expect(acceptInvite("user_1", "invite_1")).resolves.toEqual({
+      accepted: false,
+      teamId: "team_1",
+    });
     expect(mockFns.assignTeamSeat).not.toHaveBeenCalled();
     expect(admin.rpc).not.toHaveBeenCalled();
   });

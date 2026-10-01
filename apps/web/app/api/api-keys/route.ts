@@ -1,3 +1,4 @@
+import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest, type SessionAuthResult } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
@@ -73,9 +74,16 @@ export async function POST(request: Request) {
 
   if (insertError) {
     console.error("Failed to insert API key:", insertError);
+    await auditUserAction(request, auth.userId, { action: "api_key.created", status: 500 });
     return Response.json({ error: "Failed to create API key" }, { status: 500 });
   }
 
+  await auditUserAction(request, auth.userId, {
+    action: "api_key.created",
+    status: 200,
+    targetId: keyPrefix,
+    metadata: { name },
+  });
   return Response.json({ key: rawKey, name, keyPrefix, expiresAt });
 }
 
@@ -90,16 +98,27 @@ export async function DELETE(request: Request) {
   }
 
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data: deletedKeys, error } = await admin
     .from("api_keys")
     .delete()
     .eq("id", keyId)
-    .eq("user_id", auth.userId);
+    .eq("user_id", auth.userId)
+    .select("key_prefix");
 
   if (error) {
     console.error("Failed to delete API key:", error);
+    await auditUserAction(request, auth.userId, {
+      action: "api_key.deleted",
+      status: 500,
+      targetId: keyId,
+    });
     return Response.json({ error: "Failed to delete API key" }, { status: 500 });
   }
 
+  await auditUserAction(request, auth.userId, {
+    action: "api_key.deleted",
+    status: deletedKeys && deletedKeys.length > 0 ? 200 : 404,
+    targetId: deletedKeys?.[0]?.key_prefix ?? keyId,
+  });
   return Response.json({ success: true });
 }
