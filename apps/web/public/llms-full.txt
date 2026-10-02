@@ -120,7 +120,7 @@ const response = await client.endpoints.send("my-slug", {
 
 // Send provider webhook template
 await client.endpoints.sendTemplate("my-slug", {
-  provider: "stripe",        // stripe|github|shopify|twilio|slack|paddle|linear|sendgrid|clerk|discord|vercel|gitlab|typeform|standard-webhooks|meta|lemonsqueezy|coinbase-commerce|razorpay|cal|intercom|telegram|square|hubspot|mailgun|calendly|mux|sentry|bitbucket|docusign|adyen|paypal|plaid
+  provider: "stripe",        // stripe|github|shopify|twilio|slack|paddle|linear|sendgrid|clerk|discord|vercel|gitlab|typeform|standard-webhooks|meta|lemonsqueezy|coinbase-commerce|razorpay|cal|intercom|telegram|square|hubspot|mailgun|calendly|mux|sentry|bitbucket|docusign|adyen|paypal|plaid|resend|workos
   template?: string,         // Provider-specific preset
   secret: "whsec_test",      // Template signing input (omit for unsigned templates: sendgrid|discord|plaid)
   event?: string,            // Event type override

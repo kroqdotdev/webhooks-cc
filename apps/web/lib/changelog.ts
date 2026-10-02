@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.12";
+export const APP_VERSION = "0.32.13";
 export const CLI_VERSION = "1.3.1";
-export const SDK_VERSION = "1.10.0";
-export const MCP_VERSION = "1.8.0";
+export const SDK_VERSION = "1.11.0";
+export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.13",
+    date: "2026-10-02",
+    title: "Resend and WorkOS Signature Verification",
+    track: "web",
+    items: [
+      "Resend and WorkOS are now full providers: send signed sample webhooks from the dashboard, and set either one as an endpoint's signing provider so every captured request is verified (migration 00046)",
+      "Resend verification uses its Svix headers and whsec_ signing secret; WorkOS verification reads the workos-signature header and uses the signing secret exactly as WorkOS shows it",
+      "Request badges tell Resend apart from Clerk even though both deliver through Svix, and WorkOS requests show their event name",
+      "Their /webhooks pages now offer sample templates and built-in verification instead of capture only",
+    ],
+  },
   {
     version: "0.32.12",
     date: "2026-10-02",
@@ -1046,6 +1058,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.11.0",
+    date: "2026-10-02",
+    title: "Resend and WorkOS Providers",
+    track: "sdk",
+    items: [
+      "New `resend` provider: templates for `email.sent`, `email.delivered`, `email.bounced`, `email.clicked`, and `contact.created`, signed with the svix-* headers Resend sends; `verifyResendSignature()` and `isResendWebhook()`",
+      "New `workos` provider: templates for `user.created`, `dsync.user.created`, `connection.activated`, `session.created`, and `organization.created`, signed as `workos-signature: t=<ms>, v1=<hex>`; `verifyWorkOSSignature()` and `isWorkOSWebhook()`",
+      "Detection tells Resend apart from Clerk by body shape (both use Svix headers), and reads WorkOS event names from `event`",
+      "`TEMPLATE_PROVIDERS` grows to 34 and `VERIFY_PROVIDERS` to 32",
+    ],
+  },
+  {
     version: "1.10.0",
     date: "2026-09-07",
     title: "Teams Namespace",
@@ -1266,6 +1290,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.9.0",
+    date: "2026-10-02",
+    title: "Resend and WorkOS Providers",
+    track: "mcp",
+    items: [
+      "`send_webhook`, `send_to`, `preview_webhook`, and `list_provider_templates` support the `resend` and `workos` providers, and `verify_signature` verifies both (SDK 1.11.0)",
+    ],
+  },
   {
     version: "1.8.0",
     date: "2026-09-07",

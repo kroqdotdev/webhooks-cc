@@ -201,6 +201,18 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
     configHint: "Set the webhook URL when creating a Link token (or via /item/webhook/update)",
     category: "Identity & data",
   },
+  resend: {
+    blurb:
+      "Resend sends webhooks for email events such as sent, delivered, opened, clicked, bounced, and complained, plus domain and contact changes.",
+    configHint: "Dashboard → Webhooks, or via the Webhooks API",
+    category: "Communication",
+  },
+  workos: {
+    blurb:
+      "WorkOS sends webhooks for authentication, user, session, organization, SSO connection, directory sync, and invitation events.",
+    configHint: "Dashboard → Webhooks",
+    category: "Identity & data",
+  },
 };
 
 // Keyed by both the raw SDK algorithm ids and the catalog's formatted strings,
@@ -517,17 +529,6 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureNote:
       "Postmark does not sign payloads. It recommends HTTP Basic auth credentials in the webhook URL plus allowlisting Postmark's IP ranges.",
   },
-  resend: {
-    label: "Resend",
-    blurb:
-      "Resend sends webhooks for email events such as sent, delivered, opened, clicked, bounced, and complained, plus domain and contact changes.",
-    configHint: "Dashboard → Webhooks, or via the Webhooks API",
-    category: "Communication",
-    signatureHeader: "svix-signature",
-    signatureAlgorithm: "HMAC-SHA256",
-    signatureNote:
-      "Resend delivers through Svix: verify the svix-id, svix-timestamp, and svix-signature headers with the signing secret from the webhook's details page.",
-  },
   salesforce: {
     label: "Salesforce",
     blurb:
@@ -584,16 +585,6 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureHeader: "x-wc-webhook-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote: "A base64-encoded HMAC of the payload, keyed with the webhook secret.",
-  },
-  workos: {
-    label: "WorkOS",
-    blurb:
-      "WorkOS sends webhooks for authentication, user, session, organization, SSO connection, directory sync, and invitation events.",
-    configHint: "Dashboard → Webhooks",
-    category: "Identity & data",
-    signatureHeader: "workos-signature",
-    signatureAlgorithm: "HMAC-SHA256",
-    signatureNote: "The header holds a timestamp and a v1 signature separated by a comma.",
   },
   yousign: {
     label: "Yousign",

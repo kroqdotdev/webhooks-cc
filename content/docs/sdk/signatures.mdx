@@ -9,12 +9,12 @@ keywords:
   ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
 seo:
   ogTitle: "Webhook Signature Verification"
-  ogDescription: "Verify webhook signatures for 30 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, RSA-SHA256, and token comparison."
+  ogDescription: "Verify webhook signatures for 32 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, RSA-SHA256, and token comparison."
 ---
 
 ## Overview
 
-Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 30 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
 
 Generic verifier (works with any supported provider):
 
@@ -56,6 +56,8 @@ import {
   verifyDocuSignSignature,
   verifyAdyenSignature,
   verifyPayPalSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
 } from "@webhooks-cc/sdk";
 ```
 
@@ -138,6 +140,8 @@ The SDK also includes client-side verification functions that work without serve
 | DocuSign          | `x-docusign-signature-1`                                 | HMAC-SHA256 (base64) | HMAC secret                          |
 | Adyen             | _(body field)_ `additionalData.hmacSignature`            | HMAC-SHA256 (base64) | Hex HMAC key                         |
 | PayPal            | `paypal-transmission-sig` + `paypal-cert-url`            | RSA-SHA256           | Webhook ID                           |
+| Resend            | `svix-id` + `svix-timestamp` + `svix-signature`          | HMAC-SHA256 (base64) | `whsec_...` signing secret           |
+| WorkOS            | `workos-signature`                                       | HMAC-SHA256          | Signing secret, used as-is           |
 
 ### Stripe
 
@@ -463,6 +467,28 @@ const result = await verifySignature(request, {
 });
 ```
 
+### Resend
+
+Resend delivers through Svix, so the scheme is the same as Clerk's: `svix-signature` holds space-separated `v1,<base64>` entries, each an HMAC-SHA256 of `{svix-id}.{svix-timestamp}.{body}` keyed with the base64-decoded `whsec_` secret. Resend signs with both the old and the new secret for 24 hours after a rotation, and any matching entry passes.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "resend",
+  secret: process.env.RESEND_WEBHOOK_SECRET!,
+});
+```
+
+### WorkOS
+
+WorkOS sends `workos-signature: t=<milliseconds>, v1=<hex>`, the hex HMAC-SHA256 of `{t}.{body}`. Unlike Svix, the key is the signing secret string exactly as WorkOS shows it, prefix included. Like the other `t=,v1=` providers, the SDK does not enforce a timestamp tolerance, so captured requests can be verified later; check the age of `t` in your own handler if you need replay protection.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "workos",
+  secret: process.env.WORKOS_WEBHOOK_SECRET!,
+});
+```
+
 ### Plaid
 
 Plaid templates and detection are supported, but signature verification is not available yet. Real Plaid verification requires fetching a Plaid JWT verification key with Plaid API credentials, then comparing the JWT `request_body_sha256` claim to the raw request body.
@@ -489,7 +515,7 @@ The options type is a discriminated union:
 ```ts
 // HMAC/token-based providers
 {
-  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "clerk" | "vercel" | "gitlab" | "typeform" | "standard-webhooks" | "meta" | "lemonsqueezy" | "coinbase-commerce" | "razorpay" | "cal" | "intercom" | "telegram" | "square" | "hubspot" | "mailgun" | "calendly" | "mux" | "sentry" | "bitbucket" | "docusign" | "adyen" | "paypal";
+  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "clerk" | "vercel" | "gitlab" | "typeform" | "standard-webhooks" | "meta" | "lemonsqueezy" | "coinbase-commerce" | "razorpay" | "cal" | "intercom" | "telegram" | "square" | "hubspot" | "mailgun" | "calendly" | "mux" | "sentry" | "bitbucket" | "docusign" | "adyen" | "paypal" | "resend" | "workos";
   secret: string;
   url?: string;    // Required for twilio, square, and hubspot
   method?: string; // Used by hubspot (defaults to "POST")

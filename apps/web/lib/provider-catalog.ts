@@ -59,6 +59,8 @@ const PROVIDER_LABELS: Record<TemplateProvider, string> = {
   adyen: "Adyen",
   paypal: "PayPal",
   plaid: "Plaid",
+  resend: "Resend",
+  workos: "WorkOS",
 };
 
 const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
@@ -94,6 +96,8 @@ const SECRET_PLACEHOLDERS: Record<TemplateProvider, string> = {
   adyen: "your hex HMAC key",
   paypal: "WEBHOOK_ID",
   plaid: "",
+  resend: "whsec_...",
+  workos: "your webhook signing secret",
 };
 
 const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
@@ -320,6 +324,20 @@ const PROVIDER_ICONS: Record<TemplateProvider, WebProviderIcon> = {
     background: "#111111",
     foreground: "#ffffff",
     border: "#2d2d2d",
+  },
+  resend: {
+    glyph: "resend",
+    text: "RS",
+    background: "#000000",
+    foreground: "#ffffff",
+    border: "#2d2d2d",
+  },
+  workos: {
+    glyph: "workos",
+    text: "WO",
+    background: "#6363f1",
+    foreground: "#ffffff",
+    border: "#4338ca",
   },
 };
 

@@ -255,6 +255,8 @@ secret or public test key flow) for:
 - `adyen`
 - `paypal`
 - `plaid`
+- `resend`
+- `workos`
 
 `sendgrid`, `discord`, `paypal`, and `plaid` templates are intentionally not shared-secret signed:
 SendGrid uses IP allowlisting, Discord/PayPal signatures require provider-owned private keys, and
@@ -336,6 +338,8 @@ Supported verification providers:
 - `docusign`
 - `adyen`
 - `paypal`
+- `resend`
+- `workos`
 
 `sendgrid` and `plaid` are template-only for verification: SendGrid uses IP allowlisting, and Plaid
 JWT/JWK verification requires Plaid API credentials.
@@ -386,6 +390,7 @@ isCoinbaseCommerceWebhook  isRazorpayWebhook   isCalWebhook         isIntercomWe
 isTelegramWebhook      isSquareWebhook         isHubSpotWebhook     isMailgunWebhook
 isCalendlyWebhook      isMuxWebhook            isSentryWebhook      isBitbucketWebhook
 isDocuSignWebhook      isAdyenWebhook          isPayPalWebhook      isPlaidWebhook
+isResendWebhook        isWorkOSWebhook
 ```
 
 ## Matchers, parsing, and diffing

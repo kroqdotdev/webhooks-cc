@@ -361,7 +361,7 @@ describe("Signature Verification Integration", () => {
     expect(data.signing_secret_encrypted).not.toContain("plaintext_secret_value");
   });
 
-  it("PATCH: accepts every tier-2 and tier-3 signing provider", async () => {
+  it("PATCH: accepts every tier-2, tier-3, Resend, and WorkOS signing provider", async () => {
     const providers = [
       "square",
       "hubspot",
@@ -373,6 +373,8 @@ describe("Signature Verification Integration", () => {
       "docusign",
       "adyen",
       "paypal",
+      "resend",
+      "workos",
     ];
 
     for (const provider of providers) {
@@ -428,6 +430,10 @@ const RECEIVER_VERIFICATION_CASES: ReceiverVerificationCase[] = [
     secret: "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
     bodyEmbedded: true,
   },
+  // Svix scheme with a base64 whsec_ secret, the way Resend issues them.
+  { provider: "resend", secret: "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw" },
+  // WorkOS keys the HMAC with the secret string as-is, whsec_ prefix included.
+  { provider: "workos", secret: "whsec_0FWAiVGkEfGBqqsJH4aNAGBJ4" },
 ];
 
 async function receiverReachable(): Promise<boolean> {
@@ -549,9 +555,10 @@ describe("Tier-2 automatic verification through the receiver", () => {
   }
 
   // Representative tampered-body false cases across the scheme families:
-  // body-bound hex (sentry), URL+body (square), and body-embedded (mailgun).
+  // body-bound hex (sentry), URL+body (square), body-embedded (mailgun),
+  // Svix id.timestamp.body (resend), and t=<ms>,v1= hex (workos).
   for (const tc of RECEIVER_VERIFICATION_CASES.filter((c) =>
-    ["sentry", "square", "mailgun"].includes(c.provider)
+    ["sentry", "square", "mailgun", "resend", "workos"].includes(c.provider)
   )) {
     it(`rejects a tampered ${tc.provider} body (signature_verified === false)`, async () => {
       if (skipSuite) return;

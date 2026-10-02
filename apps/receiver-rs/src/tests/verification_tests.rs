@@ -2056,3 +2056,198 @@ fn verify_plaid_is_unsupported() {
         VerificationResult::Skipped(_)
     ));
 }
+
+// ── Resend (Svix) ──
+
+#[test]
+fn verify_resend_matches_the_svix_test_vector() {
+    // Published test vector from the svix-webhooks Rust library.
+    let body = br#"{"email":"test@example.com","username":"test_user"}"#;
+    let h = headers(&[
+        ("svix-id", "msg_27UH4WbU6Z5A5EzD8u03UvzRbpk"),
+        ("svix-timestamp", "1649367553"),
+        (
+            "svix-signature",
+            "v1,tZ1I4/hDygAJgO5TYxiSd6Sd0kDW6hPenDe+bTa3Kkw=",
+        ),
+    ]);
+    assert!(matches!(
+        verify_signature(
+            "resend",
+            b"whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_resend_accepts_any_signature_during_rotation() {
+    // For 24 hours after a secret rotation Resend signs with both secrets.
+    let body = br#"{"email":"test@example.com","username":"test_user"}"#;
+    let h = headers(&[
+        ("svix-id", "msg_27UH4WbU6Z5A5EzD8u03UvzRbpk"),
+        ("svix-timestamp", "1649367553"),
+        (
+            "svix-signature",
+            "v1,c3RhbGUtc2lnbmF0dXJlLWZyb20tb2xkLXNlY3JldA== v1,tZ1I4/hDygAJgO5TYxiSd6Sd0kDW6hPenDe+bTa3Kkw=",
+        ),
+    ]);
+    assert!(matches!(
+        verify_signature(
+            "resend",
+            b"whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+            &h,
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_resend_rejects_tampered_body_and_wrong_secret() {
+    let h = headers(&[
+        ("svix-id", "msg_27UH4WbU6Z5A5EzD8u03UvzRbpk"),
+        ("svix-timestamp", "1649367553"),
+        (
+            "svix-signature",
+            "v1,tZ1I4/hDygAJgO5TYxiSd6Sd0kDW6hPenDe+bTa3Kkw=",
+        ),
+    ]);
+    let secret = b"whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD";
+    assert!(matches!(
+        verify_signature(
+            "resend",
+            secret,
+            &h,
+            br#"{"email":"test@example.com","username":"other"}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+    assert!(matches!(
+        verify_signature(
+            "resend",
+            b"whsec_plJ3nmyCDGBKInavdOK15jsl",
+            &h,
+            br#"{"email":"test@example.com","username":"test_user"}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn resend_is_not_auto_detected_apart_from_clerk() {
+    // Same svix-* headers as Clerk; Resend is owner-selected on the endpoint.
+    let h = headers(&[
+        ("svix-id", "msg_1"),
+        ("svix-timestamp", "1649367553"),
+        ("svix-signature", "v1,abc"),
+    ]);
+    assert_eq!(detect_provider(&h), Some("clerk"));
+}
+
+// ── WorkOS (t=<ms>, v1=<hex>) ──
+
+/// Build a WorkOS `t=<ms>, v1=<hex>` header (note the space after the comma).
+fn make_workos_header(secret: &str, ts_ms: &str, body: &str) -> String {
+    let sig = make_hmac_sha256(secret, &format!("{ts_ms}.{body}"));
+    format!("t={ts_ms}, v1={sig}")
+}
+
+#[test]
+fn detect_workos() {
+    let h = headers(&[("workos-signature", "t=1700000000000, v1=abc")]);
+    assert_eq!(detect_provider(&h), Some("workos"));
+}
+
+#[test]
+fn verify_workos_valid() {
+    let body = br#"{"event":"user.created","id":"event_01","data":{},"created_at":"2026-10-02T00:00:00.000Z"}"#;
+    let secret = "whsec_0FWAiVGkEfGBqqsJH4aNAGBJ4";
+    let sig = make_workos_header(secret, "1700000000000", std::str::from_utf8(body).unwrap());
+    let h = headers(&[("workos-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("workos", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Valid
+    ));
+}
+
+#[test]
+fn verify_workos_uses_the_secret_string_as_the_key() {
+    // Unlike Svix, a whsec_ prefix is part of the key and nothing is
+    // base64-decoded: signing with the decoded bytes must not verify.
+    let body = br#"{"event":"user.created"}"#;
+    let secret = "whsec_0FWAiVGkEfGBqqsJH4aNAGBJ4";
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode("0FWAiVGkEfGBqqsJH4aNAGBJ4")
+        .unwrap_or_default();
+    let payload = format!("1700000000000.{}", std::str::from_utf8(body).unwrap());
+    let wrong = hex::encode(hmac_sha256(&decoded, payload.as_bytes()));
+    let h = headers(&[("workos-signature", &format!("t=1700000000000, v1={wrong}"))]);
+    assert!(matches!(
+        verify_signature("workos", secret.as_bytes(), &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_workos_rejects_wrong_secret_and_tampered_body() {
+    let body = br#"{"event":"user.created"}"#;
+    let sig = make_workos_header(
+        "workos_secret",
+        "1700000000000",
+        std::str::from_utf8(body).unwrap(),
+    );
+    let h = headers(&[("workos-signature", &sig)]);
+    assert!(matches!(
+        verify_signature("workos", b"other_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+    assert!(matches!(
+        verify_signature(
+            "workos",
+            b"workos_secret",
+            &h,
+            br#"{"event":"user.deleted"}"#,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Invalid(_)
+    ));
+}
+
+#[test]
+fn verify_workos_missing_and_malformed_header() {
+    let body = br#"{"event":"user.created"}"#;
+    assert!(matches!(
+        verify_signature(
+            "workos",
+            b"workos_secret",
+            &headers(&[]),
+            body,
+            None,
+            None,
+            None
+        ),
+        VerificationResult::Skipped(_)
+    ));
+    let h = headers(&[("workos-signature", "garbage")]);
+    assert!(matches!(
+        verify_signature("workos", b"workos_secret", &h, body, None, None, None),
+        VerificationResult::Invalid(_)
+    ));
+}
