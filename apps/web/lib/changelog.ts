@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.10";
+export const APP_VERSION = "0.32.11";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.11",
+    date: "2026-10-02",
+    title: "Tighter Database Permissions",
+    track: "web",
+    items: [
+      "Endpoints and API keys can no longer be created, changed, or deleted by calling the database API directly; every change goes through the app's own routes, which apply the rate limits, the guest endpoint and API key caps, input validation, and the audit trail (migration 00045)",
+    ],
+  },
   {
     version: "0.32.10",
     date: "2026-10-02",
