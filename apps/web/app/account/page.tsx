@@ -24,7 +24,7 @@ import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profi
 import { trackUpgradeCompleted, identifyUser } from "@/lib/analytics";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToUserRow } from "@/lib/supabase/realtime";
+import { subscribeToUserProfileChanges } from "@/lib/supabase/realtime";
 import { CheckCircle, Trash2 } from "lucide-react";
 import { GitHubIcon } from "@/components/ui/icons";
 import Link from "next/link";
@@ -100,6 +100,8 @@ function UpgradeSuccessBanner() {
   );
 }
 
+const USAGE_REFRESH_INTERVAL_MS = 30_000;
+
 export default function AccountPage() {
   const { user: authUser, session, isLoading: authLoading } = useAuth();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
@@ -149,16 +151,29 @@ export default function AccountPage() {
     void refreshProfile();
   }, [authUser, refreshProfile]);
 
+  // Plan, billing and quota-state changes are signalled; the usage counter
+  // moves on every capture without a signal, so it refreshes on an interval
+  // while the page is visible and when it regains focus.
   useEffect(() => {
     if (!authUser) {
       return;
     }
 
-    return subscribeToUserRow(authUser.id, (row) => {
-      setProfile(row ? (row as AccountProfile) : null);
-      setProfileLoading(false);
-    });
-  }, [authUser]);
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void refreshProfile();
+    };
+    const interval = setInterval(refreshIfVisible, USAGE_REFRESH_INTERVAL_MS);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    const unsubscribe = subscribeToUserProfileChanges(authUser.id, () => void refreshProfile());
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      unsubscribe();
+    };
+  }, [authUser, refreshProfile]);
 
   const refreshApiKeys = useCallback(async () => {
     if (!session?.access_token) return;

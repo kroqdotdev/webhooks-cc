@@ -1,10 +1,10 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { serverEnv } from "@/lib/env";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
-import type { Database, Json } from "@/lib/supabase/database";
+import type { Database } from "@/lib/supabase/database";
 import {
-  byteaToBase64,
-  listNewRequestsForEndpointByUser,
+  listRequestsAfterCursorForEndpointByUser,
+  type RequestCursor,
   type RequestRecord,
 } from "@/lib/supabase/requests";
 import { sendError } from "@appsignal/nodejs";
@@ -14,8 +14,7 @@ export const dynamic = "force-dynamic";
 
 const KEEPALIVE_INTERVAL_MS = 30_000;
 const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000;
-
-type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
+const BACKLOG_PAGE_SIZE = 100;
 
 function createRealtimeAdminClient() {
   const env = serverEnv();
@@ -25,37 +24,6 @@ function createRealtimeAdminClient() {
       persistSession: false,
     },
   });
-}
-
-function asStringRecord(value: Json): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => typeof item === "string")
-  ) as Record<string, string>;
-}
-
-function parseMillis(timestamp: string): number {
-  return Date.parse(timestamp);
-}
-
-function toRequestRecord(row: RequestRow): RequestRecord {
-  return {
-    id: row.id,
-    endpointId: row.endpoint_id,
-    method: row.method,
-    path: row.path,
-    headers: asStringRecord(row.headers),
-    body: row.body ?? undefined,
-    bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
-    queryParams: asStringRecord(row.query_params),
-    contentType: row.content_type ?? undefined,
-    ip: row.ip,
-    size: row.size,
-    receivedAt: parseMillis(row.received_at),
-  };
 }
 
 function toStreamRequest(record: RequestRecord) {
@@ -134,12 +102,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       const abortSignal = request.signal;
       const supabase = createRealtimeAdminClient();
       const sentIds = new Set<string>();
-      let afterTimestamp = since ?? connectionStart;
+      const afterTimestamp = since ?? connectionStart;
+      // Last streamed row; reads resume strictly after it.
+      let cursor: RequestCursor | null = null;
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
       let durationTimer: ReturnType<typeof setTimeout> | null = null;
       let closed = false;
-      let requestsChannel: RealtimeChannel | null = null;
-      let endpointChannel: RealtimeChannel | null = null;
+      let channel: RealtimeChannel | null = null;
+      let draining = false;
+      let drainAgain = false;
 
       const cleanup = () => {
         if (keepaliveTimer) {
@@ -150,13 +121,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
           clearTimeout(durationTimer);
           durationTimer = null;
         }
-        if (requestsChannel) {
-          void supabase.removeChannel(requestsChannel);
-          requestsChannel = null;
-        }
-        if (endpointChannel) {
-          void supabase.removeChannel(endpointChannel);
-          endpointChannel = null;
+        if (channel) {
+          void supabase.removeChannel(channel);
+          channel = null;
         }
         void supabase.realtime.disconnect();
       };
@@ -178,21 +145,73 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         }
 
         sentIds.add(record.id);
-        afterTimestamp = Math.max(afterTimestamp, record.receivedAt);
         controller.enqueue(
           encoder.encode(`event: request\ndata: ${JSON.stringify(toStreamRequest(record))}\n\n`)
         );
       };
 
+      const sendEndpointDeleted = () => {
+        try {
+          controller.enqueue(
+            encoder.encode(`event: endpoint_deleted\ndata: ${JSON.stringify({ slug })}\n\n`)
+          );
+        } catch {
+          // Stream may already be closed.
+        }
+        closeStream();
+      };
+
+      // Broadcast signals carry ids only, so every signal (and the initial
+      // backlog) reads the rows after the last one streamed. Signals that land
+      // while a read is running fold into one more read.
+      const drain = async () => {
+        if (draining) {
+          drainAgain = true;
+          return;
+        }
+        draining = true;
+        try {
+          do {
+            drainAgain = false;
+            while (!closed) {
+              const page = await listRequestsAfterCursorForEndpointByUser({
+                userId: auth.userId,
+                slug,
+                after: afterTimestamp,
+                cursor,
+                limit: BACKLOG_PAGE_SIZE,
+              });
+              if (page === null) {
+                sendEndpointDeleted();
+                return;
+              }
+              for (const record of page.records) {
+                enqueueRequest(record);
+              }
+              cursor = page.cursor;
+              if (page.records.length < BACKLOG_PAGE_SIZE) break;
+            }
+          } while (drainAgain && !closed);
+        } catch (error) {
+          sendError(error instanceof Error ? error : new Error(String(error)));
+          console.error("Failed to read SSE stream backlog:", error);
+        } finally {
+          draining = false;
+        }
+      };
+
       abortSignal.addEventListener("abort", closeStream);
 
+      // The keepalive also catches up, in case a signal was dropped.
       keepaliveTimer = setInterval(() => {
         if (closed || abortSignal.aborted) return;
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
         } catch {
           closeStream();
+          return;
         }
+        void drain();
       }, KEEPALIVE_INTERVAL_MS);
 
       durationTimer = setTimeout(
@@ -212,78 +231,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         Math.max(0, MAX_CONNECTION_DURATION_MS - (Date.now() - connectionStart))
       );
 
-      requestsChannel = supabase.channel(`stream:requests:${endpoint.id}:${connectionStart}`).on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "requests",
-          filter: `endpoint_id=eq.${endpoint.id}`,
-        },
-        (payload) => {
-          try {
-            enqueueRequest(toRequestRecord(payload.new as RequestRow));
-          } catch (error) {
-            sendError(error instanceof Error ? error : new Error(String(error)));
+      // The service role passes the realtime.messages policy; access to the
+      // endpoint was checked above.
+      channel = supabase
+        .channel(`endpoint:${endpoint.id}`, { config: { private: true } })
+        .on("broadcast", { event: "*" }, ({ event }) => {
+          if (event === "request_created") {
+            void drain();
+          } else if (event === "endpoint_deleted") {
+            sendEndpointDeleted();
           }
-        }
-      );
-
-      endpointChannel = supabase.channel(`stream:endpoint:${endpoint.id}:${connectionStart}`).on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "endpoints",
-          filter: `id=eq.${endpoint.id}`,
-        },
-        () => {
-          try {
-            controller.enqueue(
-              encoder.encode(`event: endpoint_deleted\ndata: ${JSON.stringify({ slug })}\n\n`)
-            );
-          } catch {
-            // Stream may already be closed.
-          }
-          closeStream();
-        }
-      );
+        });
 
       try {
-        await Promise.all([waitForSubscribed(requestsChannel), waitForSubscribed(endpointChannel)]);
-
-        let backlogCursor = afterTimestamp;
-
-        while (!closed) {
-          const backlog = await listNewRequestsForEndpointByUser({
-            userId: auth.userId,
-            slug,
-            after: backlogCursor,
-            limit: 100,
-          });
-
-          if (backlog === null) {
-            controller.enqueue(
-              encoder.encode(`event: endpoint_deleted\ndata: ${JSON.stringify({ slug })}\n\n`)
-            );
-            closeStream();
-            return;
-          }
-
-          if (backlog.length === 0) {
-            break;
-          }
-
-          for (const record of backlog) {
-            enqueueRequest(record);
-          }
-
-          if (backlog.length < 100) {
-            break;
-          }
-
-          backlogCursor = Math.max(backlogCursor, backlog[backlog.length - 1]!.receivedAt - 1);
-        }
+        await waitForSubscribed(channel);
+        await drain();
       } catch (error) {
         sendError(error instanceof Error ? error : new Error(String(error)));
         console.error("Failed to initialize SSE stream:", error);

@@ -119,6 +119,44 @@ async function waitForEvent(
   }
 }
 
+async function collectEvents(
+  stream: ReadableStream<Uint8Array>,
+  expectedEvent: string,
+  count: number
+): Promise<string[]> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const collected: string[] = [];
+  let buffer = "";
+  const deadline = Date.now() + 15_000;
+
+  try {
+    while (collected.length < count) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), remaining)),
+      ]);
+      if (result === null || result.done) break;
+      buffer += decoder.decode(result.value, { stream: true });
+      let boundary: number;
+      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const lines = frame.split("\n");
+        if (lines.some((line) => line === `event: ${expectedEvent}`)) {
+          const data = lines.find((line) => line.startsWith("data: "));
+          if (data) collected.push(data.slice(6));
+        }
+      }
+    }
+    return collected;
+  } finally {
+    await reader.cancel();
+  }
+}
+
 describe("Supabase Stream Route Integration", () => {
   let testUserId = "";
   let testUserEmail = "";
@@ -207,6 +245,140 @@ describe("Supabase Stream Route Integration", () => {
       method: "POST",
       path: "/stream-live",
     });
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 20_000);
+
+  it("streams a burst of inserts once each, in order", async () => {
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(
+        `/api/stream/${testEndpointSlug}`,
+        signIn.data.session!.access_token,
+        controller.signal
+      ),
+      { params: Promise.resolve({ slug: testEndpointSlug }) }
+    );
+    expect(response.status).toBe(200);
+
+    const burst = 30;
+    const eventsPromise = collectEvents(response.body!, "request", burst);
+    // Let the route subscribe before the burst, so it is served by signals
+    // rather than only by the initial backlog read.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    for (let index = 0; index < burst; index++) {
+      const { error } = await admin.from("requests").insert({
+        endpoint_id: testEndpointId,
+        user_id: testUserId,
+        method: "POST",
+        path: `/stream-burst/${index}`,
+        headers: {},
+        body: "{}",
+        query_params: {},
+        content_type: "application/json",
+        ip: "127.0.0.1",
+        size: 2,
+      });
+      expect(error).toBeNull();
+    }
+
+    const events = (await eventsPromise).map((data) => JSON.parse(data) as { path: string });
+    expect(events.map((event) => event.path)).toEqual(
+      Array.from({ length: burst }, (_, index) => `/stream-burst/${index}`)
+    );
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 30_000);
+
+  it("streams every request when more than a page share one timestamp", async () => {
+    // Rows tied on received_at, read by the initial backlog through the
+    // (received_at, id) cursor. user_id is null so the rows send no broadcast
+    // signals: 150 at once would trip the Realtime tenant's rate limit and
+    // starve suites running alongside.
+    const tied = 150;
+    const receivedAt = new Date(Date.now() - 5_000).toISOString();
+    const { error } = await admin.from("requests").insert(
+      Array.from({ length: tied }, (_, index) => ({
+        endpoint_id: testEndpointId,
+        user_id: null,
+        method: "POST",
+        path: `/stream-tied/${index}`,
+        headers: {},
+        body: "{}",
+        query_params: {},
+        content_type: "application/json",
+        ip: "127.0.0.1",
+        size: 2,
+        received_at: receivedAt,
+      }))
+    );
+    expect(error).toBeNull();
+
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+
+    const since = Date.parse(receivedAt) - 1;
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(
+        `/api/stream/${testEndpointSlug}?since=${since}`,
+        signIn.data.session!.access_token,
+        controller.signal
+      ),
+      { params: Promise.resolve({ slug: testEndpointSlug }) }
+    );
+    expect(response.status).toBe(200);
+
+    const paths = (await collectEvents(response.body!, "request", tied + 10))
+      .map((data) => (JSON.parse(data) as { path: string }).path)
+      .filter((path) => path.startsWith("/stream-tied/"));
+    expect(paths).toHaveLength(tied);
+    expect(new Set(paths).size).toBe(tied);
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 30_000);
+
+  it("streams endpoint_deleted and closes when the endpoint is deleted", async () => {
+    const doomed = await createEndpointForUser({ userId: testUserId, name: "Doomed Stream" });
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(
+        `/api/stream/${doomed.slug}`,
+        signIn.data.session!.access_token,
+        controller.signal
+      ),
+      { params: Promise.resolve({ slug: doomed.slug }) }
+    );
+    expect(response.status).toBe(200);
+
+    const deletedPromise = waitForEvent(response.body!, "endpoint_deleted");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const { error } = await admin.from("endpoints").delete().eq("id", doomed.id);
+    expect(error).toBeNull();
+
+    const frame = await deletedPromise;
+    expect(JSON.parse(frame.data)).toEqual({ slug: doomed.slug });
 
     controller.abort();
     await anonClient.auth.signOut();

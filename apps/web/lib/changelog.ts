@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.8";
+export const APP_VERSION = "0.32.9";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.9",
+    date: "2026-10-02",
+    title: "Live Updates over Broadcast",
+    track: "web",
+    items: [
+      "Live dashboard and CLI stream updates now travel as small Realtime Broadcast signals on private, per-endpoint channels, instead of having the database check every change against every open dashboard",
+      "Captures no longer fan out account and endpoint counter updates to open dashboards, so busy endpoints stay live under much higher traffic",
+      "The account page refreshes its usage figure every 30 seconds and when you return to the tab; plan, billing and quota changes still show up immediately",
+    ],
+  },
   {
     version: "0.32.8",
     date: "2026-10-02",
