@@ -294,10 +294,10 @@ function LandingDashboardInner() {
     return () => clearInterval(interval);
   }, [clearDemoEndpoint, expiresAt]);
 
-  // Sync model: guest endpoints have no owner, and Supabase Realtime filters
-  // postgres_changes through RLS (`endpoints_select` / `requests_select` are
-  // owner- or team-scoped), so an anonymous subscription can never receive an
-  // event. The landing page therefore syncs by polling the guest API: a cheap
+  // Sync model: guest endpoints have no owner, and Realtime endpoint topics are
+  // only joinable by the owner or a team member (`can_join_realtime_topic()`),
+  // and their captures are not broadcast at all, so an anonymous client never
+  // receives an event. The landing page therefore syncs by polling the guest API: a cheap
   // endpoint-row read (watchdog) notices the request counter moving, which arms
   // the catch-up poll below to fetch the new requests.
 

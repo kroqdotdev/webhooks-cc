@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import { createTeam } from "@/lib/supabase/teams-crud";
@@ -23,258 +23,215 @@ const admin = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const callRpc = admin.rpc.bind(admin) as unknown as (
-  functionName: string,
-  params?: Record<string, unknown>
-) => Promise<{ data: unknown; error: { message: string } | null }>;
-
 function createAnonClient() {
   return createClient<Database>(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
 
-async function waitForSubscribed(channel: RealtimeChannel): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out waiting for realtime subscription"));
-    }, 10_000);
+async function signedInClient(email: string) {
+  const client = createAnonClient();
+  const { error } = await client.auth.signInWithPassword({ email, password: TEST_PASSWORD });
+  expect(error).toBeNull();
+  return client;
+}
 
+async function createUser(prefix: string) {
+  const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@webhooks-test.local`;
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: TEST_PASSWORD,
+    email_confirm: true,
+  });
+  expect(error).toBeNull();
+  return { id: data.user!.id, email };
+}
+
+// A refused join surfaces as CHANNEL_ERROR, or as TIMED_OUT while the client
+// keeps retrying it; either way the channel never subscribes.
+const REFUSED = /CHANNEL_ERROR|TIMED_OUT/;
+
+type Signal = { event: string; payload: Record<string, unknown> };
+
+/**
+ * Joins a private broadcast topic and records its signals. Resolves once the
+ * join is acknowledged; rejects with the join status if it is refused.
+ */
+async function listen(client: SupabaseClient<Database>, topic: string) {
+  const signals: Signal[] = [];
+  const waiters: Array<() => void> = [];
+  const channel = client
+    .channel(topic, { config: { private: true } })
+    .on("broadcast", { event: "*" }, ({ event, payload }) => {
+      signals.push({ event, payload: payload as Record<string, unknown> });
+      for (const wake of waiters.splice(0)) wake();
+    });
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("TIMED_OUT")), 10_000);
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         clearTimeout(timeout);
         resolve();
-      }
-
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         clearTimeout(timeout);
-        reject(new Error(`Realtime subscription failed with status ${status}`));
+        reject(new Error(status));
       }
     });
   });
 
-  // Give the server a brief moment to finish wiring the Postgres change feed
-  // after the channel reports SUBSCRIBED. This avoids a race on fast updates.
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  return {
+    signals,
+    /** Waits for the next signal with this event name. */
+    async next(event: string, timeoutMs = 10_000): Promise<Signal> {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const index = signals.findIndex((signal) => signal.event === event);
+        if (index >= 0) return signals.splice(index, 1)[0]!;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error(`Timed out waiting for ${event} on ${topic}`);
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, remaining);
+          waiters.push(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+      }
+    },
+    close: () => client.removeChannel(channel),
+  };
 }
 
-describe("Supabase Realtime Integration", () => {
-  let testUserId = "";
-  let testUserEmail = "";
-  let testEndpointId = "";
-
-  beforeAll(async () => {
-    testUserEmail = `test-realtime-${Date.now()}@webhooks-test.local`;
-
-    const { data, error } = await admin.auth.admin.createUser({
-      email: testUserEmail,
-      password: TEST_PASSWORD,
-      email_confirm: true,
-      user_metadata: {
-        full_name: "Realtime Test User",
-      },
-    });
-
-    expect(error).toBeNull();
-    testUserId = data.user!.id;
-
-    const endpoint = await createEndpointForUser({
-      userId: testUserId,
-      name: "Realtime Endpoint",
-    });
-
-    testEndpointId = endpoint.id;
-  });
-
-  afterAll(async () => {
-    if (testEndpointId) {
-      await admin.from("requests").delete().eq("endpoint_id", testEndpointId);
-      await admin.from("endpoints").delete().eq("id", testEndpointId);
-    }
-
-    if (testUserId) {
-      await admin.auth.admin.deleteUser(testUserId);
-    }
-  });
-
-  it("delivers authenticated user row updates over realtime", async () => {
-    const anonClient = createAnonClient();
-    const signIn = await anonClient.auth.signInWithPassword({
-      email: testUserEmail,
-      password: TEST_PASSWORD,
-    });
-
-    expect(signIn.error).toBeNull();
-
-    const channel = anonClient.channel(`test-users-${testUserId}`);
-    const updatePromise = new Promise<Database["public"]["Tables"]["users"]["Row"]>(
-      (resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Timed out waiting for user realtime update"));
-        }, 10_000);
-
-        channel.on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "users",
-            filter: `id=eq.${testUserId}`,
-          },
-          (payload) => {
-            clearTimeout(timeout);
-            resolve(payload.new as Database["public"]["Tables"]["users"]["Row"]);
-          }
-        );
-      }
-    );
-
-    await waitForSubscribed(channel);
-
-    const { error: updateError } = await admin
-      .from("users")
-      .update({
-        requests_used: 7,
-        subscription_status: "past_due",
-      })
-      .eq("id", testUserId);
-
-    expect(updateError).toBeNull();
-
-    await expect(updatePromise).resolves.toMatchObject({
-      id: testUserId,
-      requests_used: 7,
-      subscription_status: "past_due",
-    });
-
-    await anonClient.removeChannel(channel);
-    await anonClient.auth.signOut();
-  }, 20_000);
-
-  it("delivers retained request inserts for an owned endpoint over realtime", async () => {
-    const anonClient = createAnonClient();
-    const signIn = await anonClient.auth.signInWithPassword({
-      email: testUserEmail,
-      password: TEST_PASSWORD,
-    });
-
-    expect(signIn.error).toBeNull();
-
-    const channel = anonClient.channel(`test-requests-${testEndpointId}`);
-    const requestPromise = new Promise<Database["public"]["Tables"]["requests"]["Row"]>(
-      (resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Timed out waiting for request realtime insert"));
-        }, 10_000);
-
-        channel.on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "requests",
-            filter: `endpoint_id=eq.${testEndpointId}`,
-          },
-          (payload) => {
-            clearTimeout(timeout);
-            resolve(payload.new as Database["public"]["Tables"]["requests"]["Row"]);
-          }
-        );
-      }
-    );
-
-    await waitForSubscribed(channel);
-
-    const { error: insertError } = await admin.from("requests").insert({
-      endpoint_id: testEndpointId,
-      user_id: testUserId,
+function insertRequest(endpointId: string, userId: string, extra: Record<string, unknown> = {}) {
+  return admin
+    .from("requests")
+    .insert({
+      endpoint_id: endpointId,
+      user_id: userId,
       method: "POST",
       path: "/realtime-test",
       headers: { "content-type": "application/json" },
       body: '{"ok":true}',
-      query_params: { source: "realtime" },
+      query_params: {},
       content_type: "application/json",
       ip: "127.0.0.1",
       size: 11,
-    });
+      ...extra,
+    })
+    .select("id")
+    .single();
+}
 
-    expect(insertError).toBeNull();
+describe("Supabase Realtime broadcast topics", () => {
+  let owner = { id: "", email: "" };
+  let outsider = { id: "", email: "" };
+  let endpointId = "";
 
-    await expect(requestPromise).resolves.toMatchObject({
-      endpoint_id: testEndpointId,
-      user_id: testUserId,
-      method: "POST",
-      path: "/realtime-test",
-    });
+  beforeAll(async () => {
+    owner = await createUser("test-realtime-owner");
+    outsider = await createUser("test-realtime-outsider");
+    const endpoint = await createEndpointForUser({ userId: owner.id, name: "Realtime Endpoint" });
+    endpointId = endpoint.id;
+  });
 
-    await anonClient.removeChannel(channel);
-    await anonClient.auth.signOut();
-  }, 20_000);
+  afterAll(async () => {
+    if (endpointId) {
+      await admin.from("requests").delete().eq("endpoint_id", endpointId);
+      await admin.from("endpoints").delete().eq("id", endpointId);
+    }
+    for (const user of [owner, outsider]) {
+      if (user.id) await admin.auth.admin.deleteUser(user.id);
+    }
+  });
 
-  it("delivers owned endpoint row updates over realtime", async () => {
-    const anonClient = createAnonClient();
-    const signIn = await anonClient.auth.signInWithPassword({
-      email: testUserEmail,
-      password: TEST_PASSWORD,
-    });
-
-    expect(signIn.error).toBeNull();
-
-    const channel = anonClient.channel(`test-owned-endpoint-${testEndpointId}`);
-    const updatePromise = new Promise<Database["public"]["Tables"]["endpoints"]["Row"]>(
-      (resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Timed out waiting for owned endpoint realtime update"));
-        }, 10_000);
-
-        channel.on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "endpoints",
-            filter: `id=eq.${testEndpointId}`,
-          },
-          (payload) => {
-            clearTimeout(timeout);
-            resolve(payload.new as Database["public"]["Tables"]["endpoints"]["Row"]);
-          }
-        );
-      }
+  it("refuses topics to callers without a user", async () => {
+    // The service role has no auth.uid(); it reaches topics by bypassing RLS,
+    // not through this helper.
+    const { data, error } = await admin.rpc(
+      "can_join_realtime_topic" as never,
+      {
+        p_topic: `user:${owner.id}`,
+      } as never
     );
+    expect(error).toBeNull();
+    expect(data).toBe(false);
+  });
 
-    await waitForSubscribed(channel);
+  it("signals request inserts and signature results to the owner", async () => {
+    const client = await signedInClient(owner.email);
+    const topic = await listen(client, `endpoint:${endpointId}`);
 
-    const { error: countError } = await callRpc("increment_endpoint_request_count", {
-      p_endpoint_id: testEndpointId,
-      p_count: 1,
-    });
+    const { data: inserted, error } = await insertRequest(endpointId, owner.id);
+    expect(error).toBeNull();
+    const created = await topic.next("request_created");
+    expect(created.payload).toMatchObject({ request_id: inserted!.id });
 
-    expect(countError).toBeNull();
+    const { error: updateError } = await admin
+      .from("requests")
+      .update({ signature_verified: true, signing_provider: "stripe" })
+      .eq("id", inserted!.id);
+    expect(updateError).toBeNull();
+    const updated = await topic.next("request_updated");
+    expect(updated.payload).toMatchObject({ request_id: inserted!.id });
 
-    await expect(updatePromise).resolves.toMatchObject({
-      id: testEndpointId,
-    });
+    await topic.close();
+    await client.auth.signOut();
+  }, 30_000);
 
-    await anonClient.removeChannel(channel);
-    await anonClient.auth.signOut();
-  }, 20_000);
+  it("signals profile changes, but not a plain usage increment", async () => {
+    const client = await signedInClient(owner.email);
+    const topic = await listen(client, `user:${owner.id}`);
 
-  it("delivers request inserts on a team-shared endpoint to a team member (RLS via can_view_team_endpoint)", async () => {
-    // Second user: a member of a team the owner shares the endpoint with.
-    const memberEmail = `test-realtime-member-${Date.now()}@webhooks-test.local`;
-    const { data: memberData, error: memberError } = await admin.auth.admin.createUser({
-      email: memberEmail,
-      password: TEST_PASSWORD,
-      email_confirm: true,
-      user_metadata: { full_name: "Realtime Team Member" },
-    });
-    expect(memberError).toBeNull();
-    const memberId = memberData.user!.id;
+    await admin.from("users").update({ requests_used: 1 }).eq("id", owner.id);
+    await expect(topic.next("profile_changed", 1500)).rejects.toThrow("Timed out");
 
+    await admin.from("users").update({ subscription_status: "past_due" }).eq("id", owner.id);
+    await topic.next("profile_changed");
+
+    const { data: profile } = await admin
+      .from("users")
+      .select("request_limit")
+      .eq("id", owner.id)
+      .single();
+    await admin.from("users").update({ requests_used: profile!.request_limit }).eq("id", owner.id);
+    await topic.next("profile_changed");
+
+    await topic.close();
+    await client.auth.signOut();
+  }, 30_000);
+
+  it("signals endpoint deletion", async () => {
+    const endpoint = await createEndpointForUser({ userId: owner.id, name: "Doomed Endpoint" });
+    const client = await signedInClient(owner.email);
+    const topic = await listen(client, `endpoint:${endpoint.id}`);
+
+    await admin.from("endpoints").delete().eq("id", endpoint.id);
+    const deleted = await topic.next("endpoint_deleted");
+    expect(deleted.payload).toMatchObject({ endpoint_id: endpoint.id });
+
+    await topic.close();
+    await client.auth.signOut();
+  }, 30_000);
+
+  it("refuses other users' topics and anonymous clients", async () => {
+    const outsiderClient = await signedInClient(outsider.email);
+    await expect(listen(outsiderClient, `endpoint:${endpointId}`)).rejects.toThrow(REFUSED);
+    await expect(listen(outsiderClient, `user:${owner.id}`)).rejects.toThrow(REFUSED);
+    await expect(listen(outsiderClient, "endpoint:not-a-uuid")).rejects.toThrow(REFUSED);
+    await outsiderClient.removeAllChannels();
+    await outsiderClient.auth.signOut();
+
+    const anonClient = createAnonClient();
+    await expect(listen(anonClient, `endpoint:${endpointId}`)).rejects.toThrow(REFUSED);
+    await anonClient.removeAllChannels();
+  }, 40_000);
+
+  it("signals request inserts on a team-shared endpoint to a team member", async () => {
+    const member = await createUser("test-realtime-member");
     let teamId = "";
     try {
-      const created = await createTeam(testUserId, "Realtime Team");
+      const created = await createTeam(owner.id, "Realtime Team");
       if ("error" in created) throw new Error(created.error);
       teamId = created.id;
 
@@ -294,83 +251,30 @@ describe("Supabase Realtime Integration", () => {
 
       const { error: memberInsertError } = await admin
         .from("team_members")
-        .insert({ team_id: teamId, user_id: memberId, role: "member" });
+        .insert({ team_id: teamId, user_id: member.id, role: "member" });
       expect(memberInsertError).toBeNull();
 
-      const share = await shareEndpointWithTeam(testUserId, teamId, testEndpointId);
+      const share = await shareEndpointWithTeam(owner.id, teamId, endpointId);
       expect(share.success).toBe(true);
 
-      const memberClient = createAnonClient();
-      const signIn = await memberClient.auth.signInWithPassword({
-        email: memberEmail,
-        password: TEST_PASSWORD,
-      });
-      expect(signIn.error).toBeNull();
+      const memberClient = await signedInClient(member.email);
+      const topic = await listen(memberClient, `endpoint:${endpointId}`);
 
-      // The RLS-scoped read works for the member (this is what Realtime evaluates).
-      const { data: visibleEndpoint, error: visibleError } = await memberClient
-        .from("endpoints")
-        .select("id")
-        .eq("id", testEndpointId)
-        .maybeSingle();
-      expect(visibleError).toBeNull();
-      expect(visibleEndpoint?.id).toBe(testEndpointId);
-
-      const channel = memberClient.channel(`test-team-requests-${testEndpointId}`);
-      const requestPromise = new Promise<Database["public"]["Tables"]["requests"]["Row"]>(
-        (resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error("Timed out waiting for team-shared request realtime insert"));
-          }, 10_000);
-
-          channel.on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "requests",
-              filter: `endpoint_id=eq.${testEndpointId}`,
-            },
-            (payload) => {
-              clearTimeout(timeout);
-              resolve(payload.new as Database["public"]["Tables"]["requests"]["Row"]);
-            }
-          );
-        }
-      );
-
-      await waitForSubscribed(channel);
-
-      // Rows are stamped with the OWNER's user_id (and the billed team), exactly
-      // as capture_webhook() writes them: the member is not the row owner.
-      const { error: insertError } = await admin.from("requests").insert({
-        endpoint_id: testEndpointId,
-        user_id: testUserId,
+      // Rows carry the owner's user_id, as capture_webhook() writes them.
+      const { data: inserted, error } = await insertRequest(endpointId, owner.id, {
         team_id: teamId,
-        method: "POST",
-        path: "/team-realtime-test",
-        headers: { "content-type": "application/json" },
-        body: '{"team":true}',
-        query_params: {},
-        content_type: "application/json",
-        ip: "127.0.0.1",
-        size: 13,
       });
-      expect(insertError).toBeNull();
+      expect(error).toBeNull();
+      const signal = await topic.next("request_created");
+      expect(signal.payload).toMatchObject({ request_id: inserted!.id });
 
-      await expect(requestPromise).resolves.toMatchObject({
-        endpoint_id: testEndpointId,
-        user_id: testUserId,
-        path: "/team-realtime-test",
-      });
-
-      await memberClient.removeChannel(channel);
+      await topic.close();
       await memberClient.auth.signOut();
     } finally {
       if (teamId) {
         await admin.from("teams").delete().eq("id", teamId);
       }
-      await admin.auth.admin.deleteUser(memberId);
+      await admin.auth.admin.deleteUser(member.id);
     }
-  }, 30_000);
+  }, 40_000);
 });

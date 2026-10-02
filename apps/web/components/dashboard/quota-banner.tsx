@@ -8,7 +8,7 @@ import { UpgradeButton } from "@/components/billing/upgrade-button";
 import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
 import { isQuotaExhausted } from "@/lib/quota";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToUserRow } from "@/lib/supabase/realtime";
+import { subscribeToUserProfileChanges } from "@/lib/supabase/realtime";
 
 /**
  * Shown while the receiver is rejecting the user's webhooks with 429. Without
@@ -31,19 +31,25 @@ export function QuotaBanner() {
     }
 
     let cancelled = false;
-    void createClient()
-      .from("users")
-      .select(ACCOUNT_PROFILE_SELECT)
-      .eq("id", userId)
-      .single<AccountProfile>()
-      .then(({ data }) => {
-        if (!cancelled) setProfile(data ?? null);
-      });
+    let requestSeq = 0;
+    const loadProfile = () => {
+      const seq = ++requestSeq;
+      void createClient()
+        .from("users")
+        .select(ACCOUNT_PROFILE_SELECT)
+        .eq("id", userId)
+        .single<AccountProfile>()
+        .then(({ data }) => {
+          if (cancelled || seq !== requestSeq) return;
+          setProfile(data ?? null);
+          setNowMs(Date.now());
+        });
+    };
 
-    const unsubscribe = subscribeToUserRow(userId, (row) => {
-      setProfile(row ? (row as AccountProfile) : null);
-      setNowMs(Date.now());
-    });
+    loadProfile();
+    // Signalled when the quota is exhausted or reset and on plan changes,
+    // not on every capture.
+    const unsubscribe = subscribeToUserProfileChanges(userId, loadProfile);
 
     return () => {
       cancelled = true;
