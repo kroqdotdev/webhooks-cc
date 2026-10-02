@@ -515,7 +515,7 @@ The options type is a discriminated union:
 ```ts
 // HMAC/token-based providers
 {
-  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "clerk" | "vercel" | "gitlab" | "typeform" | "standard-webhooks" | "meta" | "lemonsqueezy" | "coinbase-commerce" | "razorpay" | "cal" | "intercom" | "telegram" | "square" | "hubspot" | "mailgun" | "calendly" | "mux" | "sentry" | "bitbucket" | "docusign" | "adyen" | "paypal";
+  provider: "stripe" | "github" | "shopify" | "twilio" | "slack" | "paddle" | "linear" | "clerk" | "vercel" | "gitlab" | "typeform" | "standard-webhooks" | "meta" | "lemonsqueezy" | "coinbase-commerce" | "razorpay" | "cal" | "intercom" | "telegram" | "square" | "hubspot" | "mailgun" | "calendly" | "mux" | "sentry" | "bitbucket" | "docusign" | "adyen" | "paypal" | "resend" | "workos";
   secret: string;
   url?: string;    // Required for twilio, square, and hubspot
   method?: string; // Used by hubspot (defaults to "POST")
