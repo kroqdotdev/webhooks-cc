@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.7";
+export const APP_VERSION = "0.32.8";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.8",
+    date: "2026-10-02",
+    title: "Calmer Live Dashboard",
+    track: "web",
+    items: [
+      "On busy endpoints the dashboard refreshes the request list at most once a second instead of after every event",
+      "The request count updates in the browser as webhooks arrive, so a busy endpoint no longer runs into the count rate limit and leaves the count stale",
+    ],
+  },
   {
     version: "0.32.7",
     date: "2026-10-01",

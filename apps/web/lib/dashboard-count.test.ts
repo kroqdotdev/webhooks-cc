@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   buildRetainedCountParams,
   computeShowHasMore,
+  countLoadedAfter,
   incrementRetainedCount,
+  retainedCountCutoff,
 } from "./dashboard-count";
 
 describe("buildRetainedCountParams", () => {
@@ -17,6 +19,38 @@ describe("buildRetainedCountParams", () => {
       method: "POST",
       q: "needle",
     });
+  });
+
+  test("includes the upper bound when given", () => {
+    expect(buildRetainedCountParams("demo", "ALL", "", 1001)).toEqual({ slug: "demo", to: "1001" });
+  });
+});
+
+describe("retainedCountCutoff", () => {
+  test("is the newest request plus one millisecond", () => {
+    expect(retainedCountCutoff([{ receivedAt: 2000 }, { receivedAt: 1000 }])).toBe(2001);
+  });
+
+  test("is undefined without loaded requests", () => {
+    expect(retainedCountCutoff([])).toBeUndefined();
+  });
+});
+
+describe("countLoadedAfter", () => {
+  const requests = [
+    { method: "POST", receivedAt: 3000 },
+    { method: "GET", receivedAt: 2000 },
+    { method: "POST", receivedAt: 1000 },
+  ];
+
+  test("counts requests newer than the cutoff", () => {
+    expect(countLoadedAfter(requests, 1000, "ALL")).toBe(2);
+    expect(countLoadedAfter(requests, 3000, "ALL")).toBe(0);
+  });
+
+  test("applies the method filter", () => {
+    expect(countLoadedAfter(requests, 0, "POST")).toBe(2);
+    expect(countLoadedAfter(requests, 1500, "GET")).toBe(1);
   });
 });
 
