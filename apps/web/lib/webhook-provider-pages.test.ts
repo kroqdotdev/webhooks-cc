@@ -35,4 +35,14 @@ describe("webhook provider pages", () => {
       expect(copy).not.toContain(String.fromCharCode(0x2014));
     }
   });
+
+  it("marks opt-in signing as optional, and never for SDK providers", () => {
+    for (const slug of ["segment", "zapier", "chargebee", "jira", "mailchimp"]) {
+      expect(getWebhookProviderPage(slug)?.signatureOptional).toBe(true);
+    }
+    expect(getWebhookProviderPage("pagerduty")?.signatureOptional).toBe(false);
+    for (const page of pages.filter((p) => p.inSdk)) {
+      expect(page.signatureOptional).toBe(false);
+    }
+  });
 });
