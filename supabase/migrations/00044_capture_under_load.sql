@@ -17,6 +17,8 @@
 --     'endpoint:<id>' for guest endpoints): the row the capture's quota lands
 --     on. The receiver caps concurrent captures per key, so one busy account
 --     queues on its own row lock without taking every pooled connection.
+--     capture_billing_key() returns the same key without capturing, for slugs
+--     the receiver has not seen yet.
 --
 --  3. Free-period race. Concurrent first captures of a free period (the first
 --     ones ever, and every daily rollover) all called start_free_period(); one
@@ -281,6 +283,38 @@ revoke all on function public.capture_webhook(
 grant execute on function public.capture_webhook(
   text, text, text, jsonb, text, jsonb, text, text, timestamptz, bytea
 ) to service_role;
+
+-- The billing key capture_webhook() would return for a slug, without capturing:
+-- the receiver asks before the first capture of a slug it has not cached, so a
+-- burst across fresh slugs of one account shares the account's cap. Mirrors the
+-- billing selection in capture_webhook(); keep the two in step.
+create or replace function public.capture_billing_key(p_slug text)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select case
+    when e.is_ephemeral and e.user_id is null then 'endpoint:' || e.id::text
+    when e.user_id is null then null
+    else coalesce(
+      (select 'team:' || t.id::text
+         from public.team_endpoints te
+         join public.teams t on t.id = te.team_id
+        where te.endpoint_id = e.id
+          and t.subscription_status is not null
+        order by te.shared_at asc
+        limit 1),
+      'user:' || e.user_id::text
+    )
+  end
+  from public.endpoints e
+  where e.slug = p_slug;
+$$;
+
+revoke all on function public.capture_billing_key(text) from public, anon, authenticated;
+grant execute on function public.capture_billing_key(text) to service_role;
 
 -- ----------------------------------------------------------------------------
 -- 3. Slug-scoped search

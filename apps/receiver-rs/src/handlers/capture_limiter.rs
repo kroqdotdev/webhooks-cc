@@ -9,9 +9,11 @@
 //! captures are serialized anyway, a few in flight keep its row busy, and the
 //! rest wait here without holding a connection.
 //!
-//! The account is learned from the `billing_key` that `capture_webhook()`
-//! returns and remembered per slug for a short while; a slug seen for the
-//! first time is capped on its own.
+//! The account comes from the `billing_key` that `capture_webhook()` returns,
+//! remembered per slug. For a slug not in the cache the handler asks
+//! `capture_billing_key()` first, so a burst across fresh slugs of one account
+//! still shares that account's cap; only if that lookup fails is the slug
+//! capped on its own.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,7 +23,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// How long a slug's billing key is trusted. Sharing an endpoint with a team
 /// moves its billing; a stale key only affects fairness, never correctness.
-const BILLING_KEY_TTL: Duration = Duration::from_secs(60);
+const BILLING_KEY_TTL: Duration = Duration::from_secs(300);
 /// Bounds on the two maps; past them, idle entries are dropped.
 const MAX_SLUGS: usize = 50_000;
 const MAX_KEYS: usize = 10_000;
@@ -51,13 +53,18 @@ impl CaptureLimiter {
         }
     }
 
-    /// The key a capture for `slug` should be counted against.
-    pub fn key_for(&self, slug: &str) -> String {
+    /// The cached billing key for `slug`, if it is still fresh.
+    pub fn cached_key(&self, slug: &str) -> Option<String> {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         match state.billing_keys.get(slug) {
-            Some((key, seen)) if seen.elapsed() < BILLING_KEY_TTL => key.clone(),
-            _ => format!("slug:{slug}"),
+            Some((key, seen)) if seen.elapsed() < BILLING_KEY_TTL => Some(key.clone()),
+            _ => None,
         }
+    }
+
+    /// Key for a slug whose account could not be resolved.
+    pub fn slug_key(slug: &str) -> String {
+        format!("slug:{slug}")
     }
 
     /// Remember which account `slug` bills to.
@@ -138,9 +145,10 @@ mod tests {
     #[test]
     fn learns_the_billing_key_per_slug() {
         let limiter = CaptureLimiter::new(4);
-        assert_eq!(limiter.key_for("abc"), "slug:abc");
+        assert_eq!(limiter.cached_key("abc"), None);
         limiter.remember("abc", "team:t1");
-        assert_eq!(limiter.key_for("abc"), "team:t1");
-        assert_eq!(limiter.key_for("other"), "slug:other");
+        assert_eq!(limiter.cached_key("abc").as_deref(), Some("team:t1"));
+        assert_eq!(limiter.cached_key("other"), None);
+        assert_eq!(CaptureLimiter::slug_key("other"), "slug:other");
     }
 }

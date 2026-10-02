@@ -49,6 +49,16 @@ async function capture(slug: string) {
   return data as { status: string; billing_key?: string };
 }
 
+/** What the receiver asks before the first capture of an uncached slug. */
+async function billingKey(slug: string) {
+  const { data, error } = await admin.rpc(
+    "capture_billing_key" as never,
+    { p_slug: slug } as never
+  );
+  if (error) throw error;
+  return data as string | null;
+}
+
 afterAll(async () => {
   if (createdEndpointIds.length > 0) {
     await admin.from("endpoints").delete().in("id", createdEndpointIds);
@@ -71,7 +81,9 @@ describe("capture_webhook under concurrency", () => {
       .single();
     expect(before!.period_end).toBeNull();
 
-    const results = await Promise.all(Array.from({ length: CONCURRENT }, () => capture(endpoint.slug)));
+    const results = await Promise.all(
+      Array.from({ length: CONCURRENT }, () => capture(endpoint.slug))
+    );
     expect(results.map((result) => result.status)).toEqual(Array(CONCURRENT).fill("ok"));
 
     const { data: after } = await admin
@@ -103,7 +115,9 @@ describe("capture_webhook under concurrency", () => {
       })
       .eq("id", userId);
 
-    const results = await Promise.all(Array.from({ length: CONCURRENT }, () => capture(endpoint.slug)));
+    const results = await Promise.all(
+      Array.from({ length: CONCURRENT }, () => capture(endpoint.slug))
+    );
     expect(results.map((result) => result.status)).toEqual(Array(CONCURRENT).fill("ok"));
 
     const { data: after } = await admin
@@ -118,6 +132,8 @@ describe("capture_webhook under concurrency", () => {
     const userId = await createFreeUser();
     const endpoint = await createEndpointForUser({ userId, name: "Key endpoint" });
     createdEndpointIds.push(endpoint.id);
+    await expect(billingKey(endpoint.slug)).resolves.toBe(`user:${userId}`);
+    await expect(billingKey("no-such-slug")).resolves.toBeNull();
     await expect(capture(endpoint.slug)).resolves.toMatchObject({
       status: "ok",
       billing_key: `user:${userId}`,
@@ -135,6 +151,7 @@ describe("capture_webhook under concurrency", () => {
       .single();
     expect(error).toBeNull();
     createdEndpointIds.push(guest!.id);
+    await expect(billingKey(slug)).resolves.toBe(`endpoint:${guest!.id}`);
     await expect(capture(slug)).resolves.toMatchObject({
       status: "ok",
       billing_key: `endpoint:${guest!.id}`,
