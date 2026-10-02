@@ -734,12 +734,12 @@ export default function DashboardPage() {
     const topId = recentRequests[0]._id;
     const previousTopId = prevTopSummaryId.current;
 
-    // First requests on an endpoint the server counted as empty.
+    // First snapshot for this endpoint: the count may have been read before
+    // this list, so re-read it bounded at the snapshot. Later snapshots are
+    // reconciled by the arrival increments below.
     if (!previousTopId && !debouncedSearch) {
-      const matched = recentRequests.filter(
-        (request) => methodFilter === "ALL" || request.method === methodFilter
-      ).length;
-      setRetainedTotalCount((prev) => (prev === 0 ? matched : prev));
+      countedRequestsRef.current = recentRequests;
+      void refreshRetainedCountRef.current();
     }
 
     if (previousTopId && topId !== previousTopId) {
