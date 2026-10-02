@@ -27,3 +27,5 @@ drop policy if exists api_keys_delete on public.api_keys;
 
 revoke insert, update, delete, truncate, references, trigger
   on public.endpoints, public.api_keys from anon, authenticated;
+
+notify pgrst, 'reload schema';
