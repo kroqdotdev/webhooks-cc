@@ -38,7 +38,14 @@ import {
   claimGuestEndpointForUser,
   type DashboardEndpoint,
 } from "@/lib/dashboard-api";
-import { buildRetainedCountParams, computeShowHasMore } from "@/lib/dashboard-count";
+import {
+  buildRetainedCountParams,
+  computeShowHasMore,
+  countLoadedAfter,
+  incrementRetainedCount,
+  retainedCountCutoff,
+} from "@/lib/dashboard-count";
+import { createRefreshScheduler } from "@/lib/refresh-scheduler";
 import type {
   ClickHouseRequest,
   ClickHouseSummary,
@@ -49,6 +56,17 @@ import type {
 const CLICKHOUSE_PAGE_SIZE = 50;
 const PANE_MIN = 240;
 const PANE_DEFAULT = 320;
+// Realtime refreshes: a short settle window lets a request insert and its
+// signature update share one fetch, and bursts refresh at most once a second.
+const REALTIME_SETTLE_MS = 150;
+const REALTIME_MIN_INTERVAL_MS = 1000;
+// The retained count follows arrivals in the browser. The server count is
+// rate-limited per user, so while events flow it is re-read at most every
+// COUNT_MIN_INTERVAL_MS (with a search active, where arrivals cannot be matched
+// locally, or after more than a page arrived between refreshes), and otherwise
+// every COUNT_RESYNC_INTERVAL_MS to drop requests that left retention.
+const COUNT_MIN_INTERVAL_MS = 10_000;
+const COUNT_RESYNC_INTERVAL_MS = 60_000;
 
 export default function DashboardPage() {
   const { session, isLoading: authLoading } = useAuth();
@@ -287,7 +305,12 @@ export default function DashboardPage() {
   const retainedCountRequestSeq = useRef(0);
   const recentRequestsRequestSeq = useRef(0);
   const searchResultsRequestSeq = useRef(0);
-  const realtimeRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Requests already reflected in retainedTotalCount, and when the server
+  // count was last requested.
+  const countedRequestsRef = useRef<Request[]>([]);
+  const lastCountRequestAtRef = useRef(0);
+  const refreshRetainedCountRef = useRef<() => Promise<void>>(async () => {});
+  const countSchedulerRef = useRef<ReturnType<typeof createRefreshScheduler> | null>(null);
 
   const clickHouseDetailMap = useRef(new Map<string, ClickHouseRequest>());
 
@@ -537,14 +560,44 @@ export default function DashboardPage() {
   const refreshRetainedCount = useCallback(async () => {
     if (!currentSlug) return;
     const requestSeq = ++retainedCountRequestSeq.current;
-    const params = buildRetainedCountParams(currentSlug, methodFilter, debouncedSearch);
+    lastCountRequestAtRef.current = Date.now();
+    // Without a search, arrivals are added in the browser, so bound the server
+    // count at the newest counted request and add whatever was counted past it
+    // by the time the response lands. Counting both would double-count.
+    const counted = countedRequestsRef.current;
+    const cutoff =
+      !debouncedSearch && counted[0]?.endpointId === currentEndpointId
+        ? retainedCountCutoff(counted)
+        : undefined;
+    const params = buildRetainedCountParams(currentSlug, methodFilter, debouncedSearch, cutoff);
 
     const { count, ok } = await fetchCountFromClickHouse(params);
     if (requestSeq !== retainedCountRequestSeq.current) return;
     if (ok && count != null) {
-      setRetainedTotalCount(count);
+      setRetainedTotalCount(
+        cutoff === undefined
+          ? count
+          : count + countLoadedAfter(countedRequestsRef.current, cutoff, methodFilter)
+      );
     }
-  }, [currentSlug, methodFilter, debouncedSearch, fetchCountFromClickHouse]);
+  }, [currentSlug, currentEndpointId, methodFilter, debouncedSearch, fetchCountFromClickHouse]);
+
+  useEffect(() => {
+    refreshRetainedCountRef.current = refreshRetainedCount;
+  }, [refreshRetainedCount]);
+
+  useEffect(() => {
+    const scheduler = createRefreshScheduler({
+      run: () => void refreshRetainedCountRef.current(),
+      settleMs: 0,
+      minIntervalMs: COUNT_MIN_INTERVAL_MS,
+    });
+    countSchedulerRef.current = scheduler;
+    return () => {
+      scheduler.cancel();
+      countSchedulerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentSlug || !accessToken) {
@@ -591,36 +644,30 @@ export default function DashboardPage() {
       return;
     }
 
-    const queueRefresh = () => {
-      if (realtimeRefreshTimeoutRef.current) {
-        clearTimeout(realtimeRefreshTimeoutRef.current);
-      }
-
-      realtimeRefreshTimeoutRef.current = setTimeout(() => {
+    const scheduler = createRefreshScheduler({
+      settleMs: REALTIME_SETTLE_MS,
+      minIntervalMs: REALTIME_MIN_INTERVAL_MS,
+      run: () => {
         void refreshRecentRequests();
         if (debouncedSearch) {
           void refreshSearchResults({ showLoading: false });
         }
 
-        void refreshRetainedCount();
-      }, 150);
-    };
+        if (
+          debouncedSearch ||
+          Date.now() - lastCountRequestAtRef.current >= COUNT_RESYNC_INTERVAL_MS
+        ) {
+          countSchedulerRef.current?.schedule();
+        }
+      },
+    });
 
-    const unsubscribe = subscribeToEndpointRequestChanges(currentEndpointId, queueRefresh);
+    const unsubscribe = subscribeToEndpointRequestChanges(currentEndpointId, scheduler.schedule);
     return () => {
-      if (realtimeRefreshTimeoutRef.current) {
-        clearTimeout(realtimeRefreshTimeoutRef.current);
-        realtimeRefreshTimeoutRef.current = undefined;
-      }
+      scheduler.cancel();
       unsubscribe();
     };
-  }, [
-    currentEndpointId,
-    debouncedSearch,
-    refreshRecentRequests,
-    refreshRetainedCount,
-    refreshSearchResults,
-  ]);
+  }, [currentEndpointId, debouncedSearch, refreshRecentRequests, refreshSearchResults]);
 
   const displayedItems = useMemo((): AnyRequestSummary[] => {
     if (debouncedSearch) {
@@ -680,11 +727,20 @@ export default function DashboardPage() {
   useEffect(() => {
     if (recentRequests.length === 0) {
       prevTopSummaryId.current = null;
+      countedRequestsRef.current = [];
       return;
     }
 
     const topId = recentRequests[0]._id;
     const previousTopId = prevTopSummaryId.current;
+
+    // First requests on an endpoint the server counted as empty.
+    if (!previousTopId && !debouncedSearch) {
+      const matched = recentRequests.filter(
+        (request) => methodFilter === "ALL" || request.method === methodFilter
+      ).length;
+      setRetainedTotalCount((prev) => (prev === 0 ? matched : prev));
+    }
 
     if (previousTopId && topId !== previousTopId) {
       const previousIdx = recentRequests.findIndex((request) => request._id === previousTopId);
@@ -697,14 +753,23 @@ export default function DashboardPage() {
           setNewCount((prev) => prev + arrived);
         }
 
-        if (previousIdx === -1) {
-          void refreshRetainedCount();
+        if (!debouncedSearch) {
+          // More than a page arrived when the previous top is gone: count the
+          // whole page for now and let the server fill in the rest.
+          const matched = recentRequests
+            .slice(0, previousIdx >= 0 ? previousIdx : recentRequests.length)
+            .filter((request) => methodFilter === "ALL" || request.method === methodFilter).length;
+          setRetainedTotalCount((prev) => incrementRetainedCount(prev, matched));
+          if (previousIdx === -1) {
+            countSchedulerRef.current?.schedule();
+          }
         }
       }
     }
 
     prevTopSummaryId.current = topId;
-  }, [recentRequests, liveMode, refreshRetainedCount]);
+    countedRequestsRef.current = recentRequests;
+  }, [recentRequests, liveMode, debouncedSearch, methodFilter]);
 
   useEffect(() => {
     if (recentRequests.length > 0 && !selectedId) {
@@ -730,14 +795,6 @@ export default function DashboardPage() {
     setSearchError(false);
     clickHouseDetailMap.current.clear();
   }, [currentEndpointId]);
-
-  useEffect(() => {
-    return () => {
-      if (realtimeRefreshTimeoutRef.current) {
-        clearTimeout(realtimeRefreshTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
