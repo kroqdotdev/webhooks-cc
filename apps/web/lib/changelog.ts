@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.11";
+export const APP_VERSION = "0.32.12";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.12",
+    date: "2026-10-02",
+    title: "10 More Provider Pages",
+    track: "web",
+    items: [
+      "Webhook guides for Amazon SNS, PagerDuty, Okta, Segment, Datadog, Zapier, Make, Loops, Salesforce, and Customer.io, with where to configure each one and how it authenticates deliveries, taken from each provider's own developer docs",
+    ],
+  },
   {
     version: "0.32.11",
     date: "2026-10-02",
