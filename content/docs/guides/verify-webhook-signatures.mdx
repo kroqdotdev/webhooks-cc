@@ -14,7 +14,7 @@ seo:
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord uses Ed25519 public-key cryptography, PayPal uses RSA-SHA256 with provider certificates, and Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 30 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures. Plaid is supported for templates and detection, but JWT/JWK verification requires Plaid API credentials and is not available in the SDK yet.
+The webhooks.cc SDK verifies signatures for 32 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures. Plaid is supported for templates and detection, but JWT/JWK verification requires Plaid API credentials and is not available in the SDK yet.
 
 ## Verify in the dashboard (no code)
 

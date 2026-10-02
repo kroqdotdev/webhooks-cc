@@ -9,12 +9,12 @@ keywords:
   ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
 seo:
   ogTitle: "Webhook Signature Verification"
-  ogDescription: "Verify webhook signatures for 30 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, RSA-SHA256, and token comparison."
+  ogDescription: "Verify webhook signatures for 32 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, RSA-SHA256, and token comparison."
 ---
 
 ## Overview
 
-Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 30 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
 
 Generic verifier (works with any supported provider):
 
