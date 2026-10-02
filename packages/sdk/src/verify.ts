@@ -826,6 +826,29 @@ export async function verifyMuxSignature(
 }
 
 /**
+ * Verify a WorkOS webhook signature. The `workos-signature` header is
+ * `t=<milliseconds>, v1=<hex>`, where the signature is the hex HMAC-SHA256 of
+ * `${t}.${body}` keyed with the signing secret string as-is. Like the other
+ * `t=,v1=` providers this does not enforce a timestamp tolerance, so captured
+ * requests can be verified after the fact.
+ */
+export async function verifyWorkOSSignature(
+  body: string | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+): Promise<boolean> {
+  requireSecret(secret, "verifyWorkOSSignature");
+  const parsed = parseStripeHeader(signatureHeader);
+  if (!parsed) {
+    return false;
+  }
+  const expected = toHex(
+    await hmacSign("SHA-256", secret, `${parsed.timestamp}.${normalizeBody(body)}`)
+  ).toLowerCase();
+  return parsed.signatures.some((signature) => timingSafeEqual(signature, expected));
+}
+
+/**
  * Verify a Sentry webhook signature (raw hex HMAC-SHA256 over the body, sent in
  * the `sentry-hook-signature` header). Reuses the shared hex HMAC helper.
  */
@@ -1074,6 +1097,20 @@ export async function verifyClerkSignature(
   if (svixSig && !getHeader(headers, "webhook-signature"))
     normalized["webhook-signature"] = svixSig;
   return verifyStandardWebhookSignature(body, normalized, secret);
+}
+
+/**
+ * Verify a Resend webhook signature. Resend delivers through Svix, the same
+ * scheme as Clerk: the svix-signature header carries space-separated
+ * `v1,<base64>` entries, each an HMAC-SHA256 of `${svix-id}.${svix-timestamp}.${body}`
+ * keyed with the base64-decoded `whsec_` signing secret.
+ */
+export function verifyResendSignature(
+  body: string | undefined,
+  headers: Record<string, string>,
+  secret: string
+): Promise<boolean> {
+  return verifyClerkSignature(body, headers, secret);
 }
 
 /**
@@ -1398,6 +1435,18 @@ export async function verifySignature(
   if (options.provider === "plaid") {
     throw new Error(
       "Plaid webhook verification requires Plaid JWT/JWK lookup credentials and is not supported by verifySignature yet."
+    );
+  }
+
+  if (options.provider === "resend") {
+    valid = await verifyResendSignature(request.body, request.headers, options.secret);
+  }
+
+  if (options.provider === "workos") {
+    valid = await verifyWorkOSSignature(
+      request.body,
+      getHeader(request.headers, "workos-signature"),
+      options.secret
     );
   }
 

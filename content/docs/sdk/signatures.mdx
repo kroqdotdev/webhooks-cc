@@ -56,6 +56,8 @@ import {
   verifyDocuSignSignature,
   verifyAdyenSignature,
   verifyPayPalSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
 } from "@webhooks-cc/sdk";
 ```
 
@@ -138,6 +140,8 @@ The SDK also includes client-side verification functions that work without serve
 | DocuSign          | `x-docusign-signature-1`                                 | HMAC-SHA256 (base64) | HMAC secret                          |
 | Adyen             | _(body field)_ `additionalData.hmacSignature`            | HMAC-SHA256 (base64) | Hex HMAC key                         |
 | PayPal            | `paypal-transmission-sig` + `paypal-cert-url`            | RSA-SHA256           | Webhook ID                           |
+| Resend            | `svix-id` + `svix-timestamp` + `svix-signature`          | HMAC-SHA256 (base64) | `whsec_...` signing secret           |
+| WorkOS            | `workos-signature`                                       | HMAC-SHA256          | Signing secret, used as-is           |
 
 ### Stripe
 
@@ -460,6 +464,28 @@ If the certificate cannot be downloaded, `verifyPayPalSignature` throws instead 
 const result = await verifySignature(request, {
   provider: "paypal",
   secret: process.env.PAYPAL_WEBHOOK_ID!,
+});
+```
+
+### Resend
+
+Resend delivers through Svix, so the scheme is the same as Clerk's: `svix-signature` holds space-separated `v1,<base64>` entries, each an HMAC-SHA256 of `{svix-id}.{svix-timestamp}.{body}` keyed with the base64-decoded `whsec_` secret. Resend signs with both the old and the new secret for 24 hours after a rotation, and any matching entry passes.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "resend",
+  secret: process.env.RESEND_WEBHOOK_SECRET!,
+});
+```
+
+### WorkOS
+
+WorkOS sends `workos-signature: t=<milliseconds>, v1=<hex>`, the hex HMAC-SHA256 of `{t}.{body}`. Unlike Svix, the key is the signing secret string exactly as WorkOS shows it, prefix included. Like the other `t=,v1=` providers, the SDK does not enforce a timestamp tolerance, so captured requests can be verified later; check the age of `t` in your own handler if you need replay protection.
+
+```ts
+const result = await verifySignature(request, {
+  provider: "workos",
+  secret: process.env.WORKOS_WEBHOOK_SECRET!,
 });
 ```
 

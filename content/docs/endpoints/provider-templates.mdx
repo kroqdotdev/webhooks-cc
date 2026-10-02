@@ -1,9 +1,9 @@
 ---
 title: "Provider Template Reference"
-description: "Detailed reference for all 32 webhook provider templates. Payload shapes, signature methods, headers, and event types for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, and Plaid."
+description: "Detailed reference for all 34 webhook provider templates. Payload shapes, signature methods, headers, and event types for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, Plaid, Resend, and WorkOS."
 section: dashboard
 order: 3
-lastUpdated: 2026-05-31
+lastUpdated: 2026-10-02
 schema: none
 keywords:
   [
@@ -39,12 +39,14 @@ keywords:
     "adyen webhook",
     "paypal webhook",
     "plaid webhook",
+    "resend webhook",
+    "workos webhook",
     "webhook signature",
     "webhook payload",
   ]
 seo:
   ogTitle: "Webhook Provider Template Reference"
-  ogDescription: "Payload shapes, signature methods, headers, and event types for all 32 supported webhook provider templates. Covers Stripe, GitHub, Shopify, Meta, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, Plaid, and more."
+  ogDescription: "Payload shapes, signature methods, headers, and event types for all 34 supported webhook provider templates. Covers Stripe, GitHub, Shopify, Meta, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, Plaid, Resend, WorkOS, and more."
 ---
 
 Templates generate realistic payloads with correct provider headers. Providers with shared-secret or token-style signing also get matching signature material — usually a signature header, except Mailgun, which embeds its signature fields in the request body. Use templates from the [dashboard](/docs/endpoints/test-webhooks), the [SDK](/docs/sdk/api), or the [MCP server](/docs/mcp/tools).
@@ -1072,3 +1074,77 @@ console.log(detected);
 ```
 
 **Headers:** `plaid-verification`, `user-agent: Plaid`
+
+---
+
+## Resend
+
+**Signature:** Resend delivers through Svix, the same scheme as Clerk: HMAC-SHA256 over `{svix-id}.{svix-timestamp}.{body}`, base64-encoded as `v1,<signature>` in the `svix-signature` header. The key is the signing secret with its `whsec_` prefix removed, base64-decoded. After a secret rotation Resend signs with both secrets for 24 hours, so the header can carry two space-separated signatures.
+
+| Template          | Description                  |
+| ----------------- | ---------------------------- |
+| `email.sent`      | Email accepted for delivery  |
+| `email.delivered` | Email delivered              |
+| `email.bounced`   | Email bounced                |
+| `email.clicked`   | Recipient clicked a link     |
+| `contact.created` | Contact added to an audience |
+
+**Payload shape (email.delivered):**
+
+```json
+{
+  "type": "email.delivered",
+  "created_at": "2026-10-02T12:00:00.000Z",
+  "data": {
+    "created_at": "2026-10-02T12:00:00.000Z",
+    "email_id": "56761188-7520-42d8-8898-ff6fc54ce618",
+    "from": "Acme <onboarding@resend.dev>",
+    "to": ["delivered@resend.dev"],
+    "subject": "Sending this example",
+    "tags": { "category": "confirm_email" }
+  }
+}
+```
+
+There is no top-level event id: the delivery id is the `svix-id` header. Auto-detection tells Resend apart from Clerk by this body shape, since both send the same Svix headers.
+
+**Headers:** `svix-id`, `svix-timestamp`, `svix-signature`, `user-agent: Svix-Webhooks/1.0`
+
+---
+
+## WorkOS
+
+**Signature:** HMAC-SHA256 over `{t}.{body}`, hex-encoded in the `workos-signature` header as `t=<milliseconds>, v1=<hex>` (note the space after the comma). The key is the signing secret string exactly as shown in the WorkOS dashboard; nothing is decoded.
+
+| Template               | Description                     |
+| ---------------------- | ------------------------------- |
+| `user.created`         | AuthKit user created            |
+| `dsync.user.created`   | Directory Sync user provisioned |
+| `connection.activated` | SSO connection activated        |
+| `session.created`      | User session started            |
+| `organization.created` | Organization created            |
+
+**Payload shape (user.created):**
+
+```json
+{
+  "event": "user.created",
+  "id": "event_01K6JZ7Q2V8WQ1H3B5N9C0D2EF",
+  "data": {
+    "object": "user",
+    "id": "user_01K6JZ7Q2V8WQ1H3B5N9C0D2EG",
+    "email": "todd@example.com",
+    "first_name": "Todd",
+    "last_name": "Rundgren",
+    "email_verified": false,
+    "created_at": "2026-10-02T12:00:00.000Z",
+    "updated_at": "2026-10-02T12:00:00.000Z"
+  },
+  "created_at": "2026-10-02T12:00:00.000Z",
+  "context": {}
+}
+```
+
+WorkOS names the event in `event`, not `type`.
+
+**Headers:** `workos-signature` (`t=..., v1=...`)

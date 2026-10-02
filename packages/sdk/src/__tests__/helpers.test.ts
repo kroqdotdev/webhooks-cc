@@ -38,6 +38,8 @@ import {
   isAdyenWebhook,
   isPayPalWebhook,
   isPlaidWebhook,
+  isResendWebhook,
+  isWorkOSWebhook,
 } from "../helpers";
 import type { Request } from "../types";
 
@@ -1053,5 +1055,73 @@ describe("tier-1 provider detection", () => {
     for (const body of bodies) {
       expect(detectWebhookProvider(makeRequest({ body }))).not.toBe("standard-webhooks");
     }
+  });
+});
+
+describe("Resend and Clerk share Svix headers", () => {
+  const svixHeaders = {
+    "svix-id": "msg_2abc",
+    "svix-timestamp": "1700000000",
+    "svix-signature": "v1,abc=",
+  };
+
+  it("detects Resend from the svix headers plus the Resend body shape", () => {
+    const request = makeRequest({
+      headers: svixHeaders,
+      body: JSON.stringify({
+        type: "email.delivered",
+        created_at: "2026-02-22T23:41:12.126Z",
+        data: { email_id: "56761188-7520-42d8-8898-ff6fc54ce618" },
+      }),
+    });
+    expect(isResendWebhook(request)).toBe(true);
+    expect(isClerkWebhook(request)).toBe(false);
+    const info = detectWebhookInfo(request);
+    expect(info?.provider).toBe("resend");
+    expect(info?.via).toBe("body");
+    expect(info?.event).toBe("email.delivered");
+  });
+
+  it("keeps Clerk events as Clerk, including Clerk's own email.created", () => {
+    for (const type of ["user.created", "email.created"]) {
+      const request = makeRequest({
+        headers: svixHeaders,
+        body: JSON.stringify({ object: "event", type, timestamp: 1654012591835, data: {} }),
+      });
+      expect(isResendWebhook(request)).toBe(false);
+      expect(detectWebhookProvider(request)).toBe("clerk");
+    }
+  });
+
+  it("does not treat a Resend-shaped body without svix headers as Resend", () => {
+    const request = makeRequest({
+      body: JSON.stringify({
+        type: "email.sent",
+        created_at: "2026-02-22T23:41:12.126Z",
+        data: {},
+      }),
+    });
+    expect(isResendWebhook(request)).toBe(false);
+  });
+});
+
+describe("isWorkOSWebhook", () => {
+  it("detects WorkOS by the workos-signature header, case-insensitively", () => {
+    expect(
+      isWorkOSWebhook(makeRequest({ headers: { "WorkOS-Signature": "t=1700000000000, v1=ab" } }))
+    ).toBe(true);
+    expect(isWorkOSWebhook(makeRequest())).toBe(false);
+  });
+
+  it("reads the event name from the body's event field", () => {
+    const info = detectWebhookInfo(
+      makeRequest({
+        headers: { "workos-signature": "t=1700000000000, v1=ab" },
+        body: JSON.stringify({ event: "dsync.user.created", id: "event_01", data: {} }),
+      })
+    );
+    expect(info?.provider).toBe("workos");
+    expect(info?.matchedOn).toBe("workos-signature");
+    expect(info?.event).toBe("dsync.user.created");
   });
 });

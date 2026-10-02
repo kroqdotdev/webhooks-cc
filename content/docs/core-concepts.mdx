@@ -131,7 +131,7 @@ whk tunnel 3000 -e
 
 Provider templates are pre-built webhook payloads for common services. Each template includes realistic data and, when the provider supports shared-secret or token-style signing, matching signature headers so your handler can verify them.
 
-Supported providers (32): **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, **SendGrid**, **Clerk**, **Discord**, **Vercel**, **GitLab**, **Typeform**, **Standard Webhooks** (Polar, Svix, Resend), **Meta**, **Lemon Squeezy**, **Coinbase Commerce**, **Razorpay**, **Cal.com**, **Intercom**, **Telegram**, **Square**, **HubSpot**, **Mailgun**, **Calendly**, **Mux**, **Sentry**, **Bitbucket**, **DocuSign**, **Adyen**, **PayPal**, and **Plaid**.
+Supported providers (34): **Stripe**, **GitHub**, **Shopify**, **Twilio**, **Slack**, **Paddle**, **Linear**, **SendGrid**, **Clerk**, **Discord**, **Vercel**, **GitLab**, **Typeform**, **Standard Webhooks** (Polar and other spec-compliant senders), **Meta**, **Lemon Squeezy**, **Coinbase Commerce**, **Razorpay**, **Cal.com**, **Intercom**, **Telegram**, **Square**, **HubSpot**, **Mailgun**, **Calendly**, **Mux**, **Sentry**, **Bitbucket**, **DocuSign**, **Adyen**, **PayPal**, **Plaid**, **Resend**, and **WorkOS**.
 
 ```ts
 await client.endpoints.sendTemplate(endpoint.slug, {

@@ -65,6 +65,8 @@ export {
   isAdyenWebhook,
   isPayPalWebhook,
   isPlaidWebhook,
+  isResendWebhook,
+  isWorkOSWebhook,
   matchJsonField,
 } from "./helpers";
 export {
@@ -137,6 +139,8 @@ export {
   verifyDocuSignSignature,
   verifyAdyenSignature,
   verifyPayPalSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
   buildPayPalTransmissionMessage,
 } from "./verify";
 export type { SSEFrame, ParseSSEOptions } from "./sse";

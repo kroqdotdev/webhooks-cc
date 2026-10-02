@@ -27,7 +27,7 @@ See [Dashboard Features: Signature Verification](/docs/dashboard-features#signat
 
 ## What you'll build
 
-A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar, Svix, Resend), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, and PayPal.
+A webhook handler that verifies signatures before processing, with working examples for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks (Polar and other spec-compliant senders), Meta (WhatsApp/Messenger/Instagram), Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, PayPal, Resend, and WorkOS.
 
 ## Prerequisites
 
@@ -245,9 +245,9 @@ const result = await verifySignature(request, {
 ```
 
 </Step>
-<Step title="Handle Standard Webhooks (Polar, Svix, Resend)">
+<Step title="Handle Standard Webhooks (Polar and other senders)">
 
-Standard Webhooks uses three headers: `webhook-id`, `webhook-timestamp`, and `webhook-signature`. Many services use this spec, including Polar.sh, Svix, Resend, Liveblocks, and Novu.
+Standard Webhooks uses three headers: `webhook-id`, `webhook-timestamp`, and `webhook-signature`. Many services use this spec, including Polar.sh, Liveblocks, and Novu. Svix-based senders that send `svix-*` headers instead, such as Clerk and Resend, have their own providers (`clerk`, `resend`) that read those headers.
 
 ```ts
 import { verifySignature } from "@webhooks-cc/sdk";
@@ -430,7 +430,7 @@ const paypal = await verifySignature(request, {
 | Vercel            | `x-vercel-signature`                                     | HMAC-SHA1        | Hex-encoded hash                                                    |
 | GitLab            | `x-gitlab-token`                                         | Token comparison | Raw secret sent in header                                           |
 | Typeform          | `typeform-signature`                                     | HMAC-SHA256      | `sha256={base64}` format                                            |
-| Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256      | Used by Polar, Svix, Resend                                         |
+| Standard Webhooks | `webhook-id` + `webhook-timestamp` + `webhook-signature` | HMAC-SHA256      | Used by Polar and other Standard Webhooks senders                   |
 | Meta              | `x-hub-signature-256`                                    | HMAC-SHA256      | `sha256=hash`, keyed by app secret                                  |
 | Lemon Squeezy     | `x-signature`                                            | HMAC-SHA256      | Raw hex hash                                                        |
 | Coinbase Commerce | `x-cc-webhook-signature`                                 | HMAC-SHA256      | Raw hex hash                                                        |
@@ -448,6 +448,8 @@ const paypal = await verifySignature(request, {
 | DocuSign          | `x-docusign-signature-1`                                 | HMAC-SHA256      | Base64 raw-body HMAC                                                |
 | Adyen             | _(body field)_ `additionalData.hmacSignature`            | HMAC-SHA256      | Base64 HMAC over Adyen standard notification fields                 |
 | PayPal            | `paypal-transmission-sig` + `paypal-cert-url`            | RSA-SHA256       | Uses PayPal certificate URL and configured webhook ID               |
+| Resend            | `svix-id` + `svix-timestamp` + `svix-signature`          | HMAC-SHA256      | Svix scheme, same as Clerk; base64-decoded `whsec_` secret          |
+| WorkOS            | `workos-signature`                                       | HMAC-SHA256      | `t=<ms>, v1=<hex>` over `t.body`; secret string used as-is          |
 
 ## Verifying captured requests
 
@@ -584,7 +586,7 @@ HMAC-SHA256. Most supported providers use it. Twilio and Vercel use HMAC-SHA1, D
 </FAQItem>
 <FAQItem question="What if my provider isn't listed?">
 
-If your provider follows the Standard Webhooks spec (check their docs for `webhook-id`, `webhook-timestamp`, and `webhook-signature` headers), use `provider: "standard-webhooks"`. Services that use this spec include Polar.sh, Svix, Clerk, Resend, Liveblocks, and Novu.
+If your provider follows the Standard Webhooks spec (check their docs for `webhook-id`, `webhook-timestamp`, and `webhook-signature` headers), use `provider: "standard-webhooks"`. Services that use this spec include Polar.sh, Liveblocks, and Novu. Clerk and Resend deliver through Svix with `svix-*` headers, so use `provider: "clerk"` or `provider: "resend"` for them.
 
 For other providers, use the provider-specific signing documentation to verify manually. Most use some variant of HMAC-SHA256 over the raw body.
 

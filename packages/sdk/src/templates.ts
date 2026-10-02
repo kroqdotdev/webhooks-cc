@@ -55,6 +55,8 @@ const DEFAULT_TEMPLATE_BY_PROVIDER = {
   adyen: "AUTHORISATION",
   paypal: "PAYMENT.CAPTURE.COMPLETED",
   plaid: "TRANSACTIONS",
+  resend: "email.sent",
+  workos: "user.created",
 } as const;
 
 const PROVIDER_TEMPLATES = {
@@ -93,6 +95,20 @@ const PROVIDER_TEMPLATES = {
     "BILLING.SUBSCRIPTION.CREATED",
   ] as const,
   plaid: ["TRANSACTIONS", "ITEM", "AUTH"] as const,
+  resend: [
+    "email.sent",
+    "email.delivered",
+    "email.bounced",
+    "email.clicked",
+    "contact.created",
+  ] as const,
+  workos: [
+    "user.created",
+    "dsync.user.created",
+    "connection.activated",
+    "session.created",
+    "organization.created",
+  ] as const,
 } as const;
 
 export const TEMPLATE_PROVIDERS = [
@@ -128,6 +144,8 @@ export const TEMPLATE_PROVIDERS = [
   "adyen",
   "paypal",
   "plaid",
+  "resend",
+  "workos",
 ] as const satisfies readonly TemplateProvider[];
 
 export const VERIFY_PROVIDERS = [
@@ -161,6 +179,8 @@ export const VERIFY_PROVIDERS = [
   "docusign",
   "adyen",
   "paypal",
+  "resend",
+  "workos",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid" | "plaid">[];
 
 export const TEMPLATE_METADATA = Object.freeze({
@@ -415,6 +435,23 @@ export const TEMPLATE_METADATA = Object.freeze({
     secretRequired: false,
     signatureHeader: "plaid-verification",
     signatureAlgorithm: "jwt-es256",
+  }),
+  resend: Object.freeze({
+    provider: "resend",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.resend]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.resend,
+    secretRequired: true,
+    // Resend delivers through Svix and sends only the svix-* headers.
+    signatureHeader: "svix-signature",
+    signatureAlgorithm: "hmac-sha256",
+  }),
+  workos: Object.freeze({
+    provider: "workos",
+    templates: Object.freeze([...PROVIDER_TEMPLATES.workos]),
+    defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.workos,
+    secretRequired: true,
+    signatureHeader: "workos-signature",
+    signatureAlgorithm: "hmac-sha256",
   }),
 }) satisfies Readonly<Record<TemplateProvider, TemplateProviderInfo>>;
 
@@ -1238,6 +1275,168 @@ function buildTemplatePayload(
       contentType: "application/json",
       headers: { "user-agent": "Mux-Webhooks/1.0" },
     };
+  }
+
+  if (provider === "resend") {
+    // Resend events are { type, created_at, data } with no top-level id: the
+    // delivery id travels in the svix-id header instead. Shapes follow the
+    // examples in Resend's webhook event docs.
+    const email = {
+      created_at: nowIso,
+      email_id: randomUuid(),
+      message_id: `<${randomUuid()}@email.example.com>`,
+      from: "Acme <onboarding@resend.dev>",
+      to: ["delivered@resend.dev"],
+      subject: "Sending this example",
+      tags: { category: "confirm_email" },
+    };
+    const dataByTemplate: Record<string, unknown> = {
+      "email.sent": email,
+      "email.delivered": email,
+      "email.bounced": {
+        ...email,
+        bounce: {
+          message:
+            "The recipient's email address is on the suppression list because it has a recent history of producing hard bounces.",
+          subType: "Suppressed",
+          type: "Permanent",
+        },
+      },
+      "email.clicked": {
+        ...email,
+        click: {
+          ipAddress: "122.115.53.11",
+          link: "https://resend.com",
+          timestamp: nowIso,
+          userAgent:
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+        },
+      },
+      "contact.created": {
+        id: randomUuid(),
+        audience_id: randomUuid(),
+        segment_ids: [],
+        created_at: nowIso,
+        updated_at: nowIso,
+        email: "ada@example.com",
+        first_name: null,
+        last_name: null,
+        unsubscribed: false,
+      },
+    };
+    const payload = bodyOverride ?? {
+      type: event,
+      created_at: nowIso,
+      data: dataByTemplate[template],
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return {
+      body,
+      contentType: "application/json",
+      headers: { "user-agent": "Svix-Webhooks/1.0" },
+    };
+  }
+
+  if (provider === "workos") {
+    // WorkOS events are { event, id, data, created_at, context }: the event name
+    // is in `event`, not `type`. IDs are prefixed ULIDs; uppercase hex is a
+    // subset of the ULID alphabet. Shapes follow WorkOS's events reference.
+    const ulid = () => `01${randomHex(24).toUpperCase()}`;
+    const organizationId = `org_${ulid()}`;
+    const userId = `user_${ulid()}`;
+    const userAgent =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36";
+    const dataByTemplate: Record<string, unknown> = {
+      "user.created": {
+        object: "user",
+        id: userId,
+        email: "todd@example.com",
+        first_name: "Todd",
+        last_name: "Rundgren",
+        email_verified: false,
+        profile_picture_url: null,
+        last_sign_in_at: null,
+        external_id: null,
+        metadata: {},
+        created_at: nowIso,
+        updated_at: nowIso,
+      },
+      "dsync.user.created": {
+        id: `directory_user_${ulid()}`,
+        directory_id: `directory_${ulid()}`,
+        organization_id: organizationId,
+        idp_id: randomDigits(4),
+        email: "lela.block@example.com",
+        first_name: "Lela",
+        last_name: "Block",
+        state: "active",
+        created_at: nowIso,
+        updated_at: nowIso,
+        custom_attributes: {
+          department: "Engineering",
+          job_title: "Software Engineer",
+          username: "lela.block@example.com",
+        },
+        role: { slug: "member" },
+        roles: [{ slug: "member" }],
+      },
+      "connection.activated": {
+        object: "connection",
+        id: `conn_${ulid()}`,
+        organization_id: organizationId,
+        state: "active",
+        connection_type: "OktaSAML",
+        name: "Foo Corp's Connection",
+        created_at: nowIso,
+        updated_at: nowIso,
+        domains: [
+          {
+            id: `org_domain_${ulid()}`,
+            object: "connection_domain",
+            domain: "foo-corp.com",
+          },
+        ],
+      },
+      "session.created": {
+        object: "session",
+        id: `session_${ulid()}`,
+        user_id: userId,
+        organization_id: organizationId,
+        ip_address: "192.0.2.1",
+        user_agent: userAgent,
+        created_at: nowIso,
+        updated_at: nowIso,
+      },
+      "organization.created": {
+        object: "organization",
+        id: organizationId,
+        name: "Foo Corp",
+        external_id: null,
+        domains: [
+          {
+            object: "organization_domain",
+            id: `org_domain_${ulid()}`,
+            organization_id: organizationId,
+            domain: "foo-corp.com",
+            state: "verified",
+            verification_strategy: "manual",
+            created_at: nowIso,
+            updated_at: nowIso,
+          },
+        ],
+        created_at: nowIso,
+        updated_at: nowIso,
+      },
+    };
+    const payload = bodyOverride ?? {
+      event,
+      id: `event_${ulid()}`,
+      data: dataByTemplate[template],
+      created_at: nowIso,
+      context: {},
+    };
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return { body, contentType: "application/json", headers: {} };
   }
 
   if (provider === "sentry") {
@@ -2661,6 +2860,30 @@ export async function buildTemplateSendOptions(
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signature = await hmacSign("SHA-256", secret, `${timestamp}.${built.body}`);
     headers["mux-signature"] = `t=${timestamp},v1=${toHex(signature)}`;
+  }
+
+  if (provider === "resend") {
+    // Resend delivers through Svix: base64 HMAC-SHA256 of `${id}.${timestamp}.${body}`
+    // keyed with the base64-decoded whsec_ secret, sent only as svix-* headers.
+    const msgId = `msg_${randomHex(24)}`;
+    const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+    const signature = await hmacSignRaw(
+      "SHA-256",
+      decodeStandardWebhookSecret(secret),
+      `${msgId}.${timestamp}.${built.body}`
+    );
+    headers["svix-id"] = msgId;
+    headers["svix-timestamp"] = String(timestamp);
+    headers["svix-signature"] = `v1,${toBase64(signature)}`;
+  }
+
+  if (provider === "workos") {
+    // WorkOS signs `${t}.${body}` with HMAC-SHA256 (hex), keyed with the secret
+    // string as-is. `t` is in milliseconds, and the header puts a space after
+    // the comma: `t=<ms>, v1=<hex>`.
+    const timestampMs = options.timestamp !== undefined ? options.timestamp * 1000 : Date.now();
+    const signature = await hmacSign("SHA-256", secret, `${timestampMs}.${built.body}`);
+    headers["workos-signature"] = `t=${timestampMs}, v1=${toHex(signature)}`;
   }
 
   if (provider === "sentry") {

@@ -567,6 +567,8 @@ describe("WebhooksCC", () => {
         "adyen",
         "paypal",
         "plaid",
+        "resend",
+        "workos",
       ]);
     });
 

@@ -173,6 +173,8 @@ Provider template and signing support includes:
 - `adyen`
 - `paypal`
 - `plaid`
+- `resend`
+- `workos`
 
 Signature verification also supports:
 

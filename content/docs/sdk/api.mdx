@@ -405,7 +405,7 @@ List all supported webhook provider templates. No API call made.
 
 ```ts
 listProviders(): TemplateProvider[]
-// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "typeform", "standard-webhooks", "meta", "lemonsqueezy", "coinbase-commerce", "razorpay", "cal", "intercom", "telegram", "square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket", "docusign", "adyen", "paypal", "plaid"]
+// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "typeform", "standard-webhooks", "meta", "lemonsqueezy", "coinbase-commerce", "razorpay", "cal", "intercom", "telegram", "square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket", "docusign", "adyen", "paypal", "plaid", "resend", "workos"]
 ```
 
 </ApiMethod>
@@ -621,7 +621,9 @@ type DetectedWebhookInfo = {
     | "docusign"
     | "adyen"
     | "paypal"
-    | "plaid";
+    | "plaid"
+    | "resend"
+    | "workos";
   event: string | null;
   via: "header" | "body";
   matchedOn?: string;
@@ -688,6 +690,8 @@ import {
   verifyMuxSignature,
   verifySentrySignature,
   verifyBitbucketSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
 } from "@webhooks-cc/sdk";
 
 // Universal verifier (dispatches by provider)
@@ -797,7 +801,9 @@ type TemplateProvider =
   | "docusign"
   | "adyen"
   | "paypal"
-  | "plaid";
+  | "plaid"
+  | "resend"
+  | "workos";
 
 type VerifyProvider = TemplateProvider;
 ```

@@ -344,7 +344,9 @@ export type TemplateProvider =
   | "docusign"
   | "adyen"
   | "paypal"
-  | "plaid";
+  | "plaid"
+  | "resend"
+  | "workos";
 
 /** Static metadata describing a supported template provider. */
 export interface TemplateProviderInfo {

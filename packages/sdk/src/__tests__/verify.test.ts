@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   WebhooksCC,
@@ -32,6 +33,8 @@ import {
   verifyDocuSignSignature,
   verifyAdyenSignature,
   verifyPayPalSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
   buildPayPalTransmissionMessage,
 } from "../index";
 import type { TemplateProvider, VerifySignatureOptions } from "../index";
@@ -1326,5 +1329,114 @@ describe("VerifySignatureOptions type surface (tier-2)", () => {
       secret: "whsec_test",
     };
     expect(options.provider).toBe("stripe");
+  });
+});
+
+describe("Resend verification (Svix scheme)", () => {
+  // Published test vectors: the svix-webhooks Rust library and Svix's manual
+  // verification docs.
+  const vectors = [
+    {
+      secret: "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+      id: "msg_27UH4WbU6Z5A5EzD8u03UvzRbpk",
+      timestamp: "1649367553",
+      body: '{"email":"test@example.com","username":"test_user"}',
+      signature: "v1,tZ1I4/hDygAJgO5TYxiSd6Sd0kDW6hPenDe+bTa3Kkw=",
+    },
+    {
+      secret: "whsec_plJ3nmyCDGBKInavdOK15jsl",
+      id: "msg_loFOjxBNrRLzqYUf",
+      timestamp: "1731705121",
+      body: '{"event_type":"ping","data":{"success":true}}',
+      signature: "v1,rAvfW3dJ/X/qxhsaXPOyyCGmRKsaKWcsNccKXlIktD0=",
+    },
+  ];
+
+  for (const vector of vectors) {
+    it(`matches the published vector for ${vector.id}`, async () => {
+      const headers = {
+        "svix-id": vector.id,
+        "svix-timestamp": vector.timestamp,
+        "svix-signature": vector.signature,
+      };
+      expect(await verifyResendSignature(vector.body, headers, vector.secret)).toBe(true);
+      expect(await verifyResendSignature(`${vector.body} `, headers, vector.secret)).toBe(false);
+      await expect(
+        verifySignature(
+          { body: vector.body, headers },
+          { provider: "resend", secret: vector.secret }
+        )
+      ).resolves.toEqual({ valid: true });
+    });
+  }
+
+  it("accepts any signature in a rotation-time list", async () => {
+    const [vector] = vectors;
+    const headers = {
+      "svix-id": vector.id,
+      "svix-timestamp": vector.timestamp,
+      "svix-signature": `v1,b2xkLXNlY3JldC1zaWduYXR1cmU= ${vector.signature}`,
+    };
+    expect(await verifyResendSignature(vector.body, headers, vector.secret)).toBe(true);
+  });
+
+  it("round-trips a built Resend request", async () => {
+    const secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "resend",
+      secret,
+    });
+    expect(await verifyResendSignature(built.body, built.headers, secret)).toBe(true);
+    expect(
+      await verifyResendSignature(built.body, built.headers, "whsec_plJ3nmyCDGBKInavdOK15jsl")
+    ).toBe(false);
+  });
+});
+
+describe("WorkOS verification (t=<ms>, v1=<hex>)", () => {
+  // Independent HMAC via node:crypto, keyed with the secret string as-is.
+  const sign = (secret: string, timestamp: string, body: string) =>
+    createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
+  const body = '{"event":"user.created","id":"event_01","data":{}}';
+  const secret = "whsec_0FWAiVGkEfGBqqsJH4aNAGBJ4";
+
+  it("verifies the header WorkOS sends, with a space after the comma", async () => {
+    const header = `t=1700000000000, v1=${sign(secret, "1700000000000", body)}`;
+    expect(await verifyWorkOSSignature(body, header, secret)).toBe(true);
+    await expect(
+      verifySignature(
+        { body, headers: { "WorkOS-Signature": header } },
+        { provider: "workos", secret }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it("uses the whole secret string as the key, whsec_ prefix included", async () => {
+    const decoded = Buffer.from("0FWAiVGkEfGBqqsJH4aNAGBJ4", "base64");
+    const wrongKey = createHmac("sha256", decoded).update(`1700000000000.${body}`).digest("hex");
+    expect(await verifyWorkOSSignature(body, `t=1700000000000, v1=${wrongKey}`, secret)).toBe(
+      false
+    );
+  });
+
+  it("rejects a wrong secret, a tampered body, and a malformed header", async () => {
+    const header = `t=1700000000000, v1=${sign(secret, "1700000000000", body)}`;
+    expect(await verifyWorkOSSignature(body, header, "other_secret")).toBe(false);
+    expect(await verifyWorkOSSignature(`${body} `, header, secret)).toBe(false);
+    expect(await verifyWorkOSSignature(body, "garbage", secret)).toBe(false);
+    expect(await verifyWorkOSSignature(body, undefined, secret)).toBe(false);
+    await expect(verifyWorkOSSignature(body, header, "")).rejects.toThrow(
+      "requires a non-empty secret"
+    );
+  });
+
+  it("round-trips a built WorkOS request", async () => {
+    const built = await client.buildRequest("https://go.webhooks.cc/w/demo", {
+      provider: "workos",
+      secret,
+    });
+    expect(await verifyWorkOSSignature(built.body, built.headers["workos-signature"], secret)).toBe(
+      true
+    );
   });
 });
