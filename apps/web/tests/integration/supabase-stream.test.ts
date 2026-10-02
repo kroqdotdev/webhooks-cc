@@ -299,6 +299,59 @@ describe("Supabase Stream Route Integration", () => {
     await anonClient.auth.signOut();
   }, 30_000);
 
+  it("streams every request when more than a page share one timestamp", async () => {
+    // Rows tied on received_at, read by the initial backlog through the
+    // (received_at, id) cursor. user_id is null so the rows send no broadcast
+    // signals: 150 at once would trip the Realtime tenant's rate limit and
+    // starve suites running alongside.
+    const tied = 150;
+    const receivedAt = new Date(Date.now() - 5_000).toISOString();
+    const { error } = await admin.from("requests").insert(
+      Array.from({ length: tied }, (_, index) => ({
+        endpoint_id: testEndpointId,
+        user_id: null,
+        method: "POST",
+        path: `/stream-tied/${index}`,
+        headers: {},
+        body: "{}",
+        query_params: {},
+        content_type: "application/json",
+        ip: "127.0.0.1",
+        size: 2,
+        received_at: receivedAt,
+      }))
+    );
+    expect(error).toBeNull();
+
+    const anonClient = createAnonClient();
+    const signIn = await anonClient.auth.signInWithPassword({
+      email: testUserEmail,
+      password: TEST_PASSWORD,
+    });
+    expect(signIn.error).toBeNull();
+
+    const since = Date.parse(receivedAt) - 1;
+    const controller = new AbortController();
+    const response = await streamRoute(
+      authRequest(
+        `/api/stream/${testEndpointSlug}?since=${since}`,
+        signIn.data.session!.access_token,
+        controller.signal
+      ),
+      { params: Promise.resolve({ slug: testEndpointSlug }) }
+    );
+    expect(response.status).toBe(200);
+
+    const paths = (await collectEvents(response.body!, "request", tied + 10))
+      .map((data) => (JSON.parse(data) as { path: string }).path)
+      .filter((path) => path.startsWith("/stream-tied/"));
+    expect(paths).toHaveLength(tied);
+    expect(new Set(paths).size).toBe(tied);
+
+    controller.abort();
+    await anonClient.auth.signOut();
+  }, 30_000);
+
   it("streams endpoint_deleted and closes when the endpoint is deleted", async () => {
     const doomed = await createEndpointForUser({ userId: testUserId, name: "Doomed Stream" });
     const anonClient = createAnonClient();

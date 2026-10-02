@@ -2,7 +2,11 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { serverEnv } from "@/lib/env";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import type { Database } from "@/lib/supabase/database";
-import { listNewRequestsForEndpointByUser, type RequestRecord } from "@/lib/supabase/requests";
+import {
+  listRequestsAfterCursorForEndpointByUser,
+  type RequestCursor,
+  type RequestRecord,
+} from "@/lib/supabase/requests";
 import { sendError } from "@appsignal/nodejs";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 
@@ -98,7 +102,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       const abortSignal = request.signal;
       const supabase = createRealtimeAdminClient();
       const sentIds = new Set<string>();
-      let afterTimestamp = since ?? connectionStart;
+      const afterTimestamp = since ?? connectionStart;
+      // Last streamed row; reads resume strictly after it.
+      let cursor: RequestCursor | null = null;
       let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
       let durationTimer: ReturnType<typeof setTimeout> | null = null;
       let closed = false;
@@ -139,7 +145,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         }
 
         sentIds.add(record.id);
-        afterTimestamp = Math.max(afterTimestamp, record.receivedAt);
         controller.enqueue(
           encoder.encode(`event: request\ndata: ${JSON.stringify(toStreamRequest(record))}\n\n`)
         );
@@ -157,10 +162,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       };
 
       // Broadcast signals carry ids only, so every signal (and the initial
-      // backlog) reads the rows after the newest one sent. Signals that land
-      // while a read is running fold into one more read. The cursor starts a
-      // millisecond early because received_at keeps microseconds; sentIds
-      // drops the repeats.
+      // backlog) reads the rows after the last one streamed. Signals that land
+      // while a read is running fold into one more read.
       const drain = async () => {
         if (draining) {
           drainAgain = true;
@@ -170,24 +173,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         try {
           do {
             drainAgain = false;
-            let cursor = afterTimestamp - 1;
             while (!closed) {
-              const page = await listNewRequestsForEndpointByUser({
+              const page = await listRequestsAfterCursorForEndpointByUser({
                 userId: auth.userId,
                 slug,
-                after: cursor,
+                after: afterTimestamp,
+                cursor,
                 limit: BACKLOG_PAGE_SIZE,
               });
               if (page === null) {
                 sendEndpointDeleted();
                 return;
               }
-              for (const record of page) {
+              for (const record of page.records) {
                 enqueueRequest(record);
               }
-              if (page.length < BACKLOG_PAGE_SIZE) break;
-              // A full page inside one millisecond would not move the cursor.
-              cursor = Math.max(cursor + 1, page[page.length - 1]!.receivedAt - 1);
+              cursor = page.cursor;
+              if (page.records.length < BACKLOG_PAGE_SIZE) break;
             }
           } while (drainAgain && !closed);
         } catch (error) {

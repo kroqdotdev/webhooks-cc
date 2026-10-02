@@ -341,6 +341,29 @@ export async function listNewRequestsForEndpointByUser(input: {
   after: number;
   limit?: number;
 }): Promise<RequestRecord[] | null> {
+  const page = await listRequestsAfterCursorForEndpointByUser(input);
+  return page && page.records;
+}
+
+/** Position of a request in (received_at, id) order, at full database precision. */
+export interface RequestCursor {
+  receivedAt: string;
+  id: string;
+}
+
+/**
+ * Requests after `cursor` in (received_at, id) order, or after the `after`
+ * millisecond timestamp when there is no cursor yet. `receivedAt` on the
+ * records is truncated to milliseconds, so paging by it alone would skip rows
+ * that share a millisecond; the returned cursor keeps the database value.
+ */
+export async function listRequestsAfterCursorForEndpointByUser(input: {
+  userId: string;
+  slug: string;
+  after: number;
+  cursor?: RequestCursor | null;
+  limit?: number;
+}): Promise<{ records: RequestRecord[]; cursor: RequestCursor | null } | null> {
   const admin = createAdminClient();
   const endpoint = await getAccessibleEndpoint(input.userId, input.slug);
   if (!endpoint) {
@@ -354,8 +377,14 @@ export async function listNewRequestsForEndpointByUser(input: {
     .select(
       "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
     )
-    .eq("endpoint_id", endpoint.id)
-    .gt("received_at", new Date(input.after).toISOString());
+    .eq("endpoint_id", endpoint.id);
+
+  if (input.cursor) {
+    const at = `"${input.cursor.receivedAt}"`;
+    query.or(`received_at.gt.${at},and(received_at.eq.${at},id.gt.${input.cursor.id})`);
+  } else {
+    query.gt("received_at", new Date(input.after).toISOString());
+  }
 
   if (retention.exemptTeamBilled) {
     query.or(retentionOrFilter(retention.cutoff));
@@ -365,6 +394,7 @@ export async function listNewRequestsForEndpointByUser(input: {
 
   const { data, error } = await query
     .order("received_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(clampLimit(input.limit, 100))
     .returns<SelectedRequestRow[]>();
 
@@ -372,7 +402,12 @@ export async function listNewRequestsForEndpointByUser(input: {
     throw error;
   }
 
-  return (data ?? []).map(normalizeRequest);
+  const rows = data ?? [];
+  const last = rows[rows.length - 1];
+  return {
+    records: rows.map(normalizeRequest),
+    cursor: last ? { receivedAt: last.received_at, id: last.id } : (input.cursor ?? null),
+  };
 }
 
 export async function listPaginatedRequestsForEndpointByUser(input: {

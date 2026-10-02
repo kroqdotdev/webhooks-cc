@@ -11,30 +11,53 @@ import { createClient } from "./client";
 
 // supabase-js hands out one channel per topic, so components that listen to
 // the same topic share it. The channel is removed shortly after its last
-// listener leaves, so an effect that resubscribes right away reuses it instead
-// of racing the asynchronous removal.
+// listener leaves, so an effect that resubscribes right away reuses it. A
+// replacement waits for a removal still in flight: supabase-js would otherwise
+// return the leaving channel, and its listeners would miss later signals.
 const CHANNEL_LINGER_MS = 1000;
 
 type TopicEntry = {
-  channel: RealtimeChannel;
+  channel?: RealtimeChannel;
   listeners: Set<(event: string) => void>;
   removeTimer?: ReturnType<typeof setTimeout>;
 };
 
 const topics = new Map<string, TopicEntry>();
+const pendingRemovals = new Map<string, Promise<void>>();
+
+function openChannel(topic: string, entry: TopicEntry) {
+  const pending = pendingRemovals.get(topic) ?? Promise.resolve();
+  void pending.then(() => {
+    if (topics.get(topic) !== entry || entry.channel) return;
+    entry.channel = createClient()
+      .channel(topic, { config: { private: true } })
+      .on("broadcast", { event: "*" }, ({ event }) => {
+        for (const listener of entry.listeners) listener(event);
+      })
+      .subscribe();
+  });
+}
+
+function removeChannel(topic: string, channel: RealtimeChannel) {
+  const removal = createClient()
+    .removeChannel(channel)
+    .then((status) => {
+      // removeChannel only tears the channel down after a clean leave.
+      if (status !== "ok") channel.teardown();
+    })
+    .catch(() => channel.teardown())
+    .finally(() => {
+      if (pendingRemovals.get(topic) === removal) pendingRemovals.delete(topic);
+    });
+  pendingRemovals.set(topic, removal);
+}
 
 function subscribeToTopic(topic: string, onEvent: (event: string) => void): () => void {
   let entry = topics.get(topic);
   if (!entry) {
-    const listeners = new Set<(event: string) => void>();
-    const channel = createClient()
-      .channel(topic, { config: { private: true } })
-      .on("broadcast", { event: "*" }, ({ event }) => {
-        for (const listener of listeners) listener(event);
-      })
-      .subscribe();
-    entry = { channel, listeners };
+    entry = { listeners: new Set() };
     topics.set(topic, entry);
+    openChannel(topic, entry);
   }
 
   const current = entry;
@@ -47,7 +70,7 @@ function subscribeToTopic(topic: string, onEvent: (event: string) => void): () =
     if (current.listeners.size > 0 || current.removeTimer) return;
     current.removeTimer = setTimeout(() => {
       topics.delete(topic);
-      void createClient().removeChannel(current.channel);
+      if (current.channel) removeChannel(topic, current.channel);
     }, CHANNEL_LINGER_MS);
   };
 }
