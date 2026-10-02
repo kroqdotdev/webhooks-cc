@@ -22,6 +22,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Config,
     pub notification_limiter: handlers::webhook::NotificationLimiter,
+    pub capture_limiter: std::sync::Arc<handlers::capture_limiter::CaptureLimiter>,
     pub redis: Option<redis::aio::MultiplexedConnection>,
 }
 
@@ -246,6 +247,9 @@ async fn main() {
         pool,
         config: config.clone(),
         notification_limiter: handlers::webhook::new_notification_limiter(),
+        capture_limiter: std::sync::Arc::new(handlers::capture_limiter::CaptureLimiter::new(
+            config.capture_max_inflight_per_account,
+        )),
         redis: redis_conn,
     };
 

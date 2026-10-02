@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.9";
+export const APP_VERSION = "0.32.10";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.10.0";
 export const MCP_VERSION = "1.8.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.10",
+    date: "2026-10-02",
+    title: "Faster Captures Under Load",
+    track: "web",
+    items: [
+      "One account receiving a flood of webhooks no longer slows down capture for everyone else",
+      "Captures write far less to the database, so the receiver handles more webhooks per second",
+      "Fixed occasional 429 responses to the first webhooks of a free account's new daily period when several arrived at once",
+      "Search within an endpoint reads only that endpoint's requests; searching a very large account for a rare term can take up to a second",
+    ],
+  },
   {
     version: "0.32.9",
     date: "2026-10-02",

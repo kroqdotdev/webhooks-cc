@@ -1,6 +1,6 @@
 /**
- * E2E tests for raw body fidelity (migration 00019) and search scalability
- * (migration 00020 + pg_trgm indexes).
+ * E2E tests for raw body fidelity (migration 00019) and search (substring
+ * matching; the trigram indexes were dropped in migration 00044).
  *
  * Tests the full path: HTTP POST to receiver -> stored in DB -> read via API.
  * Requires both the web app (port 3000) and receiver (port 3001) to be running.
