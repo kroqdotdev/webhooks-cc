@@ -78,11 +78,12 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
 
   if (page.signatureHeader && !page.inSdk) {
     // Capture-only providers include Basic auth and shared-token schemes, so
-    // this wording does not claim the delivery is signed.
+    // this wording does not claim the delivery is signed, nor that every
+    // delivery carries the header when the provider makes it opt-in.
     const scheme = page.signatureAlgorithmLabel ? ` (${page.signatureAlgorithmLabel})` : "";
     items.push({
       question: `How do I verify ${page.label} webhooks?`,
-      answer: `${page.label} authenticates each delivery with the ${page.signatureHeader} header${scheme}. ${page.signatureNote ? `${page.signatureNote} ` : ""}Capture a real delivery on webhooks.cc to inspect the exact header value, then implement the check in your handler.`,
+      answer: `${page.label} ${page.signatureOptional ? "can authenticate deliveries" : "authenticates each delivery"} with the ${page.signatureHeader} header${scheme}. ${page.signatureNote ? `${page.signatureNote} ` : ""}Capture a real delivery on webhooks.cc to inspect the exact header value, then implement the check in your handler.`,
     });
   } else if (page.signatureHeader) {
     items.push({

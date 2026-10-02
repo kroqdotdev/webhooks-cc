@@ -229,6 +229,8 @@ interface CaptureOnlyProvider extends ProviderEditorial {
   signatureAlgorithm: string | null;
   /** How the provider authenticates deliveries, when it is not a plain signature header. */
   signatureNote: string | null;
+  /** True when the header is only sent once the user turns signing or auth on. */
+  signatureOptional?: boolean;
 }
 
 const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
@@ -264,7 +266,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureHeader: null,
     signatureAlgorithm: "RSA-SHA1",
     signatureNote:
-      "Signed in the JSON body, not a header: a base64 RSA Signature (SHA1 for SignatureVersion 1, the default; SHA256 for 2) over newline-separated field names and values, checked with the SigningCertURL cert. Confirm the subscription with a GET to SubscribeURL.",
+      "Signed in the JSON body, not a header: a base64 RSA Signature (SHA1 for SignatureVersion 1, the default; SHA256 for 2) over newline-separated field names and values. Fetch SigningCertURL only if it is an HTTPS sns.*.amazonaws.com URL, and GET SubscribeURL only after the signature verifies.",
   },
   bigcommerce: {
     label: "BigCommerce",
@@ -309,6 +311,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "Basic auth",
     signatureNote:
       "Chargebee does not sign payloads. Protect the URL with optional HTTP Basic auth, and confirm each event by fetching it again through the Events API.",
+    signatureOptional: true,
   },
   "checkout-com": {
     label: "Checkout.com",
@@ -388,6 +391,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
       "Signing is optional and applies only when a secret is set on an admin webhook. The value has the WebSub form method=signature.",
+    signatureOptional: true,
   },
   juspay: {
     label: "Juspay",
@@ -421,6 +425,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
       "Signing is optional and turned on per webhook. The header has the form t={timestamp},v1={hex}, and the HMAC covers {timestamp}.{raw_body}.",
+    signatureOptional: true,
   },
   make: {
     label: "Make",
@@ -545,6 +550,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA1",
     signatureNote:
       "Only sent when a shared secret is set under Settings → Advanced Settings. The value is a hex HMAC of the JSON request body keyed with that secret; with batching enabled, Segment signs only the first event in the batch.",
+    signatureOptional: true,
   },
   supabase: {
     label: "Supabase",
@@ -609,6 +615,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "Basic auth",
     signatureNote:
       "Zapier does not sign payloads. Each action can add custom headers and HTTP Basic auth (username and password or API key); every request carries User-Agent: Zapier, and Professional and higher plans can send from static IP ranges.",
+    signatureOptional: true,
   },
   zendesk: {
     label: "Zendesk",
@@ -655,6 +662,8 @@ export interface WebhookProviderPage {
   signatureNote: string | null;
   /** False for capture-only providers: no SDK templates and no signature verification. */
   inSdk: boolean;
+  /** True when deliveries only carry the signature or auth header once the user configures it. */
+  signatureOptional: boolean;
 }
 
 export const WEBHOOK_PROVIDER_SLUGS: readonly string[] = [
@@ -722,6 +731,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     credentialLabel: getWebProviderCredentialLabel(provider),
     signatureNote: null,
     inSdk: true,
+    signatureOptional: false,
   };
 }
 
@@ -744,6 +754,7 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     credentialLabel: "",
     signatureNote: provider.signatureNote,
     inSdk: false,
+    signatureOptional: provider.signatureOptional ?? false,
   };
 }
 
