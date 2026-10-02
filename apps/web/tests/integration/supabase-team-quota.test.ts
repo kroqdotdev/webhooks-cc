@@ -106,7 +106,7 @@ async function capture(slug: string) {
     p_body_raw: null,
   });
   if (error) throw error;
-  return data as { status: string; retry_after?: number | null };
+  return data as { status: string; retry_after?: number | null; billing_key?: string };
 }
 
 async function activateTeam(teamId: string, seats: number) {
@@ -197,6 +197,14 @@ describe("capture_webhook team-pooled quota", () => {
 
     const result = await capture(endpoint.slug);
     expect(result.status).toBe("ok");
+    expect(result).toMatchObject({ billing_key: `team:${teamId}` });
+    const { data: lookedUp } = await admin.rpc(
+      "capture_billing_key" as never,
+      {
+        p_slug: endpoint.slug,
+      } as never
+    );
+    expect(lookedUp).toBe(`team:${teamId}`);
 
     const team = await getTeam(teamId);
     expect(team.request_limit).toBe(200_000);

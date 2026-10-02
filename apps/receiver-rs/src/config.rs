@@ -12,6 +12,10 @@ pub struct Config {
     /// Max seconds to wait for a pooled Postgres connection before the capture
     /// query fails with `PoolTimedOut` (mapped to 503 + Retry-After so senders retry).
     pub pg_acquire_timeout_secs: u64,
+    /// Captures one billing account may run at once (0 = unlimited). They
+    /// serialize on the account's quota row, so more only hold connections
+    /// other accounts need.
+    pub capture_max_inflight_per_account: usize,
     pub otel_collector_url: Option<String>,
     pub appsignal_push_api_key: Option<String>,
     pub notify_proxy_url: Option<String>,
@@ -39,6 +43,10 @@ impl std::fmt::Debug for Config {
             .field("pool_min", &self.pool_min)
             .field("pool_max", &self.pool_max)
             .field("pg_acquire_timeout_secs", &self.pg_acquire_timeout_secs)
+            .field(
+                "capture_max_inflight_per_account",
+                &self.capture_max_inflight_per_account,
+            )
             .field(
                 "otel_collector_url",
                 &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"),
@@ -110,6 +118,8 @@ impl Config {
         let redis_url = env::var("REDIS_URL").ok().filter(|v| !v.is_empty());
         let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
         let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
+        let capture_max_inflight_per_account: usize =
+            parse_env_or("CAPTURE_MAX_INFLIGHT_PER_ACCOUNT", 4);
         let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);
         let signing_secret_key = env::var("SIGNING_SECRET_KEY")
             .ok()
@@ -140,6 +150,7 @@ impl Config {
             pool_min,
             pool_max,
             pg_acquire_timeout_secs,
+            capture_max_inflight_per_account,
             otel_collector_url,
             appsignal_push_api_key,
             notify_proxy_url,

@@ -11,6 +11,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use tokio::sync::Mutex;
 
+use super::capture_limiter::CaptureLimiter;
 use super::log_throttle::LogThrottle;
 use super::rules::{self, RequestContext, ResponseRule};
 use crate::AppState; // ResponseRule needed for deserialization
@@ -215,6 +216,8 @@ struct CaptureResult {
     signing_secret_encrypted: Option<String>,
     /// Custom header name for generic-hmac provider.
     signing_header: Option<String>,
+    /// Quota row the capture billed ("user:<id>", "team:<id>", "endpoint:<id>").
+    billing_key: Option<String>,
 }
 
 struct WebhookTarget {
@@ -669,6 +672,44 @@ fn classify_db_error(e: &sqlx::Error) -> DbFailure {
 /// Seconds advertised in Retry-After when the capture failed transiently.
 const TRANSIENT_RETRY_AFTER_SECS: &str = "5";
 
+/// Billing key for a slug the limiter has not cached: one indexed read that
+/// waits on no row lock. Falls back to a per-slug key when the slug is unknown
+/// or the lookup fails; the capture itself then reports the real outcome.
+async fn resolve_billing_key(state: &AppState, slug: &str) -> String {
+    let lookup: Result<Option<String>, sqlx::Error> =
+        sqlx::query_scalar("SELECT capture_billing_key($1)")
+            .bind(slug)
+            .fetch_one(&state.pool)
+            .await;
+    match lookup {
+        Ok(Some(key)) => {
+            state.capture_limiter.remember(slug, &key);
+            key
+        }
+        Ok(None) => CaptureLimiter::slug_key(slug),
+        Err(e) => {
+            tracing::debug!(slug, error = %e, "billing key lookup failed");
+            CaptureLimiter::slug_key(slug)
+        }
+    }
+}
+
+/// 503 + Retry-After: the sender should redeliver.
+fn retry_later_response() -> Response {
+    let mut response = (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response();
+    response.headers_mut().insert(
+        "retry-after",
+        HeaderValue::from_static(TRANSIENT_RETRY_AFTER_SECS),
+    );
+    response
+}
+
+/// One `slots busy` line per slug per window, like the quota log.
+fn busy_log_throttle() -> &'static LogThrottle {
+    static THROTTLE: OnceLock<LogThrottle> = OnceLock::new();
+    THROTTLE.get_or_init(|| LogThrottle::new(QUOTA_LOG_WINDOW, QUOTA_LOG_MAX_SLUGS))
+}
+
 /// Map a failed `capture_webhook` query to an HTTP response, logging and
 /// counting the failure. Request bodies are never logged.
 fn capture_failure_response(slug: &str, e: &sqlx::Error) -> Response {
@@ -684,12 +725,7 @@ fn capture_failure_response(slug: &str, e: &sqlx::Error) -> Response {
                 error = %e,
                 "capture_webhook query failed, asking sender to retry"
             );
-            let mut response = (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response();
-            response.headers_mut().insert(
-                "retry-after",
-                HeaderValue::from_static(TRANSIENT_RETRY_AFTER_SECS),
-            );
-            response
+            retry_later_response()
         }
         DbFailure::Permanent => {
             metrics::capture_failed("permanent");
@@ -806,7 +842,29 @@ async fn handle_webhook_inner(
     let query_json = serde_json::to_value(&query_params)
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-    // 4. Call the stored procedure
+    // 4. Call the stored procedure, holding one of the account's capture slots
+    //    for the query only (never across a mock response delay).
+    let limit_key = match state.capture_limiter.cached_key(&slug) {
+        Some(key) => key,
+        None => resolve_billing_key(&state, &slug).await,
+    };
+    let acquire_timeout = std::time::Duration::from_secs(state.config.pg_acquire_timeout_secs);
+    let Some(permit) = state
+        .capture_limiter
+        .acquire(&limit_key, acquire_timeout)
+        .await
+    else {
+        metrics::capture_failed("account_busy");
+        if let Some(suppressed) = busy_log_throttle().check(&slug, Instant::now()) {
+            tracing::warn!(
+                slug,
+                key = limit_key,
+                suppressed,
+                "account capture slots busy, asking sender to retry"
+            );
+        }
+        return retry_later_response();
+    };
     let result: Result<serde_json::Value, sqlx::Error> =
         sqlx::query_scalar("SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")
             .bind(&slug)
@@ -821,6 +879,7 @@ async fn handle_webhook_inner(
             .bind(&body_raw)
             .fetch_one(&state.pool)
             .await;
+    drop(permit);
 
     // 5. Map result to HTTP response
     match result {
@@ -835,6 +894,10 @@ async fn handle_webhook_inner(
                     return (StatusCode::OK, "OK").into_response();
                 }
             };
+
+            if let Some(ref billing_key) = capture.billing_key {
+                state.capture_limiter.remember(&slug, billing_key);
+            }
 
             match capture.status.as_str() {
                 "ok" => {
