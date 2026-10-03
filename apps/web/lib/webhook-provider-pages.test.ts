@@ -3,6 +3,7 @@ import { TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
 import {
   getAllWebhookProviderPages,
   getWebhookProviderPage,
+  indefiniteArticle,
   WEBHOOK_PROVIDER_CATEGORIES,
   WEBHOOK_PROVIDER_SLUGS,
 } from "./webhook-provider-pages";
@@ -44,5 +45,13 @@ describe("webhook provider pages", () => {
     for (const page of pages.filter((p) => p.inSdk)) {
       expect(page.signatureOptional).toBe(false);
     }
+  });
+
+  it("picks an before vowel-initial labels", () => {
+    expect(indefiniteArticle("Amazon SNS")).toBe("an");
+    expect(indefiniteArticle("Okta")).toBe("an");
+    expect(indefiniteArticle("intercom")).toBe("an");
+    expect(indefiniteArticle("Stripe")).toBe("a");
+    expect(indefiniteArticle("WorkOS")).toBe("a");
   });
 });
