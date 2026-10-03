@@ -749,6 +749,14 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
   };
 }
 
+/**
+ * "a" or "an" for a provider label, by its first letter: "an Amazon SNS
+ * webhook", "a Stripe webhook". No label starts with a "you"-sounding U.
+ */
+export function indefiniteArticle(label: string): "a" | "an" {
+  return /^[aeiou]/i.test(label) ? "an" : "a";
+}
+
 export function getAllWebhookProviderPages(): readonly WebhookProviderPage[] {
   return [...getPagesBySlug().values()];
 }

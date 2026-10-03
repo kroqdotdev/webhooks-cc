@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.13";
+export const APP_VERSION = "0.32.14";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.14",
+    date: "2026-10-03",
+    title: "Provider Page Wording",
+    track: "web",
+    items: [
+      'Provider page FAQs use "an" before names that start with a vowel, such as "an Amazon SNS webhook" and "an Adyen account"',
+    ],
+  },
   {
     version: "0.32.13",
     date: "2026-10-02",
