@@ -3,6 +3,7 @@ import { TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
 import {
   getAllWebhookProviderPages,
   getWebhookProviderPage,
+  getWebhookProvidersLastModified,
   indefiniteArticle,
   WEBHOOK_PROVIDER_CATEGORIES,
   WEBHOOK_PROVIDER_SLUGS,
@@ -53,5 +54,34 @@ describe("webhook provider pages", () => {
     expect(indefiniteArticle("intercom")).toBe("an");
     expect(indefiniteArticle("Stripe")).toBe("a");
     expect(indefiniteArticle("WorkOS")).toBe("a");
+  });
+
+  it("gives every page a real lastModified between launch and now", () => {
+    const launch = new Date("2026-06-14T00:00:00.000Z");
+    for (const page of pages) {
+      expect(Number.isNaN(page.lastModified.getTime()), page.slug).toBe(false);
+      expect(page.lastModified >= launch, page.slug).toBe(true);
+      expect(page.lastModified <= new Date(), page.slug).toBe(true);
+    }
+  });
+
+  it("dates new and changed pages by their change, and the hub by the newest page", () => {
+    expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
+      "2026-10-02T00:00:00.000Z"
+    );
+    expect(getWebhookProviderPage("resend")?.lastModified.toISOString()).toBe(
+      "2026-10-02T00:00:00.000Z"
+    );
+    expect(getWebhookProviderPage("bigcommerce")?.lastModified.toISOString()).toBe(
+      "2026-09-29T00:00:00.000Z"
+    );
+    // #446 changed the FAQ wording ("an") on vowel-initial pages on 3 October.
+    for (const slug of ["adyen", "airtable", "auth0", "aws-sns", "intercom", "okta"]) {
+      expect(getWebhookProviderPage(slug)?.lastModified.toISOString(), slug).toBe(
+        "2026-10-03T00:00:00.000Z"
+      );
+    }
+    const newest = Math.max(...pages.map((page) => page.lastModified.getTime()));
+    expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
   });
 });
