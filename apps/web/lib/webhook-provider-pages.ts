@@ -10,6 +10,8 @@ interface ProviderEditorial {
   /** Where webhooks are configured for this provider. */
   configHint: string;
   category: WebhookProviderCategory;
+  /** Day this page's content last changed (YYYY-MM-DD). Drives its sitemap lastmod. */
+  updated: string;
 }
 
 const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
@@ -18,53 +20,62 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Stripe sends webhooks for payments, checkout sessions, invoices, subscriptions, and disputes — they are the backbone of most billing integrations.",
     configHint: "Stripe Dashboard → Developers → Webhooks → Add endpoint",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   github: {
     blurb:
       "GitHub sends webhooks for pushes, pull requests, releases, issues, and workflow runs on repositories and organizations.",
     configHint: "Repository → Settings → Webhooks → Add webhook",
     category: "Dev & deploy",
+    updated: "2026-08-21",
   },
   shopify: {
     blurb:
       "Shopify sends webhooks for orders, products, inventory, customers, and app lifecycle events in your store.",
     configHint: "Shopify Admin → Settings → Notifications → Webhooks (or via the Admin API)",
     category: "Commerce & SaaS",
+    updated: "2026-08-21",
   },
   twilio: {
     blurb:
       "Twilio sends webhooks for inbound SMS, message status callbacks, and incoming voice calls.",
     configHint: "Twilio Console → Phone Numbers → your number → Messaging/Voice webhook URL",
     category: "Communication",
+    updated: "2026-08-21",
   },
   slack: {
     blurb:
       "Slack sends webhooks for workspace events, slash commands, and interactive components via the Events API.",
     configHint: "Slack API dashboard → your app → Event Subscriptions → Request URL",
     category: "Communication",
+    updated: "2026-08-21",
   },
   paddle: {
     blurb:
       "Paddle sends webhooks for transactions, subscriptions, customers, and adjustments in Paddle Billing.",
     configHint: "Paddle Dashboard → Developer Tools → Notifications → New destination",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   linear: {
     blurb: "Linear sends webhooks for issue, comment, project, and cycle changes in a workspace.",
     configHint: "Linear → Settings → API → Webhooks → New webhook",
     category: "Commerce & SaaS",
+    updated: "2026-08-21",
   },
   sendgrid: {
     blurb:
       "SendGrid sends event webhooks for email delivery, opens, clicks, bounces, and spam reports.",
     configHint: "SendGrid → Settings → Mail Settings → Event Webhook",
     category: "Communication",
+    updated: "2026-08-21",
   },
   clerk: {
     blurb:
       "Clerk sends webhooks for user, session, and organization lifecycle events, signed with Svix-style headers.",
     configHint: "Clerk Dashboard → Webhooks → Add endpoint",
     category: "Identity & data",
+    updated: "2026-08-21",
   },
   discord: {
     blurb:
@@ -72,146 +83,171 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
     configHint:
       "Discord Developer Portal → your app → General Information → Interactions Endpoint URL",
     category: "Communication",
+    updated: "2026-08-21",
   },
   vercel: {
     blurb:
       "Vercel sends webhooks for deployment lifecycle events — created, succeeded, failed — across your projects.",
     configHint: "Vercel Dashboard → Team Settings → Webhooks",
     category: "Dev & deploy",
+    updated: "2026-08-21",
   },
   gitlab: {
     blurb:
       "GitLab sends webhooks for pushes, merge requests, pipelines, issues, and tag events on projects and groups.",
     configHint: "Project → Settings → Webhooks",
     category: "Dev & deploy",
+    updated: "2026-08-21",
   },
   typeform: {
     blurb: "Typeform sends webhooks each time someone submits (or partially completes) a form.",
     configHint: "Typeform → your form → Connect → Webhooks",
     category: "Commerce & SaaS",
+    updated: "2026-08-21",
   },
   "standard-webhooks": {
     blurb:
       "Standard Webhooks is an open specification for webhook signing and delivery adopted by providers like Svix, Clerk, and Resend.",
     configHint: "Any provider implementing the Standard Webhooks spec",
     category: "Identity & data",
+    updated: "2026-08-21",
   },
   meta: {
     blurb:
       "Meta sends webhooks for WhatsApp messages, Facebook Page events, and Instagram comments through the Graph API.",
     configHint: "Meta for Developers → your app → Webhooks → Edit subscription",
     category: "Communication",
+    updated: "2026-08-21",
   },
   lemonsqueezy: {
     blurb:
       "Lemon Squeezy sends webhooks for orders, subscriptions, and license key events in your store.",
     configHint: "Lemon Squeezy → Settings → Webhooks",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   "coinbase-commerce": {
     blurb:
       "Coinbase Commerce sends webhooks as crypto charges are created, pending, confirmed, or failed.",
     configHint: "Coinbase Commerce → Settings → Webhook subscriptions",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   razorpay: {
     blurb:
       "Razorpay sends webhooks for payments, orders, settlements, refunds, and subscription events.",
     configHint: "Razorpay Dashboard → Account & Settings → Webhooks",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   cal: {
     blurb:
       "Cal.com sends webhooks when bookings are created, cancelled, rescheduled, or completed.",
     configHint: "Cal.com → Settings → Developer → Webhooks",
     category: "Commerce & SaaS",
+    updated: "2026-08-21",
   },
   intercom: {
     blurb:
       "Intercom sends webhooks for conversations, contacts, and admin replies in your workspace.",
     configHint: "Intercom Developer Hub → your app → Webhooks",
     category: "Communication",
+    updated: "2026-08-21",
   },
   telegram: {
     blurb:
       "Telegram bots receive updates — messages, callback queries, edits — via a webhook URL registered with setWebhook.",
     configHint: "Bot API → call setWebhook with your endpoint URL",
     category: "Communication",
+    updated: "2026-08-21",
   },
   square: {
     blurb: "Square sends webhooks for payments, refunds, orders, inventory, and catalog changes.",
     configHint: "Square Developer Dashboard → your app → Webhooks → Subscriptions",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   hubspot: {
     blurb:
       "HubSpot sends webhooks for CRM object changes — contact creation, property changes, deal updates.",
     configHint: "HubSpot developer account → your app → Webhooks",
     category: "Commerce & SaaS",
+    updated: "2026-08-21",
   },
   mailgun: {
     blurb: "Mailgun sends webhooks for email delivery, failures, opens, clicks, and unsubscribes.",
     configHint: "Mailgun → Sending → Webhooks",
     category: "Communication",
+    updated: "2026-08-21",
   },
   calendly: {
     blurb: "Calendly sends webhooks when invitees schedule, cancel, or submit routing forms.",
     configHint: "Calendly API → create a webhook subscription (or Integrations page on paid plans)",
     category: "Commerce & SaaS",
+    updated: "2026-08-21",
   },
   mux: {
     blurb:
       "Mux sends webhooks for video asset lifecycle events — uploads, processing, ready states, and live streams.",
     configHint: "Mux Dashboard → Settings → Webhooks",
     category: "Dev & deploy",
+    updated: "2026-08-21",
   },
   sentry: {
     blurb:
       "Sentry sends webhooks for issues, errors, and alert rule triggers via internal integrations.",
     configHint: "Sentry → Settings → Developer Settings → your integration → Webhook URL",
     category: "Dev & deploy",
+    updated: "2026-08-21",
   },
   bitbucket: {
     blurb:
       "Bitbucket sends webhooks for pushes, pull requests, and pipeline events on repositories.",
     configHint: "Repository → Settings → Webhooks → Add webhook",
     category: "Dev & deploy",
+    updated: "2026-08-21",
   },
   docusign: {
     blurb:
       "DocuSign Connect sends webhooks as envelopes are sent, viewed, signed, completed, or declined.",
     configHint: "DocuSign Admin → Integrations → Connect → Add Configuration",
     category: "Identity & data",
+    updated: "2026-08-21",
   },
   adyen: {
     blurb:
       "Adyen sends standard notification webhooks for authorisations, captures, refunds, and chargebacks.",
     configHint: "Adyen Customer Area → Developers → Webhooks → Create webhook",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   paypal: {
     blurb:
       "PayPal sends webhooks for captures, checkout orders, subscriptions, and disputes in your REST app.",
     configHint: "PayPal Developer Dashboard → your app → Webhooks → Add webhook",
     category: "Payments & billing",
+    updated: "2026-08-21",
   },
   plaid: {
     blurb:
       "Plaid sends webhooks for transactions updates, item status changes, and auth events, verified with signed JWTs.",
     configHint: "Set the webhook URL when creating a Link token (or via /item/webhook/update)",
     category: "Identity & data",
+    updated: "2026-08-21",
   },
   resend: {
     blurb:
       "Resend sends webhooks for email events such as sent, delivered, opened, clicked, bounced, and complained, plus domain and contact changes.",
     configHint: "Dashboard → Webhooks, or via the Webhooks API",
     category: "Communication",
+    updated: "2026-10-02",
   },
   workos: {
     blurb:
       "WorkOS sends webhooks for authentication, user, session, organization, SSO connection, directory sync, and invitation events.",
     configHint: "Dashboard → Webhooks",
     category: "Identity & data",
+    updated: "2026-10-02",
   },
 };
 
@@ -252,6 +288,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Airtable sends webhook notifications when records, fields, or tables change in a base; the change payloads are then fetched through the API.",
     configHint: "Set via the Webhooks API (POST /v0/bases/{baseId}/webhooks)",
     category: "Identity & data",
+    updated: "2026-09-29",
     signatureHeader: "x-airtable-content-mac",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -263,6 +300,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Auth0 sends webhooks for tenant log events through Custom Webhook log streams, and for user lifecycle events such as user.created and user.deleted through Event Streams.",
     configHint: "Dashboard → Monitoring → Streams → Custom Webhook",
     category: "Identity & data",
+    updated: "2026-09-29",
     signatureHeader: null,
     signatureAlgorithm: null,
     signatureNote:
@@ -275,6 +313,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "SNS console → Subscriptions → Create subscription (protocol HTTP or HTTPS), or the Subscribe API",
     category: "Dev & deploy",
+    updated: "2026-10-02",
     signatureHeader: null,
     signatureAlgorithm: "RSA-SHA1",
     signatureNote:
@@ -285,6 +324,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     blurb: "BigCommerce sends webhooks for order, product, cart, and customer events in a store.",
     configHint: "Set via the Webhooks API (POST /stores/{store_hash}/v3/hooks)",
     category: "Commerce & SaaS",
+    updated: "2026-09-29",
     signatureHeader: "webhook-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -296,6 +336,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "BILL sends webhooks for bill, payment, vendor, and spend transaction events, such as bill.created, bill.updated, and spend.transaction.updated.",
     configHint: "Set via the Subscriptions API (POST /v3/subscriptions)",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "x-bill-sha-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -308,6 +349,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Set via the Webhooks API (POST /api/v2/{coin}/wallet/{walletId}/webhooks for wallet webhooks)",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "x-signature-sha256",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -319,6 +361,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Chargebee sends webhooks for subscription, customer, invoice, payment, order, quote, and credit note events.",
     configHint: "Settings → Configure Chargebee → API Keys and Webhooks → Webhooks",
     category: "Payments & billing",
+    updated: "2026-10-02",
     signatureHeader: "authorization",
     signatureAlgorithm: "Basic auth",
     signatureNote:
@@ -331,6 +374,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Checkout.com sends webhooks for payment lifecycle events such as approvals, captures, refunds, and voids, plus dispute events.",
     configHint: "Dashboard → Developers → Webhooks, or the Workflows API (POST /workflows)",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "cko-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -342,6 +386,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Clicksign sends webhooks for document events such as upload, sign, close, deadline, and cancel.",
     configHint: "Settings (Configurações) → API → Add Webhook, or register through the API",
     category: "Identity & data",
+    updated: "2026-09-29",
     signatureHeader: "content-hmac",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -353,6 +398,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Contentful sends webhooks for entry, asset, and content type events such as create, save, publish, unpublish, archive, and delete.",
     configHint: "Space settings → Webhooks",
     category: "Commerce & SaaS",
+    updated: "2026-09-29",
     signatureHeader: "x-contentful-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -365,6 +411,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Integrations → Reporting Webhooks → Add Reporting Webhook, or the App API (POST /v1/reporting_webhooks)",
     category: "Communication",
+    updated: "2026-10-02",
     signatureHeader: "x-cio-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -377,6 +424,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Integrations → Webhooks tile → Configuration, then mention @webhook-<name> in a monitor message",
     category: "Dev & deploy",
+    updated: "2026-10-02",
     signatureHeader: null,
     signatureAlgorithm: "Basic auth",
     signatureNote:
@@ -388,6 +436,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Flutterwave sends webhooks for charges, transfers, subscription cancellations, BVN verification, and bill payments.",
     configHint: "Dashboard → Settings → Webhooks",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "verif-hash",
     signatureAlgorithm: null,
     signatureNote:
@@ -399,6 +448,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Jira sends webhooks for issue, comment, worklog, attachment, sprint, version, project, board, and user events.",
     configHint: "Settings → System → WebHooks, or via the Jira REST API",
     category: "Dev & deploy",
+    updated: "2026-10-02",
     signatureHeader: "x-hub-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -411,6 +461,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Juspay sends webhooks for order, refund, transaction, chargeback, customer, mandate, and tokenization events.",
     configHint: "Juspay Dashboard → Payments → Settings → Webhooks",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "authorization",
     signatureAlgorithm: "Basic auth",
     signatureNote:
@@ -422,6 +473,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Loops sends webhooks for contact and mailing list changes, email sends, and delivery, bounce, open, click, unsubscribe, and spam complaint events.",
     configHint: "Settings → Webhooks",
     category: "Communication",
+    updated: "2026-10-02",
     signatureHeader: "webhook-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -433,6 +485,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Mailchimp sends webhooks for audience events such as subscribes, unsubscribes, profile and email changes, cleaned addresses, and campaign sends.",
     configHint: "Audience → Manage Audience → Settings → Webhooks → Create New Webhook",
     category: "Communication",
+    updated: "2026-10-02",
     signatureHeader: "x-mailchimp-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -445,6 +498,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Make sends webhooks from scenarios through the HTTP app's Make a request module, which sends POST, PUT, PATCH, or other requests with data from earlier modules.",
     configHint: "Scenario → HTTP → Make a request → URL",
     category: "Commerce & SaaS",
+    updated: "2026-10-02",
     signatureHeader: null,
     signatureAlgorithm: null,
     signatureNote:
@@ -457,6 +511,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Per API resource via webhookUrl, or Dashboard → Developers → Webhooks for next-gen webhooks",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "x-mollie-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -468,6 +523,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Netlify sends webhooks for deploy events, including deploy started, succeeded, failed, deleted, locked, unlocked, and restored.",
     configHint: "Project configuration → Notifications → Deploy notifications → HTTP POST request",
     category: "Dev & deploy",
+    updated: "2026-09-29",
     signatureHeader: "x-webhook-signature",
     signatureAlgorithm: "JWT (HS256)",
     signatureNote:
@@ -479,6 +535,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Notion sends webhooks for page, database, data source, and comment events in workspaces an integration can access.",
     configHint: "Integration settings → Webhooks → Create subscription",
     category: "Commerce & SaaS",
+    updated: "2026-09-29",
     signatureHeader: "x-notion-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -491,6 +548,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Admin Console → Workflow → Event Hooks → Create Event Hook, or the Event Hooks API (POST /api/v1/eventHooks)",
     category: "Identity & data",
+    updated: "2026-10-02",
     signatureHeader: "authorization",
     signatureAlgorithm: "Shared token",
     signatureNote:
@@ -503,6 +561,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Integrations → Generic Webhooks (v3) → New Webhook, or the REST API (POST /webhook_subscriptions)",
     category: "Dev & deploy",
+    updated: "2026-10-02",
     signatureHeader: "x-pagerduty-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -514,6 +573,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Paystack sends webhooks for charges, transfers, subscriptions, invoices, refunds, and disputes.",
     configHint: "Dashboard → Settings → API Keys & Webhooks",
     category: "Payments & billing",
+    updated: "2026-09-29",
     signatureHeader: "x-paystack-signature",
     signatureAlgorithm: "HMAC-SHA512",
     signatureNote: "Signed with your Paystack secret key rather than a separate webhook secret.",
@@ -524,6 +584,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Postmark sends webhooks for delivery, bounce, spam complaint, open, click, subscription change, and inbound email events.",
     configHint: "Servers → your server → Message Stream → Webhooks → Add webhook",
     category: "Communication",
+    updated: "2026-09-29",
     signatureHeader: null,
     signatureAlgorithm: "Basic auth",
     signatureNote:
@@ -536,6 +597,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Setup → Outbound Messages → New Outbound Message, then add it to a flow or workflow rule",
     category: "Commerce & SaaS",
+    updated: "2026-10-02",
     signatureHeader: null,
     signatureAlgorithm: "Mutual TLS",
     signatureNote:
@@ -547,6 +609,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Segment sends webhooks for Track, Identify, Page, Screen, Group, and Alias calls from connected sources through its Webhooks (Actions) destination.",
     configHint: "Connections → Catalog → Webhooks (Actions), then set the URL in a mapping",
     category: "Identity & data",
+    updated: "2026-10-02",
     signatureHeader: "x-signature",
     signatureAlgorithm: "HMAC-SHA1",
     signatureNote:
@@ -559,6 +622,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Supabase Database Webhooks send an HTTP request for INSERT, UPDATE, and DELETE events on Postgres tables.",
     configHint: "Dashboard → Integrations → Webhooks",
     category: "Dev & deploy",
+    updated: "2026-09-29",
     signatureHeader: null,
     signatureAlgorithm: null,
     signatureNote:
@@ -571,6 +635,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Site settings → Apps & integrations → Webhooks, or the Webhooks API (POST /sites/{site_id}/webhooks)",
     category: "Commerce & SaaS",
+    updated: "2026-09-29",
     signatureHeader: "x-webflow-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -582,6 +647,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "WooCommerce sends webhooks for order, product, customer, and coupon events, plus custom action topics.",
     configHint: "WooCommerce → Settings → Advanced → Webhooks",
     category: "Commerce & SaaS",
+    updated: "2026-09-29",
     signatureHeader: "x-wc-webhook-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote: "A base64-encoded HMAC of the payload, keyed with the webhook secret.",
@@ -592,6 +658,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Yousign sends webhooks for signature request, signer, approver, document verification, electronic seal, and workflow events.",
     configHint: "Yousign app → Developers → Webhooks → Create a Webhook",
     category: "Identity & data",
+    updated: "2026-09-29",
     signatureHeader: "x-yousign-signature-256",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote: "A hex digest of the raw body with a sha256= prefix.",
@@ -602,6 +669,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Zapier sends webhooks from Zap actions: Webhooks by Zapier POST, PUT, and Custom Request steps deliver data from earlier Zap steps to any URL.",
     configHint: "Zap editor → Action → Webhooks by Zapier → POST, PUT, or Custom Request",
     category: "Commerce & SaaS",
+    updated: "2026-10-02",
     signatureHeader: "authorization",
     signatureAlgorithm: "Basic auth",
     signatureNote:
@@ -614,6 +682,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Zendesk sends webhooks for ticket activity through triggers and automations, and for user, organization, and help center events.",
     configHint: "Admin Center → Apps and integrations → Webhooks → Create webhook",
     category: "Commerce & SaaS",
+    updated: "2026-09-29",
     signatureHeader: "x-zendesk-webhook-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -625,6 +694,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Zoom sends webhooks for meeting, webinar, recording, chat, phone, user, and account events.",
     configHint: "Zoom App Marketplace → your app → Features → Event Subscriptions",
     category: "Communication",
+    updated: "2026-09-29",
     signatureHeader: "x-zm-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -655,6 +725,8 @@ export interface WebhookProviderPage {
   inSdk: boolean;
   /** True when deliveries only carry the signature or auth header once the user configures it. */
   signatureOptional: boolean;
+  /** When the page's content last changed; the sitemap lastmod. */
+  lastModified: Date;
 }
 
 export const WEBHOOK_PROVIDER_SLUGS: readonly string[] = [
@@ -723,6 +795,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     signatureNote: null,
     inSdk: true,
     signatureOptional: false,
+    lastModified: new Date(`${editorial.updated}T00:00:00.000Z`),
   };
 }
 
@@ -746,6 +819,7 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     signatureNote: provider.signatureNote,
     inSdk: false,
     signatureOptional: provider.signatureOptional ?? false,
+    lastModified: new Date(`${provider.updated}T00:00:00.000Z`),
   };
 }
 
@@ -759,6 +833,14 @@ export function indefiniteArticle(label: string): "a" | "an" {
 
 export function getAllWebhookProviderPages(): readonly WebhookProviderPage[] {
   return [...getPagesBySlug().values()];
+}
+
+/** Newest provider page change: the /webhooks hub lists them all, so it changes with them. */
+export function getWebhookProvidersLastModified(): Date {
+  return getAllWebhookProviderPages().reduce(
+    (latest, page) => (page.lastModified > latest ? page.lastModified : latest),
+    new Date(0)
+  );
 }
 
 export const WEBHOOK_PROVIDER_CATEGORIES: readonly WebhookProviderCategory[] = [

@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.14";
+export const APP_VERSION = "0.32.15";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.15",
+    date: "2026-10-04",
+    title: "Accurate Sitemap Dates",
+    track: "web",
+    items: [
+      "The sitemap now dates each /webhooks provider page by when its content last changed, instead of one shared date from July, so search engines can tell which pages are new",
+      "The /webhooks hub takes the date of its newest provider page, /changelog the date of its newest entry, and docs pages edited on 2 October carry that date",
+    ],
+  },
   {
     version: "0.32.14",
     date: "2026-10-03",

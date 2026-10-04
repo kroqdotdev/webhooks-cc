@@ -1,8 +1,12 @@
 import type { MetadataRoute } from "next";
 import { getAllDocSlugs, getDocFrontmatter } from "@/lib/docs";
+import { CHANGELOG } from "@/lib/changelog";
 import { LAST_CONTENT_UPDATE, PUBLIC_SITEMAP_PAGES, SITE_URL } from "@/lib/seo";
 import { listPublishedBlogPosts } from "@/lib/supabase/blog-posts";
-import { WEBHOOK_PROVIDER_SLUGS } from "@/lib/webhook-provider-pages";
+import {
+  getAllWebhookProviderPages,
+  getWebhookProvidersLastModified,
+} from "@/lib/webhook-provider-pages";
 
 export const revalidate = 3600;
 
@@ -10,17 +14,26 @@ export const revalidate = 3600;
 // sitemaps: Google Search Console kept reporting the index as "Couldn't
 // fetch" and never requested the children, while the site is small enough
 // (well under the 50,000 URL limit) that an index buys nothing.
+//
+// lastmod must reflect real content changes: Google stops trusting it on a site
+// whose dates are visibly wrong. Provider pages carry their own dates, the
+// /webhooks hub changes whenever one of them does, and /changelog with its
+// newest entry.
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const derivedLastModified: Record<string, Date> = {
+    "/webhooks": getWebhookProvidersLastModified(),
+    "/changelog": newestChangelogDate(),
+  };
   const pages: MetadataRoute.Sitemap = PUBLIC_SITEMAP_PAGES.map((page) => ({
     url: page.path === "/" ? SITE_URL : `${SITE_URL}${page.path}`,
-    lastModified: page.lastModified ?? LAST_CONTENT_UPDATE,
+    lastModified: page.lastModified ?? derivedLastModified[page.path] ?? LAST_CONTENT_UPDATE,
     changeFrequency: page.changeFrequency,
     priority: page.priority,
   }));
 
-  const providers: MetadataRoute.Sitemap = WEBHOOK_PROVIDER_SLUGS.map((slug) => ({
-    url: `${SITE_URL}/webhooks/${slug}`,
-    lastModified: LAST_CONTENT_UPDATE,
+  const providers: MetadataRoute.Sitemap = getAllWebhookProviderPages().map((page) => ({
+    url: `${SITE_URL}/webhooks/${page.slug}`,
+    lastModified: page.lastModified,
     changeFrequency: "monthly",
     priority: 0.7,
   }));
@@ -70,4 +83,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   return [...pages, ...providers, ...docs, ...blog];
+}
+
+function newestChangelogDate(): Date {
+  return CHANGELOG.reduce((latest, entry) => {
+    const date = new Date(`${entry.date}T00:00:00.000Z`);
+    return date > latest ? date : latest;
+  }, LAST_CONTENT_UPDATE);
 }
