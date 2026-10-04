@@ -366,6 +366,8 @@ pub fn verify_signature(
         "gitlab" => verify_gitlab(secret, headers),
         "typeform" => verify_typeform(secret, headers, body),
         "clerk" => verify_clerk(secret, headers, body),
+        // Resend delivers through Svix: same svix-* headers and scheme as Clerk.
+        "resend" => verify_clerk(secret, headers, body),
         "discord" => verify_discord(secret, headers, body),
         "standard-webhooks" => verify_standard_webhooks(secret, headers, body),
         // Meta (WhatsApp/Messenger/Instagram) reuses GitHub's `sha256=` HMAC-SHA256
@@ -384,9 +386,9 @@ pub fn verify_signature(
         // is intentionally NOT auto-detected (no distinctive header to key on).
         "mailgun" => verify_mailgun(secret, headers, body),
         // Calendly: Stripe-style `t=,v1=` header, HMAC-SHA256 hex over `{t}.{body}`.
-        "calendly" => verify_calendly(secret, headers, body),
+        "calendly" => verify_t_v1_header(secret, headers, body, "calendly-webhook-signature"),
         // Mux: same Stripe-style scheme as Calendly with the `mux-signature` header.
-        "mux" => verify_mux(secret, headers, body),
+        "mux" => verify_t_v1_header(secret, headers, body, "mux-signature"),
         // Sentry: HMAC-SHA256 hex over the raw body in `sentry-hook-signature`.
         "sentry" => verify_hex_sha256(secret, headers, body, "sentry-hook-signature"),
         // Bitbucket: GitHub-style `sha256=` HMAC-SHA256 over the body, but on the
@@ -394,6 +396,9 @@ pub fn verify_signature(
         // `sha1=`; detection keys on the unique `x-event-key` header instead).
         "bitbucket" => verify_github_with_header(secret, headers, body, "x-hub-signature"),
         "docusign" => verify_docusign(secret, headers, body),
+        // WorkOS: `t=<ms>, v1=<hex>` header, HMAC-SHA256 hex over `{t}.{body}`
+        // keyed with the secret string as-is (the parser trims the space).
+        "workos" => verify_t_v1_header(secret, headers, body, "workos-signature"),
         "adyen" => verify_adyen(secret, body),
         "paypal" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
@@ -713,6 +718,9 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     if get_header(headers, "mux-signature").is_some() {
         return Some("mux");
     }
+    if get_header(headers, "workos-signature").is_some() {
+        return Some("workos");
+    }
     if get_header(headers, "sentry-hook-signature").is_some() {
         return Some("sentry");
     }
@@ -734,9 +742,10 @@ pub fn detect_provider(headers: &HashMap<String, String>) -> Option<&'static str
     {
         return Some("intercom");
     }
-    // Note: Meta (shares x-hub-signature-256 with GitHub) and Lemon Squeezy
-    // (generic x-signature) are owner-selected only — they are intentionally
-    // not auto-detected here to avoid colliding with GitHub / other providers.
+    // Note: Meta (shares x-hub-signature-256 with GitHub), Lemon Squeezy
+    // (generic x-signature), and Resend (same svix-* headers as Clerk, told
+    // apart only by body shape) are owner-selected only — they are intentionally
+    // not auto-detected here to avoid colliding with other providers.
     None
 }
 
@@ -1154,7 +1163,8 @@ fn verify_typeform(
     }
 }
 
-/// Clerk: normalize svix-* headers to webhook-*, delegate to Standard Webhooks.
+/// Svix (Clerk, Resend): normalize svix-* headers to webhook-*, delegate to
+/// Standard Webhooks.
 fn verify_clerk(
     secret: &[u8],
     headers: &HashMap<String, String>,
@@ -1816,59 +1826,23 @@ fn verify_mailgun(
     }
 }
 
-/// Calendly: Stripe-style `calendly-webhook-signature` header (`t=...,v1=...`),
-/// HMAC-SHA256 hex over `{timestamp}.{body}`. Reuses the shared Stripe parser.
-fn verify_calendly(
+/// Stripe-style `t=<timestamp>,v1=<hex>` header (Calendly, Mux, WorkOS):
+/// HMAC-SHA256 hex over `{t}.{body}`, keyed with the secret bytes as-is. Any of
+/// the `v1` entries may match.
+fn verify_t_v1_header(
     secret: &[u8],
     headers: &HashMap<String, String>,
     body: &[u8],
+    header_name: &'static str,
 ) -> VerificationResult {
-    let header_name = "calendly-webhook-signature";
     let Some(sig_header) = get_header(headers, header_name) else {
         return VerificationResult::Skipped(SignatureError::missing_header(header_name));
     };
 
-    let (timestamp, signatures) = match parse_stripe_header(sig_header) {
-        Some(v) => v,
-        None => {
-            return VerificationResult::Invalid(SignatureError::invalid_encoding(
-                "Could not parse calendly-webhook-signature header (expected t=...,v1=...)",
-            ));
-        }
-    };
-
-    let payload = format!("{timestamp}.{}", String::from_utf8_lossy(body));
-    let expected = hex::encode(hmac_sha256(secret, payload.as_bytes()));
-
-    if signatures
-        .iter()
-        .any(|sig| ct_str_eq(&sig.to_lowercase(), &expected))
-    {
-        VerificationResult::Valid
-    } else {
-        let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
-        let mut err = SignatureError::mismatch(&expected, received);
-        err.timestamp = timestamp.parse::<i64>().ok();
-        err.header = Some(header_name.to_string());
-        VerificationResult::Invalid(err)
-    }
-}
-
-/// Mux: same Stripe-style scheme as Calendly (`t=...,v1=...`), HMAC-SHA256 hex
-/// over `{timestamp}.{body}`, carried in the `mux-signature` header.
-fn verify_mux(secret: &[u8], headers: &HashMap<String, String>, body: &[u8]) -> VerificationResult {
-    let header_name = "mux-signature";
-    let Some(sig_header) = get_header(headers, header_name) else {
-        return VerificationResult::Skipped(SignatureError::missing_header(header_name));
-    };
-
-    let (timestamp, signatures) = match parse_stripe_header(sig_header) {
-        Some(v) => v,
-        None => {
-            return VerificationResult::Invalid(SignatureError::invalid_encoding(
-                "Could not parse mux-signature header (expected t=...,v1=...)",
-            ));
-        }
+    let Some((timestamp, signatures)) = parse_stripe_header(sig_header) else {
+        return VerificationResult::Invalid(SignatureError::invalid_encoding(&format!(
+            "Could not parse {header_name} header (expected t=...,v1=...)"
+        )));
     };
 
     let payload = format!("{timestamp}.{}", String::from_utf8_lossy(body));

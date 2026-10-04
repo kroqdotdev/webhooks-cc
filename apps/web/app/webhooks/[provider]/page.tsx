@@ -12,6 +12,7 @@ import { getWebProviderInfo } from "@/lib/provider-catalog";
 import {
   getAllWebhookProviderPages,
   getWebhookProviderPage,
+  indefiniteArticle,
   WEBHOOK_PROVIDER_SLUGS,
   type WebhookProviderPage,
 } from "@/lib/webhook-provider-pages";
@@ -64,25 +65,26 @@ function buildFaq(page: WebhookProviderPage): FAQItem[] {
     },
     page.inSdk
       ? {
-          question: `Can I send a sample ${page.label} webhook without a ${page.label} account?`,
+          question: `Can I send a sample ${page.label} webhook without ${indefiniteArticle(page.label)} ${page.label} account?`,
           answer:
             page.templates.length > 0
               ? `Yes. webhooks.cc ships ${page.label} templates (${page.templates.slice(0, 3).join(", ")}) with realistic payloads${page.secretRequired ? " and correctly computed signature headers" : ""}. Send them from the dashboard, the SDK, or the MCP server to exercise your handler end-to-end.`
               : `Yes. webhooks.cc can send signed test payloads following the ${page.label} signing scheme from the dashboard, the SDK, or the MCP server.`,
         }
       : {
-          question: `Can I replay a ${page.label} webhook against my local server?`,
+          question: `Can I replay ${indefiniteArticle(page.label)} ${page.label} webhook against my local server?`,
           answer: `Yes. Capture one real delivery from ${page.label}, then replay it to any URL from the dashboard, or run whk tunnel <port> to forward live deliveries to localhost. webhooks.cc has no built-in ${page.label} sample templates, but the Send button posts any payload and headers you paste in.`,
         },
   ];
 
   if (page.signatureHeader && !page.inSdk) {
     // Capture-only providers include Basic auth and shared-token schemes, so
-    // this wording does not claim the delivery is signed.
+    // this wording does not claim the delivery is signed, nor that every
+    // delivery carries the header when the provider makes it opt-in.
     const scheme = page.signatureAlgorithmLabel ? ` (${page.signatureAlgorithmLabel})` : "";
     items.push({
       question: `How do I verify ${page.label} webhooks?`,
-      answer: `${page.label} authenticates each delivery with the ${page.signatureHeader} header${scheme}. ${page.signatureNote ? `${page.signatureNote} ` : ""}Capture a real delivery on webhooks.cc to inspect the exact header value, then implement the check in your handler.`,
+      answer: `${page.label} ${page.signatureOptional ? "can authenticate deliveries" : "authenticates each delivery"} with the ${page.signatureHeader} header${scheme}. ${page.signatureNote ? `${page.signatureNote} ` : ""}Capture a real delivery on webhooks.cc to inspect the exact header value, then implement the check in your handler.`,
     });
   } else if (page.signatureHeader) {
     items.push({

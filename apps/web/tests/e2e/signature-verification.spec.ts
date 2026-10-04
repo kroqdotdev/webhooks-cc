@@ -241,9 +241,9 @@ test("provider dropdown lists providers", async ({ page }) => {
   await openSettings(page);
   const select = page.locator("#settings-signing-provider");
   const options = select.locator("option");
-  // None + 30 verifiable named providers + generic-hmac.
+  // None + 32 verifiable named providers + generic-hmac.
   // SendGrid and Plaid are excluded from endpoint signing configuration.
-  await expect(options).toHaveCount(32);
+  await expect(options).toHaveCount(34);
   await expect(options.nth(1)).toHaveText("Stripe");
   await expect(options.filter({ hasText: "Telegram" })).toHaveCount(1);
   await expect(options.filter({ hasText: "Bitbucket" })).toHaveCount(1);

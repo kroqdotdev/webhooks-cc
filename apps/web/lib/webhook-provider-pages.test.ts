@@ -3,6 +3,7 @@ import { TEMPLATE_PROVIDERS } from "@webhooks-cc/sdk";
 import {
   getAllWebhookProviderPages,
   getWebhookProviderPage,
+  indefiniteArticle,
   WEBHOOK_PROVIDER_CATEGORIES,
   WEBHOOK_PROVIDER_SLUGS,
 } from "./webhook-provider-pages";
@@ -34,5 +35,23 @@ describe("webhook provider pages", () => {
       const copy = [page.blurb, page.configHint, page.signatureNote ?? ""].join(" ");
       expect(copy).not.toContain(String.fromCharCode(0x2014));
     }
+  });
+
+  it("marks opt-in signing as optional, and never for SDK providers", () => {
+    for (const slug of ["segment", "zapier", "chargebee", "jira", "mailchimp"]) {
+      expect(getWebhookProviderPage(slug)?.signatureOptional).toBe(true);
+    }
+    expect(getWebhookProviderPage("pagerduty")?.signatureOptional).toBe(false);
+    for (const page of pages.filter((p) => p.inSdk)) {
+      expect(page.signatureOptional).toBe(false);
+    }
+  });
+
+  it("picks an before vowel-initial labels", () => {
+    expect(indefiniteArticle("Amazon SNS")).toBe("an");
+    expect(indefiniteArticle("Okta")).toBe("an");
+    expect(indefiniteArticle("intercom")).toBe("an");
+    expect(indefiniteArticle("Stripe")).toBe("a");
+    expect(indefiniteArticle("WorkOS")).toBe("a");
   });
 });

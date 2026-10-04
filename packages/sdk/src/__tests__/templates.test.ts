@@ -33,6 +33,8 @@ import {
   verifyBitbucketSignature,
   verifyDocuSignSignature,
   verifyAdyenSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
   verifySignature,
 } from "../verify";
 
@@ -1745,15 +1747,15 @@ describe("provider catalog size after tier-3", () => {
   const TIER2 = ["square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket"] as const;
   const TIER3 = ["docusign", "adyen", "paypal", "plaid"] as const;
 
-  it("lists 32 template providers (21 tier-1 + 7 tier-2 + 4 tier-3)", () => {
-    expect(TEMPLATE_PROVIDERS).toHaveLength(32);
+  it("lists 34 template providers (21 tier-1 + 7 tier-2 + 4 tier-3 + Resend and WorkOS)", () => {
+    expect(TEMPLATE_PROVIDERS).toHaveLength(34);
     for (const provider of [...TIER2, ...TIER3]) {
       expect(TEMPLATE_PROVIDERS).toContain(provider);
     }
   });
 
-  it("lists 30 verifiable providers (SendGrid and Plaid are template-only)", () => {
-    expect(VERIFY_PROVIDERS).toHaveLength(30);
+  it("lists 32 verifiable providers (SendGrid and Plaid are template-only)", () => {
+    expect(VERIFY_PROVIDERS).toHaveLength(32);
     expect(VERIFY_PROVIDERS).not.toContain("sendgrid");
     expect(VERIFY_PROVIDERS).not.toContain("plaid");
     for (const provider of [...TIER2, "docusign", "adyen", "paypal"] as const) {
@@ -1768,5 +1770,92 @@ describe("provider catalog size after tier-3", () => {
       expect(meta.templates.length).toBeGreaterThan(0);
       expect(meta.templates).toContain(meta.defaultTemplate);
     }
+  });
+});
+
+// ─── Resend (Svix) and WorkOS (t=<ms>, v1=<hex>) ─────────────────────────
+
+describe("Resend and WorkOS provider metadata", () => {
+  it("resend is listed and signs with the svix-* headers", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("resend");
+    expect(VERIFY_PROVIDERS).toContain("resend");
+    const meta = TEMPLATE_METADATA.resend;
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("svix-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("email.sent");
+  });
+
+  it("workos is listed and signs with workos-signature", () => {
+    expect(TEMPLATE_PROVIDERS).toContain("workos");
+    expect(VERIFY_PROVIDERS).toContain("workos");
+    const meta = TEMPLATE_METADATA.workos;
+    expect(meta.secretRequired).toBe(true);
+    expect(meta.signatureHeader).toBe("workos-signature");
+    expect(meta.signatureAlgorithm).toBe("hmac-sha256");
+    expect(meta.defaultTemplate).toBe("user.created");
+  });
+});
+
+describe("Resend templates produce verifiable Svix-signed requests", () => {
+  const secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+
+  for (const template of TEMPLATE_METADATA.resend.templates) {
+    it(`resend/${template} has the Resend body shape and verifies`, async () => {
+      const result = await buildTemplate("resend", { template, secret });
+      const body = parseBody(result.body) as Record<string, unknown>;
+      expect(body.type).toBe(template);
+      expect(typeof body.created_at).toBe("string");
+      expect(body.data).toBeTypeOf("object");
+      expect(body).not.toHaveProperty("object");
+
+      // Resend sends only the svix-* headers, not webhook-*.
+      expect(getHeader(result.headers, "svix-id")).toMatch(/^msg_/);
+      expect(getHeader(result.headers, "svix-timestamp")).toMatch(/^\d+$/);
+      expect(getHeader(result.headers, "svix-signature")).toMatch(/^v1,[A-Za-z0-9+/]+=*$/);
+      expect(getHeader(result.headers, "webhook-signature")).toBeUndefined();
+
+      expect(await verifyResendSignature(result.body, result.headers, secret)).toBe(true);
+      expect(
+        await verifyResendSignature(result.body, result.headers, "whsec_plJ3nmyCDGBKInavdOK15jsl")
+      ).toBe(false);
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "resend", secret }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+});
+
+describe("WorkOS templates produce verifiable t=<ms>, v1=<hex> requests", () => {
+  for (const template of TEMPLATE_METADATA.workos.templates) {
+    it(`workos/${template} has the WorkOS body shape and verifies`, async () => {
+      const result = await buildTemplate("workos", { template });
+      const body = parseBody(result.body) as Record<string, unknown>;
+      expect(body.event).toBe(template);
+      expect(body.id).toMatch(/^event_01[0-9A-F]{24}$/);
+      expect(body.data).toBeTypeOf("object");
+
+      const sig = getHeader(result.headers, "workos-signature");
+      expect(sig).toMatch(/^t=\d{13}, v1=[0-9a-f]{64}$/);
+
+      expect(await verifyWorkOSSignature(result.body, sig, TEST_SECRET)).toBe(true);
+      expect(await verifyWorkOSSignature(result.body, sig, "wrong_secret")).toBe(false);
+      const verification = await verifySignature(
+        { body: result.body, headers: result.headers },
+        { provider: "workos", secret: TEST_SECRET }
+      );
+      expect(verification.valid).toBe(true);
+    });
+  }
+
+  it("turns a seconds timestamp override into milliseconds", async () => {
+    const result = await buildTemplateSendOptions(ENDPOINT_URL, {
+      provider: "workos",
+      secret: TEST_SECRET,
+      timestamp: 1_700_000_000,
+    });
+    expect(result.headers?.["workos-signature"]).toMatch(/^t=1700000000000, v1=[0-9a-f]{64}$/);
   });
 });

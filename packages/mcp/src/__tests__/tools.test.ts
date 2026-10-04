@@ -135,6 +135,8 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
           "adyen",
           "paypal",
           "plaid",
+          "resend",
+          "workos",
         ]),
       get: vi.fn((provider: string) => ({ provider, templates: [], secretRequired: true })),
       ...(overrides.templates ?? {}),
@@ -302,10 +304,12 @@ describe("registerTools", () => {
         "adyen",
         "paypal",
         "plaid",
+        "resend",
+        "workos",
       ])
     );
-    // 21 tier-1 + 7 tier-2 + 4 tier-3 = 32 named providers in the catalog.
-    expect(providers).toHaveLength(32);
+    // 21 tier-1 + 7 tier-2 + 4 tier-3 + Resend and WorkOS = 34 named providers.
+    expect(providers).toHaveLength(34);
   });
 
   // verify_signature exercises the real SDK verification path through the MCP
@@ -551,6 +555,48 @@ describe("registerTools", () => {
         })
       );
       expect(bad.valid).toBe(false);
+    });
+  });
+
+  describe("verify_signature for Resend and WorkOS", () => {
+    async function verifyThroughTool(
+      provider: string,
+      body: string,
+      headers: Record<string, string>,
+      secret: string
+    ) {
+      const request = makeRequest({ body, headers });
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: { get: vi.fn(async () => request) } as unknown as WebhooksCC["requests"],
+        })
+      );
+      return parseJsonResult(
+        await tools.verify_signature.handler({ requestId: request.id, provider, secret })
+      );
+    }
+
+    it("verifies a Resend (Svix) signature from the published test vector", async () => {
+      const body = '{"email":"test@example.com","username":"test_user"}';
+      const headers = {
+        "svix-id": "msg_27UH4WbU6Z5A5EzD8u03UvzRbpk",
+        "svix-timestamp": "1649367553",
+        "svix-signature": "v1,tZ1I4/hDygAJgO5TYxiSd6Sd0kDW6hPenDe+bTa3Kkw=",
+      };
+      const secret = "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD";
+      expect((await verifyThroughTool("resend", body, headers, secret)).valid).toBe(true);
+      expect(
+        (await verifyThroughTool("resend", body, headers, "whsec_plJ3nmyCDGBKInavdOK15jsl")).valid
+      ).toBe(false);
+    });
+
+    it("verifies a WorkOS t=<ms>, v1=<hex> signature", async () => {
+      const body = '{"event":"user.created","id":"event_01","data":{}}';
+      const secret = "whsec_0FWAiVGkEfGBqqsJH4aNAGBJ4";
+      const signature = createHmac("sha256", secret).update(`1700000000000.${body}`).digest("hex");
+      const headers = { "workos-signature": `t=1700000000000, v1=${signature}` };
+      expect((await verifyThroughTool("workos", body, headers, secret)).valid).toBe(true);
+      expect((await verifyThroughTool("workos", body, headers, "wrong_secret")).valid).toBe(false);
     });
   });
 

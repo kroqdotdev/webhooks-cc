@@ -201,6 +201,18 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
     configHint: "Set the webhook URL when creating a Link token (or via /item/webhook/update)",
     category: "Identity & data",
   },
+  resend: {
+    blurb:
+      "Resend sends webhooks for email events such as sent, delivered, opened, clicked, bounced, and complained, plus domain and contact changes.",
+    configHint: "Dashboard → Webhooks, or via the Webhooks API",
+    category: "Communication",
+  },
+  workos: {
+    blurb:
+      "WorkOS sends webhooks for authentication, user, session, organization, SSO connection, directory sync, and invitation events.",
+    configHint: "Dashboard → Webhooks",
+    category: "Identity & data",
+  },
 };
 
 // Keyed by both the raw SDK algorithm ids and the catalog's formatted strings,
@@ -229,6 +241,8 @@ interface CaptureOnlyProvider extends ProviderEditorial {
   signatureAlgorithm: string | null;
   /** How the provider authenticates deliveries, when it is not a plain signature header. */
   signatureNote: string | null;
+  /** True when the header is only sent once the user turns signing or auth on. */
+  signatureOptional?: boolean;
 }
 
 const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
@@ -253,6 +267,18 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: null,
     signatureNote:
       "Auth0 does not sign payloads. Log streams send an optional static Authorization header value, Event Streams support bearer token auth, and log stream payloads are JSON lines.",
+  },
+  "aws-sns": {
+    label: "Amazon SNS",
+    blurb:
+      "Amazon SNS sends webhooks for each message published to a subscribed topic, plus SubscriptionConfirmation and UnsubscribeConfirmation messages.",
+    configHint:
+      "SNS console → Subscriptions → Create subscription (protocol HTTP or HTTPS), or the Subscribe API",
+    category: "Dev & deploy",
+    signatureHeader: null,
+    signatureAlgorithm: "RSA-SHA1",
+    signatureNote:
+      "Signed in the JSON body, not a header: a base64 RSA Signature (SHA1 for SignatureVersion 1, the default; SHA256 for 2) over newline-separated field names and values. Fetch SigningCertURL only if it is an HTTPS sns.*.amazonaws.com URL, and GET SubscribeURL only after the signature verifies.",
   },
   bigcommerce: {
     label: "BigCommerce",
@@ -297,6 +323,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "Basic auth",
     signatureNote:
       "Chargebee does not sign payloads. Protect the URL with optional HTTP Basic auth, and confirm each event by fetching it again through the Events API.",
+    signatureOptional: true,
   },
   "checkout-com": {
     label: "Checkout.com",
@@ -331,6 +358,30 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureNote:
       "Opt in with a webhook signing secret on the space. The signature covers a canonical request built from the headers listed in x-contentful-signed-headers, including x-contentful-timestamp.",
   },
+  "customer-io": {
+    label: "Customer.io",
+    blurb:
+      "Customer.io sends reporting webhooks for message sends, deliveries, opens, clicks, conversions, bounces, and failures across channels, plus subscription changes.",
+    configHint:
+      "Integrations → Reporting Webhooks → Add Reporting Webhook, or the App API (POST /v1/reporting_webhooks)",
+    category: "Communication",
+    signatureHeader: "x-cio-signature",
+    signatureAlgorithm: "HMAC-SHA256",
+    signatureNote:
+      "A hex-encoded HMAC of v0:{x-cio-timestamp}:{raw body}, keyed with the signing key shown on the Reporting Webhooks page.",
+  },
+  datadog: {
+    label: "Datadog",
+    blurb:
+      "Datadog sends webhooks for monitor alerts, such as metric, log, synthetics, RUM, and SLO alerts, plus incident, case, and security signal notifications.",
+    configHint:
+      "Integrations → Webhooks tile → Configuration, then mention @webhook-<name> in a monitor message",
+    category: "Dev & deploy",
+    signatureHeader: null,
+    signatureAlgorithm: "Basic auth",
+    signatureNote:
+      "Datadog does not sign payloads. It supports Basic auth credentials in the webhook URL, custom headers such as a shared token, and an OAuth 2.0 client credentials Auth Method that adds a Bearer token.",
+  },
   flutterwave: {
     label: "Flutterwave",
     blurb:
@@ -352,6 +403,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
       "Signing is optional and applies only when a secret is set on an admin webhook. The value has the WebSub form method=signature.",
+    signatureOptional: true,
   },
   juspay: {
     label: "Juspay",
@@ -364,6 +416,17 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureNote:
       "Not a payload signature: you set a username and password in the Juspay dashboard, and Juspay sends them as an HTTP Basic Authorization header. Custom headers can be added as an extra check.",
   },
+  loops: {
+    label: "Loops",
+    blurb:
+      "Loops sends webhooks for contact and mailing list changes, email sends, and delivery, bounce, open, click, unsubscribe, and spam complaint events.",
+    configHint: "Settings → Webhooks",
+    category: "Communication",
+    signatureHeader: "webhook-signature",
+    signatureAlgorithm: "HMAC-SHA256",
+    signatureNote:
+      "The header holds space-separated v1,{base64} entries, each an HMAC of {webhook-id}.{webhook-timestamp}.{raw body} keyed with the signing secret minus its whsec_ prefix, base64-decoded. After a secret roll, both secrets sign for 24 hours.",
+  },
   mailchimp: {
     label: "Mailchimp",
     blurb:
@@ -374,6 +437,18 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
       "Signing is optional and turned on per webhook. The header has the form t={timestamp},v1={hex}, and the HMAC covers {timestamp}.{raw_body}.",
+    signatureOptional: true,
+  },
+  make: {
+    label: "Make",
+    blurb:
+      "Make sends webhooks from scenarios through the HTTP app's Make a request module, which sends POST, PUT, PATCH, or other requests with data from earlier modules.",
+    configHint: "Scenario → HTTP → Make a request → URL",
+    category: "Commerce & SaaS",
+    signatureHeader: null,
+    signatureAlgorithm: null,
+    signatureNote:
+      "Make does not sign requests. Make a request can attach an API key (header or query), Basic auth, or OAuth 2.0 credentials and present a client certificate over Mutual TLS, and Make publishes egress IPs per zone for allowlisting.",
   },
   mollie: {
     label: "Mollie",
@@ -409,6 +484,30 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureNote:
       "Notion first sends a one-time verification request with a verification_token, which you paste back into the integration settings. That token is also the HMAC key for later deliveries.",
   },
+  okta: {
+    label: "Okta",
+    blurb:
+      "Okta sends webhooks for eligible System Log events through Event Hooks, such as user lifecycle changes, user sign-ins, and changes to Okta objects.",
+    configHint:
+      "Admin Console → Workflow → Event Hooks → Create Event Hook, or the Event Hooks API (POST /api/v1/eventHooks)",
+    category: "Identity & data",
+    signatureHeader: "authorization",
+    signatureAlgorithm: "Shared token",
+    signatureNote:
+      "Okta does not sign payloads. It sends a static secret in a header you name (usually Authorization, for example a Basic auth value). A one-time verification GET carries x-okta-verification-challenge; return its value in a JSON verification field.",
+  },
+  pagerduty: {
+    label: "PagerDuty",
+    blurb:
+      "PagerDuty sends webhooks for incident events such as triggered, acknowledged, escalated, and resolved, plus service created, updated, and deleted events.",
+    configHint:
+      "Integrations → Generic Webhooks (v3) → New Webhook, or the REST API (POST /webhook_subscriptions)",
+    category: "Dev & deploy",
+    signatureHeader: "x-pagerduty-signature",
+    signatureAlgorithm: "HMAC-SHA256",
+    signatureNote:
+      "The value is v1={hex}, an HMAC of the raw body keyed with the secret PagerDuty returns when the subscription is created. During secret rotation the header carries several comma-separated v1 signatures; accept a match on any.",
+  },
   paystack: {
     label: "Paystack",
     blurb:
@@ -430,16 +529,29 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureNote:
       "Postmark does not sign payloads. It recommends HTTP Basic auth credentials in the webhook URL plus allowlisting Postmark's IP ranges.",
   },
-  resend: {
-    label: "Resend",
+  salesforce: {
+    label: "Salesforce",
     blurb:
-      "Resend sends webhooks for email events such as sent, delivered, opened, clicked, bounced, and complained, plus domain and contact changes.",
-    configHint: "Dashboard → Webhooks, or via the Webhooks API",
-    category: "Communication",
-    signatureHeader: "svix-signature",
-    signatureAlgorithm: "HMAC-SHA256",
+      "Salesforce sends webhooks as outbound messages: SOAP notifications with selected record fields, triggered by flows, workflow rules, and approval processes.",
+    configHint:
+      "Setup → Outbound Messages → New Outbound Message, then add it to a flow or workflow rule",
+    category: "Commerce & SaaS",
+    signatureHeader: null,
+    signatureAlgorithm: "Mutual TLS",
     signatureNote:
-      "Resend delivers through Svix: verify the svix-id, svix-timestamp, and svix-signature headers with the signing secret from the webhook's details page.",
+      "Outbound messages are not signed. Check that the SOAP body's OrganizationId is yours, optionally require Salesforce's client certificate and allowlist its IP ranges, and answer with a SOAP notificationsResponse whose Ack is true.",
+  },
+  segment: {
+    label: "Segment",
+    blurb:
+      "Segment sends webhooks for Track, Identify, Page, Screen, Group, and Alias calls from connected sources through its Webhooks (Actions) destination.",
+    configHint: "Connections → Catalog → Webhooks (Actions), then set the URL in a mapping",
+    category: "Identity & data",
+    signatureHeader: "x-signature",
+    signatureAlgorithm: "HMAC-SHA1",
+    signatureNote:
+      "Only sent when a shared secret is set under Settings → Advanced Settings. The value is a hex HMAC of the JSON request body keyed with that secret; with batching enabled, Segment signs only the first event in the batch.",
+    signatureOptional: true,
   },
   supabase: {
     label: "Supabase",
@@ -474,16 +586,6 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote: "A base64-encoded HMAC of the payload, keyed with the webhook secret.",
   },
-  workos: {
-    label: "WorkOS",
-    blurb:
-      "WorkOS sends webhooks for authentication, user, session, organization, SSO connection, directory sync, and invitation events.",
-    configHint: "Dashboard → Webhooks",
-    category: "Identity & data",
-    signatureHeader: "workos-signature",
-    signatureAlgorithm: "HMAC-SHA256",
-    signatureNote: "The header holds a timestamp and a v1 signature separated by a comma.",
-  },
   yousign: {
     label: "Yousign",
     blurb:
@@ -493,6 +595,18 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureHeader: "x-yousign-signature-256",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote: "A hex digest of the raw body with a sha256= prefix.",
+  },
+  zapier: {
+    label: "Zapier",
+    blurb:
+      "Zapier sends webhooks from Zap actions: Webhooks by Zapier POST, PUT, and Custom Request steps deliver data from earlier Zap steps to any URL.",
+    configHint: "Zap editor → Action → Webhooks by Zapier → POST, PUT, or Custom Request",
+    category: "Commerce & SaaS",
+    signatureHeader: "authorization",
+    signatureAlgorithm: "Basic auth",
+    signatureNote:
+      "Zapier does not sign payloads. Each action can add custom headers and HTTP Basic auth (username and password or API key); every request carries User-Agent: Zapier, and Professional and higher plans can send from static IP ranges.",
+    signatureOptional: true,
   },
   zendesk: {
     label: "Zendesk",
@@ -539,6 +653,8 @@ export interface WebhookProviderPage {
   signatureNote: string | null;
   /** False for capture-only providers: no SDK templates and no signature verification. */
   inSdk: boolean;
+  /** True when deliveries only carry the signature or auth header once the user configures it. */
+  signatureOptional: boolean;
 }
 
 export const WEBHOOK_PROVIDER_SLUGS: readonly string[] = [
@@ -606,6 +722,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     credentialLabel: getWebProviderCredentialLabel(provider),
     signatureNote: null,
     inSdk: true,
+    signatureOptional: false,
   };
 }
 
@@ -628,7 +745,16 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     credentialLabel: "",
     signatureNote: provider.signatureNote,
     inSdk: false,
+    signatureOptional: provider.signatureOptional ?? false,
   };
+}
+
+/**
+ * "a" or "an" for a provider label, by its first letter: "an Amazon SNS
+ * webhook", "a Stripe webhook". No label starts with a "you"-sounding U.
+ */
+export function indefiniteArticle(label: string): "a" | "an" {
+  return /^[aeiou]/i.test(label) ? "an" : "a";
 }
 
 export function getAllWebhookProviderPages(): readonly WebhookProviderPage[] {

@@ -221,7 +221,8 @@ export function isSendGridWebhook(request: Request): boolean {
 
 /**
  * Check if a request looks like a Clerk webhook.
- * Matches on the `svix-id` header being present.
+ * Matches on the `svix-id` header being present, unless the body has the
+ * Resend shape (Resend also delivers through Svix).
  */
 export function isClerkWebhook(request: Request): boolean {
   return isDetectedProvider(request, "clerk");
@@ -347,6 +348,23 @@ export function isPlaidWebhook(request: Request): boolean {
   return isDetectedProvider(request, "plaid");
 }
 
+/**
+ * Check if a request looks like a Resend webhook.
+ * Matches on the `svix-id` header plus a `{ type, created_at, data }` body whose
+ * type is an email, contact, domain, suppression, topic, or inbox event.
+ */
+export function isResendWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "resend");
+}
+
+/**
+ * Check if a request looks like a WorkOS webhook.
+ * Matches on the `workos-signature` header being present.
+ */
+export function isWorkOSWebhook(request: Request): boolean {
+  return isDetectedProvider(request, "workos");
+}
+
 function getEventString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -436,6 +454,9 @@ function extractDiscordEvent(request: Pick<WebhookLike, "body">): string | null 
 
   return getEventString(body.type);
 }
+
+/** Resend's documented event families; Clerk's `email.created` never matches (its body has `object`). */
+const RESEND_EVENT_TYPE = /^(email|contact|domain|suppression|topic|inbox)\./;
 
 type Detector = {
   provider: TemplateProvider;
@@ -537,6 +558,14 @@ const DETECTORS: readonly Detector[] = [
     event: (request) => getEventString(extractJsonField(request, "type")),
   },
   {
+    provider: "workos",
+    via: "header",
+    matchedOn: "workos-signature",
+    matches: (request) => getHeaderValue(request.headers, "workos-signature") !== undefined,
+    // WorkOS names the event in `event`, not `type`.
+    event: (request) => getEventString(extractJsonField(request, "event")),
+  },
+  {
     provider: "sentry",
     via: "header",
     matchedOn: "sentry-hook-signature",
@@ -625,6 +654,30 @@ const DETECTORS: readonly Detector[] = [
     matchedOn: "body[].sg_event_id",
     matches: (request) => getJsonArrayFirstObject(request)?.sg_event_id !== undefined,
     event: (request) => getEventString(getJsonArrayFirstObject(request)?.event),
+  },
+  {
+    // Resend delivers through Svix like Clerk, so the headers cannot tell them
+    // apart; this must stay ahead of the Clerk entry. Resend bodies are
+    // { type, created_at, data } with no `object`, while Clerk's carry
+    // object: "event" and a numeric timestamp.
+    provider: "resend",
+    via: "body",
+    matchedOn: "svix-id + body.type",
+    matches: (request) => {
+      if (getHeaderValue(request.headers, "svix-id") === undefined) {
+        return false;
+      }
+      const body = getJsonObject(request);
+      const type = getEventString(body?.type);
+      return (
+        body !== null &&
+        body.object === undefined &&
+        typeof body.created_at === "string" &&
+        type !== null &&
+        RESEND_EVENT_TYPE.test(type)
+      );
+    },
+    event: (request) => getEventString(extractJsonField(request, "type")),
   },
   {
     provider: "clerk",
