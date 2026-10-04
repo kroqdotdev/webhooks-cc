@@ -72,9 +72,15 @@ describe("webhook provider pages", () => {
     expect(getWebhookProviderPage("resend")?.lastModified.toISOString()).toBe(
       "2026-10-02T00:00:00.000Z"
     );
-    expect(getWebhookProviderPage("airtable")?.lastModified.toISOString()).toBe(
+    expect(getWebhookProviderPage("bigcommerce")?.lastModified.toISOString()).toBe(
       "2026-09-29T00:00:00.000Z"
     );
+    // #446 changed the FAQ wording ("an") on vowel-initial pages on 3 October.
+    for (const slug of ["adyen", "airtable", "auth0", "aws-sns", "intercom", "okta"]) {
+      expect(getWebhookProviderPage(slug)?.lastModified.toISOString(), slug).toBe(
+        "2026-10-03T00:00:00.000Z"
+      );
+    }
     const newest = Math.max(...pages.map((page) => page.lastModified.getTime()));
     expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
   });

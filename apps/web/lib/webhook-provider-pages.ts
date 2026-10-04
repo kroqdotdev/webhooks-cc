@@ -152,7 +152,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Intercom sends webhooks for conversations, contacts, and admin replies in your workspace.",
     configHint: "Intercom Developer Hub → your app → Webhooks",
     category: "Communication",
-    updated: "2026-08-21",
+    updated: "2026-10-03",
   },
   telegram: {
     blurb:
@@ -219,7 +219,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Adyen sends standard notification webhooks for authorisations, captures, refunds, and chargebacks.",
     configHint: "Adyen Customer Area → Developers → Webhooks → Create webhook",
     category: "Payments & billing",
-    updated: "2026-08-21",
+    updated: "2026-10-03",
   },
   paypal: {
     blurb:
@@ -288,7 +288,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Airtable sends webhook notifications when records, fields, or tables change in a base; the change payloads are then fetched through the API.",
     configHint: "Set via the Webhooks API (POST /v0/bases/{baseId}/webhooks)",
     category: "Identity & data",
-    updated: "2026-09-29",
+    updated: "2026-10-03",
     signatureHeader: "x-airtable-content-mac",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -300,7 +300,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Auth0 sends webhooks for tenant log events through Custom Webhook log streams, and for user lifecycle events such as user.created and user.deleted through Event Streams.",
     configHint: "Dashboard → Monitoring → Streams → Custom Webhook",
     category: "Identity & data",
-    updated: "2026-09-29",
+    updated: "2026-10-03",
     signatureHeader: null,
     signatureAlgorithm: null,
     signatureNote:
@@ -313,7 +313,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "SNS console → Subscriptions → Create subscription (protocol HTTP or HTTPS), or the Subscribe API",
     category: "Dev & deploy",
-    updated: "2026-10-02",
+    updated: "2026-10-03",
     signatureHeader: null,
     signatureAlgorithm: "RSA-SHA1",
     signatureNote:
@@ -548,7 +548,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     configHint:
       "Admin Console → Workflow → Event Hooks → Create Event Hook, or the Event Hooks API (POST /api/v1/eventHooks)",
     category: "Identity & data",
-    updated: "2026-10-02",
+    updated: "2026-10-03",
     signatureHeader: "authorization",
     signatureAlgorithm: "Shared token",
     signatureNote:
