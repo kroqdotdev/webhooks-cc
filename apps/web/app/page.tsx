@@ -843,6 +843,14 @@ export default async function Home() {
                   </Link>
                 </li>
                 <li>
+                  <Link
+                    href="/subprocessors"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Subprocessors
+                  </Link>
+                </li>
+                <li>
                   <Link href="/support" className="text-muted-foreground hover:text-foreground">
                     Support
                   </Link>
