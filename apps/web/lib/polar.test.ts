@@ -1,37 +1,41 @@
-import { PolarError } from "@polar-sh/sdk/models/errors/polarerror";
+import { PolarClientError, PolarNetworkError } from "@polar-sh/sdk";
+import { errors } from "@polar-sh/sdk/2026-10";
 import { describe, expect, test } from "vitest";
-import { describePolarError, loggablePolarError } from "./polar";
+import { describePolarError, loggablePolarError, polarErrorCode } from "./polar";
 
-const TOKEN = "polar_oat_super_secret_token";
+const EMAIL = "someone@example.com";
 
-function polarError(body: string, status = 422): PolarError {
-  return new PolarError("API error occurred", {
-    response: new Response(body, { status }),
-    request: new Request("https://api.polar.sh/v1/customers/", {
-      method: "POST",
-      headers: { authorization: `Bearer ${TOKEN}` },
-    }),
-    body,
-  });
+function validationError(): InstanceType<typeof errors.HTTPValidationError> {
+  return new errors.HTTPValidationError(422, {
+    detail: [
+      {
+        loc: ["body", "email"],
+        msg: "A customer with this email address already exists.",
+        type: "value_error",
+        input: EMAIL,
+      },
+    ],
+  } as never);
 }
 
 describe("loggablePolarError", () => {
-  test("strips the request (and its authorization header) from Polar SDK errors", () => {
-    const body = JSON.stringify({
-      error: "PolarRequestValidationError",
-      detail: [
-        { loc: ["body", "email"], msg: "A customer with this email address already exists." },
-      ],
-    });
+  test("keeps the status and detail of an HTTP error but not its message", () => {
+    const loggable = loggablePolarError(validationError());
 
-    const loggable = loggablePolarError(polarError(body));
-
-    expect(JSON.stringify(loggable)).not.toContain(TOKEN);
     expect(loggable).toMatchObject({
-      name: "PolarError",
+      name: "HTTPValidationError",
       statusCode: 422,
-      body,
       detail: "A customer with this email address already exists.",
+    });
+    // The message embeds the response body, which echoes the input email.
+    expect(JSON.stringify(loggable)).not.toContain(EMAIL);
+  });
+
+  test("keeps the message of a network error", () => {
+    expect(loggablePolarError(new PolarNetworkError("Request timed out"))).toMatchObject({
+      name: "PolarNetworkError",
+      statusCode: null,
+      message: expect.stringContaining("Request timed out"),
     });
   });
 
@@ -45,8 +49,43 @@ describe("loggablePolarError", () => {
 });
 
 describe("describePolarError", () => {
-  test("reads validation detail from the raw body", () => {
-    const error = polarError(JSON.stringify({ detail: "Seats cannot go below assigned seats" }));
+  test("reads a string detail from a parsed error body", () => {
+    const error = new PolarClientError(400, { detail: "Seats cannot go below assigned seats" });
     expect(describePolarError(error)).toBe("Seats cannot go below assigned seats");
+  });
+
+  test("reads validation messages", () => {
+    expect(describePolarError(validationError())).toBe(
+      "A customer with this email address already exists."
+    );
+  });
+
+  test("parses the raw text of an undeclared status code", () => {
+    const error = new PolarClientError(409, JSON.stringify({ detail: "Already in progress" }));
+    expect(describePolarError(error)).toBe("Already in progress");
+  });
+
+  test("returns null for a non-JSON body", () => {
+    expect(describePolarError(new PolarClientError(400, "<html>Bad gateway</html>"))).toBeNull();
+  });
+});
+
+describe("polarErrorCode", () => {
+  test("reads the code from a parsed body, even when the type says null", () => {
+    const error = new errors.CustomerSeatsAssignSeat400Error(400, {
+      error: "SeatNotAvailable",
+      detail: "No seats available",
+    } as never);
+    expect(polarErrorCode(error)).toBe("SeatNotAvailable");
+  });
+
+  test("reads the code from raw text", () => {
+    const error = new PolarClientError(400, JSON.stringify({ error: "SeatAlreadyAssigned" }));
+    expect(polarErrorCode(error)).toBe("SeatAlreadyAssigned");
+  });
+
+  test("returns null without a code", () => {
+    expect(polarErrorCode(new Error("boom"))).toBeNull();
+    expect(polarErrorCode(new PolarClientError(400, "plain text"))).toBeNull();
   });
 });

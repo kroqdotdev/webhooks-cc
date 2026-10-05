@@ -91,9 +91,10 @@ describe("audit", () => {
       data: {
         id: "seat-1",
         status: "revoked",
+        subscription_id: "sub-1",
         email: "someone@example.com",
         customer: { email: "someone@example.com" },
-        seatMetadata: { userId: "user-2", teamId: "team-1" },
+        seat_metadata: { userId: "user-2", teamId: "team-1" },
       },
     });
 
@@ -104,7 +105,7 @@ describe("audit", () => {
         team_id: "team-1",
         target_user_id: "user-2",
         target_id: "seat-1",
-        metadata: { id: "seat-1", status: "revoked" },
+        metadata: { id: "seat-1", status: "revoked", subscription_id: "sub-1" },
       })
     );
   });

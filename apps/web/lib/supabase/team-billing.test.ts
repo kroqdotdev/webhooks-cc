@@ -6,18 +6,21 @@ const mockFns = vi.hoisted(() => ({
   getPolarTeamsCheckoutConfig: vi.fn(),
 }));
 
-vi.mock("@/lib/polar", () => ({
-  createPolarClient: mockFns.createPolarClient,
-  getPolarTeamsCheckoutConfig: mockFns.getPolarTeamsCheckoutConfig,
-  loggablePolarError: (error: unknown) => error,
-  unwrapPolarResult: <T>(result: T) => result,
-}));
+vi.mock("@/lib/polar", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/polar")>();
+  return {
+    createPolarClient: mockFns.createPolarClient,
+    getPolarTeamsCheckoutConfig: mockFns.getPolarTeamsCheckoutConfig,
+    loggablePolarError: (error: unknown) => error,
+    polarErrorCode: actual.polarErrorCode,
+  };
+});
 
 vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
 }));
 
-import { PaymentFailed } from "@polar-sh/sdk/models/errors/paymentfailed";
+import { errors } from "@polar-sh/sdk/2026-10";
 import {
   TeamBillingError,
   applyTeamPolarWebhookEvent,
@@ -237,9 +240,12 @@ describe("createTeamCheckout", () => {
     );
 
     const customerCreate = vi.fn().mockResolvedValue({ id: "cus_team_1" });
-    const checkoutCreate = vi
-      .fn()
-      .mockResolvedValue({ url: "https://sandbox.polar.sh/checkout/team" });
+    const checkoutCreate = vi.fn().mockResolvedValue({
+      id: "chk_1",
+      url: "https://sandbox.polar.sh/checkout/team",
+      // Polar sends microseconds; the cache keeps milliseconds.
+      expires_at: "2026-10-05T13:30:00.123456Z",
+    });
     mockFns.createPolarClient.mockReturnValue({
       customers: { create: customerCreate },
       checkouts: { create: checkoutCreate },
@@ -256,15 +262,15 @@ describe("createTeamCheckout", () => {
     expect(customerCreate).toHaveBeenCalledWith({
       type: "team",
       name: "Acme",
-      externalId: "team:team_1",
+      external_id: "team:team_1",
       metadata: { teamId: "team_1" },
-      owner: { email: "owner@example.com", name: "Owner", externalId: "user_1" },
+      owner: { email: "owner@example.com", name: "Owner", external_id: "user_1" },
     });
     expect(checkoutCreate).toHaveBeenCalledWith({
       products: ["prod_teams_123"],
       seats: 5,
-      successUrl: "https://webhooks.cc/teams/team_1?subscribed=true",
-      customerId: "cus_team_1",
+      success_url: "https://webhooks.cc/teams/team_1?subscribed=true",
+      customer_id: "cus_team_1",
     });
     expect(recorded).toContainEqual({
       table: "teams",
@@ -284,8 +290,10 @@ describe("createTeamCheckout", () => {
     );
     expect(cacheWrite).toBeDefined();
     expect((cacheWrite!.payload as Record<string, unknown>).pending_checkout).toMatchObject({
+      id: "chk_1",
       url: "https://sandbox.polar.sh/checkout/team",
       seats: 5,
+      expires_at: "2026-10-05T13:30:00.123Z",
     });
     // The cache write is fenced on the lease token, so a stalled request that
     // lost its lease cannot overwrite a newer claimant's session.
@@ -611,9 +619,9 @@ describe("updateTeamSeats", () => {
 
     await updateTeamSeats("user_1", "team_1", 3);
 
-    expect(subscriptionUpdate).toHaveBeenCalledWith({
-      id: "sub_1",
-      subscriptionUpdate: { seats: 3, prorationBehavior: "next_period" },
+    expect(subscriptionUpdate).toHaveBeenCalledWith("sub_1", {
+      seats: 3,
+      proration_behavior: "next_period",
     });
     // Seats, member cap and pool stay as paid until the renewal.
     expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
@@ -637,9 +645,9 @@ describe("updateTeamSeats", () => {
       op: "rpc",
       payload: { p_team_id: "team_1", p_seats: 5 },
     });
-    expect(subscriptionUpdate).toHaveBeenCalledWith({
-      id: "sub_1",
-      subscriptionUpdate: { seats: 5, prorationBehavior: "next_period" },
+    expect(subscriptionUpdate).toHaveBeenCalledWith("sub_1", {
+      seats: 5,
+      proration_behavior: "next_period",
     });
   });
 
@@ -683,9 +691,9 @@ describe("updateTeamSeats", () => {
 
     await updateTeamSeats("user_1", "team_1", 6);
 
-    expect(subscriptionUpdate).toHaveBeenCalledWith({
-      id: "sub_1",
-      subscriptionUpdate: { seats: 6, prorationBehavior: "invoice" },
+    expect(subscriptionUpdate).toHaveBeenCalledWith("sub_1", {
+      seats: 6,
+      proration_behavior: "invoice",
     });
     expect(recorded).toContainEqual(rpcWrite);
   });
@@ -714,18 +722,10 @@ describe("updateTeamSeats", () => {
       })
     );
 
-    const body = JSON.stringify({
+    const declined = new errors.SubscriptionsUpdate402Error(402, {
       error: "PaymentFailed",
       detail: "Payment failed with reason: card_error.",
     });
-    const declined = new PaymentFailed(
-      { error: "PaymentFailed", detail: "Payment failed with reason: card_error." },
-      {
-        response: new Response(body, { status: 402 }),
-        request: new Request("https://api.polar.sh/v1/subscriptions/sub_1"),
-        body,
-      }
-    );
     const subscriptionUpdate = vi.fn().mockRejectedValue(declined);
     mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
 
@@ -797,8 +797,8 @@ describe("updateTeamSeats", () => {
     const subscriptionUpdate = vi.fn().mockResolvedValue({
       id: "sub_1",
       seats: 6,
-      modifiedAt,
-      pendingUpdate: { seats: 3, appliesAt: new Date("2026-11-01T00:00:00Z") },
+      modified_at: modifiedAt.toISOString(),
+      pending_update: { seats: 3, applies_at: new Date("2026-11-01T00:00:00Z").toISOString() },
     });
     mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
 
@@ -839,21 +839,17 @@ describe("seat assignment", () => {
 
     await expect(assignTeamSeat("team_1", "member@example.com", "user_2")).resolves.toBe("seat_1");
     expect(assignSeat).toHaveBeenCalledWith({
-      subscriptionId: "sub_1",
+      subscription_id: "sub_1",
       email: "member@example.com",
-      immediateClaim: true,
+      immediate_claim: true,
       metadata: { userId: "user_2", teamId: "team_1" },
     });
   });
 });
 
 describe("quoteTeamSeatChange", () => {
-  function pages<T>(items: T[]) {
-    return {
-      async *[Symbol.asyncIterator]() {
-        yield { result: { items } };
-      },
-    };
+  async function* iterate<T>(items: T[]) {
+    yield* items;
   }
 
   test("prices the change from Polar's live subscription and spends unused credit", async () => {
@@ -864,24 +860,24 @@ describe("quoteTeamSeatChange", () => {
       })
     );
     const get = vi.fn().mockResolvedValue({
-      customerId: "cus_team",
+      customer_id: "cus_team",
       seats: 4,
       amount: 4800,
-      currentPeriodStart: new Date(Date.now() - 15 * 86_400_000),
-      currentPeriodEnd: new Date(Date.now() + 15 * 86_400_000),
+      current_period_start: new Date(Date.now() - 15 * 86_400_000).toISOString(),
+      current_period_end: new Date(Date.now() + 15 * 86_400_000).toISOString(),
     });
-    const list = vi.fn().mockResolvedValue(
-      pages([
-        { totalAmount: 4800, appliedBalanceAmount: 0 },
-        { totalAmount: -300, appliedBalanceAmount: 0 },
+    const iterList = vi.fn(() =>
+      iterate([
+        { total_amount: 4800, applied_balance_amount: 0 },
+        { total_amount: -300, applied_balance_amount: 0 },
       ])
     );
-    mockFns.createPolarClient.mockReturnValue({ subscriptions: { get }, orders: { list } });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { get }, orders: { iterList } });
 
     const quote = await quoteTeamSeatChange("user_1", "team_1", 5);
 
-    expect(get).toHaveBeenCalledWith({ id: "sub_1" });
-    expect(list).toHaveBeenCalledWith({ customerId: "cus_team", limit: 100 });
+    expect(get).toHaveBeenCalledWith("sub_1");
+    expect(iterList).toHaveBeenCalledWith({ customer_id: "cus_team", limit: 100 });
     expect(quote.pricePerSeatCents).toBe(1200);
     // Half the period left: one seat is $6.00 (give or take the test's runtime),
     // $3.00 of it paid from credit.
@@ -935,9 +931,9 @@ describe("ensureOwnerSeat", () => {
 
     expect(assignSeat).toHaveBeenCalledWith(
       expect.objectContaining({
-        subscriptionId: "sub_1",
+        subscription_id: "sub_1",
         email: "Owner@Example.com",
-        immediateClaim: true,
+        immediate_claim: true,
         metadata: { userId: "user_owner", teamId: "team_1" },
       })
     );
@@ -956,7 +952,7 @@ describe("ensureOwnerSeat", () => {
       })
     );
     const listSeats = vi.fn().mockResolvedValue({
-      seats: [{ id: "seat_auto", status: "claimed", customerEmail: "owner@example.com" }],
+      seats: [{ id: "seat_auto", status: "claimed", customer_email: "owner@example.com" }],
     });
     const assignSeat = vi.fn();
     mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
@@ -1045,9 +1041,10 @@ describe("ensureOwnerSeat", () => {
         seats: [{ id: "seat_raced", status: "claimed", email: "owner@example.com" }],
       });
     const assignSeat = vi.fn().mockRejectedValue(
-      Object.assign(new Error("API error occurred"), {
-        body: '{"error":"SeatAlreadyAssigned","detail":"Seat already assigned"}',
-      })
+      new errors.CustomerSeatsAssignSeat400Error(400, {
+        error: "SeatAlreadyAssigned",
+        detail: "Seat already assigned",
+      } as never)
     );
     mockFns.createPolarClient.mockReturnValue({ customerSeats: { listSeats, assignSeat } });
 
@@ -1083,8 +1080,8 @@ describe("revokeTeamSeat", () => {
       totalSeats: 3,
       availableSeats: 1,
       seats: [
-        { id: "seat_old", status: "revoked", customerEmail: "member@example.com", email: null },
-        { id: "seat_1", status: "claimed", customerEmail: "Member@Example.com", email: null },
+        { id: "seat_old", status: "revoked", customer_email: "member@example.com", email: null },
+        { id: "seat_1", status: "claimed", customer_email: "Member@Example.com", email: null },
       ],
     });
     const revokeSeat = vi.fn().mockResolvedValue({ id: "seat_1" });
@@ -1092,8 +1089,8 @@ describe("revokeTeamSeat", () => {
 
     await revokeTeamSeat("team_1", null, "member@example.com");
 
-    expect(listSeats).toHaveBeenCalledWith({ subscriptionId: "sub_1" });
-    expect(revokeSeat).toHaveBeenCalledWith({ seatId: "seat_1" });
+    expect(listSeats).toHaveBeenCalledWith({ subscription_id: "sub_1" });
+    expect(revokeSeat).toHaveBeenCalledWith("seat_1");
   });
 
   test("never calls Polar for a team without a subscription", async () => {
@@ -1115,7 +1112,7 @@ describe("revokeTeamSeat", () => {
     mockFns.createPolarClient.mockReturnValue({ customerSeats: { revokeSeat } });
 
     await expect(revokeTeamSeat("team_1", "seat_1", "member@example.com")).resolves.toBeUndefined();
-    expect(revokeSeat).toHaveBeenCalledWith({ seatId: "seat_1" });
+    expect(revokeSeat).toHaveBeenCalledWith("seat_1");
     expect(consoleError).toHaveBeenCalled();
   });
 });
@@ -1137,10 +1134,7 @@ describe("subscription management", () => {
 
     await cancelTeamSubscription("user_1", "team_1");
 
-    expect(subscriptionUpdate).toHaveBeenCalledWith({
-      id: "sub_1",
-      subscriptionUpdate: { cancelAtPeriodEnd: true },
-    });
+    expect(subscriptionUpdate).toHaveBeenCalledWith("sub_1", { cancel_at_period_end: true });
     expect(recorded).toContainEqual({
       table: "teams",
       op: "update",
@@ -1202,10 +1196,7 @@ describe("subscription management", () => {
 
     await resubscribeTeam("user_1", "team_1");
 
-    expect(subscriptionUpdate).toHaveBeenCalledWith({
-      id: "sub_1",
-      subscriptionUpdate: { cancelAtPeriodEnd: false },
-    });
+    expect(subscriptionUpdate).toHaveBeenCalledWith("sub_1", { cancel_at_period_end: false });
     expect(recorded).toContainEqual({
       table: "teams",
       op: "update",
@@ -1219,7 +1210,7 @@ describe("subscription management", () => {
 
     await revokeTeamSubscription("sub_1");
 
-    expect(revoke).toHaveBeenCalledWith({ id: "sub_1" });
+    expect(revoke).toHaveBeenCalledWith("sub_1");
   });
 });
 
@@ -1240,7 +1231,7 @@ describe("webhook events for a deleted team", () => {
 
     await applyTeamPolarWebhookEvent(eventType, "team_gone", {
       id: "sub_1",
-      customerId: "cus_1",
+      customer_id: "cus_1",
       status: "active",
       seats: 2,
     });
@@ -1253,7 +1244,7 @@ describe("webhook events for a deleted team", () => {
 
     await applyTeamPolarWebhookEvent("customer_seat.revoked", "team_gone", {
       id: "seat_1",
-      seatMetadata: { userId: "user_2", teamId: "team_gone" },
+      seat_metadata: { userId: "user_2", teamId: "team_gone" },
     });
 
     expect(recorded.filter((call) => call.op === "delete")).toEqual([]);
@@ -1265,7 +1256,7 @@ describe("webhook events for a deleted team", () => {
     await expect(
       applyTeamPolarWebhookEvent("customer_seat.assigned", "team_gone", {
         id: "seat_1",
-        seatMetadata: { userId: "user_2", teamId: "team_gone" },
+        seat_metadata: { userId: "user_2", teamId: "team_gone" },
       })
     ).resolves.toBeUndefined();
   });
@@ -1274,12 +1265,12 @@ describe("webhook events for a deleted team", () => {
 describe("subscription event guards", () => {
   const subscriptionEvent = (id: string, overrides: Record<string, unknown> = {}) => ({
     id,
-    customerId: "cus_1",
+    customer_id: "cus_1",
     status: "active",
     seats: 3,
-    currentPeriodStart: new Date("2026-08-01T00:00:00Z"),
-    currentPeriodEnd: new Date("2026-08-31T00:00:00Z"),
-    cancelAtPeriodEnd: false,
+    current_period_start: new Date("2026-08-01T00:00:00Z").toISOString(),
+    current_period_end: new Date("2026-08-31T00:00:00Z").toISOString(),
+    cancel_at_period_end: false,
     ...overrides,
   });
 
@@ -1363,7 +1354,7 @@ describe("subscription event guards", () => {
     });
   });
 
-  test("mirrors Polar's scheduled seat change, versioned by modifiedAt", async () => {
+  test("mirrors Polar's scheduled seat change, versioned by modified_at", async () => {
     const liveRow = {
       data: {
         polar_subscription_id: "sub_1",
@@ -1382,8 +1373,8 @@ describe("subscription event guards", () => {
       "team_1",
       subscriptionEvent("sub_1", {
         seats: 5,
-        modifiedAt,
-        pendingUpdate: { seats: 3, appliesAt: new Date("2026-08-31T00:00:00Z") },
+        modified_at: modifiedAt.toISOString(),
+        pending_update: { seats: 3, applies_at: new Date("2026-08-31T00:00:00Z").toISOString() },
       })
     );
 
@@ -1403,7 +1394,7 @@ describe("subscription event guards", () => {
     ]);
   });
 
-  test("an event without modifiedAt leaves the schedule alone", async () => {
+  test("an event without modified_at leaves the schedule alone", async () => {
     const liveRow = {
       data: {
         polar_subscription_id: "sub_1",
@@ -1419,7 +1410,7 @@ describe("subscription event guards", () => {
     await applyTeamPolarWebhookEvent(
       "subscription.updated",
       "team_1",
-      subscriptionEvent("sub_1", { pendingUpdate: { seats: 3 } })
+      subscriptionEvent("sub_1", { pending_update: { seats: 3 } })
     );
 
     expect(teamsUpdates()).toHaveLength(1);
@@ -1509,25 +1500,25 @@ describe("extractTeamIdFromWebhook", () => {
   test("prefers the customer metadata team id", () => {
     expect(
       extractTeamIdFromWebhook({
-        customer: { metadata: { teamId: "team_1" }, externalId: "team:other" },
+        customer: { metadata: { teamId: "team_1" }, external_id: "team:other" },
       })
     ).toBe("team_1");
   });
 
   test("strips the team prefix from the customer external id", () => {
-    expect(extractTeamIdFromWebhook({ customer: { externalId: "team:team_2" } })).toBe("team_2");
+    expect(extractTeamIdFromWebhook({ customer: { external_id: "team:team_2" } })).toBe("team_2");
   });
 
   test("returns null for a personal customer", () => {
     expect(
       extractTeamIdFromWebhook({
-        customer: { externalId: "user_1", metadata: { userId: "user_1" } },
+        customer: { external_id: "user_1", metadata: { userId: "user_1" } },
       })
     ).toBeNull();
   });
 
   test("routes seat events by their seat metadata", () => {
-    expect(extractTeamIdFromWebhook({ id: "seat_1", seatMetadata: { teamId: "team_3" } })).toBe(
+    expect(extractTeamIdFromWebhook({ id: "seat_1", seat_metadata: { teamId: "team_3" } })).toBe(
       "team_3"
     );
   });

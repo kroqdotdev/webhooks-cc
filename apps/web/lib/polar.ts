@@ -1,5 +1,5 @@
-import { Polar } from "@polar-sh/sdk";
-import { PolarError } from "@polar-sh/sdk/models/errors/polarerror";
+import { PolarError, PolarNetworkError } from "@polar-sh/sdk";
+import { createPolar, type Polar } from "@polar-sh/sdk/2026-10";
 import { publicEnv } from "./env";
 
 class PolarConfigError extends Error {
@@ -20,9 +20,13 @@ function requireEnv(name: string): string {
 export function createPolarClient(): Polar {
   const accessToken = requireEnv("POLAR_ACCESS_TOKEN");
 
-  return new Polar({
+  return createPolar({
     accessToken,
-    server: process.env.POLAR_SANDBOX === "true" ? "sandbox" : "production",
+    environment: process.env.POLAR_SANDBOX === "true" ? "sandbox" : "production",
+    // The SDK gives up after 5 seconds by default and nothing retries, so a
+    // slow Polar response would fail a checkout or seat charge that Polar
+    // still completes. Stays under the 60 second checkout lease.
+    timeout: 30,
   });
 }
 
@@ -44,29 +48,6 @@ export function getPolarWebhookSecret(): string {
   return requireEnv("POLAR_WEBHOOK_SECRET");
 }
 
-export function unwrapPolarResult<T>(
-  result: T | { ok: true; value: T } | { ok: false; error: unknown },
-  operation: string
-): T {
-  if (result && typeof result === "object" && "ok" in result && typeof result.ok === "boolean") {
-    if (result.ok) {
-      return result.value;
-    }
-
-    const error = result.error;
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === "string"
-          ? error
-          : `Polar ${operation} failed`;
-
-    throw new Error(message);
-  }
-
-  return result;
-}
-
 function truncateDetail(value: string): string {
   const trimmed = value.trim();
   return trimmed.length > 200 ? `${trimmed.slice(0, 197)}...` : trimmed;
@@ -83,36 +64,58 @@ function messagesFromValidationDetail(detail: unknown): string | null {
 }
 
 /**
- * Extracts a short human-readable description from a Polar SDK error, or null
- * when there is nothing better than the generic message. Lets routes surface
- * validation detail (e.g. Polar rejecting an unroutable billing email) without
- * leaking raw response bodies. Duck-typed rather than instanceof so it also
- * covers errors re-wrapped by unwrapPolarResult.
+ * The parsed error body of a Polar client error: an object when the endpoint
+ * declares that status code, otherwise the raw response text, which is JSON
+ * for every 4xx Polar sends.
  */
-export function describePolarError(error: unknown): string | null {
+function polarErrorPayload(error: unknown): Record<string, unknown> | null {
   if (!error || typeof error !== "object") return null;
 
-  // HTTPValidationError carries FastAPI-style detail entries: {loc, msg, type}.
-  const fromDetail = messagesFromValidationDetail((error as { detail?: unknown }).detail);
-  if (fromDetail) return fromDetail;
-
-  // PolarError subclasses carry the raw response body; Polar 4xx bodies are
-  // JSON like {"detail": "..."} or {"error": "...", "error_description": "..."}.
-  const body = (error as { body?: unknown }).body;
-  if (typeof body === "string" && body.length > 0) {
+  const payload = (error as { error?: unknown }).error;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  if (typeof payload === "string" && payload.length > 0) {
     try {
-      const parsed = JSON.parse(body) as Record<string, unknown>;
-      if (typeof parsed.detail === "string" && parsed.detail.length > 0) {
-        return truncateDetail(parsed.detail);
-      }
-      const fromBodyDetail = messagesFromValidationDetail(parsed.detail);
-      if (fromBodyDetail) return fromBodyDetail;
-      if (typeof parsed.error_description === "string" && parsed.error_description.length > 0) {
-        return truncateDetail(parsed.error_description);
+      const parsed: unknown = JSON.parse(payload);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
       }
     } catch {
       // Non-JSON body: not safe to surface.
     }
+  }
+  return null;
+}
+
+/**
+ * The machine-readable error code Polar put in the body, such as
+ * `SeatNotAvailable` or `PaymentFailed`, or null.
+ */
+export function polarErrorCode(error: unknown): string | null {
+  const code = polarErrorPayload(error)?.error;
+  return typeof code === "string" && code.length > 0 ? code : null;
+}
+
+/**
+ * Extracts a short human-readable description from a Polar SDK error, or null
+ * when there is nothing better than the generic message. Lets routes surface
+ * validation detail (e.g. Polar rejecting an unroutable billing email) without
+ * leaking raw response bodies. Polar 4xx bodies are JSON like
+ * {"detail": "..."}, FastAPI-style {"detail": [{loc, msg, type}]}, or
+ * {"error": "...", "error_description": "..."}.
+ */
+export function describePolarError(error: unknown): string | null {
+  const payload = polarErrorPayload(error);
+  if (!payload) return null;
+
+  if (typeof payload.detail === "string" && payload.detail.length > 0) {
+    return truncateDetail(payload.detail);
+  }
+  const fromDetail = messagesFromValidationDetail(payload.detail);
+  if (fromDetail) return fromDetail;
+  if (typeof payload.error_description === "string" && payload.error_description.length > 0) {
+    return truncateDetail(payload.error_description);
   }
 
   return null;
@@ -121,28 +124,21 @@ export function describePolarError(error: unknown): string | null {
 export { PolarConfigError };
 
 /**
- * Reduces a Polar SDK error to the parts that are safe to log. SDK errors keep
- * the original Request (Authorization header included), so logging the error
- * object itself writes the access token to the journal. Non-Polar errors pass
- * through unchanged, so Supabase/Postgres errors keep their code/details/hint.
+ * Reduces a Polar SDK error to the parts that are safe to log. The message of
+ * an HTTP error embeds the whole response body, which can echo request input
+ * such as an email address, so only network errors keep theirs. Non-Polar
+ * errors pass through unchanged, so Supabase/Postgres errors keep their
+ * code/details/hint.
  */
 export function loggablePolarError(error: unknown): unknown {
-  const isPolarError =
-    error instanceof PolarError ||
-    (!!error && typeof error === "object" && "rawResponse" in error && "statusCode" in error);
-  if (!isPolarError) return error;
+  if (!(error instanceof PolarError)) return error;
 
-  const { name, message, statusCode, body } = error as {
-    name?: unknown;
-    message?: unknown;
-    statusCode?: unknown;
-    body?: unknown;
-  };
+  const statusCode = "statusCode" in error ? error.statusCode : null;
   return {
-    name: typeof name === "string" ? name : "PolarError",
-    message: typeof message === "string" ? message : String(message),
+    name: error.name,
     statusCode: typeof statusCode === "number" ? statusCode : null,
-    body: typeof body === "string" ? body : null,
+    code: polarErrorCode(error),
     detail: describePolarError(error),
+    message: error instanceof PolarNetworkError ? error.message : undefined,
   };
 }

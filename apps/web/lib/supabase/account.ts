@@ -1,5 +1,5 @@
 import { createAdminClient } from "./admin";
-import { createPolarClient, describePolarError, unwrapPolarResult } from "@/lib/polar";
+import { createPolarClient, describePolarError, polarErrorCode } from "@/lib/polar";
 import { revokeTeamSubscription } from "./team-billing";
 
 /**
@@ -18,8 +18,12 @@ export class AccountDeletionBillingError extends Error {
 }
 
 function isAlreadyCanceledError(error: unknown): boolean {
-  // Match against both the Polar detail and the error message: the detail can be
-  // present yet unrelated while the message carries the "already canceled" hint.
+  // Polar answers 403 with this code for a subscription that already ended.
+  if (polarErrorCode(error) === "AlreadyCanceledSubscription") return true;
+
+  // Fallback for other wordings: match against both the Polar detail and the
+  // error message, since the detail can be present yet unrelated while the
+  // message carries the "already canceled" hint.
   const haystack = [describePolarError(error), error instanceof Error ? error.message : null]
     .filter((part): part is string => typeof part === "string" && part.length > 0)
     .join(" ");
@@ -29,8 +33,7 @@ function isAlreadyCanceledError(error: unknown): boolean {
 async function revokePersonalSubscription(polarSubscriptionId: string): Promise<void> {
   const polar = createPolarClient();
   try {
-    const result = await polar.subscriptions.revoke({ id: polarSubscriptionId });
-    unwrapPolarResult(result, "subscription revoke");
+    await polar.subscriptions.revoke(polarSubscriptionId);
   } catch (error) {
     // A subscription Polar already ended (webhook still in flight) is fine to skip.
     if (isAlreadyCanceledError(error)) return;

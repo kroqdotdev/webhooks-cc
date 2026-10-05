@@ -1,8 +1,9 @@
 import { sendEmail } from "@/lib/email/mailer";
 import { buildTeamInviteEmail } from "@/lib/email/team-invite-email";
 import { publicEnv } from "@/lib/env";
+import { polarErrorCode } from "@/lib/polar";
 import { createAdminClient } from "./admin";
-import { assignTeamSeat, polarErrorCode, revokeTeamSeat } from "./team-billing";
+import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
 import { requireActiveTeam, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
 import type { TeamInvite, TeamInviteRow } from "./teams-types";
 

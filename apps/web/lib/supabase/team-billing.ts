@@ -2,9 +2,9 @@ import {
   createPolarClient,
   getPolarTeamsCheckoutConfig,
   loggablePolarError,
-  unwrapPolarResult,
+  polarErrorCode,
 } from "@/lib/polar";
-import { PaymentFailed } from "@polar-sh/sdk/models/errors/paymentfailed";
+import { errors } from "@polar-sh/sdk/2026-10";
 import { creditBalanceFromOrders, quoteSeatChange, type SeatChangeQuote } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
 import {
@@ -154,22 +154,21 @@ async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<string> {
   // receipts, and customer-portal sign-in from the owner member's email, and
   // member emails are only unique within a customer, so the same person can
   // own any number of teams and still hold a personal customer. The team's
-  // own identity stays on `externalId` for webhook routing.
+  // own identity stays on `external_id` for webhook routing.
   const polar = createPolarClient();
-  const result = await polar.customers.create({
+  const customer = await polar.customers.create({
     type: "team",
     name: team.name,
-    externalId: `team:${team.id}`,
+    external_id: `team:${team.id}`,
     metadata: {
       teamId: team.id,
     },
     owner: {
       email: owner.email,
       name: owner.name ?? undefined,
-      externalId: team.created_by,
+      external_id: team.created_by,
     },
   });
-  const customer = unwrapPolarResult(result, "team customer creation");
 
   await updateTeamById(team.id, { polar_customer_id: customer.id });
 
@@ -349,13 +348,12 @@ export async function createTeamCheckout(
     const { appUrl, teamsProductId } = getPolarTeamsCheckoutConfig();
     const customerId = await ensureTeamPolarCustomerId(team);
 
-    const result = await polar.checkouts.create({
+    const checkout = await polar.checkouts.create({
       products: [teamsProductId],
       seats,
-      successUrl: `${appUrl}/teams/${teamId}?subscribed=true`,
-      customerId,
+      success_url: `${appUrl}/teams/${teamId}?subscribed=true`,
+      customer_id: customerId,
     });
-    const checkout = unwrapPolarResult(result, "team checkout creation");
 
     // Replace the lease with the session for the reuse path, fenced on the
     // lease token: a request stalled past the lease TTL must not overwrite a
@@ -368,7 +366,7 @@ export async function createTeamCheckout(
         url: checkout.url,
         seats,
         created_at: new Date().toISOString(),
-        expires_at: parseEventTimestamp(checkout.expiresAt),
+        expires_at: parseEventTimestamp(checkout.expires_at),
       });
     } catch (cacheError) {
       console.error("[team-billing] failed to cache pending checkout", { teamId, cacheError });
@@ -395,13 +393,7 @@ export async function cancelTeamSubscription(userId: string, teamId: string): Pr
   }
 
   const polar = createPolarClient();
-  const result = await polar.subscriptions.update({
-    id: team.polar_subscription_id,
-    subscriptionUpdate: {
-      cancelAtPeriodEnd: true,
-    },
-  });
-  unwrapPolarResult(result, "team subscription cancel");
+  await polar.subscriptions.update(team.polar_subscription_id, { cancel_at_period_end: true });
 
   await updateTeamById(team.id, { cancel_at_period_end: true });
 }
@@ -416,13 +408,7 @@ export async function resubscribeTeam(userId: string, teamId: string): Promise<v
   }
 
   const polar = createPolarClient();
-  const result = await polar.subscriptions.update({
-    id: team.polar_subscription_id,
-    subscriptionUpdate: {
-      cancelAtPeriodEnd: false,
-    },
-  });
-  unwrapPolarResult(result, "team subscription reactivate");
+  await polar.subscriptions.update(team.polar_subscription_id, { cancel_at_period_end: false });
 
   await updateTeamById(team.id, { cancel_at_period_end: false });
 }
@@ -459,25 +445,25 @@ export async function updateTeamSeats(
     // declined charge leaves the Polar subscription unchanged, so the database
     // write below is skipped too.
     const polar = createPolarClient();
-    let result;
+    let increased: Record<string, unknown>;
     try {
-      result = await polar.subscriptions.update({
-        id: team.polar_subscription_id,
-        subscriptionUpdate: { seats, prorationBehavior: "invoice" },
-      });
+      increased = (await polar.subscriptions.update(team.polar_subscription_id, {
+        seats,
+        proration_behavior: "invoice",
+      })) as unknown as Record<string, unknown>;
     } catch (error) {
-      if (error instanceof PaymentFailed) {
+      // 402 covers a declined card (PaymentFailed) and a charge that needs the
+      // cardholder to authenticate (PaymentActionRequired); neither adds seats.
+      if (error instanceof errors.SubscriptionsUpdate402Error) {
         throw new TeamBillingError(
           "payment_failed",
-          "Your payment method was declined, so no seats were added. Update the card from the link in your Polar receipt email and try again."
+          error.error.error === "PaymentActionRequired"
+            ? "Your bank needs you to approve this payment, so no seats were added yet. Approve it from the link in your Polar receipt email, or update the card there, and try again."
+            : "Your payment method was declined, so no seats were added. Update the card from the link in your Polar receipt email and try again."
         );
       }
       throw error;
     }
-    const increased = unwrapPolarResult(result, "team seat update") as unknown as Record<
-      string,
-      unknown
-    >;
 
     const { data, error } = await admin.rpc("update_team_seats", {
       p_team_id: teamId,
@@ -556,11 +542,10 @@ export async function updateTeamSeats(
   let updated: Record<string, unknown>;
   try {
     const polar = createPolarClient();
-    const result = await polar.subscriptions.update({
-      id: team.polar_subscription_id,
-      subscriptionUpdate: { seats, prorationBehavior: "next_period" },
-    });
-    updated = unwrapPolarResult(result, "team seat update") as unknown as Record<string, unknown>;
+    updated = (await polar.subscriptions.update(team.polar_subscription_id, {
+      seats,
+      proration_behavior: "next_period",
+    })) as unknown as Record<string, unknown>;
   } catch (polarError) {
     // Polar never saw the change, so put the previous schedule back, but only
     // while the row still holds this request's value: an overlapping request
@@ -615,32 +600,32 @@ export async function quoteTeamSeatChange(
   }
 
   const polar = createPolarClient();
-  const subscription = unwrapPolarResult(
-    await polar.subscriptions.get({ id: team.polar_subscription_id }),
-    "team subscription get"
-  );
+  const subscription = await polar.subscriptions.get(team.polar_subscription_id);
   const currentSeats = subscription.seats ?? team.seats;
   if (!currentSeats || currentSeats <= 0) {
     throw new TeamBillingError("seat_update_failed", "Could not read the current seat count");
   }
 
   const orders: Array<{ totalAmount: number; appliedBalanceAmount: number }> = [];
-  for await (const page of await polar.orders.list({
-    customerId: subscription.customerId,
+  for await (const order of polar.orders.iterList({
+    customer_id: subscription.customer_id,
     limit: 100,
   })) {
-    orders.push(...page.result.items);
+    orders.push({
+      totalAmount: order.total_amount,
+      appliedBalanceAmount: order.applied_balance_amount,
+    });
   }
 
-  const pendingSeats = subscription.pendingUpdate?.seats ?? null;
+  const pendingSeats = subscription.pending_update?.seats ?? null;
 
   return quoteSeatChange({
     currentSeats,
     pendingSeats,
     newSeats: seats,
     pricePerSeatCents: Math.round(subscription.amount / currentSeats),
-    periodStartMs: subscription.currentPeriodStart.getTime(),
-    periodEndMs: subscription.currentPeriodEnd.getTime(),
+    periodStartMs: Date.parse(subscription.current_period_start),
+    periodEndMs: Date.parse(subscription.current_period_end),
     creditBalanceCents: creditBalanceFromOrders(orders),
   });
 }
@@ -648,8 +633,7 @@ export async function quoteTeamSeatChange(
 /** Cancels immediately. Used by team deletion, which revokes before deleting the row. */
 export async function revokeTeamSubscription(polarSubscriptionId: string): Promise<void> {
   const polar = createPolarClient();
-  const result = await polar.subscriptions.revoke({ id: polarSubscriptionId });
-  unwrapPolarResult(result, "team subscription revoke");
+  await polar.subscriptions.revoke(polarSubscriptionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -671,18 +655,17 @@ export async function assignTeamSeat(
   }
 
   const polar = createPolarClient();
-  const result = await polar.customerSeats.assignSeat({
-    subscriptionId,
+  const seat = await polar.customerSeats.assignSeat({
+    subscription_id: subscriptionId,
     email,
     // Defaults to false, which makes Polar email an invitation. Membership is
     // granted by our own invite flow, so claim the seat immediately instead.
-    immediateClaim: true,
+    immediate_claim: true,
     metadata: {
       userId: memberUserId,
       teamId,
     },
   });
-  const seat = unwrapPolarResult(result, "team seat assign");
 
   return asNonEmptyString(seat.id);
 }
@@ -706,13 +689,12 @@ export async function revokeTeamSeat(
     let targetSeatId = seatId;
 
     if (!targetSeatId) {
-      const listResult = await polar.customerSeats.listSeats({ subscriptionId });
-      const list = unwrapPolarResult(listResult, "team seat list");
+      const list = await polar.customerSeats.listSeats({ subscription_id: subscriptionId });
       const wanted = email.toLowerCase();
       const match = list.seats.find(
         (seat) =>
           seat.status !== "revoked" &&
-          (seat.customerEmail?.toLowerCase() === wanted || seat.email?.toLowerCase() === wanted)
+          (seat.customer_email?.toLowerCase() === wanted || seat.email?.toLowerCase() === wanted)
       );
       targetSeatId = match?.id ?? null;
     }
@@ -721,26 +703,13 @@ export async function revokeTeamSeat(
       return;
     }
 
-    const revokeResult = await polar.customerSeats.revokeSeat({ seatId: targetSeatId });
-    unwrapPolarResult(revokeResult, "team seat revoke");
+    await polar.customerSeats.revokeSeat(targetSeatId);
   } catch (error) {
     console.error("[team-billing] failed to revoke Polar seat", {
       teamId,
       seatId,
       error: loggablePolarError(error),
     });
-  }
-}
-
-/** The `error` code from a Polar API error body, e.g. "SeatNotAvailable". */
-export function polarErrorCode(error: unknown): string | null {
-  const body = (error as { body?: unknown } | null)?.body;
-  if (typeof body !== "string") return null;
-  try {
-    const parsed = JSON.parse(body) as { error?: unknown };
-    return typeof parsed.error === "string" ? parsed.error : null;
-  } catch {
-    return null;
   }
 }
 
@@ -789,14 +758,11 @@ export async function ensureOwnerSeat(teamId: string): Promise<void> {
     const polar = createPolarClient();
     const wanted = email.toLowerCase();
     const listOwnerSeats = async () => {
-      const list = unwrapPolarResult(
-        await polar.customerSeats.listSeats({ subscriptionId }),
-        "team seat list"
-      );
+      const list = await polar.customerSeats.listSeats({ subscription_id: subscriptionId });
       return list.seats.filter(
         (seat) =>
           seat.status !== "revoked" &&
-          (seat.customerEmail?.toLowerCase() === wanted || seat.email?.toLowerCase() === wanted)
+          (seat.customer_email?.toLowerCase() === wanted || seat.email?.toLowerCase() === wanted)
       );
     };
 
@@ -863,23 +829,23 @@ export function extractTeamIdFromWebhook(data: Record<string, unknown>): string 
       return metadataTeamId;
     }
 
-    const externalId = asNonEmptyString(customer.externalId);
+    const externalId = asNonEmptyString(customer.external_id);
     if (externalId?.startsWith("team:")) {
       return asNonEmptyString(externalId.slice("team:".length));
     }
   }
 
-  const seatMetadata = asRecord(data.seatMetadata) ?? asRecord(data.metadata);
+  const seatMetadata = asRecord(data.seat_metadata) ?? asRecord(data.metadata);
   return seatMetadata ? asNonEmptyString(seatMetadata.teamId) : null;
 }
 
 function extractSeatUserId(data: Record<string, unknown>): string | null {
-  const metadata = asRecord(data.seatMetadata) ?? asRecord(data.metadata);
+  const metadata = asRecord(data.seat_metadata) ?? asRecord(data.metadata);
   return metadata ? asNonEmptyString(metadata.userId) : null;
 }
 
 function extractSeatEmail(data: Record<string, unknown>): string | null {
-  return asNonEmptyString(data.customerEmail) ?? asNonEmptyString(data.email);
+  return asNonEmptyString(data.customer_email) ?? asNonEmptyString(data.email);
 }
 
 async function findUserIdByEmail(email: string): Promise<string | null> {
@@ -914,14 +880,14 @@ async function resolveSeatMemberId(data: Record<string, unknown>): Promise<strin
 
 /** Seats in the subscription's pending update, or null when nothing is scheduled. */
 function pendingSeatsFromEvent(data: Record<string, unknown>): number | null {
-  const pending = asRecord(data.pendingUpdate);
+  const pending = asRecord(data.pending_update);
   const seats = pending?.seats;
   return typeof seats === "number" && Number.isInteger(seats) && seats > 0 ? seats : null;
 }
 
 /**
  * Mirrors a Polar subscription's scheduled seat change into
- * `teams.pending_seats`, accepting only a newer `modifiedAt` than the one
+ * `teams.pending_seats`, accepting only a newer `modified_at` than the one
  * already applied: a late or retried event for an earlier change must not
  * restore a schedule (and with it a looser member cap) that Polar has since
  * replaced. `subscription` is a webhook payload or an API response.
@@ -931,7 +897,7 @@ async function syncPendingSeats(
   subscriptionId: string,
   subscription: Record<string, unknown>
 ): Promise<void> {
-  const asOf = parseEventTimestamp(subscription.modifiedAt);
+  const asOf = parseEventTimestamp(subscription.modified_at);
   if (asOf === null) {
     return;
   }
@@ -970,7 +936,7 @@ async function applyTeamSubscriptionState(
   }
 
   const subscriptionId = asNonEmptyString(data.id);
-  const customerId = asNonEmptyString(data.customerId);
+  const customerId = asNonEmptyString(data.customer_id);
 
   // The team already tracks a live subscription and this event describes a
   // different one. Applying it would let a stale cross-subscription event (or
@@ -1029,7 +995,7 @@ async function applyTeamSubscriptionState(
   const isNewSubscription =
     subscriptionId !== null && subscriptionId !== team.polar_subscription_id;
 
-  const incomingPeriodStart = parseEventTimestamp(data.currentPeriodStart);
+  const incomingPeriodStart = parseEventTimestamp(data.current_period_start);
   const incomingPeriodStartMs = incomingPeriodStart ? Date.parse(incomingPeriodStart) : null;
   const storedPeriodStartMs = team.period_start ? Date.parse(team.period_start) : null;
 
@@ -1072,9 +1038,9 @@ async function applyTeamSubscriptionState(
     seats,
     request_limit: seats * TEAM_SEAT_REQUEST_LIMIT,
     period_start: isStalePeriod ? undefined : incomingPeriodStart,
-    period_end: isStalePeriod ? undefined : parseEventTimestamp(data.currentPeriodEnd),
+    period_end: isStalePeriod ? undefined : parseEventTimestamp(data.current_period_end),
     cancel_at_period_end:
-      typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
+      typeof data.cancel_at_period_end === "boolean" ? data.cancel_at_period_end : false,
     // The checkout that produced this subscription is no longer pending.
     pending_checkout: null,
   };
@@ -1118,7 +1084,7 @@ async function applyTeamSubscriptionState(
  * silently re-open a deactivated team's pool, and neither reset CTE could ever
  * clean it up (both require `period_end` non-null). A `canceled` that arrives
  * too early is safe to drop: the `created`/`updated` event that follows
- * carries `cancelAtPeriodEnd` and re-applies it.
+ * carries `cancel_at_period_end` and re-applies it.
  *
  * Revocation needs the same check in the other direction: after a team
  * replaces its subscription, a delayed or retried `subscription.revoked` for

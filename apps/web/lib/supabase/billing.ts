@@ -1,4 +1,4 @@
-import { createPolarClient, getPolarCheckoutConfig, unwrapPolarResult } from "@/lib/polar";
+import { createPolarClient, getPolarCheckoutConfig } from "@/lib/polar";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
@@ -92,15 +92,14 @@ async function ensurePolarCustomerId(user: BillingUser): Promise<string> {
   }
 
   const polar = createPolarClient();
-  const result = await polar.customers.create({
+  const customer = await polar.customers.create({
     email: user.email,
     name: user.name ?? undefined,
-    externalId: user.id,
+    external_id: user.id,
     metadata: {
       userId: user.id,
     },
   });
-  const customer = unwrapPolarResult(result, "customer creation");
 
   await updateUserById(user.id, {
     polar_customer_id: customer.id,
@@ -117,7 +116,7 @@ function extractCustomerUserId(data: Record<string, unknown>): string | null {
     return metadataUserId;
   }
 
-  return customer ? asNonEmptyString(customer.externalId) : null;
+  return customer ? asNonEmptyString(customer.external_id) : null;
 }
 
 async function resolveWebhookUserId(data: Record<string, unknown>): Promise<string | null> {
@@ -126,7 +125,7 @@ async function resolveWebhookUserId(data: Record<string, unknown>): Promise<stri
     return explicitUserId;
   }
 
-  const customerId = asNonEmptyString(data.customerId);
+  const customerId = asNonEmptyString(data.customer_id);
   if (!customerId) {
     return null;
   }
@@ -157,12 +156,11 @@ export async function createCheckoutForUser(userId: string): Promise<string> {
   const { appUrl, proProductId } = getPolarCheckoutConfig();
   const customerId = await ensurePolarCustomerId(user);
 
-  const result = await polar.checkouts.create({
+  const checkout = await polar.checkouts.create({
     products: [proProductId],
-    successUrl: `${appUrl}/account?upgraded=true`,
-    customerId,
+    success_url: `${appUrl}/account?upgraded=true`,
+    customer_id: customerId,
   });
-  const checkout = unwrapPolarResult(result, "checkout creation");
 
   return checkout.url;
 }
@@ -174,13 +172,7 @@ export async function cancelSubscriptionForUser(userId: string): Promise<void> {
   }
 
   const polar = createPolarClient();
-  const result = await polar.subscriptions.update({
-    id: user.polar_subscription_id,
-    subscriptionUpdate: {
-      cancelAtPeriodEnd: true,
-    },
-  });
-  unwrapPolarResult(result, "subscription cancel");
+  await polar.subscriptions.update(user.polar_subscription_id, { cancel_at_period_end: true });
 
   await updateUserById(user.id, {
     cancel_at_period_end: true,
@@ -197,13 +189,7 @@ export async function resubscribeForUser(userId: string): Promise<void> {
   }
 
   const polar = createPolarClient();
-  const result = await polar.subscriptions.update({
-    id: user.polar_subscription_id,
-    subscriptionUpdate: {
-      cancelAtPeriodEnd: false,
-    },
-  });
-  unwrapPolarResult(result, "subscription reactivate");
+  await polar.subscriptions.update(user.polar_subscription_id, { cancel_at_period_end: false });
 
   await updateUserById(user.id, {
     cancel_at_period_end: false,
@@ -247,9 +233,9 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
       if (storedError) throw storedError;
       if (!stored) return;
 
-      const currentPeriodStart = parseEventTimestamp(data.currentPeriodStart);
-      const currentPeriodEnd = parseEventTimestamp(data.currentPeriodEnd);
-      const customerId = asNonEmptyString(data.customerId);
+      const currentPeriodStart = parseEventTimestamp(data.current_period_start);
+      const currentPeriodEnd = parseEventTimestamp(data.current_period_end);
+      const customerId = asNonEmptyString(data.customer_id);
       const subscriptionId = asNonEmptyString(data.id);
 
       // Same renewal semantics as applyTeamSubscriptionState in team-billing.ts.
@@ -289,7 +275,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         period_start: isStalePeriod ? undefined : currentPeriodStart,
         period_end: isStalePeriod ? undefined : currentPeriodEnd,
         cancel_at_period_end:
-          typeof data.cancelAtPeriodEnd === "boolean" ? data.cancelAtPeriodEnd : false,
+          typeof data.cancel_at_period_end === "boolean" ? data.cancel_at_period_end : false,
       };
 
       // Every write is compare-and-swapped on the state that was read. This
@@ -318,7 +304,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
     }
 
     case "subscription.canceled": {
-      const customerId = asNonEmptyString(data.customerId);
+      const customerId = asNonEmptyString(data.customer_id);
       if (!customerId) return;
 
       const userId = await findUserIdByPolarCustomerId(customerId);
@@ -332,7 +318,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
     }
 
     case "subscription.uncanceled": {
-      const customerId = asNonEmptyString(data.customerId);
+      const customerId = asNonEmptyString(data.customer_id);
       if (!customerId) return;
 
       const userId = await findUserIdByPolarCustomerId(customerId);
@@ -346,7 +332,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
     }
 
     case "subscription.revoked": {
-      const customerId = asNonEmptyString(data.customerId);
+      const customerId = asNonEmptyString(data.customer_id);
       if (!customerId) return;
 
       const userId = await findUserIdByPolarCustomerId(customerId);
@@ -366,7 +352,7 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
     }
 
     case "subscription.active": {
-      const customerId = asNonEmptyString(data.customerId);
+      const customerId = asNonEmptyString(data.customer_id);
       if (!customerId) return;
 
       const userId = await findUserIdByPolarCustomerId(customerId);
