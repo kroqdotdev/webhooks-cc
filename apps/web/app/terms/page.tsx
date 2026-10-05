@@ -40,12 +40,14 @@ export default function TermsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Terms of Service</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: August 21, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 5, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
-            By using webhooks.cc, you agree to these terms. If you disagree with any part, do not
-            use the service.
+            These terms are an agreement between you and enkelt.design, a personally owned Danish
+            business (CVR 45871290, Lille Bygade 13, 2635 Ishøj, Denmark) that runs webhooks.cc. By
+            using webhooks.cc, you agree to these terms. If you disagree with any part, do not use
+            the service.
           </p>
         </div>
 
@@ -93,8 +95,9 @@ export default function TermsPage() {
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               You are responsible for the data sent to your endpoints. Do not send sensitive
-              information&mdash;passwords, payment card numbers, or personal health
-              data&mdash;through the service. See our{" "}
+              information such as passwords, payment card numbers, or personal health data through
+              the service. Where captured requests contain personal data, we process it on your
+              behalf and only to provide the service. See our{" "}
               <Link href="/privacy" className="text-primary hover:underline font-bold">
                 Privacy Policy
               </Link>{" "}
@@ -110,6 +113,19 @@ export default function TermsPage() {
             <p>
               The service is provided &ldquo;as is&rdquo; without warranties of any kind. We do not
               guarantee uptime, and we may modify or discontinue features at any time.
+            </p>
+          </div>
+        </section>
+
+        {/* Governing Law */}
+        <section className="border-t-strong border-line pt-8 mt-8">
+          <h2 className="text-xl font-bold mb-3">Governing Law</h2>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              These terms are governed by Danish law, and disputes are settled by the Danish courts.
+              If you use webhooks.cc as a consumer, you keep any protection that the mandatory
+              consumer law of the country where you live gives you, including the right to bring a
+              case there.
             </p>
           </div>
         </section>
