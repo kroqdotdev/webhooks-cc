@@ -37,3 +37,5 @@ select cron.schedule(
   '27 3 * * *',
   'select public.prune_auth_audit_log();'
 );
+
+notify pgrst, 'reload schema';
