@@ -1,6 +1,6 @@
 {
   "name": "web",
-  "version": "0.32.15",
+  "version": "0.32.16",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -47,8 +47,8 @@
     "rehype-pretty-code": "^0.14.5",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "resend": "^6.30.0",
-    "shiki": "^4.4.3",
+    "resend": "^6.32.0",
+    "shiki": "^4.5.0",
     "simple-icons": "^16.33.0",
     "source-map-support": "^0.5.21",
     "tailwind-merge": "^3.7.0",

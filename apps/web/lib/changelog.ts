@@ -15,13 +15,26 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.15";
+export const APP_VERSION = "0.32.16";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.16",
+    date: "2026-10-05",
+    title: "Privacy Policy, Terms, and Subprocessors",
+    track: "web",
+    items: [
+      "The privacy policy names enkelt.design as the business behind webhooks.cc and says where data lives: our servers and backups in Germany, email through Denmark and Frankfurt, analytics in PostHog's EU region",
+      "It now covers every kind of data we keep, the legal basis for each use, how long each is retained, your GDPR rights, how to complain to Datatilsynet, and how to request a data processing agreement",
+      "A new /subprocessors page lists each company that handles data for us, what it receives, and where",
+      "The terms name enkelt.design and add a governing law section (Danish law, with consumer protections kept)",
+      "Sign-in event records are deleted after one year, like the rest of the audit trail (migration 00047)",
+    ],
+  },
   {
     version: "0.32.15",
     date: "2026-10-04",

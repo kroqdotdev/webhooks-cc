@@ -10,6 +10,9 @@ export const DEFAULT_OG_IMAGE_PATH = "/og-image.jpg";
 
 export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 
+// Privacy policy, terms, and the subprocessor list change together.
+const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
+
 export interface SitemapPageDefinition {
   path: string;
   changeFrequency: NonNullable<MetadataRoute.Sitemap[number]["changeFrequency"]>;
@@ -37,8 +40,14 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
   // /login is noindexed — excluded from sitemap intentionally
   { path: "/changelog", changeFrequency: "weekly", priority: 0.5 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/privacy", changeFrequency: "yearly", priority: 0.3 },
-  { path: "/terms", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/privacy", changeFrequency: "yearly", priority: 0.3, lastModified: LEGAL_PAGES_UPDATED },
+  { path: "/terms", changeFrequency: "yearly", priority: 0.3, lastModified: LEGAL_PAGES_UPDATED },
+  {
+    path: "/subprocessors",
+    changeFrequency: "yearly",
+    priority: 0.3,
+    lastModified: LEGAL_PAGES_UPDATED,
+  },
 ];
 
 interface PageMetadataInput {
