@@ -161,7 +161,15 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+
+// Pending-seat syncs are versioned by our own clock; tests pin it.
+const NOW = new Date("2026-10-06T08:00:00.000Z");
+function freezeClock() {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+}
 
 describe("createTeamCheckout", () => {
   test("rejects a seat count below one before touching the database", async () => {
@@ -688,6 +696,7 @@ describe("updateTeamSeats", () => {
       return Promise.resolve({ id: "sub_1" });
     });
     mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+    freezeClock();
 
     await updateTeamSeats("user_1", "team_1", 6);
 
@@ -696,6 +705,13 @@ describe("updateTeamSeats", () => {
       proration_behavior: "invoice",
     });
     expect(recorded).toContainEqual(rpcWrite);
+    // Polar dropped any pending reduction; recorded with the confirmation time
+    // so an older read cannot bring it back.
+    expect(recorded).toContainEqual({
+      table: "teams",
+      op: "update",
+      payload: { pending_seats: null, pending_seats_as_of: NOW.toISOString() },
+    });
   });
 
   test("increase: leaves the database untouched when Polar rejects the update", async () => {
@@ -793,27 +809,29 @@ describe("updateTeamSeats", () => {
         "teams:update": [{}],
       })
     );
-    const modifiedAt = new Date("2026-10-01T14:00:00.123Z");
+    freezeClock();
     const subscriptionUpdate = vi.fn().mockResolvedValue({
       id: "sub_1",
       seats: 6,
-      modified_at: modifiedAt.toISOString(),
-      pending_update: { seats: 3, applies_at: new Date("2026-11-01T00:00:00Z").toISOString() },
+      // Polar leaves this alone when it schedules a change, so it is not the version.
+      modified_at: "2026-10-01T14:00:00.123456Z",
+      pending_update: { seats: 3, applies_at: "2026-11-01T00:00:00.000000Z" },
     });
     mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
 
     await updateTeamSeats("user_1", "team_1", 3);
 
+    // Stamped with the time Polar's confirmation arrived.
     expect(recorded).toContainEqual({
       table: "teams",
       op: "update",
-      payload: { pending_seats: 3, pending_seats_as_of: modifiedAt.toISOString() },
+      payload: { pending_seats: 3, pending_seats_as_of: NOW.toISOString() },
     });
     const sync = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
     expect(sync!.filters).toContainEqual(["eq", "polar_subscription_id", "sub_1"]);
     expect(sync!.filters).toContainEqual([
       "or",
-      `pending_seats_as_of.is.null,pending_seats_as_of.lt."${modifiedAt.toISOString()}"`,
+      `pending_seats_as_of.is.null,pending_seats_as_of.lt."${NOW.toISOString()}"`,
       null,
     ]);
   });
@@ -1354,7 +1372,7 @@ describe("subscription event guards", () => {
     });
   });
 
-  test("mirrors Polar's scheduled seat change, versioned by modified_at", async () => {
+  test("mirrors the schedule from Polar's current state, versioned by the read time", async () => {
     const liveRow = {
       data: {
         polar_subscription_id: "sub_1",
@@ -1366,54 +1384,109 @@ describe("subscription event guards", () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "teams:select": [liveRow], "teams:update": [{}, {}] })
     );
-    const modifiedAt = new Date("2026-08-10T12:00:00.000Z");
+    freezeClock();
+    const get = vi.fn().mockResolvedValue({
+      id: "sub_1",
+      seats: 5,
+      pending_update: { seats: 3, applies_at: "2026-08-31T00:00:00.000000Z" },
+    });
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { get } });
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_1", { seats: 5, pending_update: { seats: 3 } })
+    );
+
+    // The state write keeps the paid seats; the schedule is a separate,
+    // version-guarded write so an older read loses.
+    expect(get).toHaveBeenCalledWith("sub_1");
+    expect(teamsUpdates()[0].payload).toMatchObject({ seats: 5, request_limit: 500_000 });
+    expect(teamsUpdates()[0].payload).not.toHaveProperty("pending_seats");
+    expect(teamsUpdates()[1].payload).toEqual({
+      pending_seats: 3,
+      pending_seats_as_of: NOW.toISOString(),
+    });
+    const sync = recordedFilters.filter((c) => c.table === "teams" && c.op === "update")[1];
+    expect(sync.filters).toContainEqual([
+      "or",
+      `pending_seats_as_of.is.null,pending_seats_as_of.lt."${NOW.toISOString()}"`,
+      null,
+    ]);
+  });
+
+  test("a schedule cleared in Polar reaches the row although modified_at did not move", async () => {
+    // Polar keeps the subscription's modified_at when a pending update is
+    // cleared, so a payload can still show the old schedule; the read wins.
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 5,
+              period_start: "2026-08-01T00:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{}, {}],
+      })
+    );
+    freezeClock();
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: { get: vi.fn().mockResolvedValue({ id: "sub_1", pending_update: null }) },
+    });
 
     await applyTeamPolarWebhookEvent(
       "subscription.updated",
       "team_1",
       subscriptionEvent("sub_1", {
-        seats: 5,
-        modified_at: modifiedAt.toISOString(),
-        pending_update: { seats: 3, applies_at: new Date("2026-08-31T00:00:00Z").toISOString() },
+        modified_at: "2026-08-10T12:00:00.000000Z",
+        pending_update: { seats: 3 },
       })
     );
 
-    // The state write keeps the paid seats; the schedule is a separate,
-    // version-guarded write so a late event for an earlier change loses.
-    expect(teamsUpdates()[0].payload).toMatchObject({ seats: 5, request_limit: 500_000 });
-    expect(teamsUpdates()[0].payload).not.toHaveProperty("pending_seats");
     expect(teamsUpdates()[1].payload).toEqual({
-      pending_seats: 3,
-      pending_seats_as_of: modifiedAt.toISOString(),
+      pending_seats: null,
+      pending_seats_as_of: NOW.toISOString(),
     });
-    const sync = recordedFilters.filter((c) => c.table === "teams" && c.op === "update")[1];
-    expect(sync.filters).toContainEqual([
-      "or",
-      `pending_seats_as_of.is.null,pending_seats_as_of.lt."${modifiedAt.toISOString()}"`,
-      null,
-    ]);
   });
 
-  test("an event without modified_at leaves the schedule alone", async () => {
-    const liveRow = {
-      data: {
-        polar_subscription_id: "sub_1",
-        subscription_status: "active",
-        seats: 5,
-        period_start: "2026-08-01T00:00:00.000Z",
-      },
-    };
+  test("a failed Polar read leaves the schedule alone and still applies the event", async () => {
     mockFns.createAdminClient.mockReturnValue(
-      createFakeAdmin({ "teams:select": [liveRow], "teams:update": [{}] })
+      createFakeAdmin({
+        "teams:select": [
+          {
+            data: {
+              polar_subscription_id: "sub_1",
+              subscription_status: "active",
+              seats: 5,
+              period_start: "2026-08-01T00:00:00.000Z",
+            },
+          },
+        ],
+        "teams:update": [{}],
+      })
     );
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: { get: vi.fn().mockRejectedValue(new Error("polar down")) },
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await applyTeamPolarWebhookEvent(
-      "subscription.updated",
-      "team_1",
-      subscriptionEvent("sub_1", { pending_update: { seats: 3 } })
-    );
+    await expect(
+      applyTeamPolarWebhookEvent(
+        "subscription.updated",
+        "team_1",
+        subscriptionEvent("sub_1", { pending_update: { seats: 3 } })
+      )
+    ).resolves.toBeUndefined();
 
     expect(teamsUpdates()).toHaveLength(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[team-billing] could not read the subscription to sync pending seats",
+      expect.objectContaining({ teamId: "team_1", subscriptionId: "sub_1" })
+    );
   });
 
   test("the renewal reset is conditioned on the observed subscription id and period start", async () => {
