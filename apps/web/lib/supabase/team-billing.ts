@@ -926,25 +926,18 @@ async function syncPendingSeats(
  * change, for webhooks: their payloads cannot be ordered against each other
  * (see syncPendingSeats), but Polar's current state can. Stamped with the
  * time the read started, so it never overrides a seat change this app wrote
- * after Polar confirmed it. Failures are logged rather than thrown: failing
- * the webhook would only make Polar redeliver it, and enough consecutive
- * failures disable the endpoint. The next subscription event retries.
+ * after Polar confirmed it.
+ *
+ * A failed read fails the webhook, like any other processing error, so Polar
+ * redelivers it: a schedule changed in Polar itself may produce no other
+ * event before the renewal, and pending_seats caps members until then. The
+ * state write before this call is safe to repeat.
  */
 async function refreshPendingSeats(teamId: string, subscriptionId: string): Promise<void> {
   const observedAt = new Date();
-  let subscription: Record<string, unknown>;
-  try {
-    subscription = (await createPolarClient().subscriptions.get(
-      subscriptionId
-    )) as unknown as Record<string, unknown>;
-  } catch (error) {
-    console.error("[team-billing] could not read the subscription to sync pending seats", {
-      teamId,
-      subscriptionId,
-      error: loggablePolarError(error),
-    });
-    return;
-  }
+  const subscription = (await createPolarClient().subscriptions.get(
+    subscriptionId
+  )) as unknown as Record<string, unknown>;
 
   await syncPendingSeats(teamId, subscriptionId, subscription, observedAt);
 }

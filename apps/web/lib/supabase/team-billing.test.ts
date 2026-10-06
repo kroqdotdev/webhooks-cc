@@ -1295,6 +1295,14 @@ describe("subscription event guards", () => {
   const teamsUpdates = () =>
     recorded.filter((call) => call.table === "teams" && call.op === "update");
 
+  // Subscription events re-read the subscription from Polar to mirror its
+  // pending seat change; by default Polar reports nothing scheduled.
+  beforeEach(() => {
+    mockFns.createPolarClient.mockReturnValue({
+      subscriptions: { get: vi.fn().mockResolvedValue({ pending_update: null }) },
+    });
+  });
+
   test("ignores events for a foreign subscription while another is live", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockFns.createAdminClient.mockReturnValue(
@@ -1362,7 +1370,9 @@ describe("subscription event guards", () => {
       subscriptionEvent("sub_new")
     );
 
-    expect(teamsUpdates()).toHaveLength(1);
+    // The state write, then the schedule read back from Polar.
+    expect(teamsUpdates()).toHaveLength(2);
+    expect(teamsUpdates()[1].payload).toMatchObject({ pending_seats: null });
     expect(teamsUpdates()[0].payload).toMatchObject({
       polar_subscription_id: "sub_new",
       subscription_status: "active",
@@ -1453,7 +1463,7 @@ describe("subscription event guards", () => {
     });
   });
 
-  test("a failed Polar read leaves the schedule alone and still applies the event", async () => {
+  test("a failed Polar read fails the webhook so Polar redelivers it", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
         "teams:select": [
@@ -1472,7 +1482,6 @@ describe("subscription event guards", () => {
     mockFns.createPolarClient.mockReturnValue({
       subscriptions: { get: vi.fn().mockRejectedValue(new Error("polar down")) },
     });
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
       applyTeamPolarWebhookEvent(
@@ -1480,13 +1489,11 @@ describe("subscription event guards", () => {
         "team_1",
         subscriptionEvent("sub_1", { pending_update: { seats: 3 } })
       )
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("polar down");
 
+    // The state write already happened and is safe to repeat on redelivery;
+    // the schedule is left for the retry.
     expect(teamsUpdates()).toHaveLength(1);
-    expect(consoleError).toHaveBeenCalledWith(
-      "[team-billing] could not read the subscription to sync pending seats",
-      expect.objectContaining({ teamId: "team_1", subscriptionId: "sub_1" })
-    );
   });
 
   test("the renewal reset is conditioned on the observed subscription id and period start", async () => {

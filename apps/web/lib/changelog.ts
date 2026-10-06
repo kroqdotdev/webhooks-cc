@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.18";
+export const APP_VERSION = "0.32.19";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.19",
+    date: "2026-10-06",
+    title: "Seat Schedule Retries",
+    track: "web",
+    items: [
+      "If reading a team's subscription from Polar fails while handling a webhook, the webhook now fails so Polar delivers it again, instead of leaving the seat schedule out of date until the next subscription event",
+    ],
+  },
   {
     version: "0.32.18",
     date: "2026-10-06",
