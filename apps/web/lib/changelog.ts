@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.17";
+export const APP_VERSION = "0.32.18";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.18",
+    date: "2026-10-06",
+    title: "Seat Schedules Follow Polar",
+    track: "web",
+    items: [
+      "A seat reduction scheduled or cancelled in Polar itself, for example from Polar's dashboard, now reaches the team's member cap. Polar does not change a subscription's modification time for these, so team billing now reads the subscription's current state from Polar on every subscription webhook",
+    ],
+  },
   {
     version: "0.32.17",
     date: "2026-10-05",
