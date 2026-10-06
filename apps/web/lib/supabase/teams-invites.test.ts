@@ -1,3 +1,4 @@
+import { errors } from "@polar-sh/sdk/2026-10";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mockFns = vi.hoisted(() => ({
@@ -12,14 +13,10 @@ vi.mock("./admin", () => ({
   createAdminClient: mockFns.createAdminClient,
 }));
 
-vi.mock("./team-billing", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./team-billing")>();
-  return {
-    assignTeamSeat: mockFns.assignTeamSeat,
-    revokeTeamSeat: mockFns.revokeTeamSeat,
-    polarErrorCode: actual.polarErrorCode,
-  };
-});
+vi.mock("./team-billing", () => ({
+  assignTeamSeat: mockFns.assignTeamSeat,
+  revokeTeamSeat: mockFns.revokeTeamSeat,
+}));
 
 vi.mock("./teams-gating", () => ({
   requireActiveTeam: mockFns.requireActiveTeam,
@@ -152,9 +149,10 @@ describe("acceptInvite", () => {
 
   test("answers a full team when Polar has no seat left, without touching the invite", async () => {
     mockFns.assignTeamSeat.mockRejectedValue(
-      Object.assign(new Error("API error occurred"), {
-        body: '{"error":"SeatNotAvailable","detail":"No available seats for sub_1"}',
-      })
+      new errors.CustomerSeatsAssignSeat400Error(400, {
+        error: "SeatNotAvailable",
+        detail: "No available seats for sub_1",
+      } as never)
     );
     const admin = createFakeAdmin(
       {

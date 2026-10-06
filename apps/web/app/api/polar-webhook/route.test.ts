@@ -11,11 +11,13 @@ vi.mock("@/lib/audit", () => ({
   auditPolarEvent: mockFns.auditPolarEvent,
 }));
 
-vi.mock("@polar-sh/sdk/webhooks", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@polar-sh/sdk/webhooks")>();
+// The SDK's `webhooks` namespace is getter-only, so replace the whole module
+// export rather than spying on validateEvent.
+vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@polar-sh/sdk/2026-10")>();
   return {
     ...actual,
-    validateEvent: mockFns.validateEvent,
+    webhooks: { ...actual.webhooks, validateEvent: mockFns.validateEvent },
   };
 });
 
@@ -62,9 +64,9 @@ describe("POST /api/polar-webhook", () => {
 
   test("routes customer metadata team events to the team handler", async () => {
     const data = {
-      customer: { id: "cus_1", externalId: "cus_1", metadata: { teamId: "team_meta" } },
+      customer: { id: "cus_1", external_id: "cus_1", metadata: { teamId: "team_meta" } },
     };
-    mockFns.validateEvent.mockReturnValue({ type: "subscription.updated", data });
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.updated", data });
 
     const { POST } = await import("./route");
     const response = await POST(webhookRequest());
@@ -85,9 +87,9 @@ describe("POST /api/polar-webhook", () => {
     });
   });
 
-  test("routes team: externalId events to the team handler", async () => {
-    const data = { customer: { id: "cus_2", externalId: "team:abc", metadata: {} } };
-    mockFns.validateEvent.mockReturnValue({ type: "subscription.active", data });
+  test("routes team: external_id events to the team handler", async () => {
+    const data = { customer: { id: "cus_2", external_id: "team:abc", metadata: {} } };
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.active", data });
 
     const { POST } = await import("./route");
     const response = await POST(webhookRequest());
@@ -101,17 +103,17 @@ describe("POST /api/polar-webhook", () => {
     expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
   });
 
-  test("routes seat events carrying only seatMetadata to the team handler", async () => {
+  test("routes seat events carrying only seat_metadata to the team handler", async () => {
     // `customer_seat.*` payloads are a bare CustomerSeat with no customer object,
-    // so seatMetadata.teamId is the only routing key. The route must forward the raw
+    // so seat_metadata.teamId is the only routing key. The route must forward the raw
     // event data untouched or these events lose their team entirely.
     const data = {
       id: "seat_1",
       status: "claimed",
-      seatMetadata: { teamId: "team_seat", userId: "user_1" },
-      customerEmail: "member@example.com",
+      seat_metadata: { teamId: "team_seat", userId: "user_1" },
+      customer_email: "member@example.com",
     };
-    mockFns.validateEvent.mockReturnValue({ type: "customer_seat.claimed", data });
+    mockFns.validateEvent.mockResolvedValue({ type: "customer_seat.claimed", data });
 
     const { POST } = await import("./route");
     const response = await POST(webhookRequest());
@@ -128,8 +130,8 @@ describe("POST /api/polar-webhook", () => {
   });
 
   test("routes personal events to the existing handler", async () => {
-    const data = { customer: { id: "cus_3", externalId: "user_9", metadata: {} } };
-    mockFns.validateEvent.mockReturnValue({ type: "subscription.updated", data });
+    const data = { customer: { id: "cus_3", external_id: "user_9", metadata: {} } };
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.updated", data });
 
     const { POST } = await import("./route");
     const response = await POST(webhookRequest());
@@ -142,7 +144,7 @@ describe("POST /api/polar-webhook", () => {
 
   test("maps team handler failures to 500 internal_error", async () => {
     const data = { customer: { id: "cus_4", metadata: { teamId: "team_meta" } } };
-    mockFns.validateEvent.mockReturnValue({ type: "subscription.canceled", data });
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.canceled", data });
     mockFns.applyTeamPolarWebhookEvent.mockRejectedValue(new Error("team update failed"));
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -162,7 +164,7 @@ describe("POST /api/polar-webhook", () => {
 
   test("maps personal handler failures to 500 internal_error", async () => {
     const data = { customer: { id: "cus_5", metadata: {} } };
-    mockFns.validateEvent.mockReturnValue({ type: "subscription.updated", data });
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.updated", data });
     mockFns.applyPolarWebhookEvent.mockRejectedValue(new Error("personal update failed"));
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -175,10 +177,10 @@ describe("POST /api/polar-webhook", () => {
   });
 
   test("rejects invalid signatures before touching either handler", async () => {
-    const { WebhookVerificationError } = await import("@polar-sh/sdk/webhooks");
-    mockFns.validateEvent.mockImplementation(() => {
-      throw new WebhookVerificationError("bad signature");
-    });
+    const { webhooks } = await import("@polar-sh/sdk/2026-10");
+    mockFns.validateEvent.mockRejectedValue(
+      new webhooks.PolarWebhookVerificationError("bad signature")
+    );
 
     const { POST } = await import("./route");
     const response = await POST(webhookRequest());
@@ -188,5 +190,34 @@ describe("POST /api/polar-webhook", () => {
     expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
     expect(mockFns.applyTeamPolarWebhookEvent).not.toHaveBeenCalled();
     expect(mockFns.auditPolarEvent).not.toHaveBeenCalled();
+  });
+
+  test("acknowledges a correctly signed event of a type the SDK does not know", async () => {
+    // Polar disables an endpoint after 10 consecutive failed deliveries, so a
+    // new event type must not be answered with an error.
+    const { webhooks } = await import("@polar-sh/sdk/2026-10");
+    mockFns.validateEvent.mockRejectedValue(
+      new webhooks.PolarWebhookUnknownTypeError("subscription.brand_new")
+    );
+
+    const { POST } = await import("./route");
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ received: true });
+    expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
+    expect(mockFns.applyTeamPolarWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  test("rejects a payload the SDK cannot parse", async () => {
+    const { webhooks } = await import("@polar-sh/sdk/2026-10");
+    mockFns.validateEvent.mockRejectedValue(new webhooks.PolarWebhookError("not JSON"));
+
+    const { POST } = await import("./route");
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_payload" });
+    expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
   });
 });

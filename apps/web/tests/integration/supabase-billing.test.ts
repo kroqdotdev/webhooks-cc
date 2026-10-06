@@ -9,35 +9,24 @@ const polarMocks = vi.hoisted(() => ({
   validateEvent: vi.fn(),
 }));
 
-vi.mock("@/lib/polar", () => {
-  class PolarConfigError extends Error {
-    constructor(message: string) {
-      super(message);
-      this.name = "PolarConfigError";
-    }
-  }
-
+vi.mock("@/lib/polar", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/polar")>();
   return {
+    ...actual,
     createPolarClient: polarMocks.createPolarClient,
     getPolarCheckoutConfig: polarMocks.getPolarCheckoutConfig,
     getPolarWebhookSecret: polarMocks.getPolarWebhookSecret,
     loggablePolarError: (error: unknown) => error,
-    unwrapPolarResult: <T>(result: T) => result,
-    PolarConfigError,
   };
 });
 
-vi.mock("@polar-sh/sdk/webhooks", () => {
-  class WebhookVerificationError extends Error {
-    constructor(message: string) {
-      super(message);
-      this.name = "WebhookVerificationError";
-    }
-  }
-
+// The SDK's `webhooks` namespace is getter-only, so replace the whole module
+// export; the real error classes stay available to the route.
+vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@polar-sh/sdk/2026-10")>();
   return {
-    validateEvent: polarMocks.validateEvent,
-    WebhookVerificationError,
+    ...actual,
+    webhooks: { ...actual.webhooks, validateEvent: polarMocks.validateEvent },
   };
 });
 
@@ -163,15 +152,15 @@ describe("Supabase Billing Integration", () => {
     expect(customerCreate).toHaveBeenCalledWith({
       email: expect.stringContaining("@webhooks-test.local"),
       name: "Billing Test User",
-      externalId: testUserId,
+      external_id: testUserId,
       metadata: {
         userId: testUserId,
       },
     });
     expect(checkoutCreate).toHaveBeenCalledWith({
       products: ["prod_test_123"],
-      successUrl: "https://webhooks.cc/account?upgraded=true",
-      customerId: "polar_cust_123",
+      success_url: "https://webhooks.cc/account?upgraded=true",
+      customer_id: "polar_cust_123",
     });
 
     const { data: userRow, error: userError } = await admin
@@ -229,17 +218,11 @@ describe("Supabase Billing Integration", () => {
 
     expect(reactivateError).toBeNull();
     expect(reactivatedUser?.cancel_at_period_end).toBe(false);
-    expect(subscriptionUpdate).toHaveBeenNthCalledWith(1, {
-      id: "polar_sub_123",
-      subscriptionUpdate: {
-        cancelAtPeriodEnd: true,
-      },
+    expect(subscriptionUpdate).toHaveBeenNthCalledWith(1, "polar_sub_123", {
+      cancel_at_period_end: true,
     });
-    expect(subscriptionUpdate).toHaveBeenNthCalledWith(2, {
-      id: "polar_sub_123",
-      subscriptionUpdate: {
-        cancelAtPeriodEnd: false,
-      },
+    expect(subscriptionUpdate).toHaveBeenNthCalledWith(2, "polar_sub_123", {
+      cancel_at_period_end: false,
     });
   });
 
@@ -247,20 +230,20 @@ describe("Supabase Billing Integration", () => {
     const periodStart = new Date();
     const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    polarMocks.validateEvent.mockReturnValueOnce({
+    polarMocks.validateEvent.mockResolvedValueOnce({
       type: "subscription.created",
       data: {
         id: "polar_sub_webhook",
-        customerId: "polar_cust_webhook",
+        customer_id: "polar_cust_webhook",
         customer: {
           metadata: {
             userId: testUserId,
           },
         },
         status: "active",
-        currentPeriodStart: periodStart,
-        currentPeriodEnd: periodEnd,
-        cancelAtPeriodEnd: false,
+        current_period_start: periodStart.toISOString(),
+        current_period_end: periodEnd.toISOString(),
+        cancel_at_period_end: false,
       },
     });
 
@@ -281,23 +264,28 @@ describe("Supabase Billing Integration", () => {
 
     const { data: upgradedUser, error: upgradedError } = await admin
       .from("users")
-      .select("plan, request_limit, polar_customer_id, polar_subscription_id, subscription_status")
+      .select(
+        "plan, request_limit, polar_customer_id, polar_subscription_id, subscription_status, period_start, period_end"
+      )
       .eq("id", testUserId)
       .single();
 
     expect(upgradedError).toBeNull();
-    expect(upgradedUser).toEqual({
+    expect(upgradedUser).toMatchObject({
       plan: "pro",
       request_limit: 100_000,
       polar_customer_id: "polar_cust_webhook",
       polar_subscription_id: "polar_sub_webhook",
       subscription_status: "active",
     });
+    // Polar sends ISO strings; the period bounds must be stored, not dropped.
+    expect(Date.parse(upgradedUser!.period_start!)).toBe(periodStart.getTime());
+    expect(Date.parse(upgradedUser!.period_end!)).toBe(periodEnd.getTime());
 
-    polarMocks.validateEvent.mockReturnValueOnce({
+    polarMocks.validateEvent.mockResolvedValueOnce({
       type: "subscription.canceled",
       data: {
-        customerId: "polar_cust_webhook",
+        customer_id: "polar_cust_webhook",
       },
     });
 
@@ -329,10 +317,10 @@ describe("Supabase Billing Integration", () => {
       subscription_status: "canceled",
     });
 
-    polarMocks.validateEvent.mockReturnValueOnce({
+    polarMocks.validateEvent.mockResolvedValueOnce({
       type: "subscription.revoked",
       data: {
-        customerId: "polar_cust_webhook",
+        customer_id: "polar_cust_webhook",
       },
     });
 

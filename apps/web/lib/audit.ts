@@ -62,13 +62,11 @@ const POLAR_FIELDS = [
   "id",
   "status",
   "seats",
-  "subscriptionId",
   "subscription_id",
-  "customerId",
   "customer_id",
-  "cancelAtPeriodEnd",
-  "billingReason",
-  "totalAmount",
+  "cancel_at_period_end",
+  "billing_reason",
+  "total_amount",
   "currency",
 ] as const;
 
@@ -144,7 +142,7 @@ function pickPolarFields(data: Record<string, unknown>): Record<string, unknown>
 }
 
 function seatUserId(data: Record<string, unknown>): string | null {
-  for (const key of ["seatMetadata", "seat_metadata", "metadata"]) {
+  for (const key of ["seat_metadata", "metadata"]) {
     const value = data[key];
     if (value && typeof value === "object" && !Array.isArray(value)) {
       const userId = (value as Record<string, unknown>).userId;

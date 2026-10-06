@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.16";
+export const APP_VERSION = "0.32.17";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.17",
+    date: "2026-10-05",
+    title: "Polar SDK 1.0",
+    track: "web",
+    items: [
+      "Billing runs on version 1.0 of Polar's SDK, pinned to Polar API version 2026-10",
+      "A seat increase that your bank must approve now says so, instead of reporting a declined card",
+      "Polar calls wait up to 30 seconds instead of failing after 5, so a slow response no longer fails a checkout or seat change that Polar completes",
+      "Correctly signed Polar webhooks of an unfamiliar type are acknowledged instead of rejected, so Polar never disables the endpoint over a new event type",
+    ],
+  },
   {
     version: "0.32.16",
     date: "2026-10-05",

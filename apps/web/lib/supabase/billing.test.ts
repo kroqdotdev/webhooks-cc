@@ -100,12 +100,13 @@ function userUpdatePayload(): Record<string, unknown> | undefined {
 function subscriptionEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: "sub_1",
-    customerId: "cus_1",
+    customer_id: "cus_1",
     status: "active",
-    customer: { id: "cus_1", externalId: "user_1", metadata: { userId: "user_1" } },
-    currentPeriodStart: new Date("2026-08-01T00:00:00Z"),
-    currentPeriodEnd: new Date("2026-08-31T00:00:00Z"),
-    cancelAtPeriodEnd: false,
+    customer: { id: "cus_1", external_id: "user_1", metadata: { userId: "user_1" } },
+    // Polar's timestamps carry microseconds; stored values keep milliseconds.
+    current_period_start: "2026-08-01T00:00:00.000000Z",
+    current_period_end: "2026-08-31T00:00:00.000000Z",
+    cancel_at_period_end: false,
     ...overrides,
   };
 }

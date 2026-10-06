@@ -40,10 +40,14 @@ export function normalizeStoredSubscriptionStatus(status: unknown): StoredSubscr
   }
 }
 
+/**
+ * Normalizes a Polar timestamp to the ISO string we store, or null when it is
+ * missing or invalid. Webhook payloads and API responses carry ISO 8601
+ * strings with microseconds; they are truncated to milliseconds so stored
+ * values compare consistently (`pending_seats_as_of` ordering relies on it).
+ */
 export function parseEventTimestamp(value: unknown): string | null {
-  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-    return null;
-  }
-
-  return value.toISOString();
+  const ms =
+    value instanceof Date ? value.getTime() : typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }

@@ -147,8 +147,8 @@ describe("scheduled seat reductions", () => {
       id: subscriptionId,
       status: "active",
       seats: 5,
-      modifiedAt: new Date(modifiedAt),
-      pendingUpdate: pendingSeats === null ? null : { seats: pendingSeats },
+      modified_at: modifiedAt,
+      pending_update: pendingSeats === null ? null : { seats: pendingSeats },
     });
 
     await applyTeamPolarWebhookEvent(
