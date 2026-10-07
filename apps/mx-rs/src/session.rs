@@ -735,8 +735,11 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             raw,
         };
         let backend = &self.shared.backend;
+        let recipients = self.tx.recipients.len();
         let outcome = if retried.is_empty() || fresh.is_empty() {
-            backend.deliver(delivery).await
+            let all: Vec<usize> = (0..recipients).collect();
+            let outcome = backend.deliver(delivery).await;
+            reply::merge_outcomes([(outcome, all.as_slice())], recipients)
         } else {
             // Endpoints that may already hold this message go as a retry, the
             // others as new mail, so neither is taken for the other.
@@ -760,7 +763,7 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             let second = backend.deliver(as_new).await;
             reply::merge_outcomes(
                 [(first, retried.as_slice()), (second, fresh.as_slice())],
-                self.tx.recipients.len(),
+                recipients,
             )
         };
         let verdict = reply::data_reply(&outcome);

@@ -824,6 +824,25 @@ async fn keeps_the_hash_when_the_final_reply_cannot_be_written() {
 }
 
 #[tokio::test]
+async fn an_answer_missing_recipients_is_a_temporary_failure() {
+    let shared = shared(FakeBackend::default());
+    shared
+        .backend
+        .set_outcome(DeliverOutcome::Results(vec!["captured".into()]));
+    let (mut client, _handle, _stop) = start(shared.clone());
+    greet(&mut client).await;
+    client
+        .send("MAIL FROM:<s@client.test>\r\nRCPT TO:<a@mailhooks.cc>\r\nRCPT TO:<b@mailhooks.cc>\r\nDATA\r\n")
+        .await;
+    for code in [250, 250, 250, 354] {
+        client.expect(code).await;
+    }
+    client.send("short answer\r\n.\r\n").await;
+    client.expect(451).await;
+    assert_eq!(shared.retry_store.len(), 2, "both endpoints stay uncertain");
+}
+
+#[tokio::test]
 async fn refused_messages_are_not_flagged_as_retries() {
     let shared = shared(FakeBackend::default());
     shared

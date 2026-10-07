@@ -165,11 +165,15 @@ pub enum DeliverOutcome {
     Failed,
 }
 
-/// One outcome for a message delivered in parts, each part covering the
-/// recipients at the given positions. Any part that did not produce a status
-/// per recipient decides the whole (it makes the reply a temporary failure,
-/// or 552 for a 413).
-pub fn merge_outcomes(parts: [(DeliverOutcome, &[usize]); 2], recipients: usize) -> DeliverOutcome {
+/// One outcome for a message delivered in one or more parts, each part
+/// covering the recipients at the given positions. Any part that did not
+/// produce exactly one status per recipient decides the whole (it makes the
+/// reply a temporary failure, or 552 for a 413), so a short answer can never
+/// settle recipients it says nothing about.
+pub fn merge_outcomes<'a>(
+    parts: impl IntoIterator<Item = (DeliverOutcome, &'a [usize])>,
+    recipients: usize,
+) -> DeliverOutcome {
     let mut statuses = vec![String::new(); recipients];
     for (outcome, positions) in parts {
         match outcome {
@@ -181,6 +185,9 @@ pub fn merge_outcomes(parts: [(DeliverOutcome, &[usize]); 2], recipients: usize)
             DeliverOutcome::Results(_) => return DeliverOutcome::Failed,
             other => return other,
         }
+    }
+    if statuses.iter().any(String::is_empty) {
+        return DeliverOutcome::Failed;
     }
     DeliverOutcome::Results(statuses)
 }
@@ -367,8 +374,8 @@ mod tests {
     fn merges_parts_back_into_recipient_order() {
         let merged = merge_outcomes(
             [
-                (results(&["duplicate"]), &[1]),
-                (results(&["captured", "over_quota"]), &[0, 2]),
+                (results(&["duplicate"]), &[1][..]),
+                (results(&["captured", "over_quota"]), &[0, 2][..]),
             ],
             3,
         );
@@ -376,8 +383,8 @@ mod tests {
         assert_eq!(
             merge_outcomes(
                 [
-                    (results(&["captured"]), &[0]),
-                    (DeliverOutcome::Failed, &[1])
+                    (results(&["captured"]), &[0][..]),
+                    (DeliverOutcome::Failed, &[1][..])
                 ],
                 2
             ),
@@ -385,11 +392,24 @@ mod tests {
         );
         assert_eq!(
             merge_outcomes(
-                [(results(&["captured", "x"]), &[0]), (results(&[]), &[])],
+                [
+                    (results(&["captured", "x"]), &[0][..]),
+                    (results(&[]), &[][..])
+                ],
                 1
             ),
             DeliverOutcome::Failed,
             "a part with the wrong number of statuses"
+        );
+        let all: &[usize] = &[0, 1];
+        assert_eq!(
+            merge_outcomes([(results(&["captured"]), all)], 2),
+            DeliverOutcome::Failed,
+            "a single delivery answered for one of two recipients"
+        );
+        assert_eq!(
+            merge_outcomes([(results(&["captured", "duplicate"]), all)], 2),
+            results(&["captured", "duplicate"])
         );
     }
 
