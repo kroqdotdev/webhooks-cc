@@ -23,7 +23,7 @@ use crate::config::{MAX_MESSAGE_BYTES, MAX_RECIPIENTS, Timeouts};
 use crate::ingest::Delivery;
 use crate::limits::{Client, Limiter, SlotGuard, address_key};
 use crate::reply::{self, CheckStatus, DeliverOutcome, Reply};
-use crate::retry_store::RetryStore;
+use crate::retry_store::{Attempt, RetryStore};
 use crate::tls::TlsProvider;
 
 /// Errors tolerated before the connection is closed.
@@ -549,7 +549,7 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         // ended by then is too large either way.
         let head = &message[..message.len().min(MAX_HEADER_SECTION + 4)];
         let header_end = header_section_end(head).unwrap_or(message.len());
-        let (verdict, settled) = if header_end > MAX_HEADER_SECTION {
+        let (verdict, attempt) = if header_end > MAX_HEADER_SECTION {
             (Reply::new(552, 5, 3, 4, "Message header too large"), None)
         } else {
             self.deliver(message).await
@@ -563,14 +563,18 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             self.stats.messages_refused += 1;
         }
         self.tx = Transaction::default();
-        self.reply(&verdict).await?;
-        // The sender has the definitive answer now. Had the write failed, it
-        // would try again, and that attempt must still count as a retry.
-        if let Some(hash) = settled {
-            self.shared
-                .retry_store
-                .forget(&hash, chrono::Utc::now().timestamp() as u64);
+        let written = self.reply(&verdict).await;
+        // Settled only once a definitive answer has actually been written:
+        // had the write failed, the sender would try again, and that attempt
+        // must count as a retry.
+        if let Some((attempt, definitive)) = attempt {
+            self.shared.retry_store.finish(
+                attempt,
+                definitive && written.is_ok(),
+                chrono::Utc::now().timestamp() as u64,
+            );
         }
+        written?;
         Ok(Flow::Continue)
     }
 
@@ -645,9 +649,10 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         }
     }
 
-    /// Hand the message to the receiver. Returns the reply, and the message
-    /// hash when it may be forgotten once that reply has reached the sender.
-    async fn deliver(&mut self, raw: Vec<u8>) -> (Reply, Option<String>) {
+    /// Hand the message to the receiver. Returns the reply, and the retry
+    /// store's attempt with whether the reply is definitive, to be finished
+    /// once the reply has been written.
+    async fn deliver(&mut self, raw: Vec<u8>) -> (Reply, Option<(Attempt, bool)>) {
         let raw = Arc::new(raw);
         let helo = self.helo.clone().unwrap_or_default();
         let mail_from = self.tx.mail_from.clone().unwrap_or_default();
@@ -666,18 +671,14 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         let hash =
             tokio::task::spawn_blocking(move || hex::encode(Sha256::digest(hashed.as_slice())))
                 .await
-                .unwrap_or_default();
+                .ok();
 
-        // Record the hash before handing the message over: if the delivery
+        // Record the attempt before handing the message over: if the delivery
         // dies half way (crash, restart), the receiver may have stored it, and
         // the sender's next attempt must be flagged as a retry.
-        let store = &self.shared.retry_store;
         let now = chrono::Utc::now();
-        let unix = now.timestamp() as u64;
-        let retry = !hash.is_empty() && store.contains(&hash, unix);
-        if !hash.is_empty() {
-            store.remember(&hash, unix);
-        }
+        let attempt = hash.map(|hash| self.shared.retry_store.begin(&hash, now.timestamp() as u64));
+        let retry = attempt.as_ref().is_some_and(|attempt| attempt.retry);
 
         let size = raw.len();
         let recipients = self.tx.recipients.len();
@@ -704,10 +705,6 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             })
             .await;
         let verdict = reply::data_reply(&outcome);
-        // A definitive answer ends the message's story, retry or not, so a
-        // deliberate re-send later is captured again; a 4xx keeps the hash
-        // for the next attempt.
-        let settled = (!verdict.remember_for_retry && !hash.is_empty()).then_some(hash);
         tracing::info!(
             ip = %self.peer.ip,
             trusted = self.peer.client.trusted,
@@ -717,7 +714,8 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             code = verdict.reply.code,
             "message"
         );
-        (verdict.reply, settled)
+        let definitive = !verdict.remember_for_retry;
+        (verdict.reply, attempt.map(|attempt| (attempt, definitive)))
     }
 }
 

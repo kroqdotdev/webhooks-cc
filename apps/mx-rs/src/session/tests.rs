@@ -619,6 +619,26 @@ async fn records_the_hash_while_delivering_and_forgets_it_after_a_definitive_ans
 }
 
 #[tokio::test]
+async fn captures_both_of_two_identical_messages_sent_at_the_same_time() {
+    let shared = shared(FakeBackend::default().with_delay(Duration::from_millis(200)));
+    let send = |shared: Arc<Shared<FakeBackend>>| async move {
+        let (mut client, _handle, _stop) = start(shared);
+        greet(&mut client).await;
+        client.start_message("a@mailhooks.cc").await;
+        client.send("identical on purpose\r\n.\r\n").await;
+        client.expect(250).await;
+    };
+    tokio::join!(send(shared.clone()), send(shared.clone()));
+    let deliveries = shared.backend.deliveries();
+    assert_eq!(deliveries.len(), 2);
+    assert!(
+        deliveries.iter().all(|d| !d.retry),
+        "running at the same time is not a retry"
+    );
+    assert_eq!(shared.retry_store.len(), 0);
+}
+
+#[tokio::test]
 async fn keeps_the_hash_when_the_final_reply_cannot_be_written() {
     let shared = shared(FakeBackend::default().with_delay(Duration::from_millis(200)));
     let (mut client, handle, _stop) = start(shared.clone());

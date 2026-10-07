@@ -15,6 +15,7 @@ mod session;
 mod tls;
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -22,7 +23,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 
-use auth_check::{AuthChecker, AuthOutcome, AuthRequest};
+use auth_check::{AuthChecker, AuthOutcome, AuthRequest, ReverseDns};
 use config::Config;
 use ingest::{Delivery, Ingest};
 use limits::{Client, ClientKey, Limiter, is_trusted_name};
@@ -35,6 +36,8 @@ use tls::TlsProvider;
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 /// Refused connections are logged at most this often per client.
 const REFUSAL_LOG_EVERY: Duration = Duration::from_secs(60);
+/// How long a reverse-DNS answer is reused for later connections.
+const REVERSE_DNS_CACHE_FOR: Duration = Duration::from_secs(600);
 
 struct LiveBackend {
     ingest: Ingest,
@@ -62,6 +65,9 @@ struct Server {
     trusted_rdns: Vec<String>,
     sessions: Arc<Semaphore>,
     refusals: Mutex<HashMap<ClientKey, Instant>>,
+    /// Recent reverse-DNS answers: a sending server usually opens several
+    /// connections in a row.
+    reverse_dns: Mutex<HashMap<IpAddr, (ReverseDns, Instant)>>,
 }
 
 #[tokio::main]
@@ -102,7 +108,13 @@ async fn main() {
             }
         };
 
-    let auth = AuthChecker::new(&config.hostname, config.timeouts.auth_checks);
+    // One authentication check per buffered message; a check whose message
+    // already got its reply keeps its slot until it has really stopped.
+    let auth = AuthChecker::new(
+        &config.hostname,
+        config.timeouts.auth_checks,
+        config.data_slots,
+    );
     let server = Arc::new(Server {
         shared: Shared {
             backend: LiveBackend {
@@ -125,6 +137,7 @@ async fn main() {
         trusted_rdns: config.trusted_rdns.clone(),
         sessions: Arc::new(Semaphore::new(config.max_sessions)),
         refusals: Mutex::new(HashMap::new()),
+        reverse_dns: Mutex::new(HashMap::new()),
     });
     let (stop, stopped) = watch::channel(false);
 
@@ -193,9 +206,21 @@ async fn accept_loop(
         tokio::spawn(async move {
             let _permit = permit;
             // Reverse DNS decides whether the client is a known provider,
-            // which sets its limits, so it is looked up before anything else.
-            let timeouts = &server.shared.timeouts;
-            let reverse_dns = server.auth.reverse_dns(ip, timeouts.reverse_dns).await;
+            // which sets its limits, so it is looked up before anything else,
+            // under a per-client cap of its own.
+            let reverse_dns = match server.cached_reverse_dns(ip) {
+                Some(found) => found,
+                None => {
+                    let Some(_lookup) = server.shared.limiter.start_lookup(ip) else {
+                        server.refuse(stream, Client::new(ip, false), &reply::TOO_BUSY);
+                        return;
+                    };
+                    let budget = server.shared.timeouts.reverse_dns;
+                    let found = server.auth.reverse_dns(ip, budget).await;
+                    server.remember_reverse_dns(ip, &found);
+                    found
+                }
+            };
             let trusted = reverse_dns.confirmed
                 && reverse_dns
                     .name
@@ -230,6 +255,23 @@ async fn accept_loop(
 }
 
 impl Server {
+    fn cached_reverse_dns(&self, ip: IpAddr) -> Option<ReverseDns> {
+        let cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
+        cache
+            .get(&ip)
+            .filter(|(_, at)| at.elapsed() < REVERSE_DNS_CACHE_FOR)
+            .map(|(found, _)| found.clone())
+    }
+
+    fn remember_reverse_dns(&self, ip: IpAddr, found: &ReverseDns) {
+        let now = Instant::now();
+        let mut cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
+        if cache.len() >= 10_000 {
+            cache.retain(|_, (_, at)| now.duration_since(*at) < REVERSE_DNS_CACHE_FOR);
+        }
+        cache.insert(ip, (found.clone(), now));
+    }
+
     /// Send one 421 and close, without holding a session slot. Logged at most
     /// once a minute per client, so a flood does not flood the log too.
     fn refuse(&self, mut stream: TcpStream, client: Client, reply: &Reply) {

@@ -6,11 +6,17 @@
 //! the middle of a delivery), so the next attempt is sent with `retry: true`,
 //! and the receiver returns the stored copy instead of billing again.
 //!
-//! A hash goes in before each delivery and stays when the answer is a
-//! temporary failure; it is forgotten again once a definitive answer (2xx or
-//! 5xx) has been written to the sender. It is kept for eight days, longer
-//! than the retry horizon of common SMTP queues, in memory and in an
-//! append-only file so a restart or a crash does not forget it.
+//! Each delivery is an attempt from `begin` to `finish`. An attempt is a
+//! retry only when an earlier one left the outcome uncertain: answered with
+//! 4xx, or its final reply could not be written. Attempts merely running at
+//! the same time are not retries, so two deliberate sends of the same bytes
+//! are both captured. A hash is forgotten once no attempt is running and none
+//! left it uncertain.
+//!
+//! The hash is written to an append-only file when an attempt begins, so a
+//! crash in the middle of a delivery leaves it behind; everything loaded at
+//! startup counts as uncertain. Entries last eight days, longer than the retry
+//! horizon of common SMTP queues.
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -31,10 +37,27 @@ pub struct RetryStore {
 }
 
 struct Inner {
-    /// Hash to expiry (unix seconds).
-    entries: HashMap<String, u64>,
+    entries: HashMap<String, Entry>,
     file: Option<File>,
     appended_since_rewrite: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Entry {
+    /// Unix seconds.
+    expiry: u64,
+    /// Attempts between `begin` and `finish`.
+    running: u32,
+    /// An attempt ended without the sender learning a definitive answer.
+    uncertain: bool,
+}
+
+/// One delivery attempt, from `begin` to `finish`.
+#[derive(Debug)]
+pub struct Attempt {
+    hash: String,
+    /// An earlier attempt left the outcome uncertain.
+    pub retry: bool,
 }
 
 fn is_hash(s: &str) -> bool {
@@ -75,7 +98,14 @@ impl RetryStore {
                 {
                     let hash = hash.to_ascii_lowercase();
                     if expiry > now {
-                        entries.insert(hash, expiry);
+                        // Whatever was running when the process stopped has
+                        // an unknown outcome.
+                        let entry = Entry {
+                            expiry,
+                            running: 0,
+                            uncertain: true,
+                        };
+                        entries.insert(hash, entry);
                     } else {
                         entries.remove(&hash);
                     }
@@ -104,25 +134,58 @@ impl RetryStore {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Start delivering the message with this hash. Checking for an earlier
+    /// uncertain attempt and recording this one happen under one lock.
+    pub fn begin(&self, hash: &str, now: u64) -> Attempt {
+        let expiry = now + self.ttl_secs;
+        let mut inner = self.lock();
+        let entry = inner.entries.entry(hash.to_string()).or_insert(Entry {
+            expiry,
+            running: 0,
+            uncertain: false,
+        });
+        if entry.expiry <= now {
+            entry.running = 0;
+            entry.uncertain = false;
+        }
+        let retry = entry.uncertain;
+        entry.running += 1;
+        entry.expiry = expiry;
+        self.append(&mut inner, hash, expiry, now);
+        Attempt {
+            hash: hash.to_string(),
+            retry,
+        }
+    }
+
+    /// End an attempt. `settled` means the sender has received a definitive
+    /// answer (2xx or 5xx); anything else leaves the outcome uncertain, and
+    /// the next attempt is a retry.
+    pub fn finish(&self, attempt: Attempt, settled: bool, now: u64) {
+        let mut inner = self.lock();
+        let Some(entry) = inner.entries.get_mut(&attempt.hash) else {
+            return;
+        };
+        entry.running = entry.running.saturating_sub(1);
+        if !settled {
+            entry.uncertain = true;
+        } else if attempt.retry {
+            // This retry resolved what the earlier attempt left open.
+            entry.uncertain = false;
+        }
+        if entry.running == 0 && !entry.uncertain {
+            inner.entries.remove(&attempt.hash);
+            self.append(&mut inner, &attempt.hash, 0, now);
+        }
+    }
+
+    /// Whether the hash is known at all (running or uncertain).
+    #[cfg(test)]
     pub fn contains(&self, hash: &str, now: u64) -> bool {
         self.lock()
             .entries
             .get(hash)
-            .is_some_and(|expiry| *expiry > now)
-    }
-
-    pub fn remember(&self, hash: &str, now: u64) {
-        let expiry = now + self.ttl_secs;
-        let mut inner = self.lock();
-        inner.entries.insert(hash.to_string(), expiry);
-        self.append(&mut inner, hash, expiry, now);
-    }
-
-    pub fn forget(&self, hash: &str, now: u64) {
-        let mut inner = self.lock();
-        if inner.entries.remove(hash).is_some() {
-            self.append(&mut inner, hash, 0, now);
-        }
+            .is_some_and(|entry| entry.expiry > now)
     }
 
     fn append(&self, inner: &mut Inner, hash: &str, expiry: u64, now: u64) {
@@ -133,7 +196,7 @@ impl RetryStore {
         }
         inner.appended_since_rewrite += 1;
         if inner.appended_since_rewrite >= COMPACT_EVERY {
-            inner.entries.retain(|_, expiry| *expiry > now);
+            inner.entries.retain(|_, entry| entry.expiry > now);
             if let Err(e) = self.rewrite(inner) {
                 tracing::warn!(error = %e, "could not compact the retry store");
             }
@@ -155,8 +218,8 @@ impl RetryStore {
         let tmp = path.with_extension("tmp");
         {
             let mut out = File::create(&tmp)?;
-            for (hash, expiry) in &inner.entries {
-                writeln!(out, "{hash} {expiry}")?;
+            for (hash, entry) in &inner.entries {
+                writeln!(out, "{hash} {}", entry.expiry)?;
             }
             out.sync_all()?;
         }
@@ -202,38 +265,82 @@ mod tests {
     }
 
     #[test]
-    fn remembers_until_the_ttl_runs_out() {
+    fn a_settled_attempt_leaves_nothing_behind() {
+        let store = RetryStore::in_memory(TTL);
+        let attempt = store.begin(&hash(1), NOW);
+        assert!(!attempt.retry);
+        assert!(store.contains(&hash(1), NOW), "recorded while running");
+        store.finish(attempt, true, NOW);
+        assert!(!store.contains(&hash(1), NOW));
+        assert!(!store.begin(&hash(1), NOW).retry, "a later send is new");
+    }
+
+    #[test]
+    fn an_unsettled_attempt_makes_the_next_one_a_retry_until_it_settles() {
+        let store = RetryStore::in_memory(TTL);
+        let first = store.begin(&hash(1), NOW);
+        store.finish(first, false, NOW);
+        let second = store.begin(&hash(1), NOW + 60);
+        assert!(second.retry);
+        store.finish(second, false, NOW + 60);
+        let third = store.begin(&hash(1), NOW + 120);
+        assert!(third.retry, "still uncertain after another 4xx");
+        store.finish(third, true, NOW + 120);
+        assert!(!store.contains(&hash(1), NOW + 120));
+        assert!(!store.begin(&hash(1), NOW + 180).retry);
+    }
+
+    #[test]
+    fn concurrent_attempts_are_not_retries() {
+        let store = RetryStore::in_memory(TTL);
+        let a = store.begin(&hash(1), NOW);
+        let b = store.begin(&hash(1), NOW);
+        assert!(!a.retry && !b.retry);
+        store.finish(a, true, NOW);
+        assert!(store.contains(&hash(1), NOW), "b is still running");
+        store.finish(b, true, NOW);
+        assert!(!store.contains(&hash(1), NOW));
+    }
+
+    #[test]
+    fn one_unsettled_concurrent_attempt_keeps_the_hash() {
+        let store = RetryStore::in_memory(TTL);
+        let a = store.begin(&hash(1), NOW);
+        let b = store.begin(&hash(1), NOW);
+        store.finish(a, false, NOW);
+        store.finish(b, true, NOW);
+        assert!(
+            store.begin(&hash(1), NOW).retry,
+            "a's outcome is still unknown to its sender"
+        );
+    }
+
+    #[test]
+    fn uncertain_hashes_expire() {
         let store = RetryStore::in_memory(Duration::from_secs(100));
-        store.remember(&hash(1), NOW);
+        let attempt = store.begin(&hash(1), NOW);
+        store.finish(attempt, false, NOW);
         assert!(store.contains(&hash(1), NOW + 99));
         assert!(!store.contains(&hash(1), NOW + 100));
-        assert!(!store.contains(&hash(2), NOW));
+        assert!(!store.begin(&hash(1), NOW + 100).retry);
     }
 
     #[test]
-    fn forgets_on_request() {
-        let store = RetryStore::in_memory(TTL);
-        store.remember(&hash(1), NOW);
-        store.forget(&hash(1), NOW);
-        assert!(!store.contains(&hash(1), NOW));
-        store.forget(&hash(2), NOW); // unknown: nothing happens
-    }
-
-    #[test]
-    fn survives_a_restart_including_forgets() {
+    fn survives_a_restart_and_a_crash_mid_delivery() {
         let (_dir, path) = temp_path();
         {
             let store = RetryStore::open(path.clone(), TTL, NOW).unwrap();
-            store.remember(&hash(1), NOW);
-            store.remember(&hash(2), NOW - TTL.as_secs()); // already expired
-            store.remember(&hash(3), NOW);
-            store.forget(&hash(3), NOW);
+            let deferred = store.begin(&hash(1), NOW);
+            store.finish(deferred, false, NOW);
+            let settled = store.begin(&hash(2), NOW);
+            store.finish(settled, true, NOW);
+            // Still running when the process dies.
+            let _crashed = store.begin(&hash(3), NOW);
         }
         let store = RetryStore::open(path, TTL, NOW + 10).unwrap();
-        assert!(store.contains(&hash(1), NOW + 10));
-        assert!(!store.contains(&hash(2), NOW + 10));
-        assert!(!store.contains(&hash(3), NOW + 10), "the forget survived");
-        assert_eq!(store.len(), 1);
+        assert!(store.begin(&hash(1), NOW + 10).retry);
+        assert!(!store.contains(&hash(2), NOW + 10), "the forget survived");
+        assert!(store.begin(&hash(3), NOW + 10).retry);
     }
 
     #[test]
@@ -257,7 +364,9 @@ mod tests {
         // Entries that expire quickly: neither memory nor the file may grow
         // without bound.
         for i in 0..(3 * COMPACT_EVERY) {
-            store.remember(&format!("{:064x}", i), NOW + 20 * i as u64);
+            let now = NOW + 20 * i as u64;
+            let attempt = store.begin(&format!("{:064x}", i), now);
+            store.finish(attempt, false, now);
         }
         let lines = fs::read_to_string(&path).unwrap().lines().count();
         assert!(lines <= COMPACT_EVERY + 1, "{lines} lines");

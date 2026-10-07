@@ -8,12 +8,18 @@
 //! DKIM verification is CPU work that never yields, so a timeout around it on
 //! the async runtime could not fire: one crafted signature (a huge `h=` list
 //! over a huge header block) would freeze a worker thread for minutes. The
-//! checks therefore run on a blocking thread with the budget applied from the
-//! outside, and inputs that could only be abuse are not verified at all.
+//! checks therefore run on a blocking thread, and inputs that could only be
+//! abuse are not verified at all. A timeout on the caller's side does not stop
+//! a blocking task, so the task carries the same deadline for its DNS work and
+//! holds one of a fixed number of slots until it has really ended: stalled
+//! checks cannot pile up, each holding a message.
 
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::sync::Semaphore;
+use tokio::time::Instant;
 
 use mail_auth::dmarc::Policy;
 use mail_auth::{
@@ -55,12 +61,15 @@ pub struct AuthChecker {
     authenticator: Option<MessageAuthenticator>,
     hostname: Arc<str>,
     budget: Duration,
+    /// Checks running on blocking threads, including ones whose caller
+    /// already gave up.
+    slots: Arc<Semaphore>,
 }
 
 impl AuthChecker {
     /// Uses the system's resolver configuration. Without one the checks are
     /// skipped and reported as unavailable.
-    pub fn new(hostname: &str, budget: Duration) -> Self {
+    pub fn new(hostname: &str, budget: Duration, slots: usize) -> Self {
         let authenticator = match MessageAuthenticator::new_system_conf() {
             Ok(authenticator) => Some(authenticator),
             Err(e) => {
@@ -72,6 +81,7 @@ impl AuthChecker {
             authenticator,
             hostname: Arc::from(hostname),
             budget,
+            slots: Arc::new(Semaphore::new(slots.max(1))),
         }
     }
 
@@ -82,6 +92,7 @@ impl AuthChecker {
             authenticator: None,
             hostname: Arc::from(hostname),
             budget: Duration::from_secs(1),
+            slots: Arc::new(Semaphore::new(1)),
         }
     }
 
@@ -112,18 +123,39 @@ impl AuthChecker {
         };
         let hostname = self.hostname.clone();
         let runtime = tokio::runtime::Handle::current();
-        let task = tokio::task::spawn_blocking(move || {
-            runtime.block_on(run(&authenticator, &hostname, &request))
-        });
-        match tokio::time::timeout(self.budget, task).await {
-            Ok(Ok(json)) => AuthOutcome { json },
-            Ok(Err(_)) => AuthOutcome {
-                json: json!({ "error": "failed" }),
-            },
-            Err(_) => AuthOutcome {
-                json: json!({ "error": "timeout" }),
-            },
-        }
+        let deadline = Instant::now() + self.budget;
+        let json = bounded(&self.slots, deadline, move || {
+            runtime.block_on(async {
+                tokio::time::timeout_at(deadline, run(&authenticator, &hostname, &request))
+                    .await
+                    .ok()
+            })
+        })
+        .await;
+        AuthOutcome { json }
+    }
+}
+
+/// Run blocking `work` once one of `slots` is free, answering by `deadline`.
+/// The slot stays taken until `work` has returned, even after the caller has
+/// stopped waiting, so `work` must honour the deadline itself as far as it
+/// can. `None` from `work` means it ran out of time.
+async fn bounded<F>(slots: &Arc<Semaphore>, deadline: Instant, work: F) -> Value
+where
+    F: FnOnce() -> Option<Value> + Send + 'static,
+{
+    let Ok(Ok(slot)) = tokio::time::timeout_at(deadline, slots.clone().acquire_owned()).await
+    else {
+        return json!({ "error": "busy" });
+    };
+    let task = tokio::task::spawn_blocking(move || {
+        let _slot = slot;
+        work()
+    });
+    match tokio::time::timeout_at(deadline, task).await {
+        Ok(Ok(Some(json))) => json,
+        Ok(Ok(None)) | Err(_) => json!({ "error": "timeout" }),
+        Ok(Err(_)) => json!({ "error": "failed" }),
     }
 }
 
@@ -335,6 +367,26 @@ mod tests {
                 .await,
             ReverseDns::default()
         );
+    }
+
+    #[tokio::test]
+    async fn a_check_that_overruns_keeps_its_slot_until_it_really_ends() {
+        let slots = Arc::new(Semaphore::new(1));
+        let budget = Duration::from_millis(100);
+        let slow = bounded(&slots, Instant::now() + budget, || {
+            std::thread::sleep(Duration::from_millis(400));
+            Some(json!({ "late": true }))
+        })
+        .await;
+        assert_eq!(slow, json!({ "error": "timeout" }));
+        // The slow task is still running and still holds the only slot.
+        let blocked = bounded(&slots, Instant::now() + budget, || Some(json!({}))).await;
+        assert_eq!(blocked, json!({ "error": "busy" }));
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let next = bounded(&slots, Instant::now() + budget, || Some(json!({ "ok": 1 }))).await;
+        assert_eq!(next, json!({ "ok": 1 }));
+        let gave_up = bounded(&slots, Instant::now() + budget, || None).await;
+        assert_eq!(gave_up, json!({ "error": "timeout" }));
     }
 
     #[test]
