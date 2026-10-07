@@ -7,6 +7,7 @@
 
 mod auth_check;
 mod config;
+mod expiring;
 mod ingest;
 mod limits;
 mod reply;
@@ -14,7 +15,6 @@ mod retry_store;
 mod session;
 mod tls;
 
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -25,6 +25,7 @@ use tokio::sync::{Semaphore, watch};
 
 use auth_check::{AuthChecker, AuthOutcome, AuthRequest, ReverseDns};
 use config::Config;
+use expiring::Expiring;
 use ingest::{Delivery, Ingest};
 use limits::{Client, ClientKey, Limiter, is_trusted_name};
 use reply::{CheckStatus, DeliverOutcome, Reply};
@@ -38,6 +39,8 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 const REFUSAL_LOG_EVERY: Duration = Duration::from_secs(60);
 /// How long a reverse-DNS answer is reused for later connections.
 const REVERSE_DNS_CACHE_FOR: Duration = Duration::from_secs(600);
+/// Most entries kept in each of the per-client caches.
+const CACHE_CAP: usize = 50_000;
 
 struct LiveBackend {
     ingest: Ingest,
@@ -64,10 +67,10 @@ struct Server {
     auth: AuthChecker,
     trusted_rdns: Vec<String>,
     sessions: Arc<Semaphore>,
-    refusals: Mutex<HashMap<ClientKey, Instant>>,
+    refusals: Mutex<Expiring<ClientKey, Instant>>,
     /// Recent reverse-DNS answers: a sending server usually opens several
     /// connections in a row.
-    reverse_dns: Mutex<HashMap<IpAddr, (ReverseDns, Instant)>>,
+    reverse_dns: Mutex<Expiring<IpAddr, (ReverseDns, Instant)>>,
 }
 
 #[tokio::main]
@@ -136,8 +139,8 @@ async fn main() {
         auth,
         trusted_rdns: config.trusted_rdns.clone(),
         sessions: Arc::new(Semaphore::new(config.max_sessions)),
-        refusals: Mutex::new(HashMap::new()),
-        reverse_dns: Mutex::new(HashMap::new()),
+        refusals: Mutex::new(Expiring::capped(CACHE_CAP)),
+        reverse_dns: Mutex::new(Expiring::capped(CACHE_CAP)),
     });
     let (stop, stopped) = watch::channel(false);
 
@@ -266,10 +269,9 @@ impl Server {
     fn remember_reverse_dns(&self, ip: IpAddr, found: &ReverseDns) {
         let now = Instant::now();
         let mut cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
-        if cache.len() >= 10_000 {
-            cache.retain(|_, (_, at)| now.duration_since(*at) < REVERSE_DNS_CACHE_FOR);
-        }
-        cache.insert(ip, (found.clone(), now));
+        cache.insert(ip, (found.clone(), now), |_, (_, at)| {
+            now.duration_since(*at) < REVERSE_DNS_CACHE_FOR
+        });
     }
 
     /// Send one 421 and close, without holding a session slot. Logged at most
@@ -278,13 +280,12 @@ impl Server {
         let now = Instant::now();
         let log = {
             let mut refusals = self.refusals.lock().unwrap_or_else(|e| e.into_inner());
-            if refusals.len() >= 10_000 {
-                refusals.retain(|_, at| now.duration_since(*at) < REFUSAL_LOG_EVERY);
-            }
             match refusals.get(&client.key) {
                 Some(at) if now.duration_since(*at) < REFUSAL_LOG_EVERY => false,
                 _ => {
-                    refusals.insert(client.key, now);
+                    refusals.insert(client.key, now, |_, at| {
+                        now.duration_since(*at) < REFUSAL_LOG_EVERY
+                    });
                     true
                 }
             }

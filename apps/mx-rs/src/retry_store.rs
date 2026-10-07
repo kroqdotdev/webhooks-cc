@@ -13,7 +13,11 @@
 //! are both captured. A hash is forgotten once no attempt is running and none
 //! left it uncertain.
 //!
-//! The hash is written to an append-only file when an attempt begins, so a
+//! The key covers the message and its recipients: the receiver deduplicates
+//! per endpoint, so an outcome for these bytes to one address must not settle
+//! an attempt to another.
+//!
+//! The key is written to an append-only file when an attempt begins, so a
 //! crash in the middle of a delivery leaves it behind; everything loaded at
 //! startup counts as uncertain. Entries last eight days, longer than the retry
 //! horizon of common SMTP queues.
@@ -24,6 +28,8 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
+
+use sha2::{Digest, Sha256};
 
 pub const TTL: Duration = Duration::from_secs(8 * 24 * 60 * 60);
 /// After this many appends, expired entries are dropped and the file is
@@ -58,6 +64,24 @@ pub struct Attempt {
     hash: String,
     /// An earlier attempt left the outcome uncertain.
     pub retry: bool,
+}
+
+/// The store's key for one message to one set of recipients, regardless of
+/// their order or case.
+pub fn key(raw: &[u8], recipients: &[String]) -> String {
+    let mut recipients: Vec<String> = recipients
+        .iter()
+        .map(|r| r.trim().to_ascii_lowercase())
+        .collect();
+    recipients.sort();
+    recipients.dedup();
+    let mut hasher = Sha256::new();
+    hasher.update(Sha256::digest(raw));
+    for recipient in &recipients {
+        hasher.update(b"\n");
+        hasher.update(recipient.as_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 fn is_hash(s: &str) -> bool {
@@ -257,6 +281,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state").join("retry-hashes");
         (dir, path)
+    }
+
+    #[test]
+    fn keys_cover_the_recipients_in_any_order_or_case() {
+        let to = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let k = key(b"raw", &to(&["a@mailhooks.cc", "b@mailhooks.cc"]));
+        assert!(is_hash(&k));
+        assert_eq!(k, key(b"raw", &to(&["B@mailhooks.cc", "a@mailhooks.cc"])));
+        assert_ne!(k, key(b"raw", &to(&["a@mailhooks.cc"])));
+        assert_ne!(k, key(b"other", &to(&["a@mailhooks.cc", "b@mailhooks.cc"])));
     }
 
     #[test]

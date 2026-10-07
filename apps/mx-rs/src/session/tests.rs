@@ -56,8 +56,9 @@ impl FakeBackend {
     }
 }
 
-fn hash_of(raw: &[u8]) -> String {
-    hex::encode(Sha256::digest(raw))
+fn key_of(raw: &[u8], recipients: &[&str]) -> String {
+    let recipients: Vec<String> = recipients.iter().map(|r| r.to_string()).collect();
+    retry_store::key(raw, &recipients)
 }
 
 fn unix_now() -> u64 {
@@ -75,7 +76,10 @@ impl Backend for FakeBackend {
 
     async fn deliver(&self, delivery: Delivery) -> DeliverOutcome {
         if let Some(store) = self.store.lock().unwrap().clone() {
-            let present = store.contains(&hash_of(&delivery.raw), unix_now());
+            let present = store.contains(
+                &retry_store::key(&delivery.raw, &delivery.recipients),
+                unix_now(),
+            );
             self.in_store_during_deliver.lock().unwrap().push(present);
         }
         if let Some(delay) = self.delay {
@@ -588,8 +592,35 @@ async fn defers_when_the_receiver_fails_and_flags_the_retry() {
     assert!(
         !shared
             .retry_store
-            .contains(&hash_of(&deliveries[1].raw), unix_now())
+            .contains(&key_of(&deliveries[1].raw, &["a@mailhooks.cc"]), unix_now())
     );
+}
+
+#[tokio::test]
+async fn one_endpoints_outcome_does_not_settle_another_endpoints_retry() {
+    let shared = shared(FakeBackend::default());
+    let raw = "Message-ID: <same@client.test>\r\n\r\nsame bytes\r\n.\r\n";
+    for (to, outcome, code) in [
+        ("a@mailhooks.cc", "transient", 451),
+        ("b@mailhooks.cc", "captured", 250),
+        ("a@mailhooks.cc", "duplicate", 250),
+    ] {
+        shared
+            .backend
+            .set_outcome(DeliverOutcome::Results(vec![outcome.into()]));
+        let (mut client, _handle, _stop) = start(shared.clone());
+        greet(&mut client).await;
+        client.start_message(to).await;
+        client.send(raw).await;
+        client.expect(code).await;
+    }
+    let retries: Vec<bool> = shared
+        .backend
+        .deliveries()
+        .iter()
+        .map(|d| d.retry)
+        .collect();
+    assert_eq!(retries, vec![false, false, true]);
 }
 
 #[tokio::test]
@@ -652,7 +683,7 @@ async fn keeps_the_hash_when_the_final_reply_cannot_be_written() {
     assert!(
         shared
             .retry_store
-            .contains(&hash_of(b"lost reply\r\n"), unix_now()),
+            .contains(&key_of(b"lost reply\r\n", &["a@mailhooks.cc"]), unix_now()),
         "the sender will retry, and that attempt must be flagged"
     );
 }

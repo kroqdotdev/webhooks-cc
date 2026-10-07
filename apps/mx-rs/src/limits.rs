@@ -22,11 +22,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use crate::config::Limits;
+use crate::expiring::Expiring;
 
 const HOUR: Duration = Duration::from_secs(3600);
 const MINUTE: Duration = Duration::from_secs(60);
-/// Maps are pruned once they hold this many keys.
-const PRUNE_AT: usize = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClientKey {
@@ -75,6 +74,10 @@ impl Window {
         }
     }
 
+    fn live(&self, now: Instant, period: Duration) -> bool {
+        now.duration_since(self.started) < period
+    }
+
     /// Count one event; true while the window's count stays within `max`.
     fn hit(&mut self, now: Instant, period: Duration, max: u32) -> bool {
         if now.duration_since(self.started) >= period {
@@ -96,8 +99,8 @@ struct State {
     lookups: HashMap<ClientKey, usize>,
     sessions: HashMap<ClientKey, usize>,
     data: HashMap<ClientKey, usize>,
-    messages: HashMap<ClientKey, Window>,
-    per_address: HashMap<(ClientKey, String), Window>,
+    messages: Expiring<ClientKey, Window>,
+    per_address: Expiring<(ClientKey, String), Window>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,11 +204,9 @@ impl Limiter {
             self.limits.messages_per_client_per_hour
         };
         let mut state = self.lock();
-        prune(&mut state.messages, now, HOUR);
         state
             .messages
-            .entry(client.key)
-            .or_insert_with(|| Window::new(now))
+            .get_or_insert_with(client.key, || Window::new(now), |_, w| w.live(now, HOUR))
             .hit(now, HOUR, max)
     }
 
@@ -215,18 +216,14 @@ impl Limiter {
     pub fn allow_address(&self, client: Client, address_key: &str, now: Instant) -> bool {
         let max = self.limits.messages_per_address_per_minute;
         let mut state = self.lock();
-        prune(&mut state.per_address, now, MINUTE);
         state
             .per_address
-            .entry((client.key, address_key.to_string()))
-            .or_insert_with(|| Window::new(now))
+            .get_or_insert_with(
+                (client.key, address_key.to_string()),
+                || Window::new(now),
+                |_, w| w.live(now, MINUTE),
+            )
             .hit(now, MINUTE, max)
-    }
-}
-
-fn prune<K: std::hash::Hash + Eq>(map: &mut HashMap<K, Window>, now: Instant, period: Duration) {
-    if map.len() >= PRUNE_AT {
-        map.retain(|_, w| now.duration_since(w.started) < period);
     }
 }
 

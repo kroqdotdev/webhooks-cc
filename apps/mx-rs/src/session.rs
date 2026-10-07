@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
 use smtp_proto::request::receiver::{DataReceiver, DummyDataReceiver, RequestReceiver};
 use smtp_proto::{Error as SmtpError, Request};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
@@ -23,7 +22,7 @@ use crate::config::{MAX_MESSAGE_BYTES, MAX_RECIPIENTS, Timeouts};
 use crate::ingest::Delivery;
 use crate::limits::{Client, Limiter, SlotGuard, address_key};
 use crate::reply::{self, CheckStatus, DeliverOutcome, Reply};
-use crate::retry_store::{Attempt, RetryStore};
+use crate::retry_store::{self, Attempt, RetryStore};
 use crate::tls::TlsProvider;
 
 /// Errors tolerated before the connection is closed.
@@ -667,11 +666,10 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
                 reverse_dns: self.peer.reverse_dns.clone(),
             })
             .await;
-        let hashed = raw.clone();
-        let hash =
-            tokio::task::spawn_blocking(move || hex::encode(Sha256::digest(hashed.as_slice())))
-                .await
-                .ok();
+        let (hashed, recipients) = (raw.clone(), self.tx.recipients.clone());
+        let hash = tokio::task::spawn_blocking(move || retry_store::key(&hashed, &recipients))
+            .await
+            .ok();
 
         // Record the attempt before handing the message over: if the delivery
         // dies half way (crash, restart), the receiver may have stored it, and

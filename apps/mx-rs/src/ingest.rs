@@ -4,7 +4,6 @@
 //! verifies it: `x-mail-signature` is the hex HMAC-SHA256 of
 //! `"{timestamp}.POST.{path}."` followed by the body.
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -13,11 +12,13 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
+use crate::expiring::Expiring;
 use crate::reply::{CheckStatus, DeliverOutcome};
 
 pub const CHECK_PATH: &str = "/internal/mail/check";
 pub const DELIVER_PATH: &str = "/internal/mail/deliver";
-const CACHE_PRUNE_AT: usize = 10_000;
+/// Most recipient answers kept at once.
+const CACHE_CAP: usize = 50_000;
 
 pub fn sign(secret: &[u8], timestamp: i64, method: &str, path: &str, body: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
@@ -79,7 +80,7 @@ pub struct Ingest {
     secret: Vec<u8>,
     check_timeout: Duration,
     deliver_timeout: Duration,
-    cache: Mutex<HashMap<String, (CheckStatus, Instant)>>,
+    cache: Mutex<Expiring<String, (CheckStatus, Instant)>>,
 }
 
 impl Ingest {
@@ -101,7 +102,7 @@ impl Ingest {
             secret: secret.as_bytes().to_vec(),
             check_timeout,
             deliver_timeout,
-            cache: Mutex::new(HashMap::new()),
+            cache: Mutex::new(Expiring::capped(CACHE_CAP)),
         }
     }
 
@@ -177,10 +178,11 @@ impl Ingest {
                 _ => slug_key,
             };
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            if cache.len() >= CACHE_PRUNE_AT {
-                cache.retain(|_, (_, until)| *until > now);
-            }
-            cache.insert(key, (status, now + Duration::from_secs(secs)));
+            cache.insert(
+                key,
+                (status, now + Duration::from_secs(secs)),
+                |_, (_, until)| *until > now,
+            );
         }
         status
     }
@@ -386,6 +388,7 @@ mod tests {
         client.cache.lock().unwrap().insert(
             crate::limits::address_key("abc@mailhooks.cc"),
             (CheckStatus::Ok, Instant::now() + Duration::from_secs(60)),
+            |_, _| true,
         );
         assert_eq!(client.check(bad).await, CheckStatus::Invalid);
         assert_eq!(client.check("abc@mailhooks.cc").await, CheckStatus::Ok);
