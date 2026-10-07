@@ -17,6 +17,7 @@ Production: `https://webhooks.cc` (app) and `https://go.webhooks.cc` (webhook re
 | `apps/web/`             | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui. Dashboard, marketing and SEO pages, API routes under `app/api/`, env validation in `lib/env.ts`. |
 | `content/docs/`         | MDX source for `/docs/*`, rendered by the catch-all route in `apps/web/app/docs/`.                                                                        |
 | `apps/receiver-rs/`     | Rust (Axum, Tokio, sqlx) webhook receiver. Captures at `/w/{slug}`. Env vars are read in `src/config.rs`.                                                 |
+| `apps/mx-rs/`           | Rust (Tokio) receive-only SMTP host for email capture on `mailhooks.cc`. Env vars are read in `src/config.rs`.                                            |
 | `apps/cli-rs/`          | Rust CLI `whk` (Clap, Ratatui). Subcommands live in `src/cli/`.                                                                                           |
 | `packages/sdk/`         | `@webhooks-cc/sdk`, published to npm. Also the canonical provider catalog (`TEMPLATE_PROVIDERS`, `VERIFY_PROVIDERS`).                                     |
 | `packages/mcp/`         | `@webhooks-cc/mcp`, stdio MCP server. Tools in `src/tools.ts`; the test suite pins the tool and provider counts.                                          |
@@ -37,6 +38,7 @@ pnpm typecheck && pnpm lint && pnpm build
 pnpm test                               # SDK + MCP + web unit tests
 cd apps/web && pnpm test:integration    # needs the local Supabase stack; some suites need the receiver running (make dev-receiver, which also opens its mail listener)
 cd apps/receiver-rs && cargo test && cargo clippy -- -D warnings
+cd apps/mx-rs && cargo test && cargo clippy --all-targets -- -D warnings
 cd apps/cli-rs && cargo test
 pnpm test:full                          # everything, including integration and Playwright e2e
 ```
@@ -45,7 +47,7 @@ pnpm test:full                          # everything, including integration and 
 
 Production runs as containers on a single host: the web app and receiver images built from this repository (`apps/web/Dockerfile`, `apps/receiver-rs/Dockerfile`), Caddy, Redis, the AppSignal collector, and a self-hosted Supabase project, all under Docker Compose. Images are built in CI and shipped to the host; the host never builds. The deploy workflow, compose files, and host configuration live in a separate private operations repository, not here.
 
-A deploy builds both images for a given ref of this repository, loads them on the host, and recreates the web and receiver containers. `NEXT_PUBLIC_*` values are build arguments, so changing one means a new build, not a restart. The CI job "Build Docker Images" checks on every PR that both images still build.
+A deploy builds the images for a given ref of this repository, loads them on the host, and recreates the web and receiver containers (and, where configured, the SMTP listener on the MX host). `NEXT_PUBLIC_*` values are build arguments, so changing one means a new build, not a restart. The CI job "Build Docker Images" checks on every PR that the images still build.
 
 ### Database changes
 
@@ -63,7 +65,7 @@ Two rules that are easy to miss:
 
 ## How it fits together
 
-Web (3000), receiver (3001, plus a private mail listener on 3002), collector (8099), a self-hosted Supabase instance (Postgres, Auth, Realtime), a Cloudflare Worker for outbound notifications, and optional Redis for distributed rate limiting.
+Web (3000), receiver (3001, plus a private mail listener on 3002), collector (8099), the SMTP listener for `mailhooks.cc` on its own box (25), a self-hosted Supabase instance (Postgres, Auth, Realtime), a Cloudflare Worker for outbound notifications, and optional Redis for distributed rate limiting.
 
 Capture path: a sender POSTs to `go.webhooks.cc/w/{slug}/...`. The receiver validates the slug, strips proxy headers, and calls the `capture_webhook()` stored procedure once. That single call looks up the endpoint, checks expiry, decrements quota atomically, inserts the request, bumps counters, and picks the billing pool. The receiver answers with the configured mock response or a plain 200. Dashboards update over Supabase Realtime; the CLI streams over SSE from `/api/stream/{slug}`.
 
@@ -78,7 +80,7 @@ Decisions worth knowing, with the reasons:
 - **The visual-style A/B split is a local coin flip, PostHog only analyses it.** posthog-js resolves feature flags after first paint, so a flag-driven style would re-skin the page in front of the visitor. `appearanceBootstrapScript()` in `apps/web/lib/ui-style.ts` assigns the variant before paint and the app reports it to PostHog as `$feature/ui-style` plus one `$feature_flag_called` exposure per session, which is what the Experiments UI reads. PostHog names experiment variants `control` and `test`, so classic and clean are mapped onto those keys and the readable name rides along as `ui_style_assigned`. Traffic lives in `NEXT_PUBLIC_UI_STYLE_SPLIT` (0 disables). It is inlined at build time on purpose: most routes are prerendered, and a request-time value would leave them serving a stale split while dynamic routes used the new one. Changing the split means a rebuild and restart. Browsers with any trace of an earlier visit keep classic and stay out of the experiment, and a visitor's own pick is never overwritten.
 - **Free periods are lazy.** `period_end` is unset until the first capture triggers `start_free_period()`.
 - **No trigram indexes on `requests`.** Search is substring `ILIKE` over path, body and headers without an index (migration 00044 dropped them): the indexes made every capture write about 8x the WAL and cost about a third of capture throughput, for a feature used rarely. Slug-scoped searches read only that endpoint's rows through `requests_endpoint_time`. Do not add a GIN index on `body` or `headers` without measuring capture throughput.
-- **Email is an ordinary request.** Email capture (in progress: database and receiver side done, SMTP host and dashboard to come) lands mail for `{slug}@mailhooks.cc` as a request with `kind = 'email'`, through the same `capture_webhook()` call, quota, billing period and counters as HTTP. A separate MX host speaks SMTP and calls the receiver's private, HMAC-signed mail listener; that listener must only ever be reachable on the private network, never through Caddy. Endpoints without an owner get no email, because guest captures are readable by anyone who knows the slug. A sender's retry is matched in the database by the message hash, and only deliveries the MX host marks as retries are checked, so a message sent again on purpose is captured again. `check_email_recipient()` mirrors the billing selection in `capture_webhook()`; change them together. The capture domain never sends mail.
+- **Email is an ordinary request.** Email capture (in progress: database, receiver and SMTP host done, dashboard to come) lands mail for `{slug}@mailhooks.cc` as a request with `kind = 'email'`, through the same `capture_webhook()` call, quota, billing period and counters as HTTP. The SMTP host (`apps/mx-rs`) runs on its own box, so a public MX record never exposes the production IP; it refuses unknown, guest, over-quota and oversize mail before accepting it and calls the receiver's private, HMAC-signed mail listener, which must only ever be reachable on the private network, never through Caddy. It passes the raw message on byte for byte and keeps the hash of every message whose outcome the sender may not have learned (a 4xx, a lost reply, a crash mid-delivery), so the receiver can tell a sender's retry apart from a deliberate re-send. Endpoints without an owner get no email, because guest captures are readable by anyone who knows the slug. A sender's retry is matched in the database by the message hash, and only deliveries the MX host marks as retries are checked, so a message sent again on purpose is captured again. `check_email_recipient()` mirrors the billing selection in `capture_webhook()`; change them together. The capture domain never sends mail.
 - **Guest endpoint creation is bot-gated.** `POST /api/go/endpoint` returns 403 for crawler or missing user agents, and the landing page only auto-creates an endpoint after a human input signal. Browsers with `navigator.webdriver` get a manual create button, so Playwright and agents must click it and tests must send a browser user agent.
 - **Site totals survive deletes.** `site_stats.total_webhooks` is `sum(endpoints.request_count) + deleted_webhooks`; an AFTER DELETE trigger on `endpoints` (migration 00038) moves the counts of deleted rows into `deleted_webhooks`. Do not add another accumulate step to any delete path.
 - **State changes leave an audit trail; webhook traffic leaves only counts.** Routes that change account, team, billing, API key, or endpoint state call `auditUserAction()` from `lib/audit.ts`, and the Polar webhook calls `auditPolarEvent()`; both write `audit_events` (kept a year) and print one `[audit]` line, and never throw. Add the call when you add such a route. Individual webhooks are never logged: `capture_webhook()` upserts per-endpoint daily counts into `endpoint_daily_stats`, which outlives request retention and endpoint deletion.
@@ -89,7 +91,7 @@ Decisions worth knowing, with the reasons:
 
 ## Environment
 
-Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/receiver-rs/src/config.rs`; read those for the current list and defaults. `.env.example` documents the required set. Secrets live only in `.env.local`, which is gitignored. Three that trip people up:
+Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/receiver-rs/src/config.rs` and `apps/mx-rs/src/config.rs`; read those for the current list and defaults. `.env.example` documents the required set. Secrets live only in `.env.local`, which is gitignored. Three that trip people up:
 
 - `DATABASE_URL` (receiver) is the session pooler in development and a direct same-host connection in production. Keep `PG_POOL_MAX` small (about 20) whenever it bypasses a pooler: every capture updates the same user and endpoint rows, and hundreds of direct connections only queue on those row locks. For the same reason the receiver caps concurrent captures per billing account (`CAPTURE_MAX_INFLIGHT_PER_ACCOUNT`, default 4, keyed by the `billing_key` that `capture_webhook()` returns): without it one flooded account fills the pool and every other account waits. `SUPABASE_DB_URL` is the direct connection used for migrations.
 - `SIGNING_SECRET_KEY` (AES-256-GCM, base64, 32 bytes) is needed by both the receiver and the web app once signature verification is configured. Generate with `openssl rand -base64 32`.
@@ -115,7 +117,7 @@ Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/rec
 
 ## Licensing
 
-Split model. AGPL-3.0: `apps/web`, `apps/receiver-rs`, `supabase/`. MIT: `apps/cli-rs`, `packages/sdk`, `packages/mcp`.
+Split model. AGPL-3.0: `apps/web`, `apps/receiver-rs`, `apps/mx-rs`, `supabase/`. MIT: `apps/cli-rs`, `packages/sdk`, `packages/mcp`.
 
 <!-- BEGIN:turborepo-agent-rules -->
 

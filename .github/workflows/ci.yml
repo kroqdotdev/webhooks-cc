@@ -243,6 +243,58 @@ jobs:
         run: cargo clippy -- -D warnings
         working-directory: apps/receiver-rs
 
+  test-mx:
+    name: Test Rust MX Listener
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/mx-rs/target
+          key: ${{ runner.os }}-cargo-mx-${{ hashFiles('apps/mx-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-mx-
+
+      - name: Run tests
+        run: cargo test --locked
+        working-directory: apps/mx-rs
+
+  lint-mx:
+    name: Lint Rust MX Listener
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/mx-rs/target
+          key: ${{ runner.os }}-cargo-mx-${{ hashFiles('apps/mx-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-mx-
+
+      - name: Check formatting
+        run: cargo fmt --check
+        working-directory: apps/mx-rs
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: apps/mx-rs
+
   lint-cli:
     name: Lint Rust CLI
     runs-on: ubuntu-latest
@@ -272,7 +324,7 @@ jobs:
     name: Build Docker Images
     runs-on: ubuntu-latest
     # Production runs these images, built by the deploy in a separate
-    # repository. This job only checks that both still build; nothing is
+    # repository. This job only checks that they still build; nothing is
     # pushed.
     strategy:
       fail-fast: false
@@ -284,6 +336,9 @@ jobs:
           - image: receiver
             context: apps/receiver-rs
             file: apps/receiver-rs/Dockerfile
+          - image: mx
+            context: apps/mx-rs
+            file: apps/mx-rs/Dockerfile
     steps:
       - uses: actions/checkout@v7
 
