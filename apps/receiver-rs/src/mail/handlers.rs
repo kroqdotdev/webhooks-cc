@@ -21,8 +21,9 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -290,6 +291,28 @@ fn prepare(raw_base64: String) -> Result<Prepared, PrepareError> {
     })
 }
 
+/// Holds one of the delivery slots for the whole delivery request, taken
+/// before the body is read: the slots bound how many messages (each up to
+/// about 14 MiB of base64, plus its decoded and parsed copies) are in memory
+/// at once. Waiting longer than `DELIVER_SLOT_WAIT` answers 503, which the MX
+/// host turns into "try later".
+pub async fn delivery_slot(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Ok(Ok(_slot)) = tokio::time::timeout(
+        DELIVER_SLOT_WAIT,
+        state.mail_deliver_slots.clone().acquire_owned(),
+    )
+    .await
+    else {
+        metrics::mail_ingest("deliver_busy");
+        return retry_later();
+    };
+    next.run(request).await
+}
+
 /// `POST /internal/mail/deliver` → `{results: [{recipient, status, request_id?}]}`,
 /// one result per requested recipient, in request order.
 pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
@@ -320,17 +343,6 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
             .collect();
         return axum::Json(DeliverResponse { results }).into_response();
     }
-
-    // Bounds the memory held by deliveries in flight.
-    let Ok(Ok(_slot)) = tokio::time::timeout(
-        DELIVER_SLOT_WAIT,
-        state.mail_deliver_slots.clone().acquire_owned(),
-    )
-    .await
-    else {
-        metrics::mail_ingest("deliver_busy");
-        return retry_later();
-    };
 
     let DeliverRequest {
         recipients,
@@ -802,6 +814,76 @@ mod tests {
             let response = deliver(State(test_state(false)), headers, body).await;
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         }
+    }
+
+    async fn through_router(
+        state: AppState,
+        path: &str,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> StatusCode {
+        use tower::ServiceExt;
+        let mut request = axum::http::Request::post(path)
+            .body(axum::body::Body::from(body))
+            .unwrap();
+        *request.headers_mut() = headers;
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            crate::mail::router(state).oneshot(request),
+        )
+        .await
+        .expect("router answered in time")
+        .unwrap();
+        response.status()
+    }
+
+    #[tokio::test]
+    async fn a_delivery_without_a_free_slot_is_refused_before_its_body_is_read() {
+        let state = test_state(false);
+        state.mail_deliver_slots.close();
+        let payload = json!({"recipients": ["a@mailhooks.cc"], "raw": b64("Subject: x\r\n\r\ny")});
+        let (headers, body) = signed(DELIVER_PATH, &payload);
+        assert_eq!(
+            through_router(state, DELIVER_PATH, headers, body).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[tokio::test]
+    async fn the_signature_precheck_runs_before_the_slot() {
+        let state = test_state(false);
+        state.mail_deliver_slots.close();
+        let status = through_router(
+            state,
+            DELIVER_PATH,
+            HeaderMap::new(),
+            Bytes::from_static(b"{}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn recipient_checks_do_not_need_a_delivery_slot() {
+        let state = test_state(true);
+        state.mail_deliver_slots.close();
+        let (headers, body) = signed(CHECK_PATH, &json!({"address": "a@mailhooks.cc"}));
+        assert_eq!(
+            through_router(state, CHECK_PATH, headers, body).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn a_delivery_with_a_free_slot_reaches_the_handler() {
+        let (headers, body) = signed(
+            DELIVER_PATH,
+            &json!({"recipients": ["x@example.com"], "raw": b64("Subject: x\r\n\r\ny")}),
+        );
+        assert_eq!(
+            through_router(test_state(false), DELIVER_PATH, headers, body).await,
+            StatusCode::OK
+        );
     }
 
     #[test]

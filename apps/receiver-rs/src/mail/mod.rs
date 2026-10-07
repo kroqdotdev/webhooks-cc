@@ -26,7 +26,14 @@ const MAX_INGEST_BODY: usize = 16 * 1024 * 1024;
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route(handlers::CHECK_PATH, post(handlers::check))
-        .route(handlers::DELIVER_PATH, post(handlers::deliver))
+        // The delivery slot is taken before the handler reads the body.
+        .route(
+            handlers::DELIVER_PATH,
+            post(handlers::deliver).layer(middleware::from_fn_with_state(
+                state.clone(),
+                handlers::delivery_slot,
+            )),
+        )
         // The `Bytes` extractor's own 2 MB default would cut messages short;
         // the layer below is the one limit that applies.
         .layer(DefaultBodyLimit::disable())
