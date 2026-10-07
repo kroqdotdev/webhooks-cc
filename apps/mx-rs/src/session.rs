@@ -37,6 +37,8 @@ const MAX_COMMANDS: u32 = 100;
 /// close, and the receiver would cut them anyway.
 const MAX_HEADER_SECTION: usize = 1024 * 1024;
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long the last writes may take once the session deadline has passed.
+const WRITE_GRACE: Duration = Duration::from_secs(5);
 const READ_CHUNK: usize = 16 * 1024;
 
 /// What a session needs from the rest of the system.
@@ -207,13 +209,31 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         }
         let reason = self.command_loop().await;
         self.stats.closed_by = reason;
-        let _ = self.conn.shutdown().await;
+        let _ = tokio::time::timeout(WRITE_GRACE, self.conn.shutdown()).await;
         self.stats
     }
 
+    /// Writes are bounded like reads: a client that pipelines commands and
+    /// stops reading the replies must not hold its slots forever. The grace
+    /// past the session deadline lets the closing 421 still go out.
     async fn write_raw(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.conn.write_all(bytes).await?;
-        self.conn.flush().await
+        let until = self.deadline + WRITE_GRACE;
+        let limit = self
+            .shared
+            .timeouts
+            .command
+            .min(until.saturating_duration_since(Instant::now()));
+        let write = async {
+            self.conn.write_all(bytes).await?;
+            self.conn.flush().await
+        };
+        match tokio::time::timeout(limit, write).await {
+            Ok(result) => result,
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "reply not taken in time",
+            )),
+        }
     }
 
     async fn reply(&mut self, reply: &Reply) -> io::Result<()> {

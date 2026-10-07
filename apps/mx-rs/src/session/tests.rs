@@ -257,6 +257,40 @@ fn start_with(shared: Arc<Shared<FakeBackend>>, peer: Peer) -> Running {
     (SmtpClient::new(client), handle, stop)
 }
 
+#[tokio::test]
+async fn gives_up_on_a_client_that_stops_reading_replies() {
+    let shared = shared_with(
+        FakeBackend::default(),
+        Limits::default(),
+        timeouts(|t| t.command = Duration::from_millis(200)),
+        None,
+    );
+    // A small pipe, so the replies fill it once the client stops reading.
+    let (client, server) = tokio::io::duplex(256);
+    let (_stop, stopped) = watch::channel(false);
+    let server_shared = shared.clone();
+    let handle = tokio::spawn(async move {
+        Session::new(&server_shared, server, peer(), stopped)
+            .run()
+            .await
+    });
+    let (mut read, mut write) = tokio::io::split(client);
+    let mut banner = [0u8; 16];
+    read.read_exact(&mut banner).await.unwrap();
+    // Keep the read half alive but never read from it again.
+    let _unread = read;
+    tokio::spawn(async move {
+        let _ = write.write_all("NOOP\r\n".repeat(90).as_bytes()).await;
+        // Stay connected without reading.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+    });
+    let stats = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("the session ends although the client never reads")
+        .unwrap();
+    assert_eq!(stats.closed_by, "write_failed");
+}
+
 fn start(shared: Arc<Shared<FakeBackend>>) -> Running {
     start_with(shared, peer())
 }
