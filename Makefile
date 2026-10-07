@@ -31,6 +31,7 @@ build-cli:
 test:
 	pnpm test
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo test
+	cd apps/mx-rs && $$HOME/.cargo/bin/cargo test
 	cd apps/cli-rs && cargo test
 
 test-full:
@@ -43,6 +44,7 @@ test-full:
 # Lint
 lint:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
+	cd apps/mx-rs && $$HOME/.cargo/bin/cargo clippy --all-targets -- -D warnings
 	cd apps/cli-rs && cargo clippy -- -D warnings
 
 # Clean
@@ -53,3 +55,4 @@ clean:
 	rm -rf apps/web/node_modules
 	rm -rf packages/sdk/node_modules
 	rm -rf apps/receiver-rs/target
+	rm -rf apps/mx-rs/target
