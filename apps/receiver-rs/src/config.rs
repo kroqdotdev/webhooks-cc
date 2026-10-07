@@ -30,6 +30,14 @@ pub struct Config {
     /// External webhook base URL (e.g., "https://go.webhooks.cc").
     /// Used to construct the full URL for Twilio signature verification.
     pub webhook_base_url: Option<String>,
+    /// Address of the private mail ingest listener (e.g. "0.0.0.0:3002").
+    /// Unset: the listener is off. Never route it through Caddy.
+    pub mail_ingest_addr: Option<String>,
+    /// When true, every recipient check answers "paused" and deliveries are
+    /// refused as transient, so the MX host tells senders to retry later.
+    pub mail_ingest_paused: bool,
+    /// Domains whose recipients map to endpoint slugs, lowercase.
+    pub mail_domains: Vec<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -72,6 +80,9 @@ impl std::fmt::Debug for Config {
                 &self.signing_secret_key.as_ref().map(|_| "[REDACTED]"),
             )
             .field("webhook_base_url", &self.webhook_base_url)
+            .field("mail_ingest_addr", &self.mail_ingest_addr)
+            .field("mail_ingest_paused", &self.mail_ingest_paused)
+            .field("mail_domains", &self.mail_domains)
             .finish()
     }
 }
@@ -141,6 +152,15 @@ impl Config {
                 }
             });
 
+        let mail_ingest_addr = env::var("MAIL_INGEST_ADDR")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let mail_ingest_paused = env::var("MAIL_INGEST_PAUSED")
+            .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"));
+        let mail_domains =
+            parse_mail_domains(&env::var("MAIL_DOMAINS").unwrap_or_else(|_| "mailhooks.cc".into()));
+
         Self {
             database_url,
             capture_shared_secret,
@@ -161,6 +181,62 @@ impl Config {
             notification_timeout_secs,
             signing_secret_key,
             webhook_base_url,
+            mail_ingest_addr,
+            mail_ingest_paused,
+            mail_domains,
         }
+    }
+}
+
+#[cfg(test)]
+impl Config {
+    /// Defaults for unit tests; nothing here points at a real service.
+    pub fn for_tests() -> Self {
+        Self {
+            database_url: "postgres://nobody@127.0.0.1:1/none".into(),
+            capture_shared_secret: String::new(),
+            port: 0,
+            debug: false,
+            log_dir: "logs".into(),
+            pool_min: 0,
+            pool_max: 1,
+            pg_acquire_timeout_secs: 1,
+            capture_max_inflight_per_account: 4,
+            otel_collector_url: None,
+            appsignal_push_api_key: None,
+            notify_proxy_url: None,
+            notify_secret: None,
+            redis_url: None,
+            max_body_size: 1_048_576,
+            notification_cooldown_secs: 1,
+            notification_timeout_secs: 5,
+            signing_secret_key: None,
+            webhook_base_url: None,
+            mail_ingest_addr: None,
+            mail_ingest_paused: false,
+            mail_domains: vec!["mailhooks.cc".into()],
+        }
+    }
+}
+
+/// Comma-separated domain list, trimmed, lowercased, without trailing dots.
+fn parse_mail_domains(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|d| d.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|d| !d.is_empty())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_mail_domains;
+
+    #[test]
+    fn mail_domains_are_normalised() {
+        assert_eq!(
+            parse_mail_domains(" MailHooks.cc. , dev.mailhooks.cc,, "),
+            vec!["mailhooks.cc".to_string(), "dev.mailhooks.cc".to_string()]
+        );
+        assert!(parse_mail_domains(" , ").is_empty());
     }
 }

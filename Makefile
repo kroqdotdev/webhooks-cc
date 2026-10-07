@@ -8,7 +8,7 @@ dev-web:
 	pnpm --filter web dev
 
 dev-receiver:
-	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
+	@set -a && . ./.env.local && set +a && export MAIL_INGEST_ADDR="$${MAIL_INGEST_ADDR:-127.0.0.1:3002}" && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
 
 dev-cli:
 	cd apps/cli-rs && cargo run -- $(ARGS)
