@@ -74,17 +74,21 @@ pub struct Attempt {
 }
 
 /// The store's key for this message to each recipient. Recipients on the
-/// same endpoint (any tag, any case) share a key, because the receiver
-/// deduplicates per endpoint.
+/// same endpoint share a key, because the receiver deduplicates per
+/// endpoint: any tag, any case, and any of the mail domains, which all map a
+/// slug to the same endpoint. Only accepted recipients get here, so the
+/// domain needs no part in it.
 pub fn keys(raw: &[u8], recipients: &[String]) -> Vec<String> {
     let digest = Sha256::digest(raw);
     recipients
         .iter()
         .map(|recipient| {
+            let address = address_key(recipient);
+            let slug = address.split('@').next().unwrap_or(&address);
             let mut hasher = Sha256::new();
             hasher.update(digest);
             hasher.update(b"\n");
-            hasher.update(address_key(recipient).as_bytes());
+            hasher.update(slug.as_bytes());
             hex::encode(hasher.finalize())
         })
         .collect()
@@ -302,6 +306,11 @@ mod tests {
         assert!(k.iter().all(|key| is_hash(key)));
         assert_ne!(k[0], k[1]);
         assert_eq!(k[0], keys(b"raw", &to(&["<A+tag@MailHooks.cc>"]))[0]);
+        assert_eq!(
+            k[0],
+            keys(b"raw", &to(&["a@alias.example"]))[0],
+            "every mail domain maps a slug to the same endpoint"
+        );
         assert_ne!(k[0], keys(b"other", &to(&["a@mailhooks.cc"]))[0]);
     }
 
