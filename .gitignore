@@ -16,6 +16,7 @@ apps/receiver-rs/target/
 .env
 .env.local
 .env*.local
+.env*.bak*
 
 # IDE
 .idea/

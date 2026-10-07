@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.19";
+export const APP_VERSION = "0.32.20";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.32.20",
+    date: "2026-10-07",
+    title: "Email Capture Groundwork",
+    track: "web",
+    items: [
+      "Groundwork for capturing email at your endpoints: a captured request can now be an email, counted exactly like any other request. Nothing changes in the dashboard yet",
+    ],
+  },
   {
     version: "0.32.19",
     date: "2026-10-06",

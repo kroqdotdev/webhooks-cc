@@ -75,14 +75,20 @@ fn real_ip(headers: &HeaderMap) -> String {
         return String::new();
     };
 
-    // Validate: only allow characters valid in IPv4/IPv6 addresses
-    // (digits, a-f, A-F, dots, colons, brackets, percent for zone IDs)
+    sanitize_ip(&raw)
+}
+
+/// Keep `raw` only when it looks like an IP address: at most 45 characters,
+/// all valid in IPv4/IPv6 (digits, a-f, A-F, dots, colons, brackets, percent
+/// for zone IDs). Anything else becomes "" so a spoofed value can never carry
+/// markup into the database.
+pub(crate) fn sanitize_ip(raw: &str) -> String {
     if raw.len() <= 45
         && raw.bytes().all(|b| {
             b.is_ascii_hexdigit() || b == b'.' || b == b':' || b == b'[' || b == b']' || b == b'%'
         })
     {
-        raw
+        raw.to_string()
     } else {
         String::new()
     }
@@ -99,7 +105,7 @@ fn contains_nul(bytes: &[u8]) -> bool {
 
 /// Replace every NUL character with U+FFFD (replacement character).
 /// Returns `Cow::Borrowed` when there is nothing to replace.
-fn strip_nul(s: &str) -> Cow<'_, str> {
+pub(crate) fn strip_nul(s: &str) -> Cow<'_, str> {
     if s.contains('\0') {
         Cow::Owned(s.replace('\0', "\u{FFFD}"))
     } else {
@@ -151,7 +157,7 @@ fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
 /// - Valid UTF-8 with NUL: raw bytes preserved, NUL replaced by U+FFFD in the
 ///   text copy so Postgres accepts it.
 /// - Invalid UTF-8: raw bytes preserved, lossy text (with NUL also replaced).
-fn classify_body(body: &[u8]) -> (String, Option<Vec<u8>>) {
+pub(crate) fn classify_body(body: &[u8]) -> (String, Option<Vec<u8>>) {
     match std::str::from_utf8(body) {
         Ok(s) if !contains_nul(body) => (s.to_owned(), None),
         Ok(s) => (strip_nul(s).into_owned(), Some(body.to_vec())),
@@ -200,16 +206,16 @@ fn sanitize_query(params: HashMap<String, String>) -> HashMap<String, String> {
 
 /// Shape returned by the capture_webhook stored procedure.
 #[derive(Debug, Deserialize)]
-struct CaptureResult {
-    status: String,
+pub(crate) struct CaptureResult {
+    pub(crate) status: String,
     /// UUID of the inserted request row (for post-capture verification UPDATE).
-    request_id: Option<String>,
+    pub(crate) request_id: Option<String>,
     mock_response: Option<MockResponse>,
     /// Raw JSON so that malformed rules don't break mock_response deserialization.
     #[serde(default)]
     response_rules: Option<serde_json::Value>,
     retry_after: Option<i64>,
-    notification_url: Option<String>,
+    pub(crate) notification_url: Option<String>,
     /// Signing provider configured on the endpoint (e.g., "stripe", "github").
     signing_provider: Option<String>,
     /// Base64-encoded AES-256-GCM encrypted signing secret.
@@ -217,7 +223,7 @@ struct CaptureResult {
     /// Custom header name for generic-hmac provider.
     signing_header: Option<String>,
     /// Quota row the capture billed ("user:<id>", "team:<id>", "endpoint:<id>").
-    billing_key: Option<String>,
+    pub(crate) billing_key: Option<String>,
 }
 
 struct WebhookTarget {
@@ -239,7 +245,7 @@ pub struct MockResponse {
 const MAX_DELAY_MS: u64 = 30_000;
 
 /// Maximum body preview length in notification payloads (characters, not bytes).
-const NOTIFICATION_PREVIEW_LEN: usize = 200;
+pub(crate) const NOTIFICATION_PREVIEW_LEN: usize = 200;
 
 /// Maximum entries in the rate limiter before a full prune is triggered.
 const NOTIFICATION_LIMITER_MAX: usize = 10_000;
@@ -289,7 +295,7 @@ pub fn new_notification_limiter() -> NotificationLimiter {
 
 /// Truncate a string to at most `max_chars` characters (including "..." suffix).
 /// Safe for multi-byte UTF-8 — never splits a character.
-fn truncate_preview(s: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_preview(s: &str, max_chars: usize) -> String {
     let char_count = s.chars().count();
     if char_count <= max_chars {
         return s.to_string();
@@ -410,29 +416,29 @@ fn validate_direct_notification_target(target: &ResolvedTarget) -> Result<(), &'
 }
 
 /// Notification payload for the fire-and-forget POST.
-struct NotificationInfo {
-    limiter: NotificationLimiter,
-    redis: Option<redis::aio::MultiplexedConnection>,
-    url: String,
-    slug: String,
-    method: String,
-    path: String,
-    ip: String,
-    preview: String,
-    received_at: String,
+pub(crate) struct NotificationInfo {
+    pub(crate) limiter: NotificationLimiter,
+    pub(crate) redis: Option<redis::aio::MultiplexedConnection>,
+    pub(crate) url: String,
+    pub(crate) slug: String,
+    pub(crate) method: String,
+    pub(crate) path: String,
+    pub(crate) ip: String,
+    pub(crate) preview: String,
+    pub(crate) received_at: String,
     /// When set, notifications route through this Cloudflare Worker proxy
     /// so the destination sees a Cloudflare IP instead of the origin server.
-    proxy_url: Option<String>,
+    pub(crate) proxy_url: Option<String>,
     /// Shared secret for authenticating with the proxy.
-    proxy_secret: Option<String>,
+    pub(crate) proxy_secret: Option<String>,
     /// Minimum interval between notifications for the same endpoint.
-    cooldown: std::time::Duration,
+    pub(crate) cooldown: std::time::Duration,
     /// Overall timeout budget for DNS resolution + HTTP POST.
-    timeout_secs: u64,
+    pub(crate) timeout_secs: u64,
 }
 
 /// Fire-and-forget POST to the notification URL with a JSON summary.
-fn spawn_notification(info: NotificationInfo) {
+pub(crate) fn spawn_notification(info: NotificationInfo) {
     tokio::spawn(async move {
         // Rate limit: skip if we notified this endpoint within the cooldown period.
         // Try Redis first (distributed), fall back to in-memory on error or absence.
@@ -622,7 +628,7 @@ fn build_verification_request_url(
 
 /// How a failed `capture_webhook` query should be surfaced to the sender.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DbFailure {
+pub(crate) enum DbFailure {
     /// Connection/pool/transaction-level failure that a retry can fix.
     /// The sender gets 503 + Retry-After so its retry mechanism stays armed.
     Transient,
@@ -640,7 +646,7 @@ fn sqlstate_is_transient(code: &str) -> bool {
 }
 
 /// SQLSTATE of a database-reported error, if any.
-fn sqlstate_of(e: &sqlx::Error) -> Option<String> {
+pub(crate) fn sqlstate_of(e: &sqlx::Error) -> Option<String> {
     match e {
         sqlx::Error::Database(db) => db.code().map(|c| c.into_owned()),
         _ => None,
@@ -651,7 +657,7 @@ fn sqlstate_of(e: &sqlx::Error) -> Option<String> {
 ///
 /// `Database` errors without a SQLSTATE are treated as permanent (unknown);
 /// the caller logs the missing code.
-fn classify_db_error(e: &sqlx::Error) -> DbFailure {
+pub(crate) fn classify_db_error(e: &sqlx::Error) -> DbFailure {
     match e {
         sqlx::Error::PoolTimedOut
         | sqlx::Error::PoolClosed
@@ -675,7 +681,7 @@ const TRANSIENT_RETRY_AFTER_SECS: &str = "5";
 /// Billing key for a slug the limiter has not cached: one indexed read that
 /// waits on no row lock. Falls back to a per-slug key when the slug is unknown
 /// or the lookup fails; the capture itself then reports the real outcome.
-async fn resolve_billing_key(state: &AppState, slug: &str) -> String {
+pub(crate) async fn resolve_billing_key(state: &AppState, slug: &str) -> String {
     let lookup: Result<Option<String>, sqlx::Error> =
         sqlx::query_scalar("SELECT capture_billing_key($1)")
             .bind(slug)

@@ -307,6 +307,9 @@ export interface Database {
           signature_verified: boolean | null;
           signature_error: string | null;
           signing_provider: string | null;
+          kind: "http" | "email";
+          email: Json | null;
+          dedupe_key: string | null;
         };
         Insert: {
           id?: string;
@@ -326,6 +329,9 @@ export interface Database {
           signature_verified?: boolean | null;
           signature_error?: string | null;
           signing_provider?: string | null;
+          kind?: "http" | "email";
+          email?: Json | null;
+          dedupe_key?: string | null;
         };
         Update: {
           id?: string;
@@ -345,6 +351,9 @@ export interface Database {
           signature_verified?: boolean | null;
           signature_error?: string | null;
           signing_provider?: string | null;
+          kind?: "http" | "email";
+          email?: Json | null;
+          dedupe_key?: string | null;
         };
         Relationships: [];
       };

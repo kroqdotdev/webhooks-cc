@@ -1,6 +1,7 @@
 mod config;
 pub mod crypto;
 mod handlers;
+mod mail;
 pub mod metrics;
 pub mod verification;
 
@@ -24,6 +25,8 @@ pub struct AppState {
     pub notification_limiter: handlers::webhook::NotificationLimiter,
     pub capture_limiter: std::sync::Arc<handlers::capture_limiter::CaptureLimiter>,
     pub redis: Option<redis::aio::MultiplexedConnection>,
+    /// Bounds how many mail deliveries are decoded and held in memory at once.
+    pub mail_deliver_slots: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 /// Resource attributes shared by the trace and metric pipelines so AppSignal
@@ -251,6 +254,36 @@ async fn main() {
             config.capture_max_inflight_per_account,
         )),
         redis: redis_conn,
+        mail_deliver_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
+            mail::handlers::DELIVER_CONCURRENCY,
+        )),
+    };
+
+    // Private mail ingest listener for the MX host. Bound here, before the
+    // public server starts, so a bad MAIL_INGEST_ADDR fails startup loudly
+    // instead of leaving mail silently off.
+    let mail_server = match config.mail_ingest_addr.as_deref() {
+        Some(mail_addr) => {
+            let mail_listener = TcpListener::bind(mail_addr)
+                .await
+                .expect("failed to bind MAIL_INGEST_ADDR");
+            tracing::info!(
+                addr = mail_addr,
+                paused = config.mail_ingest_paused,
+                domains = ?config.mail_domains,
+                "mail ingest listener starting"
+            );
+            let mail_app = mail::router(state.clone());
+            Some(tokio::spawn(async move {
+                if let Err(e) = axum::serve(mail_listener, mail_app)
+                    .with_graceful_shutdown(shutdown_signal())
+                    .await
+                {
+                    tracing::error!(error = %e, "mail ingest server error");
+                }
+            }))
+        }
+        None => None,
     };
 
     // CORS: allow all origins on public webhook capture endpoints
@@ -285,6 +318,12 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server error");
+
+    if let Some(handle) = mail_server
+        && let Err(e) = handle.await
+    {
+        tracing::error!(error = %e, "mail ingest task ended abnormally");
+    }
 
     // Flush any remaining OTel spans on shutdown
     if let Some(provider) = otel_provider
