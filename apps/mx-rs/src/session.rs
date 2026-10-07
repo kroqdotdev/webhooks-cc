@@ -122,7 +122,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for Conn<S> {
     }
 }
 
-/// Counts for the one log line a session writes when it ends. No addresses
+/// Counts for the debug line a session writes when it ends. No addresses
 /// and no content, by design.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Stats {
@@ -714,7 +714,6 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             retry: !retried.is_empty(),
             raw,
         };
-        let size = delivery.raw.len();
         let backend = &self.shared.backend;
         let outcome = if retried.is_empty() || fresh.is_empty() {
             backend.deliver(delivery).await
@@ -745,15 +744,8 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             )
         };
         let verdict = reply::data_reply(&outcome);
-        tracing::info!(
-            ip = %self.peer.ip,
-            trusted = self.peer.client.trusted,
-            recipients = self.tx.recipients.len(),
-            retried = retried.len(),
-            size,
-            code = verdict.reply.code,
-            "message"
-        );
+        // Not logged: like webhooks, individual emails leave only counts
+        // (the receiver's daily per-endpoint stats).
         (verdict.reply, attempts, !verdict.remember_for_retry)
     }
 }

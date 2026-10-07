@@ -242,7 +242,9 @@ async fn accept_loop(
             let stats = Session::new(&server.shared, stream, peer, stopped)
                 .run()
                 .await;
-            tracing::info!(
+            // Debug only: mail traffic, like webhook traffic, is not logged
+            // per connection in production.
+            tracing::debug!(
                 %ip,
                 trusted,
                 tls = stats.tls,
