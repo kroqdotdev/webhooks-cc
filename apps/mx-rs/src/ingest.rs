@@ -135,7 +135,9 @@ impl Ingest {
         let now = Instant::now();
         {
             let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            for key in [&slug_key, &full_key] {
+            // The answer about this exact address wins over the one about
+            // its endpoint: `abc+<bad tag>` stays invalid while `abc` is ok.
+            for key in [&full_key, &slug_key] {
                 if let Some((status, until)) = cache.get(key)
                     && *until > now
                 {
@@ -373,6 +375,21 @@ mod tests {
             serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
             serde_json::json!({"address": "Abc@mailhooks.cc"})
         );
+    }
+
+    #[tokio::test]
+    async fn check_prefers_the_cached_answer_about_the_exact_address() {
+        let (url, _, hits) = stub(200, r#"{"status":"invalid"}"#).await;
+        let client = ingest(&url);
+        let bad = "abc+bad\"tag@mailhooks.cc";
+        assert_eq!(client.check(bad).await, CheckStatus::Invalid);
+        client.cache.lock().unwrap().insert(
+            crate::limits::address_key("abc@mailhooks.cc"),
+            (CheckStatus::Ok, Instant::now() + Duration::from_secs(60)),
+        );
+        assert_eq!(client.check(bad).await, CheckStatus::Invalid);
+        assert_eq!(client.check("abc@mailhooks.cc").await, CheckStatus::Ok);
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
