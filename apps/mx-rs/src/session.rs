@@ -4,6 +4,7 @@
 //! STARTTLS) and to the rest of the system through `Backend`, so tests can
 //! drive it over an in-memory stream with a fake backend.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::net::IpAddr;
@@ -279,6 +280,13 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
                 let parsed = self.receiver.ingest(&mut iter).map(Request::into_owned);
                 match parsed {
                     Ok(request) => {
+                        // Checked per command, not only per read: one read can
+                        // hold hundreds of pipelined commands, each of which
+                        // may wait on the receiver.
+                        if Instant::now() >= self.deadline {
+                            let _ = self.reply(&reply::TIMEOUT).await;
+                            return "session_timeout";
+                        }
                         let transactional = matches!(
                             request,
                             Request::Mail { .. } | Request::Rcpt { .. } | Request::Data
@@ -548,8 +556,9 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         // ended by then is too large either way.
         let head = &message[..message.len().min(MAX_HEADER_SECTION + 4)];
         let header_end = header_section_end(head).unwrap_or(message.len());
-        let (verdict, attempt) = if header_end > MAX_HEADER_SECTION {
-            (Reply::new(552, 5, 3, 4, "Message header too large"), None)
+        let (verdict, attempts, definitive) = if header_end > MAX_HEADER_SECTION {
+            let too_large = Reply::new(552, 5, 3, 4, "Message header too large");
+            (too_large, Vec::new(), true)
         } else {
             self.deliver(message).await
         };
@@ -566,12 +575,10 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         // Settled only once a definitive answer has actually been written:
         // had the write failed, the sender would try again, and that attempt
         // must count as a retry.
-        if let Some((attempt, definitive)) = attempt {
-            self.shared.retry_store.finish(
-                attempt,
-                definitive && written.is_ok(),
-                chrono::Utc::now().timestamp() as u64,
-            );
+        let settled = definitive && written.is_ok();
+        let now = chrono::Utc::now().timestamp() as u64;
+        for attempt in attempts {
+            self.shared.retry_store.finish(attempt, settled, now);
         }
         written?;
         Ok(Flow::Continue)
@@ -648,10 +655,10 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         }
     }
 
-    /// Hand the message to the receiver. Returns the reply, and the retry
-    /// store's attempt with whether the reply is definitive, to be finished
-    /// once the reply has been written.
-    async fn deliver(&mut self, raw: Vec<u8>) -> (Reply, Option<(Attempt, bool)>) {
+    /// Hand the message to the receiver. Returns the reply, the retry store's
+    /// attempts, and whether the reply is definitive; the attempts are
+    /// finished once the reply has been written.
+    async fn deliver(&mut self, raw: Vec<u8>) -> (Reply, Vec<Attempt>, bool) {
         let raw = Arc::new(raw);
         let helo = self.helo.clone().unwrap_or_default();
         let mail_from = self.tx.mail_from.clone().unwrap_or_default();
@@ -667,53 +674,87 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             })
             .await;
         let (hashed, recipients) = (raw.clone(), self.tx.recipients.clone());
-        let hash = tokio::task::spawn_blocking(move || retry_store::key(&hashed, &recipients))
+        let keys = tokio::task::spawn_blocking(move || retry_store::keys(&hashed, &recipients))
             .await
             .ok();
 
-        // Record the attempt before handing the message over: if the delivery
-        // dies half way (crash, restart), the receiver may have stored it, and
-        // the sender's next attempt must be flagged as a retry.
+        // Record the attempts before handing the message over: if the
+        // delivery dies half way (crash, restart), the receiver may have
+        // stored it, and the sender's next attempt must be flagged as a
+        // retry. One attempt per endpoint, as the receiver deduplicates per
+        // endpoint and a retry may go to fewer recipients than before.
         let now = chrono::Utc::now();
-        let attempt = hash.map(|hash| self.shared.retry_store.begin(&hash, now.timestamp() as u64));
-        let retry = attempt.as_ref().is_some_and(|attempt| attempt.retry);
+        let mut attempts = Vec::new();
+        let mut retry_of: HashMap<&str, bool> = HashMap::new();
+        for key in keys.iter().flatten() {
+            if !retry_of.contains_key(key.as_str()) {
+                let attempt = self.shared.retry_store.begin(key, now.timestamp() as u64);
+                retry_of.insert(key, attempt.retry);
+                attempts.push(attempt);
+            }
+        }
+        let (retried, fresh): (Vec<usize>, Vec<usize>) = (0..self.tx.recipients.len())
+            .partition(|&i| keys.as_ref().is_some_and(|keys| retry_of[keys[i].as_str()]));
 
-        let size = raw.len();
-        let recipients = self.tx.recipients.len();
         let reverse_dns = &self.peer.reverse_dns;
-        let outcome = self
-            .shared
-            .backend
-            .deliver(Delivery {
-                recipients: self.tx.recipients.clone(),
-                envelope_from: mail_from,
-                client_ip: self.peer.ip.to_string(),
-                // Only a forward-confirmed name: an unconfirmed PTR is
-                // whatever the sender's network operator chose to publish.
-                client_rdns: reverse_dns
-                    .confirmed
-                    .then(|| reverse_dns.name.clone())
-                    .flatten(),
-                helo: self.helo.clone(),
-                tls: self.tls_info.clone(),
-                auth: auth.json,
-                received_at: now,
-                retry,
-                raw,
-            })
-            .await;
+        let delivery = Delivery {
+            recipients: self.tx.recipients.clone(),
+            envelope_from: mail_from,
+            client_ip: self.peer.ip.to_string(),
+            // Only a forward-confirmed name: an unconfirmed PTR is whatever
+            // the sender's network operator chose to publish.
+            client_rdns: reverse_dns
+                .confirmed
+                .then(|| reverse_dns.name.clone())
+                .flatten(),
+            helo: self.helo.clone(),
+            tls: self.tls_info.clone(),
+            auth: auth.json,
+            received_at: now,
+            retry: !retried.is_empty(),
+            raw,
+        };
+        let size = delivery.raw.len();
+        let backend = &self.shared.backend;
+        let outcome = if retried.is_empty() || fresh.is_empty() {
+            backend.deliver(delivery).await
+        } else {
+            // Endpoints that may already hold this message go as a retry, the
+            // others as new mail, so neither is taken for the other.
+            let pick = |indexes: &[usize]| -> Vec<String> {
+                indexes
+                    .iter()
+                    .map(|&i| self.tx.recipients[i].clone())
+                    .collect()
+            };
+            let as_retry = Delivery {
+                recipients: pick(&retried),
+                retry: true,
+                ..delivery.clone()
+            };
+            let as_new = Delivery {
+                recipients: pick(&fresh),
+                retry: false,
+                ..delivery
+            };
+            let first = backend.deliver(as_retry).await;
+            let second = backend.deliver(as_new).await;
+            reply::merge_outcomes(
+                [(first, retried.as_slice()), (second, fresh.as_slice())],
+                self.tx.recipients.len(),
+            )
+        };
         let verdict = reply::data_reply(&outcome);
         tracing::info!(
             ip = %self.peer.ip,
             trusted = self.peer.client.trusted,
-            recipients,
+            recipients = self.tx.recipients.len(),
+            retried = retried.len(),
             size,
-            retry,
             code = verdict.reply.code,
             "message"
         );
-        let definitive = !verdict.remember_for_retry;
-        (verdict.reply, attempt.map(|attempt| (attempt, definitive)))
+        (verdict.reply, attempts, !verdict.remember_for_retry)
     }
 }
 

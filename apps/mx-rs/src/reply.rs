@@ -165,6 +165,26 @@ pub enum DeliverOutcome {
     Failed,
 }
 
+/// One outcome for a message delivered in parts, each part covering the
+/// recipients at the given positions. Any part that did not produce a status
+/// per recipient decides the whole (it makes the reply a temporary failure,
+/// or 552 for a 413).
+pub fn merge_outcomes(parts: [(DeliverOutcome, &[usize]); 2], recipients: usize) -> DeliverOutcome {
+    let mut statuses = vec![String::new(); recipients];
+    for (outcome, positions) in parts {
+        match outcome {
+            DeliverOutcome::Results(list) if list.len() == positions.len() => {
+                for (status, &i) in list.into_iter().zip(positions) {
+                    statuses[i] = status;
+                }
+            }
+            DeliverOutcome::Results(_) => return DeliverOutcome::Failed,
+            other => return other,
+        }
+    }
+    DeliverOutcome::Results(statuses)
+}
+
 /// The reply to the end of DATA, and whether the message hash must be
 /// remembered so the sender's retry is recognised.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,6 +361,36 @@ mod tests {
             assert_eq!(verdict.reply.code, 451, "{outcome:?}");
             assert!(verdict.remember_for_retry);
         }
+    }
+
+    #[test]
+    fn merges_parts_back_into_recipient_order() {
+        let merged = merge_outcomes(
+            [
+                (results(&["duplicate"]), &[1]),
+                (results(&["captured", "over_quota"]), &[0, 2]),
+            ],
+            3,
+        );
+        assert_eq!(merged, results(&["captured", "duplicate", "over_quota"]));
+        assert_eq!(
+            merge_outcomes(
+                [
+                    (results(&["captured"]), &[0]),
+                    (DeliverOutcome::Failed, &[1])
+                ],
+                2
+            ),
+            DeliverOutcome::Failed
+        );
+        assert_eq!(
+            merge_outcomes(
+                [(results(&["captured", "x"]), &[0]), (results(&[]), &[])],
+                1
+            ),
+            DeliverOutcome::Failed,
+            "a part with the wrong number of statuses"
+        );
     }
 
     #[test]

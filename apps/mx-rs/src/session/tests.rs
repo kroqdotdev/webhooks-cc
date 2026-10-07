@@ -34,6 +34,8 @@ struct FakeBackend {
     in_store_during_deliver: Mutex<Vec<bool>>,
     /// Makes each delivery take this long.
     delay: Option<Duration>,
+    /// Makes each recipient check take this long.
+    check_delay: Option<Duration>,
 }
 
 impl FakeBackend {
@@ -47,8 +49,18 @@ impl FakeBackend {
         self
     }
 
+    fn with_check_delay(mut self, delay: Duration) -> Self {
+        self.check_delay = Some(delay);
+        self
+    }
+
     fn set_outcome(&self, outcome: DeliverOutcome) {
         *self.outcome.lock().unwrap() = Some(outcome);
+    }
+
+    /// Back to "captured" for every recipient.
+    fn reset_outcome(&self) {
+        *self.outcome.lock().unwrap() = None;
     }
 
     fn deliveries(&self) -> Vec<Delivery> {
@@ -56,9 +68,8 @@ impl FakeBackend {
     }
 }
 
-fn key_of(raw: &[u8], recipients: &[&str]) -> String {
-    let recipients: Vec<String> = recipients.iter().map(|r| r.to_string()).collect();
-    retry_store::key(raw, &recipients)
+fn key_of(raw: &[u8], recipient: &str) -> String {
+    retry_store::keys(raw, &[recipient.to_string()]).remove(0)
 }
 
 fn unix_now() -> u64 {
@@ -68,6 +79,9 @@ fn unix_now() -> u64 {
 impl Backend for FakeBackend {
     async fn check_recipient(&self, address: &str) -> CheckStatus {
         self.checks.fetch_add(1, Ordering::SeqCst);
+        if let Some(delay) = self.check_delay {
+            tokio::time::sleep(delay).await;
+        }
         self.statuses
             .get(&address.to_ascii_lowercase())
             .copied()
@@ -76,10 +90,9 @@ impl Backend for FakeBackend {
 
     async fn deliver(&self, delivery: Delivery) -> DeliverOutcome {
         if let Some(store) = self.store.lock().unwrap().clone() {
-            let present = store.contains(
-                &retry_store::key(&delivery.raw, &delivery.recipients),
-                unix_now(),
-            );
+            let present = retry_store::keys(&delivery.raw, &delivery.recipients)
+                .iter()
+                .all(|key| store.contains(key, unix_now()));
             self.in_store_during_deliver.lock().unwrap().push(present);
         }
         if let Some(delay) = self.delay {
@@ -592,7 +605,7 @@ async fn defers_when_the_receiver_fails_and_flags_the_retry() {
     assert!(
         !shared
             .retry_store
-            .contains(&key_of(&deliveries[1].raw, &["a@mailhooks.cc"]), unix_now())
+            .contains(&key_of(&deliveries[1].raw, "a@mailhooks.cc"), unix_now())
     );
 }
 
@@ -621,6 +634,94 @@ async fn one_endpoints_outcome_does_not_settle_another_endpoints_retry() {
         .map(|d| d.retry)
         .collect();
     assert_eq!(retries, vec![false, false, true]);
+}
+
+#[tokio::test]
+async fn a_retry_to_fewer_recipients_is_still_a_retry() {
+    let shared = shared(FakeBackend::default());
+    let raw = "Message-ID: <subset@client.test>\r\n\r\nsame bytes\r\n.\r\n";
+    shared.backend.set_outcome(DeliverOutcome::Results(vec![
+        "transient".into(),
+        "captured".into(),
+    ]));
+    let (mut client, _handle, _stop) = start(shared.clone());
+    greet(&mut client).await;
+    client
+        .send("MAIL FROM:<s@client.test>\r\nRCPT TO:<a@mailhooks.cc>\r\nRCPT TO:<b@mailhooks.cc>\r\nDATA\r\n")
+        .await;
+    for code in [250, 250, 250, 354] {
+        client.expect(code).await;
+    }
+    client.send(raw).await;
+    client.expect(451).await;
+
+    // The next attempt only reaches b, which already holds a copy.
+    shared.backend.reset_outcome();
+    client.start_message("b@mailhooks.cc").await;
+    client.send(raw).await;
+    client.expect(250).await;
+    let deliveries = shared.backend.deliveries();
+    assert_eq!(deliveries[1].recipients, vec!["b@mailhooks.cc"]);
+    assert!(deliveries[1].retry);
+}
+
+#[tokio::test]
+async fn sends_retried_and_new_recipients_as_separate_deliveries() {
+    let shared = shared(FakeBackend::default());
+    let raw = "Message-ID: <split@client.test>\r\n\r\nsame bytes\r\n.\r\n";
+    shared
+        .backend
+        .set_outcome(DeliverOutcome::Results(vec!["transient".into()]));
+    let (mut client, _handle, _stop) = start(shared.clone());
+    greet(&mut client).await;
+    client.start_message("b@mailhooks.cc").await;
+    client.send(raw).await;
+    client.expect(451).await;
+
+    // The retry adds a recipient that has never seen the message.
+    shared.backend.reset_outcome();
+    client
+        .send("MAIL FROM:<s@client.test>\r\nRCPT TO:<c@mailhooks.cc>\r\nRCPT TO:<B+tag@mailhooks.cc>\r\nDATA\r\n")
+        .await;
+    for code in [250, 250, 250, 354] {
+        client.expect(code).await;
+    }
+    client.send(raw).await;
+    client.expect(250).await;
+    let deliveries = shared.backend.deliveries();
+    assert_eq!(deliveries.len(), 3);
+    assert_eq!(deliveries[1].recipients, vec!["B+tag@mailhooks.cc"]);
+    assert!(deliveries[1].retry, "same endpoint as the deferred attempt");
+    assert_eq!(deliveries[2].recipients, vec!["c@mailhooks.cc"]);
+    assert!(!deliveries[2].retry);
+    assert_eq!(shared.retry_store.len(), 0, "all settled");
+}
+
+#[tokio::test]
+async fn enforces_the_session_deadline_between_pipelined_commands() {
+    let shared = shared_with(
+        FakeBackend::default().with_check_delay(Duration::from_millis(100)),
+        Limits::default(),
+        timeouts(|t| t.session = Duration::from_millis(400)),
+        None,
+    );
+    let (mut client, handle, _stop) = start(shared);
+    greet(&mut client).await;
+    let mut pipeline = "MAIL FROM:<s@client.test>\r\n".to_string();
+    for i in 0..15 {
+        pipeline.push_str(&format!("RCPT TO:<r{i}@mailhooks.cc>\r\n"));
+    }
+    client.send(&pipeline).await;
+    let mut answered = 0;
+    loop {
+        let (code, _) = client.reply().await;
+        if code == 421 {
+            break;
+        }
+        answered += 1;
+    }
+    assert!(answered < 10, "{answered} replies before the deadline hit");
+    assert_eq!(handle.await.unwrap().closed_by, "session_timeout");
 }
 
 #[tokio::test]
@@ -683,7 +784,7 @@ async fn keeps_the_hash_when_the_final_reply_cannot_be_written() {
     assert!(
         shared
             .retry_store
-            .contains(&key_of(b"lost reply\r\n", &["a@mailhooks.cc"]), unix_now()),
+            .contains(&key_of(b"lost reply\r\n", "a@mailhooks.cc"), unix_now()),
         "the sender will retry, and that attempt must be flagged"
     );
 }

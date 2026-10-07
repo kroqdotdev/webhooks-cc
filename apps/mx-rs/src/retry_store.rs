@@ -13,9 +13,10 @@
 //! are both captured. A hash is forgotten once no attempt is running and none
 //! left it uncertain.
 //!
-//! The key covers the message and its recipients: the receiver deduplicates
-//! per endpoint, so an outcome for these bytes to one address must not settle
-//! an attempt to another.
+//! Keys are per message and endpoint, as the receiver deduplicates per
+//! endpoint: an outcome for these bytes to one endpoint must not settle an
+//! attempt to another, and a retry that goes to fewer recipients than the
+//! first attempt must still be recognised.
 //!
 //! The key is written to an append-only file when an attempt begins, so a
 //! crash in the middle of a delivery leaves it behind; everything loaded at
@@ -30,6 +31,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
+
+use crate::limits::address_key;
 
 pub const TTL: Duration = Duration::from_secs(8 * 24 * 60 * 60);
 /// After this many appends, expired entries are dropped and the file is
@@ -70,22 +73,21 @@ pub struct Attempt {
     epoch: u64,
 }
 
-/// The store's key for one message to one set of recipients, regardless of
-/// their order or case.
-pub fn key(raw: &[u8], recipients: &[String]) -> String {
-    let mut recipients: Vec<String> = recipients
+/// The store's key for this message to each recipient. Recipients on the
+/// same endpoint (any tag, any case) share a key, because the receiver
+/// deduplicates per endpoint.
+pub fn keys(raw: &[u8], recipients: &[String]) -> Vec<String> {
+    let digest = Sha256::digest(raw);
+    recipients
         .iter()
-        .map(|r| r.trim().to_ascii_lowercase())
-        .collect();
-    recipients.sort();
-    recipients.dedup();
-    let mut hasher = Sha256::new();
-    hasher.update(Sha256::digest(raw));
-    for recipient in &recipients {
-        hasher.update(b"\n");
-        hasher.update(recipient.as_bytes());
-    }
-    hex::encode(hasher.finalize())
+        .map(|recipient| {
+            let mut hasher = Sha256::new();
+            hasher.update(digest);
+            hasher.update(b"\n");
+            hasher.update(address_key(recipient).as_bytes());
+            hex::encode(hasher.finalize())
+        })
+        .collect()
 }
 
 fn is_hash(s: &str) -> bool {
@@ -293,13 +295,14 @@ mod tests {
     }
 
     #[test]
-    fn keys_cover_the_recipients_in_any_order_or_case() {
+    fn keys_are_per_message_and_endpoint() {
         let to = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let k = key(b"raw", &to(&["a@mailhooks.cc", "b@mailhooks.cc"]));
-        assert!(is_hash(&k));
-        assert_eq!(k, key(b"raw", &to(&["B@mailhooks.cc", "a@mailhooks.cc"])));
-        assert_ne!(k, key(b"raw", &to(&["a@mailhooks.cc"])));
-        assert_ne!(k, key(b"other", &to(&["a@mailhooks.cc", "b@mailhooks.cc"])));
+        let k = keys(b"raw", &to(&["a@mailhooks.cc", "b@mailhooks.cc"]));
+        assert_eq!(k.len(), 2);
+        assert!(k.iter().all(|key| is_hash(key)));
+        assert_ne!(k[0], k[1]);
+        assert_eq!(k[0], keys(b"raw", &to(&["<A+tag@MailHooks.cc>"]))[0]);
+        assert_ne!(k[0], keys(b"other", &to(&["a@mailhooks.cc"]))[0]);
     }
 
     #[test]
