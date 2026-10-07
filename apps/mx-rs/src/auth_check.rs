@@ -14,17 +14,19 @@
 //! holds one of a fixed number of slots until it has really ended: stalled
 //! checks cannot pile up, each holding a message.
 
-use std::net::IpAddr;
+use std::future::Future;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
 
+use mail_auth::common::cache::NoCache;
 use mail_auth::dmarc::Policy;
 use mail_auth::{
-    AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, IprevResult,
-    MessageAuthenticator, SpfResult, dmarc::verify::DmarcParameters, spf::verify::SpfParameters,
+    AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, MessageAuthenticator,
+    RecordSet, SpfResult, dmarc::verify::DmarcParameters, spf::verify::SpfParameters,
 };
 use serde_json::{Value, json};
 
@@ -102,17 +104,22 @@ impl AuthChecker {
         let Some(authenticator) = &self.authenticator else {
             return ReverseDns::default();
         };
-        match tokio::time::timeout(budget, authenticator.verify_iprev(ip)).await {
-            Ok(output) => ReverseDns {
-                name: output
-                    .ptr
-                    .as_ref()
-                    .and_then(|names| names.first())
-                    .map(|name| name.trim_end_matches('.').to_ascii_lowercase()),
-                confirmed: matches!(output.result, IprevResult::Pass),
-            },
-            Err(_) => ReverseDns::default(),
-        }
+        let lookup = async {
+            let no_cache = None::<&NoCache<IpAddr, RecordSet<Box<str>>>>;
+            let Ok(ptr) = authenticator.ptr_lookup(ip, no_cache).await else {
+                return ReverseDns::default();
+            };
+            let names = ptr
+                .rrset
+                .iter()
+                .take(MAX_PTR_NAMES)
+                .map(|name| name.trim_end_matches('.').to_ascii_lowercase())
+                .collect();
+            first_confirmed(names, |name| resolves_to(authenticator, name, ip)).await
+        };
+        tokio::time::timeout(budget, lookup)
+            .await
+            .unwrap_or_default()
     }
 
     pub async fn check(&self, request: AuthRequest) -> AuthOutcome {
@@ -133,6 +140,51 @@ impl AuthChecker {
         })
         .await;
         AuthOutcome { json }
+    }
+}
+
+/// The PTR names to look at; more are ignored.
+const MAX_PTR_NAMES: usize = 4;
+
+/// The first PTR name that resolves back to the client, checked name by
+/// name. An overall "some name matched" is not enough: a sender that controls
+/// its reverse zone could list a provider's name it does not own next to its
+/// own confirmed one.
+async fn first_confirmed<F, Fut>(names: Vec<String>, mut resolves_to_client: F) -> ReverseDns
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = bool>,
+{
+    for name in &names {
+        if resolves_to_client(name.clone()).await {
+            return ReverseDns {
+                name: Some(name.clone()),
+                confirmed: true,
+            };
+        }
+    }
+    ReverseDns {
+        name: names.into_iter().next(),
+        confirmed: false,
+    }
+}
+
+async fn resolves_to(authenticator: &MessageAuthenticator, name: String, ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => authenticator
+            .ipv4_lookup(
+                name.as_str(),
+                None::<&NoCache<Box<str>, RecordSet<Ipv4Addr>>>,
+            )
+            .await
+            .is_ok_and(|found| found.rrset.contains(&v4)),
+        IpAddr::V6(v6) => authenticator
+            .ipv6_lookup(
+                name.as_str(),
+                None::<&NoCache<Box<str>, RecordSet<Ipv6Addr>>>,
+            )
+            .await
+            .is_ok_and(|found| found.rrset.contains(&v6)),
     }
 }
 
@@ -365,6 +417,37 @@ mod tests {
             checker
                 .reverse_dns("192.0.2.1".parse().unwrap(), Duration::from_secs(1))
                 .await,
+            ReverseDns::default()
+        );
+    }
+
+    #[tokio::test]
+    async fn trusts_only_the_ptr_name_that_resolves_back() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // A provider's name listed first, the sender's own second: only the
+        // second one resolves back to the client.
+        let found = first_confirmed(names(&["smtp.google.com", "mail.attacker.test"]), |n| {
+            std::future::ready(n == "mail.attacker.test")
+        })
+        .await;
+        assert_eq!(
+            found,
+            ReverseDns {
+                name: Some("mail.attacker.test".into()),
+                confirmed: true
+            }
+        );
+        let none =
+            first_confirmed(names(&["a.test", "b.test"]), |_| std::future::ready(false)).await;
+        assert_eq!(
+            none,
+            ReverseDns {
+                name: Some("a.test".into()),
+                confirmed: false
+            }
+        );
+        assert_eq!(
+            first_confirmed(vec![], |_| std::future::ready(true)).await,
             ReverseDns::default()
         );
     }

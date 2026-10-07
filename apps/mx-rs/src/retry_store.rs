@@ -56,6 +56,9 @@ struct Entry {
     running: u32,
     /// An attempt ended without the sender learning a definitive answer.
     uncertain: bool,
+    /// Bumped whenever an attempt leaves the outcome uncertain, so a retry
+    /// only settles the uncertainty it was started for, not a newer one.
+    epoch: u64,
 }
 
 /// One delivery attempt, from `begin` to `finish`.
@@ -64,6 +67,7 @@ pub struct Attempt {
     hash: String,
     /// An earlier attempt left the outcome uncertain.
     pub retry: bool,
+    epoch: u64,
 }
 
 /// The store's key for one message to one set of recipients, regardless of
@@ -128,6 +132,7 @@ impl RetryStore {
                             expiry,
                             running: 0,
                             uncertain: true,
+                            epoch: 1,
                         };
                         entries.insert(hash, entry);
                     } else {
@@ -167,19 +172,21 @@ impl RetryStore {
             expiry,
             running: 0,
             uncertain: false,
+            epoch: 0,
         });
         if entry.expiry <= now {
             entry.running = 0;
             entry.uncertain = false;
         }
-        let retry = entry.uncertain;
+        let attempt = Attempt {
+            hash: hash.to_string(),
+            retry: entry.uncertain,
+            epoch: entry.epoch,
+        };
         entry.running += 1;
         entry.expiry = expiry;
         self.append(&mut inner, hash, expiry, now);
-        Attempt {
-            hash: hash.to_string(),
-            retry,
-        }
+        attempt
     }
 
     /// End an attempt. `settled` means the sender has received a definitive
@@ -193,8 +200,10 @@ impl RetryStore {
         entry.running = entry.running.saturating_sub(1);
         if !settled {
             entry.uncertain = true;
-        } else if attempt.retry {
-            // This retry resolved what the earlier attempt left open.
+            entry.epoch += 1;
+        } else if attempt.retry && attempt.epoch == entry.epoch {
+            // This retry resolved what the earlier attempt left open, and no
+            // attempt has left it open again since this one began.
             entry.uncertain = false;
         }
         if entry.running == 0 && !entry.uncertain {
@@ -346,6 +355,23 @@ mod tests {
         assert!(
             store.begin(&hash(1), NOW).retry,
             "a's outcome is still unknown to its sender"
+        );
+    }
+
+    #[test]
+    fn a_settled_retry_does_not_clear_a_newer_uncertainty() {
+        let store = RetryStore::in_memory(TTL);
+        let first = store.begin(&hash(1), NOW);
+        store.finish(first, false, NOW);
+        // Two retries of it overlap; the first one's reply is lost.
+        let a = store.begin(&hash(1), NOW + 60);
+        let b = store.begin(&hash(1), NOW + 60);
+        assert!(a.retry && b.retry);
+        store.finish(a, false, NOW + 61);
+        store.finish(b, true, NOW + 62);
+        assert!(
+            store.begin(&hash(1), NOW + 120).retry,
+            "a's sender will try again, and that must still be a retry"
         );
     }
 

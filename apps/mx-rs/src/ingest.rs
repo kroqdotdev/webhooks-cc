@@ -20,6 +20,25 @@ pub const DELIVER_PATH: &str = "/internal/mail/deliver";
 /// Most recipient answers kept at once.
 const CACHE_CAP: usize = 50_000;
 
+/// The receiver's syntax rule for the local part (`parse_recipient` in
+/// `apps/receiver-rs/src/mail/address.rs`; keep the two in step): 1 to 64
+/// printable ASCII characters without specials. The slug and the domain are
+/// part of the cache key, so they need no check here.
+fn plausible_local_part(address: &str) -> bool {
+    let address = address.trim();
+    let address = address
+        .strip_prefix('<')
+        .and_then(|a| a.strip_suffix('>'))
+        .unwrap_or(address);
+    let Some((local, _)) = address.rsplit_once('@') else {
+        return false;
+    };
+    (1..=64).contains(&local.len())
+        && local
+            .bytes()
+            .all(|b| b.is_ascii_graphic() && !b"\"\\<>@(),;:[]".contains(&b))
+}
+
 pub fn sign(secret: &[u8], timestamp: i64, method: &str, path: &str, body: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
     mac.update(format!("{timestamp}.{method}.{path}.").as_bytes());
@@ -138,7 +157,14 @@ impl Ingest {
             let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             // The answer about this exact address wins over the one about
             // its endpoint: `abc+<bad tag>` stays invalid while `abc` is ok.
-            for key in [&full_key, &slug_key] {
+            // An address the receiver would refuse for its own syntax never
+            // borrows the endpoint's answer.
+            let keys: &[&str] = if plausible_local_part(address) {
+                &[&full_key, &slug_key]
+            } else {
+                &[&full_key]
+            };
+            for &key in keys {
                 if let Some((status, until)) = cache.get(key)
                     && *until > now
                 {
@@ -393,6 +419,47 @@ mod tests {
         assert_eq!(client.check(bad).await, CheckStatus::Invalid);
         assert_eq!(client.check("abc@mailhooks.cc").await, CheckStatus::Ok);
         assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn an_address_with_a_malformed_tag_never_borrows_the_endpoints_answer() {
+        let (url, _, hits) = stub(200, r#"{"status":"invalid"}"#).await;
+        let client = ingest(&url);
+        client.cache.lock().unwrap().insert(
+            crate::limits::address_key("abc@mailhooks.cc"),
+            (CheckStatus::Ok, Instant::now() + Duration::from_secs(60)),
+            |_, _| true,
+        );
+        assert_eq!(client.check("abc+fine@mailhooks.cc").await, CheckStatus::Ok);
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+        for odd in [
+            "abc+caf\u{e9}@mailhooks.cc",
+            "abc+a(b)@mailhooks.cc",
+            &format!("abc+{}@mailhooks.cc", "t".repeat(64)),
+        ] {
+            assert_eq!(client.check(odd).await, CheckStatus::Invalid, "{odd}");
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 3, "each went to the receiver");
+    }
+
+    #[test]
+    fn checks_local_parts_like_the_receiver() {
+        for ok in [
+            "abc@mailhooks.cc",
+            "<abc+Signup.Flow@mailhooks.cc>",
+            "a+b+c@x",
+        ] {
+            assert!(plausible_local_part(ok), "{ok}");
+        }
+        for bad in [
+            "abc",
+            "@mailhooks.cc",
+            "\"quoted\"@mailhooks.cc",
+            "a b@mailhooks.cc",
+            "abc+\u{e9}@mailhooks.cc",
+        ] {
+            assert!(!plausible_local_part(bad), "{bad}");
+        }
     }
 
     #[tokio::test]
