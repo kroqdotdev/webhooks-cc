@@ -7,11 +7,10 @@
 //! and the receiver returns the stored copy instead of billing again.
 //!
 //! A hash goes in before each delivery and stays when the answer is a
-//! temporary failure; it is forgotten again only once a definitive answer
-//! (2xx or 5xx) for a message that was not already a retry has been written
-//! to the sender. It is kept for eight days, longer than the retry horizon of
-//! common SMTP queues, in memory and in an append-only file so a restart or a
-//! crash does not forget it.
+//! temporary failure; it is forgotten again once a definitive answer (2xx or
+//! 5xx) has been written to the sender. It is kept for eight days, longer
+//! than the retry horizon of common SMTP queues, in memory and in an
+//! append-only file so a restart or a crash does not forget it.
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};

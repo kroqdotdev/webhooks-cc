@@ -583,9 +583,10 @@ async fn defers_when_the_receiver_fails_and_flags_the_retry() {
         deliveries[1].retry,
         "the second attempt is flagged as a retry"
     );
-    // A retry keeps its hash: its first attempt's outcome was uncertain.
+    // The retry got its definitive answer, so a deliberate re-send of the
+    // same bytes later is not mistaken for another retry.
     assert!(
-        shared
+        !shared
             .retry_store
             .contains(&hash_of(&deliveries[1].raw), unix_now())
     );

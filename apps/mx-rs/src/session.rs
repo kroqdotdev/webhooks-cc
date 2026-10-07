@@ -704,10 +704,10 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             })
             .await;
         let verdict = reply::data_reply(&outcome);
-        // A definitive answer for a message that was not already a retry
-        // ends its story; a 4xx keeps the hash for the next attempt, and so
-        // does a retry, whose earlier attempt left the outcome uncertain.
-        let settled = (!verdict.remember_for_retry && !retry && !hash.is_empty()).then_some(hash);
+        // A definitive answer ends the message's story, retry or not, so a
+        // deliberate re-send later is captured again; a 4xx keeps the hash
+        // for the next attempt.
+        let settled = (!verdict.remember_for_retry && !hash.is_empty()).then_some(hash);
         tracing::info!(
             ip = %self.peer.ip,
             trusted = self.peer.client.trusted,
