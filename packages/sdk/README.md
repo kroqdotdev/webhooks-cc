@@ -1,6 +1,6 @@
 # @webhooks-cc/sdk
 
-TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints, capture and search requests, send signed test webhooks, verify provider signatures, and build webhook tests with less boilerplate.
+TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints, capture and search requests, wait for emails and read their codes and links, forward emails to your server, send signed test webhooks, verify provider signatures, and build webhook tests with less boilerplate.
 
 ## Install
 
@@ -8,10 +8,11 @@ TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints,
 pnpm add @webhooks-cc/sdk
 ```
 
-The package also ships a testing entrypoint:
+The package also ships a testing entrypoint, and an email entrypoint with no network code:
 
 ```typescript
-import { captureDuring, assertRequest } from "@webhooks-cc/sdk/testing";
+import { captureDuring, captureEmailDuring, assertRequest } from "@webhooks-cc/sdk/testing";
+import { extractCode, type EmailReceivedEvent } from "@webhooks-cc/sdk/email";
 ```
 
 ## API key setup
@@ -74,19 +75,22 @@ const client = new WebhooksCC({
 });
 ```
 
-| Option       | Type           | Default                  | Notes                                                                    |
-| ------------ | -------------- | ------------------------ | ------------------------------------------------------------------------ |
-| `apiKey`     | `string`       | required                 | API key in `whcc_...` format. Often read from `process.env.WHK_API_KEY`. |
-| `baseUrl`    | `string`       | `https://webhooks.cc`    | API base URL                                                             |
-| `webhookUrl` | `string`       | `https://go.webhooks.cc` | receiver base URL used by `endpoints.send()`                             |
-| `timeout`    | `number`       | `30000`                  | request timeout in milliseconds                                          |
-| `retry`      | `RetryOptions` | `1` attempt              | retries transient SDK requests                                           |
-| `hooks`      | `ClientHooks`  | none                     | lifecycle callbacks for request logging                                  |
+| Option        | Type           | Default                  | Notes                                                                    |
+| ------------- | -------------- | ------------------------ | ------------------------------------------------------------------------ |
+| `apiKey`      | `string`       | required                 | API key in `whcc_...` format. Often read from `process.env.WHK_API_KEY`. |
+| `baseUrl`     | `string`       | `https://webhooks.cc`    | API base URL                                                             |
+| `webhookUrl`  | `string`       | `https://go.webhooks.cc` | receiver base URL used by `endpoints.send()`                             |
+| `timeout`     | `number`       | `30000`                  | request timeout in milliseconds                                          |
+| `retry`       | `RetryOptions` | `1` attempt              | retries transient SDK requests                                           |
+| `hooks`       | `ClientHooks`  | none                     | lifecycle callbacks for request logging                                  |
+| `emailDomain` | `string`       | `mailhooks.cc`           | domain `emails.address()` builds addresses on                            |
 
 ## API overview
 
 - `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `send`, `sendTemplate`
 - `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `count`, `clear`, `export`
+- `client.emails`: `address`, `list`, `get`, `latest`, `waitFor`, `waitForAll`, `sendTest`, `toJson`
+- `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `emailDeliveries`, `redeliver`
 - `client.templates`: `listProviders`, `get`
 - `client.teams`: `list`, `members`, `share`, `unshare`, `invite`, `invites.list`, `invites.accept`, `invites.decline`
 - top-level client methods: `usage()`, `sendTo()`, `buildRequest()`, `flow()`, `describe()`
@@ -133,6 +137,7 @@ List, paginate, wait, stream, replay, export, and clear captured requests.
 const recent = await client.requests.list(endpoint.slug, {
   limit: 50,
   since: Date.now() - 60_000,
+  kind: "http", // or "email"; omit for both
 });
 
 const page1 = await client.requests.listPaginated(endpoint.slug, { limit: 100 });
@@ -217,6 +222,127 @@ const total = await client.requests.count({
 ```
 
 `search()` returns `SearchResult[]`. Their `id` field is synthetic and is not valid for `requests.get()` or `requests.replay()`.
+
+`requests.list()`, `listPaginated()`, `search()` and `count()` take `kind: "http" | "email"`.
+`waitFor()` and `waitForAll()` look back five minutes by default, so a request that arrived just
+before the call is found; pass `since` to change that.
+
+## Emails
+
+Every endpoint on an account also receives email at `<slug>@mailhooks.cc`, and at
+`<slug>+<tag>@mailhooks.cc` for any tag. Guest endpoints receive none. A captured email is a
+request with `kind: "email"`, `method: "EMAIL"`, the recipient address as `path`, the raw message
+as `body`, and the parsed message as `email` (typed `EmailRequest`). Each email counts as one
+request against your quota.
+
+Give each test run its own tag, wait for its email, and pull out the code or link:
+
+```typescript
+import { extractCode, extractLink } from "@webhooks-cc/sdk";
+
+const runId = `signup-${Date.now()}`;
+await yourApp.signUp({ email: client.emails.address(endpoint.slug, runId) });
+
+const email = await client.emails.waitFor(endpoint.slug, { tag: runId, timeout: "60s" });
+console.log(email.email.subject, email.email.from[0]?.address);
+
+const code = extractCode(email); // "482913", or null
+const link = extractLink(email); // the confirm, verify, reset or sign-in link, or null
+```
+
+`client.emails` methods:
+
+- `address(endpointOrSlug, tag?)`: the address, optionally tagged. Pass the endpoint object to use
+  the address the server reports; a slug uses the `emailDomain` client option
+- `list(slug, { tag, subject, from, to, limit, since })`: emails newest first. `limit` (default 50)
+  is how many of the newest emails are fetched before the filters apply
+- `get(requestId)`: one email; throws `NotFoundError` for anything else
+- `latest(slug, criteria)`: the newest matching email among the 100 newest, or `null`
+- `waitFor(slug, { ...criteria, timeout, pollInterval, since, match })`: polls until a matching
+  email arrives (defaults: 60 s timeout, 1 s interval, looking back five minutes)
+- `waitForAll(slug, { count, ...options })`: polls until `count` matching emails arrived, oldest
+  first
+- `sendTest(slug, { tag? })`: delivers a sample email with a six-digit code and a link. It counts as
+  one request and skips SMTP, so no sender checks run on it
+- `toJson(email, { endpoint?, includeExtracts? })`: the `email.received` JSON forwarding would post
+
+The criteria are `tag` (exact and case-sensitive; `null` matches untagged mail), `subject` (a
+substring or a RegExp), `from` and `to` (an address, compared case-insensitively, or a RegExp tested
+against `Name <address>`). `to` also matches the address the email was delivered to.
+
+`extractFromEmail(email.email)` returns every code and link found (`{ codes, links }`).
+`extractLink(email)` returns the confirm, verify, reset or sign-in link when there is one, otherwise
+the first link worth keeping; pass `{ actionOnly: true }` to accept only an action link.
+
+`matchEmail(criteria)` does the same filtering as a matcher for `requests.waitFor()` or
+`captureDuring()`, and `isEmailRequest(request)` narrows a request to `EmailRequest`. Requests from
+`requests.subscribe()` carry `kind` but not the parsed `email`; fetch it with
+`client.emails.get(request.id)`. `requests.replay()` throws for emails, `requests.export()` skips
+them, and provider detection ignores them.
+
+The `@webhooks-cc/sdk/email` entry point exports the email types, `extractCode`, `extractLink`,
+`extractFromEmail`, `htmlToText`, `buildEmailJson`, `emailAddress` and `isValidEmailTag`. It has
+no network code, so it fits in a browser bundle.
+
+## Forwarding
+
+Forwarding posts every email an endpoint captures to your server as signed `email.received` JSON,
+retried for about a day until your server answers 2xx. Only the endpoint's owner can manage it.
+
+```typescript
+await client.forwarding.configure(endpoint.slug, { url: "https://example.com/hooks/email" });
+const secret = await client.forwarding.secret(endpoint.slug); // "whsec_..."
+
+const test = await client.forwarding.test(endpoint.slug); // posts the newest email or a sample once
+console.log(test.delivered, test.status, test.excerpt);
+
+await client.forwarding.configure(endpoint.slug, { enabled: true });
+```
+
+`client.forwarding` also has `rotateSecret(slug)`, `deliveries(slug, { limit })` (latest
+deliveries, 1 to 20, default 5), `emailDeliveries(requestId)` (every try of one email) and
+`redeliver(requestId)`. `configure({ url: null })` removes the URL once forwarding is off.
+
+Verify deliveries in your handler with `verifyForwardedEmail()`. It checks the Standard Webhooks
+signature and that the timestamp is within five minutes, then returns the typed event. Pass the raw
+body (string, `Uint8Array`/`Buffer` or `ArrayBuffer`) and the headers as a Fetch `Headers`, a plain
+object such as Express's `req.headers`, or name and value pairs:
+
+```typescript
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(
+      await request.text(),
+      request.headers,
+      process.env.FORWARD_SECRET!
+    );
+    console.log(event.data.subject, event.data.codes);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      // error.code: missing_headers | timestamp_out_of_range | invalid_signature | invalid_payload
+      return new Response(error.message, { status: error.code === "invalid_payload" ? 400 : 401 });
+    }
+    throw error;
+  }
+}
+```
+
+To test a handler on your machine without forwarding, post a captured email to it, signed with your
+secret:
+
+```typescript
+const email = await client.emails.latest(endpoint.slug);
+if (email) {
+  await client.sendTo("http://localhost:3000/hooks/email", {
+    provider: "standard-webhooks",
+    secret: process.env.FORWARD_SECRET!,
+    body: client.emails.toJson(email),
+  });
+}
+```
 
 ## Templates, sendTo, and buildRequest
 
@@ -375,7 +501,7 @@ const hubspot = await verifySignature(request, {
 });
 ```
 
-Mailgun is the exception with no signature header — it embeds `signature.{timestamp,token,signature}` in the request body, so `verifyMailgunSignature` reads the body directly and never throws on malformed input.
+Mailgun is the exception with no signature header: it embeds `signature.{timestamp,token,signature}` in the request body, so `verifyMailgunSignature` reads the body directly and never throws on malformed input.
 
 SendGrid uses IP allowlisting rather than cryptographic signature verification.
 
@@ -419,6 +545,7 @@ const request = await client.requests.waitFor(endpoint.slug, {
 ```
 
 `matchAny()`, `matchBodyPath()`, and `matchJsonField()` are available when you need looser matching.
+`matchEmail({ tag, subject, from, to })` matches captured emails; see [Emails](#emails).
 
 Parse request bodies and diff captures:
 
@@ -443,6 +570,7 @@ console.log(parsed, form, eventType, diff.matches);
 - `withEndpoint()`
 - `withEphemeralEndpoint()`
 - `captureDuring()`
+- `captureEmailDuring()`
 - `assertRequest()`
 
 ```typescript
@@ -473,6 +601,27 @@ assertRequest(
   { throwOnFailure: true }
 );
 ```
+
+`captureEmailDuring()` creates a temporary endpoint, runs your action with its email address, waits
+for the email, and deletes the endpoint:
+
+```typescript
+import { extractCode } from "@webhooks-cc/sdk";
+import { captureEmailDuring } from "@webhooks-cc/sdk/testing";
+
+const [email] = await captureEmailDuring(
+  client,
+  async (address) => {
+    await yourApp.signUp({ email: address });
+  },
+  { subject: "Confirm your email", timeout: "30s" }
+);
+
+console.log(extractCode(email));
+```
+
+It takes the email criteria (`tag`, `subject`, `from`, `to`), `count` (default 1), `timeout`
+(default 60 s), `pollInterval`, `match`, and the options of `endpoints.create()`.
 
 ## Flow builder
 
@@ -546,6 +695,9 @@ API failures throw typed errors:
 - `NotFoundError`
 - `TimeoutError` (also thrown by `requests.subscribe()` when the idle watchdog trips without `reconnect`)
 - `RateLimitError`
+
+`verifyForwardedEmail()` throws `WebhookVerificationError`, whose `code` is `missing_headers`,
+`timestamp_out_of_range`, `invalid_signature` or `invalid_payload`.
 
 `ApiError` is still exported as a legacy alias of `WebhooksCCError`.
 

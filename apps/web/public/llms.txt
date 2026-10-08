@@ -6,23 +6,30 @@
 
 webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses with conditional rules (route different responses based on method, path, headers, body, or query params), forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
+Every endpoint on an account also receives email at its own address, so a signup flow that sends a webhook and a confirmation email can be checked in one place, and captured email can be forwarded to your server as signed JSON.
+
 Requests are captured by a Rust receiver, written directly to Postgres via a single stored procedure, and surfaced in the dashboard through Supabase Realtime.
 
 ## Core capabilities
 
 - Webhook capture: Send any HTTP request to https://go.webhooks.cc/w/<slug> and inspect it instantly
-- Mock responses: Configure status codes, headers, and response bodies per endpoint — with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins)
-- CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>` — no port forwarding or ngrok needed
-- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming
+- Email capture: Every endpoint on an account receives email at <slug>@mailhooks.cc; each email is stored as a request with `kind: "email"` and the parsed message, and the dashboard shows its one-time codes, links, and SPF, DKIM and DMARC results
+- Email forwarding: Forward every email an endpoint captures to your HTTPS URL as parsed JSON, signed with Standard Webhooks headers and retried for about a day
+- Mock responses: Configure status codes, headers, and response bodies per endpoint, with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins)
+- CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>`, no port forwarding or ngrok needed
+- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming; `client.emails.waitFor()` and `extractCode()` for email tests, `client.forwarding` and `verifyForwardedEmail()` for email forwarding
 - MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf)
-- Real-time streaming: Dashboard updates via Supabase Realtime (postgres_changes), CLI via Server-Sent Events
+- Real-time streaming: Dashboard updates via Supabase Realtime Broadcast signals, CLI and SDK via Server-Sent Events
 - Request replay: Resend captured requests to any URL
 - Provider detection: Built-in helpers for Stripe, GitHub, Shopify, Slack, Twilio, Paddle, and Linear webhooks
 
 ## Pricing
 
-- Free: 50 requests/day, unlimited endpoints, 7-day retention, full CLI/SDK/MCP access
-- Pro ($8/month): 100,000 requests/month, 30-day retention
+- Guest (no signup): 25 requests per ephemeral endpoint, deleted after 12 hours, no email capture
+- Free: 50 requests per 24 hours, unlimited endpoints, 7-day retention, every feature including email capture and full CLI/SDK/MCP access
+- Pro ($8/month): 100,000 requests per 30 days, 31-day retention
+- Teams ($12/seat/month): a separate per-team subscription; each seat adds 100,000 requests per 30 days to a pooled team quota, and requests on endpoints shared with the team are kept 31 days
+- Emails count against the same quota as webhooks: one request per email per endpoint
 
 ## Links
 
@@ -37,7 +44,13 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - SDK API reference: https://webhooks.cc/docs/sdk/api
 - SDK testing patterns: https://webhooks.cc/docs/sdk/testing
 - MCP server docs: https://webhooks.cc/docs/mcp
-- Agent registration (auth.md): https://webhooks.cc/auth.md — how AI agents register for an API credential
+- Email capture: https://webhooks.cc/docs/email-capture
+- Email forwarding: https://webhooks.cc/docs/forwarding
+- Email testing overview: https://webhooks.cc/email-testing
+- Email to webhook overview: https://webhooks.cc/email-to-webhook
+- REST API: https://webhooks.cc/docs/api
+- OpenAPI spec: https://webhooks.cc/openapi.yaml
+- Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents register for an API credential
 - GitHub: https://github.com/kroqdotdev/webhooks-cc
 - npm (SDK): https://www.npmjs.com/package/@webhooks-cc/sdk
 - npm (MCP): https://www.npmjs.com/package/@webhooks-cc/mcp
@@ -52,6 +65,13 @@ https://go.webhooks.cc/w/<slug>
 https://go.webhooks.cc/w/<slug>/optional/path
 
 Any HTTP method, content type, and body up to 1 MB is accepted.
+
+## Email address format
+
+<slug>@mailhooks.cc
+<slug>+<tag>@mailhooks.cc
+
+Endpoints on an account receive email; guest endpoints do not. Messages up to 10 MB are accepted. The tag after the plus sign lands on the same endpoint and is kept on the captured email. mailhooks.cc only receives mail and never sends any.
 
 ## CLI commands
 

@@ -19,7 +19,7 @@ import { sendError } from "@appsignal/nodejs";
  * an unexpected server error.
  */
 export async function POST(request: Request) {
-  const rateLimited = await checkRateLimit(request, 30);
+  const rateLimited = await checkRateLimit(request, "agent-revoke", 30);
   if (rateLimited) return rateLimited;
 
   // Body size cap (matches parseJsonBody's cap on the JSON branch).

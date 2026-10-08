@@ -3,14 +3,19 @@ info:
   title: webhooks.cc API
   version: "1.0.0"
   description: |
-    REST API for webhooks.cc — capture, inspect, and test webhooks.
+    REST API for webhooks.cc: capture, inspect, and test webhooks and email.
 
     **Authentication:** Most endpoints require a Bearer token in the `Authorization` header.
     Use your API key (prefix `whcc_`) generated from the [account page](https://webhooks.cc/account).
     Public endpoints (`/api/stats`, `/api/health`) do not require authentication.
 
-    **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}` — they are captured
+    **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}`. They are captured
     and available via the API and dashboard in real time.
+
+    **Email capture:** Every endpoint that belongs to an account also receives email at
+    `{slug}@mailhooks.cc` (and `{slug}+tag@mailhooks.cc`). An email is stored as a request with
+    `kind: "email"` and `method: "EMAIL"`. See [Email capture](https://webhooks.cc/docs/email-capture)
+    and [Email forwarding](https://webhooks.cc/docs/forwarding).
 
     **Rate limits:** Rate-limited endpoints return `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
     and `X-RateLimit-Reset` headers on every response. When the limit is exceeded, the API
@@ -33,7 +38,9 @@ tags:
   - name: Endpoints
     description: Create, read, update, and delete webhook endpoints.
   - name: Requests
-    description: List, inspect, and clear captured webhook requests.
+    description: List, inspect, and clear captured webhook requests and emails.
+  - name: Forwarding
+    description: Forward every email an endpoint captures to your own URL as JSON, signed with Standard Webhooks headers. Only the endpoint's owner can configure it.
   - name: Streaming
     description: Real-time Server-Sent Events stream of incoming webhooks.
   - name: Search
@@ -124,7 +131,9 @@ paths:
       operationId: getEndpoint
       tags: [Endpoints]
       summary: Get endpoint
-      description: Returns a single endpoint by slug. Team members can access shared endpoints.
+      description: |
+        Returns a single endpoint by slug. Team members can access shared endpoints; for them
+        `notificationUrl` and `forwardUrl` are left out.
       responses:
         "200":
           description: Endpoint details
@@ -144,8 +153,19 @@ paths:
       tags: [Endpoints]
       summary: Update endpoint
       description: |
-        Update an endpoint's name or mock response. Team members can also update shared endpoints.
+        Update an endpoint. Only the fields you send change.
         Set `mockResponse` to `null` to clear the mock response.
+
+        Team members can update `name`, `mockResponse`, and `responseRules` on endpoints shared
+        with them. Only the owner can change `showEmailExtracts` (it also decides whether forwarded
+        JSON includes codes and links), `notificationUrl`, the signing settings, `forwardEnabled`,
+        and `forwardUrl`; anyone else who sends one gets `403`.
+
+        **Forwarding:** `forwardEnabled: true` needs a `forwardUrl`, sent in the same request or
+        saved before. Saving the first URL (or turning forwarding on) creates the endpoint's signing
+        secret; read it with `GET /api/endpoints/{slug}/forwarding`. Send `forwardUrl: null` (or `""`)
+        to remove the URL, which fails while forwarding is on. Turning forwarding off marks
+        deliveries that are still waiting as failed. See [Email forwarding](https://webhooks.cc/docs/forwarding).
       requestBody:
         content:
           application/json:
@@ -162,10 +182,26 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            A team member sent an owner-only field (email, notification, signing, or forwarding settings),
+            or the API key belongs to an unclaimed agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          description: |
+            Secrets cannot be encrypted on this server, so a signing secret or the first forwarding
+            URL cannot be saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
     delete:
       operationId: deleteEndpoint
@@ -238,6 +274,12 @@ paths:
           schema:
             type: integer
           description: Only return requests received after this Unix timestamp (ms)
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [http, email]
+          description: Only HTTP requests (`http`) or only captured emails (`email`)
       responses:
         "200":
           description: Array of captured requests
@@ -247,6 +289,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Request"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -300,6 +344,12 @@ paths:
           schema:
             type: string
           description: Opaque cursor from a previous page
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [http, email]
+          description: Only HTTP requests (`http`) or only captured emails (`email`); send the same value for every page
       responses:
         "200":
           description: Paginated request listing
@@ -307,6 +357,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaginatedRequests"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -327,7 +379,9 @@ paths:
       operationId: getRequest
       tags: [Requests]
       summary: Get request
-      description: Get a single captured request by ID.
+      description: |
+        Get a single captured request by ID. Captured emails are requests too: they have
+        `kind: "email"` and the parsed message in `email`.
       responses:
         "200":
           description: Request details
@@ -341,6 +395,254 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  # -- Forwarding --------------------------------------------------------------
+
+  /api/endpoints/{slug}/forwarding:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: getForwardingSecret
+      tags: [Forwarding]
+      summary: Get forwarding secret
+      description: |
+        Returns the secret that signs the endpoint's forwarded emails, for verifying the
+        `webhook-signature` header in your handler. The secret is created when the endpoint's
+        first forwarding URL is saved. Owner only: anyone else gets `404`. The response is sent
+        with `Cache-Control: no-store`.
+      responses:
+        "200":
+          description: The forwarding secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForwardingSecret"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Endpoint not found, not owned by you, or it has no forwarding secret yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: rotateForwardingSecret
+      tags: [Forwarding]
+      summary: Rotate forwarding secret
+      description: |
+        Replaces the forwarding secret with a new one and returns it. Every delivery sent from now
+        on is signed with the new secret, including retries of deliveries still waiting, so update
+        your handler right away. Owner only: anyone else gets `404`. The response is sent with
+        `Cache-Control: no-store`.
+      responses:
+        "200":
+          description: The new forwarding secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForwardingSecret"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/endpoints/{slug}/forwarding/test:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    post:
+      operationId: testForwarding
+      tags: [Forwarding]
+      summary: Send test delivery
+      description: |
+        Posts the endpoint's newest email to the saved forwarding URL once, signed with the current
+        secret, and returns what your server answered. When the endpoint has not received an email
+        yet, a sample is sent instead, with `"test": true` in its JSON. Works whether forwarding is
+        on or off. Nothing is queued, retried, or added to the delivery history. Owner only: anyone
+        else gets `404`. Rate limited to 10 requests per minute.
+      responses:
+        "200":
+          description: |
+            What the forwarding URL answered. A non-2xx answer is still a `200` here, with
+            `delivered: false`.
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForwardTestResult"
+        "400":
+          description: No forwarding URL saved yet
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Endpoint not found or not owned by you
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+
+  /api/endpoints/{slug}/deliveries:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+
+    get:
+      operationId: listEndpointDeliveries
+      tags: [Forwarding]
+      summary: List recent deliveries
+      description: |
+        The endpoint's latest forwarded emails, newest first, each with the email's subject.
+        Owner only: anyone else gets `404`.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+          description: Number of deliveries to return (clamped to 1 to 20)
+      responses:
+        "200":
+          description: Recent deliveries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecentDelivery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/requests/{id}/deliveries:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Request ID of a captured email
+
+    get:
+      operationId: listEmailDeliveries
+      tags: [Forwarding]
+      summary: List deliveries of an email
+      description: |
+        Every forwarded copy of one email, newest first (up to 20), each with its attempts.
+        Anyone who can read the email can list them, including team members on a shared endpoint.
+        A request that was never forwarded (any HTTP request, for one) returns an empty array.
+      responses:
+        "200":
+          description: Deliveries of the email
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Delivery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: redeliverEmail
+      tags: [Forwarding]
+      summary: Redeliver an email
+      description: |
+        Queues another delivery of the email. It is sent with the endpoint's current forwarding URL
+        and secret, and retried on the usual schedule if it fails. Forwarding must be on.
+        Owner only: anyone else gets `404`. Rate limited to 30 requests per minute.
+      responses:
+        "200":
+          description: Delivery queued
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: string
+                    description: ID of the new delivery
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Not found, not an email, or the endpoint is not yours
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Forwarding is off for this endpoint
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
 
   # -- Streaming ---------------------------------------------------------------
 
@@ -357,20 +659,26 @@ paths:
         arrives as an `event: request` message with JSON data.
 
         The server sends keepalive pings (`:ping`) every 30 seconds. Maximum connection
-        duration is 30 minutes — reconnect when the stream closes.
+        duration is 30 minutes; reconnect when the stream closes.
+
+        Captured emails arrive as `request` events too, with `kind: "email"`, `method: "EMAIL"` and
+        the recipient address as `path`. Stream messages do not carry the parsed `email`; fetch the
+        request by its `_id` for it.
 
         **Event types:**
-        - `connected` — stream established
-        - `request` — captured webhook (JSON data matching the Request schema)
-        - `keepalive` — connection keepalive
-        - `timeout` — max duration reached, reconnect
-        - `endpoint_deleted` — endpoint was deleted, stream closed
+        - `connected`: stream established
+        - `request`: captured webhook or email (JSON data matching the StreamRequest schema,
+          which differs from Request: `_id` instead of `id`, an extra `_creationTime`, and no
+          `email`)
+        - `keepalive`: connection keepalive
+        - `timeout`: max duration reached, reconnect
+        - `endpoint_deleted`: endpoint was deleted, stream closed
       parameters:
         - name: since
           in: query
           schema:
             type: integer
-          description: Resume from this Unix timestamp (ms) — returns requests received after this time
+          description: Resume from this Unix timestamp (ms); returns requests received after this time
       responses:
         "200":
           description: SSE stream
@@ -405,8 +713,14 @@ paths:
           in: query
           schema:
             type: string
-            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
-          description: Filter by HTTP method
+            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, EMAIL]
+          description: Filter by HTTP method (`EMAIL` for captured emails)
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [http, email]
+          description: Only HTTP requests or only captured emails
         - name: q
           in: query
           schema:
@@ -457,6 +771,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SearchResult"
+        "400":
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
@@ -495,7 +811,12 @@ paths:
           in: query
           schema:
             type: string
-            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, EMAIL]
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [http, email]
         - name: q
           in: query
           schema:
@@ -526,6 +847,8 @@ paths:
                 properties:
                   count:
                     type: integer
+        "400":
+          $ref: "#/components/responses/BadRequestRateLimited"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
@@ -624,6 +947,107 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Remaining"
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/send-test-email:
+    post:
+      operationId: sendTestEmail
+      tags: [Send]
+      summary: Send test email
+      description: |
+        Deliver a sample email (with a one-time code and a link) to one of your endpoints, or one
+        shared with you through a team. It is captured and counted like any other email, but it does
+        not travel over SMTP, so no sender checks (SPF, DKIM, DMARC) run on it.
+        Pass `tag` to send it to a tagged address. Rate limited to 10 requests per minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug]
+              properties:
+                slug:
+                  type: string
+                  pattern: "^[A-Za-z0-9_-]{1,50}$"
+                  description: Target endpoint slug
+                tag:
+                  type: string
+                  description: |
+                    Deliver to `{slug}+{tag}@mailhooks.cc` instead of the plain address, so a test
+                    can wait for its own sample. Printable ASCII without spaces, quotes, brackets,
+                    `@`, `,`, `;` or `:`; slug, `+` and tag together at most 64 characters.
+      responses:
+        "200":
+          description: Test email captured
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, requestId]
+                properties:
+                  status:
+                    type: string
+                    enum: [captured]
+                  requestId:
+                    type: ["string", "null"]
+                    description: ID of the captured email
+        "400":
+          description: Invalid JSON, slug or tag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: |
+            No endpoint with that slug that you own or that is shared with you. Guest endpoints
+            answer `404` too: they belong to no account, and only endpoints on an account receive
+            email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The endpoint's request quota is used up
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "410":
+          description: The endpoint has expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          description: The test email could not be delivered; try again
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Test emails are not available on this server
           content:
             application/json:
               schema:
@@ -1209,6 +1633,27 @@ components:
           items:
             $ref: "#/components/schemas/TeamShare"
           description: Every subscribed team of yours this endpoint is shared with (present when shared with you)
+        emailAddress:
+          type: ["string", "null"]
+          description: |
+            Address that delivers email to this endpoint (`{slug}@mailhooks.cc`). Null for endpoints
+            without an owner (guest endpoints), which receive no email.
+        showEmailExtracts:
+          type: boolean
+          default: true
+          description: |
+            Whether the one-time codes and links found in emails are shown in the dashboard and
+            included (as `codes` and `links`) in forwarded JSON
+        forwardEnabled:
+          type: boolean
+          description: Whether every captured email is forwarded to `forwardUrl` as signed JSON
+        forwardUrl:
+          type: ["string", "null"]
+          format: uri
+          description: Where captured emails are forwarded. Only returned to the endpoint's owner.
+        hasForwardSecret:
+          type: boolean
+          description: Whether a forwarding secret exists. The secret itself is never included.
 
     MockResponse:
       type: object
@@ -1342,11 +1787,31 @@ components:
               format: uri
               maxLength: 2048
             - type: "null"
-          description: Notification webhook URL, or null to clear
+          description: Notification webhook URL, or null to clear. Owner only.
+        showEmailExtracts:
+          type: boolean
+          description: |
+            Show the codes and links found in emails, and include them in forwarded JSON.
+            Owner only, because it changes what forwarding sends.
+        forwardEnabled:
+          type: boolean
+          description: Forward every captured email to `forwardUrl`. Needs a URL. Owner only.
+        forwardUrl:
+          oneOf:
+            - type: string
+              format: uri
+              maxLength: 2048
+            - type: string
+              const: ""
+            - type: "null"
+          description: |
+            URL to forward captured emails to, or null (or `""`) to remove it. Must be `https` on a
+            public host name: no IP addresses, `localhost`, credentials in the URL, or blocked
+            ports (mail, database, and other internal services). Owner only.
 
     Request:
       type: object
-      required: [id, endpointId, method, path, headers, queryParams, ip, size, receivedAt]
+      required: [id, endpointId, method, path, headers, queryParams, ip, size, receivedAt, kind]
       properties:
         id:
           type: string
@@ -1354,14 +1819,79 @@ components:
           type: string
         method:
           type: string
+          description: HTTP method, or `EMAIL` for a captured email
         path:
           type: string
+          description: Path after the slug, or the recipient address for a captured email
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Request headers. For an email, the message headers, lowercase names, repeated headers
+            joined with a newline.
+        body:
+          type: string
+          description: |
+            Request body. For an email, the original message, or only its headers when the message
+            was over 1 MB.
+        bodyRaw:
+          type: string
+          description: Base64 of the exact body bytes, present only when the body is not valid UTF-8
+        queryParams:
+          type: object
+          additionalProperties:
+            type: string
+        contentType:
+          type: string
+          description: Content-Type of the request; `message/rfc822` for an email
+        ip:
+          type: string
+          description: Client IP, or the sending mail server's IP for an email
+        size:
+          type: integer
+        receivedAt:
+          type: integer
+          description: Unix timestamp (ms)
+        kind:
+          type: string
+          enum: [http, email]
+          description: "`email` for a captured email, `http` for everything else"
+        email:
+          oneOf:
+            - $ref: "#/components/schemas/EmailCapture"
+            - type: "null"
+          description: The parsed message when `kind` is `email`, null otherwise
+
+    StreamRequest:
+      type: object
+      description: The data of a `request` event on the SSE stream.
+      required:
+        [_id, _creationTime, endpointId, method, path, headers, queryParams, ip, size, receivedAt]
+      properties:
+        _id:
+          type: string
+          description: The request ID, as `id` in Request
+        _creationTime:
+          type: integer
+          description: Unix timestamp (ms), the same as `receivedAt`
+        endpointId:
+          type: string
+        method:
+          type: string
+          description: HTTP method, or `EMAIL` for a captured email
+        path:
+          type: string
+          description: Path after the slug, or the recipient address for a captured email
         headers:
           type: object
           additionalProperties:
             type: string
         body:
           type: string
+        bodyRaw:
+          type: string
+          description: Base64 of the exact body bytes, present only when the body is not valid UTF-8
         queryParams:
           type: object
           additionalProperties:
@@ -1375,6 +1905,367 @@ components:
         receivedAt:
           type: integer
           description: Unix timestamp (ms)
+        kind:
+          type: string
+          enum: [http, email]
+          description: "`email` for a captured email, `http` for everything else"
+
+    EmailCapture:
+      type: object
+      description: |
+        A captured email, parsed. Anything missing or malformed in the message is null or an empty
+        list. Text and HTML parts are kept up to 256 KB each; attachment contents are not kept.
+        See [Email capture](https://webhooks.cc/docs/email-capture).
+      required:
+        [
+          subject,
+          from,
+          to,
+          cc,
+          replyTo,
+          sender,
+          date,
+          messageId,
+          inReplyTo,
+          tag,
+          text,
+          html,
+          textFromHtml,
+          attachments,
+          auth,
+          smtp,
+          parseError,
+          truncated,
+        ]
+      properties:
+        subject:
+          type: ["string", "null"]
+        from:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailAddress"
+        to:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailAddress"
+        cc:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailAddress"
+        replyTo:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailAddress"
+        sender:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailAddress"
+        date:
+          type: ["string", "null"]
+          format: date-time
+          description: The message's Date header as RFC 3339, null when missing or invalid
+        messageId:
+          type: ["string", "null"]
+        inReplyTo:
+          type: array
+          items:
+            type: string
+        tag:
+          type: ["string", "null"]
+          description: The `+tag` of the address the email was sent to, as the sender wrote it
+        text:
+          type: ["string", "null"]
+          description: The text part
+        html:
+          type: ["string", "null"]
+          description: The HTML part
+        textFromHtml:
+          type: boolean
+          description: The message had no text part, so `text` was derived from the HTML
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailAttachment"
+        auth:
+          oneOf:
+            - $ref: "#/components/schemas/EmailAuth"
+            - type: "null"
+          description: Sender checks run when the message arrived, null when there are none
+        smtp:
+          oneOf:
+            - $ref: "#/components/schemas/EmailSmtp"
+            - type: "null"
+          description: The SMTP session the message arrived in
+        parseError:
+          type: boolean
+          description: The message could not be parsed; the original is still in the request's `body`
+        truncated:
+          type: object
+          required: [raw, text, html, headers, addresses, attachments]
+          properties:
+            raw:
+              type: boolean
+              description: The message was over 1 MB, so the request's `body` holds its headers only
+            text:
+              type: boolean
+              description: The text part was cut at 256 KB
+            html:
+              type: boolean
+              description: The HTML part was cut at 256 KB
+            headers:
+              type: boolean
+              description: The header section was over 1 MB, so only its start was parsed and the body was skipped
+            addresses:
+              type: boolean
+              description: An address list had more than 100 entries; the rest were dropped
+            attachments:
+              type: boolean
+              description: The message had more than 100 attachments; only the first 100 are listed
+
+    EmailAddress:
+      type: object
+      required: [name, address]
+      properties:
+        name:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+
+    EmailAttachment:
+      type: object
+      required: [filename, contentType, size, contentId, inline]
+      properties:
+        filename:
+          type: ["string", "null"]
+        contentType:
+          type: string
+        size:
+          type: integer
+          description: Size in bytes. The contents are not kept.
+        contentId:
+          type: ["string", "null"]
+          description: Content-ID, for images the HTML references with `cid:`
+        inline:
+          type: boolean
+
+    EmailCheck:
+      type: object
+      required: [result, domain]
+      properties:
+        result:
+          type: string
+          description: Verdict such as `pass`, `fail`, `softfail`, `neutral`, `none`, `temperror`, `permerror`
+        domain:
+          type: ["string", "null"]
+
+    EmailAuth:
+      type: object
+      required: [spf, dkim, dmarc, iprev, authenticationResults, error]
+      properties:
+        spf:
+          oneOf:
+            - $ref: "#/components/schemas/EmailCheck"
+            - type: "null"
+        dkim:
+          type: array
+          description: One result per DKIM signature
+          items:
+            allOf:
+              - $ref: "#/components/schemas/EmailCheck"
+              - type: object
+                required: [selector]
+                properties:
+                  selector:
+                    type: ["string", "null"]
+        dmarc:
+          oneOf:
+            - allOf:
+                - $ref: "#/components/schemas/EmailCheck"
+                - type: object
+                  required: [policy, reason]
+                  properties:
+                    policy:
+                      type: ["string", "null"]
+                    reason:
+                      type: ["string", "null"]
+            - type: "null"
+        iprev:
+          oneOf:
+            - type: object
+              required: [result, ptr]
+              properties:
+                result:
+                  type: string
+                ptr:
+                  type: ["string", "null"]
+                  description: Host name the sending server's IP address points to
+            - type: "null"
+          description: Reverse DNS check of the sending server
+        authenticationResults:
+          type: ["string", "null"]
+          description: The Authentication-Results header written when the message arrived
+        error:
+          type: ["string", "null"]
+          description: Set when the checks could not run (`unavailable`, `timeout`, `busy`, `failed`)
+
+    EmailSmtp:
+      type: object
+      required: [clientIp, clientRdns, helo, tls, envelopeFrom, envelopeTo, size, test]
+      properties:
+        clientIp:
+          type: ["string", "null"]
+        clientRdns:
+          type: ["string", "null"]
+        helo:
+          type: ["string", "null"]
+        tls:
+          oneOf:
+            - type: object
+              required: [version, cipher]
+              properties:
+                version:
+                  type: ["string", "null"]
+                cipher:
+                  type: ["string", "null"]
+            - type: "null"
+          description: The encrypted connection, null when the message arrived without TLS
+        envelopeFrom:
+          type: ["string", "null"]
+          description: The SMTP envelope sender (MAIL FROM)
+        envelopeTo:
+          type: array
+          items:
+            type: string
+          description: The SMTP envelope recipients (RCPT TO) that reached this endpoint
+        size:
+          type: ["integer", "null"]
+          description: Size of the whole message as received, in bytes
+        test:
+          type: boolean
+          description: True only for the dashboard's "Send test email" sample
+
+    ForwardingSecret:
+      type: object
+      required: [secret]
+      properties:
+        secret:
+          type: string
+          description: |
+            `whsec_` followed by the base64 signing key. Verify `webhook-signature` with the key
+            (the base64 after the prefix), as the Standard Webhooks libraries do.
+
+    ForwardTestResult:
+      type: object
+      required: [status, durationMs, excerpt, error, delivered, sample]
+      properties:
+        status:
+          type: ["integer", "null"]
+          description: Status your server answered, null when no answer arrived
+        durationMs:
+          type: integer
+        excerpt:
+          type: ["string", "null"]
+          description: The start of your server's response body (up to 1 KB)
+        error:
+          type: ["string", "null"]
+          description: Why no answer arrived (timeout, refused connection, TLS problem, blocked URL), null when one did
+        delivered:
+          type: boolean
+          description: True when your server answered with a 2xx status
+        sample:
+          type: boolean
+          description: True when the endpoint had no email yet, so a sample was sent
+
+    Delivery:
+      type: object
+      description: One forwarded copy of an email
+      required:
+        [
+          id,
+          requestId,
+          status,
+          attempts,
+          createdAt,
+          finishedAt,
+          nextAttemptAt,
+          lastStatus,
+          lastError,
+          attemptLog,
+        ]
+      properties:
+        id:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [pending, succeeded, failed]
+        attempts:
+          type: integer
+          description: Tries made so far
+        createdAt:
+          type: integer
+          description: Unix timestamp (ms) when the delivery was queued
+        finishedAt:
+          type: ["integer", "null"]
+          description: Unix timestamp (ms) when it succeeded or failed for good, null while pending
+        nextAttemptAt:
+          type: ["integer", "null"]
+          description: Unix timestamp (ms) of the next try, for pending deliveries only
+        lastStatus:
+          type: ["integer", "null"]
+          description: Status your server answered on the last try
+        lastError:
+          type: ["string", "null"]
+          description: Why the last try failed, null after a success
+        attemptLog:
+          type: array
+          description: Every try, newest first
+          items:
+            $ref: "#/components/schemas/DeliveryAttempt"
+
+    DeliveryAttempt:
+      type: object
+      required: [attemptedAt, status, durationMs, error, responseExcerpt]
+      properties:
+        attemptedAt:
+          type: integer
+          description: Unix timestamp (ms)
+        status:
+          type: ["integer", "null"]
+          description: Status your server answered, null when no answer arrived
+        durationMs:
+          type: integer
+        error:
+          type: ["string", "null"]
+          description: Why the try failed (including a non-2xx answer), null when it succeeded
+        responseExcerpt:
+          type: ["string", "null"]
+          description: The start of your server's response body (up to 1 KB)
+
+    RecentDelivery:
+      type: object
+      required: [id, requestId, status, attempts, createdAt, lastStatus, lastError, subject]
+      properties:
+        id:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [pending, succeeded, failed]
+        attempts:
+          type: integer
+        createdAt:
+          type: integer
+          description: Unix timestamp (ms) when the delivery was queued
+        lastStatus:
+          type: ["integer", "null"]
+        lastError:
+          type: ["string", "null"]
+        subject:
+          type: ["string", "null"]
+          description: Subject of the forwarded email
 
     SearchResult:
       type: object
@@ -1407,6 +2298,18 @@ components:
           type: integer
         receivedAt:
           type: integer
+        bodyRaw:
+          type: string
+          description: Base64 of the exact body bytes, present only when the body is not valid UTF-8
+        kind:
+          type: string
+          enum: [http, email]
+          description: "`email` for a captured email, `http` for everything else"
+        email:
+          oneOf:
+            - $ref: "#/components/schemas/EmailCapture"
+            - type: "null"
+          description: The parsed message when `kind` is `email`, null otherwise
 
     PaginatedRequests:
       type: object

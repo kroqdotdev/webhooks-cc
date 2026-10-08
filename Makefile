@@ -8,7 +8,7 @@ dev-web:
 	pnpm --filter web dev
 
 dev-receiver:
-	@set -a && . ./.env.local && set +a && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
+	@set -a && . ./.env.local && set +a && export MAIL_INGEST_ADDR="$${MAIL_INGEST_ADDR:-127.0.0.1:3002}" && cd apps/receiver-rs && $$HOME/.cargo/bin/cargo run
 
 dev-cli:
 	cd apps/cli-rs && cargo run -- $(ARGS)
@@ -31,6 +31,7 @@ build-cli:
 test:
 	pnpm test
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo test
+	cd apps/mx-rs && $$HOME/.cargo/bin/cargo test
 	cd apps/cli-rs && cargo test
 
 test-full:
@@ -43,6 +44,7 @@ test-full:
 # Lint
 lint:
 	cd apps/receiver-rs && $$HOME/.cargo/bin/cargo clippy -- -D warnings
+	cd apps/mx-rs && $$HOME/.cargo/bin/cargo clippy --all-targets -- -D warnings
 	cd apps/cli-rs && cargo clippy -- -D warnings
 
 # Clean
@@ -53,3 +55,4 @@ clean:
 	rm -rf apps/web/node_modules
 	rm -rf packages/sdk/node_modules
 	rm -rf apps/receiver-rs/target
+	rm -rf apps/mx-rs/target

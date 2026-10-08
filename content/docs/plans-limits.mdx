@@ -3,7 +3,7 @@ title: "Plans & Limits"
 description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
 section: getting-started
 order: 4
-lastUpdated: 2026-08-06
+lastUpdated: 2026-10-08
 schema: faq
 keywords:
   [
@@ -29,7 +29,7 @@ seo:
 | **Pro**   | 100,000          | 30 days  | 31 days   | Unlimited, never expire      | $8/month         |
 | **Teams** | 100,000 per seat | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month   |
 
-Every feature — webhook capture, inspection, replay, mock responses, CLI tunneling, SDK, and MCP server — works on both Free and Pro.
+Every feature (webhook capture, [email capture](/docs/email-capture), inspection, replay, mock responses, CLI tunneling, SDK, and MCP server) works on both Free and Pro.
 
 **Teams** is a separate, per-team subscription rather than a tier of your personal plan. Any account (Free or Pro) can create a team, and the team's own subscription decides what it can do. See [Teams and shared endpoints](#teams-and-shared-endpoints) below.
 
@@ -50,6 +50,8 @@ Endpoints created by logged-in users (Free or Pro) **never expire**. They persis
 Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets.
 
 Quotas are enforced atomically inside a single Postgres stored procedure — no race conditions, even under high concurrency.
+
+Emails sent to an endpoint's address count against the same quota: one request per endpoint the email is addressed to. When the quota is used up, new mail is refused with `552 5.2.2 Mailbox full`, so the sender gets a bounce instead of the email disappearing. The account page shows how much of your usage was email.
 
 <Callout type="tip">
   `sendTo` calls that send webhooks directly to your handler URL do not count toward your quota.
@@ -91,6 +93,9 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Create endpoint                   | 30    | 10 minutes |
 | Create ephemeral endpoint (guest) | 20    | 10 minutes |
 | Send test webhook                 | 30    | 1 minute   |
+| Send test email                   | 10    | 1 minute   |
+| Send test delivery (forwarding)   | 10    | 1 minute   |
+| Redeliver a forwarded email       | 30    | 1 minute   |
 | Search requests                   | 60    | 10 minutes |
 | Search count                      | 120   | 10 minutes |
 | Device auth flows                 | 10    | 1 minute   |
@@ -106,6 +111,11 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | API key default TTL            | 365 days              |
 | Mock response delay            | 30,000ms (30 seconds) |
 | Test webhook body size         | 1 MB                  |
+| Email message size             | 10 MB                 |
+| Recipients per email           | 20                    |
+| Original email kept up to      | 1 MB                  |
+| Forwarding answer timeout      | 15 seconds            |
+| Forwarding retries             | 8, over about a day   |
 | Paginated request listing      | 100 per page          |
 | Ephemeral endpoints (per user) | 25 concurrent         |
 | SSE stream connection          | 30 minutes max        |
@@ -118,6 +128,11 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 <FAQItem question="Do sendTo calls count toward my quota?">
 
 No. `sendTo` sends webhooks directly to your URL without routing through webhooks.cc endpoints. Only requests captured by the receiver at `go.webhooks.cc/w/{slug}` count toward your quota.
+
+</FAQItem>
+<FAQItem question="Do emails count toward my quota?">
+
+Yes. An email sent to an endpoint's address counts as one request, the same as a webhook, once per endpoint it is addressed to. A sender's retry after a temporary failure is not counted twice. Emails also follow your plan's retention.
 
 </FAQItem>
 <FAQItem question="What happens when I hit the rate limit?">

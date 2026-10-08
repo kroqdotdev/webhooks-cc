@@ -41,6 +41,8 @@ function toStreamRequest(record: RequestRecord) {
     ip: record.ip,
     size: record.size,
     receivedAt: record.receivedAt,
+    // The parsed email stays out of the stream; read it from /api/requests/{id}.
+    kind: record.kind,
   };
 }
 

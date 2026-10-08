@@ -7,7 +7,7 @@ use crate::api::stream::join_stream;
 use crate::cli::output::{
     bold, dim, green, method_color, print_reconnected, print_reconnecting, red,
 };
-use crate::tunnel::{Tunnel, parse_target};
+use crate::tunnel::{EMAIL_NOT_TUNNELED, Tunnel, parse_target};
 use crate::types::{CreateEndpointRequest, SseEvent};
 
 pub async fn run(
@@ -84,6 +84,33 @@ pub async fn run(
                     SseEvent::Request(req) => {
                         let method = req.method.clone();
                         let path = req.path.clone();
+
+                        // An email's path is the recipient address and its body a
+                        // raw MIME message: not something a local HTTP server takes.
+                        if req.is_email() {
+                            if json {
+                                println!(
+                                    "{}",
+                                    serde_json::json!({
+                                        "event": "skipped",
+                                        "reason": "email",
+                                        "method": method,
+                                        "path": path,
+                                    })
+                                );
+                            } else {
+                                let time = chrono::Local::now().format("%H:%M:%S");
+                                println!(
+                                    "  {} {} {} -> {}",
+                                    dim(&time.to_string()),
+                                    method_color(&method),
+                                    path,
+                                    dim(EMAIL_NOT_TUNNELED),
+                                );
+                            }
+                            continue;
+                        }
+
                         let result = tunnel.forward(&req).await;
 
                         if json {

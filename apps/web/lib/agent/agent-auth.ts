@@ -10,6 +10,7 @@ import {
   MAX_KEYS_PER_USER,
 } from "@/lib/supabase/api-keys";
 import { sendEmail } from "@/lib/email/mailer";
+import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { verifyIdJag, type IdJagSuccess } from "./id-jag";
 
 /**
@@ -812,6 +813,11 @@ export async function revokeForIssuerSubject(iss: string, sub: string): Promise<
  * public.users). The auth user id equals public.users.id.
  */
 async function resolveOrProvisionUser(email: string, fullName: string | null): Promise<string> {
+  // Mail to the capture domain can be read through webhooks.cc itself, so it
+  // never identifies anyone: no flow may create or reach an account by it.
+  if (isCaptureDomainAddress(email, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
+    throw new AgentRequestError(400, "invalid_email");
+  }
   const admin = db();
   const normalized = email.toLowerCase();
 

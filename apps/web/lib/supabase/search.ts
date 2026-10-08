@@ -1,6 +1,8 @@
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
+import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
+import { byteaToBase64 } from "./requests";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -16,6 +18,8 @@ export interface SearchRequestRecord {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  /** Base64 of the exact bytes, when the body was not valid UTF-8. */
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -23,6 +27,14 @@ export interface SearchRequestRecord {
   receivedAt: number;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind: "http" | "email";
+  email?: EmailCapture | null;
+}
+
+export type RequestKind = "http" | "email";
+
+export function isRequestKind(value: unknown): value is RequestKind {
+  return value === "http" || value === "email";
 }
 
 export interface SearchRequestsInput {
@@ -30,6 +42,7 @@ export interface SearchRequestsInput {
   plan?: UserPlan;
   slug?: string;
   method?: string;
+  kind?: RequestKind;
   q?: string;
   from?: number;
   to?: number;
@@ -43,6 +56,7 @@ export interface CountSearchRequestsInput {
   plan?: UserPlan;
   slug?: string;
   method?: string;
+  kind?: RequestKind;
   q?: string;
   from?: number;
   to?: number;
@@ -86,11 +100,15 @@ function normalizeTimestamp(value: number | undefined): number | null {
 function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
   const headers = asStringRecord(row.headers);
   const body = row.body ?? undefined;
-  const detection = deriveWebhookDetection({
-    headers,
-    body,
-    contentType: row.content_type ?? undefined,
-  });
+  const kind = row.kind === "email" ? "email" : "http";
+  const detection =
+    kind === "email"
+      ? { detectedProvider: null, detectedEvent: null }
+      : deriveWebhookDetection({
+          headers,
+          body,
+          contentType: row.content_type ?? undefined,
+        });
 
   return {
     id: row.id,
@@ -99,6 +117,7 @@ function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
     path: row.path,
     headers,
     body,
+    bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
@@ -106,6 +125,8 @@ function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
     receivedAt: row.received_at,
     detectedProvider: detection.detectedProvider,
     detectedEvent: detection.detectedEvent,
+    kind,
+    email: kind === "email" ? toEmailCapture(row.email) : null,
   };
 }
 
@@ -145,6 +166,7 @@ export async function searchRequestsForUser(
     p_limit: clampLimit(input.limit),
     p_offset: clampOffset(input.offset),
     p_order: normalizeOrder(input.order),
+    p_kind: input.kind ?? null,
   });
 
   if (error) {
@@ -166,6 +188,7 @@ export async function countSearchRequestsForUser(input: CountSearchRequestsInput
     p_q: normalizeOptionalString(input.q),
     p_from_ms: normalizeTimestamp(input.from),
     p_to_ms: normalizeTimestamp(input.to),
+    p_kind: input.kind ?? null,
   });
 
   if (error) {

@@ -7,7 +7,8 @@ import type {
   TemplateProvider,
 } from "./types";
 
-type RequestLike = Pick<Request, "headers" | "body" | "contentType">;
+type RequestLike = Pick<Request, "headers" | "body" | "contentType"> &
+  Partial<Pick<Request, "kind">>;
 type SearchLike = Pick<SearchResult, "headers" | "body" | "contentType">;
 type WebhookLike = RequestLike | SearchLike;
 
@@ -821,6 +822,10 @@ export function detectWebhookProvider(request: WebhookLike): TemplateProvider | 
  * Uses an ordered detector list so more specific providers win over generic matches.
  */
 export function detectWebhookInfo(request: WebhookLike): DetectedWebhookInfo | null {
+  // An email's headers and body are a mail message, not a provider's webhook.
+  if ("kind" in request && request.kind === "email") {
+    return null;
+  }
   for (const detector of DETECTORS) {
     if (detector.matches(request)) {
       return {

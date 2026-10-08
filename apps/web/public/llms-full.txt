@@ -1,4 +1,4 @@
-# webhooks.cc — Full Reference
+# webhooks.cc full reference
 
 > Webhook testing tools for developers. Capture, inspect, forward, and test webhooks with a dashboard, CLI, TypeScript SDK, and MCP server for AI agents.
 
@@ -6,12 +6,16 @@
 
 webhooks.cc is a webhook inspection and testing service. Developers use it to capture incoming HTTP requests at unique URLs, inspect headers and bodies in real time, configure mock responses with conditional rules (route different responses based on method, path, headers, body, or query params), forward webhooks to localhost for local development, and write automated test assertions against captured requests.
 
+Every endpoint on an account also receives email at `<slug>@mailhooks.cc`. Captured emails sit in the same request list as webhooks and can be forwarded to your own server as signed JSON.
+
 The Rust receiver handles 86,000+ requests per second with sub-millisecond capture latency. Requests are written directly to Postgres via a single stored procedure and surfaced in the dashboard through Supabase Realtime.
 
 ## Architecture
 
-- **Dashboard**: Next.js App Router with real-time updates via Supabase Realtime (postgres_changes)
+- **Dashboard**: Next.js App Router with real-time updates via Supabase Realtime Broadcast signals (database triggers send id-only signals on private topics; the dashboard then re-reads through authenticated API routes)
 - **Receiver**: Rust (Axum + Tokio) writing directly to Postgres via sqlx and a single stored procedure
+- **Email intake**: a receive-only Rust SMTP host for `mailhooks.cc` that hands each message to the receiver, which stores it through the same stored procedure as webhooks
+- **Email forwarding**: a queue drained by the web app, which signs and posts each captured email to the endpoint's forwarding URL
 - **Database**: Self-hosted Supabase (Postgres) with row-level security
 - **CLI**: Rust (Clap + Ratatui) connecting via SSE streams
 - **SDK**: TypeScript (`@webhooks-cc/sdk`) published to npm
@@ -22,7 +26,12 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 - Homepage: https://webhooks.cc
 - Webhook receiver: https://go.webhooks.cc
 - Endpoint URL format: `https://go.webhooks.cc/w/<slug>` or `https://go.webhooks.cc/w/<slug>/optional/path`
+- Endpoint email address format: `<slug>@mailhooks.cc` or `<slug>+<tag>@mailhooks.cc`
 - Documentation: https://webhooks.cc/docs
+- Email capture: https://webhooks.cc/docs/email-capture
+- Email forwarding: https://webhooks.cc/docs/forwarding
+- REST API: https://webhooks.cc/docs/api
+- OpenAPI spec: https://webhooks.cc/openapi.yaml
 - Installation: https://webhooks.cc/installation
 - GitHub: https://github.com/kroqdotdev/webhooks-cc
 - npm SDK: https://www.npmjs.com/package/@webhooks-cc/sdk
@@ -30,8 +39,11 @@ The Rust receiver handles 86,000+ requests per second with sub-millisecond captu
 
 ## Pricing
 
-- **Free**: 50 requests/day, unlimited endpoints, 7-day retention, full CLI/SDK/MCP access
-- **Pro** ($8/month): 100,000 requests/month, 30-day retention, team collaboration
+- **Guest** (no signup): 25 requests per ephemeral endpoint, deleted after 12 hours, no email capture
+- **Free**: 50 requests per 24 hours, unlimited endpoints, 7-day retention, every feature including email capture and full CLI/SDK/MCP access
+- **Pro** ($8/month): 100,000 requests per 30 days, 31-day retention
+- **Teams** ($12/seat/month): a separate per-team subscription, not a tier of a personal plan. Each seat adds 100,000 requests per 30 days to a pooled team quota and one member slot. Requests on endpoints shared with an active team are billed to the pool and kept 31 days.
+- Emails count against the same quota as webhooks: one request per email per endpoint it is addressed to.
 
 ## Authentication
 
@@ -76,6 +88,7 @@ const client = new WebhooksCC({
     onResponse: (info) => {},
     onError: (info) => {},
   },
+  emailDomain: "mailhooks.cc", // Optional, the domain emails.address() uses
 });
 ```
 
@@ -135,16 +148,18 @@ await client.endpoints.sendTemplate("my-slug", {
 const requests = await client.requests.list("my-slug", {
   limit?: number,
   since?: number,           // Timestamp in ms
+  kind?: "http" | "email",  // Only HTTP requests or only emails
 });
 
 // Paginated listing
 const page = await client.requests.listPaginated("my-slug", {
   limit?: number,
   cursor?: string,          // From previous page
+  kind?: "http" | "email",
 });
 // Returns: { items: Request[], cursor?: string, hasMore: boolean }
 
-// Get single request
+// Get single request (emails have kind: "email" and the parsed message in `email`)
 const req = await client.requests.get("request-id");
 
 // Wait for next request (polling)
@@ -152,6 +167,7 @@ const req = await client.requests.waitFor("my-slug", {
   timeout?: number | string,     // Default: "30s", e.g. "5m"
   pollInterval?: number | string, // Default: "500ms"
   match?: (request: Request) => boolean,
+  since?: number,                 // Default: five minutes ago, so a request that just arrived is found
 });
 
 // Wait for multiple requests
@@ -168,16 +184,17 @@ for await (const req of client.requests.subscribe("my-slug", {
   reconnect?: boolean,
   maxReconnectAttempts?: number,  // Default: 5
 })) {
-  console.log(req.method, req.path);
+  console.log(req.kind, req.method, req.path);  // streamed requests carry kind, not the parsed email
 }
 
-// Replay captured request to a URL
+// Replay captured request to a URL (throws for emails)
 const response = await client.requests.replay("request-id", "http://localhost:8080");
 
-// Search requests (ClickHouse)
+// Search requests
 const results = await client.requests.search({
   slug?: string,
   method?: string,
+  kind?: "http" | "email",
   q?: string,               // Free-text search
   from?: number | string,   // Start time
   to?: number | string,     // End time
@@ -192,11 +209,135 @@ const count = await client.requests.count({ slug: "my-slug", method: "POST" });
 // Clear requests
 await client.requests.clear("my-slug", { before?: number | string });
 
-// Export requests
+// Export requests (HTTP only; emails are skipped)
 const exported = await client.requests.export("my-slug", {
   format: "har" | "curl",
   limit?: number,
   since?: number,
+});
+```
+
+### Emails
+
+Every endpoint on an account receives email at `<slug>@mailhooks.cc` and `<slug>+<tag>@mailhooks.cc`; guest endpoints receive none. A captured email is a request with `kind: "email"`, `method: "EMAIL"`, the recipient address as `path`, the raw message as `body` and the parsed message as `email` (typed `EmailRequest`). An email counts as one request.
+
+```typescript
+import { extractCode, extractLink, extractFromEmail } from "@webhooks-cc/sdk";
+
+// The address, optionally with a +tag (pass the Endpoint object to use its emailAddress)
+const address = client.emails.address("my-slug", "run-42"); // "my-slug+run-42@mailhooks.cc"
+
+// Criteria shared by list, latest, waitFor, waitForAll (all given criteria must match):
+//   tag?: string | null        exact, case-sensitive; null = untagged mail only
+//   subject?: string | RegExp  string = substring
+//   from?: string | RegExp     string = address, case-insensitive; RegExp tested against "Name <address>"
+//   to?: string | RegExp       To, Cc, or the address it was delivered to; same rules as from
+
+// List emails, newest first (limit = newest emails fetched before filtering, default 50)
+const emails = await client.emails.list("my-slug", { tag: "run-42", limit: 50, since: Date.now() - 60_000 });
+
+// One email by request ID (NotFoundError if the request is not an email)
+const one = await client.emails.get("request-id");
+
+// The newest matching email among the 100 newest, or null
+const latest = await client.emails.latest("my-slug", { subject: "Confirm" });
+
+// Poll until a matching email arrives; throws TimeoutError
+const email = await client.emails.waitFor("my-slug", {
+  tag: "run-42",
+  timeout: "60s",            // Default: 60000
+  pollInterval: "1s",        // Default: 1000
+  since: Date.now(),         // Default: five minutes ago
+  match: (e) => e.email.attachments.length === 0,  // Extra filter
+});
+
+// Poll until `count` matching emails arrive, oldest first
+const several = await client.emails.waitForAll("my-slug", { count: 2, tag: "run-42" });
+
+// Deliver a sample email with a 6-digit code and a link (counts as one request, no SMTP, no sender checks)
+const sent = await client.emails.sendTest("my-slug", { tag: "run-42" });
+// Returns: { status: "captured", requestId: string | null }
+
+// The email.received JSON forwarding would post (no API call)
+const event = client.emails.toJson(email, {
+  endpoint: { slug: "my-slug", name: "Signup flow" },  // Optional; fills data.endpoint.name
+  includeExtracts: true,                                // Default: true (codes and links)
+});
+
+// Code and link finder (no API call); accepts a request or the parsed email
+extractCode(email);                          // "482913" or null
+extractLink(email);                          // action link (confirm, verify, reset, sign in), else the first link worth keeping
+extractLink(email, { actionOnly: true });    // only an action link, or null
+extractFromEmail(email.email);               // { codes: string[], links: { url, label, action }[] }
+```
+
+`@webhooks-cc/sdk/email` exports the email types (`EmailCapture`, `EmailReceivedEvent`, ...), `extractCode`, `extractLink`, `extractFromEmail`, `htmlToText`, `buildEmailJson`, `emailAddress` and `isValidEmailTag`, with no network code (browser-safe).
+
+`requests.replay()` throws for emails, `requests.export()` skips them, and provider detection ignores them. Requests from `requests.subscribe()` carry `kind` but not `email`; call `client.emails.get(id)` for the parsed message.
+
+### Forwarding
+
+Owner only: for anyone else these throw `NotFoundError` (`configure` fails with 403 for team members).
+
+```typescript
+// Set the URL and/or turn forwarding on or off; returns the Endpoint.
+// The first URL creates the signing secret. url: null removes it (forwarding must be off).
+await client.forwarding.configure("my-slug", { url: "https://example.com/hooks/email", enabled: true });
+
+// The whsec_ signing secret (NotFoundError before a URL was saved)
+const secret = await client.forwarding.secret("my-slug");
+
+// Replace the secret; every delivery from now on, retries included, uses the new one
+const rotated = await client.forwarding.rotateSecret("my-slug");
+
+// Post the newest email (or a sample) to the URL once; works with forwarding on or off
+const result = await client.forwarding.test("my-slug");
+// Returns: { status: number | null, durationMs, excerpt: string | null, error: string | null, delivered: boolean, sample: boolean }
+
+// The endpoint's latest deliveries, newest first (limit 1-20, default 5)
+const recent = await client.forwarding.deliveries("my-slug", { limit: 10 });
+// Returns: RecentEmailDelivery[] { id, requestId, status, attempts, createdAt, lastStatus, lastError, subject }
+
+// Every delivery of one email, with each try in attemptLog
+const deliveries = await client.forwarding.emailDeliveries("request-id");
+// Returns: EmailDelivery[] (see Delivery under Email Forwarding below)
+
+// Queue the email again with the current URL and secret (409 when forwarding is off)
+const { id } = await client.forwarding.redeliver("request-id");
+```
+
+Verify a forwarded email in your handler. `verifyForwardedEmail` checks `webhook-id`, `webhook-timestamp` (within `toleranceSeconds`, default 300) and `webhook-signature` against the raw body and the `whsec_` secret, then parses the body as an `email.received` event:
+
+```typescript
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(
+      await request.text(),       // raw body: string, Uint8Array (Buffer) or ArrayBuffer
+      request.headers,            // Fetch Headers, a plain object (Node/Express req.headers) or [name, value] pairs
+      process.env.FORWARD_SECRET!,
+      { toleranceSeconds: 300 }   // Optional; also `now` (ms) for tests
+    );
+    console.log(event.data.subject, event.data.codes);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      // error.code: "missing_headers" | "timestamp_out_of_range" | "invalid_signature" | "invalid_payload"
+      return new Response(error.message, { status: error.code === "invalid_payload" ? 400 : 401 });
+    }
+    throw error;
+  }
+}
+```
+
+Test a handler locally without forwarding: `sendTo` with the `standard-webhooks` provider signs the body with the given secret and sends `webhook-id`, `webhook-timestamp` and `webhook-signature`, which `verifyForwardedEmail` accepts (the `webhook-id` is random rather than derived from the email's id):
+
+```typescript
+await client.sendTo("http://localhost:3000/hooks/email", {
+  provider: "standard-webhooks",
+  secret: process.env.FORWARD_SECRET!,
+  body: client.emails.toJson(email),
 });
 ```
 
@@ -233,13 +374,15 @@ All matchers return `(request: Request) => boolean` for use with `waitFor` and `
 import {
   matchMethod,      // matchMethod("POST")
   matchHeader,      // matchHeader("stripe-signature") or matchHeader("content-type", "application/json")
-  matchPath,        // matchPath("/api/**") — glob wildcards
+  matchPath,        // matchPath("/api/**"), glob wildcards
   matchQueryParam,  // matchQueryParam("token", "abc")
-  matchBodyPath,    // matchBodyPath("data.object.id", "cs_123") — dot-notation
+  matchBodyPath,    // matchBodyPath("data.object.id", "cs_123"), dot-notation
   matchBodySubset,  // matchBodySubset({ type: "checkout.session.completed" })
   matchContentType, // matchContentType("application/json")
   matchAll,         // matchAll(matchMethod("POST"), matchHeader("stripe-signature"))
   matchAny,         // matchAny(matchMethod("POST"), matchMethod("PUT"))
+  matchEmail,       // matchEmail({ tag: "run-42", subject: "Confirm" }), same criteria as client.emails
+  isEmailRequest,   // isEmailRequest(request): type guard for a captured email with its parsed message
 } from "@webhooks-cc/sdk";
 ```
 
@@ -271,7 +414,7 @@ import {
   parseFormBody,       // parseFormBody(request) → Record<string, string | string[]>
   parseBody,           // Auto-detect content-type and parse
   extractJsonField,    // extractJsonField<T>(request, "data.object.id")
-  matchJsonField,      // matchJsonField("event", "invoice.paid") — returns matcher
+  matchJsonField,      // matchJsonField("event", "invoice.paid"), returns matcher
 } from "@webhooks-cc/sdk";
 ```
 
@@ -280,11 +423,12 @@ import {
 ```typescript
 import {
   WebhooksCCError,    // Base error (statusCode, message)
-  UnauthorizedError,  // 401 — invalid/missing API key
-  NotFoundError,      // 404 — resource not found
+  UnauthorizedError,  // 401: invalid/missing API key
+  NotFoundError,      // 404: resource not found
   TimeoutError,       // Request timeout
-  RateLimitError,     // 429 — includes retryAfter, limit, remaining, reset
+  RateLimitError,     // 429: includes retryAfter, limit, remaining, reset
   ApiError,           // General API error
+  WebhookVerificationError,  // From verifyForwardedEmail(); `code` says which check failed
 } from "@webhooks-cc/sdk";
 ```
 
@@ -303,6 +447,11 @@ interface Endpoint {
   responseRules?: ResponseRule[];  // Conditional response rules
   sharedWith?: TeamShare[];
   fromTeam?: TeamShare;
+  emailAddress?: string | null;  // null for guest endpoints
+  showEmailExtracts?: boolean;
+  forwardEnabled?: boolean;
+  forwardUrl?: string | null;    // owner only
+  hasForwardSecret?: boolean;
 }
 
 interface Request {
@@ -318,6 +467,13 @@ interface Request {
   ip: string;
   size: number;             // Bytes
   receivedAt: number;       // Unix ms
+  kind?: "http" | "email";
+  email?: EmailCapture | null;  // Parsed message, for a captured email (see Email Capture)
+}
+
+interface EmailRequest extends Request {
+  kind: "email";
+  email: EmailCapture;
 }
 
 interface MockResponse {
@@ -543,9 +699,9 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests (limit, since, cursor) |
+| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests (limit, since, cursor, kind=http\|email) |
 | GET | `/api/requests/[id]` | Bearer | Get single request |
-| GET | `/api/search/requests` | Bearer | Search requests (slug, method, q, from, to) |
+| GET | `/api/search/requests` | Bearer | Search requests (slug, method, kind, q, from, to) |
 | GET | `/api/search/requests/count` | Bearer | Count matching requests |
 
 ### Webhooks
@@ -553,6 +709,21 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/send-test` | Bearer | Send test webhook (rate limit: 30/min) |
+| POST | `/api/send-test-email` | Bearer | Deliver a sample email to an endpoint, body `{ "slug": "...", "tag": "..." }` with `tag` optional (rate limit: 10/min) |
+
+### Email forwarding
+
+Forwarding settings are owner only. The owner-only routes below answer `404` to anyone else.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| PATCH | `/api/endpoints/[slug]` | Bearer, owner | Set `forwardUrl` and `forwardEnabled` (team members get `403`) |
+| GET | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Get the signing secret: `{ "secret": "whsec_..." }` |
+| POST | `/api/endpoints/[slug]/forwarding` | Bearer, owner | Rotate the signing secret, returns the new one |
+| POST | `/api/endpoints/[slug]/forwarding/test` | Bearer, owner | Post the newest email (or a sample) once and report the answer (rate limit: 10/min) |
+| GET | `/api/endpoints/[slug]/deliveries` | Bearer, owner | Latest deliveries, `limit` 1 to 20 (default 5) |
+| GET | `/api/requests/[id]/deliveries` | Bearer | Deliveries of one email with every attempt; anyone who can read the email |
+| POST | `/api/requests/[id]/deliveries` | Bearer, owner | Redeliver the email; `409` when forwarding is off (rate limit: 30/min) |
 
 ### Streaming
 
@@ -599,7 +770,7 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 
 ## Conditional Response Rules
 
-Endpoints can have an ordered list of conditional response rules. Each rule has match conditions and its own response (status, headers, body, delay). Rules are evaluated in order — first match wins. If no rule matches, the default `mockResponse` is returned. If no default exists, the endpoint returns 200 OK.
+Endpoints can have an ordered list of conditional response rules. Each rule has match conditions and its own response (status, headers, body, delay). Rules are evaluated in order, and the first match wins. If no rule matches, the default `mockResponse` is returned. If no default exists, the endpoint returns 200 OK.
 
 ### Rule Structure
 
@@ -638,7 +809,7 @@ interface ResponseRuleCondition {
 - Max 50 rules per endpoint
 - Max 10 conditions per rule
 - Glob patterns max 500 chars
-- Body JSON parsing is lazy — only triggered when a `body_path` condition exists
+- Body JSON parsing is lazy: only triggered when a `body_path` condition exists
 
 ### SDK Usage
 
@@ -726,20 +897,287 @@ Captured data per request:
 - Received timestamp
 - Body size in bytes
 
-Mock responses can return custom status codes (100-599), headers, body, and an optional delay (0-30 seconds). Conditional response rules allow different responses based on request properties (method, path, headers, body content, JSON paths, query params) — first matching rule wins, with fallback to the default mock response.
+Mock responses can return custom status codes (100-599), headers, body, and an optional delay (0-30 seconds). Conditional response rules allow different responses based on request properties (method, path, headers, body content, JSON paths, query params). The first matching rule wins, with fallback to the default mock response.
 
-The receiver fails open: if the database is unavailable, it returns 200 OK so webhook senders don't retry.
+When the database has a transient problem, the receiver answers `503` with `Retry-After: 5` so senders retry. Permanent errors fail open with `200 OK`.
+
+---
+
+## Email Capture
+
+Docs: https://webhooks.cc/docs/email-capture
+
+Every endpoint that belongs to an account receives email at `<slug>@mailhooks.cc`, on every plan, including endpoints shared with a team. Add a tag after a plus sign (`<slug>+signup@mailhooks.cc`) to tell test runs or flows apart: tagged mail lands on the same endpoint and the tag is kept on the email. The slug is not case sensitive; the tag is kept exactly as written. Guest endpoints (created without an account) receive no email, because anyone who knows a guest slug can read what it captured. The address is in each endpoint's `emailAddress` field (`null` for guest endpoints).
+
+An email is stored as an ordinary request, in the same list as webhooks:
+
+- `kind`: `"email"` (`"http"` for everything else)
+- `method`: `"EMAIL"`
+- `path`: the recipient address
+- `body`: the original message, or only its headers when the message is over 1 MB
+- `headers`: the message headers
+- `contentType`: `message/rfc822`
+- `ip`: the sending mail server's IP address
+- `email`: the parsed message (below)
+
+```typescript
+// The `email` field of GET /api/requests/{id}, the request list routes, and search results
+interface EmailCapture {
+  subject: string | null;
+  from: EmailAddress[];
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  replyTo: EmailAddress[];
+  sender: EmailAddress[];
+  date: string | null;             // the Date header as RFC 3339
+  messageId: string | null;
+  inReplyTo: string[];
+  tag: string | null;              // the +tag of the address
+  text: string | null;             // up to 256 KB
+  html: string | null;             // up to 256 KB
+  textFromHtml: boolean;           // no text part, so text was derived from the HTML
+  attachments: {                   // contents are not kept
+    filename: string | null;
+    contentType: string;
+    size: number;
+    contentId: string | null;
+    inline: boolean;
+  }[];
+  auth: {                          // sender checks run when the message arrived
+    spf: { result: string; domain: string | null } | null;
+    dkim: { result: string; domain: string | null; selector: string | null }[];
+    dmarc: { result: string; domain: string | null; policy: string | null; reason: string | null } | null;
+    iprev: { result: string; ptr: string | null } | null;   // reverse DNS
+    authenticationResults: string | null;
+    error: string | null;          // set when the checks could not run
+  } | null;
+  smtp: {
+    clientIp: string | null;
+    clientRdns: string | null;
+    helo: string | null;
+    tls: { version: string | null; cipher: string | null } | null;
+    envelopeFrom: string | null;
+    envelopeTo: string[];
+    size: number | null;           // whole message in bytes
+    test: boolean;                 // the dashboard's "Send test email" sample
+  } | null;
+  parseError: boolean;             // unparseable; the original is still in body
+  truncated: {
+    raw: boolean;                  // over 1 MB, body holds the headers only
+    text: boolean;
+    html: boolean;
+    headers: boolean;
+    addresses: boolean;
+    attachments: boolean;
+  };
+}
+
+interface EmailAddress {
+  name: string | null;
+  address: string | null;
+}
+```
+
+Check results are strings such as `pass`, `fail`, `softfail`, `neutral`, `none`, `temperror` and `permerror`. Failing a check does not stop a message from being captured.
+
+Finding emails through the API:
+
+- `GET /api/endpoints/<slug>/requests?kind=email` (also on `/requests/paginated`) and `GET /api/search/requests?kind=email` (or `method=EMAIL`) return only emails; `kind=http` only webhooks.
+- The SSE stream (`/api/stream/<slug>`) sends emails as `request` events with `kind: "email"` and `method: "EMAIL"`, without `email`, and names the request id `_id`. Fetch the request by that id for the parsed message.
+- `POST /api/send-test-email` with `{ "slug": "<slug>" }` delivers a sample message with a six-digit code and a link; add `"tag": "<tag>"` to send it to `<slug>+<tag>@mailhooks.cc`. It counts as one request and does not travel over SMTP, so no sender checks run on it.
+- In the SDK: `client.emails` (see TypeScript SDK Reference above).
+
+Limits and SMTP replies:
+
+- An email counts as one request against the same quota as webhooks, once per endpoint it is addressed to. A sender's retry after a temporary failure is captured once; sending the same message again on purpose captures it again.
+- Messages up to 10 MB, up to 20 recipients per message.
+- `250` captured; `550 5.1.1` no endpoint with that slug; `550 5.7.1` guest endpoint; `552 5.2.2` request quota used up; `552 5.3.4` message over 10 MB; `452` for recipients past the 20th; `451` temporary problem, the sender retries.
+- Emails follow the plan's retention, like HTTP requests.
+- `mailhooks.cc` only receives. It never sends mail, replies, or bounces of its own.
+- Notification URLs fire for emails too, with `"method": "EMAIL"` and the recipient address as `path`.
+
+---
+
+## Email Forwarding
+
+Docs: https://webhooks.cc/docs/forwarding
+
+Forwarding posts every email an endpoint captures to your own URL as parsed JSON, usually within a second or two. HTTP requests are not forwarded. Only the endpoint's owner can configure it. It is available on every plan and does not use request quota (each email already counted once when it arrived).
+
+### Set up
+
+```bash
+# Save the URL and turn forwarding on (the first URL creates the signing secret)
+curl -X PATCH https://webhooks.cc/api/endpoints/<slug> \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"forwardUrl": "https://example.com/hooks/email", "forwardEnabled": true}'
+
+# Read the signing secret for your handler
+curl https://webhooks.cc/api/endpoints/<slug>/forwarding \
+  -H "Authorization: Bearer whcc_..."
+# {"secret": "whsec_..."}
+
+# Post the newest email (or a sample) once and see what your server answered
+curl -X POST https://webhooks.cc/api/endpoints/<slug>/forwarding/test \
+  -H "Authorization: Bearer whcc_..."
+# {"status": 200, "durationMs": 182, "excerpt": "ok", "error": null, "delivered": true, "sample": false}
+```
+
+`forwardEnabled: true` needs a `forwardUrl`. Saving a URL before turning forwarding on lets you set up the handler and send a test delivery first. Endpoint objects carry `forwardEnabled`, `hasForwardSecret` and (for the owner only) `forwardUrl`.
+
+### The request
+
+```http
+POST /hooks/email HTTP/1.1
+Content-Type: application/json
+User-Agent: webhooks.cc (+https://webhooks.cc/docs/forwarding)
+webhook-id: msg_0b9e5f3a6c1d4f7e9a2b3c4d5e6f7a8b
+webhook-timestamp: 1791450602
+webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+```
+
+The body is the same JSON the dashboard's JSON tab shows for the email:
+
+```typescript
+interface ForwardedEmail {
+  type: "email.received";
+  timestamp: string;               // ISO 8601, when the email arrived; the same on every copy
+  data: {
+    id: string;                    // the request id; webhook-id is "msg_" + this id without dashes
+    endpoint: { slug: string; name: string | null };
+    receivedAt: string;            // ISO 8601
+    address: string;               // the address it arrived at, tag included
+    tag: string | null;
+    subject: string | null;
+    from: EmailAddress | null;     // the first From address
+    to: EmailAddress[];
+    cc: EmailAddress[];
+    replyTo: EmailAddress[];
+    date: string | null;
+    messageId: string | null;
+    inReplyTo: string[];
+    text: string | null;           // up to 256 KB; derived from the HTML when there is no text part
+    html: string | null;           // up to 256 KB
+    codes?: string[];              // one-time codes; left out when showEmailExtracts is false
+    links?: { url: string; text: string | null }[];  // links worth clicking; same rule
+    attachments: {                 // contents are not kept, so not forwarded
+      filename: string | null;
+      contentType: string;
+      size: number;
+      contentId: string | null;
+      inline: boolean;
+    }[];
+    auth: { spf: string | null; dkim: string | null; dmarc: string | null; tls: string | null };
+    headers: Record<string, string>;  // lowercase names, repeated headers joined with "\n"
+    size: number;                  // whole message in bytes
+    truncated: { text: boolean; html: boolean };
+    test: boolean;                 // the "Send test email" sample, or the sample a test delivery sends
+  };
+}
+```
+
+### Verify the signature (Standard Webhooks)
+
+The signature is `v1,` followed by the base64 HMAC-SHA256 of `${webhook-id}.${webhook-timestamp}.${rawBody}`. The key is the base64 after the `whsec_` prefix of the secret, decoded. `webhook-signature` may hold several space-separated signatures; accept the request when any matches. Verify against the raw body before parsing JSON, compare in constant time, and reject a `webhook-timestamp` more than 300 seconds from your clock.
+
+With the SDK, `verifyForwardedEmail` checks the headers, the timestamp (300 seconds by default) and the signature, and returns the typed event. It takes a Fetch `Headers`, a plain object or name and value pairs, and the raw body as a string, `Uint8Array` or `ArrayBuffer`:
+
+```typescript
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(await request.text(), request.headers, process.env.FORWARD_SECRET!);
+    // event.type === "email.received"; event.data is typed
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      return new Response(error.message, { status: error.code === "invalid_payload" ? 400 : 401 });
+    }
+    throw error;
+  }
+}
+```
+
+(`verifyStandardWebhookSignature(body, headers, secret)` also accepts a Fetch `Headers` now, but checks the signature only, not the timestamp.)
+
+In Node without dependencies:
+
+```typescript
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(rawBody: string, headers: Record<string, string>, secret: string): boolean {
+  const id = headers["webhook-id"];
+  const timestamp = headers["webhook-timestamp"];
+  if (!id || !timestamp || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
+  const expected = createHmac("sha256", key).update(`${id}.${timestamp}.${rawBody}`).digest();
+  return (headers["webhook-signature"] ?? "").split(" ").some((part) => {
+    const given = Buffer.from(part.replace(/^v1,/, ""), "base64");
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
+}
+```
+
+The official Standard Webhooks libraries (https://github.com/standard-webhooks/standard-webhooks) verify these headers too. Rotating the secret (`POST /api/endpoints/<slug>/forwarding`) signs every delivery from then on with the new one, retries included.
+
+### Delivery and retries
+
+- Any `2xx` answer accepts a delivery. Redirects are not followed and count as failures. Your server has 15 seconds to answer.
+- A failed delivery is retried after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours (about a day in all), then marked failed.
+- Every copy of one email has the same `webhook-id`, so a handler can skip repeats. Delivery is at least once, in no guaranteed order.
+- A retry goes to the URL and secret saved at that moment. Turning forwarding off marks deliveries still waiting as failed.
+- `POST /api/requests/<id>/deliveries` queues a redelivery with the current settings (forwarding must be on).
+
+Delivery history (`GET /api/requests/<id>/deliveries`, newest first, up to 20):
+
+```typescript
+interface Delivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;               // Unix ms
+  finishedAt: number | null;
+  nextAttemptAt: number | null;    // set while pending
+  lastStatus: number | null;
+  lastError: string | null;
+  attemptLog: {                    // newest first
+    attemptedAt: number;
+    status: number | null;         // null when no answer arrived
+    durationMs: number;
+    error: string | null;
+    responseExcerpt: string | null; // start of the response body, up to 1 KB
+  }[];
+}
+```
+
+`GET /api/endpoints/<slug>/deliveries` returns the endpoint's latest deliveries in a shorter form: `id`, `requestId`, `status`, `attempts`, `createdAt`, `lastStatus`, `lastError` and the email's `subject`.
+
+### Limits
+
+- The URL must be `https` on a public host name, at most 2048 characters: no IP addresses, `localhost`, private networks, credentials in the URL, or mail, database and other internal ports.
+- On webhooks.cc, requests come from Cloudflare's network, not a fixed address (a self-hosted copy without the notify proxy sends from its own server). Do not allowlist IPs; check the signature.
+- An email whose JSON would be larger than 10 MB is not forwarded.
+- Deliveries are kept as long as the email itself.
 
 ## Rate Limits
 
 - Endpoint creation: 30 per 10 minutes
 - Send test: 30 per minute
+- Send test email: 10 per minute
+- Forwarding test delivery: 10 per minute
+- Redeliver a forwarded email: 30 per minute
 - Search: 60 per 10 minutes
+- Search count: 120 per 10 minutes
 - Guest endpoint creation: 20 per 10 minutes per IP
 - Device auth: 10 per minute per IP
 
 ## Data Retention
 
 - **Free plan**: 7 days
-- **Pro plan**: 30 days
+- **Pro plan**: 31 days
+- **Team-billed requests** (endpoints shared with an active team): 31 days, whatever the owner's plan
 - Ephemeral endpoints: 12 hours, max 25 requests
+- Emails and their forwarding deliveries follow the same retention as HTTP requests

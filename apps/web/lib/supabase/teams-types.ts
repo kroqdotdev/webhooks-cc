@@ -77,4 +77,10 @@ export interface SharedEndpoint {
   /** Every subscribed team of the caller this endpoint is shared with. */
   fromTeams: { teamId: string; teamName: string }[];
   ownerId: string;
+  /** The endpoint's capture address; shared endpoints always have an owner. */
+  emailAddress: string | null;
+  showEmailExtracts: boolean;
+  /** Forwarding state without the URL (owner-only): enough to show delivery history. */
+  forwardEnabled: boolean;
+  hasForwardSecret: boolean;
 }

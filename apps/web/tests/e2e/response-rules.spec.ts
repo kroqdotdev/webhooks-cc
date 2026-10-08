@@ -55,28 +55,41 @@ test.afterAll(async () => {
   }
 });
 
-async function openSettings(page: import("@playwright/test").Page) {
-  await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
-  // Wait for the URL bar to show the endpoint name
+type Page = import("@playwright/test").Page;
+
+/** The "HTTP responses" card on the endpoint's Settings tab. */
+function responsesSection(page: Page) {
+  return page.getByRole("region", { name: "HTTP responses" });
+}
+
+async function openSettingsTab(page: Page) {
+  // Wait for the endpoint bar to show the endpoint name
   await expect(page.locator("span.font-bold.caps", { hasText: "Rules E2E Test" })).toBeVisible({
     timeout: 15000,
   });
-  // Click the settings gear button
-  await page.getByLabel("Endpoint settings").click();
-  // Wait for dialog to open
-  await expect(page.getByRole("heading", { name: "Endpoint Settings" })).toBeVisible({
-    timeout: 10000,
-  });
+  await page
+    .getByRole("navigation", { name: "Endpoint" })
+    .getByRole("button", { name: "Settings" })
+    .click();
+  await expect(responsesSection(page)).toBeVisible({ timeout: 10000 });
 }
 
-test("settings dialog shows Response Rules section", async ({ page }) => {
+async function openSettings(page: Page) {
+  await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
+  await openSettingsTab(page);
+}
+
+test("settings tab shows the response rules", async ({ page }) => {
   await openSettings(page);
 
-  await expect(page.getByText("Response Rules")).toBeVisible();
+  const section = responsesSection(page);
+  await expect(section.getByText("Response Rules")).toBeVisible();
   await expect(
-    page.getByText("First matching rule wins. Falls back to the default mock response below.")
+    section.getByText(
+      "The first matching rule wins. Without a match, the status code and body above are sent."
+    )
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Rule" })).toBeVisible();
+  await expect(section.getByRole("button", { name: "Add Rule" })).toBeVisible();
 });
 
 test("can add a rule with a condition", async ({ page }) => {
@@ -181,7 +194,7 @@ test("can reorder rules with move buttons", async ({ page }) => {
   await page.getByPlaceholder("Rule name (optional)").last().fill("Second Rule");
 
   // Verify initial order
-  const ruleHeaders = page.locator("button.flex-1.text-left");
+  const ruleHeaders = responsesSection(page).getByRole("button", { name: /^(Collapse|Expand) / });
   await expect(ruleHeaders.first()).toContainText("First Rule");
   await expect(ruleHeaders.last()).toContainText("Second Rule");
 
@@ -197,27 +210,30 @@ test("can set rule response status and body", async ({ page }) => {
   await openSettings(page);
   await page.getByRole("button", { name: "Add Rule" }).click();
 
-  // The response section should have a status picker and body textarea
-  await expect(page.getByText("Response").first()).toBeVisible();
+  // The rule card has its own response, below the endpoint's default one
+  await expect(responsesSection(page).getByText("Response", { exact: true })).toBeVisible();
 
   // Set body text
-  const bodyTextarea = page.locator("textarea").first();
+  const bodyTextarea = responsesSection(page).getByPlaceholder("Response body");
   await bodyTextarea.fill('{"matched": true}');
   await expect(bodyTextarea).toHaveValue('{"matched": true}');
 });
 
-test("default mock response label updates when rules exist", async ({ page }) => {
+test("save stays disabled until the responses change", async ({ page }) => {
   await openSettings(page);
 
-  // Without rules, should say "Mock Response"
-  await expect(page.getByText("Mock Response", { exact: true })).toBeVisible();
+  const section = responsesSection(page);
+  const save = section.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeDisabled();
 
-  // Add a rule
-  await page.getByRole("button", { name: "Add Rule" }).click();
+  await section.getByRole("button", { name: "Add Rule" }).click();
+  await expect(save).toBeEnabled();
+  await expect(section.getByText("Response changed.")).toBeVisible();
 
-  // Should now say "Default Response" with fallback description
-  await expect(page.getByText("Default Response", { exact: true })).toBeVisible();
-  await expect(page.getByText("Returned when no rule matches.")).toBeVisible();
+  // Cancel puts the saved state back
+  await section.getByRole("button", { name: "Cancel" }).click();
+  await expect(save).toBeDisabled();
+  await expect(page.getByText("Rule 1: 1 condition")).not.toBeVisible();
 });
 
 test("can save rules and they persist after reopening", async ({ page }) => {
@@ -235,36 +251,17 @@ test("can save rules and they persist after reopening", async ({ page }) => {
   await page.getByLabel("JSON path").fill("type");
   await page.getByLabel("Condition value").fill("invoice.paid");
 
-  // Set response body
-  const bodyTextarea = page.locator("textarea").first();
-  await bodyTextarea.fill('{"received": true}');
+  // Set the rule's response body
+  const section = responsesSection(page);
+  await section.getByPlaceholder("Response body").fill('{"received": true}');
 
   // Save
-  await page.getByRole("button", { name: "Save Changes" }).click();
+  await section.getByRole("button", { name: "Save changes" }).click();
+  await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
 
-  // Wait for dialog to close
-  await expect(page.getByRole("heading", { name: "Endpoint Settings" })).not.toBeVisible({
-    timeout: 5000,
-  });
-
-  // After save, emitDashboardEndpointsChanged triggers a GET /api/endpoints refetch.
-  // Wait for that refetch to complete so the dialog will have fresh data when reopened.
-  await page.waitForResponse(
-    (resp) =>
-      resp.url().includes("/api/endpoints") &&
-      resp.request().method() === "GET" &&
-      resp.status() === 200,
-    { timeout: 10000 }
-  );
-
-  // Small buffer for React to re-render with the new endpoint data
-  await page.waitForTimeout(500);
-
-  // Reopen settings
-  await page.getByLabel("Endpoint settings").click();
-  await expect(page.getByRole("heading", { name: "Endpoint Settings" })).toBeVisible({
-    timeout: 10000,
-  });
+  // Load the page again so the settings are read back from the database
+  await page.reload();
+  await openSettingsTab(page);
 
   // Rule should still be there (name shows in the rule card header)
   await expect(page.getByText("Persist Test")).toBeVisible({ timeout: 10000 });

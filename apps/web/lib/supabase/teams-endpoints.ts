@@ -1,5 +1,6 @@
 import { createAdminClient } from "./admin";
 import type { Json } from "./database";
+import { emailAddress } from "./endpoints";
 import { requireActiveTeam } from "./teams-gating";
 import type { TeamEndpointShare, TeamEndpointRow, SharedEndpoint } from "./teams-types";
 
@@ -284,7 +285,9 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
 
   const { data: endpointsData, error: endpointsError } = await admin
     .from("endpoints")
-    .select("id, user_id, slug, name, mock_response, is_ephemeral, created_at")
+    .select(
+      "id, user_id, slug, name, mock_response, is_ephemeral, created_at, show_email_extracts, forward_enabled, forward_secret_encrypted"
+    )
     .in("id", endpointIds)
     .neq("user_id", userId);
 
@@ -299,6 +302,9 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
     mock_response: Json | null;
     is_ephemeral: boolean;
     created_at: string;
+    show_email_extracts: boolean;
+    forward_enabled: boolean;
+    forward_secret_encrypted: string | null;
   };
 
   const endpointMap = new Map((endpointsData as EndpointMinRow[]).map((e) => [e.id, e]));
@@ -332,6 +338,10 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
       fromTeam: team,
       fromTeams: [team],
       ownerId: ep.user_id ?? "",
+      emailAddress: emailAddress(ep.slug, ep.user_id),
+      showEmailExtracts: ep.show_email_extracts,
+      forwardEnabled: ep.forward_enabled,
+      hasForwardSecret: !!ep.forward_secret_encrypted,
     });
   }
 

@@ -70,9 +70,17 @@ async function openDashboard(page: import("@playwright/test").Page) {
   });
 }
 
+/** The "Signature verification" card on the endpoint's Settings tab. */
+function verificationSection(page: import("@playwright/test").Page) {
+  return page.getByRole("region", { name: "Signature verification" });
+}
+
 async function openSettings(page: import("@playwright/test").Page) {
-  await page.click('button[aria-label="Endpoint settings"]');
-  await expect(page.locator("text=Endpoint Settings")).toBeVisible({ timeout: 5000 });
+  await page
+    .getByRole("navigation", { name: "Endpoint" })
+    .getByRole("button", { name: "Settings" })
+    .click();
+  await expect(verificationSection(page)).toBeVisible({ timeout: 5000 });
 }
 
 function sendSignedWebhook(slug: string, valid: boolean) {
@@ -232,7 +240,7 @@ async function clearServerSigning() {
 test("signing config section is visible in endpoint settings", async ({ page }) => {
   await openDashboard(page);
   await openSettings(page);
-  await expect(page.getByText("Signature Verification", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Signature verification" })).toBeVisible();
   await expect(page.locator("#settings-signing-provider")).toBeVisible();
 });
 
@@ -277,10 +285,8 @@ test("configure signing secret and save", async ({ page }) => {
 
   await page.selectOption("#settings-signing-provider", "standard-webhooks");
   await page.fill("#settings-signing-secret", TEST_SECRET);
-  await page.click("text=Save Changes");
-
-  // Dialog should close
-  await expect(page.locator("text=Endpoint Settings")).not.toBeVisible({ timeout: 5000 });
+  await verificationSection(page).getByRole("button", { name: "Save changes" }).click();
+  await expect(verificationSection(page).getByText("Saved.")).toBeVisible({ timeout: 5000 });
 
   await expect
     .poll(async () => {
@@ -303,12 +309,11 @@ test("configure signing secret and save", async ({ page }) => {
   });
 
   // Reopen and verify status shows configured
-  await page
-    .locator('[aria-label="Endpoint settings"]')
-    .waitFor({ state: "visible", timeout: 5000 });
   await openSettings(page);
   await expect(page.locator("#settings-signing-provider")).toHaveValue("standard-webhooks");
-  await expect(page.locator("text=Configured").first()).toBeVisible({ timeout: 5000 });
+  await expect(
+    verificationSection(page).getByText("Verifying Standard Webhooks signatures")
+  ).toBeVisible({ timeout: 5000 });
 });
 
 // ── Signature Tab ──

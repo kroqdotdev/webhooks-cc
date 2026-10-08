@@ -1,7 +1,19 @@
 import Link from "next/link";
 import { AuthNav } from "@/components/nav/auth-nav";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
-import { Zap, Eye, Terminal, ArrowRight, Check, Bot, Reply, Users, Star } from "lucide-react";
+import {
+  Zap,
+  Eye,
+  Terminal,
+  ArrowRight,
+  Check,
+  Bot,
+  Reply,
+  Users,
+  Star,
+  Mail,
+  Webhook,
+} from "lucide-react";
 import { InstallCards } from "@/components/landing/install-cards";
 import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { PricingCTA } from "@/components/landing/pricing-cta";
@@ -75,10 +87,48 @@ function getStatsClient() {
   return _statsClient;
 }
 
+function isSiteStats(value: unknown): value is SiteStats {
+  const stats = value as Partial<SiteStats> | null;
+  return (
+    typeof stats?.total_webhooks === "number" &&
+    typeof stats.total_endpoints === "number" &&
+    typeof stats.total_users === "number"
+  );
+}
+
+// The Docker image is built without the service-role key, so the page
+// prerendered into it would ship without the counters until the first
+// revalidation, up to ten minutes after the build. Without the key, read the
+// public stats route of the deployment the build is for instead. A failure
+// is logged so it shows up in the build log rather than as a page without
+// counters.
+async function getPublicSiteStats(): Promise<SiteStats | null> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (!appUrl) return null;
+  try {
+    const res = await fetch(new URL("/api/stats", appUrl), {
+      next: { revalidate },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      console.warn(`[landing] /api/stats at ${appUrl} returned ${res.status}; no counters`);
+      return null;
+    }
+    const data: unknown = await res.json();
+    if (isSiteStats(data)) return data;
+    console.warn(`[landing] /api/stats at ${appUrl} returned an unexpected shape; no counters`);
+    return null;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[landing] could not read /api/stats at ${appUrl}: ${reason}; no counters`);
+    return null;
+  }
+}
+
 async function getSiteStats(): Promise<SiteStats | null> {
   try {
     const supabase = getStatsClient();
-    if (!supabase) return null;
+    if (!supabase) return getPublicSiteStats();
     const { data, error } = await supabase
       .from("site_stats")
       .select("total_webhooks, total_endpoints, total_users")
@@ -101,6 +151,11 @@ const LANDING_FAQ: FAQItem[] = [
     question: "What do I get when I sign up free?",
     answer:
       "Everything on the free plan, no credit card: one click via GitHub or Google, or sign up with an email and password (confirm the email and you are in). You keep your guest endpoint and get 50 requests/day, unlimited endpoints, 7-day request history, mock responses, request replay, signed provider test webhooks, and full CLI, SDK & MCP access.",
+  },
+  {
+    question: "Can webhooks.cc receive emails?",
+    answer:
+      "Yes. Every endpoint on a free or paid account has an email address, your-slug@mailhooks.cc. Emails show up next to your webhooks with the one-time code and link picked out and the SPF, DKIM and DMARC results, and forwarding can post each one to your server as signed JSON. An email counts as one request. Guest endpoints receive HTTP requests only.",
   },
   {
     question: "How do I test webhooks locally?",
@@ -466,6 +521,49 @@ export default async function Home() {
               </p>
             </div>
           </div>
+          <div className="mt-16">
+            <h3 className="text-2xl md:text-3xl font-bold mb-3">Catch the emails too</h3>
+            <p className="text-lg text-muted-foreground mb-8 max-w-2xl">
+              Every endpoint on an account also has an email address. Test the emails your app
+              sends, or forward inbound mail to your server as signed JSON.
+            </p>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <Link href="/email-testing" className="ui-card block group">
+                <div className="w-12 h-12 border-strong border-line rounded-md bg-primary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                  <Mail className="h-6 w-6 text-primary-foreground clean:text-foreground" />
+                </div>
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
+                  Test signup, login and reset emails
+                </h4>
+                <p className="text-muted-foreground mb-4">
+                  Read one-time codes and magic links, preview the HTML safely, and check SPF, DKIM
+                  and DMARC. Add a <code className="font-mono font-bold">+tag</code> per test run.
+                </p>
+                <span className="text-sm font-bold">
+                  Email testing
+                  <ArrowRight className="inline-block ml-1 h-4 w-4" />
+                </span>
+              </Link>
+
+              <Link href="/email-to-webhook" className="ui-card block group">
+                <div className="w-12 h-12 border-strong border-line rounded-md bg-secondary clean:bg-muted flex items-center justify-center mb-4 shadow-raised-sm">
+                  <Webhook className="h-6 w-6 text-secondary-foreground clean:text-foreground" />
+                </div>
+                <h4 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
+                  Turn inbound email into a webhook
+                </h4>
+                <p className="text-muted-foreground mb-4">
+                  Every email posted to your URL as parsed JSON, signed with Standard Webhooks
+                  headers and retried for about a day until your server accepts it.
+                </p>
+                <span className="text-sm font-bold">
+                  Email to webhook
+                  <ArrowRight className="inline-block ml-1 h-4 w-4" />
+                </span>
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -607,7 +705,7 @@ export default async function Home() {
               <ul className="space-y-3 mb-8">
                 {[
                   "100,000 requests/month",
-                  "30-day data retention",
+                  "31-day data retention",
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
@@ -773,6 +871,22 @@ export default async function Home() {
                     className="text-muted-foreground hover:text-foreground"
                   >
                     Installation
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/email-testing"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Email testing
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/email-to-webhook"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Email to webhook
                   </Link>
                 </li>
                 <li>

@@ -1,5 +1,6 @@
 "use client";
 
+import type { EmailCapture } from "@/lib/email-capture";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
 export interface ResponseRuleCondition {
@@ -42,6 +43,15 @@ export interface DashboardEndpoint {
   signingProvider?: string | null;
   hasSigningSecret?: boolean;
   signingHeader?: string | null;
+  /** Address that delivers email here; null for endpoints without an owner. */
+  emailAddress?: string | null;
+  /** Show codes and links found in captured emails. */
+  showEmailExtracts?: boolean;
+  /** Forward captured email to forwardUrl as signed JSON. */
+  forwardEnabled?: boolean;
+  /** Owner only. */
+  forwardUrl?: string | null;
+  hasForwardSecret?: boolean;
 }
 
 export interface TeamEndpointShare {
@@ -93,6 +103,7 @@ function toDashboardRequest(record: {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -103,6 +114,8 @@ function toDashboardRequest(record: {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind?: "http" | "email";
+  email?: EmailCapture | null;
 }): Request {
   return {
     _id: record.id,
@@ -112,6 +125,7 @@ function toDashboardRequest(record: {
     path: record.path,
     headers: record.headers,
     body: record.body,
+    bodyRaw: record.bodyRaw,
     queryParams: record.queryParams,
     contentType: record.contentType,
     ip: record.ip,
@@ -122,7 +136,123 @@ function toDashboardRequest(record: {
     signingProvider: record.signingProvider ?? null,
     detectedProvider: record.detectedProvider ?? null,
     detectedEvent: record.detectedEvent ?? null,
+    kind: record.kind ?? "http",
+    email: record.email ?? null,
   };
+}
+
+/** Delivers a sample email to the endpoint (see app/api/send-test-email). */
+export async function sendTestEmail(
+  accessToken: string,
+  slug: string
+): Promise<{ status: "captured"; requestId: string | null }> {
+  const response = await fetch(
+    "/api/send-test-email",
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug }),
+    })
+  );
+  return readJson<{ status: "captured"; requestId: string | null }>(response);
+}
+
+export interface DeliveryAttempt {
+  attemptedAt: number;
+  status: number | null;
+  durationMs: number;
+  error: string | null;
+  responseExcerpt: string | null;
+}
+
+export interface EmailDelivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;
+  finishedAt: number | null;
+  nextAttemptAt: number | null;
+  lastStatus: number | null;
+  lastError: string | null;
+  attemptLog: DeliveryAttempt[];
+}
+
+export interface RecentDelivery {
+  id: string;
+  requestId: string;
+  status: EmailDelivery["status"];
+  attempts: number;
+  createdAt: number;
+  lastStatus: number | null;
+  lastError: string | null;
+  subject: string | null;
+}
+
+export interface ForwardTestResult {
+  status: number | null;
+  durationMs: number;
+  excerpt: string | null;
+  error: string | null;
+  delivered: boolean;
+  /** No email had arrived yet, so a sample was sent. */
+  sample: boolean;
+}
+
+const endpointPath = (slug: string) => `/api/endpoints/${encodeURIComponent(slug)}`;
+
+export async function fetchForwardSecret(accessToken: string, slug: string): Promise<string> {
+  const response = await fetch(`${endpointPath(slug)}/forwarding`, withAuthHeaders(accessToken));
+  return (await readJson<{ secret: string }>(response)).secret;
+}
+
+export async function rotateForwardSecret(accessToken: string, slug: string): Promise<string> {
+  const response = await fetch(
+    `${endpointPath(slug)}/forwarding`,
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  return (await readJson<{ secret: string }>(response)).secret;
+}
+
+export async function sendForwardTest(
+  accessToken: string,
+  slug: string
+): Promise<ForwardTestResult> {
+  const response = await fetch(
+    `${endpointPath(slug)}/forwarding/test`,
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  return readJson<ForwardTestResult>(response);
+}
+
+export async function fetchRecentDeliveries(
+  accessToken: string,
+  slug: string
+): Promise<RecentDelivery[]> {
+  const response = await fetch(
+    `${endpointPath(slug)}/deliveries?limit=5`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson<RecentDelivery[]>(response);
+}
+
+export async function fetchEmailDeliveries(
+  accessToken: string,
+  requestId: string
+): Promise<EmailDelivery[]> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/deliveries`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson<EmailDelivery[]>(response);
+}
+
+export async function redeliverEmail(accessToken: string, requestId: string): Promise<void> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/deliveries`,
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  await readJson<{ id: string }>(response);
 }
 
 export async function fetchDashboardEndpoints(

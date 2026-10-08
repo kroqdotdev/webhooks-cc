@@ -2,9 +2,12 @@ import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
+import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
+import type { RequestKind } from "@/lib/supabase/search";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const PRO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+// Matches the daily cleanup, which deletes Pro requests after 31 days.
+const PRO_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const MAX_LIST_LIMIT = 1000;
 
 type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
@@ -23,6 +26,8 @@ type SelectedRequestRow = Pick<
   | "size"
   | "received_at"
   | "team_id"
+  | "kind"
+  | "email"
 > & {
   signature_verified?: boolean | null;
   signature_error?: string | null;
@@ -50,6 +55,9 @@ export interface RequestRecord {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  /** "email" for captured emails (`email` is set), "http" for everything else. */
+  kind: "http" | "email";
+  email?: EmailCapture | null;
 }
 
 export interface PaginatedRequestPage {
@@ -110,11 +118,16 @@ function isAsciiHex(bytes: Buffer): boolean {
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {
   const headers = asStringRecord(row.headers);
   const body = row.body ?? undefined;
-  const detection = deriveWebhookDetection({
-    headers,
-    body,
-    contentType: row.content_type ?? undefined,
-  });
+  const kind = row.kind === "email" ? "email" : "http";
+  // Provider detection reads webhook headers and payloads; emails have neither.
+  const detection =
+    kind === "email"
+      ? { detectedProvider: null, detectedEvent: null }
+      : deriveWebhookDetection({
+          headers,
+          body,
+          contentType: row.content_type ?? undefined,
+        });
 
   return {
     id: row.id,
@@ -134,6 +147,8 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     signingProvider: row.signing_provider ?? null,
     detectedProvider: detection.detectedProvider,
     detectedEvent: detection.detectedEvent,
+    kind,
+    email: kind === "email" ? toEmailCapture(row.email) : null,
   };
 }
 
@@ -244,6 +259,24 @@ function retentionOrFilter(cutoff: number): string {
   return `team_id.not.is.null,received_at.gte.${new Date(cutoff).toISOString()}`;
 }
 
+/**
+ * Requests by id with no access check, for server work that already knows
+ * which rows it may read (the email forwarding worker claims them).
+ */
+export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> {
+  if (ids.length === 0) return [];
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("requests")
+    .select(
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+    )
+    .in("id", ids)
+    .returns<SelectedRequestRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeRequest);
+}
+
 export async function getRequestByIdForUser(
   userId: string,
   requestId: string
@@ -254,7 +287,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -296,6 +329,8 @@ export async function listRequestsForEndpointByUser(input: {
   slug: string;
   limit?: number;
   since?: number;
+  /** Only HTTP requests or only emails. */
+  kind?: RequestKind;
 }): Promise<RequestRecord[] | null> {
   const admin = createAdminClient();
   const endpoint = await getAccessibleEndpoint(input.userId, input.slug);
@@ -308,7 +343,7 @@ export async function listRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -321,6 +356,9 @@ export async function listRequestsForEndpointByUser(input: {
     const floor =
       input.since === undefined ? retention.cutoff : Math.max(input.since, retention.cutoff);
     query.gte("received_at", new Date(floor).toISOString());
+  }
+  if (input.kind) {
+    query.eq("kind", input.kind);
   }
 
   const { data, error } = await query
@@ -375,7 +413,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -415,6 +453,8 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   slug: string;
   limit?: number;
   cursor?: string;
+  /** Only HTTP requests or only emails; pass the same value for every page. */
+  kind?: RequestKind;
 }): Promise<PaginatedRequestPage | null> {
   const admin = createAdminClient();
   const endpoint = await getAccessibleEndpoint(input.userId, input.slug);
@@ -436,7 +476,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -444,6 +484,9 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
     query.or(retentionOrFilter(cutoff));
   } else {
     query.gte("received_at", new Date(cutoff).toISOString());
+  }
+  if (input.kind) {
+    query.eq("kind", input.kind);
   }
 
   const { data, error } = await query

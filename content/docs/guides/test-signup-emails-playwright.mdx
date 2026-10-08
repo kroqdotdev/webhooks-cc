@@ -1,0 +1,202 @@
+---
+title: "How to Test Signup and Login Emails in Playwright"
+description: "Test the confirmation codes, magic links and password reset emails your app sends, end to end in Playwright, with a real email address per test run. No mail server and no mocks."
+section: guides
+order: 10
+lastUpdated: 2026-10-08
+schema: howto
+keywords:
+  [
+    "playwright email testing",
+    "test signup email playwright",
+    "playwright otp test",
+    "playwright magic link",
+    "e2e email verification test",
+    "test email in playwright",
+  ]
+seo:
+  ogTitle: "Test Signup and Login Emails in Playwright"
+  ogDescription: "Confirmation codes, magic links and reset emails, tested end to end in Playwright with a real email address per test run."
+---
+
+Signup, login and password reset flows all stop at the same place in an end-to-end test: the app sends an email, and the test needs the code or the link inside it. Mocking the mail provider skips the part most likely to break (the template, the link, the sending setup). With webhooks.cc your test signs up with a real address, the email arrives at your endpoint, and the SDK hands the test its code or link.
+
+## What you'll build
+
+A Playwright setup where each test gets its own email address, waits for the email the app sends to it, and finishes the flow with the code or link from that email. It works with any mail provider (Resend, Postmark, SES, SendGrid, plain SMTP) because the email is really sent.
+
+<Callout type="info">
+  Every endpoint on a webhooks.cc account receives email at `{slug}@mailhooks.cc`, and at
+  `{slug}+{tag}@mailhooks.cc` for any tag. One endpoint is enough for a whole test suite: a fresh
+  tag per test keeps parallel tests apart. Each email counts as one request against your quota.
+  Guest endpoints (created without an account) receive no email.
+</Callout>
+
+<Steps>
+<Step title="Install the SDK and create an endpoint">
+
+```bash
+npm install --save-dev @webhooks-cc/sdk
+```
+
+Create an endpoint for your tests in the [dashboard](/dashboard), or once from a script:
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const endpoint = await client.endpoints.create({ name: "e2e-email" });
+console.log(endpoint.slug, endpoint.emailAddress); // e.g. "k3m9x2a7qp" "k3m9x2a7qp@mailhooks.cc"
+```
+
+Create an API key on your [account page](/account) and keep it in `WHK_API_KEY`. Put the endpoint's slug in `WHK_EMAIL_ENDPOINT`.
+
+</Step>
+<Step title="Give every test its own address">
+
+A Playwright fixture builds a tagged address for each test, so tests running in parallel never read each other's email:
+
+```ts
+// tests/fixtures.ts
+import { test as base } from "@playwright/test";
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+export const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+export const SLUG = process.env.WHK_EMAIL_ENDPOINT!;
+
+type Inbox = { address: string; tag: string };
+
+export const test = base.extend<{ inbox: Inbox }>({
+  inbox: async ({}, use, testInfo) => {
+    const tag = `w${testInfo.workerIndex}-${Date.now()}`;
+    await use({ address: client.emails.address(SLUG, tag), tag });
+  },
+});
+
+export { expect } from "@playwright/test";
+```
+
+Tags are case-sensitive and may use letters, digits and `.`, `_`, `-` or `=`; keep the whole address part before the `@` under 64 characters.
+
+</Step>
+<Step title="Sign up and enter the code from the email">
+
+`client.emails.waitFor()` polls until an email for this test's tag arrives (60 seconds by default), and `extractCode()` returns the one-time code, using the same finder as the dashboard's "Found in this email" strip:
+
+```ts
+// tests/signup.spec.ts
+import { extractCode } from "@webhooks-cc/sdk";
+import { test, expect, client, SLUG } from "./fixtures";
+
+test("new users confirm their email with a code", async ({ page, inbox }) => {
+  await page.goto("/signup");
+  await page.getByLabel("Email").fill(inbox.address);
+  await page.getByLabel("Password").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  const email = await client.emails.waitFor(SLUG, { tag: inbox.tag });
+  expect(email.email.subject).toContain("Confirm");
+
+  const code = extractCode(email);
+  expect(code).toMatch(/^\d{6}$/);
+  await page.getByLabel("Verification code").fill(code!);
+  await expect(page.getByText("Welcome")).toBeVisible();
+});
+```
+
+</Step>
+<Step title="Follow a magic link or a reset link">
+
+`extractLink()` returns the link the email asks you to click. With `actionOnly: true` it only accepts a confirm, verify, reset or sign-in link, so a test fails clearly when the email has none:
+
+```ts
+import { extractLink } from "@webhooks-cc/sdk";
+import { test, expect, client, SLUG } from "./fixtures";
+
+test("users sign in with a magic link", async ({ page, inbox }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(inbox.address);
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+
+  const email = await client.emails.waitFor(SLUG, { tag: inbox.tag, subject: "Sign in" });
+  const link = extractLink(email, { actionOnly: true });
+  expect(link).not.toBeNull();
+
+  await page.goto(link!);
+  await expect(page).toHaveURL(/\/dashboard/);
+});
+```
+
+</Step>
+<Step title="Check the email itself">
+
+The captured email carries everything the app sent, so the same test can check the sender, the recipients, the text and the sender checks:
+
+```ts
+const { email: message } = email;
+expect(message.from[0]?.address).toBe("no-reply@yourapp.dev");
+expect(message.text).toContain("expires in 10 minutes");
+expect(message.attachments).toHaveLength(0);
+
+// SPF, DKIM and DMARC as a receiving mail server saw them
+expect(message.auth?.spf?.result).toBe("pass");
+expect(message.auth?.dmarc?.result).toBe("pass");
+```
+
+Sender checks reflect how the email was really sent: a development setup that does not sign mail will fail DKIM, which is what you would want to learn before production.
+
+</Step>
+</Steps>
+
+## A temporary endpoint per test
+
+If you would rather not keep an endpoint around, `captureEmailDuring()` creates one, passes your action its address, waits for the email and deletes the endpoint afterwards:
+
+```ts
+import { captureEmailDuring } from "@webhooks-cc/sdk/testing";
+import { extractCode } from "@webhooks-cc/sdk";
+
+const [email] = await captureEmailDuring(
+  client,
+  async (address) => {
+    await page.getByLabel("Email").fill(address);
+    await page.getByRole("button", { name: "Create account" }).click();
+  },
+  { subject: "Confirm", timeout: "60s" }
+);
+expect(extractCode(email)).toMatch(/^\d{6}$/);
+```
+
+## Running in CI
+
+- Store `WHK_API_KEY` and `WHK_EMAIL_ENDPOINT` as CI secrets.
+- Parallel workers are safe: each test has its own tag, and `waitFor` only matches its own.
+- Every email counts as one request. The free plan takes 50 a day; [Pro](/docs/plans-limits) takes 100,000 a month.
+- Emails follow your plan's retention, so old test mail cleans itself up.
+
+## Troubleshooting
+
+- **No email arrives.** Check that the app really sends (its mail provider's log), that the slug belongs to an endpoint on your account, and that the address has no typo. Open the endpoint in the dashboard: mail that arrived shows up there with an **EMAIL** badge.
+- **`extractCode()` returns null.** The finder only takes a code that sits next to a word like "code", "verification" or "PIN". If your template says something else, read the code with your own pattern from `email.email.text`.
+- **The wrong email matches.** Make the tag unique per test, or add `subject` or `from` to `waitFor()`.
+- **Timeouts in slow environments.** Raise `timeout` on `waitFor()`, for example `"120s"`.
+
+## Next steps
+
+<LinkCard
+  href="/docs/email-capture"
+  title="Email Capture"
+  description="Addresses, tags, what is stored, and the sender checks."
+/>
+
+<LinkCard
+  href="/docs/sdk/api#emails"
+  title="SDK reference: emails"
+  description="Every client.emails method and option."
+/>
+
+<LinkCard
+  href="/docs/forwarding"
+  title="Email Forwarding"
+  description="Post every captured email to your own server as signed JSON."
+/>

@@ -49,6 +49,10 @@ export async function GET(request: Request) {
       createdAt: ep.createdAt,
       fromTeam: ep.fromTeam,
       fromTeams: ep.fromTeams,
+      emailAddress: ep.emailAddress,
+      showEmailExtracts: ep.showEmailExtracts,
+      forwardEnabled: ep.forwardEnabled,
+      hasForwardSecret: ep.hasForwardSecret,
     }));
 
     return Response.json({ owned, shared });

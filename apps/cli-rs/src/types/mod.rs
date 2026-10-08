@@ -32,6 +32,9 @@ pub struct Endpoint {
     /// Every subscribed team of the caller this endpoint is shared with.
     #[serde(rename = "fromTeams", default)]
     pub from_teams: Vec<TeamShare>,
+    /// Address the endpoint receives email at (`{slug}@mailhooks.cc`); none for guest endpoints.
+    #[serde(rename = "emailAddress", default)]
+    pub email_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +131,77 @@ pub struct CapturedRequest {
     /// Provider that verified the signature (e.g., "stripe", "github")
     #[serde(rename = "signingProvider", default)]
     pub signing_provider: Option<String>,
+    /// "email" for a captured email, "http" otherwise. The SSE stream leaves it out.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// The parsed message of a captured email (the REST API sends it; the stream does not).
+    #[serde(default)]
+    pub email: Option<EmailSummary>,
+}
+
+/// The parts of a captured email the CLI shows. The API's `email` object has
+/// more (HTML, sender checks, every header); `--json` on the API is the way
+/// to read those.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EmailSummary {
+    #[serde(default)]
+    pub subject: Option<String>,
+    #[serde(default)]
+    pub from: Vec<EmailAddress>,
+    #[serde(default)]
+    pub to: Vec<EmailAddress>,
+    /// The `+tag` of the address it was sent to.
+    #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<EmailAttachment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailAddress {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub address: Option<String>,
+}
+
+impl fmt::Display for EmailAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let address = self.address.as_deref().unwrap_or("");
+        match self.name.as_deref() {
+            Some(name) if !name.is_empty() => write!(f, "{name} <{address}>"),
+            _ => write!(f, "{address}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailAttachment {
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(rename = "contentType", default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub size: u64,
+}
+
+impl CapturedRequest {
+    /// A captured email (sent to the endpoint's mailhooks.cc address). Its
+    /// `path` is the recipient address and its body a raw MIME message, so it
+    /// must never be sent on as an HTTP request.
+    ///
+    /// The REST API says so in `kind`. The SSE stream leaves `kind` out, and an
+    /// HTTP sender may use `EMAIL` as a custom method, so without `kind` an
+    /// email is the `EMAIL` method with a path that is not a URL path (HTTP
+    /// paths always start with a slash).
+    pub fn is_email(&self) -> bool {
+        match self.kind.as_deref() {
+            Some(kind) => kind == "email",
+            None => self.method.eq_ignore_ascii_case("EMAIL") && !self.path.starts_with('/'),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +267,8 @@ impl From<SearchHit> for CapturedRequest {
             signature_verified: None,
             signature_error: None,
             signing_provider: None,
+            kind: None,
+            email: None,
         }
     }
 }
@@ -638,5 +714,43 @@ mod search_tests {
 
         let empty: SearchResult = serde_json::from_str("[]").unwrap();
         assert!(empty.requests.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod email_tests {
+    use super::{CapturedRequest, EmailAddress, Endpoint};
+
+    #[test]
+    fn captured_email_parses_the_api_shape() {
+        let json = r#"{"id":"e1","endpointId":"ep","method":"EMAIL","path":"acme+run@mailhooks.cc","headers":{"subject":"Hi"},"body":"raw","queryParams":{},"ip":"192.0.2.1","size":120,"receivedAt":1700000000000,"kind":"email","email":{"subject":"Confirm your email","from":[{"name":"Tidewater","address":"no-reply@tidewater.app"}],"to":[{"name":null,"address":"acme+run@mailhooks.cc"}],"cc":[],"tag":"run","text":"Code 482913","html":"<p>x</p>","attachments":[{"filename":"a.pdf","contentType":"application/pdf","size":10,"contentId":null,"inline":false}],"auth":null}}"#;
+        let request: CapturedRequest = serde_json::from_str(json).unwrap();
+        assert!(request.is_email());
+        let email = request.email.unwrap();
+        assert_eq!(email.subject.as_deref(), Some("Confirm your email"));
+        assert_eq!(email.tag.as_deref(), Some("run"));
+        assert_eq!(email.from[0].to_string(), "Tidewater <no-reply@tidewater.app>");
+        assert_eq!(email.attachments[0].size, 10);
+    }
+
+    #[test]
+    fn http_requests_and_endpoints_without_email_fields_still_parse() {
+        let json = r#"{"id":"r1","endpointId":"ep","method":"POST","path":"/hook","headers":{},"queryParams":{},"ip":"::1","size":3,"receivedAt":1}"#;
+        let request: CapturedRequest = serde_json::from_str(json).unwrap();
+        assert!(request.email.is_none());
+        assert!(!request.is_email());
+
+        let endpoint: Endpoint =
+            serde_json::from_str(r#"{"id":"ep","slug":"acme","emailAddress":"acme@mailhooks.cc"}"#)
+                .unwrap();
+        assert_eq!(endpoint.email_address.as_deref(), Some("acme@mailhooks.cc"));
+        let guest: Endpoint = serde_json::from_str(r#"{"id":"ep","slug":"g"}"#).unwrap();
+        assert!(guest.email_address.is_none());
+    }
+
+    #[test]
+    fn address_without_a_name_prints_the_address() {
+        let address = EmailAddress { name: None, address: Some("a@b.c".into()) };
+        assert_eq!(address.to_string(), "a@b.c");
     }
 }

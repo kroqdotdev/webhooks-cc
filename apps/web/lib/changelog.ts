@@ -15,13 +15,132 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.17";
-export const CLI_VERSION = "1.3.1";
-export const SDK_VERSION = "1.11.0";
-export const MCP_VERSION = "1.9.0";
+export const APP_VERSION = "0.35.3";
+export const CLI_VERSION = "1.4.0";
+export const SDK_VERSION = "1.12.0";
+export const MCP_VERSION = "1.10.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.3",
+    date: "2026-10-08",
+    title: "Agent Registration and Rate Limit Fixes",
+    track: "web",
+    items: [
+      "Agents can no longer register with an address at mailhooks.cc: its codes can be read through webhooks.cc itself, so it proved nothing",
+      "Each rate limit now counts on its own: a one-minute limit no longer erased the history of an hourly one from the same IP, which let agent registration run far above its hourly limit",
+      "IPv6 clients are rate-limited per /64, so a fresh address per request no longer gets a fresh limit",
+    ],
+  },
+  {
+    version: "0.35.2",
+    date: "2026-10-08",
+    title: "MCP Email Docs",
+    track: "web",
+    items: [
+      "The MCP tools reference and workflows cover the email and forwarding tools, with a signup-email walkthrough",
+      "New guide: testing signup and login emails in Playwright",
+      "The CLI reference covers whk get and whk requests, including how emails are shown",
+    ],
+  },
+  {
+    version: "0.35.1",
+    date: "2026-10-08",
+    title: "Landing Counters After Deploys",
+    track: "web",
+    items: [
+      "The developer, endpoint and webhook counters on the landing page no longer disappear for the first minutes after a release",
+    ],
+  },
+  {
+    version: "0.35.0",
+    date: "2026-10-08",
+    title: "Emails in the API and SDK",
+    track: "web",
+    items: [
+      "The request list API takes kind=email or kind=http, and live stream events say which kind each request is",
+      "Send test email takes an optional tag, so a test can wait for its own sample",
+      "The dashboard, forwarding and the SDK now share one code and link finder and one email JSON builder, from the SDK",
+      "SDK docs for emails and forwarding; the email testing and email-to-webhook pages show the SDK",
+    ],
+  },
+  {
+    version: "0.34.2",
+    date: "2026-10-08",
+    title: "Faster Code and Link Finder",
+    track: "web",
+    items: [
+      "Finding one-time codes and links in an email, and counting its images for the preview, take time in proportion to its size; certain malformed emails could make them take minutes, in the dashboard and when forwarding",
+    ],
+  },
+  {
+    version: "0.34.1",
+    date: "2026-10-08",
+    title: "Email Pages and API Reference",
+    track: "web",
+    items: [
+      "New pages on email testing and on turning inbound email into a webhook, linked from the home page",
+      "The REST API reference and the OpenAPI spec cover emails, the forwarding settings, the signing secret, test deliveries and the delivery log",
+      "The Webhook.site comparison covers email capture and forwarding, and the dashboard docs list the Forwarding section of Settings",
+      "Pro requests stay visible for all 31 days they are kept; the dashboard and API stopped showing them after 30",
+      'Only an endpoint\'s owner can turn off "Show codes and links found in emails", because it also decides whether forwarded emails carry their codes and links',
+    ],
+  },
+  {
+    version: "0.34.0",
+    date: "2026-10-08",
+    title: "Email as JSON, Forwarded to Your Server",
+    track: "web",
+    items: [
+      "Every email now opens on a JSON tab: the parsed email (sender, recipients, subject, text, HTML, the codes and links found in it, attachments and sender checks) as JSON, ready to copy as a test fixture",
+      "Forwarding: turn it on in an endpoint's Settings and every email it receives is POSTed to your URL as that JSON, signed with Standard Webhooks headers, so your app can handle inbound email without a mail server",
+      "Deliveries that fail are tried again after 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h and 12 h. Each email's Deliveries tab shows every try with your server's answer, and Redeliver sends it again",
+      "Settings shows the signing secret (reveal, copy, rotate), sends a test delivery and lists the latest deliveries",
+    ],
+  },
+  {
+    version: "0.33.0",
+    date: "2026-10-07",
+    title: "Email Capture",
+    track: "web",
+    items: [
+      "Every endpoint on an account now has an email address next to its HTTP URL, at mailhooks.cc. Mail sent there lands in the same request list as your webhooks and counts as one request. Add a tag after a plus sign, like slug+signup@mailhooks.cc, to tell flows apart",
+      "Emails get their own view: a sandboxed preview where no scripts run and remote images only load when you ask, the text, headers, attachments, the raw message with a .eml download, and an Authentication tab that explains the SPF, DKIM and DMARC results",
+      "One-time codes and the main link of each email are picked out above the preview with copy buttons. Turn this off per endpoint in Settings",
+      "Switch the request list between all requests, HTTP and email. Send then Send test email delivers a sample message to try it",
+      "Endpoint settings moved from a dialog to a Settings tab next to Requests, with one section per topic and a save button per section",
+      "The endpoint bar shows both addresses with copy buttons, and the setup checklist moved into a Setup menu next to Send and Export",
+      "The account page splits your usage into HTTP requests and emails",
+    ],
+  },
+  {
+    version: "0.32.20",
+    date: "2026-10-07",
+    title: "Email Capture Groundwork",
+    track: "web",
+    items: [
+      "Groundwork for capturing email at your endpoints: a captured request can now be an email, counted exactly like any other request. Nothing changes in the dashboard yet",
+    ],
+  },
+  {
+    version: "0.32.19",
+    date: "2026-10-06",
+    title: "Seat Schedule Retries",
+    track: "web",
+    items: [
+      "If reading a team's subscription from Polar fails while handling a webhook, the webhook now fails so Polar delivers it again, instead of leaving the seat schedule out of date until the next subscription event",
+    ],
+  },
+  {
+    version: "0.32.18",
+    date: "2026-10-06",
+    title: "Seat Schedules Follow Polar",
+    track: "web",
+    items: [
+      "A seat reduction scheduled or cancelled in Polar itself, for example from Polar's dashboard, now reaches the team's member cap. Polar does not change a subscription's modification time for these, so team billing now reads the subscription's current state from Polar on every subscription webhook",
+    ],
+  },
   {
     version: "0.32.17",
     date: "2026-10-05",
@@ -935,6 +1054,31 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.4.0",
+    date: "2026-10-08",
+    title: "Emails in the Terminal",
+    track: "cli",
+    items: [
+      "whk requests list shows a captured email's subject next to the address it arrived at, and EMAIL gets its own colour",
+      "whk requests get on an email shows the sender, recipient, subject, tag, attachments and text part instead of the raw message; --json still has every header and the raw message",
+      "whk create and whk get print the endpoint's mailhooks.cc email address",
+      "An email's subject, sender and attachment names stay on one line, so a sender cannot fake rows in the list",
+      "whk get no longer shows a request count of 0 when the API sends none",
+    ],
+  },
+  {
+    version: "1.3.2",
+    date: "2026-10-08",
+    title: "Emails Stay Out of the Tunnel",
+    track: "cli",
+    items: [
+      "whk tunnel no longer passes captured emails to your local server and lists them as not tunneled instead: an email is a raw message sent to an address, not an HTTP request. To receive emails in your app, use forwarding (webhooks.cc/docs/forwarding)",
+      "Fixed: with a port-only target such as whk tunnel 8080, an email's recipient address was read as part of the host name, so the message went over plain HTTP to mailhooks.cc, which only redirects, instead of to your machine. Update if you tunnel an endpoint that receives email",
+      "A captured path without a leading slash can no longer change the host the tunnel or whk replay sends to",
+      "whk replay refuses emails and points to forwarding",
+    ],
+  },
+  {
     version: "1.3.1",
     date: "2026-09-25",
     title: "Dependency Updates",
@@ -1101,6 +1245,23 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.12.0",
+    date: "2026-10-08",
+    title: "Emails and Forwarding",
+    track: "sdk",
+    items: [
+      "`client.emails` for the email every endpoint receives at mailhooks.cc: `address()` (with a `+tag` per test run), `list()`, `get()`, `latest()`, `waitFor()`, `waitForAll()`, `sendTest()` and `toJson()`",
+      "`extractCode()`, `extractLink()` and `extractFromEmail()`: the dashboard's one-time code and link finder",
+      "`client.forwarding`: `configure()`, `secret()`, `rotateSecret()`, `test()`, `deliveries()`, `emailDeliveries()` and `redeliver()`",
+      "`verifyForwardedEmail()` checks a forwarded email's Standard Webhooks signature and timestamp and returns the typed `email.received` event, throwing `WebhookVerificationError` otherwise",
+      "`matchEmail()`, `isEmailRequest()` and `captureEmailDuring()` for tests",
+      "New `@webhooks-cc/sdk/email` entry point with the email types, the finder and the JSON builder, and no network code",
+      "Requests carry `kind` and `email`; `requests.list()`, `listPaginated()` and `search()` take `kind`, and `waitFor()` takes `since`",
+      "`verifyStandardWebhookSignature()` accepts a Fetch `Headers`; it used to fail on one silently",
+      "`requests.replay()` refuses emails, `export()` skips them, and provider detection ignores them",
+    ],
+  },
   {
     version: "1.11.0",
     date: "2026-10-02",
@@ -1334,6 +1495,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.10.0",
+    date: "2026-10-08",
+    title: "Email and Forwarding Tools",
+    track: "mcp",
+    items: [
+      "`list_emails`, `get_email` and `wait_for_email` read the email an endpoint receives at mailhooks.cc, with the one-time code and main link picked out, so an agent can complete a signup or login flow itself",
+      "`send_test_email` delivers a sample email, optionally to a +tag address",
+      "`configure_forwarding`, `get_forwarding_secret`, `test_forwarding`, `list_deliveries` and `redeliver_email` manage email forwarding",
+      "`list_requests`, `search_requests` and `count_requests` take `kind`; request tools and resources leave out an email's raw message and HTML part and cut its text, so one email cannot use up the output; `update_endpoint` takes `showEmailExtracts`",
+      "`get_email` and `wait_for_email` put the code and link first and trim a large email to fit the output (headers, then extra codes, links, addresses and attachments, then HTML and text, then all but the essentials), so the result stays valid JSON; `wait_for_email` waits 30 seconds by default, under the usual client timeout; `list_emails` with a tag, subject or sender searches the newest 100 emails",
+      "44 tools (SDK 1.12.0)",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-10-02",

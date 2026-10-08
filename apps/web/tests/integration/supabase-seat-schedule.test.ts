@@ -1,6 +1,30 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { applyTeamPolarWebhookEvent } from "@/lib/supabase/team-billing";
+
+// Subscription webhooks re-read the subscription from Polar to mirror its
+// pending seat change; this stands in for Polar's current state.
+const polarState = vi.hoisted(() => ({ pendingSeats: null as number | null }));
+vi.mock("@/lib/polar", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/polar")>();
+  return {
+    ...actual,
+    createPolarClient: () => ({
+      subscriptions: {
+        get: async (id: string) => ({
+          id,
+          pending_update:
+            polarState.pendingSeats === null ? null : { seats: polarState.pendingSeats },
+        }),
+      },
+    }),
+  };
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  polarState.pendingSeats = null;
+});
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -141,37 +165,39 @@ describe("scheduled seat reductions", () => {
     expect(await team()).toEqual({ seats: 5, pending_seats: null, request_limit: 500_000 });
   });
 
-  it("ignores a late webhook for an earlier schedule", async () => {
+  it("mirrors Polar's current schedule and lets an older read lose", async () => {
     const subscriptionId = `sub_seat_schedule_${ts}`;
-    const event = (modifiedAt: string, pendingSeats: number | null) => ({
+    // Polar keeps the subscription's modified_at when a pending update is
+    // scheduled or cleared, so every event here carries the same one.
+    const event = (pendingSeats: number | null) => ({
       id: subscriptionId,
       status: "active",
       seats: 5,
-      modified_at: modifiedAt,
+      modified_at: "2026-10-01T10:00:00.000000Z",
       pending_update: pendingSeats === null ? null : { seats: pendingSeats },
     });
+    const readAt = (iso: string) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(iso));
+    };
 
-    await applyTeamPolarWebhookEvent(
-      "subscription.updated",
-      teamId,
-      event("2026-10-01T10:00:02.000Z", 3)
-    );
+    polarState.pendingSeats = 3;
+    readAt("2026-10-01T10:00:02.000Z");
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, event(3));
     expect((await team()).pending_seats).toBe(3);
 
-    // The retried event for the earlier reduction to 4 must not loosen the cap.
-    await applyTeamPolarWebhookEvent(
-      "subscription.updated",
-      teamId,
-      event("2026-10-01T10:00:01.000Z", 4)
-    );
+    // A read that started earlier but finished later (Polar still showed the
+    // reduction to 4) must not loosen the cap.
+    polarState.pendingSeats = 4;
+    readAt("2026-10-01T10:00:01.000Z");
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, event(4));
     expect((await team()).pending_seats).toBe(3);
 
-    // A newer event (e.g. the reduction was cancelled) still applies.
-    await applyTeamPolarWebhookEvent(
-      "subscription.updated",
-      teamId,
-      event("2026-10-01T10:00:03.000Z", null)
-    );
+    // The reduction was cancelled in Polar: the payload still shows the old
+    // schedule and the same modified_at, but a newer read clears it.
+    polarState.pendingSeats = null;
+    readAt("2026-10-01T10:00:03.000Z");
+    await applyTeamPolarWebhookEvent("subscription.updated", teamId, event(3));
     expect((await team()).pending_seats).toBeNull();
   });
 });

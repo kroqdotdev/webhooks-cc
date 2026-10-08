@@ -10,7 +10,7 @@ import { sendError } from "@appsignal/nodejs";
  * bound to the matched-or-JIT-provisioned user for the verified email.
  */
 export async function POST(request: Request) {
-  const rateLimited = await checkRateLimit(request, 10);
+  const rateLimited = await checkRateLimit(request, "agent-verify-otp", 10);
   if (rateLimited) return rateLimited;
 
   const parsed = await parseJsonBody(request, 1024);

@@ -11,11 +11,13 @@ next-env.d.ts
 apps/cli/
 apps/cli-rs/target/
 apps/receiver-rs/target/
+apps/mx-rs/target/
 
 # Environment
 .env
 .env.local
 .env*.local
+.env*.bak*
 
 # IDE
 .idea/

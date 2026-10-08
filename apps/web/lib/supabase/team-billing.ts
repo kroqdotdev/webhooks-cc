@@ -446,11 +446,13 @@ export async function updateTeamSeats(
     // write below is skipped too.
     const polar = createPolarClient();
     let increased: Record<string, unknown>;
+    let increasedAt: Date;
     try {
       increased = (await polar.subscriptions.update(team.polar_subscription_id, {
         seats,
         proration_behavior: "invoice",
       })) as unknown as Record<string, unknown>;
+      increasedAt = new Date();
     } catch (error) {
       // 402 covers a declined card (PaymentFailed) and a charge that needs the
       // cardholder to authenticate (PaymentActionRequired); neither adds seats.
@@ -488,10 +490,10 @@ export async function updateTeamSeats(
     }
 
     // Adding seats drops any pending reduction in Polar (update_team_seats
-    // already cleared the row); record the version so a late event for the
-    // dropped schedule cannot bring it back.
+    // already cleared the row); record Polar's state with the time it was
+    // confirmed, so an older read cannot bring the dropped schedule back.
     try {
-      await syncPendingSeats(teamId, team.polar_subscription_id, increased);
+      await syncPendingSeats(teamId, team.polar_subscription_id, increased, increasedAt);
     } catch (syncError) {
       console.error("[team-billing] failed to record the seat schedule from Polar", {
         teamId,
@@ -540,12 +542,14 @@ export async function updateTeamSeats(
   const recordedPending = seats === team.seats ? null : seats;
 
   let updated: Record<string, unknown>;
+  let updatedAt: Date;
   try {
     const polar = createPolarClient();
     updated = (await polar.subscriptions.update(team.polar_subscription_id, {
       seats,
       proration_behavior: "next_period",
     })) as unknown as Record<string, unknown>;
+    updatedAt = new Date();
   } catch (polarError) {
     // Polar never saw the change, so put the previous schedule back, but only
     // while the row still holds this request's value: an overlapping request
@@ -569,10 +573,10 @@ export async function updateTeamSeats(
     throw polarError;
   }
 
-  // Record Polar's own view (and its version) now rather than waiting for the
-  // webhook, so a late event for an earlier change is already outdated.
+  // Record Polar's own view now rather than waiting for the webhook, stamped
+  // with the time Polar confirmed it, so an older read is already outdated.
   try {
-    await syncPendingSeats(teamId, team.polar_subscription_id, updated);
+    await syncPendingSeats(teamId, team.polar_subscription_id, updated, updatedAt);
   } catch (syncError) {
     console.error("[team-billing] failed to record the seat schedule from Polar", {
       teamId,
@@ -887,21 +891,23 @@ function pendingSeatsFromEvent(data: Record<string, unknown>): number | null {
 
 /**
  * Mirrors a Polar subscription's scheduled seat change into
- * `teams.pending_seats`, accepting only a newer `modified_at` than the one
- * already applied: a late or retried event for an earlier change must not
- * restore a schedule (and with it a looser member cap) that Polar has since
- * replaced. `subscription` is a webhook payload or an API response.
+ * `teams.pending_seats`, accepting only a newer observation than the one
+ * already applied: an older read must not restore a schedule (and with it a
+ * looser member cap) that Polar has since replaced.
+ *
+ * The version is our own clock, `observedAt`, not Polar's: Polar leaves the
+ * subscription's `modified_at` unchanged when a pending update is scheduled
+ * or cleared, so its timestamps cannot order these changes. Callers pass a
+ * time at which the given state was already true in Polar: the arrival of an
+ * update response (Polar commits before it answers), or the start of a read.
  */
 async function syncPendingSeats(
   teamId: string,
   subscriptionId: string,
-  subscription: Record<string, unknown>
+  subscription: Record<string, unknown>,
+  observedAt: Date
 ): Promise<void> {
-  const asOf = parseEventTimestamp(subscription.modified_at);
-  if (asOf === null) {
-    return;
-  }
-
+  const asOf = observedAt.toISOString();
   const admin = createAdminClient();
   const { error } = await admin
     .from("teams")
@@ -913,6 +919,27 @@ async function syncPendingSeats(
   if (error) {
     throw error;
   }
+}
+
+/**
+ * Re-reads the subscription from Polar and mirrors its current pending seat
+ * change, for webhooks: their payloads cannot be ordered against each other
+ * (see syncPendingSeats), but Polar's current state can. Stamped with the
+ * time the read started, so it never overrides a seat change this app wrote
+ * after Polar confirmed it.
+ *
+ * A failed read fails the webhook, like any other processing error, so Polar
+ * redelivers it: a schedule changed in Polar itself may produce no other
+ * event before the renewal, and pending_seats caps members until then. The
+ * state write before this call is safe to repeat.
+ */
+async function refreshPendingSeats(teamId: string, subscriptionId: string): Promise<void> {
+  const observedAt = new Date();
+  const subscription = (await createPolarClient().subscriptions.get(
+    subscriptionId
+  )) as unknown as Record<string, unknown>;
+
+  await syncPendingSeats(teamId, subscriptionId, subscription, observedAt);
 }
 
 async function applyTeamSubscriptionState(
@@ -1070,9 +1097,9 @@ async function applyTeamSubscriptionState(
 
   // Separately from the guarded write above: seat changes within one period
   // share its subscription id and period start, so the pending schedule is
-  // versioned by the subscription's modified_at instead.
+  // read from Polar's current state rather than from this payload.
   if (subscriptionId !== null) {
-    await syncPendingSeats(teamId, subscriptionId, data);
+    await refreshPendingSeats(teamId, subscriptionId);
   }
 }
 

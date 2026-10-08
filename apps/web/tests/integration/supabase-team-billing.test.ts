@@ -1,6 +1,18 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/database";
+
+// Subscription webhooks re-read the subscription from Polar to mirror its
+// pending seat change; these tests have nothing scheduled.
+vi.mock("@/lib/polar", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/polar")>();
+  return {
+    ...actual,
+    createPolarClient: () => ({
+      subscriptions: { get: async (id: string) => ({ id, pending_update: null }) },
+    }),
+  };
+});
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import {
   TEAM_SEAT_REQUEST_LIMIT,

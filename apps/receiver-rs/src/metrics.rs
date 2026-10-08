@@ -26,9 +26,14 @@ const CAPTURE_TOTAL: &str = "webhooks_capture_total";
 /// could not be completed (transient, permanent, parse, unknown_status).
 const CAPTURE_FAILED_TOTAL: &str = "webhooks_capture_failed_total";
 
+/// `webhooks_mail_ingest_total{outcome}`: one increment per mail recipient
+/// check or capture handled by the internal mail API (see `mail::handlers`).
+const MAIL_INGEST_TOTAL: &str = "webhooks_mail_ingest_total";
+
 struct CaptureInstruments {
     total: Counter<u64>,
     failed: Counter<u64>,
+    mail: Counter<u64>,
 }
 
 fn instruments() -> &'static CaptureInstruments {
@@ -43,6 +48,10 @@ fn instruments() -> &'static CaptureInstruments {
             failed: meter
                 .u64_counter(CAPTURE_FAILED_TOTAL)
                 .with_description("Number of capture_webhook calls that failed, by failure kind")
+                .build(),
+            mail: meter
+                .u64_counter(MAIL_INGEST_TOTAL)
+                .with_description("Mail recipient checks and captures by outcome")
                 .build(),
         }
     })
@@ -65,6 +74,15 @@ pub fn capture_failed(kind: &'static str) {
     instruments().failed.add(1, &[KeyValue::new("kind", kind)]);
 }
 
+/// Record one mail ingest outcome, such as `check_ok`, `check_unknown`,
+/// `captured`, `duplicate`, `over_quota` or `transient`. Like the other
+/// labels, `outcome` is always a fixed string, never request data.
+pub fn mail_ingest(outcome: &'static str) {
+    instruments()
+        .mail
+        .add(1, &[KeyValue::new("outcome", outcome)]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,5 +95,7 @@ mod tests {
         capture_result("not_found");
         capture_failed("transient");
         capture_failed("permanent");
+        mail_ingest("captured");
+        mail_ingest("transient");
     }
 }

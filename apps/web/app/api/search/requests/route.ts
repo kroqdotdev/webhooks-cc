@@ -5,7 +5,7 @@ import {
   applyRateLimitHeaders,
   type RateLimitInfo,
 } from "@/lib/rate-limit";
-import { searchRequestsForUser } from "@/lib/supabase/search";
+import { isRequestKind, searchRequestsForUser } from "@/lib/supabase/search";
 import { sendError } from "@appsignal/nodejs";
 
 function parseOptionalInteger(
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     // below never runs for them, so without this an unclaimed key could hammer
     // this endpoint (and its bearer validation) unthrottled.
     if (validated.userId === null) {
-      const agentLimit = await checkRateLimitWithInfo(request, 60, 10 * 60_000);
+      const agentLimit = await checkRateLimitWithInfo(request, "search-unclaimed", 60, 10 * 60_000);
       if (agentLimit.response) return agentLimit.response;
       return Response.json(
         { error: "This operation requires a claimed account." },
@@ -67,6 +67,13 @@ export async function GET(request: Request) {
     if (parsedTo.error) {
       return applyRateLimitHeaders(parsedTo.error, rateLimit);
     }
+    const kind = url.searchParams.get("kind");
+    if (kind !== null && !isRequestKind(kind)) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_kind" }, { status: 400 }),
+        rateLimit
+      );
+    }
     const parsedLimit = parseOptionalInteger(url.searchParams, "limit");
     if (parsedLimit.error) {
       return applyRateLimitHeaders(parsedLimit.error, rateLimit);
@@ -82,6 +89,7 @@ export async function GET(request: Request) {
       plan,
       slug: url.searchParams.get("slug") ?? undefined,
       method: url.searchParams.get("method") ?? undefined,
+      kind: kind ?? undefined,
       q: url.searchParams.get("q") ?? undefined,
       from: parsedFrom.value,
       to: parsedTo.value,

@@ -42,6 +42,8 @@ export const NAV_SECTIONS: NavSection[] = [
         isNew: true,
       },
       { title: "Requests", href: "/docs/requests", isNew: true },
+      { title: "Email Capture", href: "/docs/email-capture", isNew: true },
+      { title: "Email Forwarding", href: "/docs/forwarding", depth: 1, isNew: true },
       { title: "Mock Responses", href: "/docs/mock-responses" },
       { title: "Dashboard Features", href: "/docs/dashboard-features", isNew: true },
       { title: "Notification Webhooks", href: "/docs/notification-webhooks", isNew: true },
@@ -93,6 +95,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Test Shopify Webhooks", href: "/docs/guides/test-shopify-webhooks" },
       { title: "Verify Signatures", href: "/docs/guides/verify-webhook-signatures", isNew: true },
       { title: "Webhook Testing in CI/CD", href: "/docs/guides/webhook-testing-ci-cd" },
+      {
+        title: "Test Signup Emails in Playwright",
+        href: "/docs/guides/test-signup-emails-playwright",
+        isNew: true,
+      },
     ],
   },
   {

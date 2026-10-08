@@ -3,7 +3,7 @@ title: "Signature Verification"
 description: "Verify webhook signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, and PayPal using the SDK."
 section: sdk
 order: 5
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-08
 schema: faq
 keywords:
   ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
@@ -15,6 +15,8 @@ seo:
 ## Overview
 
 Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
+
+Emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifier, `verifyForwardedEmail`, which also checks the timestamp and returns the parsed email. See [Forwarded emails](#forwarded-emails).
 
 Generic verifier (works with any supported provider):
 
@@ -296,6 +298,8 @@ Standard Webhooks is used by Polar, Svix, Resend, Liveblocks, and Novu. It sends
 
 Secrets can include the `whsec_` prefix (base64-encoded key after the prefix) or be passed as raw base64.
 
+`verifyStandardWebhookSignature(body, headers, secret)` takes the headers as a Fetch `Headers`, a plain object such as Node's `req.headers`, or name and value pairs. It checks the signature only; check `webhook-timestamp` yourself if you need replay protection.
+
 ```ts
 const result = await verifySignature(request, {
   provider: "standard-webhooks",
@@ -305,7 +309,7 @@ const result = await verifySignature(request, {
 
 ### Meta (WhatsApp / Messenger / Instagram)
 
-Meta signs the raw body with HMAC-SHA256 and sends `sha256=hash` in `x-hub-signature-256` — the same scheme as GitHub — keyed by your **app secret**. Because Meta shares GitHub's header, configure `meta` explicitly rather than relying on header auto-detection (the SDK auto-detects Meta by body shape).
+Meta signs the raw body with HMAC-SHA256 and sends `sha256=hash` in `x-hub-signature-256` (the same scheme as GitHub), keyed by your **app secret**. Because Meta shares GitHub's header, configure `meta` explicitly rather than relying on header auto-detection (the SDK auto-detects Meta by body shape).
 
 ```ts
 const result = await verifySignature(request, {
@@ -350,7 +354,7 @@ const result = await verifySignature(request, {
 ### Square
 
 <Callout type="warning">
-  Square verification requires the notification URL — Square signs the URL it delivers to
+  Square verification requires the notification URL: Square signs the URL it delivers to
   concatenated with the raw body. Pass it as the `url` option.
 </Callout>
 
@@ -368,7 +372,7 @@ const result = await verifySignature(request, {
 
 <Callout type="warning">
   HubSpot v3 signs the HTTP method and request URI alongside the body. Pass both the `url` and
-  `method` options, and verify promptly — HubSpot rejects signatures whose timestamp is more than 5
+  `method` options, and verify promptly: HubSpot rejects signatures whose timestamp is more than 5
   minutes old.
 </Callout>
 
@@ -396,7 +400,7 @@ const result = await verifySignature(request, {
 
 ### Calendly and Mux
 
-Calendly and Mux both use the Stripe-style `t=<timestamp>,v1=<hash>` header format — `calendly-webhook-signature` and `mux-signature` respectively — computing HMAC-SHA256 over `{timestamp}.{body}` (hex).
+Calendly and Mux both use the Stripe-style `t=<timestamp>,v1=<hash>` header format (`calendly-webhook-signature` and `mux-signature` respectively), computing HMAC-SHA256 over `{timestamp}.{body}` (hex).
 
 ```ts
 const calendly = await verifySignature(request, {
@@ -423,7 +427,7 @@ const result = await verifySignature(request, {
 
 ### Bitbucket
 
-Bitbucket signs the raw body with HMAC-SHA256 and sends `sha256=hash` in the `x-hub-signature` header — the same scheme as GitHub. The SDK distinguishes it from Intercom (which uses `x-hub-signature` with `sha1=`) by Bitbucket's unique `x-event-key` header during auto-detection.
+Bitbucket signs the raw body with HMAC-SHA256 and sends `sha256=hash` in the `x-hub-signature` header, the same scheme as GitHub. The SDK distinguishes it from Intercom (which uses `x-hub-signature` with `sha1=`) by Bitbucket's unique `x-event-key` header during auto-detection.
 
 ```ts
 const result = await verifySignature(request, {
@@ -445,7 +449,7 @@ const result = await verifySignature(request, {
 
 ### Adyen
 
-Adyen standard notifications store the signature in `notificationItems[].NotificationRequestItem.additionalData.hmacSignature`. The SDK verifies every notification item in the batch using the hex HMAC key from your Adyen Customer Area — the batch only counts as valid when each item carries its own correct signature.
+Adyen standard notifications store the signature in `notificationItems[].NotificationRequestItem.additionalData.hmacSignature`. The SDK verifies every notification item in the batch using the hex HMAC key from your Adyen Customer Area. The batch only counts as valid when each item carries its own correct signature.
 
 ```ts
 const result = await verifySignature(request, {
@@ -458,7 +462,7 @@ const result = await verifySignature(request, {
 
 PayPal signs `transmissionId|transmissionTime|webhookId|crc32(rawBody)` with RSA-SHA256. The SDK fetches and caches the certificate URL from `paypal-cert-url`, only allows PayPal certificate hosts, and uses the configured webhook ID as the verification credential.
 
-If the certificate cannot be downloaded, `verifyPayPalSignature` throws instead of returning `false` — a transport failure is not a signature verdict. Browsers usually block the cross-origin certificate download, so verify PayPal server-side or pass a custom `fetchCertificate` function.
+If the certificate cannot be downloaded, `verifyPayPalSignature` throws instead of returning `false`, because a transport failure is not a signature verdict. Browsers usually block the cross-origin certificate download, so verify PayPal server-side or pass a custom `fetchCertificate` function.
 
 ```ts
 const result = await verifySignature(request, {
@@ -506,7 +510,7 @@ const result = await verifySignature(request, {
 });
 
 if (result.valid) {
-  // Signature verified — safe to process
+  // Signature verified: safe to process
 }
 ```
 
@@ -572,6 +576,89 @@ const valid = await verifyStripeSignature(
   process.env.STRIPE_WEBHOOK_SECRET!
 );
 ```
+
+## Forwarded emails
+
+[Forwarding](/docs/forwarding) posts each email an endpoint captures to your server as `email.received` JSON, signed with Standard Webhooks headers. `verifyForwardedEmail` checks a delivery and returns it typed as an `EmailReceivedEvent`. It accepts the request only when:
+
+1. `webhook-id`, `webhook-timestamp` and `webhook-signature` are all present.
+2. `webhook-timestamp` is within five minutes of your clock.
+3. One of the signatures in `webhook-signature` matches the raw body and your endpoint's `whsec_` secret, compared in constant time.
+4. The body is an `email.received` event.
+
+```ts
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+// A Next.js route handler; the same code runs on Bun, Deno, Hono and Workers
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(
+      await request.text(),
+      request.headers,
+      process.env.FORWARD_SECRET!
+    );
+    console.log(event.data.from?.address, event.data.subject, event.data.codes);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      const status = error.code === "invalid_payload" ? 400 : 401;
+      return new Response(error.message, { status });
+    }
+    throw error;
+  }
+}
+```
+
+In Express, read the body raw, so the bytes you check are the bytes that were signed. `req.headers` can be passed as it is:
+
+```ts
+import express from "express";
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+const app = express();
+
+app.post("/hooks/email", express.raw({ type: "application/json" }), async (req, res, next) => {
+  try {
+    const event = await verifyForwardedEmail(req.body, req.headers, process.env.FORWARD_SECRET!);
+    await handleInboundEmail(event.data); // your code
+    res.sendStatus(204);
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      res.status(error.code === "invalid_payload" ? 400 : 401).send(error.message);
+      return;
+    }
+    next(error);
+  }
+});
+```
+
+```ts
+verifyForwardedEmail(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options?: VerifyForwardedEmailOptions
+): Promise<EmailReceivedEvent>
+```
+
+| Argument                   | Type                                  | Description                                                                                                                                                |
+| -------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `body`                     | `string \| Uint8Array \| ArrayBuffer` | The raw request body, before any JSON parsing. A Node `Buffer` works                                                                                       |
+| `headers`                  | `HeadersInput`                        | A Fetch `Headers`, a plain object such as Node's or Express's `req.headers` (array values are joined), or name and value pairs. Names are case-insensitive |
+| `secret`                   | `string`                              | The endpoint's `whsec_` secret, from **Settings** or `client.forwarding.secret(slug)`                                                                      |
+| `options.toleranceSeconds` | `number`                              | How far `webhook-timestamp` may be from now, in seconds (default: 300)                                                                                     |
+| `options.now`              | `number`                              | The current time in ms, for tests (default: `Date.now()`)                                                                                                  |
+
+When a check fails it throws `WebhookVerificationError`, whose `code` says which:
+
+| `code`                   | When                                                                              | Answer with |
+| ------------------------ | --------------------------------------------------------------------------------- | ----------- |
+| `missing_headers`        | One of the three headers is missing                                               | 401         |
+| `timestamp_out_of_range` | `webhook-timestamp` is more than `toleranceSeconds` from now                      | 401         |
+| `invalid_signature`      | No signature matches: a wrong or rotated secret, or a body changed on the way     | 401         |
+| `invalid_payload`        | The signature is valid, but the body is not JSON or not an `email.received` event | 400         |
+
+Every copy of one email has the same `webhook-id`, so a handler that stores it can skip repeats. To post a captured email to a handler on your machine, see [Test your handler locally](/docs/forwarding#test-your-handler-locally).
 
 ## FAQ
 

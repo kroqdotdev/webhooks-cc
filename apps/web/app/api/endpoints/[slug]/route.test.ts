@@ -26,6 +26,10 @@ vi.mock("@/lib/request-validation", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/forwarding/config", () => ({
+  allowPrivateTargets: () => false,
+}));
+
 vi.mock("@/lib/supabase/teams", () => ({
   resolveEndpointAccess: mockFns.resolveEndpointAccess,
 }));
@@ -138,7 +142,8 @@ describe("PATCH /api/endpoints/[slug]", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only the endpoint owner can update notification or signing settings",
+      error:
+        "Only the endpoint owner can update email, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
@@ -159,9 +164,54 @@ describe("PATCH /api/endpoints/[slug]", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only the endpoint owner can update notification or signing settings",
+      error:
+        "Only the endpoint owner can update email, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("rejects forwarding updates from team members", async () => {
+    mockFns.resolveEndpointAccess.mockResolvedValue({
+      ownerId: "owner_123",
+      endpointId: "endpoint_123",
+      isOwner: false,
+    });
+
+    const { PATCH } = await import("./route");
+    const response = await PATCH(
+      patchRequest({ forwardEnabled: true, forwardUrl: "https://api.example.com/hooks/email" }),
+      params
+    );
+
+    expect(response.status).toBe(403);
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("rejects the email extracts setting from team members", async () => {
+    mockFns.resolveEndpointAccess.mockResolvedValue({
+      ownerId: "owner_123",
+      endpointId: "endpoint_123",
+      isOwner: false,
+    });
+
+    const { PATCH } = await import("./route");
+    const response = await PATCH(patchRequest({ showEmailExtracts: false }), params);
+
+    expect(response.status).toBe(403);
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("refuses a forwarding URL that is not public https", async () => {
+    const { PATCH } = await import("./route");
+    for (const forwardUrl of [
+      "http://api.example.com/x",
+      "https://10.0.0.5/x",
+      "https://localhost/x",
+    ]) {
+      const response = await PATCH(patchRequest({ forwardUrl }), params);
+      expect(response.status, forwardUrl).toBe(400);
+    }
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 

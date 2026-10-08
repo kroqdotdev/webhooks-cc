@@ -13,6 +13,8 @@ import {
 } from "@/lib/supabase/endpoints";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
+import { allowPrivateTargets } from "@/lib/forwarding/config";
+import { checkForwardUrl } from "@/lib/forwarding/target";
 import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -32,10 +34,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
     }
 
-    // Strip notification URL for non-owners — it's a bearer secret (Slack/Discord)
+    // Strip notification and forwarding URLs for non-owners: they can be bearer secrets
     if (access.ownerId !== auth.userId) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { notificationUrl, ...safe } = endpoint;
+      const { notificationUrl, forwardUrl, ...safe } = endpoint;
       return Response.json(safe);
     }
 
@@ -54,6 +56,9 @@ const AUDITED_ENDPOINT_FIELDS = [
   "signingProvider",
   "signingSecret",
   "signingHeader",
+  "showEmailExtracts",
+  "forwardEnabled",
+  "forwardUrl",
 ] as const;
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -69,6 +74,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   // Validate name type and length if provided
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length > 100)) {
     return Response.json({ error: "Invalid name" }, { status: 400 });
+  }
+
+  if (body.showEmailExtracts !== undefined && typeof body.showEmailExtracts !== "boolean") {
+    return Response.json({ error: "Invalid showEmailExtracts" }, { status: 400 });
+  }
+
+  if (body.forwardEnabled !== undefined && typeof body.forwardEnabled !== "boolean") {
+    return Response.json({ error: "Invalid forwardEnabled" }, { status: 400 });
+  }
+  if (body.forwardUrl !== undefined && body.forwardUrl !== null && body.forwardUrl !== "") {
+    if (typeof body.forwardUrl !== "string" || body.forwardUrl.length > 2048) {
+      return Response.json({ error: "Invalid forwardUrl" }, { status: 400 });
+    }
+    const forwardCheck = checkForwardUrl(body.forwardUrl, { allowPrivate: allowPrivateTargets() });
+    if (!forwardCheck.ok) {
+      return Response.json({ error: forwardCheck.reason }, { status: 400 });
+    }
   }
 
   const notifCheck = validateNotificationUrl(body.notificationUrl);
@@ -107,7 +129,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   const updatedFields = AUDITED_ENDPOINT_FIELDS.filter((field) => body[field] !== undefined);
 
   try {
-    // Allow team members to edit (they can rename + change mock response)
+    // Team members can rename the endpoint and change its responses
     const access = await resolveEndpointAccess(auth.userId, slug);
     if (!access) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
@@ -117,13 +139,47 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       body.signingProvider !== undefined ||
       body.signingSecret !== undefined ||
       body.signingHeader !== undefined;
-    const ownerOnlyConfigTouched = body.notificationUrl !== undefined || signingConfigTouched;
+    const forwardingTouched = body.forwardEnabled !== undefined || body.forwardUrl !== undefined;
+    // showEmailExtracts also decides whether codes and links are in the JSON
+    // forwarded to the owner's server, so a team member must not change it.
+    const ownerOnlyConfigTouched =
+      body.notificationUrl !== undefined ||
+      body.showEmailExtracts !== undefined ||
+      signingConfigTouched ||
+      forwardingTouched;
 
     if (!access.isOwner && ownerOnlyConfigTouched) {
       return Response.json(
-        { error: "Only the endpoint owner can update notification or signing settings" },
+        {
+          error:
+            "Only the endpoint owner can update email, notification, forwarding or signing settings",
+        },
         { status: 403 }
       );
+    }
+
+    if (forwardingTouched) {
+      const current = await getEndpointBySlugForUser(access.ownerId, slug);
+      if (!current) {
+        return Response.json({ error: "Endpoint not found" }, { status: 404 });
+      }
+      const nextEnabled = (body.forwardEnabled as boolean | undefined) ?? current.forwardEnabled;
+      const nextUrl =
+        body.forwardUrl === undefined
+          ? current.forwardUrl
+          : (body.forwardUrl as string | null) || null;
+      if (nextEnabled && !nextUrl) {
+        return Response.json({ error: "Add a URL before turning forwarding on." }, { status: 400 });
+      }
+      if ((nextEnabled || nextUrl) && !current.hasForwardSecret) {
+        const { isSigningKeyConfigured } = await import("@/lib/crypto");
+        if (!isSigningKeyConfigured()) {
+          return Response.json(
+            { error: "Forwarding is not available. Contact support." },
+            { status: 503 }
+          );
+        }
+      }
     }
 
     const existing = signingConfigTouched
@@ -218,6 +274,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.signingSecret === undefined ? undefined : (body.signingSecret as string | null),
       signingHeader:
         body.signingHeader === undefined ? undefined : (body.signingHeader as string | null),
+      showEmailExtracts: body.showEmailExtracts as boolean | undefined,
+      forwardEnabled: body.forwardEnabled as boolean | undefined,
+      forwardUrl:
+        body.forwardUrl === undefined ? undefined : (body.forwardUrl as string | null) || null,
     });
 
     await auditUserAction(request, auth.userId, {

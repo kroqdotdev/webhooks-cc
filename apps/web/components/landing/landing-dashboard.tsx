@@ -20,8 +20,8 @@ import { parseStoredDemoEndpoint } from "@/lib/go-demo-storage";
 import { useHumanSignal } from "@/lib/use-human-signal";
 import { buildTemplateRequest } from "@/lib/template-send";
 import type { Request, RequestSummary } from "@/types/request";
-import { trackGuestEndpointCreated } from "@/lib/analytics";
-import { ArrowRight, Check, Circle, Copy, Send } from "lucide-react";
+import { trackCTAClick, trackGuestEndpointCreated } from "@/lib/analytics";
+import { ArrowRight, Check, Circle, Copy, Mail, Send } from "lucide-react";
 
 const REQUEST_LIMIT = 25;
 const DEMO_ENDPOINT_STORAGE_KEY = "demo_endpoint";
@@ -526,6 +526,15 @@ function LandingDashboardInner() {
         <div className="shrink-0 border-b-strong border-line bg-card px-4 py-2.5 flex items-center gap-3">
           <span className="font-bold text-sm caps shrink-0 hidden sm:inline">Your endpoint</span>
           <UrlCopy url={endpointUrl} />
+          {/* Email capture needs an account: guest captures are readable by anyone with the slug. */}
+          <Link
+            href="/login"
+            onClick={() => trackCTAClick("register")}
+            className="hidden lg:inline-flex items-center gap-2 h-8 px-2.5 text-xs text-muted-foreground border-strong border-line border-dashed rounded-md hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          >
+            <Mail className="h-3 w-3" />
+            Sign up to get an email address too
+          </Link>
           <div className="hidden md:flex items-center gap-4 shrink-0 text-xs text-muted-foreground ml-auto">
             <span className="flex items-center gap-1.5">
               <Circle className="h-2 w-2 fill-primary text-primary" />

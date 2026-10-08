@@ -24,8 +24,10 @@ export {
   NotFoundError,
   TimeoutError,
   RateLimitError,
+  WebhookVerificationError,
 } from "./errors";
-export type { RateLimitMeta } from "./errors";
+export type { RateLimitMeta, WebhookVerificationErrorCode } from "./errors";
+export * from "./email";
 export {
   parseJsonBody,
   parseFormBody,
@@ -81,6 +83,8 @@ export {
   matchAny,
   matchVerified,
   matchUnverified,
+  matchEmail,
+  isEmailRequest,
 } from "./matchers";
 export { diffRequests } from "./diff";
 export { parseDuration } from "./utils";
@@ -141,8 +145,10 @@ export {
   verifyPayPalSignature,
   verifyResendSignature,
   verifyWorkOSSignature,
+  verifyForwardedEmail,
   buildPayPalTransmissionMessage,
 } from "./verify";
+export type { HeadersInput, VerifyForwardedEmailOptions } from "./verify";
 export type { SSEFrame, ParseSSEOptions } from "./sse";
 export type {
   DiffResult,
@@ -202,5 +208,17 @@ export type {
   VerifySignatureOptions,
   SDKDescription,
   OperationDescription,
+  EmailRequest,
+  EmailCriteria,
+  ListEmailsOptions,
+  WaitForEmailOptions,
+  WaitForEmailsOptions,
+  SendTestEmailOptions,
+  SendTestEmailResult,
+  ConfigureForwardingOptions,
+  ForwardingTestResult,
+  EmailDelivery,
+  EmailDeliveryAttempt,
+  RecentEmailDelivery,
 } from "./types";
 export type { WebhookFlowResult, WebhookFlowVerifyOptions } from "./flow";

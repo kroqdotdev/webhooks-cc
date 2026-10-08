@@ -1,3 +1,5 @@
+import type { EmailCapture, EmailSummary } from "@/lib/email-capture";
+
 export interface Request {
   _id: string;
   _creationTime: number;
@@ -6,6 +8,8 @@ export interface Request {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  /** Base64 of the raw bytes when stored: non-UTF-8 HTTP bodies, and emails of 1 MiB or less */
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -21,6 +25,9 @@ export interface Request {
   detectedProvider?: string | null;
   /** Best-effort detected event or topic derived from request headers/body */
   detectedEvent?: string | null;
+  /** "email" for captured emails, "http" (or missing, from older clients) otherwise */
+  kind?: "http" | "email";
+  email?: EmailCapture | null;
 }
 
 export interface RequestSummary {
@@ -36,6 +43,8 @@ export interface RequestSummary {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind?: "http" | "email";
+  email?: EmailSummary | null;
 }
 
 /** A request from search/pagination (uses string id instead of _id). */
@@ -46,6 +55,7 @@ export interface ClickHouseRequest {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -56,6 +66,8 @@ export interface ClickHouseRequest {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind?: "http" | "email";
+  email?: EmailCapture | null;
 }
 
 /** Summary shape for ClickHouse results displayed in the sidebar list. */
@@ -71,6 +83,8 @@ export interface ClickHouseSummary {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind?: "http" | "email";
+  email?: EmailSummary | null;
 }
 
 /** Union type for items in the request list. */
@@ -90,13 +104,23 @@ const METHOD_COLORS_MAP: Record<HttpMethod, string> = {
 };
 
 const DEFAULT_METHOD_COLOR = "bg-muted text-muted-foreground";
+/** Captured emails carry the method "EMAIL" (see the receiver's mail handler). */
+const EMAIL_COLOR = "bg-kind-email text-black clean:bg-kind-email/15 clean:text-kind-email";
 
 /**
- * Gets the CSS color classes for an HTTP method.
+ * Gets the CSS color classes for an HTTP method, or for "EMAIL".
  * Returns a default muted style for unknown methods.
  */
 export function getMethodColor(method: string): string {
+  if (method === "EMAIL") return EMAIL_COLOR;
   return METHOD_COLORS_MAP[method as HttpMethod] ?? DEFAULT_METHOD_COLOR;
+}
+
+export type KindFilter = "all" | "http" | "email";
+
+/** Whether a list item is a captured email (by method only for records without `kind`). */
+export function isEmailItem(item: { kind?: "http" | "email"; method: string }): boolean {
+  return item.kind ? item.kind === "email" : item.method === "EMAIL";
 }
 
 // Export for backwards compatibility, but prefer getMethodColor()

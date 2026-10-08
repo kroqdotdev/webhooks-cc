@@ -31,6 +31,9 @@ type SendMode = "manual" | TemplateProvider;
 
 interface SendWebhookDialogProps {
   slug: string;
+  /** Controlled open state, for opening from a menu; uses its own button otherwise. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 type TemplateSelectionByProvider = Record<TemplateProvider, string>;
@@ -60,9 +63,19 @@ function parseHeaders(raw: string): Record<string, string> {
   return out;
 }
 
-export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
+export function SendWebhookDialog({
+  slug,
+  open: controlledOpen,
+  onOpenChange,
+}: SendWebhookDialogProps) {
   const { session } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [mode, setMode] = useState<SendMode>("manual");
   const [templates, setTemplates] = useState<TemplateSelectionByProvider>(defaultTemplateSelection);
   const [method, setMethod] = useState<HttpMethod>("POST");
@@ -206,12 +219,14 @@ export function SendWebhookDialog({ slug }: SendWebhookDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
-      <DialogTrigger asChild>
-        <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
-          <Send className="h-3.5 w-3.5" />
-          Send
-        </button>
-      </DialogTrigger>
+      {!controlled && (
+        <DialogTrigger asChild>
+          <button className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5">
+            <Send className="h-3.5 w-3.5" />
+            Send
+          </button>
+        </DialogTrigger>
+      )}
       <DialogContent className="border-strong border-line shadow-raised max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-bold caps">Send Webhook</DialogTitle>

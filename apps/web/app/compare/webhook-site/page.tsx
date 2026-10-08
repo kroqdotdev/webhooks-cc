@@ -25,6 +25,11 @@ const FAQ_ITEMS = [
       "Yes. The TypeScript SDK provides a waitFor() method that polls for incoming requests with configurable matchers (method, headers, body fields). You can assert on webhook payloads directly inside Vitest or Jest test suites.",
   },
   {
+    question: "Does webhooks.cc capture emails like Webhook.site?",
+    answer:
+      "Yes. Every endpoint on a webhooks.cc account, free included, has an email address at mailhooks.cc. Each email shows the one-time code and main link it contains and its SPF, DKIM and DMARC results, and forwarding posts it to your server as signed JSON with retries. Webhook.site gives every URL an email address without an account; acting on incoming email there takes Custom Actions, which are part of its paid plans.",
+  },
+  {
     question: "Does Webhook.site have an SDK or MCP server?",
     answer:
       "Webhook.site offers an API but no first-party TypeScript SDK with test assertion helpers. It also does not provide an MCP server for AI coding agent integration.",
@@ -38,6 +43,12 @@ const ROWS = [
   ["Search & filtering", "Yes", "Yes"],
   ["Export (JSON / CSV)", "Yes", "Yes"],
   ["CLI tunnel to localhost", "Yes", "Yes"],
+  ["Email capture", "Yes, every account endpoint on every plan", "Yes, every URL"],
+  [
+    "Email forwarded as signed JSON, with retries",
+    "Yes, every plan",
+    "Through Custom Actions (paid plans)",
+  ],
   ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No first-party SDK"],
   ["CI test assertions (waitFor)", "Yes", "No"],
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
@@ -80,7 +91,7 @@ export default function CompareWebhookSitePage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Webhook.site</h1>
         <p className="text-lg text-muted-foreground mb-10">
@@ -149,6 +160,27 @@ export default function CompareWebhookSitePage() {
           </div>
 
           <div className="ui-card ui-card-static">
+            <h3 className="text-lg font-bold mb-2">Email capture and forwarding</h3>
+            <p className="text-muted-foreground">
+              Both tools give you an email address to send test mail to. Webhook.site hands one out
+              with every URL, no account needed. webhooks.cc gives one to every endpoint on an
+              account, free included, picks out the one-time code and main link, and shows the SPF,
+              DKIM and DMARC results. Its forwarding posts every email to your server as parsed
+              JSON, signed with Standard Webhooks headers and retried for about a day, on every
+              plan. On Webhook.site, acting on incoming email takes Custom Actions, which are part
+              of its paid plans. See{" "}
+              <Link href="/email-testing" className="font-semibold hover:text-primary">
+                email testing
+              </Link>{" "}
+              and{" "}
+              <Link href="/email-to-webhook" className="font-semibold hover:text-primary">
+                email to webhook
+              </Link>
+              .
+            </p>
+          </div>
+
+          <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Pricing model</h3>
             <p className="text-muted-foreground">
               Every individual feature is included on both free and paid tiers. Teams (invite
@@ -169,6 +201,8 @@ export default function CompareWebhookSitePage() {
               <li>Webhook assertions in CI pipelines (SDK waitFor)</li>
               <li>AI agents that create, inspect, and replay webhooks (MCP)</li>
               <li>A CLI tunnel purpose-built for webhook forwarding</li>
+              <li>Email capture with codes, links and sender checks</li>
+              <li>Inbound email forwarded to your server as signed JSON, on the free plan</li>
               <li>Every individual feature on both tiers, plus teams at $12/seat/mo</li>
               <li>Open-source codebase you can inspect and self-host</li>
             </ul>
@@ -178,6 +212,7 @@ export default function CompareWebhookSitePage() {
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>A well-established tool with a large existing user base</li>
               <li>Quick browser-only inspection with no install</li>
+              <li>An email address without creating an account</li>
               <li>Familiarity — your team already uses it</li>
             </ul>
           </div>

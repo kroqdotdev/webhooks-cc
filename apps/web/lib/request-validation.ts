@@ -377,6 +377,26 @@ export function validateResponseRules(
 
 const DEFAULT_MAX_SIZE = 64 * 1024; // 64KB
 
+/** RFC 5321 maximum address length; also bounds the regex below. */
+const MAX_EMAIL_LENGTH = 254;
+
+/**
+ * An ASCII address with a dotted domain (the WHATWG "valid email address"
+ * form, which GoTrue accepts too).
+ */
+const PLAIN_EMAIL_REGEX =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+
+/**
+ * Whether `value` is one plain email address and nothing else. Strict on
+ * purpose: the mailer parses looser strings such as `x<a@b.c>` or
+ * `a@b.c,d.e` as other recipients, so a check on the string would not be a
+ * check on where mail goes.
+ */
+export function isPlainEmailAddress(value: string): boolean {
+  return value.length <= MAX_EMAIL_LENGTH && PLAIN_EMAIL_REGEX.test(value);
+}
+
 /**
  * Parse a JSON request body with size limit enforcement.
  * Checks Content-Length header first (fast path), then actual byte size.

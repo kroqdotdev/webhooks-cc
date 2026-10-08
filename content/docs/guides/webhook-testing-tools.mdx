@@ -3,7 +3,7 @@ title: "Webhook Testing Tools Compared"
 description: "Side-by-side comparison of webhook testing tools: webhooks.cc, ngrok, Svix, RequestBin, Hookdeck, Beeceptor, and Webhook.site. Features, pricing, and use cases to find the right fit for your workflow."
 section: guides
 order: 8
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-08
 schema: faq
 keywords:
   [
@@ -42,7 +42,7 @@ Webhook-specific development and testing platform.
 | Feature       | Detail                                                           |
 | ------------- | ---------------------------------------------------------------- |
 | **Focus**     | Inbound webhook capture, signing, and CI/CD testing              |
-| **Protocols** | HTTP only                                                        |
+| **Protocols** | HTTP, email                                                      |
 | **SDK**       | TypeScript (`@webhooks-cc/sdk`)                                  |
 | **CLI**       | Go binary (`whk`)                                                |
 | **Free tier** | 50 req/day, every individual feature, endpoints never expire     |
@@ -56,6 +56,8 @@ Webhook-specific development and testing platform.
 - MCP server for AI agent integration
 - Sub-1ms capture latency (Rust receiver)
 - Request replay to any URL
+- [Email capture](/docs/email-capture) on every account endpoint, with SPF, DKIM and DMARC results and one-time codes and links picked out
+- [Email forwarding](/docs/forwarding): every captured email posted to your server as signed JSON, retried for about a day
 
 **What it lacks:**
 

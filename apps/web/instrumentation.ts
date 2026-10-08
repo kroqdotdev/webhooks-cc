@@ -21,6 +21,12 @@ export async function register() {
       const { startQuotaEmailPoller } = await import("./lib/quota-emails");
       startQuotaEmailPoller();
     }
+
+    // Send forwarded email (lib/forwarding/worker.ts); see EMAIL_FORWARDING_WORKER.
+    if (serverEnv().EMAIL_FORWARDING_WORKER) {
+      const { startForwardingWorker } = await import("./lib/forwarding/worker");
+      startForwardingWorker();
+    }
   }
 }
 
