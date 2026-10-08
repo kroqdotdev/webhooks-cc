@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.34.0";
+export const APP_VERSION = "0.34.1";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.34.1",
+    date: "2026-10-08",
+    title: "Email Pages and API Reference",
+    track: "web",
+    items: [
+      "New pages on email testing and on turning inbound email into a webhook, linked from the home page",
+      "The REST API reference and the OpenAPI spec cover emails, the forwarding settings, the signing secret, test deliveries and the delivery log",
+      "The Webhook.site comparison covers email capture and forwarding, and the dashboard docs list the Forwarding section of Settings",
+    ],
+  },
   {
     version: "0.34.0",
     date: "2026-10-08",

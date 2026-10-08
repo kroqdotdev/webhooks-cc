@@ -1,9 +1,9 @@
 ---
 title: "REST API"
-description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests, and stream webhooks."
+description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure email forwarding, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -20,6 +20,8 @@ The [TypeScript SDK](/docs/sdk) wraps this API, but you can call it directly fro
 
 **Webhook receiver URL:** `https://go.webhooks.cc`
 
+**Email address:** `{slug}@mailhooks.cc` (see [Email capture](/docs/email-capture))
+
 ## Authentication
 
 Authenticate by passing your API key in the `Authorization` header:
@@ -28,7 +30,7 @@ Authenticate by passing your API key in the `Authorization` header:
 Authorization: Bearer whcc_...
 ```
 
-API keys are generated from the [account page](/account). Keys use the `whcc_` prefix and are stored as SHA-256 hashes — the raw key is shown only once at creation time.
+API keys are generated from the [account page](/account). Keys use the `whcc_` prefix and are stored as SHA-256 hashes; the raw key is shown only once at creation time.
 
 <Callout type="warning">
   Some sensitive operations (account deletion, API key management) require a Supabase session token
@@ -54,9 +56,24 @@ curl -X POST https://webhooks.cc/api/endpoints \
   "slug": "abc123",
   "name": "my-endpoint",
   "url": "https://go.webhooks.cc/w/abc123",
-  "createdAt": 1234567890000
+  "createdAt": 1234567890000,
+  "emailAddress": "abc123@mailhooks.cc",
+  "showEmailExtracts": true,
+  "forwardEnabled": false,
+  "forwardUrl": null,
+  "hasForwardSecret": false
 }
 ```
+
+Email fields on every endpoint:
+
+| Field               | Description                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `emailAddress`      | The endpoint's [email address](/docs/email-capture). `null` for guest endpoints, which receive no email.            |
+| `showEmailExtracts` | Whether codes and links found in emails are shown in the dashboard and included in forwarded JSON. Default `true`. |
+| `forwardEnabled`    | Whether captured emails are [forwarded](/docs/forwarding) to `forwardUrl`.                                          |
+| `forwardUrl`        | Where emails are forwarded. Only returned to the endpoint's owner.                                                  |
+| `hasForwardSecret`  | Whether a forwarding secret exists. The secret itself is never included.                                            |
 
 ### List endpoints
 
@@ -65,7 +82,7 @@ curl https://webhooks.cc/api/endpoints \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns an array of endpoint objects.
+Returns `{ "owned": [...], "shared": [...] }`: the endpoints you own, and the endpoints shared with you through a team. Shared endpoints leave out `notificationUrl` and `forwardUrl`.
 
 ### Get endpoint
 
@@ -76,7 +93,7 @@ curl https://webhooks.cc/api/endpoints/abc123 \
 
 ### Update endpoint
 
-Update an endpoint's name, mock response, or notification webhook.
+Update an endpoint's name, mock response, notification webhook, or email settings. Only the fields you send change.
 
 ```bash
 curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
@@ -86,6 +103,10 @@ curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
 ```
 
 Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications. The `notificationUrl` must be a valid `http` or `https` URL, max 2048 characters.
+
+Set `"showEmailExtracts": false` to stop picking out codes and links in emails. `forwardEnabled` and `forwardUrl` are covered under [Forwarding](#forwarding).
+
+Team members can change `name`, `mockResponse`, `responseRules`, and `showEmailExtracts` on shared endpoints. Notification, signing, and forwarding settings are owner only and return `403` for anyone else.
 
 ### Delete endpoint
 
@@ -182,6 +203,137 @@ curl -X POST https://webhooks.cc/api/send-test \
   -d '{"slug": "abc123", "method": "POST", "headers": {"content-type": "application/json"}, "body": "{\"event\": \"test\"}"}'
 ```
 
+## Send test email
+
+Deliver a sample email (with a one-time code and a link) to one of your endpoints. It is captured and counted like any other email, but it does not travel over SMTP, so no sender checks run on it.
+
+```bash
+curl -X POST https://webhooks.cc/api/send-test-email \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "abc123"}'
+```
+
+Returns `{ "status": "captured", "requestId": "..." }`. Guest endpoints return `400`, an endpoint whose quota is used up returns `409`. Rate limited to 10 requests per minute.
+
+## Forwarding
+
+[Forwarding](/docs/forwarding) posts every email an endpoint captures to your URL as JSON, signed with Standard Webhooks headers and retried for about a day until your server answers `2xx`. The payload and how to verify its signature are described in [Email forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
+
+### Turn forwarding on
+
+```bash
+curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"forwardUrl": "https://example.com/hooks/email", "forwardEnabled": true}'
+```
+
+`"forwardEnabled": true` needs a `forwardUrl`, sent in the same request or saved before. The URL must be `https` on a public host name (no IP addresses or `localhost`), max 2048 characters. Saving the first URL creates the endpoint's signing secret, so you can set up your handler and send a test delivery before turning forwarding on. Send `"forwardEnabled": false` to stop; deliveries still waiting are marked failed. Send `"forwardUrl": null` to remove the URL once forwarding is off.
+
+### Get the signing secret
+
+```bash
+curl https://webhooks.cc/api/endpoints/abc123/forwarding \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "secret": "whsec_..." }`, or `404` before a URL has been saved.
+
+### Rotate the signing secret
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/forwarding \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "secret": "whsec_..." }` with the new secret. Every delivery from now on, retries included, is signed with it.
+
+### Send a test delivery
+
+Posts the endpoint's newest email (or a sample marked `"test": true`, if none has arrived yet) to the saved URL once and reports what your server answered. It works with forwarding on or off, and nothing is retried or added to the delivery history.
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/forwarding/test \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Response:**
+
+```json
+{
+  "status": 200,
+  "durationMs": 182,
+  "excerpt": "ok",
+  "error": null,
+  "delivered": true,
+  "sample": false
+}
+```
+
+`delivered` is `true` when your server answered `2xx`. `error` says why no answer arrived (a timeout, a refused connection, a TLS problem), and `excerpt` is the start of the response body. Returns `400` when no URL is saved. Rate limited to 10 requests per minute.
+
+### List recent deliveries
+
+```bash
+curl "https://webhooks.cc/api/endpoints/abc123/deliveries?limit=5" \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns the endpoint's latest deliveries, newest first (`limit` from 1 to 20, default 5). Each has `id`, `requestId`, `status` (`pending`, `succeeded` or `failed`), `attempts`, `createdAt`, `lastStatus`, `lastError`, and the email's `subject`.
+
+### List deliveries of an email
+
+```bash
+curl https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
+  -H "Authorization: Bearer whcc_..."
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": "...",
+    "requestId": "REQUEST_ID",
+    "status": "pending",
+    "attempts": 2,
+    "createdAt": 1791450602000,
+    "finishedAt": null,
+    "nextAttemptAt": 1791450752000,
+    "lastStatus": 500,
+    "lastError": "The URL answered 500.",
+    "attemptLog": [
+      {
+        "attemptedAt": 1791450632000,
+        "status": 500,
+        "durationMs": 95,
+        "error": "The URL answered 500.",
+        "responseExcerpt": "Internal Server Error"
+      },
+      {
+        "attemptedAt": 1791450602000,
+        "status": 500,
+        "durationMs": 104,
+        "error": "The URL answered 500.",
+        "responseExcerpt": "Internal Server Error"
+      }
+    ]
+  }
+]
+```
+
+Lists up to 20 deliveries of the email, newest first, each with every try (newest first). `nextAttemptAt` is set while a delivery is pending. Anyone who can read the email can list its deliveries, team members included. A request that was never forwarded returns `[]`.
+
+### Redeliver an email
+
+```bash
+curl -X POST https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Queues another delivery, sent with the endpoint's current URL and secret, and returns `{ "id": "..." }`. Owner only. Returns `409` when forwarding is off. Rate limited to 30 requests per minute.
+
 ## Search
 
 Search captured requests across endpoints with optional filters.
@@ -195,14 +347,15 @@ curl "https://webhooks.cc/api/search/requests?slug=abc123&method=POST&q=stripe&l
 
 | Param    | Type     | Description                        |
 | -------- | -------- | ---------------------------------- |
-| `slug`   | `string` | Filter by endpoint slug            |
-| `method` | `string` | Filter by HTTP method              |
-| `q`      | `string` | Free-text search                   |
-| `from`   | `string` | Start time (duration or timestamp) |
-| `to`     | `string` | End time (duration or timestamp)   |
-| `limit`  | `number` | Max results (default: 50)          |
-| `offset` | `number` | Pagination offset                  |
-| `order`  | `string` | `"asc"` or `"desc"` (default)      |
+| `slug`   | `string` | Filter by endpoint slug                       |
+| `method` | `string` | Filter by HTTP method (`EMAIL` for emails)    |
+| `kind`   | `string` | `http` or `email`                             |
+| `q`      | `string` | Free-text search                              |
+| `from`   | `number` | Start time (Unix timestamp in ms)             |
+| `to`     | `number` | End time (Unix timestamp in ms)               |
+| `limit`  | `number` | Max results (default: 50)                     |
+| `offset` | `number` | Pagination offset                             |
+| `order`  | `string` | `"asc"` or `"desc"` (default)                 |
 
 ### Search count
 
@@ -233,7 +386,9 @@ data: {"id":"...","method":"POST","path":"/","headers":{...},"body":"...","recei
 
 ```
 
-The server sends keepalive pings (`:ping`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes — reconnect when the stream closes.
+The server sends keepalive pings (`:ping`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes; reconnect when the stream closes.
+
+Emails arrive as `request` events too, with `"method": "EMAIL"` and the recipient address as `path`. Stream messages do not include the parsed `email`; fetch the request by id for it.
 
 ## Usage
 
@@ -378,7 +533,7 @@ Returns `204 No Content` on success.
 
 ### Leave team
 
-Leave a team you are a member of. Owners cannot leave their own team — delete it instead.
+Leave a team you are a member of. Owners cannot leave their own team; delete it instead.
 
 ```bash
 curl -X POST https://webhooks.cc/api/teams/TEAM_ID/leave \
@@ -416,10 +571,10 @@ curl -X POST https://webhooks.cc/api/invites/INVITE_ID/decline \
 
 Some routes require a Supabase session token (from browser login) instead of an API key. These return `403` when called with an API key.
 
-- `GET /api/api-keys` — list your API keys
-- `POST /api/api-keys` — create a new API key
-- `DELETE /api/api-keys?id=...` — delete an API key
-- `DELETE /api/account` — delete your account and all data
+- `GET /api/api-keys`: list your API keys
+- `POST /api/api-keys`: create a new API key
+- `DELETE /api/api-keys?id=...`: delete an API key
+- `DELETE /api/account`: delete your account and all data
 
 These routes are designed for the web dashboard, not programmatic access.
 
@@ -433,10 +588,12 @@ All errors return a JSON body with an `error` field:
 
 | Status | Meaning                                                 |
 | ------ | ------------------------------------------------------- |
-| `400`  | Validation error — check request body and parameters    |
+| `400`  | Validation error: check request body and parameters     |
 | `401`  | Invalid or missing API key                              |
+| `403`  | Not allowed, for example an owner-only setting          |
 | `404`  | Resource not found                                      |
-| `429`  | Rate limited — check `Retry-After` header for wait time |
+| `409`  | Conflict, for example redelivering with forwarding off  |
+| `429`  | Rate limited: check `Retry-After` header for wait time  |
 | `500`  | Server error                                            |
 
 ### Rate limit headers
@@ -477,7 +634,7 @@ requests.post(f"{BASE}/api/send-test", headers=HEADERS, json={
 # List captured requests
 captured = requests.get(f"{BASE}/api/endpoints/{slug}/requests", headers=HEADERS).json()
 for req in captured:
-    print(f"{req['method']} {req['path']} — {req['receivedAt']}")
+    print(f"{req['method']} {req['path']} {req['receivedAt']}")
 ```
 
 ### Go
@@ -570,7 +727,7 @@ api_request(:post, "/api/send-test", {
 # List captured requests
 requests = api_request(:get, "/api/endpoints/#{slug}/requests")
 requests.each do |req|
-  puts "#{req['method']} #{req['path']} — #{req['receivedAt']}"
+  puts "#{req['method']} #{req['path']} #{req['receivedAt']}"
 end
 ```
 
@@ -639,6 +796,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   href="/docs/sdk/api"
   title="TypeScript SDK reference"
   description="Full method reference for the @webhooks-cc/sdk package."
+/>
+
+<LinkCard
+  href="/docs/forwarding"
+  title="Email forwarding"
+  description="The forwarded JSON payload, signature verification, and the retry schedule."
 />
 
 <LinkCard
