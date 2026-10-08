@@ -171,7 +171,7 @@ async function getRequests(endpointId: string): Promise<RequestRow[]> {
 async function getDailyStats(endpointId: string) {
   const { data, error } = await admin
     .from("endpoint_daily_stats")
-    .select("captured, team_billed, quota_rejected, bytes")
+    .select("captured, team_billed, quota_rejected, bytes, emails")
     .eq("endpoint_id", endpointId);
   if (error) throw error;
   const rows = (data ?? []) as {
@@ -179,6 +179,7 @@ async function getDailyStats(endpointId: string) {
     team_billed: number;
     quota_rejected: number;
     bytes: number;
+    emails: number;
   }[];
   const sum = (key: keyof (typeof rows)[number]) =>
     rows.reduce((total, row) => total + Number(row[key]), 0);
@@ -188,6 +189,7 @@ async function getDailyStats(endpointId: string) {
     teamBilled: sum("team_billed"),
     quotaRejected: sum("quota_rejected"),
     bytes: sum("bytes"),
+    emails: sum("emails"),
   };
 }
 
@@ -295,6 +297,7 @@ describe("capture_webhook with kind = 'email'", () => {
       captured: 1,
       teamBilled: 0,
       quotaRejected: 0,
+      emails: 1,
     });
   });
 
@@ -310,6 +313,8 @@ describe("capture_webhook with kind = 'email'", () => {
     expect(await getEndpointCount(endpoint.id)).toBe(3);
     const kinds = (await getRequests(endpoint.id)).map((row) => row.kind).sort();
     expect(kinds).toEqual(["email", "http", "http"]);
+    // The daily rollup counts all three and singles out the email for usage.
+    expect(await getDailyStats(endpoint.id)).toMatchObject({ captured: 3, emails: 1 });
   });
 
   it("keeps the 10-argument HTTP call working with kind 'http' and no email", async () => {

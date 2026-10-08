@@ -253,6 +253,7 @@ export interface Database {
           signing_provider: string | null;
           signing_secret_encrypted: string | null;
           signing_header: string | null;
+          show_email_extracts: boolean;
         };
         Insert: {
           id?: string;
@@ -269,6 +270,7 @@ export interface Database {
           signing_provider?: string | null;
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
+          show_email_extracts?: boolean;
         };
         Update: {
           id?: string;
@@ -285,6 +287,7 @@ export interface Database {
           signing_provider?: string | null;
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
+          show_email_extracts?: boolean;
         };
         Relationships: [];
       };
@@ -593,6 +596,7 @@ export interface Database {
           team_billed: number;
           quota_rejected: number;
           bytes: number;
+          emails: number;
         };
         Insert: Record<string, never>;
         Update: Record<string, never>;
@@ -666,6 +670,8 @@ export interface Database {
           ip: string;
           size: number;
           received_at: number;
+          kind: "http" | "email";
+          email: Json | null;
         }>;
       };
       search_requests_count: {

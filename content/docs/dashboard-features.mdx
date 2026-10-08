@@ -3,7 +3,7 @@ title: "Dashboard Features"
 description: "Complete guide to every feature in the webhooks.cc dashboard — keyboard shortcuts, pinning, notes, request comparison, timeline view, and more."
 section: dashboard
 order: 5
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-07
 schema: none
 keywords:
   [
@@ -23,8 +23,8 @@ seo:
 The dashboard packs a lot of power into a simple split-pane layout. This page covers every feature beyond the basics covered in [Requests](/docs/requests) and [Endpoints](/docs/endpoints).
 
 <Callout type="tip">
-  Click the **Guide** button in the dashboard URL bar for an interactive reference you can use
-  without leaving the dashboard.
+  Open **Setup** (or **Guide**) next to the endpoint name and pick **Dashboard guide** for an
+  interactive reference you can use without leaving the dashboard.
 </Callout>
 
 ## Keyboard shortcuts
@@ -160,7 +160,7 @@ In the **Body** tab, the **Copy** dropdown offers:
 
 ### Export
 
-The **Export** dropdown in the URL bar lets you download all visible requests as JSON or CSV.
+The **Export** menu next to the endpoint name lets you download all visible requests as JSON or CSV.
 
 ## Replay & send
 
@@ -170,18 +170,20 @@ Click **Replay** (or press `r`) to send the captured request to any URL. The req
 
 ### Send test webhook
 
-Click **Send** in the URL bar to fire a test webhook at your endpoint. Choose from provider templates (Stripe, GitHub, Shopify, Twilio, Slack, and more) with realistic payloads and mock signatures.
+Open **Send** next to the endpoint name and pick **Send test request** to fire a test webhook at your endpoint. Choose from provider templates (Stripe, GitHub, Shopify, Twilio, Slack, and more) with realistic payloads and mock signatures. **Send test email** delivers a sample email instead; see [Email Capture](/docs/email-capture).
 
 ## Endpoint settings
 
-Click the gear icon in the URL bar to open endpoint settings:
+Open the **Settings** tab under the endpoint name. Each section has its own **Save changes** button:
 
-- **Rename** your endpoint for easier identification
-- **Mock response** — configure a custom status code, response body, and headers returned to the webhook sender
-- **Notification webhook** — get alerted in Slack, Discord, or any URL when a request arrives. See the [notification webhooks guide](/docs/notification-webhooks) for setup and payload details
-- **Delete** the endpoint
+- **Receiving**: rename the endpoint, copy its HTTP URL and email address, and choose whether codes and links found in emails are shown
+- **HTTP responses**: the status code, body and delay returned to webhook senders, plus [response rules](/docs/mock-responses#conditional-response-rules)
+- **Notifications**: get alerted in Slack, Discord, or any URL when a request arrives. See the [notification webhooks guide](/docs/notification-webhooks) for setup and payload details
+- **Team sharing**: share the endpoint with your teams
+- **Signature verification**: verify every incoming webhook against a signing secret (below)
+- **Delete endpoint**: delete the endpoint and everything it captured
 
-Mock response and notification changes take effect immediately — there is no caching layer.
+Changes take effect immediately; there is no caching layer.
 
 ## Signature verification
 
@@ -202,7 +204,7 @@ The result panel shows valid (green), invalid (red with expected vs. received si
 
 For automatic verification on every request, configure a signing secret in endpoint settings:
 
-1. Click the gear icon and find the **Signature Verification** section
+1. Open the **Settings** tab and find the **Signature verification** section
 2. Select your provider and paste the signing secret
 3. The secret is encrypted at rest (AES-256-GCM) and never visible after saving
 4. Every incoming request is verified automatically by the receiver

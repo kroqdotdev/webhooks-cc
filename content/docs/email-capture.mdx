@@ -1,0 +1,137 @@
+---
+title: "Email Capture"
+description: "Every endpoint on an account also receives email at its own mailhooks.cc address. Preview the HTML safely, copy one-time codes and links, check SPF, DKIM and DMARC, and download the original message."
+section: dashboard
+order: 4
+lastUpdated: 2026-10-07
+schema: none
+keywords:
+  [
+    "email testing",
+    "inbound email",
+    "test email address",
+    "email capture",
+    "verification code email",
+    "signup email testing",
+    "SPF DKIM DMARC",
+  ]
+seo:
+  ogTitle: "Email Capture for Testing Signup and Login Flows"
+  ogDescription: "Every webhooks.cc endpoint on an account also receives email. Preview the HTML safely, copy one-time codes and links, and check SPF, DKIM and DMARC."
+---
+
+Every endpoint that belongs to an account has an email address next to its HTTP URL. Mail sent to it lands in the same request list as your webhooks, so a signup flow that sends a webhook and a confirmation email can be checked in one place.
+
+## The address
+
+The address is the endpoint's slug at `mailhooks.cc`:
+
+```text
+my-endpoint@mailhooks.cc
+```
+
+Copy it from the endpoint bar above the request list, or from **Settings**, under **Receiving**.
+
+Add a tag after a plus sign to tell test runs or flows apart. Tagged mail lands on the same endpoint, and the tag is shown on the email in the list and in the detail view:
+
+```text
+my-endpoint+signup@mailhooks.cc
+my-endpoint+password-reset@mailhooks.cc
+```
+
+The slug is not case sensitive. The tag is kept exactly as the sender wrote it.
+
+### Which endpoints receive email
+
+Endpoints on an account do, on every plan, including endpoints shared with a team. Endpoints created without an account (guest endpoints on the landing page) receive HTTP requests only, because anyone who knows a guest slug can read what it captured. Mail to a guest endpoint is refused.
+
+## Send a test email
+
+Open **Send** in the endpoint bar and pick **Send test email**. A sample message with a code and a link is delivered straight to the endpoint, so you can see every part of the email view before wiring up a real sender. It counts as one request. It does not travel over SMTP, so the sender checks (SPF, DKIM, DMARC) do not apply to it, and the dashboard says so.
+
+## In the dashboard
+
+Emails show up in the request list with an **EMAIL** badge, their subject, the sender, the tag, the number of attachments, and the size. Above the list, switch between **All**, **HTTP** and **Email**.
+
+Selecting an email opens its own view:
+
+- **Envelope**: subject, sender, recipients (with the tag highlighted), when it arrived and its size.
+- **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS.
+- **Found in this email**: the one-time code and the main link, each with a copy button (see below).
+- **Tabs**: Preview (when the email has HTML), Text, Headers, Attachments (when there are any), Authentication, and Raw.
+- **Download .eml**: saves the original message, when it was stored in full.
+
+Notes, pinning, compare, export, search, and live updates work for emails the same way as for HTTP requests.
+
+### The preview
+
+The HTML is shown in a sandboxed frame on a white sheet, the way a mail client would show it:
+
+- No scripts run, and forms cannot be submitted.
+- Links in the preview do not open. Copy them from **Found in this email** or the **Text** tab.
+- Remote images are blocked until you click **Load images**, because loading them tells the sender that the email was opened, and from which IP address. Images embedded in the message show right away.
+- Switch between a desktop and a mobile width to check a responsive layout.
+
+### Codes and links
+
+For signup and login tests, the code or link is usually all you need. The dashboard picks out:
+
+- **Codes**: 4 to 8 digits (also split in two, like `123 456`) or a short mix of letters and digits, but only when a word such as "code", "verification", "PIN" or "sign in" sits next to it. Order numbers, prices, years and phone numbers stay out.
+- **Links**: links that look like the thing the email asks you to click (confirm, verify, reset, sign in, accept an invite) come first. Unsubscribe, preference, tracking and social links are left out.
+
+This runs in your browser when you open an email; nothing extra is stored. To hide it for an endpoint, for example one that receives mail you would rather not have scanned, open **Settings**, then **Receiving**, and turn off **Show codes and links found in emails**.
+
+### Authentication
+
+The **Authentication** tab explains each check our mail server ran when the message arrived:
+
+| Check   | What it tells you                                                                |
+| ------- | -------------------------------------------------------------------------------- |
+| SPF     | Whether the sending server is allowed to send for the envelope sender's domain.  |
+| DKIM    | Whether the message carries a valid signature, and for which domain.             |
+| DMARC   | Whether SPF or DKIM passed for the domain in the From address, and its policy.   |
+| Reverse DNS | Whether the sending server's IP address has a matching host name. |
+| TLS     | Whether the message arrived over an encrypted connection, and with which cipher. |
+
+Failing a check does not stop a message from being captured. The results are there so you can see what a real inbox provider would think of your mail before you ship it.
+
+## What is stored
+
+| Part                       | Stored                                                              |
+| -------------------------- | ------------------------------------------------------------------- |
+| Subject, addresses, dates  | Yes                                                                 |
+| Text and HTML parts        | Up to 256 KB each; longer parts are cut and marked                  |
+| Headers                    | All of them, as they arrived                                        |
+| Attachments                | Name, type and size; the contents are not kept                      |
+| The original message       | When it is 1 MB or smaller; larger messages keep their headers only |
+| Sender check results, TLS  | Yes                                                                 |
+
+Emails follow the same [retention](/docs/plans-limits#data-retention) as HTTP requests on your plan.
+
+## Quota and limits
+
+An email counts as one request against the same quota as your webhooks, once per endpoint it is addressed to. The account page shows how much of your usage was email.
+
+Messages are accepted or refused while the sender is still connected, so a sender always learns what happened:
+
+| Situation                               | Reply                                               |
+| --------------------------------------- | --------------------------------------------------- |
+| Captured                                | `250` Message captured                              |
+| No endpoint with that slug              | `550 5.1.1` Mailbox does not exist                  |
+| Guest endpoint                          | `550 5.7.1` Email capture needs a webhooks.cc account endpoint |
+| Request quota used up                   | `552 5.2.2` Mailbox full                            |
+| Message larger than 10 MB               | `552 5.3.4` Message too big                         |
+| More than 20 recipients in one message  | `452` for the extra recipients                      |
+| Temporary problem on our side           | `451`, and the sender tries again later             |
+
+A message the sender retries after a temporary failure is captured once, not once per attempt. Sending the same message again on purpose captures it again.
+
+`mailhooks.cc` only receives. It never sends mail, replies, or bounces of its own.
+
+## Notifications
+
+A [notification URL](/docs/notification-webhooks) fires for emails too. The payload has `"method": "EMAIL"`, the recipient address as `path`, and the subject followed by the start of the text as `preview`.
+
+## In the API
+
+The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`.

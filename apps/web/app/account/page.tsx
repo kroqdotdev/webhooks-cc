@@ -105,11 +105,14 @@ const USAGE_REFRESH_INTERVAL_MS = 30_000;
 export default function AccountPage() {
   const { user: authUser, session, isLoading: authLoading } = useAuth();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
+  /** Emails among this period's requests (from /api/usage); null until known. */
+  const [periodEmails, setPeriodEmails] = useState<number | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
   const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
 
+  const usageToken = session?.access_token;
   const refreshProfile = useCallback(async () => {
     if (!authUser) {
       setProfile(null);
@@ -131,6 +134,13 @@ export default function AccountPage() {
     setProfile(data ?? null);
     setProfileLoading(false);
 
+    if (usageToken) {
+      void fetch("/api/usage", { headers: { Authorization: `Bearer ${usageToken}` } })
+        .then((res) => (res.ok ? (res.json() as Promise<{ emails?: number }>) : null))
+        .then((usage) => setPeriodEmails(typeof usage?.emails === "number" ? usage.emails : null))
+        .catch(() => setPeriodEmails(null));
+    }
+
     if (data) {
       identifyUser(authUser.id, {
         email: authUser.email ?? undefined,
@@ -138,7 +148,7 @@ export default function AccountPage() {
         request_limit: data.request_limit,
       });
     }
-  }, [authUser]);
+  }, [authUser, usageToken]);
 
   useEffect(() => {
     if (!authUser) {
@@ -245,6 +255,7 @@ export default function AccountPage() {
       ? Math.min((displayedRequestsUsed / profile.request_limit) * 100, 100)
       : 0;
   const isNearLimit = usagePercent > 80;
+  const emailsShown = Math.min(periodEmails ?? 0, displayedRequestsUsed);
   const accessToken = session?.access_token ?? null;
 
   return (
@@ -327,11 +338,37 @@ export default function AccountPage() {
               aria-valuemax={100}
               aria-label={`Usage: ${displayedRequestsUsed.toLocaleString()} of ${profile.request_limit.toLocaleString()} requests`}
             >
-              <div
-                className={`h-full transition-all ${isNearLimit ? "bg-destructive" : "bg-primary"}`}
-                style={{ width: `${usagePercent}%` }}
-              />
+              <div className="h-full flex transition-all" style={{ width: `${usagePercent}%` }}>
+                <div
+                  className={`h-full ${isNearLimit ? "bg-destructive" : "bg-primary"}`}
+                  style={{ flexGrow: Math.max(displayedRequestsUsed - emailsShown, 0) }}
+                />
+                {emailsShown > 0 && (
+                  <div className="h-full bg-kind-email" style={{ flexGrow: emailsShown }} />
+                )}
+              </div>
             </div>
+
+            {emailsShown > 0 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-sm ${isNearLimit ? "bg-destructive" : "bg-primary"}`}
+                  />
+                  HTTP{" "}
+                  <span className="font-medium text-foreground">
+                    {(displayedRequestsUsed - emailsShown).toLocaleString()}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 rounded-sm bg-kind-email" />
+                  Email{" "}
+                  <span className="font-medium text-foreground">
+                    {emailsShown.toLocaleString()}
+                  </span>
+                </span>
+              </div>
+            )}
 
             {profile.period_end && (
               <p className="text-xs text-muted-foreground">

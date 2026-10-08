@@ -26,6 +26,7 @@ import {
   Code2,
   ListOrdered,
   ShieldCheck,
+  Mail,
 } from "lucide-react";
 import Link from "next/link";
 import { WEB_VERIFICATION_PROVIDER_OPTIONS } from "@/lib/provider-catalog";
@@ -57,6 +58,46 @@ const SECTIONS: Section[] = [
           Requests appear instantly via real-time subscription. Use <Kbd>Live</Kbd> /{" "}
           <Kbd>Paused</Kbd> mode to control whether new requests auto-select.
         </p>
+      </div>
+    ),
+  },
+  {
+    id: "email",
+    title: "Email",
+    icon: <Mail className="h-3.5 w-3.5" />,
+    content: (
+      <div className="space-y-3">
+        <p>
+          Every endpoint on an account also has an email address, shown next to its HTTP URL. Mail
+          sent there lands in the same list as HTTP requests and counts against the same quota.
+        </p>
+        <ul className="space-y-1.5 text-sm">
+          <li>
+            Add a tag after a plus sign, like <code className="text-xs">slug+signup@…</code>, to
+            tell test runs apart. The tag is shown on the email.
+          </li>
+          <li>
+            Switch the list between <strong>All</strong>, <strong>HTTP</strong> and{" "}
+            <strong>Email</strong> above the requests
+          </li>
+          <li>
+            <strong>Preview</strong> shows the HTML in a sandbox: no scripts run, and remote images
+            only load when you ask, since they tell the sender the email was opened
+          </li>
+          <li>
+            Codes and links found in the email are shown above the tabs, ready to copy. Turn this
+            off per endpoint in Settings.
+          </li>
+          <li>
+            <strong>Authentication</strong> shows the SPF, DKIM and DMARC results;{" "}
+            <strong>Raw</strong> has the original message, and Download .eml saves it
+          </li>
+          <li>
+            <strong>Send</strong> then <strong>Send test email</strong> delivers a sample message to
+            the endpoint
+          </li>
+          <li>Endpoints created without an account receive HTTP requests only</li>
+        </ul>
       </div>
     ),
   },
@@ -239,7 +280,8 @@ const SECTIONS: Section[] = [
             interface, or CSV
           </li>
           <li>
-            <strong>Export</strong> dropdown in the URL bar — export all requests as JSON or CSV
+            <strong>Export</strong> menu next to the endpoint name: export all requests as JSON or
+            CSV
           </li>
           <li>
             Press <Kbd>c</Kbd> to quickly copy the cURL command
@@ -260,8 +302,8 @@ const SECTIONS: Section[] = [
             <strong>Replay</strong> button — sends the captured request to any URL from your browser
           </li>
           <li>
-            <strong>Send</strong> button in the URL bar — send test webhooks with provider templates
-            (Stripe, GitHub, etc.)
+            <strong>Send</strong> menu next to the endpoint name: a test webhook with provider
+            templates (Stripe, GitHub and more), or a test email
           </li>
           <li>
             Press <Kbd>r</Kbd> to open replay, <Kbd>n</Kbd> to create a new endpoint
@@ -276,35 +318,33 @@ const SECTIONS: Section[] = [
     icon: <Settings className="h-3.5 w-3.5" />,
     content: (
       <div className="space-y-3">
-        <p>Configure how your endpoint responds to incoming webhooks.</p>
+        <p>
+          Open the <strong>Settings</strong> tab under the endpoint name. Each section saves on its
+          own.
+        </p>
         <ul className="space-y-1.5 text-sm">
           <li>
-            Click the <Settings className="inline h-3 w-3" /> gear icon in the URL bar
+            <strong>Receiving</strong>: rename the endpoint, copy its HTTP URL and email address,
+            and choose whether codes and links found in emails are shown
           </li>
           <li>
-            <strong>Response rules</strong> — define conditional responses based on method, path,
-            headers, or body content (see next section)
+            <strong>HTTP responses</strong>: the status code, body and delay senders get back, plus
+            response rules that answer differently by method, path, headers or body (see Response
+            Rules)
           </li>
           <li>
-            <strong>Default mock response</strong> — set a status code, headers, body, and delay
-            returned when no rule matches
+            <strong>Notifications</strong>: POST a JSON summary to Slack, Discord, or any URL when a
+            request arrives
           </li>
           <li>
-            <strong>Notification webhook</strong> — POST a JSON summary to Slack, Discord, or any
-            URL when a request arrives
+            <strong>Team sharing</strong>: share the endpoint with your teams (needs an active Teams
+            subscription)
           </li>
           <li>
-            <strong>Signature verification</strong> — configure a provider and signing secret to
-            automatically verify every incoming webhook (see next section)
+            <strong>Signature verification</strong>: pick a provider and signing secret to verify
+            every incoming webhook (see Signature Verification)
           </li>
-          <li>
-            <strong>Team sharing</strong> — share the endpoint with your teams (requires an active
-            Teams subscription)
-          </li>
-          <li>
-            <strong>Rename</strong> your endpoint for easier identification
-          </li>
-          <li>Changes take effect immediately (no caching layer)</li>
+          <li>Changes take effect immediately</li>
         </ul>
       </div>
     ),
@@ -356,7 +396,8 @@ const SECTIONS: Section[] = [
         </p>
         <ul className="space-y-1.5 text-sm">
           <li>
-            Open endpoint settings and click <strong>Add Rule</strong>
+            Open the <strong>Settings</strong> tab and click <strong>Add Rule</strong> under HTTP
+            responses
           </li>
           <li>
             Each rule has <strong>conditions</strong> (method, path, header, body content, JSON
@@ -373,10 +414,7 @@ const SECTIONS: Section[] = [
           <li>
             <strong>Disable</strong> a rule temporarily with the checkbox toggle
           </li>
-          <li>
-            The <strong>Default Response</strong> section below rules is returned when no rule
-            matches
-          </li>
+          <li>When no rule matches, the status code and body set above the rules are sent</li>
         </ul>
         <p className="text-xs text-muted-foreground">
           Example: Route Stripe webhooks to a 201 response and GitHub webhooks to a 200 response,
@@ -407,7 +445,8 @@ const SECTIONS: Section[] = [
             Manage teams from the <strong>Teams</strong> page (avatar dropdown → Teams)
           </li>
           <li>
-            Share endpoints from <strong>Endpoint Settings</strong> → Team Sharing section
+            Share endpoints from the endpoint&apos;s <strong>Settings</strong> tab, under Team
+            sharing
           </li>
         </ul>
       </div>
@@ -464,22 +503,31 @@ function ShortcutTable({ shortcuts }: { shortcuts: [string, string][] }) {
   );
 }
 
-export function DashboardGuideDialog() {
+export function DashboardGuideDialog({
+  open,
+  onOpenChange,
+}: {
+  /** Controlled open state, for opening from a menu; uses its own button otherwise. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const [activeSection, setActiveSection] = useState("overview");
 
   const current = SECTIONS.find((s) => s.id === activeSection) ?? SECTIONS[0];
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button
-          data-shortcut="guide"
-          className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
-        >
-          <HelpCircle className="h-3.5 w-3.5" />
-          Guide
-        </button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open === undefined && (
+        <DialogTrigger asChild>
+          <button
+            data-shortcut="guide"
+            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+            Guide
+          </button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-4xl h-[640px] max-h-[85vh] p-0 overflow-hidden">
         <div className="flex h-full">
           {/* Sidebar */}

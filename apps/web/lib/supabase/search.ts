@@ -1,6 +1,7 @@
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
+import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -23,6 +24,8 @@ export interface SearchRequestRecord {
   receivedAt: number;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind: "http" | "email";
+  email?: EmailCapture | null;
 }
 
 export interface SearchRequestsInput {
@@ -86,11 +89,15 @@ function normalizeTimestamp(value: number | undefined): number | null {
 function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
   const headers = asStringRecord(row.headers);
   const body = row.body ?? undefined;
-  const detection = deriveWebhookDetection({
-    headers,
-    body,
-    contentType: row.content_type ?? undefined,
-  });
+  const kind = row.kind === "email" ? "email" : "http";
+  const detection =
+    kind === "email"
+      ? { detectedProvider: null, detectedEvent: null }
+      : deriveWebhookDetection({
+          headers,
+          body,
+          contentType: row.content_type ?? undefined,
+        });
 
   return {
     id: row.id,
@@ -106,6 +113,8 @@ function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
     receivedAt: row.received_at,
     detectedProvider: detection.detectedProvider,
     detectedEvent: detection.detectedEvent,
+    kind,
+    email: kind === "email" ? toEmailCapture(row.email) : null,
   };
 }
 

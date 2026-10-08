@@ -14,6 +14,7 @@ import {
   List,
   GitCompareArrows,
   Clipboard,
+  Paperclip,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { SignatureVerificationBadge } from "./signature-tab";
@@ -24,8 +25,9 @@ import {
   formatRelativeTimestamp,
   formatBytes,
   getContentTypeLabel,
+  isEmailItem,
 } from "@/types/request";
-import type { AnyRequestSummary } from "@/types/request";
+import type { AnyRequestSummary, KindFilter } from "@/types/request";
 
 const TS_PREF_KEY = "request_list_relative_time";
 
@@ -63,7 +65,17 @@ interface RequestListProps {
   viewMode?: "list" | "timeline";
   onViewModeChange?: (mode: "list" | "timeline") => void;
   timelineSlot?: React.ReactNode;
+  /** Set for endpoints that receive email: shows the All / HTTP / Email switch. */
+  kindFilter?: KindFilter;
+  onKindFilterChange?: (kind: KindFilter) => void;
+  kindCounts?: Record<KindFilter, number>;
 }
+
+const KINDS: { id: KindFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "http", label: "HTTP" },
+  { id: "email", label: "Email" },
+];
 
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
@@ -96,6 +108,9 @@ export function RequestList({
   viewMode,
   onViewModeChange,
   timelineSlot,
+  kindFilter = "all",
+  onKindFilterChange,
+  kindCounts,
 }: RequestListProps) {
   const displayCount = totalCount ?? requests.length;
   const internalSearchRef = useRef<HTMLInputElement>(null);
@@ -194,11 +209,43 @@ export function RequestList({
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="border-b-strong border-line px-3 py-2 flex items-center justify-between shrink-0">
-        <span className="text-sm font-bold">
-          {displayCount} request{displayCount !== 1 ? "s" : ""}
-        </span>
-        <div className="flex items-center gap-2">
+      <div className="@container border-b-strong border-line px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+        {onKindFilterChange ? (
+          <div
+            role="radiogroup"
+            aria-label="Show"
+            className="flex min-w-0 overflow-hidden rounded-md border-strong border-line"
+          >
+            {KINDS.map((kind, index) => (
+              <button
+                key={kind.id}
+                type="button"
+                role="radio"
+                aria-checked={kindFilter === kind.id}
+                onClick={() => onKindFilterChange(kind.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold caps cursor-pointer transition-colors whitespace-nowrap",
+                  index > 0 && "border-l-strong border-line",
+                  kindFilter === kind.id
+                    ? "bg-selected text-selected-foreground"
+                    : "bg-background hover:bg-muted"
+                )}
+              >
+                {kind.label}
+                {kindCounts && (
+                  <span className="hidden @[300px]:inline font-mono font-normal opacity-70">
+                    {kindCounts[kind.id]}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-sm font-bold">
+            {displayCount} request{displayCount !== 1 ? "s" : ""}
+          </span>
+        )}
+        <div className="flex items-center gap-2 shrink-0">
           {onViewModeChange && (
             <button
               onClick={() => onViewModeChange(viewMode === "list" ? "timeline" : "list")}
@@ -246,17 +293,19 @@ export function RequestList({
 
       {/* Filter bar */}
       <div className="border-b-strong border-line px-3 py-2 flex items-center gap-2 shrink-0">
-        <select
-          value={methodFilter}
-          onChange={(e) => onMethodFilterChange(e.target.value)}
-          className="text-xs font-bold caps rounded-md border-strong border-line bg-background px-2 py-1 cursor-pointer"
-        >
-          {METHODS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+        {kindFilter !== "email" && (
+          <select
+            value={methodFilter}
+            onChange={(e) => onMethodFilterChange(e.target.value)}
+            className="text-xs font-bold caps rounded-md border-strong border-line bg-background px-2 py-1 cursor-pointer"
+          >
+            {METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex-1 flex items-center gap-1 rounded-md border-strong border-line px-2 py-1 bg-background">
           <Search className="h-3 w-3 text-muted-foreground shrink-0" />
           <input
@@ -264,7 +313,7 @@ export function RequestList({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder="Search..."
+            placeholder={onKindFilterChange ? "Search" : "Search..."}
             className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground font-mono min-w-0"
           />
           {searchQuery && (
@@ -406,6 +455,7 @@ export function RequestList({
     const isPinned = pinnedIds?.has(id);
     const hasNote = noteIds?.has(id);
     const isComparing = compareId === id;
+    if (isEmailItem(request)) return renderEmailRow(request, id, isPinned, hasNote, isComparing);
     return (
       <button
         key={id}
@@ -476,6 +526,86 @@ export function RequestList({
                 {formatBytes(request.size)}
               </span>
             </>
+          )}
+        </div>
+      </button>
+    );
+  }
+
+  /** Emails lead with what a person wrote: the subject, then who sent it. */
+  function renderEmailRow(
+    request: AnyRequestSummary,
+    id: string,
+    isPinned: boolean | undefined,
+    hasNote: boolean | undefined,
+    isComparing: boolean
+  ) {
+    const email = request.email;
+    const sender = email?.from?.name || email?.from?.address || null;
+    return (
+      <button
+        key={id}
+        onClick={(e) => handleRowClick(e, id)}
+        onContextMenu={(e) => handleContextMenu(e, id)}
+        className={cn(
+          "w-full px-3 py-2 text-left cursor-pointer transition-colors border-b border-foreground/10",
+          isComparing
+            ? "bg-amber-100 dark:bg-amber-900/30 border-l-4 border-l-amber-500"
+            : selectedId === id
+              ? "bg-muted border-l-4 border-l-primary"
+              : "hover:bg-muted/50 border-l-4 border-l-transparent"
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "px-1.5 py-0.5 text-[10px] font-mono font-bold rounded-sm border-strong border-line clean:border-transparent shrink-0 w-14 text-center",
+              getMethodColor("EMAIL")
+            )}
+          >
+            EMAIL
+          </span>
+          <span
+            className={cn(
+              "text-[13px] truncate flex-1",
+              !email?.subject && "text-muted-foreground"
+            )}
+          >
+            {email?.subject || "(no subject)"}
+          </span>
+          {isPinned && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500 shrink-0" />}
+          {hasNote && <StickyNote className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
+          <span
+            className="text-[10px] text-muted-foreground font-mono shrink-0 cursor-pointer hover:text-foreground transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTimestampMode();
+            }}
+            title="Click to toggle time format"
+          >
+            {renderTimestamp(request.receivedAt)}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 mt-0.5 ml-[calc(3.5rem+0.5rem)] min-w-0">
+          <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+            #{id.slice(-6)}
+          </span>
+          {sender && <span className="text-[11px] text-muted-foreground truncate">{sender}</span>}
+          {email?.tag && (
+            <span className="text-[10px] font-mono font-semibold text-kind-email-ink truncate max-w-[40%]">
+              +{email.tag}
+            </span>
+          )}
+          {(email?.attachmentCount ?? 0) > 0 && (
+            <span className="text-[10px] text-muted-foreground font-mono flex items-center gap-0.5 shrink-0">
+              <Paperclip className="h-2.5 w-2.5" />
+              {email!.attachmentCount}
+            </span>
+          )}
+          {request.size > 0 && (
+            <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+              {formatBytes(request.size)}
+            </span>
           )}
         </div>
       </button>

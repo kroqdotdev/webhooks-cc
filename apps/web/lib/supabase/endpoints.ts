@@ -26,6 +26,7 @@ type SelectedEndpointRow = Pick<
   signing_provider?: string | null;
   signing_secret_encrypted?: string | null;
   signing_header?: string | null;
+  show_email_extracts?: boolean;
 };
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 interface ExistingSigningConfigRow {
@@ -56,6 +57,10 @@ export interface EndpointRecord {
   hasSigningSecret?: boolean;
   /** Custom header name for generic-hmac provider. */
   signingHeader?: string | null;
+  /** Address that delivers email to this endpoint. Endpoints without an owner get no email. */
+  emailAddress?: string | null;
+  /** Show the codes and links found in captured emails in the dashboard. */
+  showEmailExtracts: boolean;
 }
 
 interface CreateEndpointInput {
@@ -79,6 +84,12 @@ interface UpdateEndpointInput {
   /** Plaintext secret — encrypted before storage, never returned. */
   signingSecret?: string | null;
   signingHeader?: string | null;
+  showEmailExtracts?: boolean;
+}
+
+/** Endpoints without an owner get no email: guest captures are readable by anyone with the slug. */
+function emailAddress(slug: string, userId: string | null): string | null {
+  return userId ? `${slug}@${serverEnv().EMAIL_CAPTURE_DOMAIN}` : null;
 }
 
 function webhookUrl(slug: string): string | undefined {
@@ -139,6 +150,8 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     signingProvider: row.signing_provider ?? null,
     hasSigningSecret: !!row.signing_secret_encrypted,
     signingHeader: row.signing_header ?? null,
+    emailAddress: emailAddress(row.slug, row.user_id),
+    showEmailExtracts: row.show_email_extracts ?? true,
   };
 }
 
@@ -206,7 +219,7 @@ export async function listEndpointsForUser(userId: string): Promise<EndpointReco
   const { data, error } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -227,7 +240,7 @@ export async function getEndpointBySlugForUser(
   const { data, error } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
     )
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
@@ -280,7 +293,7 @@ export async function createEndpointForUser({
     .from("endpoints")
     .insert(insert)
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
     )
     .returns<SelectedEndpointRow>()
     .single();
@@ -345,7 +358,7 @@ export async function claimGuestEndpoint(
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
     )
     .returns<SelectedEndpointRow>()
     .maybeSingle();
@@ -364,6 +377,7 @@ export async function updateEndpointBySlugForUser({
   signingProvider,
   signingSecret,
   signingHeader,
+  showEmailExtracts,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
@@ -440,6 +454,9 @@ export async function updateEndpointBySlugForUser({
   if (notificationUrl !== undefined) {
     updates.notification_url = notificationUrl;
   }
+  if (showEmailExtracts !== undefined) {
+    updates.show_email_extracts = showEmailExtracts;
+  }
   // Handle signing config
   if (signingProvider !== undefined) {
     if (signingProvider === null) {
@@ -486,7 +503,7 @@ export async function updateEndpointBySlugForUser({
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
     .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header"
+      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
     )
     .returns<SelectedEndpointRow>()
     .maybeSingle();

@@ -15,13 +15,28 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.32.20";
+export const APP_VERSION = "0.33.0";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.33.0",
+    date: "2026-10-07",
+    title: "Email Capture",
+    track: "web",
+    items: [
+      "Every endpoint on an account now has an email address next to its HTTP URL, at mailhooks.cc. Mail sent there lands in the same request list as your webhooks and counts as one request. Add a tag after a plus sign, like slug+signup@mailhooks.cc, to tell flows apart",
+      "Emails get their own view: a sandboxed preview where no scripts run and remote images only load when you ask, the text, headers, attachments, the raw message with a .eml download, and an Authentication tab that explains the SPF, DKIM and DMARC results",
+      "One-time codes and the main link of each email are picked out above the preview with copy buttons. Turn this off per endpoint in Settings",
+      "Switch the request list between all requests, HTTP and email. Send then Send test email delivers a sample message to try it",
+      "Endpoint settings moved from a dialog to a Settings tab next to Requests, with one section per topic and a save button per section",
+      "The endpoint bar shows both addresses with copy buttons, and the setup checklist moved into a Setup menu next to Send and Export",
+      "The account page splits your usage into HTTP requests and emails",
+    ],
+  },
   {
     version: "0.32.20",
     date: "2026-10-07",

@@ -80,6 +80,8 @@ html {
   --color-method-post: hsl(var(--method-post));
   --color-method-put: hsl(var(--method-put));
   --color-method-delete: hsl(var(--method-delete));
+  --color-kind-email: hsl(var(--kind-email));
+  --color-kind-email-ink: hsl(var(--kind-email-ink));
 
   --border-width-strong: var(--line-width);
 
@@ -143,6 +145,10 @@ html {
     --method-post: 52 100% 50%;
     --method-put: 280 100% 65%;
     --method-delete: 0 84% 60%;
+    /* Captured emails: the fill carries black text; the ink is the same blue,
+       dark enough to be text on the page (the fill as text fails contrast). */
+    --kind-email: 211 100% 60%;
+    --kind-email-ink: 211 100% 40%;
 
     --app-font-sans: var(--font-space-grotesk), system-ui, sans-serif;
     --app-font-mono: var(--font-jetbrains-mono), monospace;
@@ -178,6 +184,8 @@ html {
       transparent 2px
     );
     --syntax-string: var(--secondary);
+    --kind-email: 211 100% 66%;
+    --kind-email-ink: 211 100% 66%;
   }
 
   :root[data-style="clean"] {
@@ -228,6 +236,8 @@ html {
     --method-post: 26 90% 37%;
     --method-put: 263 70% 50%;
     --method-delete: 0 74% 42%;
+    --kind-email: 221 83% 45%;
+    --kind-email-ink: 221 83% 45%;
 
     /* Bold renders as semibold; Geist at 700 is heavier than the look calls for */
     --font-weight-bold: 600;
@@ -274,6 +284,8 @@ html {
     --method-post: 43 96% 56%;
     --method-put: 255 92% 76%;
     --method-delete: 0 91% 71%;
+    --kind-email: 213 94% 68%;
+    --kind-email-ink: 213 94% 68%;
   }
 }
 

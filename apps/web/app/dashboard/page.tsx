@@ -4,8 +4,12 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { UrlBar } from "@/components/dashboard/url-bar";
-import type { EndpointSettingsDialogHandle } from "@/components/dashboard/endpoint-settings-dialog";
+import { cn } from "@/lib/utils";
+import { EndpointBar, type EndpointTab } from "@/components/dashboard/endpoint-bar";
+import {
+  EndpointSettingsPanel,
+  type SettingsSection,
+} from "@/components/dashboard/endpoint-settings-panel";
 import { RequestList } from "@/components/dashboard/request-list";
 import {
   RequestDetail,
@@ -13,7 +17,7 @@ import {
   TABS,
   type Tab,
 } from "@/components/dashboard/request-detail";
-import { GettingStarted } from "@/components/dashboard/getting-started";
+import { EmailDetail } from "@/components/dashboard/email-detail";
 import { KeyboardShortcutsDialog } from "@/components/dashboard/keyboard-shortcuts-dialog";
 import { RequestDiff } from "@/components/dashboard/request-diff";
 import { RequestTimeline } from "@/components/dashboard/request-timeline";
@@ -22,7 +26,7 @@ import { getNote, setNote, getAllNotes } from "@/lib/request-notes";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Check, Send, Download, ChevronDown } from "lucide-react";
+import { Copy, Check, Send, Download, ChevronDown, Mail } from "lucide-react";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import { copyToClipboard } from "@/lib/clipboard";
 import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
@@ -37,6 +41,7 @@ import {
   createDashboardEndpoint,
   claimGuestEndpointForUser,
   type DashboardEndpoint,
+  sendTestEmail,
 } from "@/lib/dashboard-api";
 import {
   buildRetainedCountParams,
@@ -52,10 +57,12 @@ import type {
   AnyRequestSummary,
   Request,
 } from "@/types/request";
+import { isEmailItem, type KindFilter } from "@/types/request";
+import { toEmailSummary } from "@/lib/email-capture";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
 const PANE_MIN = 240;
-const PANE_DEFAULT = 320;
+const PANE_DEFAULT = 384;
 // Realtime refreshes: a short settle window lets a request insert and its
 // signature update share one fetch, and bursts refresh at most once a second.
 const REALTIME_SETTLE_MS = 150;
@@ -89,6 +96,7 @@ export default function DashboardPage() {
   const prevTopSummaryId = useRef<string | null>(null);
   const [newCount, setNewCount] = useState(0);
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -669,7 +677,7 @@ export default function DashboardPage() {
     };
   }, [currentEndpointId, debouncedSearch, refreshRecentRequests, refreshSearchResults]);
 
-  const displayedItems = useMemo((): AnyRequestSummary[] => {
+  const allItems = useMemo((): AnyRequestSummary[] => {
     if (debouncedSearch) {
       return searchResults.map((r): ClickHouseSummary => ({
         id: r.id,
@@ -683,6 +691,8 @@ export default function DashboardPage() {
         signingProvider: r.signingProvider,
         detectedProvider: r.detectedProvider,
         detectedEvent: r.detectedEvent,
+        kind: r.kind,
+        email: toEmailSummary(r.email ?? null),
       }));
     }
 
@@ -701,6 +711,8 @@ export default function DashboardPage() {
         signingProvider: request.signingProvider,
         detectedProvider: request.detectedProvider,
         detectedEvent: request.detectedEvent,
+        kind: request.kind,
+        email: toEmailSummary(request.email ?? null),
       }));
 
     const oldestRecent =
@@ -719,10 +731,25 @@ export default function DashboardPage() {
         signingProvider: r.signingProvider,
         detectedProvider: r.detectedProvider,
         detectedEvent: r.detectedEvent,
+        kind: r.kind,
+        email: toEmailSummary(r.email ?? null),
       }));
 
     return [...recentSummaries, ...olderSummaries];
   }, [recentRequests, olderRequests, searchResults, debouncedSearch, methodFilter]);
+
+  // All / HTTP / Email, counted before the switch filters them.
+  const kindCounts = useMemo(() => {
+    const email = allItems.filter(isEmailItem).length;
+    return { all: allItems.length, http: allItems.length - email, email };
+  }, [allItems]);
+  const displayedItems = useMemo(
+    () =>
+      kindFilter === "all"
+        ? allItems
+        : allItems.filter((item) => isEmailItem(item) === (kindFilter === "email")),
+    [allItems, kindFilter]
+  );
 
   useEffect(() => {
     if (recentRequests.length === 0) {
@@ -869,9 +896,22 @@ export default function DashboardPage() {
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)
   const curlBtnRef = useRef<HTMLButtonElement>(null);
-  // Ref for opening endpoint settings dialog programmatically
-  const settingsDialogRef = useRef<EndpointSettingsDialogHandle>(null);
-  const handleOpenSettings = useCallback(() => settingsDialogRef.current?.open(), []);
+  // Requests or Settings; links elsewhere open Settings at the right section.
+  const [endpointTab, setEndpointTab] = useState<EndpointTab>("requests");
+  const [settingsFocus, setSettingsFocus] = useState<SettingsSection | null>(null);
+  const handleOpenSettings = useCallback(() => {
+    setSettingsFocus("verification");
+    setEndpointTab("settings");
+  }, []);
+  const handleTabChange = useCallback((tab: EndpointTab) => {
+    setSettingsFocus(null);
+    setEndpointTab(tab);
+  }, []);
+  // A different endpoint starts on its requests.
+  useEffect(() => {
+    setEndpointTab("requests");
+    setSettingsFocus(null);
+  }, [currentEndpointId]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -985,28 +1025,29 @@ export default function DashboardPage() {
     <ErrorBoundary resetKey={currentEndpoint.id}>
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
-      {/* URL Bar */}
-      <UrlBar
-        endpointId={currentEndpoint.id}
-        endpointName={currentEndpoint.name || currentEndpoint.slug}
+      <EndpointBar
+        name={currentEndpoint.name || currentEndpoint.slug}
         slug={currentEndpoint.slug}
-        mockResponse={currentEndpoint.mockResponse}
-        responseRules={currentEndpoint.responseRules}
-        notificationUrl={currentEndpoint.notificationUrl}
-        signingProvider={currentEndpoint.signingProvider}
-        hasSigningSecret={currentEndpoint.hasSigningSecret}
-        signingHeader={currentEndpoint.signingHeader}
-        settingsRef={settingsDialogRef}
-        extra={
+        emailAddress={currentEndpoint.emailAddress}
+        tab={endpointTab}
+        onTabChange={handleTabChange}
+        hasRequests={hasRequests}
+        exportMenu={
           hasRequests ? (
             <ExportDropdown onExportJson={handleExportJson} onExportCsv={handleExportCsv} />
           ) : undefined
         }
       />
-      <GettingStarted hasReceivedWebhook={hasRequests} />
 
-      {/* Split pane or empty state */}
-      {hasRequests ? (
+      {/* Settings, the split pane, or the empty state */}
+      {endpointTab === "settings" ? (
+        <EndpointSettingsPanel
+          key={currentEndpoint.id}
+          endpoint={currentEndpoint}
+          requestCount={retainedTotalCount ?? recentRequests.length}
+          focusSection={settingsFocus}
+        />
+      ) : hasRequests ? (
         <>
           {/* Desktop: side-by-side with resizable pane */}
           <div className="hidden md:flex flex-1 overflow-hidden">
@@ -1040,6 +1081,9 @@ export default function DashboardPage() {
                   onCompareSelect={handleCompareSelect}
                   viewMode={viewMode}
                   onViewModeChange={setViewMode}
+                  kindFilter={kindFilter}
+                  onKindFilterChange={currentEndpoint.emailAddress ? setKindFilter : undefined}
+                  kindCounts={kindCounts}
                   timelineSlot={
                     <RequestTimeline
                       requests={displayedItems}
@@ -1063,6 +1107,14 @@ export default function DashboardPage() {
               <ErrorBoundary resetKey={selectedId ?? undefined}>
                 {compareId && compareBase && compareRequest ? (
                   <RequestDiff left={compareBase} right={compareRequest} onExit={exitCompare} />
+                ) : displayRequest?.kind === "email" ? (
+                  <EmailDetail
+                    key={selectedId ?? undefined}
+                    request={displayRequest}
+                    showExtracts={currentEndpoint.showEmailExtracts !== false}
+                    note={currentNote}
+                    onNoteChange={handleNoteChange}
+                  />
                 ) : displayRequest ? (
                   <RequestDetail
                     request={displayRequest}
@@ -1093,15 +1145,25 @@ export default function DashboardPage() {
                 </button>
                 <div className="flex-1 overflow-hidden">
                   <ErrorBoundary resetKey={selectedId ?? undefined}>
-                    <RequestDetail
-                      request={displayRequest}
-                      activeTab={activeTab}
-                      onTabChange={setActiveTab}
-                      note={currentNote}
-                      onNoteChange={handleNoteChange}
-                      onOpenSettings={handleOpenSettings}
-                      endpointSlug={currentEndpoint.slug}
-                    />
+                    {displayRequest.kind === "email" ? (
+                      <EmailDetail
+                        key={selectedId ?? undefined}
+                        request={displayRequest}
+                        showExtracts={currentEndpoint.showEmailExtracts !== false}
+                        note={currentNote}
+                        onNoteChange={handleNoteChange}
+                      />
+                    ) : (
+                      <RequestDetail
+                        request={displayRequest}
+                        activeTab={activeTab}
+                        onTabChange={setActiveTab}
+                        note={currentNote}
+                        onNoteChange={handleNoteChange}
+                        onOpenSettings={handleOpenSettings}
+                        endpointSlug={currentEndpoint.slug}
+                      />
+                    )}
                   </ErrorBoundary>
                 </div>
               </div>
@@ -1130,12 +1192,18 @@ export default function DashboardPage() {
                 pinnedIds={pinnedIds}
                 onTogglePin={handleTogglePin}
                 noteIds={noteIds}
+                kindFilter={kindFilter}
+                onKindFilterChange={currentEndpoint.emailAddress ? setKindFilter : undefined}
+                kindCounts={kindCounts}
               />
             )}
           </div>
         </>
       ) : (
-        <WaitingForRequests slug={currentEndpoint.slug} />
+        <WaitingForRequests
+          slug={currentEndpoint.slug}
+          emailAddress={currentEndpoint.emailAddress ?? null}
+        />
       )}
     </ErrorBoundary>
   );
@@ -1252,11 +1320,25 @@ function DashboardSkeleton() {
   );
 }
 
-function WaitingForRequests({ slug }: { slug: string }) {
+function CopyLabel({ done }: { done: boolean }) {
+  return done ? (
+    <>
+      <Check className="h-3 w-3" /> Copied
+    </>
+  ) : (
+    <>
+      <Copy className="h-3 w-3" /> Copy
+    </>
+  );
+}
+
+function WaitingForRequests({ slug, emailAddress }: { slug: string; emailAddress: string | null }) {
   const internalTestHeader = "X-Webhooks-CC-Test-Send";
-  const [copied, setCopied] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const { session } = useAuth();
+  const [copied, setCopied] = useState<"curl" | "email" | null>(null);
+  const [sending, setSending] = useState<"http" | "email" | null>(null);
+  const [sent, setSent] = useState<"http" | "email" | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -1272,17 +1354,21 @@ function WaitingForRequests({ slug }: { slug: string }) {
   -H "Content-Type: application/json" \\
   -d '{"test": true}'`;
 
-  const handleCopy = async () => {
-    const success = await copyToClipboard(curlCmd);
-    if (success) {
-      setCopied(true);
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
-    }
+  const handleCopy = async (text: string, key: "curl" | "email") => {
+    if (!(await copyToClipboard(text))) return;
+    setCopied(key);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopied(null), 2000);
+  };
+
+  const markSent = (kind: "http" | "email") => {
+    setSent(kind);
+    if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
+    sentTimeoutRef.current = setTimeout(() => setSent(null), 3000);
   };
 
   const handleSendTest = async () => {
-    setSending(true);
+    setSending("http");
     try {
       await fetch(url, {
         method: "POST",
@@ -1292,70 +1378,101 @@ function WaitingForRequests({ slug }: { slug: string }) {
         },
         body: JSON.stringify({ test: true, sentAt: new Date().toISOString() }),
       });
-      setSent(true);
-      if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
-      sentTimeoutRef.current = setTimeout(() => setSent(false), 3000);
     } catch {
-      // Ignore - might be CORS, request still reaches the receiver
-      setSent(true);
-      if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
-      sentTimeoutRef.current = setTimeout(() => setSent(false), 3000);
+      // Might be CORS; the request still reaches the receiver.
     } finally {
-      setSending(false);
+      markSent("http");
+      setSending(null);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!session?.access_token) return;
+    setSending("email");
+    setEmailError(null);
+    try {
+      await sendTestEmail(session.access_token, slug);
+      markSent("email");
+    } catch (error) {
+      setEmailError(error instanceof Error ? error.message : "The test email failed.");
+    } finally {
+      setSending(null);
     }
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="max-w-lg w-full text-center space-y-6">
+    <div className="flex-1 overflow-y-auto flex items-center justify-center p-6 md:p-8">
+      <div className={cn("w-full space-y-6", emailAddress ? "max-w-4xl" : "max-w-lg")}>
         <div className="flex items-center justify-center gap-3">
           <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-reduce:hidden" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
           </span>
-          <p className="font-bold caps">Waiting for first request...</p>
+          <p className="font-bold caps">Waiting for the first request</p>
         </div>
 
-        <div className="text-left">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold caps text-muted-foreground">
-              Send a test webhook
-            </span>
+        <div className={cn("grid gap-4", emailAddress && "md:grid-cols-2")}>
+          <div className="ui-card ui-card-static p-5! flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <p className="font-bold">Send an HTTP request</p>
+              <button
+                onClick={() => void handleCopy(curlCmd, "curl")}
+                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+              >
+                <CopyLabel done={copied === "curl"} />
+              </button>
+            </div>
+            <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left shadow-none!">
+              {curlCmd}
+            </pre>
             <button
-              onClick={handleCopy}
-              className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+              onClick={() => void handleSendTest()}
+              disabled={sending === "http"}
+              className="ui-btn-primary self-start flex items-center gap-2 py-2! px-4! text-sm"
             >
-              {copied ? (
-                <>
-                  <Check className="h-3 w-3" /> Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3" /> Copy
-                </>
-              )}
+              <Send className="h-4 w-4" />
+              {sending === "http" ? "Sending..." : sent === "http" ? "Sent" : "Send test request"}
             </button>
           </div>
-          <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left">{curlCmd}</pre>
+
+          {emailAddress && (
+            <div className="ui-card ui-card-static p-5! flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="font-bold">Send an email</p>
+                <button
+                  onClick={() => void handleCopy(emailAddress, "email")}
+                  className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 transition-colors"
+                >
+                  <CopyLabel done={copied === "email"} />
+                </button>
+              </div>
+              <pre className="ui-code text-sm whitespace-pre-wrap break-all text-left shadow-none!">
+                {emailAddress}
+              </pre>
+              <p className="text-xs text-muted-foreground">
+                Put this address in your app&apos;s signup form, or send to it from any mail client.
+              </p>
+              <button
+                onClick={() => void handleSendEmail()}
+                disabled={sending === "email"}
+                className="ui-btn-outline self-start flex items-center gap-2 py-2! px-4! text-sm"
+              >
+                <Mail className="h-4 w-4" />
+                {sending === "email" ? "Sending..." : sent === "email" ? "Sent" : "Send test email"}
+              </button>
+              {emailError && <p className="text-xs text-destructive">{emailError}</p>}
+            </div>
+          )}
         </div>
 
-        <button
-          onClick={handleSendTest}
-          disabled={sending}
-          className="ui-btn-primary w-full flex items-center justify-center gap-2"
-        >
-          <Send className="h-4 w-4" />
-          {sending ? "Sending..." : sent ? "Sent!" : "Send test request"}
-        </button>
-
-        <p className="text-xs text-muted-foreground">
-          Need signed provider templates? Use the{" "}
-          <span className="font-bold text-foreground">Send</span> button in the URL bar or read{" "}
+        <p className="text-xs text-muted-foreground text-center">
+          Need signed provider templates? Use{" "}
+          <span className="font-bold text-foreground">Send</span> above, or read the{" "}
           <Link
             href="/docs/endpoints/test-webhooks"
             className="underline font-bold text-foreground"
           >
-            dashboard test webhook docs
+            test webhook docs
           </Link>
           .
         </p>
