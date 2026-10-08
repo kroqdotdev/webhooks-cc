@@ -254,6 +254,9 @@ export interface Database {
           signing_secret_encrypted: string | null;
           signing_header: string | null;
           show_email_extracts: boolean;
+          forward_enabled: boolean;
+          forward_url: string | null;
+          forward_secret_encrypted: string | null;
         };
         Insert: {
           id?: string;
@@ -271,6 +274,9 @@ export interface Database {
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
           show_email_extracts?: boolean;
+          forward_enabled?: boolean;
+          forward_url?: string | null;
+          forward_secret_encrypted?: string | null;
         };
         Update: {
           id?: string;
@@ -288,6 +294,9 @@ export interface Database {
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
           show_email_extracts?: boolean;
+          forward_enabled?: boolean;
+          forward_url?: string | null;
+          forward_secret_encrypted?: string | null;
         };
         Relationships: [];
       };
@@ -608,9 +617,87 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      email_deliveries: {
+        Row: {
+          id: string;
+          request_id: string;
+          endpoint_id: string;
+          status: "pending" | "succeeded" | "failed";
+          attempts: number;
+          next_attempt_at: string;
+          locked_until: string | null;
+          last_status: number | null;
+          last_error: string | null;
+          created_at: string;
+          finished_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          request_id: string;
+          endpoint_id: string;
+          status?: "pending" | "succeeded" | "failed";
+          attempts?: number;
+          next_attempt_at?: string;
+          locked_until?: string | null;
+          last_status?: number | null;
+          last_error?: string | null;
+          created_at?: string;
+          finished_at?: string | null;
+        };
+        Update: {
+          status?: "pending" | "succeeded" | "failed";
+          next_attempt_at?: string;
+          locked_until?: string | null;
+          last_status?: number | null;
+          last_error?: string | null;
+          finished_at?: string | null;
+        };
+        Relationships: [];
+      };
+      email_delivery_attempts: {
+        Row: {
+          id: number;
+          delivery_id: string;
+          attempted_at: string;
+          status: number | null;
+          duration_ms: number;
+          error: string | null;
+          response_excerpt: string | null;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      claim_email_deliveries: {
+        Args: { p_limit?: number; p_per_endpoint?: number; p_lease_seconds?: number };
+        Returns: Array<{
+          delivery_id: string;
+          request_id: string;
+          endpoint_id: string;
+          attempt: number;
+          forward_url: string | null;
+          /** base64 of the AES-GCM ciphertext (see lib/crypto.ts). */
+          forward_secret_encrypted: string | null;
+          show_email_extracts: boolean;
+          endpoint_slug: string;
+          endpoint_name: string | null;
+        }>;
+      };
+      record_email_delivery_attempt: {
+        Args: {
+          p_delivery_id: string;
+          p_succeeded: boolean;
+          p_status: number | null;
+          p_duration_ms: number;
+          p_error: string | null;
+          p_response_excerpt: string | null;
+          p_retry_in_seconds: number | null;
+        };
+        Returns: undefined;
+      };
       create_team_with_owner: {
         Args: {
           p_user_id: string;

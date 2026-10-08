@@ -3,7 +3,7 @@ title: "Email Capture"
 description: "Every endpoint on an account also receives email at its own mailhooks.cc address. Preview the HTML safely, copy one-time codes and links, check SPF, DKIM and DMARC, and download the original message."
 section: dashboard
 order: 4
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 schema: none
 keywords:
   [
@@ -58,7 +58,7 @@ Selecting an email opens its own view:
 - **Envelope**: subject, sender, recipients (with the tag highlighted), when it arrived and its size.
 - **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS.
 - **Found in this email**: the one-time code and the main link, each with a copy button (see below).
-- **Tabs**: Preview (when the email has HTML), Text, Headers, Attachments (when there are any), Authentication, and Raw.
+- **Tabs**: JSON (the parsed email, shown first), Preview (when the email has HTML), Text, Headers, Attachments (when there are any), Authentication, Raw, and Deliveries when [forwarding](/docs/forwarding) is on.
 - **Download .eml**: saves the original message, when it was stored in full.
 
 Notes, pinning, compare, export, search, and live updates work for emails the same way as for HTTP requests.
@@ -127,6 +127,10 @@ Messages are accepted or refused while the sender is still connected, so a sende
 A message the sender retries after a temporary failure is captured once, not once per attempt. Sending the same message again on purpose captures it again.
 
 `mailhooks.cc` only receives. It never sends mail, replies, or bounces of its own.
+
+## Forward to your server
+
+[Forwarding](/docs/forwarding) posts every email an endpoint receives to your own URL as the JSON from the JSON tab, signed with Standard Webhooks headers and retried for about a day until your server answers 2xx. Use it to handle inbound email in your app without running a mail server or parsing MIME.
 
 ## Notifications
 

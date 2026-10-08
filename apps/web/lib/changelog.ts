@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.33.0";
+export const APP_VERSION = "0.34.0";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.34.0",
+    date: "2026-10-08",
+    title: "Email as JSON, Forwarded to Your Server",
+    track: "web",
+    items: [
+      "Every email now opens on a JSON tab: the parsed email (sender, recipients, subject, text, HTML, the codes and links found in it, attachments and sender checks) as JSON, ready to copy as a test fixture",
+      "Forwarding: turn it on in an endpoint's Settings and every email it receives is POSTed to your URL as that JSON, signed with Standard Webhooks headers, so your app can handle inbound email without a mail server",
+      "Deliveries that fail are tried again after 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h and 12 h. Each email's Deliveries tab shows every try with your server's answer, and Redeliver sends it again",
+      "Settings shows the signing secret (reveal, copy, rotate), sends a test delivery and lists the latest deliveries",
+    ],
+  },
   {
     version: "0.33.0",
     date: "2026-10-07",

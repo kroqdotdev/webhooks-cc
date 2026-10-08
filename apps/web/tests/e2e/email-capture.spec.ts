@@ -202,7 +202,15 @@ for (const style of ["classic", "clean"] as const) {
         shown(page.getByRole("link", { name: "Open link in a new tab" }))
       ).toHaveAttribute("href", CONFIRM_URL);
 
+      // Emails open on their JSON: the body forwarding sends.
+      const json = shown(page.locator("code.language-json"));
+      await expect(json).toContainText('"type": "email.received"');
+      await expect(json).toContainText(`"subject": "${SUBJECT}"`);
+      await expect(json).toContainText(`"codes": [\n      "${CODE}"\n    ]`);
+      await expect(shown(page.getByText("Forwarding can POST this JSON"))).toBeVisible();
+
       // The preview is sandboxed without scripts, and remote images wait for a click
+      await shown(page.getByRole("button", { name: /^Preview$/i })).click();
       const frame = shown(page.locator('iframe[title="Email preview"]'));
       await expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
       await expect(shown(page.getByText("2 remote images are blocked"))).toBeVisible();
@@ -252,6 +260,7 @@ test("the preview disarms links, redirects and SVG in a hostile email", async ({
 
   await openDashboard(page);
   await page.getByRole("button", { name: new RegExp(`EMAIL ${subject}`) }).click();
+  await shown(page.getByRole("button", { name: /^Preview$/i })).click();
   const frameElement = shown(page.locator('iframe[title="Email preview"]'));
   const frame = frameElement.contentFrame();
   await expect(frame.getByText("Self link")).toBeVisible();

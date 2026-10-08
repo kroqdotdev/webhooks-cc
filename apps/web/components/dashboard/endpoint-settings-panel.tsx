@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Mail, ShieldCheck } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Globe, Mail, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +14,14 @@ import { AddressPill } from "./endpoint-bar";
 import {
   deleteDashboardEndpoint,
   emitDashboardEndpointsChanged,
+  fetchForwardSecret,
+  fetchRecentDeliveries,
+  rotateForwardSecret,
+  sendForwardTest,
   updateDashboardEndpoint,
   type DashboardEndpoint,
+  type ForwardTestResult,
+  type RecentDelivery,
   type ResponseRule,
 } from "@/lib/dashboard-api";
 import { parseStatusCode } from "@/lib/http";
@@ -54,7 +62,13 @@ const DEFAULT_BODIES: Record<string, string> = {
 const DEFAULT_BODY_VALUES = new Set(Object.values(DEFAULT_BODIES));
 
 export type SettingsSection =
-  "receiving" | "responses" | "notifications" | "sharing" | "verification" | "delete";
+  | "receiving"
+  | "responses"
+  | "forwarding"
+  | "notifications"
+  | "sharing"
+  | "verification"
+  | "delete";
 
 interface EndpointSettingsPanelProps {
   endpoint: DashboardEndpoint & {
@@ -502,6 +516,298 @@ function ResponsesSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["
   );
 }
 
+const DELIVERY_LABEL: Record<RecentDelivery["status"], string> = {
+  succeeded: "Delivered",
+  pending: "Retrying",
+  failed: "Failed",
+};
+
+function ForwardingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
+  const initialEnabled = endpoint.forwardEnabled === true;
+  const initialUrl = endpoint.forwardUrl ?? "";
+  const [enabled, setEnabled] = useState(initialEnabled);
+  const [url, setUrl] = useState(initialUrl);
+  const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
+  useEffect(() => {
+    setEnabled(initialEnabled);
+    setUrl(initialUrl);
+  }, [initialEnabled, initialUrl]);
+  const dirty = enabled !== initialEnabled || url !== initialUrl;
+
+  // The secret: hidden until asked for, and never kept after the section unmounts.
+  const [secret, setSecret] = useState<string | null>(null);
+  const [secretError, setSecretError] = useState<string | null>(null);
+  const [confirmRotate, setConfirmRotate] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const reveal = async () => {
+    if (!accessToken) return;
+    try {
+      setSecret(await fetchForwardSecret(accessToken, endpoint.slug));
+      setSecretError(null);
+    } catch (err) {
+      setSecretError(err instanceof Error ? err.message : "The secret could not be loaded.");
+    }
+  };
+  const rotate = async () => {
+    if (!accessToken) return;
+    try {
+      setSecret(await rotateForwardSecret(accessToken, endpoint.slug));
+      setSecretError(null);
+      setConfirmRotate(false);
+    } catch (err) {
+      setSecretError(err instanceof Error ? err.message : "The secret could not be replaced.");
+    }
+  };
+  const copySecret = async () => {
+    const value =
+      secret ?? (accessToken ? await fetchForwardSecret(accessToken, endpoint.slug) : null);
+    if (value && (await copyToClipboard(value))) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<ForwardTestResult | { error: string } | null>(null);
+  const sendTest = async () => {
+    if (!accessToken || testing) return;
+    setTesting(true);
+    try {
+      setTest(await sendForwardTest(accessToken, endpoint.slug));
+    } catch (err) {
+      setTest({ error: err instanceof Error ? err.message : "The test delivery failed." });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const [recent, setRecent] = useState<RecentDelivery[] | null>(null);
+  useEffect(() => {
+    if (!accessToken || !initialEnabled) return;
+    let cancelled = false;
+    fetchRecentDeliveries(accessToken, endpoint.slug)
+      .then((rows) => !cancelled && setRecent(rows))
+      .catch(() => !cancelled && setRecent([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, endpoint.slug, initialEnabled]);
+
+  return (
+    <Section
+      id="forwarding"
+      title="Forwarding"
+      description="POST every email this endpoint receives to your server, as the JSON shown on each email's JSON tab, signed so you can check it came from here."
+      footer={
+        <SaveFooter
+          dirty={dirty}
+          saving={saving}
+          error={error}
+          saved={saved}
+          hint={
+            enabled !== initialEnabled
+              ? enabled
+                ? "Forwarding turned on."
+                : "Forwarding turned off."
+              : "URL changed."
+          }
+          onReset={() => {
+            setEnabled(initialEnabled);
+            setUrl(initialUrl);
+            setError(null);
+            setSaved(false);
+          }}
+          onSave={() =>
+            void save({ forwardEnabled: enabled, forwardUrl: url.trim() || null }, () => {
+              if (enabled && !url.trim())
+                throw new Error("Add a URL before turning forwarding on.");
+            })
+          }
+        />
+      }
+    >
+      <div className="flex items-start justify-between gap-6">
+        <div>
+          <label htmlFor="settings-forward-enabled" className="text-sm font-semibold">
+            Forward emails as JSON
+          </label>
+          <p className="text-xs text-muted-foreground mt-1 max-w-[62ch]">
+            Failed deliveries are tried again for about a day. HTTP requests are not forwarded.
+          </p>
+        </div>
+        <Switch
+          id="settings-forward-enabled"
+          checked={enabled}
+          onChange={setEnabled}
+          label="Forward emails as JSON"
+        />
+      </div>
+      <Field
+        id="settings-forward-url"
+        label="URL"
+        help="Each email arrives as a POST with Content-Type: application/json. Answer with any 2xx to accept it."
+      >
+        <input
+          id="settings-forward-url"
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://api.example.com/hooks/email"
+          className="ui-input w-full text-sm font-mono py-2!"
+        />
+      </Field>
+
+      {endpoint.hasForwardSecret && (
+        <Field
+          label="Signing secret"
+          help={
+            <>
+              Check the <code className="font-mono">webhook-signature</code> header with it
+              (Standard Webhooks).{" "}
+              <Link href="/docs/forwarding#verify" className="underline underline-offset-2">
+                How to verify
+              </Link>
+            </>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="ui-input flex-1 min-w-[220px] text-sm font-mono py-2! truncate">
+              {secret ?? "whsec_" + "•".repeat(24)}
+            </code>
+            <button
+              type="button"
+              onClick={() => (secret ? setSecret(null) : void reveal())}
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            >
+              {secret ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              {secret ? "Hide" : "Reveal"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void copySecret()}
+              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {confirmRotate ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void rotate()}
+                  className="ui-btn-outline py-1.5! px-3! text-xs text-destructive"
+                >
+                  Replace secret
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRotate(false)}
+                  className="ui-btn-outline py-1.5! px-3! text-xs"
+                >
+                  Keep it
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmRotate(true)}
+                className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Rotate
+              </button>
+            )}
+          </div>
+          {confirmRotate && (
+            <p className="text-xs text-muted-foreground">
+              Deliveries are signed with the new secret at once, so your server needs it before it
+              can verify them again.
+            </p>
+          )}
+          {secretError && <p className="text-xs text-destructive">{secretError}</p>}
+        </Field>
+      )}
+
+      {initialUrl && (
+        <div className="space-y-2 pt-4 border-t border-line/20">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void sendTest()}
+              disabled={testing || dirty}
+              className={cn(
+                "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
+                (testing || dirty) && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              <Send className="h-3 w-3" />
+              {testing ? "Sending..." : "Send test delivery"}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              {dirty
+                ? "Save first: the test goes to the saved URL."
+                : "Sends the newest email (or a sample) now, once."}
+            </span>
+          </div>
+          {test && "delivered" in test ? (
+            <div className="text-sm space-y-1">
+              <p className={test.delivered ? "text-foreground" : "text-destructive"}>
+                {test.delivered ? "Delivered" : "Not delivered"}
+                {test.status !== null ? `: ${test.status}` : ""} in {test.durationMs} ms
+                {test.error ? `. ${test.error}` : ""}
+                {test.sample ? " (a sample email, as none has arrived yet)" : ""}
+              </p>
+              {test.excerpt && (
+                <code className="ui-code block text-xs font-mono break-all whitespace-pre-wrap">
+                  {test.excerpt}
+                </code>
+              )}
+            </div>
+          ) : test ? (
+            <p className="text-sm text-destructive">{test.error}</p>
+          ) : null}
+        </div>
+      )}
+
+      {initialEnabled && recent && recent.length > 0 && (
+        <div className="pt-4 border-t border-line/20">
+          <p className="text-xs font-bold caps mb-2">Latest deliveries</p>
+          <ul className="divide-y divide-line/20 text-sm">
+            {recent.map((delivery) => (
+              <li key={delivery.id} className="flex items-center gap-3 py-2">
+                <span
+                  className={cn(
+                    "text-xs font-semibold w-[70px] shrink-0",
+                    delivery.status === "succeeded" && "text-primary",
+                    delivery.status === "failed" && "text-destructive",
+                    delivery.status === "pending" && "text-muted-foreground"
+                  )}
+                >
+                  {DELIVERY_LABEL[delivery.status]}
+                </span>
+                <span className="truncate flex-1 min-w-0">
+                  {delivery.subject || "(no subject)"}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground shrink-0">
+                  {delivery.lastStatus ?? (delivery.status === "pending" ? "..." : "-")}
+                </span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {new Date(delivery.createdAt).toLocaleTimeString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function NotificationsSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
   const initial = endpoint.notificationUrl || "";
   const [url, setUrl] = useState(initial);
@@ -924,6 +1230,7 @@ export function EndpointSettingsPanel({
         { id: "responses", label: "HTTP responses" },
         ...(isOwner
           ? [
+              { id: "forwarding", label: "Forwarding" },
               { id: "notifications", label: "Notifications" },
               { id: "sharing", label: "Team sharing" },
               { id: "verification", label: "Signature verification" },
@@ -995,6 +1302,7 @@ export function EndpointSettingsPanel({
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
           <ReceivingSection endpoint={endpoint} />
           <ResponsesSection endpoint={endpoint} />
+          {isOwner && <ForwardingSection endpoint={endpoint} />}
           {isOwner && <NotificationsSection endpoint={endpoint} />}
           {isOwner && <SharingSection endpointId={endpoint.id} />}
           {isOwner && <VerificationSection endpoint={endpoint} />}

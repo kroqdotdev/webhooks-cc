@@ -257,6 +257,24 @@ function retentionOrFilter(cutoff: number): string {
   return `team_id.not.is.null,received_at.gte.${new Date(cutoff).toISOString()}`;
 }
 
+/**
+ * Requests by id with no access check, for server work that already knows
+ * which rows it may read (the email forwarding worker claims them).
+ */
+export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> {
+  if (ids.length === 0) return [];
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("requests")
+    .select(
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+    )
+    .in("id", ids)
+    .returns<SelectedRequestRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeRequest);
+}
+
 export async function getRequestByIdForUser(
   userId: string,
   requestId: string
