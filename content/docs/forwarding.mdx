@@ -110,9 +110,12 @@ With the SDK:
 ```ts
 import { verifyStandardWebhookSignature } from "@webhooks-cc/sdk";
 
-const ok = await verifyStandardWebhookSignature(rawBody, request.headers, process.env.FORWARD_SECRET!);
+const headers = Object.fromEntries(request.headers); // a plain object, not a Headers instance
+const ok = await verifyStandardWebhookSignature(rawBody, headers, process.env.FORWARD_SECRET!);
 if (!ok) return new Response("Invalid signature", { status: 401 });
 ```
+
+The SDK checks the signature only; check the timestamp as well, as the examples below do.
 
 In Node without dependencies:
 
