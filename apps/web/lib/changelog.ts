@@ -1494,7 +1494,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`send_test_email` delivers a sample email, optionally to a +tag address",
       "`configure_forwarding`, `get_forwarding_secret`, `test_forwarding`, `list_deliveries` and `redeliver_email` manage email forwarding",
       "`list_requests`, `search_requests` and `count_requests` take `kind`; request tools and resources leave out an email's raw message and HTML part and cut its text, so one email cannot use up the output; `update_endpoint` takes `showEmailExtracts`",
-      "`get_email` and `wait_for_email` put the code and link first and trim a large email to fit the output (headers, then extra codes and links, then HTML and text), so the result stays valid JSON; `wait_for_email` waits 30 seconds by default, under the usual client timeout; `list_emails` with a tag, subject or sender searches the newest 100 emails",
+      "`get_email` and `wait_for_email` put the code and link first and trim a large email to fit the output (headers, then extra codes, links, addresses and attachments, then HTML and text, then all but the essentials), so the result stays valid JSON; `wait_for_email` waits 30 seconds by default, under the usual client timeout; `list_emails` with a tag, subject or sender searches the newest 100 emails",
       "44 tools (SDK 1.12.0)",
     ],
   },

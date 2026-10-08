@@ -173,7 +173,7 @@ Run a full end-to-end test: create endpoint, set mock response, send webhook, wa
 
 ### list_requests
 
-List captured requests for an endpoint, newest first. Emails come back with `kind: "email"` and the parsed message in `email`, without the raw message or the HTML part (`email.htmlSize` gives its length; `size` is the message size in bytes), and with the text cut at 8,000 characters. An email that is still too big loses its headers (`headersOmitted`) and then more of its text. The other request tools and the MCP resources return emails the same way; use `get_email` for the HTML.
+List captured requests for an endpoint, newest first. Emails come back with `kind: "email"` and the parsed message in `email`, without the raw message or the HTML part (`email.htmlSize` gives its length; `size` is the message size in bytes), and with the text cut at 8,000 characters. An email that is still too big loses its headers (`headersOmitted`), then address and attachment entries past the first 5, then more of its text, and as a last resort everything but its subject, sender, tag, date and text (`trimmed`), so each email fits on its own. The other request tools and the MCP resources return emails the same way; use `get_email` for the HTML.
 
 | Parameter      | Type     | Required | Description                                            |
 | -------------- | -------- | -------- | ------------------------------------------------------ |
@@ -272,7 +272,7 @@ List the emails an endpoint received, newest first, one line each: `id`, `receiv
 
 ### get_email
 
-Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with a `tag`). Pass exactly one of the two. Returns the parsed message in the shape of [forwarded JSON](/docs/forwarding) (`subject`, `from`, `to`, `text`, `attachments`, `auth`, `headers`, ...) with `code` and `link` first. The text is cut at 8,000 characters (`textTruncated: true`), and the HTML is left out (`htmlSize` gives its length) unless `includeHtml` is set. Tool output is capped at 32 KB, so a large email is trimmed to fit and stays valid JSON: first its headers are left out (`headersOmitted`), then codes and links past the first 10 (`codesTruncated`, `linksTruncated`), then the HTML and the text are cut (`htmlTruncated`, `textTruncated`).
+Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with a `tag`). Pass exactly one of the two. Returns the parsed message in the shape of [forwarded JSON](/docs/forwarding) (`subject`, `from`, `to`, `text`, `attachments`, `auth`, `headers`, ...) with `code` and `link` first. The text is cut at 8,000 characters (`textTruncated: true`), and the HTML is left out (`htmlSize` gives its length) unless `includeHtml` is set. Tool output is capped at 32 KB, so a large email is trimmed to fit and stays valid JSON: first its headers are left out (`headersOmitted`), then codes and links past the first 10 (`codesTruncated`, `linksTruncated`), then address and attachment entries past the first 5 (`toTotal`, `attachmentsTotal`, ...); then the HTML and the text are cut (`htmlTruncated`, `textTruncated`), and as a last resort only the essentials stay (`trimmed`).
 
 | Parameter      | Type      | Required | Description                                   |
 | -------------- | --------- | -------- | --------------------------------------------- |

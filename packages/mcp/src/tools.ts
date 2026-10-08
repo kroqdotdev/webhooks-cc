@@ -30,9 +30,12 @@ import {
 } from "@webhooks-cc/sdk";
 import {
   capExtracts,
+  capLists,
   compactRequest,
   cutEmailText,
   cutStringToFit,
+  jsonSize,
+  keepOnly,
   MAX_OUTPUT,
   omitHeaders,
   shrinkToFit,
@@ -201,6 +204,30 @@ function serializeJson(value: unknown, limit = MAX_BODY_SIZE): string {
   }
 
   return full.slice(0, limit) + `\n... [truncated, ${full.length} chars total]`;
+}
+
+/**
+ * `value` with the array `value[key]` cut to as many leading items as fit
+ * the output, the way serializeJson cuts a top-level array, so an object
+ * wrapping a list stays valid JSON.
+ */
+function fitArrayField(value: Record<string, unknown>, key: string): Record<string, unknown> {
+  const items = value[key];
+  if (!Array.isArray(items) || jsonSize(value) <= MAX_BODY_SIZE) return value;
+  const cut = (count: number) => ({
+    ...value,
+    [key]: items.slice(0, count),
+    truncated: true,
+    returned: count,
+  });
+  let low = 0;
+  let high = items.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (jsonSize(cut(mid)) <= MAX_BODY_SIZE) low = mid;
+    else high = mid - 1;
+  }
+  return cut(low);
 }
 
 function jsonContent(value: unknown): ToolResult {
@@ -481,12 +508,35 @@ function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
   };
 }
 
+/** Fields of an email detail kept when it has to shrink to its essentials. */
+const ESSENTIAL_DETAIL_FIELDS = [
+  "code",
+  "link",
+  "id",
+  "endpoint",
+  "receivedAt",
+  "address",
+  "tag",
+  "subject",
+  "from",
+  "size",
+  "test",
+  "text",
+  "textTruncated",
+  "htmlSize",
+  "html",
+  "htmlTruncated",
+];
+
 /**
  * An email as `get_email` and `wait_for_email` return it: the forwarding
- * JSON's data, trimmed to the output budget. The code and link come first
- * and the text is cut at MAX_EMAIL_TEXT. If that is still too big, the
- * headers go first, then extra codes and links, then the HTML (when asked
- * for) and the text are cut to what is left, so the result stays valid JSON.
+ * JSON's data, trimmed to the output budget so it stays valid JSON. The code
+ * and link come first and the text is cut at MAX_EMAIL_TEXT. If that is
+ * still too big, the headers go first, then extra codes and links, then the
+ * extra entries of the address and attachment lists; then the HTML (when
+ * asked for) and the text are cut to what is left; and at last only the
+ * essentials stay, with the subject and the link cut if they alone are too
+ * long.
  */
 function emailDetail(
   client: WebhooksCC,
@@ -511,8 +561,12 @@ function emailDetail(
   shrinkToFit(detail, MAX_BODY_SIZE, [
     () => omitHeaders(detail),
     () => capExtracts(detail),
+    () => capLists(detail),
     () => cutStringToFit(detail, detail, "html", "htmlTruncated", MAX_BODY_SIZE),
     () => cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE),
+    () => keepOnly(detail, ESSENTIAL_DETAIL_FIELDS),
+    () => cutStringToFit(detail, detail, "subject", "subjectTruncated", MAX_BODY_SIZE),
+    () => cutStringToFit(detail, detail, "link", "linkTruncated", MAX_BODY_SIZE),
   ]);
   return detail;
 }
@@ -1007,7 +1061,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         pollInterval,
         method,
       });
-      return jsonContent({ ...result, requests: result.requests.map(compactRequest) });
+      return jsonContent(
+        fitArrayField({ ...result, requests: result.requests.map(compactRequest) }, "requests")
+      );
     })
   );
 

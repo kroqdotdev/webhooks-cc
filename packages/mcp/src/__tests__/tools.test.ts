@@ -1323,6 +1323,93 @@ describe("email and forwarding tools", () => {
     expect(items.length).toBeGreaterThanOrEqual(1);
   });
 
+  /** Valid JSON within the output cap, with no lone surrogate that strict parsers reject. */
+  function expectValidOutput(result: { content: { text: string }[] }) {
+    const text = result.content[0].text;
+    expect(text.length).toBeLessThanOrEqual(32_768);
+    expect(text).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
+    return JSON.parse(text);
+  }
+
+  it("stays valid JSON for emails no step but the last can shrink", async () => {
+    const address = (i: number) => ({
+      name: `Recipient ${i} ${"n".repeat(60)}`,
+      address: `r${i}@example.com`,
+    });
+    const attachment = (i: number) => ({
+      filename: `report-${i}-${"f".repeat(80)}.pdf`,
+      contentType: "application/pdf",
+      size: 1000,
+      contentId: null,
+      inline: false,
+    });
+    const crowded = makeEmail("e1", {
+      to: Array.from({ length: 100 }, (_, i) => address(i)),
+      cc: Array.from({ length: 100 }, (_, i) => address(i + 100)),
+      attachments: Array.from({ length: 100 }, (_, i) => attachment(i)) as never,
+    });
+    const longLabel = makeEmail("e2", {
+      html: `<p>Your code is 482913</p><a href="https://app.tidewater.app/digest">${"word ".repeat(9000)}</a>`,
+      text: `Your code is 482913. ${"t".repeat(5000)}`,
+    });
+    const get = vi.fn(async (id: string) => (id === "e1" ? crowded : longLabel));
+    const list = vi.fn(async () => [crowded, crowded]);
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get } as never,
+        requests: { get, list } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    for (const requestId of ["e1", "e2"]) {
+      for (const includeHtml of [false, true]) {
+        const detail = expectValidOutput(await tools.get_email.handler({ requestId, includeHtml }));
+        expect(detail.code).toBe("482913");
+      }
+      expectValidOutput(await tools.get_request.handler({ requestId }));
+    }
+    const crowdedDetail = expectValidOutput(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(crowdedDetail.to).toHaveLength(5);
+    expect(crowdedDetail.toTotal).toBe(100);
+
+    const listed = expectValidOutput(
+      await tools.list_requests.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect((Array.isArray(listed) ? listed : listed.items).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("never cuts an email's text in the middle of an emoji", async () => {
+    const get = vi.fn(async () =>
+      makeEmail("e1", { text: `${"a".repeat(7999)}${"😀".repeat(10)}` })
+    );
+    const tools = getRegisteredTools(emailClient({ emails: { get } as never }));
+    const detail = expectValidOutput(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(detail.text).toBe("a".repeat(7999));
+    expect(detail.textTruncated).toBe(true);
+  });
+
+  it("keeps wait_for_requests valid JSON when the requests are too big together", async () => {
+    const newsletters = Array.from({ length: 4 }, (_, i) => ({
+      ...makeEmail(`n${i}`, { text: `Issue ${i} ${"x".repeat(10_000)}` }),
+      receivedAt: Date.now() + i,
+    }));
+    const list = vi.fn(async () => newsletters);
+    const tools = getRegisteredTools(
+      emailClient({ requests: { list } as unknown as WebhooksCC["requests"] })
+    );
+    const result = expectValidOutput(
+      await tools.wait_for_requests.handler({ endpointSlug: "acme", count: 4, timeout: "5s" })
+    );
+    expect(result.truncated).toBe(true);
+    expect(result.returned).toBe(result.requests.length);
+    expect(result.requests.length).toBeGreaterThanOrEqual(1);
+    expect(result.complete).toBe(true);
+  });
+
   it("waits 30 seconds by default, under the usual MCP client timeout", () => {
     const tools = getRegisteredTools(emailClient());
     const schema = z.object(tools.wait_for_email.schema as z.ZodRawShape);
