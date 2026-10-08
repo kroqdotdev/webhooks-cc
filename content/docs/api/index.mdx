@@ -382,13 +382,13 @@ Each captured request arrives as an SSE message:
 
 ```
 event: request
-data: {"id":"...","method":"POST","path":"/","headers":{...},"body":"...","receivedAt":1234567890000}
+data: {"_id":"...","_creationTime":1234567890000,"endpointId":"...","method":"POST","path":"/","headers":{...},"body":"...","receivedAt":1234567890000}
 
 ```
 
 The server sends keepalive pings (`:ping`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes; reconnect when the stream closes.
 
-Emails arrive as `request` events too, with `"method": "EMAIL"` and the recipient address as `path`. Stream messages do not include the parsed `email`; fetch the request by id for it.
+A stream message names the request id `_id` (not `id`) and has no `kind` or `email` field. Emails arrive as `request` events too, with `"method": "EMAIL"` and the recipient address as `path`; fetch the request by its `_id` for the parsed message.
 
 ## Usage
 

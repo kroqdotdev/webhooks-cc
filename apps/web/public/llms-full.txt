@@ -839,7 +839,7 @@ Check results are strings such as `pass`, `fail`, `softfail`, `neutral`, `none`,
 Finding emails through the API:
 
 - `GET /api/search/requests?kind=email` (or `method=EMAIL`) returns only emails; `kind=http` only webhooks.
-- The SSE stream (`/api/stream/<slug>`) sends emails as `request` events with `method: "EMAIL"`, without `kind` or `email`. Fetch the request by id for the parsed message.
+- The SSE stream (`/api/stream/<slug>`) sends emails as `request` events with `method: "EMAIL"`, without `kind` or `email`, and names the request id `_id`. Fetch the request by that id for the parsed message.
 - `POST /api/send-test-email` with `{ "slug": "<slug>" }` delivers a sample message with a code and a link. It counts as one request and does not travel over SMTP, so no sender checks run on it.
 
 Limits and SMTP replies:

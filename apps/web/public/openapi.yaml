@@ -647,11 +647,13 @@ paths:
 
         Captured emails arrive as `request` events too, with `method: "EMAIL"` and the recipient
         address as `path`. Stream messages carry neither `kind` nor `email`; fetch the request by
-        ID for the parsed message.
+        its `_id` for the parsed message.
 
         **Event types:**
         - `connected`: stream established
-        - `request`: captured webhook or email (JSON data matching the Request schema)
+        - `request`: captured webhook or email (JSON data matching the StreamRequest schema,
+          which differs from Request: `_id` instead of `id`, an extra `_creationTime`, and no
+          `kind` or `email`)
         - `keepalive`: connection keepalive
         - `timeout`: max duration reached, reconnect
         - `endpoint_deleted`: endpoint was deleted, stream closed
@@ -1761,7 +1763,7 @@ components:
           type: boolean
           description: |
             Show the codes and links found in emails, and include them in forwarded JSON.
-            Team members can change it too.
+            Owner only, because it changes what forwarding sends.
         forwardEnabled:
           type: boolean
           description: Forward every captured email to `forwardUrl`. Needs a URL. Owner only.
@@ -1829,6 +1831,49 @@ components:
             - $ref: "#/components/schemas/EmailCapture"
             - type: "null"
           description: The parsed message when `kind` is `email`, null otherwise
+
+    StreamRequest:
+      type: object
+      description: The data of a `request` event on the SSE stream.
+      required:
+        [_id, _creationTime, endpointId, method, path, headers, queryParams, ip, size, receivedAt]
+      properties:
+        _id:
+          type: string
+          description: The request ID, as `id` in Request
+        _creationTime:
+          type: integer
+          description: Unix timestamp (ms), the same as `receivedAt`
+        endpointId:
+          type: string
+        method:
+          type: string
+          description: HTTP method, or `EMAIL` for a captured email
+        path:
+          type: string
+          description: Path after the slug, or the recipient address for a captured email
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        bodyRaw:
+          type: string
+          description: Base64 of the exact body bytes, present only when the body is not valid UTF-8
+        queryParams:
+          type: object
+          additionalProperties:
+            type: string
+        contentType:
+          type: string
+        ip:
+          type: string
+        size:
+          type: integer
+        receivedAt:
+          type: integer
+          description: Unix timestamp (ms)
 
     EmailCapture:
       type: object
