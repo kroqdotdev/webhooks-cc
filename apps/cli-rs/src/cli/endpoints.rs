@@ -73,7 +73,11 @@ pub async fn create(
     } else {
         let url = client.webhook_url_for(&endpoint.slug);
         println!("\n  {} Created endpoint {}", green("✓"), bold(&endpoint.slug));
-        println!("  {} {}\n", dim("URL:"), url);
+        println!("  {} {}", dim("URL:"), url);
+        if let Some(ref address) = endpoint.email_address {
+            println!("  {} {}", dim("Email:"), address);
+        }
+        println!();
         if signing_configured {
             println!("  {} Signature verification configured\n", green("✓"));
         }
@@ -137,10 +141,15 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     let url = client.webhook_url_for(&endpoint.slug);
     println!("{}", bold(&endpoint.slug));
     println!("  {} {}", dim("URL:"), url);
+    if let Some(ref address) = endpoint.email_address {
+        println!("  {} {}", dim("Email:"), address);
+    }
     if let Some(ref name) = endpoint.name {
         println!("  {} {}", dim("Name:"), name);
     }
-    println!("  {} {}", dim("Requests:"), endpoint.request_count.unwrap_or(0));
+    if let Some(count) = endpoint.request_count {
+        println!("  {} {}", dim("Requests:"), count);
+    }
     if endpoint.is_ephemeral {
         println!("  {} true", dim("Ephemeral:"));
     }
