@@ -47,7 +47,7 @@ const STEPS = [
   },
   {
     name: "Read the email",
-    text: "The email appears in the dashboard within seconds, with the one-time code and the main link picked out for you. In an automated test, fetch it from the REST API instead.",
+    text: "The email appears in the dashboard within seconds, with the one-time code and the main link picked out for you. In an automated test, the SDK waits for it and hands you the code.",
   },
   {
     name: "Check it before you ship",
@@ -88,35 +88,32 @@ const FEATURES = [
   },
 ];
 
-const TEST_SAMPLE = `// Your signup test used \`my-app+\${runId}@mailhooks.cc\`.
-async function waitForEmail(runId: string, since: number) {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const response = await fetch(
-      \`https://webhooks.cc/api/endpoints/my-app/requests?since=\${since}\`,
-      { headers: { Authorization: \`Bearer \${process.env.WHK_API_KEY}\` } }
-    );
-    const requests = await response.json();
-    const match = requests.find((r) => r.kind === "email" && r.email.tag === runId);
-    if (match) return match.email;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  throw new Error("No email arrived within 30 seconds");
-}
+const TEST_SAMPLE = `import { test } from "@playwright/test";
+import { WebhooksCC, extractCode } from "@webhooks-cc/sdk";
 
-const email = await waitForEmail(runId, startedAt);
-const code = email.text.match(/\\b\\d{6}\\b/)?.[0];
-await page.getByLabel("Verification code").fill(code);`;
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+test("sign up with a verification code", async ({ page }) => {
+  const runId = \`signup-\${Date.now()}\`;
+  await page.goto("/signup");
+  await page.getByLabel("Email").fill(client.emails.address("my-app", runId));
+  await page.getByRole("button", { name: "Sign up" }).click();
+
+  // Waits until the email for this run arrives, up to 60 seconds.
+  const email = await client.emails.waitFor("my-app", { tag: runId });
+  await page.getByLabel("Verification code").fill(extractCode(email)!);
+});`;
 
 const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How do I test signup and verification emails?",
     answer:
-      "Create a free webhooks.cc endpoint and use its email address, your-slug@mailhooks.cc, in the signup form. The confirmation email shows up in the dashboard within seconds with the code and the link picked out, or your test fetches it from the REST API.",
+      "Create a free webhooks.cc endpoint and use its email address, your-slug@mailhooks.cc, in the signup form. The confirmation email shows up in the dashboard within seconds with the code and the link picked out, or your test waits for it with the SDK.",
   },
   {
     question: "How do I read a one-time code in a Playwright or Cypress test?",
     answer:
-      "Sign up with a tagged address such as your-slug+run-42@mailhooks.cc, then poll the requests API for an email with that tag and match the code in its text part. Each email comes back as JSON with its subject, sender, text, HTML and attachment list.",
+      "Sign up with a tagged address such as your-slug+run-42@mailhooks.cc, so each test run finds its own email. With the TypeScript SDK, client.emails.waitFor(slug, { tag }) waits for the email and extractCode(email) returns the code. From other languages, poll the requests API with kind=email; each email comes back as JSON with its subject, sender, text, HTML and attachment list.",
   },
   {
     question: "Does email testing cost extra?",
@@ -228,9 +225,9 @@ export default function EmailTestingPage() {
         <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Read the email in your test</h2>
           <p className="text-muted-foreground mb-6">
-            The REST API returns emails next to HTTP requests, each with its parsed message. Poll
-            for the email your test triggered, then pull the code or link out of it. This works in
-            Playwright, Cypress, Selenium or any test runner that can make an HTTP call.
+            The TypeScript SDK waits for the email your test triggered and picks out the code or the
+            link, with the same finder the dashboard uses. Give each run its own tag so parallel
+            tests never read each other&apos;s mail.
           </p>
           <div className="ui-code overflow-x-auto">
             <pre className="text-sm">
@@ -238,11 +235,12 @@ export default function EmailTestingPage() {
             </pre>
           </div>
           <p className="text-sm text-muted-foreground mt-3">
-            Create the API key on your account page. The{" "}
+            Create the API key on your account page. Not on Node? The{" "}
             <Link href="/docs/api" className="text-primary font-bold hover:underline">
-              REST API reference
+              REST API
             </Link>{" "}
-            lists every field of an email.
+            returns the same emails with <code className="font-mono">kind=email</code>, so Cypress,
+            Selenium or any runner that can make an HTTP call works too.
           </p>
         </section>
 

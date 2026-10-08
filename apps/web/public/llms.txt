@@ -17,7 +17,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Email forwarding: Forward every email an endpoint captures to your HTTPS URL as parsed JSON, signed with Standard Webhooks headers and retried for about a day
 - Mock responses: Configure status codes, headers, and response bodies per endpoint, with conditional rules that route different responses based on method, path, headers, body content, JSON paths, or query params (first match wins)
 - CLI tunneling: Forward webhooks to localhost with `whk tunnel <port>`, no port forwarding or ngrok needed
-- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming
+- TypeScript SDK: `@webhooks-cc/sdk` for programmatic endpoint management, test assertions, and real-time streaming; `client.emails.waitFor()` and `extractCode()` for email tests, `client.forwarding` and `verifyForwardedEmail()` for email forwarding
 - MCP server: `@webhooks-cc/mcp` connects AI coding agents (Claude Code, Cursor, VS Code, Codex, Windsurf)
 - Real-time streaming: Dashboard updates via Supabase Realtime Broadcast signals, CLI and SDK via Server-Sent Events
 - Request replay: Resend captured requests to any URL
