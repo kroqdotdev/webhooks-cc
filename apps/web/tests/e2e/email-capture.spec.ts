@@ -223,9 +223,12 @@ test("the kind switch filters the list", async ({ page }) => {
   await openDashboard(page);
   const show = page.getByRole("radiogroup", { name: "Show" });
 
+  // The selected HTTP request leaves with the filter; the email takes its place.
+  await httpRow(page).click();
   await show.getByRole("radio", { name: /^Email/ }).click();
   await expect(emailRow(page)).toBeVisible();
   await expect(httpRow(page)).not.toBeVisible();
+  await expect(shown(page.getByRole("heading", { name: SUBJECT }))).toBeVisible();
 
   await show.getByRole("radio", { name: /^HTTP/ }).click();
   await expect(httpRow(page)).toBeVisible();

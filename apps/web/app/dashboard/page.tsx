@@ -802,19 +802,20 @@ export default function DashboardPage() {
       const arrived = previousIdx >= 0 ? previousIdx : 1;
 
       if (arrived > 0) {
+        // More than a page arrived when the previous top is gone: take the
+        // whole page for now and let the server fill in the rest.
+        const matching = recentRequests
+          .slice(0, previousIdx >= 0 ? previousIdx : recentRequests.length)
+          .filter((request) => matchesFilters(request, methodFilter, kindFilter));
         if (liveMode) {
-          setSelectedId(topId);
+          // Follow the newest arrival the list shows, not one the filters hide.
+          if (matching.length > 0) setSelectedId(matching[0]._id);
         } else {
           setNewCount((prev) => prev + arrived);
         }
 
         if (!debouncedSearch) {
-          // More than a page arrived when the previous top is gone: count the
-          // whole page for now and let the server fill in the rest.
-          const matched = recentRequests
-            .slice(0, previousIdx >= 0 ? previousIdx : recentRequests.length)
-            .filter((request) => matchesFilters(request, methodFilter, kindFilter)).length;
-          setRetainedTotalCount((prev) => incrementRetainedCount(prev, matched));
+          setRetainedTotalCount((prev) => incrementRetainedCount(prev, matching.length));
           if (previousIdx === -1) {
             countSchedulerRef.current?.schedule();
           }
@@ -826,11 +827,12 @@ export default function DashboardPage() {
     countedRequestsRef.current = recentRequests;
   }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter]);
 
+  // With nothing selected, select the newest request the list shows.
   useEffect(() => {
-    if (recentRequests.length > 0 && !selectedId) {
-      setSelectedId(recentRequests[0]._id);
-    }
-  }, [recentRequests, selectedId]);
+    if (selectedId || displayedItems.length === 0) return;
+    const first = displayedItems[0];
+    setSelectedId("_id" in first ? first._id : first.id);
+  }, [displayedItems, selectedId]);
 
   useEffect(() => {
     setSelectedId(null);
@@ -924,6 +926,17 @@ export default function DashboardPage() {
   const displayRequestRef = useRef(displayRequest);
   // eslint-disable-next-line react-hooks/refs, react-hooks/immutability
   displayRequestRef.current = displayRequest;
+
+  // A filter change can hide the selected request: drop it, and the effect
+  // above selects the list's newest match instead.
+  useEffect(() => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    const visible = displayedItemsRef.current.some(
+      (item) => ("_id" in item ? item._id : item.id) === id
+    );
+    if (!visible) setSelectedId(null);
+  }, [methodFilter, kindFilter]);
 
   // Ref for cURL button (avoids DOM scraping in keyboard handler)
   const curlBtnRef = useRef<HTMLButtonElement>(null);
