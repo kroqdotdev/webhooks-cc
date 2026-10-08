@@ -24,8 +24,16 @@ describe("rateLimitIpBucket", () => {
     expect(rateLimitIpBucket("fe80::1%eth0")).toBe("fe80:0000:0000:0000::/64");
   });
 
-  it("counts IPv4-mapped IPv6 addresses as IPv4", () => {
+  it("counts IPv4-mapped IPv6 addresses as IPv4, dotted or hex", () => {
     expect(rateLimitIpBucket("::ffff:203.0.113.7")).toBe("203.0.113.7");
+    expect(rateLimitIpBucket("::ffff:c000:280")).toBe("192.0.2.128");
+    expect(rateLimitIpBucket("0:0:0:0:0:FFFF:192.0.2.128")).toBe("192.0.2.128");
+  });
+
+  it("expands an IPv4 tail as two groups", () => {
+    expect(rateLimitIpBucket("::1:2:3:4:1.2.3.4")).toBe("0000:0000:0001:0002::/64");
+    expect(rateLimitIpBucket("1::2:3:4:5:1.2.3.4")).toBe("0001:0000:0002:0003::/64");
+    expect(rateLimitIpBucket("64:ff9b::1.2.3.4")).toBe("0064:ff9b:0000:0000::/64");
   });
 
   it("leaves anything that is not an IP alone", () => {

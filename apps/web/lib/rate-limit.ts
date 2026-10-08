@@ -63,11 +63,12 @@ export function getClientIp(request: Request): string {
  * IPv4-mapped IPv6 addresses count as their IPv4 address.
  */
 export function rateLimitIpBucket(ip: string): string {
-  const address = ip.split("%")[0].toLowerCase();
-  const mapped = /^(?:0{0,4}:){0,5}(?::|0{0,4}:)ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(address);
-  if (mapped && isIPv4(mapped[1])) return mapped[1];
-  if (!isIPv6(address)) return address;
-  const [head, tail] = address.split("::");
+  const address = ip.split("%")[0].trim().toLowerCase();
+  if (isIPv4(address) || !isIPv6(address)) return address;
+  // The URL parser writes every IPv6 form (an IPv4 tail, uppercase, zero
+  // runs) in one canonical form of hex groups.
+  const canonical = new URL(`http://[${address}]`).hostname.slice(1, -1);
+  const [head, tail] = canonical.split("::");
   const headGroups = head ? head.split(":") : [];
   const tailGroups = tail ? tail.split(":") : [];
   const groups =
@@ -78,6 +79,11 @@ export function rateLimitIpBucket(ip: string): string {
           ...Array(8 - headGroups.length - tailGroups.length).fill("0"),
           ...tailGroups,
         ];
+  if (groups.slice(0, 5).every((group) => /^0+$/.test(group)) && groups[5] === "ffff") {
+    const high = parseInt(groups[6], 16);
+    const low = parseInt(groups[7], 16);
+    return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+  }
   return `${groups
     .slice(0, 4)
     .map((group) => group.padStart(4, "0"))
