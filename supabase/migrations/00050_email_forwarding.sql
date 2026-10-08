@@ -93,8 +93,8 @@ grant select, delete on table public.email_delivery_attempts to service_role;
 -- Claims up to p_limit due deliveries, at most p_per_endpoint in flight per
 -- endpoint, and leases them for p_lease_seconds. The locking step re-checks
 -- status and lease on the latest row version, so two workers never claim the
--- same delivery. Endpoints with forwarding off are skipped (the PATCH route
--- settles their pending rows).
+-- same delivery. Endpoints with forwarding off are skipped (turning it off
+-- settles their pending rows, see endpoints_forwarding_off).
 create or replace function public.claim_email_deliveries(
   p_limit         integer default 16,
   p_per_endpoint  integer default 2,
@@ -253,6 +253,36 @@ revoke all on function public.record_email_delivery_attempt(
 grant execute on function public.record_email_delivery_attempt(
   uuid, integer, boolean, integer, integer, text, text, integer
 ) to service_role;
+
+-- Turning forwarding off fails what is still waiting, in the same transaction
+-- as the update, whatever turns it off: such rows would otherwise go out
+-- whenever forwarding is turned on again.
+create or replace function public.settle_deliveries_when_forwarding_off()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  update public.email_deliveries
+     set status = 'failed',
+         last_error = 'Forwarding was turned off.',
+         finished_at = now(),
+         locked_until = null
+   where endpoint_id = new.id
+     and status = 'pending';
+  return null;
+end;
+$$;
+
+revoke all on function public.settle_deliveries_when_forwarding_off()
+  from public, anon, authenticated;
+
+drop trigger if exists endpoints_forwarding_off on public.endpoints;
+create trigger endpoints_forwarding_off
+  after update of forward_enabled on public.endpoints
+  for each row
+  when (old.forward_enabled and not new.forward_enabled)
+  execute function public.settle_deliveries_when_forwarding_off();
 
 -- Queues another delivery of one email for the dashboard's Redeliver, under
 -- the endpoint row lock with forward_enabled read again, like capture_webhook()

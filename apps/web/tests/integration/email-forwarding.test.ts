@@ -327,6 +327,25 @@ describe("email forwarding", () => {
       .eq("endpoint_id", endpoint.id);
   });
 
+  it("settles in the same update, however forwarding is turned off", async () => {
+    const endpoint = await forwardingEndpoint("/down");
+    await capture(endpoint.slug);
+    // Parked out of the workers' reach, then turned off with a plain update.
+    await admin
+      .from("email_deliveries")
+      .update({ next_attempt_at: new Date(Date.now() + 3_600_000).toISOString() })
+      .eq("endpoint_id", endpoint.id);
+    const { error } = await admin
+      .from("endpoints")
+      .update({ forward_enabled: false })
+      .eq("id", endpoint.id);
+    expect(error).toBeNull();
+    expect((await deliveries(endpoint.id))[0]).toMatchObject({
+      status: "failed",
+      last_error: "Forwarding was turned off.",
+    });
+  });
+
   it("fails what is waiting when forwarding is turned off", async () => {
     const endpoint = await forwardingEndpoint("/down");
     await capture(endpoint.slug);

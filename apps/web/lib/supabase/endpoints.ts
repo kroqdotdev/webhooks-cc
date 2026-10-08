@@ -395,7 +395,6 @@ export async function updateEndpointBySlugForUser({
 
   // Forwarding: on needs a URL. The secret is made with the first URL, so it
   // can go into the receiving handler (and be tested) before forwarding is on.
-  let forwardWasEnabled: boolean = false;
   let newForwardSecret: string | null = null;
   if (forwardEnabled !== undefined || forwardUrl !== undefined) {
     const { data, error } = await admin
@@ -406,7 +405,6 @@ export async function updateEndpointBySlugForUser({
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
-    forwardWasEnabled = data.forward_enabled;
     const nextEnabled = forwardEnabled ?? data.forward_enabled;
     const nextUrl = forwardUrl === undefined ? data.forward_url : forwardUrl;
     if (nextEnabled && !nextUrl) {
@@ -557,13 +555,8 @@ export async function updateEndpointBySlugForUser({
     throw error;
   }
 
-  // Turned off: what was still waiting fails now, rather than going out
-  // whenever forwarding is turned back on.
-  const updated = data as SelectedEndpointRow | null;
-  if (updated && forwardWasEnabled && forwardEnabled === false) {
-    const { settlePendingDeliveries } = await import("./forwarding");
-    await settlePendingDeliveries(updated.id, "Forwarding was turned off.");
-  }
+  // Turning forwarding off fails what is still waiting in the same
+  // transaction (trigger endpoints_forwarding_off, migration 00050).
 
   return data ? normalizeEndpoint(data) : null;
 }

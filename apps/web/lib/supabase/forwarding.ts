@@ -93,21 +93,6 @@ export async function rotateForwardSecret(userId: string, slug: string): Promise
   return data ? secret : null;
 }
 
-/** Settles every pending delivery of an endpoint as failed, with `reason`. */
-export async function settlePendingDeliveries(endpointId: string, reason: string): Promise<void> {
-  const { error } = await createAdminClient()
-    .from("email_deliveries")
-    .update({
-      status: "failed",
-      last_error: reason,
-      finished_at: new Date().toISOString(),
-      locked_until: null,
-    })
-    .eq("endpoint_id", endpointId)
-    .eq("status", "pending");
-  if (error) throw error;
-}
-
 /**
  * Queues another delivery of one email, sent with the endpoint's current
  * settings. Null when forwarding is off (checked under the endpoint lock, so
