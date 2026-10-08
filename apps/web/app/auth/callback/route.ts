@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { DEFAULT_EMAIL_DOMAIN } from "@webhooks-cc/sdk/email";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRedirectBase, sanitizeNextPath } from "@/lib/auth-redirect";
 import { SIGNUP_SIGNAL_COOKIE, SIGNUP_SIGNAL_COOKIE_OPTIONS } from "@/lib/signup-signal";
@@ -14,8 +15,15 @@ export async function GET(request: Request) {
   // Surface OAuth provider errors (e.g. user denied consent) as one of our
   // own codes; the login page only renders known codes, never provider text.
   const providerError = searchParams.get("error");
-  if (providerError || searchParams.get("error_description")) {
-    const code = providerError === "access_denied" ? "oauth_denied" : "oauth_error";
+  const description = searchParams.get("error_description");
+  if (providerError || description) {
+    // GoTrue reports our signup hook's refusal (migration 00052) as
+    // access_denied too; its message names the capture domain.
+    const code = description?.includes(DEFAULT_EMAIL_DOMAIN)
+      ? "capture_domain_email"
+      : providerError === "access_denied"
+        ? "oauth_denied"
+        : "oauth_error";
     return NextResponse.redirect(`${base}/login?error=${code}`);
   }
 

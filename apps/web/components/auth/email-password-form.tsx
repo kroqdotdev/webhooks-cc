@@ -2,12 +2,14 @@
 
 import { useState, type FormEvent } from "react";
 import { isAuthError } from "@supabase/supabase-js";
+import { DEFAULT_EMAIL_DOMAIN } from "@webhooks-cc/sdk/email";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trackSignInStarted } from "@/lib/analytics";
 import { mapAuthError } from "@/lib/auth-errors";
+import { isCaptureDomainAddress } from "@/lib/email-capture";
 
 export type EmailPasswordMode = "sign-in" | "sign-up" | "forgot";
 
@@ -67,6 +69,14 @@ export function EmailPasswordForm({
     }
     if (mode !== "forgot" && password.length < PASSWORD_MIN_LENGTH) {
       setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+      return;
+    }
+    // GoTrue refuses these too (migration 00052), but its answer carries no
+    // error code, so the form would only show the generic message.
+    if (mode === "sign-up" && isCaptureDomainAddress(trimmedEmail, DEFAULT_EMAIL_DOMAIN)) {
+      setError(
+        `Addresses at ${DEFAULT_EMAIL_DOMAIN} can't be used for an account. Sign up with your own email address.`
+      );
       return;
     }
 

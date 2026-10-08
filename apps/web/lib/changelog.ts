@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.3";
-export const CLI_VERSION = "1.4.0";
+export const APP_VERSION = "0.35.4";
+export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.4",
+    date: "2026-10-08",
+    title: "No Accounts at mailhooks.cc",
+    track: "web",
+    items: [
+      "New accounts can no longer use an address at mailhooks.cc, by email and password or through GitHub or Google: mail there can be read through webhooks.cc itself, so it proves nothing about who signs up",
+      "The sign-up form says so right away instead of showing a generic error",
+    ],
+  },
   {
     version: "0.35.3",
     date: "2026-10-08",
@@ -1053,6 +1063,13 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.4.1",
+    date: "2026-10-08",
+    title: "TLS Library Update",
+    track: "cli",
+    items: ["rustls 0.23.45"],
+  },
   {
     version: "1.4.0",
     date: "2026-10-08",
