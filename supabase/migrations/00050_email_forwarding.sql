@@ -254,6 +254,40 @@ grant execute on function public.record_email_delivery_attempt(
   uuid, integer, boolean, integer, integer, text, text, integer
 ) to service_role;
 
+-- Queues another delivery of one email for the dashboard's Redeliver, under
+-- the endpoint row lock with forward_enabled read again, like capture_webhook()
+-- step 5b: turning forwarding off either commits first and nothing is queued,
+-- or waits for this and then settles the new row. Null when forwarding is off.
+create or replace function public.queue_email_redelivery(
+  p_request_id  uuid,
+  p_endpoint_id uuid
+)
+returns uuid
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_id uuid;
+begin
+  perform 1
+    from public.endpoints
+   where id = p_endpoint_id
+     and forward_enabled
+     for no key update;
+  if not found then
+    return null;
+  end if;
+  insert into public.email_deliveries (request_id, endpoint_id)
+  values (p_request_id, p_endpoint_id)
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+revoke all on function public.queue_email_redelivery(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.queue_email_redelivery(uuid, uuid) to service_role;
+
 -- 4. capture_webhook() queues the delivery. The body is 00049's with the
 --    endpoint lookup reading forward_enabled and step 5b added.
 begin;

@@ -51,6 +51,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const deliveryId = await queueRedelivery(captured.id, captured.endpointId);
+    if (!deliveryId) {
+      return reply({ error: "Turn forwarding on for this endpoint first." }, 409);
+    }
     await auditUserAction(request, auth.userId, {
       action: "email.redelivery_queued",
       status: 200,

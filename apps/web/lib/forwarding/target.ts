@@ -15,7 +15,9 @@ export const BLOCKED_PORTS = new Set([
   27017, 27018, 27019,
 ]);
 
-const BLOCKED = new BlockList();
+// Separate lists: Node's BlockList applies an IPv6 rule for ::ffff:0:0/96 to
+// plain IPv4 addresses too.
+const BLOCKED_V4 = new BlockList();
 for (const [network, prefix] of [
   ["0.0.0.0", 8],
   ["10.0.0.0", 8],
@@ -27,25 +29,35 @@ for (const [network, prefix] of [
   ["224.0.0.0", 4],
   ["240.0.0.0", 4],
 ] as const) {
-  BLOCKED.addSubnet(network, prefix, "ipv4");
+  BLOCKED_V4.addSubnet(network, prefix, "ipv4");
 }
+const BLOCKED_V6 = new BlockList();
 for (const [network, prefix] of [
   ["::", 128],
   ["::1", 128],
   ["fc00::", 7],
   ["fe80::", 10],
   ["ff00::", 8],
+  // Ranges that carry an IPv4 address, however it is spelled ("::ffff:7f00:1"
+  // is 127.0.0.1): IPv4-mapped, IPv4-compatible, NAT64, 6to4 and Teredo. A
+  // forwarding target has no reason to resolve to any of them.
+  ["::ffff:0:0", 96],
+  ["::", 96],
+  ["64:ff9b::", 96],
+  ["2002::", 16],
+  ["2001::", 32],
 ] as const) {
-  BLOCKED.addSubnet(network, prefix, "ipv6");
+  BLOCKED_V6.addSubnet(network, prefix, "ipv6");
 }
 
-/** Loopback, private, link-local (cloud metadata included), CGNAT, multicast or unspecified. */
+/**
+ * Loopback, private, link-local (cloud metadata included), CGNAT, multicast,
+ * unspecified, or an IPv6 address that carries an IPv4 one.
+ */
 export function isBlockedAddress(address: string): boolean {
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  if (mapped) return BLOCKED.check(mapped[1], "ipv4");
   const family = isIP(address);
-  if (family === 4) return BLOCKED.check(address, "ipv4");
-  if (family === 6) return BLOCKED.check(address, "ipv6");
+  if (family === 4) return BLOCKED_V4.check(address, "ipv4");
+  if (family === 6) return BLOCKED_V6.check(address, "ipv6");
   return true;
 }
 

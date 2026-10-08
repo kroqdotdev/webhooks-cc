@@ -4,7 +4,7 @@ import { verifyStandardWebhookSignature } from "@webhooks-cc/sdk";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser, updateEndpointBySlugForUser } from "@/lib/supabase/endpoints";
-import { getForwardSecret } from "@/lib/supabase/forwarding";
+import { getForwardSecret, queueRedelivery } from "@/lib/supabase/forwarding";
 import { runForwardingBatch } from "@/lib/forwarding/worker";
 
 /**
@@ -297,6 +297,14 @@ describe("email forwarding", () => {
       status: "failed",
       last_error: "The delivery was interrupted too many times.",
     });
+  });
+
+  it("queues a redelivery only while forwarding is on", async () => {
+    const endpoint = await forwardingEndpoint("/ok", false);
+    const requestId = await capture(endpoint.slug);
+    expect(await queueRedelivery(requestId, endpoint.id)).toBeNull();
+    await updateEndpointBySlugForUser({ userId, slug: endpoint.slug, forwardEnabled: true });
+    expect(await queueRedelivery(requestId, endpoint.id)).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("never hands one delivery to two claims", async () => {

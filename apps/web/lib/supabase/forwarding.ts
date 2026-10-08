@@ -108,15 +108,21 @@ export async function settlePendingDeliveries(endpointId: string, reason: string
   if (error) throw error;
 }
 
-/** Queues another delivery of one email, sent with the endpoint's current settings. */
-export async function queueRedelivery(requestId: string, endpointId: string): Promise<string> {
-  const { data, error } = await createAdminClient()
-    .from("email_deliveries")
-    .insert({ request_id: requestId, endpoint_id: endpointId })
-    .select("id")
-    .single();
+/**
+ * Queues another delivery of one email, sent with the endpoint's current
+ * settings. Null when forwarding is off (checked under the endpoint lock, so
+ * a concurrent turn-off cannot leave the new row waiting).
+ */
+export async function queueRedelivery(
+  requestId: string,
+  endpointId: string
+): Promise<string | null> {
+  const { data, error } = await createAdminClient().rpc("queue_email_redelivery", {
+    p_request_id: requestId,
+    p_endpoint_id: endpointId,
+  });
   if (error) throw error;
-  return data.id;
+  return data ?? null;
 }
 
 /** Every delivery of one email, newest first, with its attempts. */

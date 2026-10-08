@@ -17,6 +17,14 @@ describe("isBlockedAddress", () => {
       "fd00::1",
       "fe80::1",
       "::ffff:10.0.0.1",
+      // Any IPv4-mapped address, public ones too: a target has no reason to use one.
+      "::ffff:8.8.8.8",
+      "::ffff:7f00:1",
+      "::ffff:a00:1",
+      "::7f00:1",
+      "64:ff9b::7f00:1",
+      "2002:7f00:1::",
+      "2001:0:4136:e378:8000:63bf:3fff:fdd2",
       "not-an-ip",
     ]) {
       expect(isBlockedAddress(address), address).toBe(true);
@@ -24,7 +32,12 @@ describe("isBlockedAddress", () => {
   });
 
   it("lets public addresses through", () => {
-    for (const address of ["93.184.216.34", "1.1.1.1", "2606:4700:4700::1111", "::ffff:8.8.8.8"]) {
+    for (const address of [
+      "93.184.216.34",
+      "1.1.1.1",
+      "2606:4700:4700::1111",
+      "2a00:1450:4001::64",
+    ]) {
       expect(isBlockedAddress(address), address).toBe(false);
     }
   });

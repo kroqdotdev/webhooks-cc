@@ -686,6 +686,10 @@ export interface Database {
           endpoint_name: string | null;
         }>;
       };
+      queue_email_redelivery: {
+        Args: { p_request_id: string; p_endpoint_id: string };
+        Returns: string | null;
+      };
       record_email_delivery_attempt: {
         Args: {
           p_delivery_id: string;

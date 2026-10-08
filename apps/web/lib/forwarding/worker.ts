@@ -27,6 +27,8 @@ const CONCURRENCY = 8;
 const PER_ENDPOINT = 2;
 /** Longer than a send can take (FORWARD_TIMEOUT_MS plus the proxy's margin). */
 const LEASE_SECONDS = 60;
+/** The notify proxy's cap (infra/notify-proxy); a larger body could never be delivered. */
+const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
 
 type Claim = Database["public"]["Functions"]["claim_email_deliveries"]["Returns"][number];
 
@@ -98,6 +100,9 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
     return record(claim, result, true);
   }
   if (!prepared) return giveUp("Only emails are forwarded.");
+  if (Buffer.byteLength(prepared.body) > MAX_FORWARD_BYTES) {
+    return giveUp("The email is too large to forward (over 10 MB as JSON).");
+  }
   const result = await sendForward(
     claim.forward_url,
     prepared.headers,

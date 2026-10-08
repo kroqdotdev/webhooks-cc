@@ -29,7 +29,12 @@ const FORWARD_HEADERS = [
   "webhook-timestamp",
   "webhook-signature",
 ];
-const MAX_FORWARD_BODY = 2 * 1024 * 1024;
+/**
+ * Above the largest email JSON the web app can build (its text and HTML parts
+ * are capped at 256 KB each and headers at 512 KB, but JSON escaping can
+ * multiply them); the web app refuses anything larger before sending.
+ */
+const MAX_FORWARD_BODY = 10 * 1024 * 1024;
 const FORWARD_TIMEOUT_MS = 15_000;
 const EXCERPT_BYTES = 1024;
 
@@ -104,9 +109,9 @@ async function excerpt(response: Response): Promise<string | null> {
 async function forward(request: Request, targetUrl: string): Promise<Response> {
   if (isBlockedUrl(targetUrl)) return json({ error: "The URL is not allowed." });
   const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > MAX_FORWARD_BODY) return json({ error: "The body is larger than 2 MB." });
+  if (declared > MAX_FORWARD_BODY) return json({ error: "The body is larger than 10 MB." });
   const body = await request.arrayBuffer();
-  if (body.byteLength > MAX_FORWARD_BODY) return json({ error: "The body is larger than 2 MB." });
+  if (body.byteLength > MAX_FORWARD_BODY) return json({ error: "The body is larger than 10 MB." });
 
   const headers = new Headers();
   for (const name of FORWARD_HEADERS) {
