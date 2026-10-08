@@ -1380,6 +1380,92 @@ describe("email and forwarding tools", () => {
     expect((Array.isArray(listed) ? listed : listed.items).length).toBeGreaterThanOrEqual(1);
   });
 
+  it("bounds a long sender list in request tools and resources", async () => {
+    const senders = Array.from({ length: 100 }, (_, i) => ({
+      name: `Sender ${i} ${"\u0001".repeat(150)}${"s".repeat(150)}`,
+      address: `s${i}@example.com`,
+    }));
+    const crowded = { ...makeEmail("f1", { from: senders }), receivedAt: Date.now() };
+    const list = vi.fn(async () => [crowded]);
+    const get = vi.fn(async () => crowded);
+    const client = emailClient({ requests: { list, get } as unknown as WebhooksCC["requests"] });
+    const tools = getRegisteredTools(client);
+
+    const single = expectValidOutput(await tools.get_request.handler({ requestId: "f1" }));
+    expect(single.email.fromTotal).toBe(100);
+    expect(single.email.subject).toBe("Confirm your email");
+    const listed = expectValidOutput(
+      await tools.list_requests.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect((Array.isArray(listed) ? listed : listed.items).length).toBe(1);
+    const waited = expectValidOutput(
+      await tools.wait_for_requests.handler({ endpointSlug: "acme", count: 1, timeout: "5s" })
+    );
+    expect(waited.requests).toHaveLength(1);
+
+    const server = new McpServer({ name: "test", version: "0.0.0" });
+    const resourceSpy = vi.spyOn(server, "registerResource");
+    registerResources(server, client);
+    const details = resourceSpy.mock.calls.find((call) => call[0] === "request-details")!;
+    const read = (await (
+      details[3] as unknown as (
+        uri: URL,
+        variables: Record<string, string>
+      ) => Promise<{ contents: { text: string }[] }>
+    )(new URL("webhooks://request/f1"), { id: "f1" })) as { contents: { text: string }[] };
+    expect(read.contents[0].text.length).toBeLessThanOrEqual(32_768);
+  });
+
+  it("keeps the whole text once the other fields are gone, and drops a link too long to use", async () => {
+    // Control characters print as six characters each, so five of these per list are still too many.
+    const person = (i: number) => ({
+      name: `${i} ${"\u0001".repeat(1000)}`,
+      address: `p${i}@example.com`,
+    });
+    const people = Array.from({ length: 100 }, (_, i) => person(i));
+    const text = `Your code is 482913. ${"w".repeat(3300)}`;
+    const crowded = makeEmail("c1", {
+      to: people,
+      cc: people,
+      replyTo: people,
+      sender: people,
+      text,
+    });
+    const hugeLink = makeEmail("l1", {
+      text: `Your code is 482913. Open https://app.tidewater.app/confirm?t=${"z".repeat(256_000)}`,
+      html: null,
+    });
+    const get = vi.fn(async (id: string) => (id === "c1" ? crowded : hugeLink));
+    const list = vi.fn(async () => [hugeLink]);
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get, list } as never,
+        requests: { get } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    const detail = expectValidOutput(
+      await tools.get_email.handler({ requestId: "c1", includeHtml: false })
+    );
+    expect(detail.text).toBe(text);
+    expect(detail.trimmed).toEqual(expect.any(String));
+    const request = expectValidOutput(await tools.get_request.handler({ requestId: "c1" }));
+    expect(request.email.text).toBe(text);
+
+    const linked = expectValidOutput(
+      await tools.get_email.handler({ requestId: "l1", includeHtml: false })
+    );
+    expect(linked.subject).toBe("Confirm your email");
+    expect(linked.link).toBeNull();
+    expect(linked.linkOmitted).toMatch(/characters long/);
+    expect(linked.code).toBe("482913");
+    const summaries = expectValidOutput(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].link).toBeNull();
+  });
+
   it("never cuts an email's text in the middle of an emoji", async () => {
     const get = vi.fn(async () =>
       makeEmail("e1", { text: `${"a".repeat(7999)}${"😀".repeat(10)}` })

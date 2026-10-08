@@ -39,6 +39,7 @@ import {
   MAX_OUTPUT,
   omitHeaders,
   shrinkToFit,
+  TEXT_FLOOR,
 } from "./compact";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
@@ -493,6 +494,18 @@ function emailSlugFromAddress(address: string): string {
   return local.split("+")[0].toLowerCase();
 }
 
+/** A main link in `list_emails` longer than this is left out, so one email cannot fill the list. */
+const MAX_SUMMARY_LINK = 8_000;
+
+/** `link`, or null and a note with its length when it is longer than `max`. */
+function boundedLink(link: string | null, max: number) {
+  if (link === null || link.length <= max) return { link };
+  return {
+    link: null,
+    linkOmitted: `The main link is ${link.length} characters long, too long for the output`,
+  };
+}
+
 /** One line per email for list output. */
 function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
   const from = email.email.from[0];
@@ -503,7 +516,9 @@ function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
     tag: email.email.tag,
     subject: email.email.subject,
     from: from ? (from.name ? `${from.name} <${from.address ?? ""}>` : from.address) : null,
-    ...(includeExtracts ? { code: extractCode(email), link: extractLink(email) } : {}),
+    ...(includeExtracts
+      ? { code: extractCode(email), ...boundedLink(extractLink(email), MAX_SUMMARY_LINK) }
+      : {}),
     attachments: email.email.attachments.length,
   };
 }
@@ -534,9 +549,10 @@ const ESSENTIAL_DETAIL_FIELDS = [
  * and link come first and the text is cut at MAX_EMAIL_TEXT. If that is
  * still too big, the headers go first, then extra codes and links, then the
  * extra entries of the address and attachment lists; then the HTML (when
- * asked for) and the text are cut to what is left; and at last only the
- * essentials stay, with the subject and the link cut if they alone are too
- * long.
+ * asked for) is cut and the text is cut down to TEXT_FLOOR characters; then
+ * only the essentials stay, a main link too long to use is left out, and the
+ * text gets what room is left; and at last the subject is cut, so it always
+ * fits.
  */
 function emailDetail(
   client: WebhooksCC,
@@ -550,6 +566,11 @@ function emailDetail(
   });
   const { html, text: fullText, ...rest } = data;
   const { text, cut } = cutEmailText(fullText ?? null);
+  const restoreText = () => {
+    detail.text = text;
+    if (cut) detail.textTruncated = true;
+    else delete detail.textTruncated;
+  };
   const detail: Record<string, unknown> = {
     ...(view.includeExtracts ? { code: extractCode(email), link: extractLink(email) } : {}),
     ...rest,
@@ -563,10 +584,16 @@ function emailDetail(
     () => capExtracts(detail),
     () => capLists(detail),
     () => cutStringToFit(detail, detail, "html", "htmlTruncated", MAX_BODY_SIZE),
-    () => cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE),
-    () => keepOnly(detail, ESSENTIAL_DETAIL_FIELDS),
+    () => cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE, TEXT_FLOOR),
+    // Down to the essentials (and without a main link too long to use) there
+    // may be room for more of the text again.
+    () => {
+      keepOnly(detail, ESSENTIAL_DETAIL_FIELDS);
+      Object.assign(detail, boundedLink(detail.link as string | null, MAX_BODY_SIZE / 2));
+      restoreText();
+      cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE);
+    },
     () => cutStringToFit(detail, detail, "subject", "subjectTruncated", MAX_BODY_SIZE),
-    () => cutStringToFit(detail, detail, "link", "linkTruncated", MAX_BODY_SIZE),
   ]);
   return detail;
 }

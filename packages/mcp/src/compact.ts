@@ -10,12 +10,19 @@ export const MAX_EMAIL_TEXT = 8_000;
 const MAX_EXTRACTS = 10;
 /** Longest link text and URL kept in a list of links once an email has to shrink. */
 const MAX_LINK_TEXT = 200;
-const MAX_LINK_URL = 2_000;
+export const MAX_LINK_URL = 2_000;
 /** Addresses and attachments kept per list once an email has to shrink. */
 const MAX_LIST_ITEMS = 5;
 
 /** The address and attachment lists of an email that can be shortened. */
-const EMAIL_LISTS = ["to", "cc", "replyTo", "sender", "inReplyTo", "attachments"];
+const EMAIL_LISTS = ["from", "to", "cc", "replyTo", "sender", "inReplyTo", "attachments"];
+
+/**
+ * Text kept while other fields can still go: the text is cut to this many
+ * characters before an email drops to its essentials, and only below it once
+ * the essentials alone are too big.
+ */
+export const TEXT_FLOOR = 2_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -99,17 +106,21 @@ export function keepOnly(holder: JsonObject, keep: readonly string[]): void {
 
 /**
  * Cuts the string `holder[key]` to the longest start that keeps `root`
- * within `budget`, and sets `holder[flag]` when it cut anything.
+ * within `budget`, but never below `floor` characters (the root may then
+ * still be over budget, for a later step), and sets `holder[flag]` when it
+ * cut anything.
  */
 export function cutStringToFit(
   root: unknown,
   holder: JsonObject,
   key: string,
   flag: string,
-  budget: number
+  budget: number,
+  floor = 0
 ): void {
   const value = holder[key];
-  if (typeof value !== "string" || value === "") return;
+  if (typeof value !== "string" || value.length <= floor) return;
+  const flagged = holder[flag] === true;
   holder[key] = "";
   holder[flag] = true;
   // The serialized slice takes the place of the two characters of "".
@@ -121,7 +132,17 @@ export function cutStringToFit(
     if (JSON.stringify(sliceText(value, mid)).length <= room) low = mid;
     else high = mid - 1;
   }
-  holder[key] = sliceText(value, low);
+  const kept = sliceText(value, Math.max(low, floor));
+  holder[key] = kept;
+  if (kept.length === value.length && !flagged) delete holder[flag];
+}
+
+/** Keeps only the first entry of the list `holder[key]`, with the full count in `${key}Total`. */
+export function keepFirst(holder: JsonObject, key: string): void {
+  const list = holder[key];
+  if (!Array.isArray(list) || list.length <= 1) return;
+  holder[`${key}Total`] = holder[`${key}Total`] ?? list.length;
+  holder[key] = list.slice(0, 1);
 }
 
 type CompactableRequest = Pick<Request, "kind" | "body" | "bodyRaw" | "email">;
@@ -137,6 +158,7 @@ export interface CompactEmailRequest {
 const ESSENTIAL_EMAIL_FIELDS = [
   "subject",
   "from",
+  "fromTotal",
   "tag",
   "date",
   "text",
@@ -149,9 +171,11 @@ const ESSENTIAL_EMAIL_FIELDS = [
  * they are. An email's `body` is the raw MIME message (up to 1 MB) and its
  * HTML part can reach 256 KB, either of which would use up the output
  * budget: both are left out and the text part is cut. An email that is still
- * too big loses its headers, then the extra entries of its address and
- * attachment lists, then more of its text, and at last everything but its
- * subject, sender, tag, date and text, so it always fits a list on its own.
+ * too big loses its headers, then the extra entries of its sender, address
+ * and attachment lists, then text down to TEXT_FLOOR characters, then
+ * everything but its subject, first sender, tag, date and as much text as
+ * then fits, and at last part of its subject, so it always fits a list on
+ * its own.
  * `size` keeps the message's size in bytes, and `get_email` returns the HTML.
  */
 export function compactRequest<T extends CompactableRequest>(request: T): T | CompactEmailRequest {
@@ -165,6 +189,11 @@ export function compactRequest<T extends CompactableRequest>(request: T): T | Co
 
   const { html, ...rest } = request.email;
   const { text, cut } = cutEmailText(rest.text);
+  const restoreText = () => {
+    email.text = text;
+    if (cut) email.textTruncated = true;
+    else delete email.textTruncated;
+  };
   const email: JsonObject = {
     ...rest,
     text,
@@ -178,8 +207,14 @@ export function compactRequest<T extends CompactableRequest>(request: T): T | Co
   shrinkToFit(root, budget, [
     () => omitHeaders(compact),
     () => capLists(email),
-    () => cutStringToFit(root, email, "text", "textTruncated", budget),
-    () => keepOnly(email, ESSENTIAL_EMAIL_FIELDS),
+    () => cutStringToFit(root, email, "text", "textTruncated", budget, TEXT_FLOOR),
+    // Down to the essentials there may be room for more of the text again.
+    () => {
+      keepOnly(email, ESSENTIAL_EMAIL_FIELDS);
+      keepFirst(email, "from");
+      restoreText();
+      cutStringToFit(root, email, "text", "textTruncated", budget);
+    },
     () => cutStringToFit(root, email, "subject", "subjectTruncated", budget),
   ]);
   return compact as CompactEmailRequest;
