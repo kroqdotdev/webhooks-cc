@@ -1,5 +1,9 @@
-import { describe, expect, test } from "vitest";
-import { validateMockResponseField, validateNotificationUrl } from "./request-validation";
+import { describe, expect, it, test } from "vitest";
+import {
+  isPlainEmailAddress,
+  validateMockResponseField,
+  validateNotificationUrl,
+} from "./request-validation";
 
 describe("validateMockResponseField", () => {
   // -----------------------------------------------------------------------
@@ -230,5 +234,31 @@ describe("validateNotificationUrl", () => {
 
   test("rejects non-string", () => {
     expect(validateNotificationUrl(42).valid).toBe(false);
+  });
+});
+
+describe("isPlainEmailAddress", () => {
+  it("accepts plain addresses", () => {
+    expect(isPlainEmailAddress("dev+run-1@example.com")).toBe(true);
+    expect(isPlainEmailAddress("first.last@sub.example.co.uk")).toBe(true);
+  });
+
+  it("refuses strings the mailer would read as other recipients", () => {
+    for (const value of [
+      "x<slug@mailhooks.cc>",
+      "slug@mailhooks.cc>",
+      "slug@mailhooks.cc(c)",
+      "slug@mailhooks.cc,x.com",
+      "slug@mailhooks.cc;x.com",
+      "a:slug@mailhooks.cc;",
+      "slug@ｍailhooks.cc",
+      "slug@mailhooks.cc​",
+      "slug@mailhooks.cc.",
+      "slug@localhost",
+      "two@at@example.com",
+      `${"a".repeat(250)}@b.cc`,
+    ]) {
+      expect(isPlainEmailAddress(value), value).toBe(false);
+    }
   });
 });

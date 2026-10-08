@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toEmailCapture, toEmailSummary } from "./email-capture";
+import { isCaptureDomainAddress, toEmailCapture, toEmailSummary } from "./email-capture";
 
 // The shape the receiver stores (requests.email), as captured in development.
 const stored = {
@@ -172,5 +172,20 @@ describe("toEmailSummary", () => {
       toEmailSummary(toEmailCapture({ sender: [{ name: "Relay", address: "relay@example.com" }] }))
     ).toMatchObject({ from: { name: "Relay", address: "relay@example.com" } });
     expect(toEmailSummary(null)).toBeNull();
+  });
+});
+
+describe("isCaptureDomainAddress", () => {
+  it("matches the capture domain and its subdomains, case and trailing dot aside", () => {
+    expect(isCaptureDomainAddress("abc+run@mailhooks.cc", "mailhooks.cc")).toBe(true);
+    expect(isCaptureDomainAddress("abc@MailHooks.CC.", "mailhooks.cc")).toBe(true);
+    expect(isCaptureDomainAddress("abc@mx.mailhooks.cc", "mailhooks.cc")).toBe(true);
+  });
+
+  it("does not match other domains", () => {
+    expect(isCaptureDomainAddress("abc@notmailhooks.cc", "mailhooks.cc")).toBe(false);
+    expect(isCaptureDomainAddress("abc@mailhooks.cc.example.com", "mailhooks.cc")).toBe(false);
+    expect(isCaptureDomainAddress("abc@example.com", "mailhooks.cc")).toBe(false);
+    expect(isCaptureDomainAddress("no-at-sign", "mailhooks.cc")).toBe(false);
   });
 });

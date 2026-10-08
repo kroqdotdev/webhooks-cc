@@ -8,6 +8,8 @@ import {
   issueIdJagCredential,
 } from "@/lib/agent/agent-auth";
 import { verifyIdJag } from "@/lib/agent/id-jag";
+import { isCaptureDomainAddress } from "@/lib/email-capture";
+import { isPlainEmailAddress } from "@/lib/request-validation";
 import { sendError } from "@appsignal/nodejs";
 
 /**
@@ -31,12 +33,6 @@ const VERIFIED_EMAIL_ASSERTION_TYPE = "verified_email";
 
 /** Request body size cap (matches parseJsonBody usage below). */
 const MAX_BODY_BYTES = 16 * 1024;
-
-/** RFC 5321 maximum email length; guards the regex against ReDoS-style backtracking. */
-const MAX_EMAIL_LENGTH = 254;
-
-/** Loose RFC 5322-ish email check: a single @ with non-empty, dot-bearing host. */
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
@@ -98,6 +94,7 @@ export async function POST(request: Request) {
 
   const rateLimit = await checkRateLimitWithInfo(
     request,
+    isIdJagFlow ? "agent-register-idjag" : "agent-register",
     isIdJagFlow ? serverEnv().AGENT_IDJAG_RATE_LIMIT : serverEnv().AGENT_REGISTER_RATE_LIMIT,
     serverEnv().AGENT_REGISTER_RATE_WINDOW_MS
   );
@@ -130,8 +127,20 @@ export async function POST(request: Request) {
           ? body.email
           : null;
       // Bound length before the regex so worst-case backtracking is capped (ReDoS guard).
-      if (!emailValue || emailValue.length > MAX_EMAIL_LENGTH || !EMAIL_REGEX.test(emailValue)) {
+      if (!emailValue || !isPlainEmailAddress(emailValue)) {
         return Response.json({ error: "invalid_email" }, { status: 400 });
+      }
+      // Codes sent to the capture domain can be read through webhooks.cc
+      // itself, so one account could verify any number of +tag addresses and
+      // mint a new account for each.
+      if (isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
+        return Response.json(
+          {
+            error: "invalid_email",
+            error_description: `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN} cannot be used to register`,
+          },
+          { status: 400 }
+        );
       }
       const claim = await issueVerifiedEmailClaim({
         email: emailValue,

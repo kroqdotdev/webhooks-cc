@@ -6,9 +6,11 @@
  * unavailable or unset (development mode).
  */
 
+import { isIPv4, isIPv6 } from "node:net";
 import { getRedisClient, isRedisAvailable } from "./redis";
 
-const store = new Map<string, number[]>();
+/** In-memory fallback: request times per bucket, with the window each bucket was checked with. */
+const store = new Map<string, { windowMs: number; timestamps: number[] }>();
 let lastFallbackWarnAt = 0;
 
 /** Metadata returned by the WithInfo rate limit variants. */
@@ -54,6 +56,49 @@ export function getClientIp(request: Request): string {
   );
 }
 
+/**
+ * The part of a client IP that a rate limit counts: IPv4 addresses as they
+ * are, IPv6 addresses by their /64, because one IPv6 client usually holds a
+ * whole /64 and could otherwise use a fresh address per request.
+ * IPv4-mapped IPv6 addresses count as their IPv4 address.
+ */
+export function rateLimitIpBucket(ip: string): string {
+  const address = ip.split("%")[0].trim().toLowerCase();
+  if (isIPv4(address) || !isIPv6(address)) return address;
+  // The URL parser writes every IPv6 form (an IPv4 tail, uppercase, zero
+  // runs) in one canonical form of hex groups.
+  const canonical = new URL(`http://[${address}]`).hostname.slice(1, -1);
+  const [head, tail] = canonical.split("::");
+  const headGroups = head ? head.split(":") : [];
+  const tailGroups = tail ? tail.split(":") : [];
+  const groups =
+    tail === undefined
+      ? headGroups
+      : [
+          ...headGroups,
+          ...Array(8 - headGroups.length - tailGroups.length).fill("0"),
+          ...tailGroups,
+        ];
+  if (groups.slice(0, 5).every((group) => /^0+$/.test(group)) && groups[5] === "ffff") {
+    const high = parseInt(groups[6], 16);
+    const low = parseInt(groups[7], 16);
+    return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+  }
+  return `${groups
+    .slice(0, 4)
+    .map((group) => group.padStart(4, "0"))
+    .join(":")}::/64`;
+}
+
+/**
+ * The storage key of a limit. The window is part of it, so two limits that
+ * happen to share a key never trim each other's history: each check trims
+ * its bucket to its own window.
+ */
+function bucketKey(key: string, windowMs: number): string {
+  return `${key}:${windowMs}`;
+}
+
 // Lua script for atomic sliding window rate limiting via sorted set.
 // Returns [count_before_add, earliest_score].
 const SLIDING_WINDOW_SCRIPT = `
@@ -94,7 +139,7 @@ async function tryRedisRateLimit(
     const evalPromise = redis["eval"](
       SLIDING_WINDOW_SCRIPT,
       1,
-      `whcc:rate:${key}`,
+      `whcc:rate:${bucketKey(key, windowMs)}`,
       String(windowMs),
       String(maxRequests),
       String(now),
@@ -152,24 +197,25 @@ async function tryRedisRateLimit(
 }
 
 /**
- * In-memory sliding window fallback (unchanged from original implementation).
+ * In-memory sliding window fallback, used when Redis is unset or down.
  */
 function inMemoryRateLimit(key: string, maxRequests: number, windowMs: number): RateLimitInfo {
   const now = Date.now();
+  const storeKey = bucketKey(key, windowMs);
 
-  // Lazy cleanup: remove expired entries periodically (every ~100 calls)
+  // Lazy cleanup (every ~100 calls), each bucket by its own window.
   if (Math.random() < 0.01) {
-    for (const [k, timestamps] of store) {
-      const valid = timestamps.filter((t) => now - t < windowMs);
+    for (const [k, bucket] of store) {
+      const valid = bucket.timestamps.filter((t) => now - t < bucket.windowMs);
       if (valid.length === 0) {
         store.delete(k);
       } else {
-        store.set(k, valid);
+        store.set(k, { windowMs: bucket.windowMs, timestamps: valid });
       }
     }
   }
 
-  const timestamps = store.get(key) ?? [];
+  const timestamps = store.get(storeKey)?.timestamps ?? [];
   const valid = timestamps.filter((t) => now - t < windowMs);
 
   // Calculate reset: earliest timestamp in window + windowMs, as Unix seconds
@@ -198,7 +244,7 @@ function inMemoryRateLimit(key: string, maxRequests: number, windowMs: number): 
   }
 
   valid.push(now);
-  store.set(key, valid);
+  store.set(storeKey, { windowMs, timestamps: valid });
 
   return {
     allowed: true,
@@ -210,19 +256,21 @@ function inMemoryRateLimit(key: string, maxRequests: number, windowMs: number): 
 }
 
 /**
- * Check if a request is rate-limited, returning full metadata.
+ * Check if a request is rate-limited by its client IP, returning full metadata.
  * @param request - The incoming request (IP extracted from headers)
+ * @param scope - Names the limit (usually the route), so each limit counts on its own
  * @param maxRequests - Max requests allowed in the window
  * @param windowMs - Window size in milliseconds
  * @returns RateLimitInfo with allowed status, response, and metadata
  */
 export async function checkRateLimitWithInfo(
   request: Request,
+  scope: string,
   maxRequests: number,
   windowMs: number = 60_000
 ): Promise<RateLimitInfo> {
-  const ip = getClientIp(request);
-  return checkRateLimitByKeyWithInfo(ip, maxRequests, windowMs);
+  const bucket = rateLimitIpBucket(getClientIp(request));
+  return checkRateLimitByKeyWithInfo(`ip:${scope}:${bucket}`, maxRequests, windowMs);
 }
 
 /**
@@ -251,18 +299,20 @@ export async function checkRateLimitByKeyWithInfo(
 }
 
 /**
- * Check if a request is rate-limited.
+ * Check if a request is rate-limited by its client IP.
  * @param request - The incoming request
+ * @param scope - Names the limit (usually the route), so each limit counts on its own
  * @param maxRequests - Max requests allowed in the window
  * @param windowMs - Window size in milliseconds
  * @returns Response if rate-limited, null if allowed
  */
 export async function checkRateLimit(
   request: Request,
+  scope: string,
   maxRequests: number,
   windowMs: number = 60_000
 ): Promise<Response | null> {
-  return (await checkRateLimitWithInfo(request, maxRequests, windowMs)).response;
+  return (await checkRateLimitWithInfo(request, scope, maxRequests, windowMs)).response;
 }
 
 export async function checkRateLimitByKey(

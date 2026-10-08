@@ -22,6 +22,7 @@ export async function POST(request: Request) {
 
   const rateLimited = await checkRateLimit(
     request,
+    "guest-endpoint",
     ANON_ENDPOINT_RATE_LIMIT_MAX,
     ANON_ENDPOINT_RATE_LIMIT_WINDOW_MS
   );

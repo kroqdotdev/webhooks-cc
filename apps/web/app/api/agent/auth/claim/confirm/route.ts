@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   // a limit a logged-in caller could online-guess short codes. Mirrors the
   // sibling claim/verify-otp routes (defense in depth; the code space + 15-min
   // TTL already make guessing impractical).
-  const rateLimited = await checkRateLimit(request, 10);
+  const rateLimited = await checkRateLimit(request, "agent-claim-confirm", 10);
   if (rateLimited) return rateLimited;
 
   const parsed = await parseJsonBody(request, 1024);

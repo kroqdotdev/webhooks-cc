@@ -21,7 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!auth.success) return auth.response;
   const { slug } = await params;
 
-  const rateLimit = await checkRateLimitWithInfo(request, 10);
+  const rateLimit = await checkRateLimitWithInfo(request, "forwarding-test", 10);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);

@@ -9,7 +9,7 @@ import { sendError } from "@appsignal/nodejs";
  * key to a user yet. Returns only coarse status — no credential material.
  */
 export async function POST(request: Request) {
-  const rateLimited = await checkRateLimit(request, 30);
+  const rateLimited = await checkRateLimit(request, "agent-claim-poll", 30);
   if (rateLimited) return rateLimited;
 
   const parsed = await parseJsonBody(request, 1024);
