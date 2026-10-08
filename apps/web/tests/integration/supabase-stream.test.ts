@@ -244,6 +244,7 @@ describe("Supabase Stream Route Integration", () => {
       endpointId: testEndpointId,
       method: "POST",
       path: "/stream-live",
+      kind: "http",
     });
 
     controller.abort();

@@ -1,7 +1,7 @@
 {
   "name": "@webhooks-cc/sdk",
-  "version": "1.11.0",
-  "description": "TypeScript SDK for webhooks.cc — create endpoints, capture requests, assert in tests",
+  "version": "1.12.0",
+  "description": "TypeScript SDK for webhooks.cc \u2014 create endpoints, capture requests, assert in tests",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -15,6 +15,11 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.mjs",
       "require": "./dist/testing.js"
+    },
+    "./email": {
+      "types": "./dist/email.d.ts",
+      "import": "./dist/email.mjs",
+      "require": "./dist/email.js"
     }
   },
   "files": [

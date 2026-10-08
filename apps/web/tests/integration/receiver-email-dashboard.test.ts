@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { extractFromEmail } from "@/lib/email-extract";
+import { extractFromEmail } from "@webhooks-cc/sdk/email";
 import {
   createEndpointForUser,
   getEndpointBySlugForUser,
   updateEndpointBySlugForUser,
 } from "@/lib/supabase/endpoints";
-import { listRequestsForEndpointByUser } from "@/lib/supabase/requests";
+import {
+  listPaginatedRequestsForEndpointByUser,
+  listRequestsForEndpointByUser,
+} from "@/lib/supabase/requests";
 import { searchRequestsForUser } from "@/lib/supabase/search";
 import { getUsageForUser } from "@/lib/supabase/usage";
 import { buildTestEmail, DELIVER_PATH, signMailRequest, testDeliveryBody } from "@/lib/test-email";
@@ -200,5 +203,31 @@ describe("captured emails in the dashboard's data", () => {
     const results = await searchRequestsForUser({ userId, slug, q: "latin1" });
     expect(results).toHaveLength(1);
     expect(results[0].bodyRaw).toBe(raw.toString("base64"));
+  });
+
+  it("lists only emails or only HTTP requests when asked", async () => {
+    const { error } = await admin.rpc("capture_webhook", {
+      p_slug: slug,
+      p_method: "POST",
+      p_path: "/hooks",
+      p_headers: { "content-type": "application/json" },
+      p_body: '{"ok":true}',
+      p_query_params: {},
+      p_content_type: "application/json",
+      p_ip: "192.0.2.10",
+      p_received_at: new Date().toISOString(),
+    });
+    expect(error).toBeNull();
+
+    const all = await listRequestsForEndpointByUser({ userId, slug });
+    const emails = await listRequestsForEndpointByUser({ userId, slug, kind: "email" });
+    const http = await listRequestsForEndpointByUser({ userId, slug, kind: "http" });
+    expect(emails!.length).toBeGreaterThan(0);
+    expect(emails!.every((request) => request.kind === "email")).toBe(true);
+    expect(http!.map((request) => request.path)).toEqual(["/hooks"]);
+    expect(emails!.length + http!.length).toBe(all!.length);
+
+    const page = await listPaginatedRequestsForEndpointByUser({ userId, slug, kind: "http" });
+    expect(page!.items.map((request) => request.path)).toEqual(["/hooks"]);
   });
 });

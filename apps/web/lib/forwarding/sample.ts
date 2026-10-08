@@ -1,5 +1,5 @@
 import { toEmailCapture } from "@/lib/email-capture";
-import type { EmailJsonSource } from "@/lib/email-json";
+import type { EmailJsonSource } from "@webhooks-cc/sdk/email";
 
 /**
  * A stand-in email for a test delivery from an endpoint that has not

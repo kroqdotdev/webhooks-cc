@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractFromEmail } from "./email-extract";
+import { extractFromEmail } from "@webhooks-cc/sdk/email";
 import { buildTestEmail, signMailRequest, testDeliveryBody, TEST_EMAIL_HEADER } from "./test-email";
 
 describe("signMailRequest", () => {

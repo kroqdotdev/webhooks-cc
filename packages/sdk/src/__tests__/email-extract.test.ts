@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractFromEmail, htmlToText } from "./email-extract";
+import { extractFromEmail, htmlToText } from "../email/extract";
 
 const confirmHtml = `<div style="font-family:Arial"><img src="https://tidewater.app/logo.png" alt="Tidewater">
 <h1>Confirm your email</h1><p>Hi Ines,</p><p>Your confirmation code is</p>

@@ -43,7 +43,22 @@ import type {
   SubscribeOptions,
   RetryOptions,
   SDKDescription,
+  EmailRequest,
+  EmailCriteria,
+  ListEmailsOptions,
+  WaitForEmailOptions,
+  WaitForEmailsOptions,
+  SendTestEmailOptions,
+  SendTestEmailResult,
+  ConfigureForwardingOptions,
+  ForwardingTestResult,
+  EmailDelivery,
+  RecentEmailDelivery,
 } from "./types";
+import type { EmailReceivedEvent, RequestKind } from "./email/types";
+import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/address";
+import { buildEmailJson } from "./email/json";
+import { isEmailRequest, matchEmail } from "./matchers";
 import {
   WebhooksCCError,
   UnauthorizedError,
@@ -261,6 +276,9 @@ function buildSearchQuery(filters: SearchFilters, includePagination: boolean): s
   if (filters.method !== undefined) {
     params.set("method", filters.method);
   }
+  if (filters.kind !== undefined) {
+    params.set("kind", filters.kind);
+  }
   if (filters.q !== undefined) {
     params.set("q", filters.q);
   }
@@ -300,6 +318,9 @@ function buildPaginatedListQuery(options: ListPaginatedRequestsOptions = {}): st
   }
   if (options.cursor !== undefined) {
     params.set("cursor", options.cursor);
+  }
+  if (options.kind !== undefined) {
+    params.set("kind", options.kind);
   }
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -502,10 +523,35 @@ function parseStreamRequest(data: string): Request | null {
       ip: typeof parsed.ip === "string" ? parsed.ip : "unknown",
       size: typeof parsed.size === "number" ? parsed.size : 0,
       receivedAt: parsed.receivedAt,
+      kind: streamKind(parsed),
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * The stream sends `kind` since web 0.35.0. Older servers leave it out; an
+ * email is then the EMAIL method with an address, not a URL path.
+ */
+function streamKind(parsed: Record<string, unknown>): RequestKind | undefined {
+  if (parsed.kind === "email" || parsed.kind === "http") return parsed.kind;
+  if (
+    parsed.method === "EMAIL" &&
+    typeof parsed.path === "string" &&
+    !parsed.path.startsWith("/")
+  ) {
+    return "email";
+  }
+  return undefined;
+}
+
+/** A captured email, whether or not it carries its parsed message. */
+function isEmailKind(request: Pick<Request, "kind" | "method" | "path">): boolean {
+  return (
+    request.kind === "email" ||
+    (request.kind === undefined && request.method === "EMAIL" && !request.path.startsWith("/"))
+  );
 }
 
 async function collectMatchingRequests(
@@ -520,7 +566,7 @@ async function collectMatchingRequests(
   );
   const desiredCount = Math.max(1, Math.floor(options.count));
   const start = Date.now();
-  let lastChecked = start - WAIT_FOR_LOOKBACK_MS;
+  let lastChecked = options.since ?? start - WAIT_FOR_LOOKBACK_MS;
   let iterations = 0;
   const MAX_ITERATIONS = 10000;
   const collected: Request[] = [];
@@ -583,6 +629,7 @@ export class WebhooksCC {
   private readonly timeout: number;
   private readonly retry: ReturnType<typeof normalizeRetryOptions>;
   private readonly hooks: ClientHooks;
+  private readonly emailDomain: string;
 
   constructor(options: ClientOptions) {
     if (!options.apiKey || typeof options.apiKey !== "string") {
@@ -594,6 +641,7 @@ export class WebhooksCC {
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.retry = normalizeRetryOptions(options.retry);
     this.hooks = options.hooks ?? {};
+    this.emailDomain = options.emailDomain ?? DEFAULT_EMAIL_DOMAIN;
   }
 
   /**
@@ -800,6 +848,9 @@ export class WebhooksCC {
             responseRules:
               "ResponseRule[]|null? — conditional rules (first match wins), or null to clear",
             notificationUrl: "string?",
+            showEmailExtracts: "boolean? (owner only)",
+            forwardEnabled: "boolean? (owner only; needs forwardUrl)",
+            forwardUrl: "string|null? (owner only)",
           },
         },
         delete: {
@@ -865,7 +916,12 @@ export class WebhooksCC {
       requests: {
         list: {
           description: "List captured requests",
-          params: { endpointSlug: "string", limit: "number?", since: "number?" },
+          params: {
+            endpointSlug: "string",
+            limit: "number?",
+            since: "number?",
+            kind: '"http"|"email"?',
+          },
         },
         listPaginated: {
           description: "List captured requests with cursor-based pagination",
@@ -891,6 +947,7 @@ export class WebhooksCC {
             endpointSlug: "string",
             timeout: "number|string?",
             match: "function?",
+            since: "number? (default: five minutes ago)",
           },
         },
         subscribe: {
@@ -924,6 +981,7 @@ export class WebhooksCC {
           params: {
             slug: "string?",
             method: "string?",
+            kind: '"http"|"email"?',
             q: "string?",
             from: "number|string?",
             to: "number|string?",
@@ -948,6 +1006,87 @@ export class WebhooksCC {
             endpointSlug: "string",
             before: "number|string?",
           },
+        },
+      },
+      emails: {
+        address: {
+          description: "The address an endpoint receives email at: {slug}[+{tag}]@mailhooks.cc",
+          params: { endpoint: "string|Endpoint", tag: "string?" },
+        },
+        list: {
+          description: "List captured emails, newest first, filtered by tag/subject/from/to",
+          params: {
+            endpointSlug: "string",
+            tag: "string|null?",
+            subject: "string|RegExp?",
+            from: "string|RegExp?",
+            to: "string|RegExp?",
+            limit: "number?",
+            since: "number?",
+          },
+        },
+        get: {
+          description: "Get a captured email by request ID",
+          params: { requestId: "string" },
+        },
+        latest: {
+          description: "The newest email matching the criteria, or null",
+          params: { endpointSlug: "string", tag: "string|null?", subject: "string|RegExp?" },
+        },
+        waitFor: {
+          description: "Poll until a matching email arrives (default timeout 60s)",
+          params: {
+            endpointSlug: "string",
+            tag: "string|null?",
+            subject: "string|RegExp?",
+            from: "string|RegExp?",
+            to: "string|RegExp?",
+            timeout: "number|string?",
+            since: "number?",
+            match: "function?",
+          },
+        },
+        waitForAll: {
+          description: "Poll until count matching emails arrive",
+          params: { endpointSlug: "string", count: "number", tag: "string|null?" },
+        },
+        sendTest: {
+          description: "Deliver a sample email with a code and a link (counts as one request)",
+          params: { endpointSlug: "string", tag: "string?" },
+        },
+        toJson: {
+          description: "The email.received JSON forwarding would post for an email",
+          params: { email: "EmailRequest", includeExtracts: "boolean?" },
+        },
+      },
+      forwarding: {
+        configure: {
+          description: "Set the forwarding URL and turn forwarding on or off (owner only)",
+          params: { endpointSlug: "string", url: "string|null?", enabled: "boolean?" },
+        },
+        secret: {
+          description: "Read the endpoint's whsec_ signing secret",
+          params: { endpointSlug: "string" },
+        },
+        rotateSecret: {
+          description: "Replace the signing secret",
+          params: { endpointSlug: "string" },
+        },
+        test: {
+          description: "Post the newest email (or a sample) to the URL once and report the answer",
+          params: { endpointSlug: "string" },
+        },
+        deliveries: {
+          description: "The endpoint's latest deliveries",
+          params: { endpointSlug: "string", limit: "number? (1-20)" },
+        },
+        emailDeliveries: {
+          description: "Every delivery of one email, with each try",
+          params: { requestId: "string" },
+        },
+        redeliver: {
+          description: "Send an email again with the current URL and secret",
+          params: { requestId: "string" },
         },
       },
       teams: {
@@ -1188,6 +1327,235 @@ export class WebhooksCC {
     },
   };
 
+  /**
+   * Captured emails. Every endpoint on an account receives email at
+   * `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mailhooks.cc` for any tag.
+   * Use a fresh tag per test run to find your own email.
+   *
+   * @example
+   * ```ts
+   * const runId = `signup-${Date.now()}`;
+   * await page.getByLabel("Email").fill(client.emails.address(slug, runId));
+   * await page.getByRole("button", { name: "Sign up" }).click();
+   * const email = await client.emails.waitFor(slug, { tag: runId });
+   * const code = extractCode(email);
+   * ```
+   */
+  emails = {
+    /**
+     * The address an endpoint receives email at, optionally with a tag.
+     * Pass the endpoint (from `endpoints.get()`) to use the address the
+     * server reports; a slug uses the client's `emailDomain`.
+     */
+    address: (endpoint: string | Pick<Endpoint, "slug" | "emailAddress">, tag?: string): string => {
+      if (typeof endpoint !== "string" && endpoint.emailAddress) {
+        if (tag === undefined) return endpoint.emailAddress;
+        const at = endpoint.emailAddress.lastIndexOf("@");
+        const local = endpoint.emailAddress.slice(0, at);
+        if (!isValidEmailTag(tag, local)) {
+          throw new Error(`Invalid email tag: "${tag}"`);
+        }
+        return `${local}+${tag}${endpoint.emailAddress.slice(at)}`;
+      }
+      const slug = typeof endpoint === "string" ? endpoint : endpoint.slug;
+      return emailAddress(slug, tag, this.emailDomain);
+    },
+
+    /** Emails an endpoint captured, newest first, filtered by the criteria. */
+    list: async (
+      endpointSlug: string,
+      options: ListEmailsOptions = {}
+    ): Promise<EmailRequest[]> => {
+      const { limit = 50, since, ...criteria } = options;
+      const requests = await this.requests.list(endpointSlug, { kind: "email", limit, since });
+      return requests.filter(matchEmail(criteria)) as EmailRequest[];
+    },
+
+    /** One captured email by request ID. Throws NotFoundError for anything else. */
+    get: async (requestId: string): Promise<EmailRequest> => {
+      const request = await this.requests.get(requestId);
+      if (!isEmailRequest(request)) {
+        throw new NotFoundError(`Request ${requestId} is not a captured email`);
+      }
+      return request;
+    },
+
+    /** The newest email matching the criteria, or null. */
+    latest: async (
+      endpointSlug: string,
+      criteria: EmailCriteria = {}
+    ): Promise<EmailRequest | null> => {
+      const emails = await this.emails.list(endpointSlug, { ...criteria, limit: 100 });
+      return emails.sort((left, right) => right.receivedAt - left.receivedAt)[0] ?? null;
+    },
+
+    /**
+     * Polls until an email matching the criteria arrives (default timeout
+     * 60 seconds). Looks back five minutes unless `since` is given, so an
+     * email that arrived just before waiting started is found too.
+     */
+    waitFor: async (
+      endpointSlug: string,
+      options: WaitForEmailOptions = {}
+    ): Promise<EmailRequest> => {
+      const [email] = await this.emails.waitForAll(endpointSlug, { ...options, count: 1 });
+      return email;
+    },
+
+    /** Polls until `count` emails matching the criteria have arrived, oldest first. */
+    waitForAll: async (
+      endpointSlug: string,
+      options: WaitForEmailsOptions
+    ): Promise<EmailRequest[]> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const { count, timeout = 60000, pollInterval = 1000, since, match, ...criteria } = options;
+      const matches = matchEmail(criteria);
+      const listLimit = Math.min(1000, Math.max(100, Math.floor(count) * 2));
+      const emails = await collectMatchingRequests(
+        (from) =>
+          this.requests.list(endpointSlug, { since: from, limit: listLimit, kind: "email" }),
+        {
+          count,
+          timeout,
+          pollInterval,
+          since,
+          match: (request) => matches(request) && (!match || match(request as EmailRequest)),
+        }
+      );
+      return emails as EmailRequest[];
+    },
+
+    /**
+     * Delivers a sample email (with a code and a link) to an endpoint. It is
+     * captured and counted like any other email, but does not travel over
+     * SMTP, so no sender checks run on it.
+     */
+    sendTest: async (
+      endpointSlug: string,
+      options: SendTestEmailOptions = {}
+    ): Promise<SendTestEmailResult> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      if (options.tag !== undefined && !isValidEmailTag(options.tag, endpointSlug)) {
+        throw new Error(`Invalid email tag: "${options.tag}"`);
+      }
+      return this.request<SendTestEmailResult>("POST", "/send-test-email", {
+        slug: endpointSlug,
+        ...(options.tag !== undefined ? { tag: options.tag } : {}),
+      });
+    },
+
+    /**
+     * The `email.received` JSON forwarding would post for this email. Post it
+     * to a local handler with `sendTo(url, { provider: "standard-webhooks",
+     * secret, body })` to test the handler without forwarding.
+     */
+    toJson: (
+      email: EmailRequest,
+      options: { endpoint?: { slug: string; name?: string | null }; includeExtracts?: boolean } = {}
+    ): EmailReceivedEvent => {
+      const local = email.path.slice(0, Math.max(0, email.path.lastIndexOf("@")));
+      const slug = options.endpoint?.slug ?? local.split("+")[0].toLowerCase();
+      return buildEmailJson(
+        {
+          id: email.id,
+          receivedAt: email.receivedAt,
+          path: email.path,
+          size: email.size,
+          headers: email.headers,
+          email: email.email,
+        },
+        { slug, name: options.endpoint?.name ?? null },
+        { includeExtracts: options.includeExtracts }
+      );
+    },
+  };
+
+  /**
+   * Email forwarding: post every email an endpoint captures to your server
+   * as signed `email.received` JSON, retried for about a day. Only the
+   * endpoint's owner can manage it. Verify deliveries with
+   * `verifyForwardedEmail()`.
+   */
+  forwarding = {
+    /**
+     * Set the URL and turn forwarding on or off. Saving the first URL
+     * creates the endpoint's signing secret, so you can send a test delivery
+     * before turning forwarding on. Turning it off fails the deliveries
+     * still waiting.
+     */
+    configure: async (
+      endpointSlug: string,
+      options: ConfigureForwardingOptions
+    ): Promise<Endpoint> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const body: Record<string, unknown> = {};
+      if (options.url !== undefined) body.forwardUrl = options.url;
+      if (options.enabled !== undefined) body.forwardEnabled = options.enabled;
+      if (Object.keys(body).length === 0) {
+        throw new Error("forwarding.configure needs url or enabled");
+      }
+      return this.request<Endpoint>("PATCH", `/endpoints/${endpointSlug}`, body);
+    },
+
+    /** The endpoint's signing secret (`whsec_...`). NotFoundError before a URL was saved. */
+    secret: async (endpointSlug: string): Promise<string> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const response = await this.request<{ secret: string }>(
+        "GET",
+        `/endpoints/${endpointSlug}/forwarding`
+      );
+      return response.secret;
+    },
+
+    /** Replace the signing secret. Every delivery from now on, retries included, uses the new one. */
+    rotateSecret: async (endpointSlug: string): Promise<string> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const response = await this.request<{ secret: string }>(
+        "POST",
+        `/endpoints/${endpointSlug}/forwarding`
+      );
+      return response.secret;
+    },
+
+    /**
+     * Post the newest email (or a sample, when none has arrived) to the saved
+     * URL once and report what your server answered. Works with forwarding
+     * on or off; nothing is retried or logged.
+     */
+    test: async (endpointSlug: string): Promise<ForwardingTestResult> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      return this.request<ForwardingTestResult>(
+        "POST",
+        `/endpoints/${endpointSlug}/forwarding/test`
+      );
+    },
+
+    /** The endpoint's latest deliveries, newest first (limit 1 to 20, default 5). */
+    deliveries: async (
+      endpointSlug: string,
+      options: { limit?: number } = {}
+    ): Promise<RecentEmailDelivery[]> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      const query = options.limit !== undefined ? `?limit=${options.limit}` : "";
+      return this.request<RecentEmailDelivery[]>(
+        "GET",
+        `/endpoints/${endpointSlug}/deliveries${query}`
+      );
+    },
+
+    /** Every delivery of one email, with each try. */
+    emailDeliveries: async (requestId: string): Promise<EmailDelivery[]> => {
+      validatePathSegment(requestId, "requestId");
+      return this.request<EmailDelivery[]>("GET", `/requests/${requestId}/deliveries`);
+    },
+
+    /** Send an email again with the current URL and secret. Fails with 409 when forwarding is off. */
+    redeliver: async (requestId: string): Promise<{ id: string }> => {
+      validatePathSegment(requestId, "requestId");
+      return this.request<{ id: string }>("POST", `/requests/${requestId}/deliveries`);
+    },
+  };
+
   flow = (): WebhookFlowBuilder => {
     return new WebhookFlowBuilder(this);
   };
@@ -1358,6 +1726,7 @@ export class WebhooksCC {
       const params = new URLSearchParams();
       if (options.limit !== undefined) params.set("limit", String(options.limit));
       if (options.since !== undefined) params.set("since", String(options.since));
+      if (options.kind !== undefined) params.set("kind", options.kind);
 
       const query = params.toString();
       return this.request<Request[]>(
@@ -1439,10 +1808,15 @@ export class WebhooksCC {
         const page = await this.requests.listPaginated(endpointSlug, {
           limit: options.limit !== undefined ? Math.min(pageSize, remaining) : pageSize,
           cursor,
+          kind: "http",
         });
 
         for (const request of page.items) {
           if (options.since !== undefined && request.receivedAt <= options.since) {
+            continue;
+          }
+          // HAR and cURL describe HTTP requests; emails have no URL or method to replay.
+          if (isEmailKind(request)) {
             continue;
           }
           requests.push(request);
@@ -1507,6 +1881,13 @@ export class WebhooksCC {
       }
 
       const captured = await this.requests.get(requestId);
+      if (isEmailKind(captured)) {
+        throw new Error(
+          `Request ${requestId} is a captured email, which cannot be replayed as an HTTP request. ` +
+            "To send it to a handler, post emails.toJson(email) with sendTo(url, { provider: " +
+            '"standard-webhooks", secret, body }), or turn on forwarding.'
+        );
+      }
 
       // Strip hop-by-hop and sensitive headers
       const headers: Record<string, string> = {};

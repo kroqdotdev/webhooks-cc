@@ -1,4 +1,5 @@
-import type { Request } from "./types";
+import type { EmailAddress } from "./email/types";
+import type { EmailCriteria, EmailRequest, Request } from "./types";
 import { parseJsonBody, matchJsonField } from "./helpers";
 
 // Re-export matchJsonField for convenience
@@ -178,4 +179,74 @@ export function matchVerified(): (request: Request) => boolean {
 /** Match requests whose server-side signature verification failed. */
 export function matchUnverified(): (request: Request) => boolean {
   return (request: Request) => request.signatureVerified === false;
+}
+
+/**
+ * True for a captured email that carries its parsed message: `kind` is
+ * "email" (or, from an older server, the method is EMAIL with an address
+ * as the path). Requests from `requests.subscribe()` have no `email`; read
+ * the full email with `emails.get(id)`.
+ */
+export function isEmailRequest(request: Request): request is EmailRequest {
+  const looksLikeEmail =
+    request.kind === "email" ||
+    (request.kind === undefined && request.method === "EMAIL" && !request.path.startsWith("/"));
+  return looksLikeEmail && !!request.email;
+}
+
+function testPattern(pattern: RegExp, value: string): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(value);
+}
+
+function matchesAddress(addresses: EmailAddress[], pattern: string | RegExp): boolean {
+  return addresses.some((entry) => {
+    const address = entry.address ?? "";
+    if (typeof pattern === "string") return address.toLowerCase() === pattern.toLowerCase();
+    return testPattern(pattern, entry.name ? `${entry.name} <${address}>` : address);
+  });
+}
+
+/**
+ * Match captured emails by tag, subject, sender or recipient. Composes with
+ * `matchAll()` and works as the `match` of `requests.waitFor()` and
+ * `captureDuring()`.
+ *
+ * - `tag`: the address's `+tag`, exactly (`null` for untagged mail)
+ * - `subject`: a substring, or a RegExp
+ * - `from`: an address (case-insensitive), or a RegExp tested against "Name <address>"
+ * - `to`: an address in To, Cc or the address it was delivered to, or a RegExp
+ *
+ * @example
+ * ```ts
+ * const request = await client.requests.waitFor(slug, {
+ *   match: matchEmail({ tag: runId, subject: "Confirm your email" }),
+ * });
+ * ```
+ */
+export function matchEmail(criteria: EmailCriteria = {}): (request: Request) => boolean {
+  return (request) => {
+    if (!isEmailRequest(request)) return false;
+    const { email } = request;
+    if (criteria.tag !== undefined && email.tag !== criteria.tag) return false;
+    if (criteria.subject !== undefined) {
+      const subject = email.subject ?? "";
+      const matches =
+        typeof criteria.subject === "string"
+          ? subject.includes(criteria.subject)
+          : testPattern(criteria.subject, subject);
+      if (!matches) return false;
+    }
+    if (criteria.from !== undefined && !matchesAddress(email.from, criteria.from)) return false;
+    if (
+      criteria.to !== undefined &&
+      !matchesAddress(
+        [...email.to, ...email.cc, { name: null, address: request.path }],
+        criteria.to
+      )
+    ) {
+      return false;
+    }
+    return true;
+  };
 }

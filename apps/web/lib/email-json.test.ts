@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toEmailCapture } from "./email-capture";
-import { buildEmailJson } from "./email-json";
+import { buildEmailJson } from "@webhooks-cc/sdk/email";
 
 const stored = {
   subject: "Confirm your email for Tidewater",

@@ -1576,6 +1576,9 @@ describe("WebhooksCC", () => {
       expect(description.endpoints.list.params.team).toContain("team id or unique name");
       expect(Object.keys(description.teams)).toHaveLength(8);
       expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });
+      expect(Object.keys(description.emails)).toHaveLength(8);
+      expect(Object.keys(description.forwarding)).toHaveLength(7);
+      expect(description.requests.list.params.kind).toBe('"http"|"email"?');
     });
   });
 

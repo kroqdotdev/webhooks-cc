@@ -1,3 +1,5 @@
+import type { EmailCapture, RequestKind } from "./email/types";
+
 /**
  * A webhook endpoint that captures incoming HTTP requests.
  * Create endpoints via the dashboard or SDK to receive webhooks.
@@ -41,6 +43,16 @@ export interface Endpoint {
   hasSigningSecret?: boolean;
   /** Custom header name for generic-hmac provider */
   signingHeader?: string | null;
+  /** Address the endpoint receives email at; null for guest endpoints, which get none */
+  emailAddress?: string | null;
+  /** Whether codes and links are picked out of emails (dashboard and forwarded JSON) */
+  showEmailExtracts?: boolean;
+  /** Whether captured emails are forwarded to `forwardUrl` */
+  forwardEnabled?: boolean;
+  /** Where emails are forwarded (only returned to the endpoint's owner) */
+  forwardUrl?: string | null;
+  /** Whether a forwarding secret exists (read it with `forwarding.secret()`) */
+  hasForwardSecret?: boolean;
 }
 
 /** A single condition within a response rule. */
@@ -120,6 +132,20 @@ export interface Request {
   signatureError?: string | null;
   /** Provider that verified (or attempted to verify) the signature */
   signingProvider?: string | null;
+  /** "email" for a captured email, "http" for everything else */
+  kind?: RequestKind;
+  /** The parsed message, for a captured email */
+  email?: EmailCapture | null;
+}
+
+/**
+ * A captured email: a request with `kind: "email"`. `method` is "EMAIL",
+ * `path` the recipient address, `body` the raw message and `email` the
+ * parsed one.
+ */
+export interface EmailRequest extends Request {
+  kind: "email";
+  email: EmailCapture;
 }
 
 /**
@@ -149,6 +175,10 @@ export interface SearchResult {
   size: number;
   /** Unix timestamp (ms) when the request arrived */
   receivedAt: number;
+  /** "email" for a captured email, "http" for everything else */
+  kind?: RequestKind;
+  /** The parsed message, for a captured email */
+  email?: EmailCapture | null;
 }
 
 /** User-level request usage and quota information. */
@@ -298,6 +328,12 @@ export interface UpdateEndpointOptions {
   signingSecret?: string | null;
   /** Custom header name for generic-hmac provider */
   signingHeader?: string | null;
+  /** Pick codes and links out of emails (owner only) */
+  showEmailExtracts?: boolean;
+  /** Forward captured emails to `forwardUrl` (owner only; needs a URL) */
+  forwardEnabled?: boolean;
+  /** Where to forward emails, or null to remove it once forwarding is off (owner only) */
+  forwardUrl?: string | null;
 }
 
 /**
@@ -410,6 +446,8 @@ export interface ListRequestsOptions {
   limit?: number;
   /** Only return requests received after this timestamp (ms) */
   since?: number;
+  /** Only HTTP requests or only emails */
+  kind?: RequestKind;
 }
 
 /** Cursor-based paginated result. */
@@ -428,6 +466,8 @@ export interface ListPaginatedRequestsOptions {
   limit?: number;
   /** Opaque cursor from a previous page */
   cursor?: string;
+  /** Only HTTP requests or only emails */
+  kind?: RequestKind;
 }
 
 /**
@@ -447,6 +487,8 @@ export interface SearchFilters {
   slug?: string;
   /** Restrict results to a specific HTTP method */
   method?: string;
+  /** Only HTTP requests or only emails */
+  kind?: RequestKind;
   /** Free-text substring search across path, body, and headers */
   q?: string;
   /** Lower bound for receivedAt (absolute ms or relative duration) */
@@ -471,6 +513,12 @@ export interface WaitForOptions {
   pollInterval?: number | string;
   /** Filter function to match specific requests */
   match?: (request: Request) => boolean;
+  /**
+   * Only consider requests received after this timestamp (ms). Defaults to
+   * five minutes before the call, so a request that arrived just before
+   * waiting started is still found.
+   */
+  since?: number;
 }
 
 /** Options for waitForAll() multi-request collection. */
@@ -582,6 +630,8 @@ export interface ClientOptions {
   retry?: RetryOptions;
   /** Lifecycle hooks for observability */
   hooks?: ClientHooks;
+  /** Domain endpoints receive email on, for `emails.address()` (default: mailhooks.cc) */
+  emailDomain?: string;
 }
 
 /** Description of a single SDK operation. */
@@ -757,5 +807,118 @@ export interface SDKDescription {
   buildRequest: OperationDescription;
   flow: OperationDescription;
   requests: Record<string, OperationDescription>;
+  emails: Record<string, OperationDescription>;
+  forwarding: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
+}
+
+/** Which emails to match. Strings match exactly (subject: contains; addresses: case-insensitive). */
+export interface EmailCriteria {
+  /** The address's `+tag`, exactly (tags are case-sensitive). `null` matches untagged mail only. */
+  tag?: string | null;
+  /** Subject: a substring, or a RegExp */
+  subject?: string | RegExp;
+  /** Any From address: the address (case-insensitive), or a RegExp tested against "Name <address>" */
+  from?: string | RegExp;
+  /** Any To or Cc address: the address (case-insensitive), or a RegExp */
+  to?: string | RegExp;
+}
+
+/** Options for `emails.list()`. */
+export interface ListEmailsOptions extends EmailCriteria {
+  /** Maximum number of emails to fetch before filtering (default: 50) */
+  limit?: number;
+  /** Only emails received after this timestamp (ms) */
+  since?: number;
+}
+
+/** Options for `emails.waitFor()`. */
+export interface WaitForEmailOptions extends EmailCriteria {
+  /** Maximum time to wait (ms or duration string like "60s") (default: 60000) */
+  timeout?: number | string;
+  /** Interval between polls (default: 1000) */
+  pollInterval?: number | string;
+  /** Only emails received after this timestamp (ms) (default: five minutes ago) */
+  since?: number;
+  /** Extra filter on top of the criteria */
+  match?: (email: EmailRequest) => boolean;
+}
+
+/** Options for `emails.waitForAll()`. */
+export interface WaitForEmailsOptions extends WaitForEmailOptions {
+  /** Number of matching emails to collect */
+  count: number;
+}
+
+/** Options for `emails.sendTest()`. */
+export interface SendTestEmailOptions {
+  /** Deliver to `{slug}+{tag}@...` instead of the plain address */
+  tag?: string;
+}
+
+/** Result of `emails.sendTest()`. */
+export interface SendTestEmailResult {
+  status: "captured";
+  /** ID of the captured email (null when the server could not tell) */
+  requestId: string | null;
+}
+
+/** Options for `forwarding.configure()`. */
+export interface ConfigureForwardingOptions {
+  /** https URL on a public host name, or null to remove it (forwarding must be off) */
+  url?: string | null;
+  /** Turn forwarding on or off. Turning it on needs a URL, sent now or saved before. */
+  enabled?: boolean;
+}
+
+/** Result of `forwarding.test()`: one delivery of the newest email (or a sample) to the saved URL. */
+export interface ForwardingTestResult {
+  /** HTTP status your server answered, or null when no answer arrived */
+  status: number | null;
+  durationMs: number;
+  /** The start of your server's response body */
+  excerpt: string | null;
+  /** Why no answer arrived (timeout, refused connection, TLS problem) */
+  error: string | null;
+  /** True when your server answered 2xx */
+  delivered: boolean;
+  /** No email had arrived yet, so a sample was sent */
+  sample: boolean;
+}
+
+/** One try of a forwarded email. */
+export interface EmailDeliveryAttempt {
+  attemptedAt: number;
+  status: number | null;
+  durationMs: number;
+  error: string | null;
+  responseExcerpt: string | null;
+}
+
+/** A forwarded email's delivery, with every try. */
+export interface EmailDelivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;
+  finishedAt: number | null;
+  /** When the next try is due, for pending deliveries */
+  nextAttemptAt: number | null;
+  lastStatus: number | null;
+  lastError: string | null;
+  attemptLog: EmailDeliveryAttempt[];
+}
+
+/** An endpoint's recent delivery, as `forwarding.deliveries()` lists it. */
+export interface RecentEmailDelivery {
+  id: string;
+  requestId: string;
+  status: EmailDelivery["status"];
+  attempts: number;
+  createdAt: number;
+  lastStatus: number | null;
+  lastError: string | null;
+  /** The email's subject */
+  subject: string | null;
 }

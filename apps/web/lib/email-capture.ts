@@ -1,3 +1,11 @@
+import type {
+  EmailAddress,
+  EmailAttachment,
+  EmailAuth,
+  EmailCapture,
+  EmailCheck,
+  EmailSmtp,
+} from "@webhooks-cc/sdk/email";
 import type { Json } from "@/lib/supabase/database";
 
 /**
@@ -7,86 +15,19 @@ import type { Json } from "@/lib/supabase/database";
  * parsed message in `requests.email` (snake_case JSON, see
  * apps/receiver-rs/src/mail/parse.rs and handlers.rs; the authentication
  * results come from the MX host, apps/mx-rs/src/auth_check.rs). This module
- * turns that JSON into camelCase types and never trusts its shape: anything
+ * turns that JSON into the SDK's camelCase types (@webhooks-cc/sdk/email, the
+ * public shape of an email in the API) and never trusts its shape: anything
  * missing or malformed becomes null or an empty list.
  */
 
-export interface EmailAddress {
-  name: string | null;
-  address: string | null;
-}
-
-export interface EmailAttachment {
-  filename: string | null;
-  contentType: string;
-  size: number;
-  contentId: string | null;
-  inline: boolean;
-}
-
-export interface EmailCheck {
-  /** "pass", "fail", "softfail", "neutral", "none", "temperror", "permerror", "skipped" ... */
-  result: string;
-  domain: string | null;
-}
-
-export interface EmailAuth {
-  spf: EmailCheck | null;
-  dkim: (EmailCheck & { selector: string | null })[];
-  dmarc: (EmailCheck & { policy: string | null; reason: string | null }) | null;
-  /** Reverse DNS of the sending server, checked name by name. */
-  iprev: { result: string; ptr: string | null } | null;
-  /** The Authentication-Results header the MX host wrote. */
-  authenticationResults: string | null;
-  /** Set when the checks could not run ("unavailable", "timeout", "busy", "failed"). */
-  error: string | null;
-}
-
-export interface EmailSmtp {
-  clientIp: string | null;
-  clientRdns: string | null;
-  helo: string | null;
-  tls: { version: string | null; cipher: string | null } | null;
-  envelopeFrom: string | null;
-  envelopeTo: string[];
-  /** Size of the whole message as received, in bytes. */
-  size: number | null;
-  /**
-   * The dashboard's own "Send test email" sample. Set by the receiver only
-   * for that signed delivery, never from anything in the message.
-   */
-  test: boolean;
-}
-
-export interface EmailCapture {
-  subject: string | null;
-  from: EmailAddress[];
-  to: EmailAddress[];
-  cc: EmailAddress[];
-  replyTo: EmailAddress[];
-  sender: EmailAddress[];
-  date: string | null;
-  messageId: string | null;
-  inReplyTo: string[];
-  /** The `+tag` of the address it was sent to, if any. */
-  tag: string | null;
-  text: string | null;
-  html: string | null;
-  /** The text part was missing and `text` was derived from the HTML. */
-  textFromHtml: boolean;
-  attachments: EmailAttachment[];
-  auth: EmailAuth | null;
-  smtp: EmailSmtp | null;
-  parseError: boolean;
-  truncated: {
-    raw: boolean;
-    text: boolean;
-    html: boolean;
-    headers: boolean;
-    addresses: boolean;
-    attachments: boolean;
-  };
-}
+export type {
+  EmailAddress,
+  EmailAttachment,
+  EmailCheck,
+  EmailAuth,
+  EmailSmtp,
+  EmailCapture,
+} from "@webhooks-cc/sdk/email";
 
 /** What a list row needs, without the message body. */
 export interface EmailSummary {
