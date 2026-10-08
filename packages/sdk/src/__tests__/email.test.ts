@@ -124,8 +124,11 @@ describe("email helpers", () => {
     expect(extractLink(request)).toBe("https://app.tidewater.app/confirm?token=Zk3q9v");
     expect(extractCode({ subject: "Hello", text: "Nothing here", html: null })).toBeNull();
     const plain = { subject: "News", text: "Read https://example.com/post", html: null };
-    expect(extractLink(plain)).toBeNull();
-    expect(extractLink(plain, { actionOnly: false })).toBe("https://example.com/post");
+    expect(extractLink(plain)).toBe("https://example.com/post");
+    expect(extractLink(plain, { actionOnly: true })).toBeNull();
+    expect(extractLink(request, { actionOnly: true })).toBe(
+      "https://app.tidewater.app/confirm?token=Zk3q9v"
+    );
     expect(extractCode(httpRequest)).toBeNull();
   });
 

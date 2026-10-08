@@ -31,7 +31,7 @@ export function emailAddress(slug: string, tag?: string, domain = DEFAULT_EMAIL_
   }
   if (tag !== undefined && !isValidEmailTag(tag, slug)) {
     throw new Error(
-      `Invalid email tag: "${tag}". Use letters, digits and . _ - = (no spaces), at most ${MAX_LOCAL_PART - slug.length - 1} characters`
+      `Invalid email tag: "${tag}". Use printable ASCII without spaces, quotes, brackets, @ , ; or :, at most ${MAX_LOCAL_PART - slug.length - 1} characters`
     );
   }
   const local = tag === undefined ? slug.toLowerCase() : `${slug.toLowerCase()}+${tag}`;

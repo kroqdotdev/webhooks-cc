@@ -1,9 +1,9 @@
 ---
 title: "Testing"
-description: "Use the SDK in your test suite to verify webhook integrations end-to-end. Create temporary endpoints, trigger your application, and assert on the captured requests."
+description: "Use the SDK in your test suite to verify webhook integrations and emails end-to-end. Create temporary endpoints, trigger your application, and assert on the captured requests and emails."
 section: sdk
 order: 3
-lastUpdated: 2026-03-10
+lastUpdated: 2026-10-08
 schema: howto
 keywords: ["webhook testing", "CI/CD webhooks", "webhook assertions", "integration testing"]
 seo:
@@ -91,7 +91,7 @@ const req = await client.requests.waitFor(endpoint.slug, {
 
 ## Testing localhost webhook handlers
 
-Use `sendTo` to send signed webhooks directly to your local server. No webhooks.cc endpoint needed — the request goes straight to localhost with proper provider signatures.
+Use `sendTo` to send signed webhooks directly to your local server. No webhooks.cc endpoint is needed: the request goes straight to localhost with proper provider signatures.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";
@@ -123,10 +123,15 @@ Works with all providers: `standard-webhooks` (Polar, Svix, Clerk, Resend), `str
 The SDK provides testing helpers via the `@webhooks-cc/sdk/testing` subpath export:
 
 ```ts
-import { withEndpoint, captureDuring, assertRequest } from "@webhooks-cc/sdk/testing";
+import {
+  withEndpoint,
+  captureDuring,
+  captureEmailDuring,
+  assertRequest,
+} from "@webhooks-cc/sdk/testing";
 
-// Auto-cleanup wrapper — endpoint is deleted when callback completes
-const result = await withEndpoint(client, async (endpoint) => {
+// Auto-cleanup wrapper: the endpoint is deleted when the callback completes
+const request = await withEndpoint(client, async (endpoint) => {
   await triggerWebhook(endpoint.url);
   return client.requests.waitFor(endpoint.slug, { timeout: "10s" });
 });
@@ -146,13 +151,84 @@ const result = assertRequest(request, {
   bodyJson: { event: "payment.success" },
 });
 expect(result.pass).toBe(true);
+
+// Capture the email an action triggers (see Testing emails below)
+const [email] = await captureEmailDuring(client, async (address) => {
+  await signUp({ email: address });
+});
 ```
+
+## Testing emails
+
+Every endpoint on an account also receives email, at `<slug>@mailhooks.cc` and at `<slug>+<tag>@mailhooks.cc` for any tag. Point your signup, login, or password reset flow at that address, wait for the email, and assert on it. Each email counts as one request.
+
+### captureEmailDuring
+
+`captureEmailDuring` creates a temporary endpoint, runs your action with its email address, waits for the email it triggers, and deletes the endpoint, even when the test fails:
+
+```ts
+import { WebhooksCC, extractCode, extractLink } from "@webhooks-cc/sdk";
+import { captureEmailDuring } from "@webhooks-cc/sdk/testing";
+import { expect, it } from "vitest";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+it("sends a confirmation email on signup", async () => {
+  const [email] = await captureEmailDuring(
+    client,
+    async (address) => {
+      await signUp({ email: address, password: "correct horse battery staple" });
+    },
+    { subject: "Confirm your email", timeout: "30s" }
+  );
+
+  expect(email.email.from[0]?.address).toBe("no-reply@example.com");
+  expect(extractCode(email)).toMatch(/^\d{6}$/);
+  expect(extractLink(email)).toContain("/confirm?token=");
+});
+```
+
+The action gets the address and the endpoint. The options take the [email criteria](/docs/sdk/api#emails) (`tag`, `subject`, `from`, `to`), `count` (default: 1), `timeout` (default: 60 seconds), `pollInterval` (default: 1 second), a `match` function, and the options of `endpoints.create()`. With `tag`, the action gets the tagged address and only mail to that tag counts. Every email the new endpoint received counts, so nothing from an earlier run can match.
+
+### One endpoint, a tag per test
+
+To keep one endpoint for a whole suite, give each test its own tag. Mail to a tagged address lands on the same endpoint, and `emails.waitFor` only takes mail with that tag:
+
+```ts
+import { WebhooksCC, extractLink } from "@webhooks-cc/sdk";
+import { afterAll, beforeAll, expect, it } from "vitest";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+let slug: string;
+
+beforeAll(async () => {
+  slug = (await client.endpoints.create({ name: "auth-emails" })).slug;
+});
+
+afterAll(async () => {
+  await client.endpoints.delete(slug);
+});
+
+it("sends a password reset link", async () => {
+  const tag = `reset-${Date.now()}`;
+  await requestPasswordReset(client.emails.address(slug, tag));
+
+  const email = await client.emails.waitFor(slug, { tag, timeout: "30s" });
+  expect(email.email.subject).toContain("Reset your password");
+  expect(extractLink(email)).toMatch(/\/reset\?token=/);
+});
+```
+
+To check the wiring before your app sends anything, `client.emails.sendTest(slug, { tag })` delivers a sample email with a six-digit code.
+
+To test the server that receives [forwarded emails](/docs/forwarding), post a captured email to it with `client.sendTo()`; see [Test your handler locally](/docs/forwarding#test-your-handler-locally).
 
 ## Tips
 
 - Use unique endpoint names per test run to avoid conflicts in parallel CI
 - Always clean up endpoints in `afterAll` / `afterEach`
-- The free plan supports 50 requests/day — enough for most test suites
+- The free plan supports 50 requests a day, enough for most test suites; each email counts as one request
+- Use a fresh `+tag` per test run when several runs share an endpoint's email address
 
 ## Framework examples
 

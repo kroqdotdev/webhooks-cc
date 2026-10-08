@@ -925,7 +925,12 @@ export class WebhooksCC {
         },
         listPaginated: {
           description: "List captured requests with cursor-based pagination",
-          params: { endpointSlug: "string", limit: "number?", cursor: "string?" },
+          params: {
+            endpointSlug: "string",
+            limit: "number?",
+            cursor: "string?",
+            kind: '"http"|"email"?',
+          },
         },
         get: {
           description: "Get request by ID",
@@ -939,6 +944,7 @@ export class WebhooksCC {
             timeout: "number|string?",
             pollInterval: "number|string?",
             match: "function?",
+            since: "number? (default: five minutes ago)",
           },
         },
         waitFor: {
@@ -995,6 +1001,7 @@ export class WebhooksCC {
           params: {
             slug: "string?",
             method: "string?",
+            kind: '"http"|"email"?',
             q: "string?",
             from: "number|string?",
             to: "number|string?",
@@ -1031,7 +1038,13 @@ export class WebhooksCC {
         },
         latest: {
           description: "The newest email matching the criteria, or null",
-          params: { endpointSlug: "string", tag: "string|null?", subject: "string|RegExp?" },
+          params: {
+            endpointSlug: "string",
+            tag: "string|null?",
+            subject: "string|RegExp?",
+            from: "string|RegExp?",
+            to: "string|RegExp?",
+          },
         },
         waitFor: {
           description: "Poll until a matching email arrives (default timeout 60s)",
@@ -1041,14 +1054,26 @@ export class WebhooksCC {
             subject: "string|RegExp?",
             from: "string|RegExp?",
             to: "string|RegExp?",
-            timeout: "number|string?",
-            since: "number?",
+            timeout: "number|string? (default: 60s)",
+            pollInterval: "number|string? (default: 1s)",
+            since: "number? (default: five minutes ago)",
             match: "function?",
           },
         },
         waitForAll: {
-          description: "Poll until count matching emails arrive",
-          params: { endpointSlug: "string", count: "number", tag: "string|null?" },
+          description: "Poll until count matching emails arrive, oldest first",
+          params: {
+            endpointSlug: "string",
+            count: "number",
+            tag: "string|null?",
+            subject: "string|RegExp?",
+            from: "string|RegExp?",
+            to: "string|RegExp?",
+            timeout: "number|string? (default: 60s)",
+            pollInterval: "number|string? (default: 1s)",
+            since: "number? (default: five minutes ago)",
+            match: "function?",
+          },
         },
         sendTest: {
           description: "Deliver a sample email with a code and a link (counts as one request)",
@@ -1056,7 +1081,11 @@ export class WebhooksCC {
         },
         toJson: {
           description: "The email.received JSON forwarding would post for an email",
-          params: { email: "EmailRequest", includeExtracts: "boolean?" },
+          params: {
+            email: "EmailRequest",
+            endpoint: "{ slug, name? }?",
+            includeExtracts: "boolean? (default: true)",
+          },
         },
       },
       forwarding: {

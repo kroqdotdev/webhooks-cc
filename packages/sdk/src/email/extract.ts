@@ -183,9 +183,10 @@ export function extractCode(input: EmailLike): string | null {
 }
 
 /**
- * The link the email asks you to click (confirm, verify, reset, sign in),
- * or null. With `actionOnly: false`, the first link worth keeping when no
- * action link is found.
+ * The link the email asks you to click (confirm, verify, reset, sign in)
+ * when it has one, otherwise the first link worth keeping; null when there
+ * is none. The same link the dashboard shows first. With `actionOnly: true`,
+ * only an action link counts.
  */
 export function extractLink(
   input: EmailLike,
@@ -193,9 +194,8 @@ export function extractLink(
 ): string | null {
   const content = contentOf(input);
   if (!content) return null;
-  const { links } = extractFromEmail(content);
-  const link =
-    links.find((candidate) => candidate.action) ??
-    (options.actionOnly === false ? links[0] : undefined);
-  return link?.url ?? null;
+  // Links come ranked with action links first.
+  const [best] = extractFromEmail(content).links;
+  if (!best || (options.actionOnly && !best.action)) return null;
+  return best.url;
 }

@@ -49,6 +49,8 @@ Endpoints on an account do, on every plan, including endpoints shared with a tea
 
 Open **Send** in the endpoint bar and pick **Send test email**. A sample message with a code and a link is delivered straight to the endpoint, so you can see every part of the email view before wiring up a real sender. It counts as one request. It does not travel over SMTP, so the sender checks (SPF, DKIM, DMARC) do not apply to it, and the dashboard says so.
 
+From code, `client.emails.sendTest(slug, { tag })` in the SDK (or `POST /api/send-test-email`) delivers the same sample, to a tagged address if you pass a tag.
+
 ## In the dashboard
 
 Emails show up in the request list with an **EMAIL** badge, their subject, the sender, the tag, the number of attachments, and the size. Above the list, switch between **All**, **HTTP** and **Email**.
@@ -136,6 +138,26 @@ A message the sender retries after a temporary failure is captured once, not onc
 
 A [notification URL](/docs/notification-webhooks) fires for emails too. The payload has `"method": "EMAIL"`, the recipient address as `path`, and the subject followed by the start of the text as `preview`.
 
+## In the SDK
+
+The [TypeScript SDK](/docs/sdk) builds the address, waits for the email, and picks out the code. Use a fresh tag per test run, so each run finds its own email:
+
+```ts
+import { WebhooksCC, extractCode } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+const runId = `signup-${Date.now()}`;
+const address = client.emails.address("my-endpoint", runId);
+// my-endpoint+signup-1791450602000@mailhooks.cc
+await signUp(address); // your app sends the confirmation email
+
+const email = await client.emails.waitFor("my-endpoint", { tag: runId });
+const code = extractCode(email); // "482913"
+```
+
+`waitFor` polls for up to 60 seconds by default and only takes mail sent to that tag. `extractLink(email)` returns the confirm, verify, reset, or sign-in link the same way. `client.emails` also lists emails, filters them by subject, sender, or recipient, and sends test emails, and `client.forwarding` manages [forwarding](/docs/forwarding). See [Emails in the SDK reference](/docs/sdk/api#emails), and [Testing emails](/docs/sdk/testing#testing-emails) for test patterns.
+
 ## In the API
 
-The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`.
+The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`. Add `kind=email` to the request list or search to get only emails, or `kind=http` to leave them out.
