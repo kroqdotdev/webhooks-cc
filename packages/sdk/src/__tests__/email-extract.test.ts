@@ -128,3 +128,72 @@ describe("htmlToText", () => {
     );
   });
 });
+
+describe("extraction time on hostile input", () => {
+  // Email bodies come from anyone and are scanned on the server when forwarding;
+  // each of these took between 2 seconds and 2 minutes with backtracking patterns.
+  const size = 256 * 1024;
+  const hostile: Record<string, { subject: null; text: string | null; html: string | null }> = {
+    "unclosed angle brackets": { subject: null, text: null, html: "<".repeat(size) },
+    "anchors without a closing bracket": {
+      subject: null,
+      text: null,
+      html: "<a ".repeat(size / 3),
+    },
+    "anchors without a closing tag": {
+      subject: null,
+      text: null,
+      html: '<a href="https://x.io/confirm">'.repeat(size / 32),
+    },
+    "unquoted href of punctuation": {
+      subject: null,
+      text: null,
+      html: "<a href=" + "!".repeat(size),
+    },
+    "unclosed script elements": { subject: null, text: null, html: "<script>".repeat(size / 8) },
+    "url followed by punctuation": {
+      subject: null,
+      text: "see https://x.io/" + "!".repeat(size) + "x",
+      html: null,
+    },
+    "punctuation line": { subject: null, text: "code\n" + "!".repeat(size) + "a", html: null },
+    "code word and capitals": { subject: null, text: "code " + "A".repeat(size), html: null },
+  };
+
+  for (const [name, email] of Object.entries(hostile)) {
+    it(`finishes quickly: ${name}`, () => {
+      const started = performance.now();
+      extractFromEmail(email);
+      expect(performance.now() - started).toBeLessThan(1000);
+    });
+  }
+});
+
+describe("tag handling edge cases", () => {
+  it("keeps the text of unclosed elements and a stray angle bracket", () => {
+    expect(htmlToText("a < b")).toBe("a < b");
+    expect(htmlToText("<p>Hi</p><script>x")).toBe("Hi\nx");
+    expect(htmlToText("<style>p{}</style>Your code is 123456")).toBe("Your code is 123456");
+    expect(htmlToText("x <> y")).toBe("x <> y");
+  });
+
+  it("reads anchors with any quoting and skips ones without href", () => {
+    const html =
+      '<a name="top">Top</a><a class=btn href=https://x.io/verify?t=1>Verify</a>' +
+      "<A HREF='https://x.io/reset'>Reset</A><abbr>no</abbr>";
+    const { links } = extractFromEmail({ subject: null, text: null, html });
+    expect(links.map((link) => [link.url, link.label])).toEqual([
+      ["https://x.io/verify?t=1", "Verify"],
+      ["https://x.io/reset", "Reset"],
+    ]);
+  });
+
+  it("trims trailing punctuation from links in text", () => {
+    const { links } = extractFromEmail({
+      subject: null,
+      text: "Confirm here: https://x.io/confirm?t=9!?.",
+      html: null,
+    });
+    expect(links[0]?.url).toBe("https://x.io/confirm?t=9");
+  });
+});
