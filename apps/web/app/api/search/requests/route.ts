@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     // below never runs for them, so without this an unclaimed key could hammer
     // this endpoint (and its bearer validation) unthrottled.
     if (validated.userId === null) {
-      const agentLimit = await checkRateLimitWithInfo(request, 60, 10 * 60_000);
+      const agentLimit = await checkRateLimitWithInfo(request, "search-unclaimed", 60, 10 * 60_000);
       if (agentLimit.response) return agentLimit.response;
       return Response.json(
         { error: "This operation requires a claimed account." },

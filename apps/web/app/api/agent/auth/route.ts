@@ -8,6 +8,7 @@ import {
   issueIdJagCredential,
 } from "@/lib/agent/agent-auth";
 import { verifyIdJag } from "@/lib/agent/id-jag";
+import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { sendError } from "@appsignal/nodejs";
 
 /**
@@ -98,6 +99,7 @@ export async function POST(request: Request) {
 
   const rateLimit = await checkRateLimitWithInfo(
     request,
+    isIdJagFlow ? "agent-register-idjag" : "agent-register",
     isIdJagFlow ? serverEnv().AGENT_IDJAG_RATE_LIMIT : serverEnv().AGENT_REGISTER_RATE_LIMIT,
     serverEnv().AGENT_REGISTER_RATE_WINDOW_MS
   );
@@ -132,6 +134,18 @@ export async function POST(request: Request) {
       // Bound length before the regex so worst-case backtracking is capped (ReDoS guard).
       if (!emailValue || emailValue.length > MAX_EMAIL_LENGTH || !EMAIL_REGEX.test(emailValue)) {
         return Response.json({ error: "invalid_email" }, { status: 400 });
+      }
+      // Codes sent to the capture domain can be read through webhooks.cc
+      // itself, so one account could verify any number of +tag addresses and
+      // mint a new account for each.
+      if (isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
+        return Response.json(
+          {
+            error: "invalid_email",
+            error_description: `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN} cannot be used to register`,
+          },
+          { status: 400 }
+        );
       }
       const claim = await issueVerifiedEmailClaim({
         email: emailValue,

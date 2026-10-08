@@ -19,9 +19,19 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const REDIS_URL = process.env.REDIS_URL;
 const RECEIVER_URL = "http://localhost:3001";
-const WEB_URL = "http://localhost:3000";
+const WEB_URL = process.env.WEB_URL ?? "http://localhost:3000";
 
 const canRun = Boolean(REDIS_URL && SUPABASE_URL && SERVICE_ROLE_KEY);
+
+/** Keys are scoped per limit and carry the window: whcc:rate:ip:<scope>:<ip>:<windowMs>. */
+const rateKey = (scope: string, ip: string, windowMs: number | "*") =>
+  `whcc:rate:ip:${scope}:${ip}:${windowMs}`;
+/** The guest endpoint route's limit window (app/api/go/endpoint/route.ts). */
+const GUEST_WINDOW_MS = 10 * 60_000;
+const guestKey = (ip: string) => rateKey("guest-endpoint", ip, GUEST_WINDOW_MS);
+/** The guest endpoint route refuses automated user agents before it rate-limits. */
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 
 describe.skipIf(!canRun)("Redis rate limiting integration", () => {
   let admin: ReturnType<typeof createClient<Database>>;
@@ -86,13 +96,13 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
     }
     if (redis) {
       const cleanupKeys = [
-        "whcc:rate:10.99.99.1",
-        "whcc:rate:10.88.88.88",
-        "whcc:rate:10.88.88.99",
-        "whcc:rate:10.66.66.66",
-        "whcc:rate:10.66.66.99",
-        "whcc:rate:10.77.77.77",
-        "whcc:rate:10.77.77.99",
+        guestKey("10.99.99.1"),
+        rateKey("device-code", "10.88.88.88", 60_000),
+        rateKey("device-code", "10.88.88.99", 60_000),
+        guestKey("10.66.66.66"),
+        guestKey("10.66.66.99"),
+        guestKey("10.77.77.77"),
+        guestKey("10.77.77.99"),
         ...(testEndpointSlug ? [`whcc:notify:${testEndpointSlug}`] : []),
       ];
       await redis.del(...cleanupKeys);
@@ -107,12 +117,16 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
   describe("web API rate limiter uses Redis", () => {
     it("creates whcc:rate:* sorted set keys on rate-limited endpoints", async () => {
       const testIp = "10.99.99.1";
-      await redis.del(`whcc:rate:${testIp}`);
+      await redis.del(guestKey(testIp));
 
       // First request warms up the Redis connection (may fall back to in-memory)
       await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": testIp,
+        },
         body: JSON.stringify({}),
       });
       await new Promise((r) => setTimeout(r, 500));
@@ -120,13 +134,17 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       // Second request should use Redis
       const resp = await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": testIp,
+        },
         body: JSON.stringify({}),
       });
       expect(resp.status).toBeLessThan(500);
 
       // Check Redis for the rate key
-      const keys = await redis.keys(`whcc:rate:${testIp}`);
+      const keys = await redis.keys(guestKey(testIp));
       expect(keys.length).toBe(1);
 
       // Verify it's a sorted set
@@ -145,7 +163,7 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       const testIp = "10.88.88.88";
 
       // Clean any prior state
-      await redis.del(`whcc:rate:${testIp}`);
+      await redis.del(rateKey("device-code", testIp, 60_000));
 
       // Warmup request to ensure Redis connection is ready
       await fetch(`${WEB_URL}/api/auth/device-code`, {
@@ -154,7 +172,7 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
         body: JSON.stringify({}),
       });
       await new Promise((r) => setTimeout(r, 500));
-      await redis.del("whcc:rate:10.88.88.99");
+      await redis.del(rateKey("device-code", "10.88.88.99", 60_000));
 
       // Hit device-code endpoint (limit: 10 per 60s) repeatedly
       const responses: { status: number; retryAfter: string | null }[] = [];
@@ -181,11 +199,11 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       }
 
       // Verify the sorted set has exactly 10 members
-      const count = await redis.zcard(`whcc:rate:${testIp}`);
+      const count = await redis.zcard(rateKey("device-code", testIp, 60_000));
       expect(count).toBe(10);
 
       // Cleanup
-      await redis.del(`whcc:rate:${testIp}`);
+      await redis.del(rateKey("device-code", testIp, 60_000));
     });
   });
 
@@ -248,16 +266,20 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
 
   describe("Redis failure mid-operation", () => {
     it("rate limiter falls back to in-memory when Redis key has wrong type", async () => {
-      const poisonKey = "whcc:rate:10.66.66.66";
+      const poisonKey = guestKey("10.66.66.66");
 
       // Warmup Redis connection
       await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.66.66.99" },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": "10.66.66.99",
+        },
         body: JSON.stringify({}),
       });
       await new Promise((r) => setTimeout(r, 500));
-      await redis.del("whcc:rate:10.66.66.99");
+      await redis.del(guestKey("10.66.66.99"));
 
       // Poison the key — set it to a string instead of a sorted set.
       // The Lua script's ZREMRANGEBYSCORE will fail with WRONGTYPE.
@@ -266,7 +288,11 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       // Hit the endpoint — should fall back to in-memory, NOT return 500
       const resp = await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.66.66.66" },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": "10.66.66.66",
+        },
         body: JSON.stringify({}),
       });
 
@@ -310,16 +336,20 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
 
     it("rate limiter recovers after Redis error is resolved", async () => {
       const testIp = "10.77.77.77";
-      const poisonKey = `whcc:rate:${testIp}`;
+      const poisonKey = guestKey(testIp);
 
       // Warmup
       await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.77.77.99" },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": "10.77.77.99",
+        },
         body: JSON.stringify({}),
       });
       await new Promise((r) => setTimeout(r, 500));
-      await redis.del("whcc:rate:10.77.77.99");
+      await redis.del(guestKey("10.77.77.99"));
 
       // 1. Poison key
       await redis.set(poisonKey, "broken");
@@ -327,7 +357,11 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       // 2. Request falls back to in-memory
       const resp1 = await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": testIp,
+        },
         body: JSON.stringify({}),
       });
       expect(resp1.status).toBeLessThan(500);
@@ -342,7 +376,11 @@ describe.skipIf(!canRun)("Redis rate limiting integration", () => {
       // 4. Next request should use Redis again (creates a sorted set)
       const resp2 = await fetch(`${WEB_URL}/api/go/endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Forwarded-For": testIp },
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": testIp,
+        },
         body: JSON.stringify({}),
       });
       expect(resp2.status).toBeLessThan(500);

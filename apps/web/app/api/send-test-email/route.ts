@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = await checkRateLimitWithInfo(request, 10);
+  const rateLimit = await checkRateLimitWithInfo(request, "send-test-email", 10);
   if (rateLimit.response) return rateLimit.response;
 
   const env = serverEnv();

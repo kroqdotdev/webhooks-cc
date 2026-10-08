@@ -132,7 +132,7 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
       headers: { "x-forwarded-for": "1.2.3.4, 10.0.0.1" },
     });
 
-    const info = await checkRateLimitWithInfo(request, 5, 60_000);
+    const info = await checkRateLimitWithInfo(request, "test", 5, 60_000);
     expect(info.allowed).toBe(true);
     expect(info.remaining).toBe(4);
 
@@ -140,7 +140,7 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
     const request2 = new Request("https://example.com/test", {
       headers: { "x-forwarded-for": "5.6.7.8" },
     });
-    const info2 = await checkRateLimitWithInfo(request2, 5, 60_000);
+    const info2 = await checkRateLimitWithInfo(request2, "test", 5, 60_000);
     expect(info2.allowed).toBe(true);
     expect(info2.remaining).toBe(4); // independent counter
   });
@@ -152,7 +152,7 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
       headers: { "x-real-ip": "9.8.7.6" },
     });
 
-    const info = await checkRateLimitWithInfo(request, 5, 60_000);
+    const info = await checkRateLimitWithInfo(request, "test", 5, 60_000);
     expect(info.allowed).toBe(true);
     expect(info.remaining).toBe(4);
   });
@@ -161,18 +161,18 @@ describe("checkRateLimitWithInfo (IP-based)", () => {
     const { checkRateLimitWithInfo } = await freshImport();
 
     const request = new Request("https://example.com/test");
-    const info = await checkRateLimitWithInfo(request, 2, 60_000);
+    const info = await checkRateLimitWithInfo(request, "test", 2, 60_000);
     expect(info.allowed).toBe(true);
 
     // Second request from same "unknown" key
     const request2 = new Request("https://example.com/test");
-    const info2 = await checkRateLimitWithInfo(request2, 2, 60_000);
+    const info2 = await checkRateLimitWithInfo(request2, "test", 2, 60_000);
     expect(info2.allowed).toBe(true);
     expect(info2.remaining).toBe(0);
 
     // Third request should be blocked
     const request3 = new Request("https://example.com/test");
-    const info3 = await checkRateLimitWithInfo(request3, 2, 60_000);
+    const info3 = await checkRateLimitWithInfo(request3, "test", 2, 60_000);
     expect(info3.allowed).toBe(false);
   });
 });
@@ -206,7 +206,7 @@ describe("backwards-compatible wrappers", () => {
     const request = new Request("https://example.com", {
       headers: { "x-forwarded-for": "1.2.3.4" },
     });
-    const result = await checkRateLimit(request, 5, 60_000);
+    const result = await checkRateLimit(request, "test", 5, 60_000);
     expect(result).toBeNull();
   });
 
@@ -215,8 +215,8 @@ describe("backwards-compatible wrappers", () => {
     const request = new Request("https://example.com", {
       headers: { "x-forwarded-for": "1.2.3.4" },
     });
-    await checkRateLimit(request, 1, 60_000);
-    const result = await checkRateLimit(request, 1, 60_000);
+    await checkRateLimit(request, "test", 1, 60_000);
+    const result = await checkRateLimit(request, "test", 1, 60_000);
     expect(result).toBeInstanceOf(Response);
     expect(result!.status).toBe(429);
   });

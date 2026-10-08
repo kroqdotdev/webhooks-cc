@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.1";
+export const APP_VERSION = "0.35.3";
 export const CLI_VERSION = "1.3.2";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.3",
+    date: "2026-10-08",
+    title: "Agent Registration and Rate Limit Fixes",
+    track: "web",
+    items: [
+      "Agents can no longer register with an address at mailhooks.cc: its codes can be read through webhooks.cc itself, so it proved nothing",
+      "Each rate limit now counts on its own: a one-minute limit no longer erased the history of an hourly one from the same IP, which let agent registration run far above its hourly limit",
+      "IPv6 clients are rate-limited per /64, so a fresh address per request no longer gets a fresh limit",
+    ],
+  },
   {
     version: "0.35.1",
     date: "2026-10-08",

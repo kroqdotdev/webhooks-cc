@@ -179,3 +179,20 @@ export function toEmailSummary(capture: EmailCapture | null): EmailSummary | nul
     attachmentCount: capture.attachments.filter((attachment) => !attachment.inline).length,
   };
 }
+
+/**
+ * Whether `address` is at the capture domain or one of its subdomains. Mail
+ * to those addresses can be read through webhooks.cc itself, so it proves
+ * nothing about who controls the address.
+ */
+export function isCaptureDomainAddress(address: string, captureDomain: string): boolean {
+  const at = address.lastIndexOf("@");
+  if (at === -1) return false;
+  const domain = address
+    .slice(at + 1)
+    .trim()
+    .toLowerCase()
+    .replace(/\.+$/, "");
+  const capture = captureDomain.toLowerCase().replace(/\.+$/, "");
+  return domain === capture || domain.endsWith(`.${capture}`);
+}

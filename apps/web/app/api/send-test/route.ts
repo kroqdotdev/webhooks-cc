@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
   if (!auth.success) return auth.response;
 
-  const rateLimit = await checkRateLimitWithInfo(request, 30); // 30 sends per minute
+  const rateLimit = await checkRateLimitWithInfo(request, "send-test", 30); // 30 sends per minute
   if (rateLimit.response) return rateLimit.response;
 
   let payload: {

@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!auth.success) return auth.response;
   const { id } = await params;
 
-  const rateLimit = await checkRateLimitWithInfo(request, 30);
+  const rateLimit = await checkRateLimitWithInfo(request, "email-redeliver", 30);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);
