@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.34.1";
+export const APP_VERSION = "0.34.2";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.11.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.34.2",
+    date: "2026-10-08",
+    title: "Faster Code and Link Finder",
+    track: "web",
+    items: [
+      "Finding one-time codes and links in an email, and counting its images for the preview, take time in proportion to its size; certain malformed emails could make them take minutes, in the dashboard and when forwarding",
+    ],
+  },
   {
     version: "0.34.1",
     date: "2026-10-08",

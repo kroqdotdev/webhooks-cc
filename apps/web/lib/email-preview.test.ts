@@ -110,3 +110,32 @@ describe("countImageReferences", () => {
     ).toEqual({ remote: 1, inline: 2 });
   });
 });
+
+describe("countImageReferences on hostile input", () => {
+  it("scans CSS url() in linear time", () => {
+    const size = 256 * 1024;
+    for (const html of [
+      "url(".repeat(size / 4),
+      'url("'.repeat(size / 5),
+      "url('".repeat(size / 5),
+    ]) {
+      const started = performance.now();
+      countImageReferences(html);
+      expect(performance.now() - started).toBeLessThan(1000);
+    }
+  });
+
+  it("counts url() after characters whose lowercase is longer", () => {
+    expect(countImageReferences("İİİİ { background: URL(https://x.io/a.png) }")).toEqual({
+      remote: 1,
+      inline: 0,
+    });
+  });
+
+  it("reads quoted, unquoted and spaced url() values", () => {
+    const html =
+      'a { background: url( "https://x.io/a.png" ) } b { background: url(cid:part) }' +
+      " c { background: url('data:image/png;base64,AA') } d { background: myurl(https://y.io/z.png) }";
+    expect(countImageReferences(html)).toEqual({ remote: 1, inline: 1 });
+  });
+});
