@@ -13,6 +13,19 @@ pub fn sanitize(s: &str) -> String {
         .collect()
 }
 
+/// Like `sanitize`, but for text that must stay on one line, such as an
+/// email's subject or sender, which the sender controls: line breaks and tabs
+/// become spaces, so they cannot fake extra rows in a listing.
+pub fn sanitize_line(s: &str) -> String {
+    s.chars()
+        .filter_map(|c| match c {
+            '\n' | '\r' | '\t' => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .collect()
+}
+
 pub fn set_no_color(val: bool) {
     NO_COLOR.store(val, Ordering::Relaxed);
 }
@@ -132,8 +145,8 @@ pub fn print_request_line(req: &CapturedRequest) {
             "  {} {} {} {} {}",
             dim(&time),
             method,
-            sanitize(&req.path),
-            bold(&sanitize(email.subject.as_deref().unwrap_or("(no subject)"))),
+            sanitize_line(&req.path),
+            bold(&sanitize_line(email.subject.as_deref().unwrap_or("(no subject)"))),
             dim(&size)
         ),
         None => println!("  {} {} {} {}", dim(&time), method, sanitize(&req.path), dim(&size)),
@@ -146,17 +159,17 @@ const EMAIL_TEXT_PREVIEW: usize = 4000;
 fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary) {
     println!("{}", bold("Email Details"));
     println!("  {} {}", dim("ID:"), sanitize(&req.id));
-    println!("  {} {}", dim("To:"), sanitize(&req.path));
+    println!("  {} {}", dim("To:"), sanitize_line(&req.path));
     if let Some(from) = email.from.first() {
-        println!("  {} {}", dim("From:"), sanitize(&from.to_string()));
+        println!("  {} {}", dim("From:"), sanitize_line(&from.to_string()));
     }
     println!(
         "  {} {}",
         dim("Subject:"),
-        sanitize(email.subject.as_deref().unwrap_or("(no subject)"))
+        sanitize_line(email.subject.as_deref().unwrap_or("(no subject)"))
     );
     if let Some(ref tag) = email.tag {
-        println!("  {} {}", dim("Tag:"), sanitize(tag));
+        println!("  {} {}", dim("Tag:"), sanitize_line(tag));
     }
     println!("  {} {}", dim("Size:"), format_bytes(req.size));
     println!("  {} {}", dim("Time:"), format_timestamp(req.received_at));
@@ -165,8 +178,8 @@ fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary)
         for attachment in &email.attachments {
             println!(
                 "  {} {} {}",
-                sanitize(attachment.filename.as_deref().unwrap_or("(unnamed)")),
-                dim(&sanitize(attachment.content_type.as_deref().unwrap_or(""))),
+                sanitize_line(attachment.filename.as_deref().unwrap_or("(unnamed)")),
+                dim(&sanitize_line(attachment.content_type.as_deref().unwrap_or(""))),
                 dim(&format_bytes(attachment.size as usize))
             );
         }
@@ -237,5 +250,19 @@ pub fn print_usage(usage: &UsageInfo) {
     );
     if let Some(pe) = usage.period_end {
         println!("  {} {}", dim("Period ends:"), format_timestamp(pe));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_line_keeps_sender_text_on_one_line() {
+        assert_eq!(
+            sanitize_line("Hi\n  12:00:00 POST /fake\r\n\tx\x1b[31m"),
+            "Hi   12:00:00 POST /fake   x[31m"
+        );
+        assert_eq!(sanitize_line("Confirm your email"), "Confirm your email");
     }
 }

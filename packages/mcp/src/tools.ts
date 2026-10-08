@@ -24,11 +24,11 @@ import {
   WebhooksCCError,
   extractCode,
   extractLink,
-  isEmailRequest,
   type EmailRequest,
   type Request,
   type VerifyProvider,
 } from "@webhooks-cc/sdk";
+import { compactRequest, cutEmailText } from "./compact";
 
 const MAX_BODY_SIZE = 32_768;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -53,8 +53,8 @@ const kindSchema = z
   .enum(["http", "email"])
   .optional()
   .describe('Only HTTP requests ("http") or only captured emails ("email")');
-/** An email's text part is cut to this many characters in tool output. */
-const MAX_EMAIL_TEXT = 8_000;
+/** With a tag, subject or sender filter, `list_emails` searches this many of the newest emails. */
+const EMAIL_SCAN_LIMIT = 100;
 const durationOrTimestampSchema = z.union([z.string(), z.number()]);
 const ruleConditionSchema = z
   .object({
@@ -439,25 +439,18 @@ async function summarizeResponse(response: Response): Promise<{
   };
 }
 
-/**
- * A request as tools return it. An email's `body` is the raw MIME message
- * (up to 1 MB), which would use up the output budget, so it is replaced by
- * its size; the parsed message stays in `email`.
- */
-function compactRequest<T extends Pick<Request, "kind" | "body" | "bodyRaw">>(request: T): T {
-  if (request.kind !== "email") return request;
-  const { body, bodyRaw: _bodyRaw, ...rest } = request;
-  return {
-    ...rest,
-    rawMessageSize: body?.length ?? 0,
-    rawMessageNote: "Raw message omitted; the parsed message is in `email`.",
-  } as unknown as T;
+interface EmailEndpointView {
+  endpoint: { slug: string; name: string | null };
+  /** Whether codes and links may be shown for the endpoint's emails (its owner can turn that off). */
+  includeExtracts: boolean;
 }
 
-/** Whether codes and links may be shown for an endpoint's emails (its owner can turn that off). */
-async function extractsAllowed(client: WebhooksCC, slug: string): Promise<boolean> {
+async function emailEndpointView(client: WebhooksCC, slug: string): Promise<EmailEndpointView> {
   const endpoint = await client.endpoints.get(slug);
-  return endpoint.showEmailExtracts !== false;
+  return {
+    endpoint: { slug: endpoint.slug, name: endpoint.name ?? null },
+    includeExtracts: endpoint.showEmailExtracts !== false,
+  };
 }
 
 function emailSlugFromAddress(address: string): string {
@@ -480,23 +473,53 @@ function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
   };
 }
 
-/** An email as `get_email` and `wait_for_email` return it: the forwarding JSON's data, trimmed. */
+/**
+ * An email as `get_email` and `wait_for_email` return it: the forwarding
+ * JSON's data, trimmed to the output budget. The code and link come first so
+ * a cut never loses them, the text is cut at MAX_EMAIL_TEXT, and the HTML,
+ * when asked for, gets what is left of the budget.
+ */
 function emailDetail(
   client: WebhooksCC,
   email: EmailRequest,
-  options: { includeExtracts: boolean; includeHtml: boolean }
+  view: EmailEndpointView,
+  includeHtml: boolean
 ) {
-  const { data } = client.emails.toJson(email, { includeExtracts: options.includeExtracts });
-  const text = data.text ?? null;
-  const textTruncated = text !== null && text.length > MAX_EMAIL_TEXT;
-  const { html, ...rest } = data;
-  return {
+  const { data } = client.emails.toJson(email, {
+    endpoint: view.endpoint,
+    includeExtracts: view.includeExtracts,
+  });
+  const { html, text: fullText, ...rest } = data;
+  const { text, cut } = cutEmailText(fullText ?? null);
+  const detail: Record<string, unknown> = {
+    ...(view.includeExtracts ? { code: extractCode(email), link: extractLink(email) } : {}),
     ...rest,
-    text: textTruncated ? text!.slice(0, MAX_EMAIL_TEXT) : text,
-    ...(textTruncated ? { textTruncated: true } : {}),
-    ...(options.includeHtml ? { html } : { htmlSize: html?.length ?? 0 }),
-    ...(options.includeExtracts ? { code: extractCode(email), link: extractLink(email) } : {}),
+    text,
+    ...(cut ? { textTruncated: true } : {}),
+    htmlSize: html?.length ?? 0,
   };
+  if (!includeHtml || html === null) return detail;
+  return { ...detail, ...fitHtml(detail, html) };
+}
+
+/** The longest start of `html` that keeps `detail` with it within MAX_BODY_SIZE. */
+function fitHtml(
+  detail: Record<string, unknown>,
+  html: string
+): { html: string; htmlTruncated?: true } {
+  const whole = { ...detail, html };
+  if (JSON.stringify(whole, null, 2).length <= MAX_BODY_SIZE) return { html };
+  const base = JSON.stringify({ ...detail, html: "", htmlTruncated: true }, null, 2).length;
+  // The serialized slice replaces the two characters of the empty string.
+  const budget = MAX_BODY_SIZE - base + 2;
+  let low = 0;
+  let high = html.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (JSON.stringify(html.slice(0, mid)).length <= budget) low = mid;
+    else high = mid - 1;
+  }
+  return { html: html.slice(0, low), htmlTruncated: true };
 }
 
 /** Register all webhook tools on an MCP server instance. */
@@ -1402,7 +1425,15 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     "List the emails an endpoint received at its mailhooks.cc address, newest first: subject, sender, tag, and the one-time code and main link found in each.",
     {
       endpointSlug: z.string().describe("The endpoint slug"),
-      limit: z.number().int().min(1).max(100).default(25).describe("Max emails to return"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(25)
+        .describe(
+          `Max emails to return. With tag, subject or from, the newest ${EMAIL_SCAN_LIMIT} emails are searched.`
+        ),
       since: z.number().optional().describe("Only emails received after this timestamp in ms"),
       tag: z
         .string()
@@ -1412,11 +1443,16 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       from: z.string().optional().describe("Only emails from this address (case-insensitive)"),
     },
     withErrorHandling(async ({ endpointSlug, limit, since, tag, subject, from }) => {
-      const [emails, includeExtracts] = await Promise.all([
-        client.emails.list(endpointSlug, { limit, since, tag, subject, from }),
-        extractsAllowed(client, endpointSlug),
+      // The SDK filters after listing, so a filter has to look past the newest `limit` emails.
+      const filtered = tag !== undefined || subject !== undefined || from !== undefined;
+      const scan = filtered ? Math.max(limit, EMAIL_SCAN_LIMIT) : limit;
+      const [emails, view] = await Promise.all([
+        client.emails.list(endpointSlug, { limit: scan, since, tag, subject, from }),
+        emailEndpointView(client, endpointSlug),
       ]);
-      return jsonContent(emails.map((email) => summarizeEmail(email, includeExtracts)));
+      return jsonContent(
+        emails.slice(0, limit).map((email) => summarizeEmail(email, view.includeExtracts))
+      );
     })
   );
 
@@ -1447,11 +1483,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
           `No email at ${endpointSlug}${tag ? ` with tag "${tag}"` : ""} yet. Send one with send_test_email, or wait with wait_for_email.`
         );
       }
-      const includeExtracts = await extractsAllowed(
+      const view = await emailEndpointView(
         client,
         endpointSlug ?? emailSlugFromAddress(email.path)
       );
-      return jsonContent(emailDetail(client, email, { includeExtracts, includeHtml }));
+      return jsonContent(emailDetail(client, email, view, includeHtml));
     })
   );
 
@@ -1464,8 +1500,10 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       subject: z.string().optional().describe("Only emails whose subject contains this text"),
       from: z.string().optional().describe("Only emails from this address (case-insensitive)"),
       timeout: durationOrTimestampSchema
-        .default("60s")
-        .describe('How long to wait, for example "60s"'),
+        .default("30s")
+        .describe(
+          'How long to wait (default "30s"). Keep it under your MCP client\'s request timeout, often 60 seconds.'
+        ),
       since: z
         .number()
         .optional()
@@ -1473,11 +1511,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       includeHtml: z.boolean().default(false).describe("Include the HTML part (default: false)"),
     },
     withErrorHandling(async ({ endpointSlug, tag, subject, from, timeout, since, includeHtml }) => {
-      const [email, includeExtracts] = await Promise.all([
+      const [email, view] = await Promise.all([
         client.emails.waitFor(endpointSlug, { tag, subject, from, timeout, since }),
-        extractsAllowed(client, endpointSlug),
+        emailEndpointView(client, endpointSlug),
       ]);
-      return jsonContent(emailDetail(client, email, { includeExtracts, includeHtml }));
+      return jsonContent(emailDetail(client, email, view, includeHtml));
     })
   );
 

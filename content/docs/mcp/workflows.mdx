@@ -59,9 +59,9 @@ Have the agent drive a signup and read the confirmation email, without a real in
 
 ```
 You: "Sign up on localhost:3000 with a webhooks.cc address and confirm the account"
-Agent: [calls create_endpoint] Created "signup-check"; its address is signup-check@mailhooks.cc
-       [fills the signup form with signup-check+run-1@mailhooks.cc in the browser]
-       [calls wait_for_email with endpointSlug: "signup-check", tag: "run-1"]
+Agent: [calls create_endpoint] Created "signup-check" with slug k3m9x2a7qp; its address is k3m9x2a7qp@mailhooks.cc
+       [fills the signup form with k3m9x2a7qp+run-1@mailhooks.cc in the browser]
+       [calls wait_for_email with endpointSlug: "k3m9x2a7qp", tag: "run-1"]
        Email "Confirm your email" from no-reply@yourapp.dev arrived after 2 s
        code: 482913, link: http://localhost:3000/confirm?token=Zk3q9v
        [enters 482913 in the confirmation form] Account confirmed
@@ -84,7 +84,7 @@ Agent: [calls configure_forwarding with url] Saved; a signing secret was created
        [calls configure_forwarding with enabled: true] Forwarding is on
 
 You: "A customer says their email never reached us"
-Agent: [calls list_deliveries with endpointSlug] Latest delivery failed: 500 three times, next try in 10 min
+Agent: [calls list_deliveries with endpointSlug] Latest delivery failed after 3 attempts, last answer 500
        [calls list_deliveries with requestId] Your server answered "TypeError: cannot read 'from'"
        [after the fix, calls redeliver_email] Delivered, 204
 ```
@@ -233,5 +233,5 @@ Returns full details of a single captured request -- headers, body, IP, timestam
 <LinkCard
   href="/docs/mcp/tools"
   title="Tool Reference"
-  description="Complete parameter reference for all 25 MCP tools."
+  description="Complete parameter reference for all 44 MCP tools."
 />

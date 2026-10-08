@@ -46,7 +46,7 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
 const endpoint = await client.endpoints.create({ name: "e2e-email" });
-console.log(endpoint.slug, endpoint.emailAddress); // e.g. "e2e-email-x1y2" "e2e-email-x1y2@mailhooks.cc"
+console.log(endpoint.slug, endpoint.emailAddress); // e.g. "k3m9x2a7qp" "k3m9x2a7qp@mailhooks.cc"
 ```
 
 Create an API key on your [account page](/account) and keep it in `WHK_API_KEY`. Put the endpoint's slug in `WHK_EMAIL_ENDPOINT`.

@@ -69,17 +69,17 @@ Get details for an endpoint by slug.
 
 Update an endpoint's name, mock response, notification webhook, signing configuration, or whether codes and links are picked out of its emails.
 
-| Parameter         | Type     | Required | Description                                                      |
-| ----------------- | -------- | -------- | ---------------------------------------------------------------- |
-| `slug`            | `string` | yes      | Endpoint slug                                                    |
-| `name`            | `string` | no       | New display name                                                 |
-| `mockResponse`    | `object` | no       | Mock response config (see fields above), or `null` to clear      |
-| `responseRules`   | `array`  | no       | Conditional response rules, or `null` to clear                   |
-| `notificationUrl` | `string` | no       | Notification webhook URL, or `null` to clear                     |
-| `signingProvider` | `string` | no       | Signing provider (e.g., `stripe`), or `null` to disable          |
-| `signingSecret`   | `string` | no       | New signing secret (encrypted server-side), or `null` to clear   |
-| `signingHeader`   | `string` | no       | Custom header name (only for `generic-hmac`), or `null` to clear |
-| `showEmailExtracts` | `boolean` | no    | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
+| Parameter           | Type      | Required | Description                                                                   |
+| ------------------- | --------- | -------- | ----------------------------------------------------------------------------- |
+| `slug`              | `string`  | yes      | Endpoint slug                                                                 |
+| `name`              | `string`  | no       | New display name                                                              |
+| `mockResponse`      | `object`  | no       | Mock response config (see fields above), or `null` to clear                   |
+| `responseRules`     | `array`   | no       | Conditional response rules, or `null` to clear                                |
+| `notificationUrl`   | `string`  | no       | Notification webhook URL, or `null` to clear                                  |
+| `signingProvider`   | `string`  | no       | Signing provider (e.g., `stripe`), or `null` to disable                       |
+| `signingSecret`     | `string`  | no       | New signing secret (encrypted server-side), or `null` to clear                |
+| `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
+| `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
 
 ### delete_endpoint
 
@@ -173,13 +173,13 @@ Run a full end-to-end test: create endpoint, set mock response, send webhook, wa
 
 ### list_requests
 
-List captured requests for an endpoint, newest first. Emails come back with `kind: "email"`, the parsed message in `email`, and the raw message replaced by its size (`rawMessageSize`); the other request tools return emails the same way.
+List captured requests for an endpoint, newest first. Emails come back with `kind: "email"` and the parsed message in `email`, without the raw message or the HTML part (`email.htmlSize` gives its length; `size` is the message size in bytes), and with the text cut at 8,000 characters. The other request tools and the MCP resources return emails the same way; use `get_email` for the HTML.
 
-| Parameter      | Type     | Required | Description                                          |
-| -------------- | -------- | -------- | ---------------------------------------------------- |
-| `endpointSlug` | `string` | yes      | Endpoint slug                                        |
-| `limit`        | `number` | no       | Max results to return                                |
-| `since`        | `string` | no       | Only return requests after this ISO timestamp        |
+| Parameter      | Type     | Required | Description                                            |
+| -------------- | -------- | -------- | ------------------------------------------------------ |
+| `endpointSlug` | `string` | yes      | Endpoint slug                                          |
+| `limit`        | `number` | no       | Max results to return                                  |
+| `since`        | `number` | no       | Only return requests after this timestamp in ms        |
 | `kind`         | `string` | no       | `http` for HTTP requests only, `email` for emails only |
 
 ### get_request
@@ -261,18 +261,18 @@ Every endpoint on an account receives email at `{slug}@mailhooks.cc`, and at `{s
 
 List the emails an endpoint received, newest first, one line each: `id`, `receivedAt`, `address`, `tag`, `subject`, `from`, `code`, `link`, and the number of attachments.
 
-| Parameter      | Type     | Required | Description                                        |
-| -------------- | -------- | -------- | -------------------------------------------------- |
-| `endpointSlug` | `string` | yes      | Endpoint slug                                      |
-| `limit`        | `number` | no       | Max emails to return (1 to 100, default 25)        |
-| `since`        | `number` | no       | Only emails received after this timestamp in ms    |
-| `tag`          | `string` | no       | Only emails sent to this `+tag` (case-sensitive)   |
-| `subject`      | `string` | no       | Only emails whose subject contains this text       |
-| `from`         | `string` | no       | Only emails from this address (case-insensitive)   |
+| Parameter      | Type     | Required | Description                                                                                                      |
+| -------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `endpointSlug` | `string` | yes      | Endpoint slug                                                                                                    |
+| `limit`        | `number` | no       | Max emails to return (1 to 100, default 25). With `tag`, `subject` or `from`, the newest 100 emails are searched |
+| `since`        | `number` | no       | Only emails received after this timestamp in ms                                                                  |
+| `tag`          | `string` | no       | Only emails sent to this `+tag` (case-sensitive)                                                                 |
+| `subject`      | `string` | no       | Only emails whose subject contains this text                                                                     |
+| `from`         | `string` | no       | Only emails from this address (case-insensitive)                                                                 |
 
 ### get_email
 
-Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with a `tag`). Pass exactly one of the two. Returns the parsed message in the shape of [forwarded JSON](/docs/forwarding) (`subject`, `from`, `to`, `text`, `attachments`, `auth`, `headers`, ...) plus `code` and `link`. The text is cut at 8,000 characters (`textTruncated: true`), and the HTML is left out (`htmlSize`) unless `includeHtml` is set.
+Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with a `tag`). Pass exactly one of the two. Returns the parsed message in the shape of [forwarded JSON](/docs/forwarding) (`subject`, `from`, `to`, `text`, `attachments`, `auth`, `headers`, ...) with `code` and `link` first. The text is cut at 8,000 characters (`textTruncated: true`), and the HTML is left out (`htmlSize` gives its length) unless `includeHtml` is set. Tool output is capped at 32 KB, so a large HTML part is cut to fit (`htmlTruncated: true`).
 
 | Parameter      | Type      | Required | Description                                   |
 | -------------- | --------- | -------- | --------------------------------------------- |
@@ -285,23 +285,23 @@ Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with 
 
 Wait for an email to arrive, for example after the agent submitted a signup form, then return it like `get_email`. Looks back five minutes unless `since` is given.
 
-| Parameter      | Type               | Required | Description                                         |
-| -------------- | ------------------ | -------- | --------------------------------------------------- |
-| `endpointSlug` | `string`           | yes      | Endpoint slug                                       |
-| `tag`          | `string`           | no       | Only emails sent to this `+tag`                     |
-| `subject`      | `string`           | no       | Only emails whose subject contains this text        |
-| `from`         | `string`           | no       | Only emails from this address                       |
-| `timeout`      | `string \| number` | no       | How long to wait (default `"60s"`)                  |
-| `since`        | `number`           | no       | Only emails received after this timestamp in ms     |
-| `includeHtml`  | `boolean`          | no       | Include the HTML part (default `false`)             |
+| Parameter      | Type               | Required | Description                                                                                           |
+| -------------- | ------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
+| `endpointSlug` | `string`           | yes      | Endpoint slug                                                                                         |
+| `tag`          | `string`           | no       | Only emails sent to this `+tag`                                                                       |
+| `subject`      | `string`           | no       | Only emails whose subject contains this text                                                          |
+| `from`         | `string`           | no       | Only emails from this address                                                                         |
+| `timeout`      | `string \| number` | no       | How long to wait (default `"30s"`). Keep it under your MCP client's request timeout, often 60 seconds |
+| `since`        | `number`           | no       | Only emails received after this timestamp in ms                                                       |
+| `includeHtml`  | `boolean`          | no       | Include the HTML part (default `false`)                                                               |
 
 ### send_test_email
 
 Deliver a sample email with a 6-digit code and a link, to try the email tools before wiring up a real sender. It counts as one request and skips SMTP, so no sender checks run on it. Returns `status`, `requestId` and the `address` it went to.
 
-| Parameter | Type     | Required | Description                         |
-| --------- | -------- | -------- | ----------------------------------- |
-| `slug`    | `string` | yes      | Endpoint slug                       |
+| Parameter | Type     | Required | Description                            |
+| --------- | -------- | -------- | -------------------------------------- |
+| `slug`    | `string` | yes      | Endpoint slug                          |
 | `tag`     | `string` | no       | Deliver to `{slug}+{tag}@mailhooks.cc` |
 
 ## Forwarding

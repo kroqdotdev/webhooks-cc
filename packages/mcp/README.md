@@ -93,7 +93,7 @@ Every endpoint on an account receives email at `{slug}@mailhooks.cc` (and `{slug
 - `wait_for_email`
 - `send_test_email`
 
-The request tools return emails too (filter with `kind`), with the raw message replaced by its size.
+The request tools and resources return emails too (filter with `kind`), without the raw message or the HTML part and with the text cut at 8,000 characters; `get_email` returns the HTML.
 
 ### Forwarding tools
 

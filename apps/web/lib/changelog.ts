@@ -1042,6 +1042,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "whk requests list shows a captured email's subject next to the address it arrived at, and EMAIL gets its own colour",
       "whk requests get on an email shows the sender, recipient, subject, tag, attachments and text part instead of the raw message; --json still has every header and the raw message",
       "whk create and whk get print the endpoint's mailhooks.cc email address",
+      "An email's subject, sender and attachment names stay on one line, so a sender cannot fake rows in the list",
+      "whk get no longer shows a request count of 0 when the API sends none",
     ],
   },
   {
@@ -1482,7 +1484,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`list_emails`, `get_email` and `wait_for_email` read the email an endpoint receives at mailhooks.cc, with the one-time code and main link picked out, so an agent can complete a signup or login flow itself",
       "`send_test_email` delivers a sample email, optionally to a +tag address",
       "`configure_forwarding`, `get_forwarding_secret`, `test_forwarding`, `list_deliveries` and `redeliver_email` manage email forwarding",
-      "`list_requests`, `search_requests` and `count_requests` take `kind`; request tools replace an email's raw message with its size; `update_endpoint` takes `showEmailExtracts`",
+      "`list_requests`, `search_requests` and `count_requests` take `kind`; request tools and resources leave out an email's raw message and HTML part and cut its text, so one email cannot use up the output; `update_endpoint` takes `showEmailExtracts`",
+      "`get_email` and `wait_for_email` put the code and link first and cut a large HTML part to fit; `wait_for_email` waits 30 seconds by default, under the usual client timeout; `list_emails` with a tag, subject or sender searches the newest 100 emails",
       "44 tools (SDK 1.12.0)",
     ],
   },
