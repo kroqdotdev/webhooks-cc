@@ -28,7 +28,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Faster Code and Link Finder",
     track: "web",
     items: [
-      "Finding one-time codes and links in an email takes time in proportion to its size; certain malformed emails could make it take minutes, in the dashboard and when forwarding",
+      "Finding one-time codes and links in an email, and counting its images for the preview, take time in proportion to its size; certain malformed emails could make them take minutes, in the dashboard and when forwarding",
     ],
   },
   {
