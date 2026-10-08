@@ -47,6 +47,7 @@ pub fn method_color(method: &str) -> String {
         "PUT" => format!("\x1b[33m{method}\x1b[0m"),
         "DELETE" => format!("\x1b[31m{method}\x1b[0m"),
         "PATCH" => format!("\x1b[36m{method}\x1b[0m"),
+        "EMAIL" => format!("\x1b[35m{method}\x1b[0m"),
         _ => method.to_string(),
     }
 }
@@ -126,10 +127,69 @@ pub fn print_request_line(req: &CapturedRequest) {
     let time = format_timestamp(req.received_at);
     let method = method_color(&req.method);
     let size = format_bytes(req.size);
-    println!("  {} {} {} {}", dim(&time), method, sanitize(&req.path), dim(&size));
+    match req.email.as_ref().filter(|_| req.is_email()) {
+        Some(email) => println!(
+            "  {} {} {} {} {}",
+            dim(&time),
+            method,
+            sanitize(&req.path),
+            bold(&sanitize(email.subject.as_deref().unwrap_or("(no subject)"))),
+            dim(&size)
+        ),
+        None => println!("  {} {} {} {}", dim(&time), method, sanitize(&req.path), dim(&size)),
+    }
+}
+
+/// Longest text part shown by `print_request_detail`; the rest is cut.
+const EMAIL_TEXT_PREVIEW: usize = 4000;
+
+fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary) {
+    println!("{}", bold("Email Details"));
+    println!("  {} {}", dim("ID:"), sanitize(&req.id));
+    println!("  {} {}", dim("To:"), sanitize(&req.path));
+    if let Some(from) = email.from.first() {
+        println!("  {} {}", dim("From:"), sanitize(&from.to_string()));
+    }
+    println!(
+        "  {} {}",
+        dim("Subject:"),
+        sanitize(email.subject.as_deref().unwrap_or("(no subject)"))
+    );
+    if let Some(ref tag) = email.tag {
+        println!("  {} {}", dim("Tag:"), sanitize(tag));
+    }
+    println!("  {} {}", dim("Size:"), format_bytes(req.size));
+    println!("  {} {}", dim("Time:"), format_timestamp(req.received_at));
+    if !email.attachments.is_empty() {
+        println!("\n{}", bold("Attachments"));
+        for attachment in &email.attachments {
+            println!(
+                "  {} {} {}",
+                sanitize(attachment.filename.as_deref().unwrap_or("(unnamed)")),
+                dim(&sanitize(attachment.content_type.as_deref().unwrap_or(""))),
+                dim(&format_bytes(attachment.size as usize))
+            );
+        }
+    }
+    if let Some(ref text) = email.text {
+        println!("\n{}", bold("Text"));
+        let preview: String = text.chars().take(EMAIL_TEXT_PREVIEW).collect();
+        println!("{}", sanitize(&preview));
+        if text.chars().count() > EMAIL_TEXT_PREVIEW {
+            println!("{}", dim("... (cut; the dashboard shows the whole email)"));
+        }
+    }
+    println!(
+        "\n{}",
+        dim("Headers and the raw message: --json. HTML and sender checks: the dashboard.")
+    );
 }
 
 pub fn print_request_detail(req: &CapturedRequest) {
+    if let Some(email) = req.email.as_ref().filter(|_| req.is_email()) {
+        print_email_detail(req, email);
+        return;
+    }
     println!("{}", bold("Request Details"));
     println!("  {} {}", dim("ID:"), sanitize(&req.id));
     println!("  {} {} {}", dim("Method:"), method_color(&req.method), sanitize(&req.path));
