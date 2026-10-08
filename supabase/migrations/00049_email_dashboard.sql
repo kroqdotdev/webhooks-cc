@@ -650,7 +650,11 @@ begin
      and s.emails < c.n;
 
   -- users.emails_used for the current period: the user's own (not
-  -- team-billed) email rows since period_start. A capture by the new
+  -- team-billed) email rows since period_start. A lazy Free period starts at
+  -- its first capture, whose MX receive time may be up to an hour earlier
+  -- (the receiver's clamp_received_at), so Free periods count from an hour
+  -- before period_start; this one-off count is capped by requests_used where
+  -- it is read. A capture by the new
   -- capture_webhook() may already have started the counter for this period;
   -- its row is in the count, so greatest() reconciles without counting it
   -- twice, and keeps the counter if the user has since deleted email.
@@ -662,7 +666,9 @@ begin
             where r.user_id = u.id
               and r.kind = 'email'
               and r.team_id is null
-              and r.received_at >= greatest(u.period_start, '2026-10-07'))
+              and r.received_at >= greatest(
+                    u.period_start - case when u.plan = 'free' then interval '1 hour' else interval '0' end,
+                    '2026-10-07'))
      for update of u;
 
   update public.users u
@@ -676,7 +682,9 @@ begin
         join public.users ru on ru.id = r.user_id
        where r.kind = 'email'
          and r.team_id is null
-         and r.received_at >= greatest(ru.period_start, '2026-10-07')
+         and r.received_at >= greatest(
+               ru.period_start - case when ru.plan = 'free' then interval '1 hour' else interval '0' end,
+               '2026-10-07')
        group by r.user_id
     ) c
    where u.id = c.user_id
