@@ -87,10 +87,39 @@ function getStatsClient() {
   return _statsClient;
 }
 
+function isSiteStats(value: unknown): value is SiteStats {
+  const stats = value as Partial<SiteStats> | null;
+  return (
+    typeof stats?.total_webhooks === "number" &&
+    typeof stats.total_endpoints === "number" &&
+    typeof stats.total_users === "number"
+  );
+}
+
+// The Docker image is built without the service-role key, so the page
+// prerendered into it would ship without the counters until the first
+// revalidation, about ten minutes after every deploy. Without the key, read
+// the public stats route of the deployment the build is for instead.
+async function getPublicSiteStats(): Promise<SiteStats | null> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (!appUrl) return null;
+  try {
+    const res = await fetch(new URL("/api/stats", appUrl), {
+      next: { revalidate },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data: unknown = await res.json();
+    return isSiteStats(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getSiteStats(): Promise<SiteStats | null> {
   try {
     const supabase = getStatsClient();
-    if (!supabase) return null;
+    if (!supabase) return getPublicSiteStats();
     const { data, error } = await supabase
       .from("site_stats")
       .select("total_webhooks, total_endpoints, total_users")
