@@ -1,22 +1,51 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, FileDown, ImageOff, Paperclip, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  FileDown,
+  ImageOff,
+  Paperclip,
+  RefreshCw,
+  Send,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes } from "@/types/request";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
 import { extractFromEmail, type ExtractedLink } from "@/lib/email-extract";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
+import { buildEmailJson } from "@/lib/email-json";
+import { highlightBody } from "@/lib/highlight";
+import { fetchEmailDeliveries, redeliverEmail, type EmailDelivery } from "@/lib/dashboard-api";
+import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { JsonTree } from "./json-tree";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
 
-type EmailTab = "preview" | "text" | "headers" | "attachments" | "authentication" | "raw";
+type EmailTab =
+  "json" | "preview" | "text" | "headers" | "attachments" | "authentication" | "raw" | "deliveries";
 type Verdict = "pass" | "fail" | "none";
 
 interface EmailDetailProps {
   request: DisplayableRequest;
   /** The endpoint's "Show codes and links found in emails" setting. */
   showExtracts: boolean;
+  /** For the JSON (it names the endpoint) and the forwarding line above it. */
+  endpoint: {
+    slug: string;
+    name?: string | null;
+    forwardEnabled?: boolean;
+    /** Only the owner sees it. */
+    forwardUrl?: string | null;
+    /** Forwarding was set up at some point, so emails may have delivery history. */
+    hasForwardSecret?: boolean;
+  };
+  /** The owner can redeliver and is pointed at the Forwarding settings. */
+  canManageForwarding: boolean;
+  onOpenForwarding?: () => void;
   note?: string | null;
   onNoteChange?: (note: string) => void;
 }
@@ -540,9 +569,293 @@ function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) 
   );
 }
 
-export function EmailDetail({ request, showExtracts, note, onNoteChange }: EmailDetailProps) {
+/** "in 4 min", "2 h ago": for retry times. */
+function relativeTime(timestamp: number, now: number): string {
+  const seconds = Math.round((timestamp - now) / 1000);
+  const abs = Math.abs(seconds);
+  const [value, unit] =
+    abs < 60
+      ? [abs, "s"]
+      : abs < 3600
+        ? [Math.round(abs / 60), "min"]
+        : abs < 86_400
+          ? [Math.round(abs / 3600), "h"]
+          : [Math.round(abs / 86_400), "d"];
+  return seconds >= 0 ? `in ${value} ${unit}` : `${value} ${unit} ago`;
+}
+
+function EmailJsonPane({
+  json,
+  forwardEnabled,
+  forwardUrl,
+  canManageForwarding,
+  onOpenForwarding,
+  onOpenDeliveries,
+}: {
+  json: unknown;
+  forwardEnabled: boolean;
+  forwardUrl?: string | null;
+  canManageForwarding: boolean;
+  onOpenForwarding?: () => void;
+  onOpenDeliveries: () => void;
+}) {
+  const [view, setView] = useState<"formatted" | "tree">("formatted");
+  const { copied, copy } = useCopy();
+  const text = useMemo(() => JSON.stringify(json, null, 2), [json]);
+  const highlighted = useMemo(() => highlightBody(text, "json"), [text]);
+
+  return (
+    <div className="space-y-3">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+        <Send className="h-3.5 w-3.5 shrink-0" />
+        {forwardEnabled ? (
+          <>
+            <span>
+              Forwarded as this JSON to{" "}
+              {forwardUrl ? (
+                <span className="font-mono text-foreground break-all">{forwardUrl}</span>
+              ) : (
+                "the endpoint's forwarding URL"
+              )}
+              .
+            </span>
+            <button
+              type="button"
+              onClick={onOpenDeliveries}
+              className="text-foreground underline underline-offset-2 cursor-pointer"
+            >
+              See deliveries
+            </button>
+          </>
+        ) : (
+          <>
+            <span>Forwarding can POST this JSON to your server for every email.</span>
+            {canManageForwarding && onOpenForwarding && (
+              <button
+                type="button"
+                onClick={onOpenForwarding}
+                className="text-foreground underline underline-offset-2 cursor-pointer"
+              >
+                Set up forwarding
+              </button>
+            )}
+          </>
+        )}
+      </p>
+      <div className="flex items-center gap-2">
+        <div className="flex overflow-hidden rounded-sm border-strong border-line">
+          {(["formatted", "tree"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setView(mode)}
+              className={cn(
+                "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                mode === "tree" && "border-l-strong border-line",
+                view === mode ? "bg-selected text-selected-foreground" : "hover:bg-muted"
+              )}
+            >
+              {mode === "formatted" ? "Formatted" : "Tree"}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => copy(text, "json")}
+          className="ml-auto ui-btn-outline py-1! px-2.5! text-xs flex items-center gap-1.5"
+        >
+          {copied === "json" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied === "json" ? "Copied" : "Copy JSON"}
+        </button>
+      </div>
+      {view === "tree" ? (
+        <div className="ui-code overflow-x-auto p-3">
+          <JsonTree data={json} />
+        </div>
+      ) : (
+        <pre className="ui-code syntax-highlight overflow-x-auto text-sm whitespace-pre-wrap break-words">
+          {/* Safe: Prism.highlight encodes token text for json. */}
+          <code className="language-json" dangerouslySetInnerHTML={{ __html: highlighted }} />
+        </pre>
+      )}
+    </div>
+  );
+}
+
+const DELIVERY_STATUS: Record<EmailDelivery["status"], { label: string; className: string }> = {
+  succeeded: {
+    label: "Delivered",
+    className: "bg-primary text-primary-foreground clean:bg-primary/12 clean:text-primary",
+  },
+  pending: {
+    label: "Retrying",
+    className:
+      "bg-secondary text-black clean:bg-amber-500/15 clean:text-amber-700 dark:clean:text-amber-400",
+  },
+  failed: {
+    label: "Failed",
+    className: "bg-destructive text-white clean:bg-destructive/12 clean:text-destructive",
+  },
+};
+
+function DeliveriesPane({
+  requestId,
+  forwardEnabled,
+  canRedeliver,
+}: {
+  requestId: string;
+  forwardEnabled: boolean;
+  canRedeliver: boolean;
+}) {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
+  const [deliveries, setDeliveries] = useState<EmailDelivery[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [redelivering, setRedelivering] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const load = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      setDeliveries(await fetchEmailDeliveries(accessToken, requestId));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Deliveries could not be loaded.");
+    }
+    setNow(Date.now());
+  }, [accessToken, requestId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Watch a delivery that is still being tried.
+  const active = deliveries?.some((delivery) => delivery.status === "pending") ?? false;
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, [active, load]);
+
+  const redeliver = async () => {
+    if (!accessToken || redelivering) return;
+    setRedelivering(true);
+    try {
+      await redeliverEmail(accessToken, requestId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The email could not be queued again.");
+    } finally {
+      setRedelivering(false);
+    }
+  };
+
+  return (
+    <div className="max-w-[860px] space-y-3">
+      <div className="flex items-center gap-3">
+        <p className="flex-1 text-sm text-muted-foreground">
+          Each copy is retried until your server answers 2xx: after 30 s, 2 min, 10 min, 30 min, 1
+          h, 3 h, 6 h and 12 h.
+        </p>
+        {canRedeliver && forwardEnabled && (
+          <button
+            type="button"
+            onClick={() => void redeliver()}
+            disabled={redelivering}
+            className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5 shrink-0"
+          >
+            <RefreshCw className={cn("h-3 w-3", redelivering && "animate-spin")} />
+            Redeliver
+          </button>
+        )}
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {deliveries === null && !error && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {deliveries?.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {forwardEnabled
+            ? "Not forwarded. It arrived before forwarding was turned on."
+            : "Forwarding is off for this endpoint."}
+        </p>
+      )}
+      {deliveries?.map((delivery) => {
+        const status = DELIVERY_STATUS[delivery.status];
+        return (
+          <section key={delivery.id} className="ui-card ui-card-static p-0! overflow-hidden">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 border-b border-line/20">
+              <span
+                className={cn(
+                  "px-2 py-0.5 text-[11px] font-bold caps rounded-sm border-strong border-line clean:border-transparent",
+                  status.className
+                )}
+              >
+                {status.label}
+              </span>
+              <span className="text-sm">{formatReceived(delivery.createdAt)}</span>
+              <span className="text-xs text-muted-foreground">
+                {delivery.attempts} {delivery.attempts === 1 ? "try" : "tries"}
+              </span>
+              {delivery.status === "pending" && delivery.nextAttemptAt && (
+                <span className="text-xs text-muted-foreground">
+                  next {relativeTime(delivery.nextAttemptAt, now)}
+                </span>
+              )}
+              {delivery.status === "failed" && delivery.lastError && (
+                <span className="text-xs text-destructive">{delivery.lastError}</span>
+              )}
+            </div>
+            {delivery.attemptLog.length > 0 && (
+              <table className="w-full text-sm">
+                <tbody>
+                  {delivery.attemptLog.map((attempt, index) => (
+                    <tr
+                      key={`${attempt.attemptedAt}-${index}`}
+                      className={cn("align-top", index > 0 && "border-t border-line/15")}
+                    >
+                      <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                        {formatReceived(attempt.attemptedAt)}
+                      </td>
+                      <td className="py-2 pr-3 font-mono whitespace-nowrap">
+                        {attempt.status ?? "No answer"}
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        {attempt.durationMs} ms
+                      </td>
+                      <td className="py-2 pr-4 w-full min-w-0">
+                        {attempt.error && (
+                          <span className="block text-xs text-destructive">{attempt.error}</span>
+                        )}
+                        {attempt.responseExcerpt && (
+                          <code className="block text-xs font-mono text-muted-foreground break-all line-clamp-3">
+                            {attempt.responseExcerpt}
+                          </code>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+export function EmailDetail({
+  request,
+  showExtracts,
+  endpoint,
+  canManageForwarding,
+  onOpenForwarding,
+  note,
+  onNoteChange,
+}: EmailDetailProps) {
   const email = request.email ?? null;
-  const [tab, setTab] = useState<EmailTab>(email?.html ? "preview" : "text");
+  const requestId = "id" in request ? request.id : request._id;
+  // JSON first: it is what forwarding sends and what a handler is written against.
+  const [tab, setTab] = useState<EmailTab>("json");
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
@@ -552,6 +865,24 @@ export function EmailDetail({ request, showExtracts, note, onNoteChange }: Email
     () => (email && showExtracts ? extractFromEmail(email) : { codes: [], links: [] }),
     [email, showExtracts]
   );
+  const json = useMemo(
+    () =>
+      email
+        ? buildEmailJson(
+            {
+              id: requestId,
+              receivedAt: request.receivedAt,
+              path: request.path,
+              size: request.size,
+              headers: request.headers,
+              email,
+            },
+            { slug: endpoint.slug, name: endpoint.name ?? null },
+            { includeExtracts: showExtracts }
+          )
+        : null,
+    [email, requestId, request, endpoint.slug, endpoint.name, showExtracts]
+  );
 
   const downloadEml = useCallback(() => {
     if (!raw) return;
@@ -559,11 +890,10 @@ export function EmailDetail({ request, showExtracts, note, onNoteChange }: Email
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    const requestId = "id" in request ? request.id : request._id;
     anchor.download = `email-${requestId.slice(0, 8)}.eml`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [raw, request]);
+  }, [raw, requestId]);
 
   if (!email) {
     return (
@@ -578,7 +908,9 @@ export function EmailDetail({ request, showExtracts, note, onNoteChange }: Email
 
   const headerCount = Object.keys(request.headers).length;
   const attachments = email.attachments;
+  const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
+    { id: "json", label: "JSON" },
     ...(email.html ? [{ id: "preview" as const, label: "Preview" }] : []),
     { id: "text", label: "Text" },
     { id: "headers", label: "Headers", count: headerCount },
@@ -587,6 +919,10 @@ export function EmailDetail({ request, showExtracts, note, onNoteChange }: Email
       : []),
     { id: "authentication", label: "Authentication" },
     { id: "raw", label: "Raw" },
+    // Kept after forwarding is turned off, so past deliveries stay readable.
+    ...(forwardEnabled || endpoint.hasForwardSecret
+      ? [{ id: "deliveries" as const, label: "Deliveries" }]
+      : []),
   ];
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : tabs[0].id;
   const rawAvailable = !!raw && !email.truncated.raw;
@@ -706,6 +1042,25 @@ export function EmailDetail({ request, showExtracts, note, onNoteChange }: Email
       </div>
 
       <div className="flex-1 overflow-auto p-4 md:p-5">
+        {activeTab === "json" && json && (
+          <EmailJsonPane
+            json={json}
+            forwardEnabled={forwardEnabled}
+            forwardUrl={endpoint.forwardUrl}
+            canManageForwarding={canManageForwarding}
+            onOpenForwarding={onOpenForwarding}
+            onOpenDeliveries={() => setTab("deliveries")}
+          />
+        )}
+
+        {activeTab === "deliveries" && (
+          <DeliveriesPane
+            requestId={requestId}
+            forwardEnabled={forwardEnabled}
+            canRedeliver={canManageForwarding}
+          />
+        )}
+
         {activeTab === "preview" && email.html && (
           <>
             {email.truncated.html && (

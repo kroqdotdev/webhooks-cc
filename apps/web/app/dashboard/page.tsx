@@ -949,6 +949,10 @@ export default function DashboardPage() {
     setSettingsFocus("verification");
     setEndpointTab("settings");
   }, []);
+  const handleOpenForwarding = useCallback(() => {
+    setSettingsFocus("forwarding");
+    setEndpointTab("settings");
+  }, []);
   const handleTabChange = useCallback((tab: EndpointTab) => {
     setSettingsFocus(null);
     setEndpointTab(tab);
@@ -1159,6 +1163,9 @@ export default function DashboardPage() {
                     key={selectedId ?? undefined}
                     request={displayRequest}
                     showExtracts={currentEndpoint.showEmailExtracts !== false}
+                    endpoint={currentEndpoint}
+                    canManageForwarding={currentEndpoint.forwardUrl !== undefined}
+                    onOpenForwarding={handleOpenForwarding}
                     note={currentNote}
                     onNoteChange={handleNoteChange}
                   />
@@ -1197,6 +1204,9 @@ export default function DashboardPage() {
                         key={selectedId ?? undefined}
                         request={displayRequest}
                         showExtracts={currentEndpoint.showEmailExtracts !== false}
+                        endpoint={currentEndpoint}
+                        canManageForwarding={currentEndpoint.forwardUrl !== undefined}
+                        onOpenForwarding={handleOpenForwarding}
                         note={currentNote}
                         onNoteChange={handleNoteChange}
                       />

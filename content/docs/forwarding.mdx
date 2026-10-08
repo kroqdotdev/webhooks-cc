@@ -1,0 +1,175 @@
+---
+title: "Email Forwarding"
+description: "Forward every email an endpoint receives to your own server as parsed JSON: signed with Standard Webhooks headers, retried for about a day until your server answers 2xx."
+section: dashboard
+order: 5
+lastUpdated: 2026-10-08
+schema: none
+keywords:
+  [
+    "email to webhook",
+    "inbound email webhook",
+    "email to JSON",
+    "parse email webhook",
+    "inbound email parsing",
+    "Standard Webhooks",
+  ]
+seo:
+  ogTitle: "Email Forwarding: Inbound Email as a Signed JSON Webhook"
+  ogDescription: "Forward every email an endpoint receives to your server as parsed JSON, signed with Standard Webhooks headers and retried until your server answers 2xx."
+---
+
+Forwarding turns the emails an endpoint receives into webhooks for your own server. Each email arrives at your URL as a `POST` of the parsed email as JSON: sender, recipients, subject, text, HTML, the one-time codes and links found in it, attachment details and the sender checks. Nothing to parse on your side.
+
+The JSON is exactly what each email's **JSON** tab shows in the dashboard, so you can copy it from there as a test fixture.
+
+## Set it up
+
+1. Open the endpoint's **Settings** tab and find **Forwarding**.
+2. Enter your URL and save. A signing secret is created for the endpoint; copy it into your handler.
+3. Click **Send test delivery** to post the newest email (or a sample, if none has arrived yet) once and see what your server answered.
+4. Turn on **Forward emails as JSON** and save.
+
+From then on every email the endpoint captures is forwarded, usually within a second or two. HTTP requests are not forwarded.
+
+Only the endpoint's owner can change forwarding. Forwarding is available on every plan.
+
+## The request
+
+```http
+POST /hooks/email HTTP/1.1
+Content-Type: application/json
+User-Agent: webhooks.cc (+https://webhooks.cc/docs/forwarding)
+webhook-id: msg_0b9e5f3a6c1d4f7e9a2b3c4d5e6f7a8b
+webhook-timestamp: 1791450602
+webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+```
+
+```json
+{
+  "type": "email.received",
+  "timestamp": "2026-10-08T09:30:01.882Z",
+  "data": {
+    "id": "0b9e5f3a-6c1d-4f7e-9a2b-3c4d5e6f7a8b",
+    "endpoint": { "slug": "acme-signup-flow", "name": "Signup flow" },
+    "receivedAt": "2026-10-08T09:30:01.882Z",
+    "address": "acme-signup-flow+signup@mailhooks.cc",
+    "tag": "signup",
+    "subject": "Confirm your email for Tidewater",
+    "from": { "name": "Tidewater", "address": "no-reply@tidewater.app" },
+    "to": [{ "name": null, "address": "acme-signup-flow+signup@mailhooks.cc" }],
+    "cc": [],
+    "replyTo": [],
+    "date": "2026-10-08T09:30:00.000Z",
+    "messageId": "179141283833.2345901@tidewater.app",
+    "inReplyTo": [],
+    "text": "Hi Ines,\n\nYour confirmation code is 482913. ...",
+    "html": "<div style=\"font-family:Arial\">...</div>",
+    "codes": ["482913"],
+    "links": [{ "url": "https://app.tidewater.app/confirm?token=Zk3q9v", "text": "Confirm email" }],
+    "attachments": [
+      {
+        "filename": "invoice.pdf",
+        "contentType": "application/pdf",
+        "size": 48211,
+        "contentId": null,
+        "inline": false
+      }
+    ],
+    "auth": { "spf": "pass", "dkim": "pass", "dmarc": "pass", "tls": "TLSv1_3" },
+    "headers": { "subject": "Confirm your email for Tidewater", "...": "..." },
+    "size": 1485,
+    "truncated": { "text": false, "html": false },
+    "test": false
+  }
+}
+```
+
+| Field                        | What it holds                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                       | Always `email.received`.                                                                                                                             |
+| `timestamp`                  | When the email arrived. The same on every copy of one email.                                                                                         |
+| `data.id`                    | The email's id in webhooks.cc. `webhook-id` is `msg_` followed by this id without its dashes.                                                    |
+| `data.address`, `data.tag`   | The address the email arrived at, and its `+tag` if it had one.                                                                                      |
+| `data.from`                  | The first `From` address, or `null`.                                                                                                                 |
+| `data.text`, `data.html`     | The text and HTML parts, up to 256 KB each; `truncated` says when one was cut. `text` is derived from the HTML when the email has no text part.      |
+| `data.codes`, `data.links`   | One-time codes and the links worth clicking, as on the email in the dashboard. Left out when the endpoint turned off "Show codes and links found in emails". |
+| `data.attachments`           | Name, type and size of each attachment. The contents are not kept, so they are not forwarded.                                                         |
+| `data.auth`                  | The SPF, DKIM and DMARC results (`pass`, `fail`, `softfail`, `none`, ...) and the TLS version; `null` when a check did not run.                     |
+| `data.headers`               | Every header, lowercase names, repeated headers joined with a newline.                                                                               |
+| `data.test`                  | `true` for the dashboard's **Send test email** sample, and for the sample **Send test delivery** posts while no email has arrived.                 |
+
+## Verify the signature
+
+Every request carries [Standard Webhooks](https://www.standardwebhooks.com) headers. The signature is the base64 HMAC-SHA256, with your secret, of `webhook-id`, `webhook-timestamp` and the raw body joined by dots, after `v1,`. The secret starts with `whsec_`; the key is the base64 after that prefix.
+
+Check it against the raw request body (before any JSON parsing), compare in constant time, and reject timestamps more than five minutes away from your clock.
+
+With the SDK:
+
+```ts
+import { verifyStandardWebhookSignature } from "@webhooks-cc/sdk";
+
+const headers = Object.fromEntries(request.headers); // a plain object, not a Headers instance
+const ok = await verifyStandardWebhookSignature(rawBody, headers, process.env.FORWARD_SECRET!);
+if (!ok) return new Response("Invalid signature", { status: 401 });
+```
+
+The SDK checks the signature only; check the timestamp as well, as the examples below do.
+
+In Node without dependencies:
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(rawBody: string, headers: Record<string, string>, secret: string): boolean {
+  const id = headers["webhook-id"];
+  const timestamp = headers["webhook-timestamp"];
+  if (!id || !timestamp || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
+  const expected = createHmac("sha256", key).update(`${id}.${timestamp}.${rawBody}`).digest();
+  return (headers["webhook-signature"] ?? "").split(" ").some((part) => {
+    const given = Buffer.from(part.replace(/^v1,/, ""), "base64");
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
+}
+```
+
+In Python:
+
+```python
+import base64, hashlib, hmac, time
+
+def verify(raw_body: bytes, headers: dict, secret: str) -> bool:
+    msg_id, timestamp = headers.get("webhook-id"), headers.get("webhook-timestamp")
+    if not msg_id or not timestamp or abs(time.time() - int(timestamp)) > 300:
+        return False
+    key = base64.b64decode(secret.removeprefix("whsec_"))
+    signed = f"{msg_id}.{timestamp}.".encode() + raw_body
+    expected = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode()
+    return any(
+        hmac.compare_digest(part.removeprefix("v1,"), expected)
+        for part in headers.get("webhook-signature", "").split()
+    )
+```
+
+The [official Standard Webhooks libraries](https://github.com/standard-webhooks/standard-webhooks) (Go, Python, Ruby, Java, PHP, Rust, C# and more) verify these headers too.
+
+**Rotate** the secret in Settings if it leaks. Deliveries are signed with the new secret at once, so update your handler right away.
+
+## Delivery and retries
+
+- Answer with any `2xx` status to accept a delivery. Redirects are not followed and count as failures.
+- Your server has 15 seconds to answer.
+- A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours, about a day in all, and then marked failed.
+- Every copy of one email has the same `webhook-id`, so a handler that saw it before can skip it. Deliveries are at least once and in no guaranteed order.
+- A retry goes to the URL saved at that moment, so fixing a wrong URL also fixes the deliveries still waiting. Turning forwarding off marks waiting deliveries as failed.
+
+The **Deliveries** tab on each email lists every try, with the status your server answered, how long it took and the start of the response. **Redeliver** sends the email again with the current URL and secret. The Forwarding section of Settings shows the endpoint's latest deliveries.
+
+## Limits
+
+- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. Requests come from Cloudflare's network, not from a fixed address, so do not allowlist IPs; check the signature instead.
+- Forwarding does not use your request quota: each email already counted once when it arrived.
+- An email whose JSON would be larger than 10 MB is not forwarded. Real mail stays far below that: text and HTML are kept up to 256 KB each.
+- Deliveries are kept as long as the email itself (your plan's [retention](/docs/plans-limits#data-retention)).

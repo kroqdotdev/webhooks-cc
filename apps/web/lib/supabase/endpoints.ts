@@ -27,8 +27,14 @@ type SelectedEndpointRow = Pick<
   signing_secret_encrypted?: string | null;
   signing_header?: string | null;
   show_email_extracts?: boolean;
+  forward_enabled?: boolean;
+  forward_url?: string | null;
+  forward_secret_encrypted?: string | null;
 };
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
+
+const ENDPOINT_COLUMNS =
+  "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, forward_enabled, forward_url, forward_secret_encrypted";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -61,6 +67,12 @@ export interface EndpointRecord {
   emailAddress?: string | null;
   /** Show the codes and links found in captured emails in the dashboard. */
   showEmailExtracts: boolean;
+  /** Forward every captured email to forwardUrl as signed JSON (lib/forwarding). */
+  forwardEnabled: boolean;
+  /** Owner-only, like notificationUrl. */
+  forwardUrl: string | null;
+  /** Whether a forwarding secret exists (never the secret itself). */
+  hasForwardSecret: boolean;
 }
 
 interface CreateEndpointInput {
@@ -85,6 +97,9 @@ interface UpdateEndpointInput {
   signingSecret?: string | null;
   signingHeader?: string | null;
   showEmailExtracts?: boolean;
+  forwardEnabled?: boolean;
+  /** Validated by the route (lib/forwarding/target.ts). */
+  forwardUrl?: string | null;
 }
 
 /** Endpoints without an owner get no email: guest captures are readable by anyone with the slug. */
@@ -152,6 +167,9 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     signingHeader: row.signing_header ?? null,
     emailAddress: emailAddress(row.slug, row.user_id),
     showEmailExtracts: row.show_email_extracts ?? true,
+    forwardEnabled: row.forward_enabled ?? false,
+    forwardUrl: row.forward_url ?? null,
+    hasForwardSecret: !!row.forward_secret_encrypted,
   };
 }
 
@@ -218,9 +236,7 @@ export async function listEndpointsForUser(userId: string): Promise<EndpointReco
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("endpoints")
-    .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
-    )
+    .select(ENDPOINT_COLUMNS)
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .returns<SelectedEndpointRow[]>();
@@ -239,9 +255,7 @@ export async function getEndpointBySlugForUser(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("endpoints")
-    .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
-    )
+    .select(ENDPOINT_COLUMNS)
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
     .returns<SelectedEndpointRow>()
@@ -292,9 +306,7 @@ export async function createEndpointForUser({
   const { data, error } = await admin
     .from("endpoints")
     .insert(insert)
-    .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
-    )
+    .select(ENDPOINT_COLUMNS)
     .returns<SelectedEndpointRow>()
     .single();
 
@@ -357,9 +369,7 @@ export async function claimGuestEndpoint(
     .is("user_id", null)
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
-    .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
-    )
+    .select(ENDPOINT_COLUMNS)
     .returns<SelectedEndpointRow>()
     .maybeSingle();
 
@@ -378,8 +388,33 @@ export async function updateEndpointBySlugForUser({
   signingSecret,
   signingHeader,
   showEmailExtracts,
+  forwardEnabled,
+  forwardUrl,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
+
+  // Forwarding: on needs a URL. The secret is made with the first URL, so it
+  // can go into the receiving handler (and be tested) before forwarding is on.
+  let newForwardSecret: string | null = null;
+  if (forwardEnabled !== undefined || forwardUrl !== undefined) {
+    const { data, error } = await admin
+      .from("endpoints")
+      .select("forward_enabled, forward_url, forward_secret_encrypted")
+      .eq("user_id", userId)
+      .eq("slug", slug.toLowerCase())
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const nextEnabled = forwardEnabled ?? data.forward_enabled;
+    const nextUrl = forwardUrl === undefined ? data.forward_url : forwardUrl;
+    if (nextEnabled && !nextUrl) {
+      throw new Error("Add a URL before turning forwarding on.");
+    }
+    if ((nextEnabled || nextUrl) && !data.forward_secret_encrypted) {
+      const { generateForwardSecret } = await import("@/lib/forwarding/sign");
+      newForwardSecret = generateForwardSecret();
+    }
+  }
 
   let existingSigningProvider: string | null = null;
   let existingSigningSecretEncrypted: string | null = null;
@@ -457,6 +492,16 @@ export async function updateEndpointBySlugForUser({
   if (showEmailExtracts !== undefined) {
     updates.show_email_extracts = showEmailExtracts;
   }
+  if (forwardEnabled !== undefined) {
+    updates.forward_enabled = forwardEnabled;
+  }
+  if (forwardUrl !== undefined) {
+    updates.forward_url = forwardUrl;
+  }
+  if (newForwardSecret) {
+    const { encryptSigningSecret } = await import("@/lib/crypto");
+    updates.forward_secret_encrypted = `\\x${encryptSigningSecret(newForwardSecret).toString("hex")}`;
+  }
   // Handle signing config
   if (signingProvider !== undefined) {
     if (signingProvider === null) {
@@ -502,15 +547,16 @@ export async function updateEndpointBySlugForUser({
     .update(updates)
     .eq("user_id", userId)
     .eq("slug", slug.toLowerCase())
-    .select(
-      "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts"
-    )
+    .select(ENDPOINT_COLUMNS)
     .returns<SelectedEndpointRow>()
     .maybeSingle();
 
   if (error) {
     throw error;
   }
+
+  // Turning forwarding off fails what is still waiting in the same
+  // transaction (trigger endpoints_forwarding_off, migration 00050).
 
   return data ? normalizeEndpoint(data) : null;
 }

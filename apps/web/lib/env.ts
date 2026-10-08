@@ -39,6 +39,26 @@ const serverEnvSchema = z
     MAIL_INGEST_URL: z.string().url().optional(),
     // The domain endpoints receive email on (the MX host's MAIL_DOMAINS).
     EMAIL_CAPTURE_DOMAIN: z.string().min(1).default("mailhooks.cc"),
+    // The notify proxy (infra/notify-proxy), shared with the receiver: email
+    // forwarding goes through it so the box's IP stays hidden. Without it,
+    // forwarding connects directly, with the SSRF checks in lib/forwarding.
+    NOTIFY_PROXY_URL: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().url().optional()
+    ),
+    NOTIFY_SECRET: z.string().optional(),
+    // The email forwarding worker (lib/forwarding/worker.ts). On by default;
+    // turn it off for a process that should not send deliveries.
+    EMAIL_FORWARDING_WORKER: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => (typeof v === "string" ? v !== "false" && v !== "0" : v))
+      .default(true),
+    // Lets forwarding reach http and local addresses, to try it against a
+    // local server. Ignored in production.
+    FORWARDING_ALLOW_PRIVATE_TARGETS: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => (typeof v === "string" ? v === "true" || v === "1" : v))
+      .default(false),
     ENDPOINT_CREATE_RATE_LIMIT: z.coerce.number().int().min(1).default(30),
     ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
     MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
@@ -135,6 +155,10 @@ export function serverEnv() {
       RECEIVER_INTERNAL_URL: process.env.RECEIVER_INTERNAL_URL,
       MAIL_INGEST_URL: process.env.MAIL_INGEST_URL || undefined,
       EMAIL_CAPTURE_DOMAIN: process.env.EMAIL_CAPTURE_DOMAIN || undefined,
+      NOTIFY_PROXY_URL: process.env.NOTIFY_PROXY_URL,
+      NOTIFY_SECRET: process.env.NOTIFY_SECRET || undefined,
+      EMAIL_FORWARDING_WORKER: process.env.EMAIL_FORWARDING_WORKER,
+      FORWARDING_ALLOW_PRIVATE_TARGETS: process.env.FORWARDING_ALLOW_PRIVATE_TARGETS,
       ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,
       ENDPOINT_CREATE_RATE_WINDOW_MS: process.env.ENDPOINT_CREATE_RATE_WINDOW_MS,
       MAX_EPHEMERAL_ENDPOINTS: process.env.MAX_EPHEMERAL_ENDPOINTS,
