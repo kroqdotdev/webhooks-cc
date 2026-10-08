@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "The REST API reference and the OpenAPI spec cover emails, the forwarding settings, the signing secret, test deliveries and the delivery log",
       "The Webhook.site comparison covers email capture and forwarding, and the dashboard docs list the Forwarding section of Settings",
       "Pro requests stay visible for all 31 days they are kept; the dashboard and API stopped showing them after 30",
-      "Only an endpoint's owner can turn off \"Show codes and links found in emails\", because it also decides whether forwarded emails carry their codes and links",
+      'Only an endpoint\'s owner can turn off "Show codes and links found in emails", because it also decides whether forwarded emails carry their codes and links',
     ],
   },
   {
