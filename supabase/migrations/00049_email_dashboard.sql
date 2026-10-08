@@ -650,11 +650,13 @@ begin
      and s.emails < c.n;
 
   -- users.emails_used for the current period: the user's own (not
-  -- team-billed) email rows since period_start.
+  -- team-billed) email rows since period_start. A capture by the new
+  -- capture_webhook() may already have started the counter for this period;
+  -- its row is in the count, so greatest() reconciles without counting it
+  -- twice, and keeps the counter if the user has since deleted email.
   perform 1
     from public.users u
    where u.period_start is not null
-     and u.emails_period_start is distinct from u.period_start
      and exists (
            select 1 from public.requests r
             where r.user_id = u.id
@@ -664,7 +666,9 @@ begin
      for update of u;
 
   update public.users u
-     set emails_used = c.n,
+     set emails_used = greatest(
+           case when u.emails_period_start = u.period_start then u.emails_used else 0 end,
+           c.n),
          emails_period_start = u.period_start
     from (
       select r.user_id, count(*)::integer as n
@@ -676,8 +680,7 @@ begin
        group by r.user_id
     ) c
    where u.id = c.user_id
-     and u.period_start is not null
-     and u.emails_period_start is distinct from u.period_start;
+     and u.period_start is not null;
 end
 $$;
 
