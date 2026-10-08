@@ -378,6 +378,8 @@ export interface Database {
           created_at: string;
           quota_email_sent_at: string | null;
           quota_email_claimed_at: string | null;
+          emails_used: number;
+          emails_period_start: string | null;
         };
         Insert: {
           id: string;
@@ -396,6 +398,8 @@ export interface Database {
           created_at?: string;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
+          emails_used?: number;
+          emails_period_start?: string | null;
         };
         Update: {
           id?: string;
@@ -414,6 +418,8 @@ export interface Database {
           created_at?: string;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
+          emails_used?: number;
+          emails_period_start?: string | null;
         };
         Relationships: [];
       };

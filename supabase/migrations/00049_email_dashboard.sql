@@ -6,12 +6,14 @@
 --    count that outlives request retention and deletion like the others in
 --    that table. Backfilled in step 6 for email captured since 00048.
 -- 3. bump_endpoint_daily_stats() gains p_emails (default 0) and
---    capture_webhook() passes it. capture_webhook() is otherwise unchanged
---    from 00048; only the success-path bump differs.
+--    capture_webhook() passes it. capture_webhook() also keeps step 5's
+--    counter for emails billed to the user; otherwise it is unchanged from
+--    00048.
 -- 4. search_requests() returns kind, email and body_raw too, and both it and
 --    search_requests_count() take p_kind to filter by kind (see below).
--- 5. A partial index on email rows for the usage split's period count.
--- 6. The endpoint_daily_stats.emails backfill.
+-- 5. users.emails_used and users.emails_period_start: emails billed to the
+--    user in the current period, for the usage split (see step 3).
+-- 6. Backfills for step 2 and step 5.
 --
 -- Apply in autocommit mode (see AGENTS.md); the function swap below runs in
 -- one transaction so no capture ever sees the old bump function missing.
@@ -21,6 +23,13 @@ alter table public.endpoints
 
 alter table public.endpoint_daily_stats
   add column if not exists emails integer not null default 0;
+
+-- Kept with the period_start it counts for, so whatever resets a period (a
+-- lazy Free start, a Pro renewal, a plan change) starts the count over
+-- without each reset path having to know about it.
+alter table public.users
+  add column if not exists emails_used integer not null default 0,
+  add column if not exists emails_period_start timestamptz;
 
 begin;
 
@@ -269,6 +278,18 @@ begin
           'retry_after', v_retry_after,
           'billing_key', v_billing_key
         );
+      end if;
+
+      -- Emails billed to the user this period, for the usage split. The row
+      -- is already locked by the decrement above; HTTP captures skip this.
+      if v_kind = 'email' then
+        update public.users
+           set emails_used = case
+                 when emails_period_start is not distinct from period_start then emails_used + 1
+                 else 1
+               end,
+               emails_period_start = period_start
+         where id = v_endpoint.user_id;
       end if;
     end if;
 
@@ -596,27 +617,23 @@ grant execute on function public.search_requests_count(uuid, text, text, text, t
 
 commit;
 
--- 5. The usage split counts a user's emails in the current period from the
---    request rows (they outlive a period: Free keeps 7 days for a 24-hour
---    period, Pro 31 for 30). Partial, so only email captures write to it and
---    the HTTP capture path pays nothing.
-create index concurrently if not exists requests_user_email_time
-  on public.requests (user_id, received_at)
-  where kind = 'email';
-
--- 6. Backfill endpoint_daily_stats.emails for email captured since 00048,
---    before step 3's capture_webhook() counted it. The rollup rows are locked
---    first, so a capture running now either committed before the count (and
---    is in it) or bumps the row after this commits (and is not); greatest()
---    keeps bumps for email the user has since deleted.
+-- 6. Backfills for email captured since 00048, before step 3's
+--    capture_webhook() counted it. Email rows only exist since 00048 went
+--    live on 2026-10-07, which bounds the scans to requests_received_at. The
+--    rows being set are locked first, so a capture running now either
+--    committed before the count (and is in it) or updates the row after this
+--    commits (and is not counted twice).
 do $$
 begin
+  -- endpoint_daily_stats.emails; greatest() keeps bumps for email the user
+  -- has since deleted.
   perform 1
     from public.endpoint_daily_stats s
    where (s.endpoint_id, s.day) in (
            select r.endpoint_id, (r.received_at at time zone 'UTC')::date
              from public.requests r
-            where r.kind = 'email')
+            where r.kind = 'email'
+              and r.received_at >= '2026-10-07')
      for update of s;
 
   update public.endpoint_daily_stats s
@@ -625,11 +642,42 @@ begin
       select r.endpoint_id, (r.received_at at time zone 'UTC')::date as day, count(*)::integer as n
         from public.requests r
        where r.kind = 'email'
+         and r.received_at >= '2026-10-07'
        group by 1, 2
     ) c
    where s.endpoint_id = c.endpoint_id
      and s.day = c.day
      and s.emails < c.n;
+
+  -- users.emails_used for the current period: the user's own (not
+  -- team-billed) email rows since period_start.
+  perform 1
+    from public.users u
+   where u.period_start is not null
+     and u.emails_period_start is distinct from u.period_start
+     and exists (
+           select 1 from public.requests r
+            where r.user_id = u.id
+              and r.kind = 'email'
+              and r.team_id is null
+              and r.received_at >= greatest(u.period_start, '2026-10-07'))
+     for update of u;
+
+  update public.users u
+     set emails_used = c.n,
+         emails_period_start = u.period_start
+    from (
+      select r.user_id, count(*)::integer as n
+        from public.requests r
+        join public.users ru on ru.id = r.user_id
+       where r.kind = 'email'
+         and r.team_id is null
+         and r.received_at >= greatest(ru.period_start, '2026-10-07')
+       group by r.user_id
+    ) c
+   where u.id = c.user_id
+     and u.period_start is not null
+     and u.emails_period_start is distinct from u.period_start;
 end
 $$;
 

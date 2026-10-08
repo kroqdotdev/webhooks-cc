@@ -105,11 +105,13 @@ function SetupMenu({
   onOpenGuide: () => void;
 }) {
   const setup = useGettingStarted(hasRequests);
+  const label = setup.open ? `Setup ${setup.progress}/${setup.total}` : "Guide";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          aria-label={label}
           className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
         >
           {setup.open ? (
@@ -117,7 +119,8 @@ function SetupMenu({
           ) : (
             <HelpCircle className="h-3.5 w-3.5" />
           )}
-          {setup.open ? `Setup ${setup.progress}/${setup.total}` : "Guide"}
+          {/* Icon only on phones, where the endpoint bar is narrow. */}
+          <span className="hidden sm:inline">{label}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 border-strong border-line shadow-raised">
@@ -291,11 +294,9 @@ export function EndpointBar({
           )}
         </div>
         <div className="relative order-2 md:order-3 ml-auto flex items-center gap-2">
-          <div className="hidden md:block">
-            <SetupMenu hasRequests={hasRequests} onOpenGuide={() => setGuideOpen(true)} />
-          </div>
+          <SetupMenu hasRequests={hasRequests} onOpenGuide={() => setGuideOpen(true)} />
           <SendMenu slug={slug} canEmail={!!emailAddress} />
-          {exportMenu && <div className="hidden md:block">{exportMenu}</div>}
+          {exportMenu}
         </div>
       </div>
       <nav className="flex gap-1 mt-2" aria-label="Endpoint">

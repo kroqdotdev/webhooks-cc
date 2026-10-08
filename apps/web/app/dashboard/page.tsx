@@ -807,11 +807,11 @@ export default function DashboardPage() {
         const matching = recentRequests
           .slice(0, previousIdx >= 0 ? previousIdx : recentRequests.length)
           .filter((request) => matchesFilters(request, methodFilter, kindFilter));
+        // Follow, or announce, only arrivals the list shows; the filters hide the rest.
         if (liveMode) {
-          // Follow the newest arrival the list shows, not one the filters hide.
           if (matching.length > 0) setSelectedId(matching[0]._id);
-        } else {
-          setNewCount((prev) => prev + arrived);
+        } else if (matching.length > 0) {
+          setNewCount((prev) => prev + matching.length);
         }
 
         if (!debouncedSearch) {
@@ -863,11 +863,13 @@ export default function DashboardPage() {
   const handleToggleSort = useCallback(() => setSortNewest((prev) => !prev), []);
 
   const handleJumpToNew = useCallback(() => {
-    if (recentRequests.length > 0) {
-      setSelectedId(recentRequests[0]._id);
+    // The newest request the list shows, which the filters may make older than the newest overall.
+    const newest = displayedItems[0];
+    if (newest) {
+      setSelectedId("_id" in newest ? newest._id : newest.id);
       setNewCount(0);
     }
-  }, [recentRequests]);
+  }, [displayedItems]);
 
   const handleExportJson = useCallback(async () => {
     if (!currentEndpoint) return;
@@ -1289,11 +1291,14 @@ function ExportDropdown({
     <div className="relative shrink-0" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
+        aria-label="Export"
+        aria-expanded={open}
         className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
       >
         <Download className="h-3.5 w-3.5" />
-        Export
-        <ChevronDown className="h-3 w-3" />
+        {/* Icon only on phones, where the endpoint bar is narrow. */}
+        <span className="hidden sm:inline">Export</span>
+        <ChevronDown className="h-3 w-3 hidden sm:block" />
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border-strong border-line bg-background shadow-raised z-50 min-w-[140px]">

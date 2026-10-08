@@ -113,7 +113,9 @@ const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOS
 async function getUser(userId: string) {
   const { data, error } = await admin
     .from("users")
-    .select("plan, requests_used, request_limit, period_end")
+    .select(
+      "plan, requests_used, request_limit, period_start, period_end, emails_used, emails_period_start"
+    )
     .eq("id", userId)
     .single();
   if (error) throw error;
@@ -121,7 +123,10 @@ async function getUser(userId: string) {
     plan: string;
     requests_used: number;
     request_limit: number;
+    period_start: string | null;
     period_end: string | null;
+    emails_used: number;
+    emails_period_start: string | null;
   };
 }
 
@@ -309,11 +314,15 @@ describe("capture_webhook with kind = 'email'", () => {
     expect((await captureEmail(endpoint.slug)).status).toBe("ok");
     expect((await captureHttp(endpoint.slug)).status).toBe("ok");
 
-    expect((await getUser(userId)).requests_used).toBe(3);
+    const user = await getUser(userId);
+    expect(user.requests_used).toBe(3);
+    // The usage split's counter: the one email, tagged with this period.
+    expect(user.emails_used).toBe(1);
+    expect(user.emails_period_start).toBe(user.period_start);
     expect(await getEndpointCount(endpoint.id)).toBe(3);
     const kinds = (await getRequests(endpoint.id)).map((row) => row.kind).sort();
     expect(kinds).toEqual(["email", "http", "http"]);
-    // The daily rollup counts all three and singles out the email for usage.
+    // The daily rollup counts all three and singles out the email.
     expect(await getDailyStats(endpoint.id)).toMatchObject({ captured: 3, emails: 1 });
   });
 
@@ -402,7 +411,8 @@ describe("capture_webhook with kind = 'email'", () => {
     expect(result.status).toBe("ok");
     expect(result.billing_key).toBe(`team:${teamId}`);
     expect(await getTeamUsed(teamId)).toBe(1);
-    expect((await getUser(userId)).requests_used).toBe(0);
+    // Neither the owner's quota nor their email count: the team pays.
+    expect(await getUser(userId)).toMatchObject({ requests_used: 0, emails_used: 0 });
     expect(await getEndpointCount(endpoint.id)).toBe(1);
     expect(await getDailyStats(endpoint.id)).toMatchObject({ captured: 1, teamBilled: 1 });
     const rows = await getRequests(endpoint.id);
