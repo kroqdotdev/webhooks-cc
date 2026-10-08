@@ -16,7 +16,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.35.1";
-export const CLI_VERSION = "1.3.1";
+export const CLI_VERSION = "1.3.2";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.0";
 
@@ -1031,6 +1031,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.3.2",
+    date: "2026-10-08",
+    title: "Emails Stay Out of the Tunnel",
+    track: "cli",
+    items: [
+      "whk tunnel no longer passes captured emails to your local server and lists them as not tunneled instead: an email is a raw message sent to an address, not an HTTP request. To receive emails in your app, use forwarding (webhooks.cc/docs/forwarding)",
+      "Fixed: with a port-only target such as whk tunnel 8080, an email's recipient address was read as part of the host name, so the message went over plain HTTP to mailhooks.cc, which only redirects, instead of to your machine. Update if you tunnel an endpoint that receives email",
+      "A captured path without a leading slash can no longer change the host the tunnel or whk replay sends to",
+      "whk replay refuses emails and points to forwarding",
+    ],
+  },
   {
     version: "1.3.1",
     date: "2026-09-25",

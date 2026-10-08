@@ -37,8 +37,15 @@ const STRIP_HEADERS: &[&str] = &[
 pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: bool) -> Result<()> {
     let req = client.get_request(request_id).await?;
 
+    if req.is_email() {
+        anyhow::bail!(
+            "{request_id} is a captured email, which cannot be replayed as an HTTP request. \
+             To send emails to your server, use forwarding: https://webhooks.cc/docs/forwarding"
+        );
+    }
+
     let method: reqwest::Method = req.method.parse().unwrap_or(reqwest::Method::POST);
-    let url = format!("{}{}", target_url.trim_end_matches('/'), req.path);
+    let url = crate::tunnel::join_path(target_url, &req.path);
 
     let mut headers = HeaderMap::new();
     for (k, v) in &req.headers {

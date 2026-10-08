@@ -36,6 +36,10 @@ const PROXY_HEADERS: &[&str] = &[
     "x-real-ip",
 ];
 
+/// Shown when a captured email reaches the tunnel instead of being forwarded.
+pub const EMAIL_NOT_TUNNELED: &str =
+    "emails are not tunneled (see https://webhooks.cc/docs/forwarding)";
+
 pub struct Tunnel {
     http: reqwest::Client,
     target_base: String,
@@ -58,6 +62,15 @@ impl Tunnel {
     /// Forward a captured request to the local target. Returns the result.
     pub async fn forward(&self, req: &CapturedRequest) -> ForwardResult {
         let start = Instant::now();
+
+        if req.is_email() {
+            return ForwardResult {
+                success: false,
+                status_code: None,
+                duration: start.elapsed(),
+                error: Some(EMAIL_NOT_TUNNELED.to_string()),
+            };
+        }
 
         let target_url = build_target_url(&self.target_base, &req.path, &req.query_params);
 
@@ -175,7 +188,7 @@ fn build_target_url(
     path: &str,
     query_params: &HashMap<String, String>,
 ) -> String {
-    let mut url = format!("{}{}", base.trim_end_matches('/'), path);
+    let mut url = join_path(base, path);
     if !query_params.is_empty() {
         let qs: Vec<String> = query_params
             .iter()
@@ -185,6 +198,19 @@ fn build_target_url(
         url.push_str(&qs.join("&"));
     }
     url
+}
+
+/// Appends a captured path to the target base. A path without a leading slash
+/// gets one, so it can never become part of the host: `http://localhost:8080`
+/// followed by `user@example.com` would otherwise send the request to
+/// example.com.
+pub fn join_path(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    if path.is_empty() || path.starts_with('/') {
+        format!("{base}{path}")
+    } else {
+        format!("{base}/{path}")
+    }
 }
 
 /// Parse a target string like "8080" or "8080/api/webhooks" into (url, base_path).
@@ -257,6 +283,19 @@ mod tests {
         params.insert("key".into(), "val".into());
         let url = build_target_url("http://localhost:8080", "/hook", &params);
         assert!(url.contains("key=val"));
+    }
+
+    #[test]
+    fn test_build_target_url_keeps_the_host_for_paths_without_a_slash() {
+        let params = HashMap::new();
+        let url = build_target_url("http://localhost:8080", "acme+run@mailhooks.cc", &params);
+        assert_eq!(url, "http://localhost:8080/acme+run@mailhooks.cc");
+        assert_eq!(
+            reqwest::Url::parse(&url).unwrap().host_str(),
+            Some("localhost")
+        );
+        assert_eq!(join_path("http://localhost:8080/", ""), "http://localhost:8080");
+        assert_eq!(join_path("http://localhost:8080/api", "/hook"), "http://localhost:8080/api/hook");
     }
 
     #[test]
