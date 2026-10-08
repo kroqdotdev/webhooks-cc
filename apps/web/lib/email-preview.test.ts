@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPreviewDocument,
+  countImageReferences,
   countRemoteImages,
   disarmTags,
   previewPolicy,
@@ -97,5 +98,15 @@ describe("countRemoteImages", () => {
       countRemoteImages('<img srcset="data:image/png;base64,AAAA 1x, https://x.example/a.png 2x">')
     ).toBe(1);
     expect(countRemoteImages('<rect fill="url(#gradient)">')).toBe(0);
+  });
+});
+
+describe("countImageReferences", () => {
+  it("tells parts of the message (cid:) apart from remote images", () => {
+    expect(
+      countImageReferences(
+        '<img src="cid:logo@x"><img src="CID:banner"><img src="https://x.example/a.png"><img src="data:image/png;base64,AA">'
+      )
+    ).toEqual({ remote: 1, inline: 2 });
   });
 });

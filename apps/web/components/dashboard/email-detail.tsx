@@ -7,7 +7,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes } from "@/types/request";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
 import { extractFromEmail, type ExtractedLink } from "@/lib/email-extract";
-import { buildPreviewDocument, countRemoteImages } from "@/lib/email-preview";
+import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
 
 type EmailTab = "preview" | "text" | "headers" | "attachments" | "authentication" | "raw";
@@ -308,7 +308,10 @@ function FoundInEmail({
 
 /** The email on a white sheet, sandboxed (see lib/email-preview.ts). */
 function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobile" }) {
-  const remoteImages = useMemo(() => countRemoteImages(html), [html]);
+  const { remote: remoteImages, inline: inlineImages } = useMemo(
+    () => countImageReferences(html),
+    [html]
+  );
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [height, setHeight] = useState(480);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -348,6 +351,14 @@ function EmailPreview({ html, width }: { html: string; width: "desktop" | "mobil
             Load images
           </button>
         </div>
+      )}
+      {inlineImages > 0 && (
+        <p className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
+          <Paperclip className="h-3.5 w-3.5 shrink-0" />
+          {inlineImages === 1
+            ? "1 image is attached inside the message. Attachment contents are not kept, so it shows as broken."
+            : `${inlineImages} images are attached inside the message. Attachment contents are not kept, so they show as broken.`}
+        </p>
       )}
       <div className="grid justify-items-center py-2 classic:py-1 clean:bg-muted/60 clean:rounded-lg clean:py-8 clean:px-4 grid-cols-[minmax(0,1fr)]">
         <div

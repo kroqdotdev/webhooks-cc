@@ -69,7 +69,7 @@ The HTML is shown in a sandboxed frame on a white sheet, the way a mail client w
 
 - No scripts run, and forms cannot be submitted.
 - Links in the preview do not open. Copy them from **Found in this email** or the **Text** tab.
-- Remote images are blocked until you click **Load images**, because loading them tells the sender that the email was opened, and from which IP address. Images embedded in the message show right away.
+- Remote images are blocked until you click **Load images**, because loading them tells the sender that the email was opened, and from which IP address. Images written into the HTML as `data:` URLs show right away. Images attached to the message (`cid:` references) show as broken, because attachment contents are not kept.
 - Switch between a desktop and a mobile width to check a responsive layout.
 
 ### Codes and links

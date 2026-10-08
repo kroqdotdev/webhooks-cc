@@ -225,6 +225,7 @@ test("the preview disarms links, redirects and SVG in a hostile email", async ({
     '<body style="background:#fafafa">',
     '<meta http-equiv="ref&#x72;esh" content="0;url=https://evil.example/refresh">',
     '<p><a href="https://evil.example/self" target="_self">Self link</a></p>',
+    '<img src="cid:logo@tidewater" alt="Logo">',
     '<p><a href="https://evil.example/top" TARGET=_top>Top link</a></p>',
     '<svg><a href="https://evil.example/svg"><text y="20">SVG link</text></a></svg>',
     '<form><button formaction="https://evil.example/form" formtarget="_self">Go</button></form>',
@@ -263,6 +264,8 @@ test("the preview disarms links, redirects and SVG in a hostile email", async ({
   await expect(frame.locator("svg")).toHaveCount(0);
   await expect(frame.locator('a[href="https://evil.example/self"]')).toHaveCount(1);
   await expect(frame.locator("body")).toHaveAttribute("style", "background:#fafafa");
+  // Attached images cannot be shown, and the view says why.
+  await expect(shown(page.getByText("1 image is attached inside the message"))).toBeVisible();
 
   // Clicking a link leaves the preview where it is.
   await frame.getByText("Self link").click();
@@ -352,6 +355,10 @@ test("the email switch reaches emails older than the newest page", async ({ page
   await show.getByRole("radio", { name: /^Email/ }).click();
 
   await expect(shown(page.getByText("None in the newest requests"))).toBeVisible();
+  // The timeline pages too.
+  await shown(page.getByRole("button", { name: "Switch to timeline view" })).click();
+  await expect(shown(page.getByRole("button", { name: "Load More" }))).toBeVisible();
+  await shown(page.getByRole("button", { name: "Switch to list view" })).click();
   await shown(page.getByRole("button", { name: "Load More" })).click();
   await expect(emailRow(page)).toBeVisible();
 

@@ -369,7 +369,11 @@ export function RequestList({
       {/* Request rows */}
       <div className="flex-1 overflow-y-auto">
         {viewMode === "timeline" && timelineSlot ? (
-          timelineSlot
+          <>
+            {timelineSlot}
+            {/* The timeline pages like the list, so older matches stay reachable. */}
+            {loadMore}
+          </>
         ) : searchLoading ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps flex items-center justify-center gap-2">
             <Loader2 className="h-3 w-3 animate-spin" />

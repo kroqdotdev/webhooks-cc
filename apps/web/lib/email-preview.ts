@@ -95,34 +95,48 @@ function decodeCharRefs(html: string): string {
   });
 }
 
-/** Embedded in the message (data:, cid:) or a reference within it (#id). */
-function isEmbedded(value: string): boolean {
+/** What loading an image reference would take. */
+function classify(value: string): "remote" | "inline" | "none" {
   // URL parsing drops tabs and newlines anywhere, and spaces around the URL.
   const url = Array.from(value)
     .filter((char) => char.charCodeAt(0) > 0x20)
     .join("")
     .toLowerCase();
-  return url === "" || url.startsWith("data:") || url.startsWith("cid:") || url.startsWith("#");
+  if (url === "" || url.startsWith("data:") || url.startsWith("#")) return "none";
+  // A part of the message; its content is not kept, so it cannot be shown.
+  if (url.startsWith("cid:")) return "inline";
+  return "remote";
 }
 
 /**
- * How many image references (src, srcset, poster and background attributes,
- * CSS url()) would load from outside the message. Anything not plainly
- * embedded counts, so an obfuscated URL still offers "Load images" rather
- * than staying blocked for good; counting too many only shows the button.
+ * The email's image references (src, srcset, poster and background
+ * attributes, CSS url()): how many would load from outside the message, and
+ * how many point at parts of the message itself (cid:). Anything not plainly
+ * a data: URL, a cid: part or a #fragment counts as remote, so an obfuscated
+ * URL still offers "Load images" rather than staying blocked for good;
+ * counting too many only shows the button.
  */
-export function countRemoteImages(html: string): number {
+export function countImageReferences(html: string): { remote: number; inline: number } {
   const decoded = decodeCharRefs(html);
-  let count = 0;
+  const counts = { remote: 0, inline: 0 };
+  const add = (kinds: ("remote" | "inline" | "none")[]) => {
+    if (kinds.includes("remote")) counts.remote++;
+    else if (kinds.includes("inline")) counts.inline++;
+  };
   for (const match of decoded.matchAll(IMAGE_ATTRIBUTE)) {
     const value = match[2] ?? match[3] ?? match[4] ?? "";
     const urls = match[1].toLowerCase() === "srcset" ? value.split(/,\s+/) : [value];
-    if (urls.some((url) => !isEmbedded(url.trim().split(/\s+/)[0] ?? ""))) count++;
+    add(urls.map((url) => classify(url.trim().split(/\s+/)[0] ?? "")));
   }
   for (const match of decoded.matchAll(CSS_URL)) {
-    if (!isEmbedded(match[1] ?? match[2] ?? match[3] ?? "")) count++;
+    add([classify(match[1] ?? match[2] ?? match[3] ?? "")]);
   }
-  return count;
+  return counts;
+}
+
+/** How many image references would load from outside the message. */
+export function countRemoteImages(html: string): number {
+  return countImageReferences(html).remote;
 }
 
 export function previewPolicy(allowRemoteImages: boolean): string {
