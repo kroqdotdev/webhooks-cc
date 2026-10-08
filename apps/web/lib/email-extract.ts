@@ -1,3 +1,13 @@
+/*
+ * Every scan here takes time linear in its input. Email HTML and text come
+ * from anyone who can send mail, run on the server for forwarding, and can
+ * be 256 KB each, so a pattern that backtracks (an unbounded quantifier next
+ * to another that matches the same characters, or one that fails at every
+ * start position) would let one message stall the process for minutes.
+ * Tag and anchor handling is done with indexOf scans for that reason, and
+ * extract.test.ts checks adversarial inputs.
+ */
+
 /**
  * Finds the one-time codes and links in a captured email, for the
  * dashboard's "Found in this email" strip. Signup and login tests usually
@@ -27,13 +37,14 @@ const CODE_WORD =
   /\b(?:code|codes|otp|passcode|pass code|pin|verification|verify|one[- ]time|security|confirmation|2fa|two[- ]factor|login|sign[- ]in|token)\b/i;
 /** Digits (4 to 8, optionally split in two by a space or dash) or a mixed letters-and-digits token. */
 const CODE_CANDIDATE =
-  /(?<![\w#$€£@./:-])(\d{3,4}[ -]\d{3,4}|\d{4,8}|(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{6,8})(?![\w%@/:-]|[.,]\d)/g;
+  /(?<![\w#$€£@./:-])(\d{3,4}[ -]\d{3,4}|\d{4,8}|(?=[A-Z0-9]{0,7}\d)(?=[A-Z0-9]{0,7}[A-Z])[A-Z0-9]{6,8})(?![\w%@/:-]|[.,]\d)/g;
 /** How far a code word may be from the code, in characters, within the same line. */
 const CODE_WORD_REACH = 48;
 const YEAR = /^(?:19|20)\d{2}$/;
 
 const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
-const ANCHOR = /<a\b[^>]*?\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
+/** The href in an anchor's attributes (the text between `<a` and `>`). */
+const HREF = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/i;
 const ACTION =
   /(confirm|verif|activat|reset|magic|log-?in|sign-?in|signin|login|invit|accept|approve|validat|onboard|set-?up|password|token|auth)/i;
 const DROP =
@@ -60,14 +71,111 @@ function decodeEntities(value: string): string {
   );
 }
 
+function isWordChar(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 95
+  );
+}
+
+/** `value` without leading and trailing characters outside [A-Za-z0-9_]. */
+function trimNonWord(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && !isWordChar(value.charCodeAt(start))) start++;
+  while (end > start && !isWordChar(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+}
+
+const SKIPPED_ELEMENTS = /<(script|style|head)\b/gi;
+
+/**
+ * Drops `<script>`, `<style>` and `<head>` elements with their content. An
+ * element without its closing tag is left for stripTags, as before; once a
+ * name has no closing tag ahead, it is not searched for again.
+ */
+function dropSkippedElements(html: string): string {
+  const lower = html.toLowerCase();
+  const unclosed = new Set<string>();
+  let out = "";
+  let copied = 0;
+  SKIPPED_ELEMENTS.lastIndex = 0;
+  for (let match = SKIPPED_ELEMENTS.exec(html); match; match = SKIPPED_ELEMENTS.exec(html)) {
+    const name = match[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const close = lower.indexOf(`</${name}>`, match.index + match[0].length);
+    if (close === -1) {
+      unclosed.add(name);
+      continue;
+    }
+    out += html.slice(copied, match.index) + " ";
+    copied = close + name.length + 3;
+    SKIPPED_ELEMENTS.lastIndex = copied;
+  }
+  return out + html.slice(copied);
+}
+
+/** Replaces every `<...>` tag with a space; a `<` without a later `>` stays as text. */
+function stripTags(html: string): string {
+  let out = "";
+  let index = 0;
+  while (index < html.length) {
+    const open = html.indexOf("<", index);
+    if (open === -1) break;
+    const close = html.indexOf(">", open + 1);
+    if (close === -1) break;
+    if (close === open + 1) {
+      // "<>" is not a tag
+      out += html.slice(index, close + 1);
+    } else {
+      out += html.slice(index, open) + " ";
+    }
+    index = close + 1;
+  }
+  return out + html.slice(index);
+}
+
+/** Each `<a href=...>label</a>`: the href and the raw HTML of its label. */
+function findAnchors(html: string): { href: string; label: string }[] {
+  const lower = html.toLowerCase();
+  const anchors: { href: string; label: string }[] = [];
+  let index = 0;
+  let close = -1;
+  while (index < html.length) {
+    const open = lower.indexOf("<a", index);
+    if (open === -1) break;
+    if (open + 2 < lower.length && isWordChar(lower.charCodeAt(open + 2))) {
+      index = open + 2;
+      continue;
+    }
+    const tagEnd = lower.indexOf(">", open + 2);
+    if (tagEnd === -1) break;
+    if (close < tagEnd) close = lower.indexOf("</a>", tagEnd);
+    if (close === -1) break;
+    const href = HREF.exec(html.slice(open + 2, tagEnd));
+    if (href) {
+      anchors.push({
+        href: href[1] ?? href[2] ?? href[3] ?? "",
+        label: html.slice(tagEnd + 1, close),
+      });
+      index = close + 4;
+    } else {
+      index = tagEnd + 1;
+    }
+  }
+  return anchors;
+}
+
 /** HTML to plain text, good enough for finding codes: tags out, block ends become line breaks. */
 export function htmlToText(html: string): string {
   return decodeEntities(
-    html
-      .replace(/<(script|style|head)\b[\s\S]*?<\/\1>/gi, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(p|div|tr|li|h[1-6]|table|section)>/gi, "\n")
-      .replace(/<[^>]+>/g, " ")
+    stripTags(
+      dropSkippedElements(html)
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/(p|div|tr|li|h[1-6]|table|section)>/gi, "\n")
+    )
   )
     .split("\n")
     .map((line) => line.replace(/[ \t\f\v]+/g, " ").trim())
@@ -88,7 +196,7 @@ function findCodes(sources: string[]): string[] {
       .filter(Boolean);
     lines.forEach((line, index) => {
       // A code alone on its line, under a line that names it ("Your code is").
-      const alone = line.replace(/^[^\w]+|[^\w]+$/g, "");
+      const alone = trimNonWord(line);
       if (index > 0 && CODE_WORD.test(lines[index - 1])) {
         const match = [...alone.matchAll(CODE_CANDIDATE)];
         if (match.length === 1 && match[0][1] === alone) {
@@ -109,8 +217,13 @@ function findCodes(sources: string[]): string[] {
   return found;
 }
 
+const TRAILING_PUNCTUATION = ".,;:!?";
+
 function cleanUrl(url: string): string | null {
-  const trimmed = decodeEntities(url.trim()).replace(/[.,;:!?]+$/, "");
+  const decoded = decodeEntities(url.trim());
+  let end = decoded.length;
+  while (end > 0 && TRAILING_PUNCTUATION.includes(decoded[end - 1])) end--;
+  const trimmed = decoded.slice(0, end);
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
@@ -139,9 +252,9 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
     links.push({ url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) });
   };
   if (html) {
-    for (const match of html.matchAll(ANCHOR)) {
-      const label = htmlToText(match[4] ?? "").trim();
-      add(match[1] ?? match[2] ?? match[3] ?? "", label || null);
+    for (const anchor of findAnchors(html)) {
+      const label = htmlToText(anchor.label).trim();
+      add(anchor.href, label || null);
     }
   }
   for (const source of [text, html ? htmlToText(html) : null]) {
