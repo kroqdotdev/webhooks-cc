@@ -31,6 +31,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "New pages on email testing and on turning inbound email into a webhook, linked from the home page",
       "The REST API reference and the OpenAPI spec cover emails, the forwarding settings, the signing secret, test deliveries and the delivery log",
       "The Webhook.site comparison covers email capture and forwarding, and the dashboard docs list the Forwarding section of Settings",
+      "Pro requests stay visible for all 31 days they are kept; the dashboard and API stopped showing them after 30",
     ],
   },
   {

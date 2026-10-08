@@ -667,7 +667,7 @@ export default async function Home() {
               <ul className="space-y-3 mb-8">
                 {[
                   "100,000 requests/month",
-                  "30-day data retention",
+                  "31-day data retention",
                   "Unlimited endpoints",
                   "CLI, SDK & MCP access",
                   "Mock responses & replay",
