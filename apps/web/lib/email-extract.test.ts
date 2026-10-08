@@ -121,4 +121,10 @@ describe("htmlToText", () => {
       )
     ).toBe("Hi Ines,\nCode 482913");
   });
+
+  it("decodes each entity once", () => {
+    expect(htmlToText("<p>&amp;lt;b&amp;gt; is &lt;b&gt;, &QUOT;Tom &amp; Jerry&quot;</p>")).toBe(
+      '&lt;b&gt; is <b>, "Tom & Jerry"'
+    );
+  });
 });

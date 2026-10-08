@@ -42,14 +42,22 @@ const SOCIAL_HOSTS =
   /(^|\.)(facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium)\.com$/i;
 const MAX_LINKS = 20;
 
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  "#39": "'",
+  apos: "'",
+  nbsp: " ",
+};
+
+/** One pass, so "&amp;lt;" becomes "&lt;" and not "<". */
 function decodeEntities(value: string): string {
-  return value
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&nbsp;/gi, " ");
+  return value.replace(
+    /&(amp|lt|gt|quot|#39|apos|nbsp);/gi,
+    (_, name: string) => ENTITIES[name.toLowerCase()]
+  );
 }
 
 /** HTML to plain text, good enough for finding codes: tags out, block ends become line breaks. */
