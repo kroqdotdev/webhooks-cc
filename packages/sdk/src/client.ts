@@ -554,6 +554,16 @@ function isEmailKind(request: Pick<Request, "kind" | "method" | "path">): boolea
   );
 }
 
+/** How many matches a waitForAll call collects: a whole number, at least 1 (NaN counts as 1). */
+function normalizeWaitCount(count: number): number {
+  return Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 1;
+}
+
+/** The page size waitForAll polls with: twice the count, between 100 and 1000. */
+function waitListLimit(count: number): number {
+  return Math.min(1000, Math.max(100, normalizeWaitCount(count) * 2));
+}
+
 async function collectMatchingRequests(
   fetchRequests: (since: number) => Promise<Request[]>,
   options: WaitForAllOptions
@@ -564,7 +574,7 @@ async function collectMatchingRequests(
     MIN_POLL_INTERVAL,
     Math.min(MAX_POLL_INTERVAL, rawPollInterval)
   );
-  const desiredCount = Math.max(1, Math.floor(options.count));
+  const desiredCount = normalizeWaitCount(options.count);
   const start = Date.now();
   let lastChecked = options.since ?? start - WAIT_FOR_LOOKBACK_MS;
   let iterations = 0;
@@ -1439,7 +1449,7 @@ export class WebhooksCC {
       validatePathSegment(endpointSlug, "endpointSlug");
       const { count, timeout = 60000, pollInterval = 1000, since, match, ...criteria } = options;
       const matches = matchEmail(criteria);
-      const listLimit = Math.min(1000, Math.max(100, Math.floor(count) * 2));
+      const listLimit = waitListLimit(count);
       const emails = await collectMatchingRequests(
         (from) =>
           this.requests.list(endpointSlug, { since: from, limit: listLimit, kind: "email" }),
@@ -1782,7 +1792,7 @@ export class WebhooksCC {
 
     waitForAll: async (endpointSlug: string, options: WaitForAllOptions): Promise<Request[]> => {
       validatePathSegment(endpointSlug, "endpointSlug");
-      const listLimit = Math.min(1000, Math.max(100, Math.floor(options.count) * 2));
+      const listLimit = waitListLimit(options.count);
       return collectMatchingRequests(
         (since) =>
           this.requests.list(endpointSlug, {

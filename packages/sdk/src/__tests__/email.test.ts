@@ -144,6 +144,15 @@ describe("email helpers", () => {
     expect("links" in without.data).toBe(false);
   });
 
+  it("rejects an invalid receivedAt with a clear error", () => {
+    const request = emailRequest("e1");
+    for (const receivedAt of [Number.NaN, 8.64e15 + 1]) {
+      expect(() =>
+        buildEmailJson({ ...request, receivedAt, email: request.email! }, { slug: "acme" })
+      ).toThrow(/receivedAt must be a valid millisecond timestamp/);
+    }
+  });
+
   it("does not run provider detection on emails", () => {
     const request = emailRequest("e1");
     request.headers = { "stripe-signature": "t=1,v1=abc" };
@@ -232,6 +241,18 @@ describe("client.emails", () => {
     expect(email.id).toBe("e2");
     expect(email.email.tag).toBe("run-9");
     expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("kind")).toBe("email");
+  });
+
+  it("treats a count that is not a number as 1", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([emailRequest("e1")]));
+    globalThis.fetch = fetchMock;
+
+    const emails = await createClient().emails.waitForAll("acme", {
+      count: Number.NaN,
+      pollInterval: 10,
+    });
+    expect(emails).toHaveLength(1);
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("limit")).toBe("100");
   });
 
   it("uses the given since instead of the five-minute lookback", async () => {
