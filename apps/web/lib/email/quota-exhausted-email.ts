@@ -33,7 +33,7 @@ export function buildQuotaExhaustedEmail(params: {
       `are rejected with HTTP 429 and are not captured.`,
       ...(teamNote ? [teamNote] : []),
       ``,
-      `Upgrade to Pro for 100,000 requests a month and 30-day retention, $8/month:`,
+      `Upgrade to Pro for 100,000 requests a month and 31-day retention, $8/month:`,
       accountLink,
       ``,
       `Capturing for a company? A team gets a pooled quota of 100,000 requests per seat:`,
@@ -48,7 +48,7 @@ export function buildQuotaExhaustedEmail(params: {
         (teamNote ? ` ${teamNote}` : "") +
         `</p>`,
       `<p><a href="${accountLink}">Upgrade to Pro</a> for 100,000 requests a month ` +
-        `and 30-day retention, $8/month.</p>`,
+        `and 31-day retention, $8/month.</p>`,
       `<p>Capturing for a company? A <a href="${teamsLink}">team</a> gets a pooled quota ` +
         `of 100,000 requests per seat.</p>`,
       `<p style="color:#666;font-size:12px">We send this at most once a week, ` +

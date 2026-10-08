@@ -89,7 +89,7 @@ function UpgradeSuccessBanner() {
         <div>
           <p className="text-sm font-medium text-green-500">Welcome to Pro!</p>
           <p className="text-sm text-muted-foreground">
-            Your subscription is now active. Enjoy 100K requests/month and 30-day data retention.
+            Your subscription is now active. Enjoy 100K requests/month and 31-day data retention.
           </p>
         </div>
         <Button variant="ghost" size="sm" onClick={() => setShow(false)} className="ml-auto">
@@ -398,7 +398,7 @@ export default function AccountPage() {
                 <UpgradeButton accessToken={accessToken} />
               </div>
               <p className="text-sm text-muted-foreground">
-                Upgrade to Pro for 100,000 requests/month and 30-day data retention ($8/month).
+                Upgrade to Pro for 100,000 requests/month and 31-day data retention ($8/month).
               </p>
             </div>
           ) : (
@@ -407,7 +407,7 @@ export default function AccountPage() {
                 <div>
                   <p className="font-medium">Pro Plan</p>
                   <p className="text-sm text-muted-foreground">
-                    100K requests/month, 30-day data retention
+                    100K requests/month, 31-day data retention
                   </p>
                 </div>
                 <p className="font-medium">$8/month</p>

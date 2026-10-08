@@ -5,7 +5,8 @@ import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const PRO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+// Matches the daily cleanup, which deletes Pro requests after 31 days.
+const PRO_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const MAX_LIST_LIMIT = 1000;
 
 type RequestRow = Database["public"]["Tables"]["requests"]["Row"];

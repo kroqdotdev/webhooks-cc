@@ -169,7 +169,7 @@ The **Deliveries** tab on each email lists every try, with the status your serve
 
 ## Limits
 
-- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. Requests come from Cloudflare's network, not from a fixed address, so do not allowlist IPs; check the signature instead.
+- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. On webhooks.cc, requests come from Cloudflare's network, not from a fixed address (a self-hosted copy without the notify proxy sends from its own server), so do not allowlist IPs; check the signature instead.
 - Forwarding does not use your request quota: each email already counted once when it arrived.
 - An email whose JSON would be larger than 10 MB is not forwarded. Real mail stays far below that: text and HTML are kept up to 256 KB each.
 - Deliveries are kept as long as the email itself (your plan's [retention](/docs/plans-limits#data-retention)).

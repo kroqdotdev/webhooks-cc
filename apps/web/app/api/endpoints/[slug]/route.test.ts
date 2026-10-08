@@ -142,7 +142,8 @@ describe("PATCH /api/endpoints/[slug]", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only the endpoint owner can update notification, forwarding or signing settings",
+      error:
+        "Only the endpoint owner can update email, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
@@ -163,7 +164,8 @@ describe("PATCH /api/endpoints/[slug]", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only the endpoint owner can update notification, forwarding or signing settings",
+      error:
+        "Only the endpoint owner can update email, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
@@ -181,6 +183,20 @@ describe("PATCH /api/endpoints/[slug]", () => {
       patchRequest({ forwardEnabled: true, forwardUrl: "https://api.example.com/hooks/email" }),
       params
     );
+
+    expect(response.status).toBe(403);
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("rejects the email extracts setting from team members", async () => {
+    mockFns.resolveEndpointAccess.mockResolvedValue({
+      ownerId: "owner_123",
+      endpointId: "endpoint_123",
+      isOwner: false,
+    });
+
+    const { PATCH } = await import("./route");
+    const response = await PATCH(patchRequest({ showEmailExtracts: false }), params);
 
     expect(response.status).toBe(403);
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();

@@ -13,6 +13,10 @@ export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 // Privacy policy, terms, and the subprocessor list change together.
 const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
 
+// Email capture and forwarding: the two email pages, plus the landing and
+// Webhook.site pages that gained email sections.
+const EMAIL_PAGES_UPDATED = new Date("2026-10-08T00:00:00.000Z");
+
 export interface SitemapPageDefinition {
   path: string;
   changeFrequency: NonNullable<MetadataRoute.Sitemap[number]["changeFrequency"]>;
@@ -21,13 +25,30 @@ export interface SitemapPageDefinition {
 }
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
-  { path: "/", changeFrequency: "weekly", priority: 1 },
+  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: EMAIL_PAGES_UPDATED },
   // /go permanently redirects to / (the landing page is the guest dashboard now)
   // Individual /webhooks/[provider] pages are appended in app/sitemap.ts
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
+  {
+    path: "/email-testing",
+    changeFrequency: "monthly",
+    priority: 0.8,
+    lastModified: EMAIL_PAGES_UPDATED,
+  },
+  {
+    path: "/email-to-webhook",
+    changeFrequency: "monthly",
+    priority: 0.8,
+    lastModified: EMAIL_PAGES_UPDATED,
+  },
   // Docs pages are auto-generated from content/docs/ in app/sitemap.ts
   { path: "/compare", changeFrequency: "monthly", priority: 0.7 },
-  { path: "/compare/webhook-site", changeFrequency: "monthly", priority: 0.6 },
+  {
+    path: "/compare/webhook-site",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: EMAIL_PAGES_UPDATED,
+  },
   { path: "/compare/ngrok", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/beeceptor", changeFrequency: "monthly", priority: 0.6 },
   { path: "/compare/requestbin", changeFrequency: "monthly", priority: 0.6 },
