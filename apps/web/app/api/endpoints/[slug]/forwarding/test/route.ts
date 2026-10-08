@@ -1,5 +1,5 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { buildEmailJson } from "@/lib/email-json";
+import { buildEmailJson } from "@webhooks-cc/sdk/email";
 import { serverEnv } from "@/lib/env";
 import { sendOptions } from "@/lib/forwarding/config";
 import { sampleEmailSource } from "@/lib/forwarding/sample";

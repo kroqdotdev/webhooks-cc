@@ -74,20 +74,23 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
   }
 }`;
 
-const VERIFY_SAMPLE = `import { verifyStandardWebhookSignature } from "@webhooks-cc/sdk";
+const VERIFY_SAMPLE = `import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
 
 export async function POST(request: Request) {
-  const rawBody = await request.text();
-  const headers = Object.fromEntries(request.headers);
-  const age = Math.abs(Date.now() / 1000 - Number(headers["webhook-timestamp"]));
-  const ok =
-    age <= 300 &&
-    (await verifyStandardWebhookSignature(rawBody, headers, process.env.FORWARD_SECRET!));
-  if (!ok) return new Response("Invalid signature", { status: 401 });
-
-  const { data } = JSON.parse(rawBody);
-  await handleInboundEmail(data); // your code
-  return new Response(null, { status: 204 });
+  try {
+    const { data } = await verifyForwardedEmail(
+      await request.text(),
+      request.headers,
+      process.env.FORWARD_SECRET!
+    );
+    await handleInboundEmail(data); // your code
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      return new Response(error.message, { status: 401 });
+    }
+    throw error;
+  }
 }`;
 
 const USE_CASES = [
@@ -230,8 +233,9 @@ export default function EmailToWebhookPage() {
           <h2 className="text-2xl md:text-3xl font-bold mb-4">Verify the signature</h2>
           <p className="text-muted-foreground mb-6">
             The signature is an HMAC-SHA256 of the id, the timestamp and the raw body, keyed with
-            your endpoint&apos;s secret. Check it, and that the timestamp is recent, before you
-            parse the body:
+            your endpoint&apos;s secret. The SDK&apos;s{" "}
+            <code className="font-mono text-sm">verifyForwardedEmail</code> checks it and the
+            timestamp, then hands you the parsed email:
           </p>
           <div className="ui-code overflow-x-auto">
             <pre className="text-sm">

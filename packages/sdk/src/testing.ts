@@ -1,7 +1,13 @@
 import type { WebhooksCC } from "./client";
 import { diffRequests, type DiffResult } from "./diff";
 import { NotFoundError, TimeoutError } from "./errors";
-import type { CreateEndpointOptions, Endpoint, Request } from "./types";
+import type {
+  CreateEndpointOptions,
+  EmailCriteria,
+  EmailRequest,
+  Endpoint,
+  Request,
+} from "./types";
 import { parseDuration } from "./utils";
 
 const MIN_CAPTURE_POLL_INTERVAL = 10;
@@ -143,6 +149,68 @@ export async function captureDuring(
       }
 
       throw new TimeoutError(timeoutMs);
+    },
+    createOptions
+  );
+}
+
+export interface CaptureEmailDuringOptions extends CreateEndpointOptions, EmailCriteria {
+  /** Maximum time to wait for the emails (default: 60000) */
+  timeout?: number | string;
+  /** Interval between polls (default: 1000) */
+  pollInterval?: number | string;
+  /** Number of emails to collect (default: 1) */
+  count?: number;
+  /** Extra filter on top of the criteria */
+  match?: (email: EmailRequest) => boolean;
+}
+
+/**
+ * Creates a temporary endpoint, runs `action` with its email address, waits
+ * for the email(s) it triggers, then deletes the endpoint. With `tag`, the
+ * address carries it and only mail to that tag counts.
+ *
+ * @example
+ * ```ts
+ * const [email] = await captureEmailDuring(client, async (address) => {
+ *   await signUp(address);
+ * }, { subject: "Confirm your email" });
+ * expect(extractCode(email)).toMatch(/^\d{6}$/);
+ * ```
+ */
+export async function captureEmailDuring(
+  client: Pick<WebhooksCC, "endpoints" | "requests" | "emails">,
+  action: (address: string, endpoint: Endpoint) => Promise<unknown>,
+  options: CaptureEmailDuringOptions = {}
+): Promise<EmailRequest[]> {
+  const {
+    timeout = 60000,
+    pollInterval = 1000,
+    count = 1,
+    match,
+    tag,
+    subject,
+    from,
+    to,
+    ...createOptions
+  } = options;
+
+  return withEndpoint(
+    client,
+    async (endpoint) => {
+      await action(client.emails.address(endpoint, tag ?? undefined), endpoint);
+      return client.emails.waitForAll(endpoint.slug, {
+        count,
+        timeout,
+        pollInterval,
+        // A new endpoint: everything it received counts, measured on the server's clock.
+        since: endpoint.createdAt,
+        match,
+        tag,
+        subject,
+        from,
+        to,
+      });
     },
     createOptions
   );

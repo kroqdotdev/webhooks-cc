@@ -126,7 +126,7 @@ curl "https://webhooks.cc/api/endpoints/abc123/requests?limit=50" \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns an array of request objects, newest first.
+Returns an array of request objects, newest first. Add `kind=email` for captured emails only, or `kind=http` for HTTP requests only; the paginated listing below takes the same parameter (send it on every page).
 
 ### List requests (paginated)
 
@@ -211,10 +211,10 @@ Deliver a sample email (with a one-time code and a link) to one of your endpoint
 curl -X POST https://webhooks.cc/api/send-test-email \
   -H "Authorization: Bearer whcc_..." \
   -H "Content-Type: application/json" \
-  -d '{"slug": "abc123"}'
+  -d '{"slug": "abc123", "tag": "run-42"}'
 ```
 
-Returns `{ "status": "captured", "requestId": "..." }`. A slug you cannot access returns `404`, and so does a guest endpoint, since only endpoints on an account receive email. An endpoint whose quota is used up returns `409`. Rate limited to 10 requests per minute.
+`tag` is optional: with it, the sample goes to `abc123+run-42@mailhooks.cc`, so a test can wait for its own email. Returns `{ "status": "captured", "requestId": "..." }`. A slug you cannot access returns `404`, and so does a guest endpoint, since only endpoints on an account receive email. An endpoint whose quota is used up returns `409`. Rate limited to 10 requests per minute.
 
 ## Forwarding
 
@@ -382,13 +382,13 @@ Each captured request arrives as an SSE message:
 
 ```
 event: request
-data: {"_id":"...","_creationTime":1234567890000,"endpointId":"...","method":"POST","path":"/","headers":{...},"body":"...","receivedAt":1234567890000}
+data: {"_id":"...","_creationTime":1234567890000,"endpointId":"...","method":"POST","path":"/","headers":{...},"body":"...","receivedAt":1234567890000,"kind":"http"}
 
 ```
 
 The server sends keepalive pings (`:ping`) every 30 seconds to keep the connection alive. Maximum connection duration is 30 minutes; reconnect when the stream closes.
 
-A stream message names the request id `_id` (not `id`) and has no `kind` or `email` field. Emails arrive as `request` events too, with `"method": "EMAIL"` and the recipient address as `path`; fetch the request by its `_id` for the parsed message.
+A stream message names the request id `_id` (not `id`) and has no `email` field. Emails arrive as `request` events too, with `"kind": "email"`, `"method": "EMAIL"` and the recipient address as `path`; fetch the request by its `_id` for the parsed message.
 
 ## Usage
 

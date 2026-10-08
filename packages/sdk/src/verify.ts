@@ -4,6 +4,8 @@ import type {
   SignatureVerificationResult,
   VerifySignatureOptions,
 } from "./types";
+import { EMAIL_RECEIVED, type EmailReceivedEvent } from "./email/types";
+import { WebhookVerificationError } from "./errors";
 import {
   buildTwilioSignaturePayload,
   calculateAdyenHmac,
@@ -41,11 +43,31 @@ function requireSecret(secret: string, functionName: string): void {
   }
 }
 
-function getHeader(headers: Record<string, string>, name: string): string | undefined {
+/**
+ * Request headers in any common shape: a plain object (a captured request,
+ * Express's `req.headers`), a Fetch `Headers` instance (Next.js, Hono, Bun,
+ * Deno, Workers), or a list of name and value pairs.
+ */
+export type HeadersInput =
+  Headers | Record<string, string | string[] | undefined> | Iterable<readonly [string, string]>;
+
+function headerEntries(headers: HeadersInput): Iterable<readonly [string, unknown]> {
+  const candidate = headers as { get?: unknown; entries?: unknown };
+  if (typeof candidate.get === "function" && typeof candidate.entries === "function") {
+    return (headers as Headers).entries();
+  }
+  if (typeof (headers as Iterable<unknown>)[Symbol.iterator] === "function") {
+    return headers as Iterable<readonly [string, string]>;
+  }
+  return Object.entries(headers as Record<string, unknown>);
+}
+
+function getHeader(headers: HeadersInput, name: string): string | undefined {
   const target = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
+  for (const [key, value] of headerEntries(headers)) {
     if (key.toLowerCase() === target) {
-      return value;
+      if (Array.isArray(value)) return value.join(", ");
+      return typeof value === "string" ? value : undefined;
     }
   }
   return undefined;
@@ -1165,7 +1187,7 @@ export async function verifyDiscordSignature(
  */
 export async function verifyStandardWebhookSignature(
   body: string | undefined,
-  headers: Record<string, string>,
+  headers: HeadersInput,
   secret: string
 ): Promise<boolean> {
   requireSecret(secret, "verifyStandardWebhookSignature");
@@ -1187,6 +1209,115 @@ export async function verifyStandardWebhookSignature(
   return parseStandardSignatures(signatureHeader).some((signature) =>
     timingSafeEqual(signature, expected)
   );
+}
+
+/** Options for `verifyForwardedEmail()`. */
+export interface VerifyForwardedEmailOptions {
+  /** How far `webhook-timestamp` may be from now, in seconds (default: 300) */
+  toleranceSeconds?: number;
+  /** The current time in ms, for tests (default: Date.now()) */
+  now?: number;
+}
+
+function isEmailReceivedEvent(value: unknown): value is EmailReceivedEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as { type?: unknown; timestamp?: unknown; data?: unknown };
+  if (event.type !== EMAIL_RECEIVED || typeof event.timestamp !== "string") return false;
+  const data = event.data as { id?: unknown; address?: unknown; headers?: unknown } | null;
+  return (
+    !!data &&
+    typeof data === "object" &&
+    typeof data.id === "string" &&
+    typeof data.address === "string" &&
+    !!data.headers &&
+    typeof data.headers === "object"
+  );
+}
+
+/**
+ * Verifies an email webhooks.cc forwarded to your server and returns it.
+ *
+ * Checks the Standard Webhooks headers (`webhook-id`, `webhook-timestamp`,
+ * `webhook-signature`) against your endpoint's `whsec_` secret, rejects a
+ * timestamp more than five minutes from now, and parses the body as an
+ * `email.received` event. Pass the raw body, before any JSON parsing.
+ * Headers may be a Fetch `Headers`, a plain object or name and value pairs.
+ *
+ * @throws WebhookVerificationError with `code` "missing_headers",
+ *   "timestamp_out_of_range", "invalid_signature" or "invalid_payload"
+ *
+ * @example
+ * ```ts
+ * export async function POST(request: Request) {
+ *   try {
+ *     const email = await verifyForwardedEmail(
+ *       await request.text(),
+ *       request.headers,
+ *       process.env.FORWARD_SECRET!
+ *     );
+ *     await handleInboundEmail(email.data);
+ *     return new Response(null, { status: 204 });
+ *   } catch (error) {
+ *     if (error instanceof WebhookVerificationError) {
+ *       return new Response(error.message, { status: 401 });
+ *     }
+ *     throw error;
+ *   }
+ * }
+ * ```
+ */
+export async function verifyForwardedEmail(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options: VerifyForwardedEmailOptions = {}
+): Promise<EmailReceivedEvent> {
+  requireSecret(secret, "verifyForwardedEmail");
+  const text =
+    typeof body === "string"
+      ? body
+      : new TextDecoder().decode(body instanceof ArrayBuffer ? new Uint8Array(body) : body);
+
+  const messageId = getHeader(headers, "webhook-id");
+  const timestampHeader = getHeader(headers, "webhook-timestamp");
+  const signatureHeader = getHeader(headers, "webhook-signature");
+  if (!messageId || !timestampHeader || !signatureHeader) {
+    throw new WebhookVerificationError(
+      "missing_headers",
+      "Missing webhook-id, webhook-timestamp or webhook-signature header"
+    );
+  }
+
+  const timestamp = Number(timestampHeader);
+  const tolerance = options.toleranceSeconds ?? 300;
+  const now = (options.now ?? Date.now()) / 1000;
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > tolerance) {
+    throw new WebhookVerificationError(
+      "timestamp_out_of_range",
+      `webhook-timestamp is more than ${tolerance} seconds from now`
+    );
+  }
+
+  if (!(await verifyStandardWebhookSignature(text, headers, secret))) {
+    throw new WebhookVerificationError(
+      "invalid_signature",
+      "The webhook-signature does not match the body and secret"
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new WebhookVerificationError("invalid_payload", "The body is not JSON");
+  }
+  if (!isEmailReceivedEvent(parsed)) {
+    throw new WebhookVerificationError(
+      "invalid_payload",
+      "The body is not an email.received event"
+    );
+  }
+  return parsed;
 }
 
 /**

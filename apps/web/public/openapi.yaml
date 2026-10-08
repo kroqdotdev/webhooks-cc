@@ -274,6 +274,12 @@ paths:
           schema:
             type: integer
           description: Only return requests received after this Unix timestamp (ms)
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [http, email]
+          description: Only HTTP requests (`http`) or only captured emails (`email`)
       responses:
         "200":
           description: Array of captured requests
@@ -283,6 +289,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Request"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -336,6 +344,12 @@ paths:
           schema:
             type: string
           description: Opaque cursor from a previous page
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [http, email]
+          description: Only HTTP requests (`http`) or only captured emails (`email`); send the same value for every page
       responses:
         "200":
           description: Paginated request listing
@@ -343,6 +357,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaginatedRequests"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -645,15 +661,15 @@ paths:
         The server sends keepalive pings (`:ping`) every 30 seconds. Maximum connection
         duration is 30 minutes; reconnect when the stream closes.
 
-        Captured emails arrive as `request` events too, with `method: "EMAIL"` and the recipient
-        address as `path`. Stream messages carry neither `kind` nor `email`; fetch the request by
-        its `_id` for the parsed message.
+        Captured emails arrive as `request` events too, with `kind: "email"`, `method: "EMAIL"` and
+        the recipient address as `path`. Stream messages do not carry the parsed `email`; fetch the
+        request by its `_id` for it.
 
         **Event types:**
         - `connected`: stream established
         - `request`: captured webhook or email (JSON data matching the StreamRequest schema,
           which differs from Request: `_id` instead of `id`, an extra `_creationTime`, and no
-          `kind` or `email`)
+          `email`)
         - `keepalive`: connection keepalive
         - `timeout`: max duration reached, reconnect
         - `endpoint_deleted`: endpoint was deleted, stream closed
@@ -945,7 +961,7 @@ paths:
         Deliver a sample email (with a one-time code and a link) to one of your endpoints, or one
         shared with you through a team. It is captured and counted like any other email, but it does
         not travel over SMTP, so no sender checks (SPF, DKIM, DMARC) run on it.
-        Rate limited to 10 requests per minute.
+        Pass `tag` to send it to a tagged address. Rate limited to 10 requests per minute.
       requestBody:
         required: true
         content:
@@ -958,6 +974,12 @@ paths:
                   type: string
                   pattern: "^[A-Za-z0-9_-]{1,50}$"
                   description: Target endpoint slug
+                tag:
+                  type: string
+                  description: |
+                    Deliver to `{slug}+{tag}@mailhooks.cc` instead of the plain address, so a test
+                    can wait for its own sample. Printable ASCII without spaces, quotes, brackets,
+                    `@`, `,`, `;` or `:`; slug, `+` and tag together at most 64 characters.
       responses:
         "200":
           description: Test email captured
@@ -981,7 +1003,7 @@ paths:
                     type: ["string", "null"]
                     description: ID of the captured email
         "400":
-          description: Invalid JSON or slug
+          description: Invalid JSON, slug or tag
           content:
             application/json:
               schema:
@@ -1883,6 +1905,10 @@ components:
         receivedAt:
           type: integer
           description: Unix timestamp (ms)
+        kind:
+          type: string
+          enum: [http, email]
+          description: "`email` for a captured email, `http` for everything else"
 
     EmailCapture:
       type: object

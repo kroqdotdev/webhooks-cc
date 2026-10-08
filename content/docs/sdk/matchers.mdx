@@ -1,9 +1,9 @@
 ---
 title: "Matchers & Helpers"
-description: "Filter, detect, and parse webhook requests with built-in matchers for method, header, and body matching. Includes provider detection helpers and JSON body parsing."
+description: "Filter, detect, and parse webhook requests and captured emails with built-in matchers for method, header, body, and email matching. Includes provider detection, JSON body parsing, and one-time code and link extraction."
 section: sdk
 order: 4
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-08
 schema: none
 keywords: ["webhook matchers", "request matching", "webhook body parsing", "provider detection"]
 seo:
@@ -26,6 +26,10 @@ import {
   matchContentType,
   matchAll,
   matchAny,
+  matchVerified,
+  matchUnverified,
+  matchEmail,
+  isEmailRequest,
 } from "@webhooks-cc/sdk";
 ```
 
@@ -189,6 +193,48 @@ const failed = await client.requests.waitFor(slug, {
 console.log(failed.signatureError); // structured error JSON
 ```
 
+### matchEmail
+
+Match captured emails by tag, subject, sender, or recipient. Every criterion you pass must match, and the matcher never matches an HTTP request.
+
+```ts
+matchEmail(criteria?: EmailCriteria): (request: Request) => boolean
+```
+
+| Criterion | Type               | Matches                                                                                                            |
+| --------- | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `tag`     | `string \| null`   | The address's `+tag`, exactly (tags are case-sensitive). `null` matches untagged mail only                         |
+| `subject` | `string \| RegExp` | A string matches when the subject contains it; a RegExp is tested against the subject                              |
+| `from`    | `string \| RegExp` | Any From address. A string must equal the address (case-insensitive); a RegExp is tested against `Name <address>` |
+| `to`      | `string \| RegExp` | Any To or Cc address, or the address the email was delivered to, with the same rules as `from`                     |
+
+```ts
+const request = await client.requests.waitFor(slug, {
+  match: matchEmail({ tag: runId, subject: "Confirm your email" }),
+});
+
+// Composes with the other matchers
+matchAll(matchEmail({ from: "no-reply@example.com" }), matchEmail({ subject: /reset/i }));
+```
+
+`client.emails.waitFor()` and `client.emails.list()` take the same criteria directly and return typed `EmailRequest`s, so reach for `matchEmail` when you wait through `requests.waitFor()`, `captureDuring()`, or your own filter.
+
+`matchEmail` reads the parsed `email`, which requests from `subscribe()` do not carry. Streamed requests have `kind`, so check `request.kind === "email"` there and fetch the message with `client.emails.get(request.id)`.
+
+### isEmailRequest
+
+A type guard: true for a captured email that carries its parsed message, which narrows the request to `EmailRequest`.
+
+```ts
+isEmailRequest(request: Request): request is EmailRequest
+```
+
+```ts
+const requests = await client.requests.list(slug);
+const emails = requests.filter(isEmailRequest);
+console.log(emails.map((email) => email.email.subject));
+```
+
 ### Combining matchers
 
 Compose matchers to build precise filters for `waitFor`:
@@ -216,9 +262,73 @@ const req = await client.requests.waitFor(slug, {
 });
 ```
 
+## Email helpers
+
+Captured emails come with helpers that pick out what signup and login tests usually need: the one-time code and the link to click. They run the same finder as the dashboard's "Found in this email" strip and the `codes` and `links` of [forwarded](/docs/forwarding) JSON, and they make no API call.
+
+```ts
+import { extractCode, extractLink, extractFromEmail, htmlToText } from "@webhooks-cc/sdk";
+```
+
+The same functions, the email types, and `buildEmailJson` are also exported from `@webhooks-cc/sdk/email`, an entry point with no network code that is small enough for a browser bundle.
+
+### extractCode
+
+The first one-time code in an email, or `null`. Takes a captured email request, any request (`null` for HTTP requests), or the parsed `email`.
+
+```ts
+extractCode(input: Request | EmailCapture): string | null
+```
+
+```ts
+const email = await client.emails.waitFor(slug, { tag: runId });
+const code = extractCode(email); // "482913"
+```
+
+A code is 4 to 8 digits (also split in two, like `123 456`, which comes back as `"123456"`) or a 6 to 8 character mix of capital letters and digits. It only counts when a word such as "code", "verification", "PIN", "OTP", or "sign in" sits within a few words of it on the same line, or, for a code alone on its line, on the line just above. Years, order numbers, prices, and phone numbers stay out.
+
+### extractLink
+
+The link the email asks you to click (confirm, verify, activate, reset, magic link, sign in, accept an invite) when it has one, otherwise the first link worth keeping, or `null` when there is none: the same link the dashboard shows first. With `actionOnly: true`, only an action link counts.
+
+```ts
+extractLink(input: Request | EmailCapture, options?: { actionOnly?: boolean }): string | null
+```
+
+```ts
+const link = extractLink(email);
+if (link) await page.goto(link);
+
+// Only a confirm, verify, reset or sign-in link, or null
+const actionLink = extractLink(email, { actionOnly: true });
+```
+
+Unsubscribe, preference, privacy, terms, help and support, tracking, and social media links are never returned.
+
+### extractFromEmail
+
+Every code and link found in a parsed email, best first: action links come before the rest, in the order they appear, up to 20 links.
+
+```ts
+extractFromEmail(email: Pick<EmailCapture, "subject" | "text" | "html">): EmailExtracts
+// EmailExtracts: { codes: string[]; links: { url: string; label: string | null; action: boolean }[] }
+```
+
+```ts
+const { codes, links } = extractFromEmail(email.email);
+```
+
+### htmlToText
+
+The HTML part as plain text: tags removed, block ends turned into line breaks. Useful for assertions on HTML-only emails.
+
+```ts
+htmlToText(html: string): string
+```
+
 ## Provider detection
 
-Detector functions identify common providers from headers and, for providers without a distinctive signature header (SendGrid, Meta, Lemon Squeezy, Mailgun, Adyen), body shape. Use `detectWebhookInfo` when you want the provider and event/topic, or the boolean helpers when you only need to route one provider.
+Detector functions identify common providers from headers and, for providers without a distinctive signature header (SendGrid, Meta, Lemon Squeezy, Mailgun, Adyen), body shape. Captured emails are never detected as a provider, even when their headers look like one. Use `detectWebhookInfo` when you want the provider and event/topic, or the boolean helpers when you only need to route one provider.
 
 ```ts
 import {

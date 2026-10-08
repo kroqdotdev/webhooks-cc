@@ -1,5 +1,6 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { listPaginatedRequestsForEndpointByUser } from "@/lib/supabase/requests";
+import { isRequestKind } from "@/lib/supabase/search";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -15,6 +16,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (parsedLimit !== undefined && (!Number.isFinite(parsedLimit) || parsedLimit < 1)) {
     return Response.json({ error: "invalid_limit" }, { status: 400 });
   }
+  const kind = url.searchParams.get("kind");
+  if (kind !== null && !isRequestKind(kind)) {
+    return Response.json({ error: "invalid_kind" }, { status: 400 });
+  }
 
   try {
     const page = await listPaginatedRequestsForEndpointByUser({
@@ -22,6 +27,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       slug,
       limit: parsedLimit,
       cursor: cursor ?? undefined,
+      kind: kind ?? undefined,
     });
 
     if (!page) {

@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.34.2";
+export const APP_VERSION = "0.35.0";
 export const CLI_VERSION = "1.3.2";
-export const SDK_VERSION = "1.11.0";
+export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.0",
+    date: "2026-10-08",
+    title: "Emails in the API and SDK",
+    track: "web",
+    items: [
+      "The request list API takes kind=email or kind=http, and live stream events say which kind each request is",
+      "Send test email takes an optional tag, so a test can wait for its own sample",
+      "The dashboard, forwarding and the SDK now share one code and link finder and one email JSON builder, from the SDK",
+      "SDK docs for emails and forwarding; the email testing and email-to-webhook pages show the SDK",
+    ],
+  },
   {
     version: "0.34.2",
     date: "2026-10-08",
@@ -1189,6 +1201,23 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.12.0",
+    date: "2026-10-08",
+    title: "Emails and Forwarding",
+    track: "sdk",
+    items: [
+      "`client.emails` for the email every endpoint receives at mailhooks.cc: `address()` (with a `+tag` per test run), `list()`, `get()`, `latest()`, `waitFor()`, `waitForAll()`, `sendTest()` and `toJson()`",
+      "`extractCode()`, `extractLink()` and `extractFromEmail()`: the dashboard's one-time code and link finder",
+      "`client.forwarding`: `configure()`, `secret()`, `rotateSecret()`, `test()`, `deliveries()`, `emailDeliveries()` and `redeliver()`",
+      "`verifyForwardedEmail()` checks a forwarded email's Standard Webhooks signature and timestamp and returns the typed `email.received` event, throwing `WebhookVerificationError` otherwise",
+      "`matchEmail()`, `isEmailRequest()` and `captureEmailDuring()` for tests",
+      "New `@webhooks-cc/sdk/email` entry point with the email types, the finder and the JSON builder, and no network code",
+      "Requests carry `kind` and `email`; `requests.list()`, `listPaginated()` and `search()` take `kind`, and `waitFor()` takes `since`",
+      "`verifyStandardWebhookSignature()` accepts a Fetch `Headers`; it used to fail on one silently",
+      "`requests.replay()` refuses emails, `export()` skips them, and provider detection ignores them",
+    ],
+  },
   {
     version: "1.11.0",
     date: "2026-10-02",

@@ -1,3 +1,4 @@
+import { isValidEmailTag } from "@webhooks-cc/sdk/email";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
@@ -10,7 +11,8 @@ const DELIVER_TIMEOUT_MS = 10_000;
 /**
  * Delivers a sample email to one of the caller's endpoints through the
  * receiver's private mail API (see lib/test-email.ts). It is captured and
- * counted like any other email.
+ * counted like any other email. With `tag`, it goes to `{slug}+{tag}@...`,
+ * so a test can wait for its own sample.
  */
 export async function POST(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
@@ -28,13 +30,17 @@ export async function POST(request: Request) {
   }
 
   let slug: unknown;
+  let tag: unknown;
   try {
-    ({ slug } = (await request.json()) as { slug?: unknown });
+    ({ slug, tag } = (await request.json()) as { slug?: unknown; tag?: unknown });
   } catch {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
   if (typeof slug !== "string" || !SLUG_REGEX.test(slug)) {
     return Response.json({ error: "Invalid slug" }, { status: 400 });
+  }
+  if (tag !== undefined && (typeof tag !== "string" || !isValidEmailTag(tag, slug))) {
+    return Response.json({ error: "Invalid tag" }, { status: 400 });
   }
 
   const access = await resolveEndpointAccess(auth.userId, slug);
@@ -42,7 +48,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "Endpoint not found" }, { status: 404 });
   }
 
-  const to = `${slug.toLowerCase()}@${env.EMAIL_CAPTURE_DOMAIN}`;
+  const local = tag === undefined ? slug.toLowerCase() : `${slug.toLowerCase()}+${tag}`;
+  const to = `${local}@${env.EMAIL_CAPTURE_DOMAIN}`;
   const now = new Date();
   const { raw } = buildTestEmail({ to, appUrl: publicEnv().NEXT_PUBLIC_APP_URL, now });
   const body = testDeliveryBody({ to, raw, now });

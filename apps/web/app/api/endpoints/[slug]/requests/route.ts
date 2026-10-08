@@ -3,6 +3,7 @@ import {
   clearRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
+import { isRequestKind } from "@/lib/supabase/search";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -22,6 +23,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (parsedSince !== undefined && (!Number.isFinite(parsedSince) || parsedSince < 0)) {
     return Response.json({ error: "invalid_since" }, { status: 400 });
   }
+  const kind = url.searchParams.get("kind");
+  if (kind !== null && !isRequestKind(kind)) {
+    return Response.json({ error: "invalid_kind" }, { status: 400 });
+  }
 
   try {
     const data = await listRequestsForEndpointByUser({
@@ -29,6 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       slug,
       limit: parsedLimit,
       since: parsedSince,
+      kind: kind ?? undefined,
     });
 
     if (!data) {

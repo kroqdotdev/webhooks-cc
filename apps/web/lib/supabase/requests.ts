@@ -3,6 +3,7 @@ import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
+import type { RequestKind } from "@/lib/supabase/search";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 // Matches the daily cleanup, which deletes Pro requests after 31 days.
@@ -328,6 +329,8 @@ export async function listRequestsForEndpointByUser(input: {
   slug: string;
   limit?: number;
   since?: number;
+  /** Only HTTP requests or only emails. */
+  kind?: RequestKind;
 }): Promise<RequestRecord[] | null> {
   const admin = createAdminClient();
   const endpoint = await getAccessibleEndpoint(input.userId, input.slug);
@@ -353,6 +356,9 @@ export async function listRequestsForEndpointByUser(input: {
     const floor =
       input.since === undefined ? retention.cutoff : Math.max(input.since, retention.cutoff);
     query.gte("received_at", new Date(floor).toISOString());
+  }
+  if (input.kind) {
+    query.eq("kind", input.kind);
   }
 
   const { data, error } = await query
@@ -447,6 +453,8 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   slug: string;
   limit?: number;
   cursor?: string;
+  /** Only HTTP requests or only emails; pass the same value for every page. */
+  kind?: RequestKind;
 }): Promise<PaginatedRequestPage | null> {
   const admin = createAdminClient();
   const endpoint = await getAccessibleEndpoint(input.userId, input.slug);
@@ -476,6 +484,9 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
     query.or(retentionOrFilter(cutoff));
   } else {
     query.gte("received_at", new Date(cutoff).toISOString());
+  }
+  if (input.kind) {
+    query.eq("kind", input.kind);
   }
 
   const { data, error } = await query

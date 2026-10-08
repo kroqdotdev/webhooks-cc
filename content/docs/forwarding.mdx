@@ -32,7 +32,7 @@ The JSON is exactly what each email's **JSON** tab shows in the dashboard, so yo
 
 From then on every email the endpoint captures is forwarded, usually within a second or two. HTTP requests are not forwarded.
 
-Only the endpoint's owner can change forwarding. Forwarding is available on every plan.
+Only the endpoint's owner can change forwarding. Forwarding is available on every plan. To do the same from code, see [Manage forwarding from code](#manage-forwarding-from-code).
 
 ## The request
 
@@ -105,17 +105,31 @@ Every request carries [Standard Webhooks](https://www.standardwebhooks.com) head
 
 Check it against the raw request body (before any JSON parsing), compare in constant time, and reject timestamps more than five minutes away from your clock.
 
-With the SDK:
+With the SDK, `verifyForwardedEmail` does all of that and returns the parsed email, typed:
 
 ```ts
-import { verifyStandardWebhookSignature } from "@webhooks-cc/sdk";
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
 
-const headers = Object.fromEntries(request.headers); // a plain object, not a Headers instance
-const ok = await verifyStandardWebhookSignature(rawBody, headers, process.env.FORWARD_SECRET!);
-if (!ok) return new Response("Invalid signature", { status: 401 });
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(
+      await request.text(),
+      request.headers,
+      process.env.FORWARD_SECRET!
+    );
+    await handleInboundEmail(event.data); // your code
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      const status = error.code === "invalid_payload" ? 400 : 401;
+      return new Response(error.message, { status });
+    }
+    throw error;
+  }
+}
 ```
 
-The SDK checks the signature only; check the timestamp as well, as the examples below do.
+It takes the headers as a Fetch `Headers`, a plain object such as Node's or Express's `req.headers`, or name and value pairs, and the body as a string, `Uint8Array` (a Node `Buffer` works) or `ArrayBuffer`. It throws `WebhookVerificationError` with a `code`: `missing_headers`, `timestamp_out_of_range` (more than 300 seconds off; change it with `toleranceSeconds`), `invalid_signature`, or `invalid_payload` when the body is not an `email.received` event. See [Forwarded emails](/docs/sdk/signatures#forwarded-emails) for an Express handler.
 
 In Node without dependencies:
 
@@ -157,6 +171,31 @@ The [official Standard Webhooks libraries](https://github.com/standard-webhooks/
 
 **Rotate** the secret in Settings if it leaks. Deliveries are signed with the new secret at once, so update your handler right away.
 
+## Test your handler locally
+
+Forwarding needs a public `https` URL, but your handler can be tested on your own machine first. `client.emails.toJson()` builds the JSON forwarding would post for a captured email, and `client.sendTo()` posts it signed with Standard Webhooks headers and your secret, straight from your machine:
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+
+// Any captured email works; send one with client.emails.sendTest("my-endpoint")
+const email = await client.emails.latest("my-endpoint");
+if (!email) throw new Error("No email captured yet");
+
+const res = await client.sendTo("http://localhost:3000/hooks/email", {
+  provider: "standard-webhooks",
+  secret: process.env.FORWARD_SECRET!,
+  body: client.emails.toJson(email, { endpoint: { slug: "my-endpoint", name: "Signup flow" } }),
+});
+console.log(res.status); // 204
+```
+
+`verifyForwardedEmail` accepts these requests like real deliveries: the body is the same JSON and the timestamp is the current time. Two differences: the `webhook-id` is random rather than `msg_` followed by the email's id, and nothing is retried. Pass `endpoint` so `data.endpoint.name` is filled in (without it the slug is read from the address and the name is `null`), and `includeExtracts: false` to leave out `codes` and `links` the way forwarding does when the endpoint turned them off.
+
+To test the deployed handler through webhooks.cc instead, use **Send test delivery**, or `client.forwarding.test()`.
+
 ## Delivery and retries
 
 - Answer with any `2xx` status to accept a delivery. Redirects are not followed and count as failures.
@@ -166,6 +205,38 @@ The [official Standard Webhooks libraries](https://github.com/standard-webhooks/
 - A retry goes to the URL saved at that moment, so fixing a wrong URL also fixes the deliveries still waiting. Turning forwarding off marks waiting deliveries as failed.
 
 The **Deliveries** tab on each email lists every try, with the status your server answered, how long it took and the start of the response. **Redeliver** sends the email again with the current URL and secret. The Forwarding section of Settings shows the endpoint's latest deliveries.
+
+## Manage forwarding from code
+
+The SDK's `client.forwarding` methods do what the **Forwarding** section of Settings does. Like the dashboard, they are for the endpoint's owner only: for anyone else they throw `NotFoundError`, and a team member's `configure()` fails with a 403.
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
+const slug = "my-endpoint";
+
+// Save the URL. The first one creates the signing secret.
+await client.forwarding.configure(slug, { url: "https://example.com/hooks/email" });
+const secret = await client.forwarding.secret(slug); // "whsec_...", for your handler
+
+// Post the newest email (or a sample) once and see what your server answered
+const result = await client.forwarding.test(slug);
+console.log(result.delivered, result.status, result.excerpt);
+
+// Turn forwarding on
+await client.forwarding.configure(slug, { enabled: true });
+
+// The latest deliveries, every try of one email, and a redelivery
+const recent = await client.forwarding.deliveries(slug, { limit: 10 });
+const deliveries = await client.forwarding.emailDeliveries(recent[0].requestId);
+await client.forwarding.redeliver(recent[0].requestId);
+
+// Replace a leaked secret; deliveries from now on are signed with the new one
+const newSecret = await client.forwarding.rotateSecret(slug);
+```
+
+`configure({ enabled: false })` turns forwarding off and fails the deliveries still waiting; `configure({ url: null })` then removes the URL. `secret()` throws `NotFoundError` until a URL has been saved, and `redeliver()` fails with a 409 while forwarding is off. See the [SDK reference](/docs/sdk/api#forwarding) for every method and type.
 
 ## Limits
 

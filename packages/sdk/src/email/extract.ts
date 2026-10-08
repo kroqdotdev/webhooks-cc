@@ -1,3 +1,5 @@
+import type { EmailCapture, EmailExtracts, ExtractedLink } from "./types";
+
 /*
  * Every scan here takes time linear in its input. Email HTML and text come
  * from anyone who can send mail, run on the server for forwarding, and can
@@ -9,9 +11,10 @@
  */
 
 /**
- * Finds the one-time codes and links in a captured email, for the
- * dashboard's "Found in this email" strip. Signup and login tests usually
- * want exactly these two things.
+ * Finds the one-time codes and links in a captured email: the dashboard's
+ * "Found in this email" strip, the `codes` and `links` of forwarded JSON,
+ * and the SDK's `extractCode()` and `extractLink()`. Signup and login tests
+ * usually want exactly these two things.
  *
  * Codes are only taken when a word like "code" or "verification" sits next
  * to them, so order numbers, prices, years and phone numbers stay out.
@@ -19,19 +22,6 @@
  * in the order they appear; footers, unsubscribe and social links are
  * dropped.
  */
-
-export interface ExtractedLink {
-  url: string;
-  /** The link text, when the link came from HTML. */
-  label: string | null;
-  /** Looks like the thing the email asks you to click. */
-  action: boolean;
-}
-
-export interface EmailExtracts {
-  codes: string[];
-  links: ExtractedLink[];
-}
 
 const CODE_WORD =
   /\b(?:code|codes|otp|passcode|pass code|pin|verification|verify|one[- ]time|security|confirmation|2fa|two[- ]factor|login|sign[- ]in|token)\b/i;
@@ -274,15 +264,60 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   return ranked.slice(0, MAX_LINKS);
 }
 
-export function extractFromEmail(email: {
-  subject: string | null;
-  text: string | null;
-  html: string | null;
-}): EmailExtracts {
+/** The parts of an email the extractor reads. */
+export type EmailContent = Pick<EmailCapture, "subject" | "text" | "html">;
+
+/**
+ * Finds the one-time codes and links in an email. Codes are only taken when
+ * a word like "code" or "verification" is next to them; links are ranked
+ * with action links (confirm, verify, reset, sign in) first.
+ */
+export function extractFromEmail(email: EmailContent): EmailExtracts {
   const text = email.text ?? (email.html ? htmlToText(email.html) : null);
   const sources = [email.subject ?? "", text ?? ""].filter(Boolean);
   return {
     codes: findCodes(sources),
     links: findLinks(email.text, email.html),
   };
+}
+
+/** An email, or a captured request that carries one. */
+export type EmailLike = EmailContent | { email?: EmailContent | null };
+
+function contentOf(input: EmailLike): EmailContent | null {
+  if ("email" in input) return input.email ?? null;
+  return input as EmailContent;
+}
+
+/**
+ * The first one-time code in an email (or a captured email request), or
+ * null when there is none.
+ *
+ * @example
+ * ```ts
+ * const email = await client.emails.waitFor(slug, { tag: runId });
+ * const code = extractCode(email); // "482913"
+ * ```
+ */
+export function extractCode(input: EmailLike): string | null {
+  const content = contentOf(input);
+  return content ? (extractFromEmail(content).codes[0] ?? null) : null;
+}
+
+/**
+ * The link the email asks you to click (confirm, verify, reset, sign in)
+ * when it has one, otherwise the first link worth keeping; null when there
+ * is none. The same link the dashboard shows first. With `actionOnly: true`,
+ * only an action link counts.
+ */
+export function extractLink(
+  input: EmailLike,
+  options: { actionOnly?: boolean } = {}
+): string | null {
+  const content = contentOf(input);
+  if (!content) return null;
+  // Links come ranked with action links first.
+  const [best] = extractFromEmail(content).links;
+  if (!best || (options.actionOnly && !best.action)) return null;
+  return best.url;
 }

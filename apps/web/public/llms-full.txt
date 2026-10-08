@@ -88,6 +88,7 @@ const client = new WebhooksCC({
     onResponse: (info) => {},
     onError: (info) => {},
   },
+  emailDomain: "mailhooks.cc", // Optional, the domain emails.address() uses
 });
 ```
 
@@ -147,16 +148,18 @@ await client.endpoints.sendTemplate("my-slug", {
 const requests = await client.requests.list("my-slug", {
   limit?: number,
   since?: number,           // Timestamp in ms
+  kind?: "http" | "email",  // Only HTTP requests or only emails
 });
 
 // Paginated listing
 const page = await client.requests.listPaginated("my-slug", {
   limit?: number,
   cursor?: string,          // From previous page
+  kind?: "http" | "email",
 });
 // Returns: { items: Request[], cursor?: string, hasMore: boolean }
 
-// Get single request
+// Get single request (emails have kind: "email" and the parsed message in `email`)
 const req = await client.requests.get("request-id");
 
 // Wait for next request (polling)
@@ -164,6 +167,7 @@ const req = await client.requests.waitFor("my-slug", {
   timeout?: number | string,     // Default: "30s", e.g. "5m"
   pollInterval?: number | string, // Default: "500ms"
   match?: (request: Request) => boolean,
+  since?: number,                 // Default: five minutes ago, so a request that just arrived is found
 });
 
 // Wait for multiple requests
@@ -180,16 +184,17 @@ for await (const req of client.requests.subscribe("my-slug", {
   reconnect?: boolean,
   maxReconnectAttempts?: number,  // Default: 5
 })) {
-  console.log(req.method, req.path);
+  console.log(req.kind, req.method, req.path);  // streamed requests carry kind, not the parsed email
 }
 
-// Replay captured request to a URL
+// Replay captured request to a URL (throws for emails)
 const response = await client.requests.replay("request-id", "http://localhost:8080");
 
 // Search requests
 const results = await client.requests.search({
   slug?: string,
   method?: string,
+  kind?: "http" | "email",
   q?: string,               // Free-text search
   from?: number | string,   // Start time
   to?: number | string,     // End time
@@ -204,11 +209,135 @@ const count = await client.requests.count({ slug: "my-slug", method: "POST" });
 // Clear requests
 await client.requests.clear("my-slug", { before?: number | string });
 
-// Export requests
+// Export requests (HTTP only; emails are skipped)
 const exported = await client.requests.export("my-slug", {
   format: "har" | "curl",
   limit?: number,
   since?: number,
+});
+```
+
+### Emails
+
+Every endpoint on an account receives email at `<slug>@mailhooks.cc` and `<slug>+<tag>@mailhooks.cc`; guest endpoints receive none. A captured email is a request with `kind: "email"`, `method: "EMAIL"`, the recipient address as `path`, the raw message as `body` and the parsed message as `email` (typed `EmailRequest`). An email counts as one request.
+
+```typescript
+import { extractCode, extractLink, extractFromEmail } from "@webhooks-cc/sdk";
+
+// The address, optionally with a +tag (pass the Endpoint object to use its emailAddress)
+const address = client.emails.address("my-slug", "run-42"); // "my-slug+run-42@mailhooks.cc"
+
+// Criteria shared by list, latest, waitFor, waitForAll (all given criteria must match):
+//   tag?: string | null        exact, case-sensitive; null = untagged mail only
+//   subject?: string | RegExp  string = substring
+//   from?: string | RegExp     string = address, case-insensitive; RegExp tested against "Name <address>"
+//   to?: string | RegExp       To, Cc, or the address it was delivered to; same rules as from
+
+// List emails, newest first (limit = newest emails fetched before filtering, default 50)
+const emails = await client.emails.list("my-slug", { tag: "run-42", limit: 50, since: Date.now() - 60_000 });
+
+// One email by request ID (NotFoundError if the request is not an email)
+const one = await client.emails.get("request-id");
+
+// The newest matching email among the 100 newest, or null
+const latest = await client.emails.latest("my-slug", { subject: "Confirm" });
+
+// Poll until a matching email arrives; throws TimeoutError
+const email = await client.emails.waitFor("my-slug", {
+  tag: "run-42",
+  timeout: "60s",            // Default: 60000
+  pollInterval: "1s",        // Default: 1000
+  since: Date.now(),         // Default: five minutes ago
+  match: (e) => e.email.attachments.length === 0,  // Extra filter
+});
+
+// Poll until `count` matching emails arrive, oldest first
+const several = await client.emails.waitForAll("my-slug", { count: 2, tag: "run-42" });
+
+// Deliver a sample email with a 6-digit code and a link (counts as one request, no SMTP, no sender checks)
+const sent = await client.emails.sendTest("my-slug", { tag: "run-42" });
+// Returns: { status: "captured", requestId: string | null }
+
+// The email.received JSON forwarding would post (no API call)
+const event = client.emails.toJson(email, {
+  endpoint: { slug: "my-slug", name: "Signup flow" },  // Optional; fills data.endpoint.name
+  includeExtracts: true,                                // Default: true (codes and links)
+});
+
+// Code and link finder (no API call); accepts a request or the parsed email
+extractCode(email);                          // "482913" or null
+extractLink(email);                          // action link (confirm, verify, reset, sign in), else the first link worth keeping
+extractLink(email, { actionOnly: true });    // only an action link, or null
+extractFromEmail(email.email);               // { codes: string[], links: { url, label, action }[] }
+```
+
+`@webhooks-cc/sdk/email` exports the email types (`EmailCapture`, `EmailReceivedEvent`, ...), `extractCode`, `extractLink`, `extractFromEmail`, `htmlToText`, `buildEmailJson`, `emailAddress` and `isValidEmailTag`, with no network code (browser-safe).
+
+`requests.replay()` throws for emails, `requests.export()` skips them, and provider detection ignores them. Requests from `requests.subscribe()` carry `kind` but not `email`; call `client.emails.get(id)` for the parsed message.
+
+### Forwarding
+
+Owner only: for anyone else these throw `NotFoundError` (`configure` fails with 403 for team members).
+
+```typescript
+// Set the URL and/or turn forwarding on or off; returns the Endpoint.
+// The first URL creates the signing secret. url: null removes it (forwarding must be off).
+await client.forwarding.configure("my-slug", { url: "https://example.com/hooks/email", enabled: true });
+
+// The whsec_ signing secret (NotFoundError before a URL was saved)
+const secret = await client.forwarding.secret("my-slug");
+
+// Replace the secret; every delivery from now on, retries included, uses the new one
+const rotated = await client.forwarding.rotateSecret("my-slug");
+
+// Post the newest email (or a sample) to the URL once; works with forwarding on or off
+const result = await client.forwarding.test("my-slug");
+// Returns: { status: number | null, durationMs, excerpt: string | null, error: string | null, delivered: boolean, sample: boolean }
+
+// The endpoint's latest deliveries, newest first (limit 1-20, default 5)
+const recent = await client.forwarding.deliveries("my-slug", { limit: 10 });
+// Returns: RecentEmailDelivery[] { id, requestId, status, attempts, createdAt, lastStatus, lastError, subject }
+
+// Every delivery of one email, with each try in attemptLog
+const deliveries = await client.forwarding.emailDeliveries("request-id");
+// Returns: EmailDelivery[] (see Delivery under Email Forwarding below)
+
+// Queue the email again with the current URL and secret (409 when forwarding is off)
+const { id } = await client.forwarding.redeliver("request-id");
+```
+
+Verify a forwarded email in your handler. `verifyForwardedEmail` checks `webhook-id`, `webhook-timestamp` (within `toleranceSeconds`, default 300) and `webhook-signature` against the raw body and the `whsec_` secret, then parses the body as an `email.received` event:
+
+```typescript
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(
+      await request.text(),       // raw body: string, Uint8Array (Buffer) or ArrayBuffer
+      request.headers,            // Fetch Headers, a plain object (Node/Express req.headers) or [name, value] pairs
+      process.env.FORWARD_SECRET!,
+      { toleranceSeconds: 300 }   // Optional; also `now` (ms) for tests
+    );
+    console.log(event.data.subject, event.data.codes);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      // error.code: "missing_headers" | "timestamp_out_of_range" | "invalid_signature" | "invalid_payload"
+      return new Response(error.message, { status: error.code === "invalid_payload" ? 400 : 401 });
+    }
+    throw error;
+  }
+}
+```
+
+Test a handler locally without forwarding: `sendTo` with the `standard-webhooks` provider signs the body with the given secret and sends `webhook-id`, `webhook-timestamp` and `webhook-signature`, which `verifyForwardedEmail` accepts (the `webhook-id` is random rather than derived from the email's id):
+
+```typescript
+await client.sendTo("http://localhost:3000/hooks/email", {
+  provider: "standard-webhooks",
+  secret: process.env.FORWARD_SECRET!,
+  body: client.emails.toJson(email),
 });
 ```
 
@@ -252,6 +381,8 @@ import {
   matchContentType, // matchContentType("application/json")
   matchAll,         // matchAll(matchMethod("POST"), matchHeader("stripe-signature"))
   matchAny,         // matchAny(matchMethod("POST"), matchMethod("PUT"))
+  matchEmail,       // matchEmail({ tag: "run-42", subject: "Confirm" }), same criteria as client.emails
+  isEmailRequest,   // isEmailRequest(request): type guard for a captured email with its parsed message
 } from "@webhooks-cc/sdk";
 ```
 
@@ -297,6 +428,7 @@ import {
   TimeoutError,       // Request timeout
   RateLimitError,     // 429: includes retryAfter, limit, remaining, reset
   ApiError,           // General API error
+  WebhookVerificationError,  // From verifyForwardedEmail(); `code` says which check failed
 } from "@webhooks-cc/sdk";
 ```
 
@@ -315,6 +447,11 @@ interface Endpoint {
   responseRules?: ResponseRule[];  // Conditional response rules
   sharedWith?: TeamShare[];
   fromTeam?: TeamShare;
+  emailAddress?: string | null;  // null for guest endpoints
+  showEmailExtracts?: boolean;
+  forwardEnabled?: boolean;
+  forwardUrl?: string | null;    // owner only
+  hasForwardSecret?: boolean;
 }
 
 interface Request {
@@ -330,6 +467,13 @@ interface Request {
   ip: string;
   size: number;             // Bytes
   receivedAt: number;       // Unix ms
+  kind?: "http" | "email";
+  email?: EmailCapture | null;  // Parsed message, for a captured email (see Email Capture)
+}
+
+interface EmailRequest extends Request {
+  kind: "email";
+  email: EmailCapture;
 }
 
 interface MockResponse {
@@ -555,7 +699,7 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests (limit, since, cursor) |
+| GET | `/api/endpoints/[slug]/requests` | Bearer | List requests (limit, since, cursor, kind=http\|email) |
 | GET | `/api/requests/[id]` | Bearer | Get single request |
 | GET | `/api/search/requests` | Bearer | Search requests (slug, method, kind, q, from, to) |
 | GET | `/api/search/requests/count` | Bearer | Count matching requests |
@@ -565,7 +709,7 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/send-test` | Bearer | Send test webhook (rate limit: 30/min) |
-| POST | `/api/send-test-email` | Bearer | Deliver a sample email to an endpoint, body `{ "slug": "..." }` (rate limit: 10/min) |
+| POST | `/api/send-test-email` | Bearer | Deliver a sample email to an endpoint, body `{ "slug": "...", "tag": "..." }` with `tag` optional (rate limit: 10/min) |
 
 ### Email forwarding
 
@@ -838,9 +982,10 @@ Check results are strings such as `pass`, `fail`, `softfail`, `neutral`, `none`,
 
 Finding emails through the API:
 
-- `GET /api/search/requests?kind=email` (or `method=EMAIL`) returns only emails; `kind=http` only webhooks.
-- The SSE stream (`/api/stream/<slug>`) sends emails as `request` events with `method: "EMAIL"`, without `kind` or `email`, and names the request id `_id`. Fetch the request by that id for the parsed message.
-- `POST /api/send-test-email` with `{ "slug": "<slug>" }` delivers a sample message with a code and a link. It counts as one request and does not travel over SMTP, so no sender checks run on it.
+- `GET /api/endpoints/<slug>/requests?kind=email` (also on `/requests/paginated`) and `GET /api/search/requests?kind=email` (or `method=EMAIL`) return only emails; `kind=http` only webhooks.
+- The SSE stream (`/api/stream/<slug>`) sends emails as `request` events with `kind: "email"` and `method: "EMAIL"`, without `email`, and names the request id `_id`. Fetch the request by that id for the parsed message.
+- `POST /api/send-test-email` with `{ "slug": "<slug>" }` delivers a sample message with a six-digit code and a link; add `"tag": "<tag>"` to send it to `<slug>+<tag>@mailhooks.cc`. It counts as one request and does not travel over SMTP, so no sender checks run on it.
+- In the SDK: `client.emails` (see TypeScript SDK Reference above).
 
 Limits and SMTP replies:
 
@@ -936,21 +1081,26 @@ interface ForwardedEmail {
 
 The signature is `v1,` followed by the base64 HMAC-SHA256 of `${webhook-id}.${webhook-timestamp}.${rawBody}`. The key is the base64 after the `whsec_` prefix of the secret, decoded. `webhook-signature` may hold several space-separated signatures; accept the request when any matches. Verify against the raw body before parsing JSON, compare in constant time, and reject a `webhook-timestamp` more than 300 seconds from your clock.
 
-With the SDK (it checks the signature only, so check the timestamp yourself, and pass headers as a plain object: a Fetch `Headers` instance does not work):
+With the SDK, `verifyForwardedEmail` checks the headers, the timestamp (300 seconds by default) and the signature, and returns the typed event. It takes a Fetch `Headers`, a plain object or name and value pairs, and the raw body as a string, `Uint8Array` or `ArrayBuffer`:
 
 ```typescript
-import { verifyStandardWebhookSignature } from "@webhooks-cc/sdk";
+import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
 
-const rawBody = await request.text();
-const headers = Object.fromEntries(request.headers);
-const timestamp = Number(headers["webhook-timestamp"]);
-if (!Number.isFinite(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) {
-  return new Response("Stale timestamp", { status: 401 });
+export async function POST(request: Request) {
+  try {
+    const event = await verifyForwardedEmail(await request.text(), request.headers, process.env.FORWARD_SECRET!);
+    // event.type === "email.received"; event.data is typed
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      return new Response(error.message, { status: error.code === "invalid_payload" ? 400 : 401 });
+    }
+    throw error;
+  }
 }
-const ok = await verifyStandardWebhookSignature(rawBody, headers, process.env.FORWARD_SECRET!);
-if (!ok) return new Response("Invalid signature", { status: 401 });
-const event = JSON.parse(rawBody);
 ```
+
+(`verifyStandardWebhookSignature(body, headers, secret)` also accepts a Fetch `Headers` now, but checks the signature only, not the timestamp.)
 
 In Node without dependencies:
 

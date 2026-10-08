@@ -3,7 +3,7 @@ title: "SDK"
 description: "The TypeScript SDK lets you create endpoints, capture and replay requests, stream webhooks in real-time, and integrate webhooks.cc into your test suite programmatically."
 section: sdk
 order: 1
-lastUpdated: 2026-05-15
+lastUpdated: 2026-10-08
 schema: faq
 keywords: ["webhook SDK", "TypeScript SDK", "webhook testing SDK", "@webhooks-cc/sdk"]
 seo:
@@ -74,7 +74,7 @@ await client.endpoints.sendTemplate(endpoint.slug, {
 
 ## Send signed webhooks to localhost
 
-Use `sendTo` to send properly signed webhooks directly to any URL — no webhooks.cc infrastructure required. Ideal for local integration testing.
+Use `sendTo` to send properly signed webhooks directly to any URL, with no webhooks.cc infrastructure involved. Ideal for local integration testing.
 
 ```ts
 const res = await client.sendTo("http://localhost:3000/api/webhooks/polar", {
@@ -103,6 +103,24 @@ const request = await client.requests.waitFor(endpoint.slug, {
 
 console.log(request.body);
 ```
+
+## Wait for an email
+
+Every endpoint on an account also receives email at `<slug>@mailhooks.cc`. Add a tag per test run so the test finds its own email, then pull the one-time code out of it:
+
+```ts
+import { extractCode } from "@webhooks-cc/sdk";
+
+const runId = `signup-${Date.now()}`;
+const address = client.emails.address(endpoint.slug, runId);
+// <slug>+signup-1791450602000@mailhooks.cc: use it in your signup form
+
+const email = await client.emails.waitFor(endpoint.slug, { tag: runId });
+
+console.log(email.email.subject, extractCode(email)); // "Confirm your email", "482913"
+```
+
+`waitFor` polls for up to 60 seconds by default. To try it without your app, `client.emails.sendTest(endpoint.slug, { tag: runId })` delivers a sample email with a six-digit code. See [Emails](/docs/sdk/api#emails) for listing and filtering emails, and [forwarding](/docs/sdk/api#forwarding) to post them to your server.
 
 ## Stream requests in real-time
 
@@ -141,10 +159,10 @@ const client = new WebhooksCC({
 When testing webhook handlers, include the response body in your assertion message for better failure diagnostics:
 
 ```ts
-// Basic — failure message is just "expected 200, received 500"
+// Basic: the failure message is just "expected 200, received 500"
 expect(res.status).toBe(200);
 
-// Better — shows the server's error in test output
+// Better: shows the server's error in test output
 const text = await res.text();
 expect(res.status, `Server responded: ${text}`).toBe(200);
 ```

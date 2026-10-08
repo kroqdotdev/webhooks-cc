@@ -1,9 +1,9 @@
 ---
 title: "API Reference"
-description: "Complete method reference for the TypeScript SDK. Endpoints, requests, streaming, matchers, and error handling with code examples."
+description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-08
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -23,6 +23,7 @@ const client = new WebhooksCC({
   timeout?: number,      // Optional. Request timeout in ms (default: 30000).
   retry?: RetryOptions,  // Optional. Automatic retry configuration.
   hooks?: ClientHooks,   // Optional. Lifecycle hooks for observability.
+  emailDomain?: string,  // Optional. Domain for emails.address() (default: mailhooks.cc).
 });
 ```
 
@@ -164,7 +165,7 @@ sendTemplate(slug: string, options: SendTemplateOptions): Promise<Response>
 
 <ApiMethod method="POST" path="(any URL)" title="client.sendTo">
 
-Send a webhook directly to any URL with optional provider signing. Use for local integration testing — send properly signed webhooks to localhost handlers without routing through webhooks.cc.
+Send a webhook directly to any URL with optional provider signing. Use it for local integration testing: send properly signed webhooks to localhost handlers without routing through webhooks.cc.
 
 ```ts
 sendTo(url: string, options?: SendToOptions): Promise<Response>
@@ -208,11 +209,12 @@ list(endpointSlug: string, options?: ListRequestsOptions): Promise<Request[]>
 
 <ParamTable>
 
-| Param          | Type     | Required | Description                                    |
-| -------------- | -------- | -------- | ---------------------------------------------- |
-| `endpointSlug` | `string` | yes      | Endpoint slug                                  |
-| `limit`        | `number` | no       | Max results (default: 50)                      |
-| `since`        | `number` | no       | Only return requests after this timestamp (ms) |
+| Param          | Type                | Required | Description                                    |
+| -------------- | ------------------- | -------- | ---------------------------------------------- |
+| `endpointSlug` | `string`            | yes      | Endpoint slug                                  |
+| `limit`        | `number`            | no       | Max results (default: 50)                      |
+| `since`        | `number`            | no       | Only return requests after this timestamp (ms) |
+| `kind`         | `"http" \| "email"` | no       | Only HTTP requests, or only emails             |
 
 </ParamTable>
 </ApiMethod>
@@ -227,18 +229,19 @@ listPaginated(slug: string, options?: ListPaginatedRequestsOptions): Promise<Pag
 
 <ParamTable>
 
-| Param    | Type     | Required | Description               |
-| -------- | -------- | -------- | ------------------------- |
-| `slug`   | `string` | yes      | Endpoint slug             |
-| `limit`  | `number` | no       | Max results per page      |
-| `cursor` | `string` | no       | Cursor from previous page |
+| Param    | Type                | Required | Description                        |
+| -------- | ------------------- | -------- | ---------------------------------- |
+| `slug`   | `string`            | yes      | Endpoint slug                      |
+| `limit`  | `number`            | no       | Max results per page               |
+| `cursor` | `string`            | no       | Cursor from previous page          |
+| `kind`   | `"http" \| "email"` | no       | Only HTTP requests, or only emails |
 
 </ParamTable>
 </ApiMethod>
 
 <ApiMethod method="GET" path="/requests/:id" title="client.requests.get">
 
-Get a single captured request by ID.
+Get a single captured request by ID. For a captured email, `kind` is `"email"` and `email` holds the parsed message; `client.emails.get()` returns the same request typed as an `EmailRequest`.
 
 ```ts
 get(requestId: string): Promise<Request>
@@ -256,14 +259,18 @@ waitFor(endpointSlug: string, options?: WaitForOptions): Promise<Request>
 
 <ParamTable>
 
-| Param          | Type                   | Required | Description                                                    |
-| -------------- | ---------------------- | -------- | -------------------------------------------------------------- |
-| `endpointSlug` | `string`               | yes      | Endpoint slug to monitor                                       |
-| `timeout`      | `number \| string`     | no       | Max wait time — ms or `"30s"`, `"5m"`, `"1h"` (default: 30000) |
-| `pollInterval` | `number \| string`     | no       | Interval between polls (default: 500)                          |
-| `match`        | `(request) => boolean` | no       | Filter function                                                |
+| Param          | Type                   | Required | Description                                                                |
+| -------------- | ---------------------- | -------- | -------------------------------------------------------------------------- |
+| `endpointSlug` | `string`               | yes      | Endpoint slug to monitor                                                   |
+| `timeout`      | `number \| string`     | no       | Max wait time: ms or `"30s"`, `"5m"`, `"1h"` (default: 30000)              |
+| `pollInterval` | `number \| string`     | no       | Interval between polls (default: 500)                                      |
+| `match`        | `(request) => boolean` | no       | Filter function                                                            |
+| `since`        | `number`               | no       | Only consider requests after this timestamp in ms (default: 5 minutes ago) |
 
 </ParamTable>
+
+The five-minute lookback means a request that arrived just before the call is still found. Pass `since: Date.now()` to wait only for new requests.
+
 </ApiMethod>
 
 <ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.waitForAll">
@@ -276,12 +283,13 @@ waitForAll(slug: string, options: WaitForAllOptions): Promise<Request[]>
 
 <ParamTable>
 
-| Param     | Type                   | Required | Description                   |
-| --------- | ---------------------- | -------- | ----------------------------- |
-| `slug`    | `string`               | yes      | Endpoint slug                 |
-| `count`   | `number`               | yes      | Number of requests to collect |
-| `timeout` | `number \| string`     | no       | Max wait time                 |
-| `match`   | `(request) => boolean` | no       | Filter function               |
+| Param     | Type                   | Required | Description                                      |
+| --------- | ---------------------- | -------- | ------------------------------------------------ |
+| `slug`    | `string`               | yes      | Endpoint slug                                    |
+| `count`   | `number`               | yes      | Number of requests to collect                    |
+| `timeout` | `number \| string`     | no       | Max wait time                                    |
+| `match`   | `(request) => boolean` | no       | Filter function                                  |
+| `since`   | `number`               | no       | Only consider requests after this timestamp (ms) |
 
 </ParamTable>
 </ApiMethod>
@@ -305,11 +313,14 @@ subscribe(slug: string, options?: SubscribeOptions): AsyncIterable<Request>
 | `maxReconnectAttempts` | `number`           | no       | Max reconnection attempts         |
 
 </ParamTable>
+
+Streamed requests carry `kind`, so you can tell emails apart, but not the parsed `email`. Read it with `client.emails.get(request.id)`.
+
 </ApiMethod>
 
 <ApiMethod method="POST" path="/requests/:id/replay" title="client.requests.replay">
 
-Replay a captured request to a target URL. Sends the original method, headers, and body. Hop-by-hop headers are stripped.
+Replay a captured request to a target URL. Sends the original method, headers, and body. Hop-by-hop headers are stripped. Throws for a captured email, which is not an HTTP request; to post an email to a handler, send `client.emails.toJson(email)` with [`sendTo()`](/docs/forwarding#test-your-handler-locally).
 
 ```ts
 replay(requestId: string, targetUrl: string): Promise<Response>
@@ -335,16 +346,17 @@ search(filters?: SearchFilters): Promise<SearchResult[]>
 
 <ParamTable>
 
-| Param    | Type              | Required | Description                        |
-| -------- | ----------------- | -------- | ---------------------------------- |
-| `slug`   | `string`          | no       | Filter by endpoint slug            |
-| `method` | `string`          | no       | Filter by HTTP method              |
-| `q`      | `string`          | no       | Free-text search                   |
-| `from`   | `string`          | no       | Start time (duration or timestamp) |
-| `to`     | `string`          | no       | End time (duration or timestamp)   |
-| `limit`  | `number`          | no       | Max results (default: 50)          |
-| `offset` | `number`          | no       | Pagination offset                  |
-| `order`  | `"asc" \| "desc"` | no       | Sort order (default: `"desc"`)     |
+| Param    | Type                | Required | Description                        |
+| -------- | ------------------- | -------- | ---------------------------------- |
+| `slug`   | `string`            | no       | Filter by endpoint slug            |
+| `method` | `string`            | no       | Filter by HTTP method              |
+| `kind`   | `"http" \| "email"` | no       | Only HTTP requests, or only emails |
+| `q`      | `string`            | no       | Free-text search                   |
+| `from`   | `string`            | no       | Start time (duration or timestamp) |
+| `to`     | `string`            | no       | End time (duration or timestamp)   |
+| `limit`  | `number`            | no       | Max results (default: 50)          |
+| `offset` | `number`            | no       | Pagination offset                  |
+| `order`  | `"asc" \| "desc"`   | no       | Sort order (default: `"desc"`)     |
 
 </ParamTable>
 </ApiMethod>
@@ -379,7 +391,7 @@ clear(slug: string, options?: ClearRequestsOptions): Promise<void>
 
 <ApiMethod method="GET" path="/endpoints/:slug/requests/export" title="client.requests.export">
 
-Export captured requests as HAR 1.2 or cURL commands.
+Export captured requests as HAR 1.2 or cURL commands. Emails are skipped: they have no HTTP request to export.
 
 ```ts
 export(slug: string, options: ExportRequestsOptions): Promise<RequestsExport>
@@ -395,6 +407,272 @@ export(slug: string, options: ExportRequestsOptions): Promise<RequestsExport>
 | `since`  | `number`          | no       | Only export requests after this timestamp |
 
 </ParamTable>
+</ApiMethod>
+
+## Emails
+
+Every endpoint on an account receives email at `<slug>@mailhooks.cc`, and at `<slug>+<tag>@mailhooks.cc` for any tag. Guest endpoints receive none. A captured email is a request with `kind: "email"`, `method: "EMAIL"`, the recipient address as `path`, the raw message as `body`, and the parsed message as `email`; the SDK types it as `EmailRequest`. Each email counts as one request against your quota. See [Email capture](/docs/email-capture) for what is stored.
+
+Use a fresh tag per test run, so each run finds its own email:
+
+```ts
+import { extractCode } from "@webhooks-cc/sdk";
+
+const runId = `signup-${Date.now()}`;
+await signUp(client.emails.address(slug, runId)); // your app sends the email
+
+const email = await client.emails.waitFor(slug, { tag: runId });
+const code = extractCode(email); // "482913"
+```
+
+`list`, `latest`, `waitFor` and `waitForAll` filter by the same criteria. Every criterion you pass must match:
+
+| Criterion | Type               | Matches                                                                                                           |
+| --------- | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `tag`     | `string \| null`   | The address's `+tag`, exactly (tags are case-sensitive). `null` matches untagged mail only                        |
+| `subject` | `string \| RegExp` | A string matches when the subject contains it; a RegExp is tested against the subject                             |
+| `from`    | `string \| RegExp` | Any From address. A string must equal the address (case-insensitive); a RegExp is tested against `Name <address>` |
+| `to`      | `string \| RegExp` | Any To or Cc address, or the address the email was delivered to, with the same rules as `from`                    |
+
+<ApiMethod method="GET" path="(local)" title="client.emails.address">
+
+The address an endpoint receives email at, with an optional tag. Pass the endpoint object (from `endpoints.create()` or `endpoints.get()`) to use the address the server reports; a slug builds the address with the client's `emailDomain`. Throws on an invalid slug or tag. A tag is printable ASCII without spaces, quotes, brackets, `@`, `,`, `;` or `:`, and the slug, the `+` and the tag together are at most 64 characters.
+
+```ts
+address(endpoint: string | Pick<Endpoint, "slug" | "emailAddress">, tag?: string): string
+```
+
+```ts
+client.emails.address("my-app"); // "my-app@mailhooks.cc"
+client.emails.address("my-app", "run-42"); // "my-app+run-42@mailhooks.cc"
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.list">
+
+Emails an endpoint captured, newest first, filtered by the criteria above.
+
+```ts
+list(endpointSlug: string, options?: ListEmailsOptions): Promise<EmailRequest[]>
+```
+
+<ParamTable>
+
+| Param                          | Type     | Required | Description                                                           |
+| ------------------------------ | -------- | -------- | --------------------------------------------------------------------- |
+| `endpointSlug`                 | `string` | yes      | Endpoint slug                                                         |
+| `tag`, `subject`, `from`, `to` | criteria | no       | See the criteria table                                                |
+| `limit`                        | `number` | no       | How many of the newest emails to fetch before filtering (default: 50) |
+| `since`                        | `number` | no       | Only emails received after this timestamp (ms)                        |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id" title="client.emails.get">
+
+One captured email by request ID. Throws `NotFoundError` when the request is not an email.
+
+```ts
+get(requestId: string): Promise<EmailRequest>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.latest">
+
+The newest email matching the criteria, or `null`. Looks at the 100 newest emails.
+
+```ts
+latest(endpointSlug: string, criteria?: EmailCriteria): Promise<EmailRequest | null>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.waitFor">
+
+Poll until an email matching the criteria arrives. Throws `TimeoutError` when none does.
+
+```ts
+waitFor(endpointSlug: string, options?: WaitForEmailOptions): Promise<EmailRequest>
+```
+
+<ParamTable>
+
+| Param                          | Type                               | Required | Description                                                              |
+| ------------------------------ | ---------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `endpointSlug`                 | `string`                           | yes      | Endpoint slug                                                            |
+| `tag`, `subject`, `from`, `to` | criteria                           | no       | See the criteria table                                                   |
+| `timeout`                      | `number \| string`                 | no       | Max wait time, ms or a duration like `"30s"` (default: 60000)            |
+| `pollInterval`                 | `number \| string`                 | no       | Interval between polls (default: 1000)                                   |
+| `since`                        | `number`                           | no       | Only emails received after this timestamp in ms (default: 5 minutes ago) |
+| `match`                        | `(email: EmailRequest) => boolean` | no       | Extra filter on top of the criteria                                      |
+
+</ParamTable>
+
+The five-minute lookback finds an email that arrived just before the call. Use a fresh tag, or pass `since: Date.now()` before triggering the email, so an older email cannot match.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.waitForAll">
+
+Poll until `count` matching emails have arrived. Returns them oldest first. Takes the same options as `waitFor`, plus `count`.
+
+```ts
+waitForAll(endpointSlug: string, options: WaitForEmailsOptions): Promise<EmailRequest[]>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/send-test-email" title="client.emails.sendTest">
+
+Deliver a sample email with a six-digit code and a link to an endpoint, optionally to a tagged address. It is captured and counted like any other email, but it does not travel over SMTP, so no sender checks run on it and `email.smtp.test` is `true`. Rate limited to 10 per minute.
+
+```ts
+sendTest(endpointSlug: string, options?: { tag?: string }): Promise<SendTestEmailResult>
+// Returns: { status: "captured", requestId: string | null }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(local)" title="client.emails.toJson">
+
+The `email.received` JSON that [forwarding](/docs/forwarding) would post for an email: an `EmailReceivedEvent`. No API call is made. Pass `endpoint` to fill in `data.endpoint.name`; without it the slug is read from the address and the name is `null`. Set `includeExtracts: false` to leave out `codes` and `links`, as forwarding does when the endpoint turned them off.
+
+```ts
+toJson(
+  email: EmailRequest,
+  options?: { endpoint?: { slug: string; name?: string | null }; includeExtracts?: boolean }
+): EmailReceivedEvent
+```
+
+</ApiMethod>
+
+### Codes and links
+
+`extractCode`, `extractLink` and `extractFromEmail` run the same finder as the dashboard's "Found in this email" strip and the `codes` and `links` of forwarded JSON. `extractCode` and `extractLink` take an `EmailRequest`, any `Request` (they return `null` for HTTP requests), or the parsed `email`; `extractFromEmail` takes the parsed `email`. None of them makes an API call.
+
+```ts
+import { extractCode, extractLink, extractFromEmail } from "@webhooks-cc/sdk";
+
+extractCode(email); // "482913", or null
+extractLink(email); // the confirm, verify, reset or sign-in link, else the first link worth keeping
+extractLink(email, { actionOnly: true }); // only an action link, or null
+extractFromEmail(email.email); // { codes: string[], links: { url, label, action }[] }
+```
+
+A code is only taken when a word like "code", "verification" or "sign in" sits next to it, so order numbers, prices and years stay out. See [Matchers & Helpers](/docs/sdk/matchers#email-helpers) for the rules.
+
+### The email entry point
+
+`@webhooks-cc/sdk/email` exports the email types, the code and link finder (`extractCode`, `extractLink`, `extractFromEmail`, `htmlToText`), `buildEmailJson`, `emailAddress` and `isValidEmailTag`. It has no network code and imports no other SDK module, so it is small enough for a browser bundle.
+
+```ts
+import { emailAddress, extractCode, type EmailReceivedEvent } from "@webhooks-cc/sdk/email";
+
+emailAddress("my-app", "run-42"); // "my-app+run-42@mailhooks.cc"
+```
+
+## Forwarding
+
+[Forwarding](/docs/forwarding) posts every email an endpoint captures to your server as signed `email.received` JSON, retried for about a day until your server answers 2xx. Only the endpoint's owner can manage it: for anyone else these methods throw `NotFoundError`, and `configure()` fails with a 403 for team members. Verify deliveries in your handler with [`verifyForwardedEmail()`](/docs/sdk/signatures#forwarded-emails).
+
+```ts
+await client.forwarding.configure(slug, { url: "https://example.com/hooks/email" });
+const secret = await client.forwarding.secret(slug); // put it in your handler
+
+const result = await client.forwarding.test(slug);
+if (result.delivered) {
+  await client.forwarding.configure(slug, { enabled: true });
+}
+```
+
+<ApiMethod method="PATCH" path="/endpoints/:slug" title="client.forwarding.configure">
+
+Set the forwarding URL and turn forwarding on or off. Returns the updated endpoint. Saving the first URL creates the endpoint's signing secret, so you can send a test delivery before turning forwarding on. Turning it off marks the deliveries still waiting as failed. Throws when neither option is given.
+
+```ts
+configure(endpointSlug: string, options: ConfigureForwardingOptions): Promise<Endpoint>
+```
+
+<ParamTable>
+
+| Param          | Type             | Required | Description                                                                           |
+| -------------- | ---------------- | -------- | ------------------------------------------------------------------------------------- |
+| `endpointSlug` | `string`         | yes      | Endpoint slug                                                                         |
+| `url`          | `string \| null` | no       | An `https` URL on a public host name, or `null` to remove it (forwarding must be off) |
+| `enabled`      | `boolean`        | no       | Turn forwarding on or off. Turning it on needs a URL, sent now or saved before        |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/forwarding" title="client.forwarding.secret">
+
+The endpoint's signing secret (`whsec_...`). Throws `NotFoundError` until a URL has been saved.
+
+```ts
+secret(endpointSlug: string): Promise<string>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/forwarding" title="client.forwarding.rotateSecret">
+
+Replace the signing secret and return the new one. Every delivery from then on, retries included, is signed with it, so update your handler right away.
+
+```ts
+rotateSecret(endpointSlug: string): Promise<string>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/forwarding/test" title="client.forwarding.test">
+
+Post the newest email (or a sample, when none has arrived) to the saved URL once and report what your server answered. Works with forwarding on or off; nothing is retried or logged. Fails with a 400 when no URL is saved. Rate limited to 10 per minute.
+
+```ts
+test(endpointSlug: string): Promise<ForwardingTestResult>
+// Returns: { status, durationMs, excerpt, error, delivered, sample }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/deliveries" title="client.forwarding.deliveries">
+
+The endpoint's latest deliveries, newest first.
+
+```ts
+deliveries(endpointSlug: string, options?: { limit?: number }): Promise<RecentEmailDelivery[]>
+```
+
+<ParamTable>
+
+| Param          | Type     | Required | Description          |
+| -------------- | -------- | -------- | -------------------- |
+| `endpointSlug` | `string` | yes      | Endpoint slug        |
+| `limit`        | `number` | no       | 1 to 20 (default: 5) |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id/deliveries" title="client.forwarding.emailDeliveries">
+
+Every delivery of one email, with each try in `attemptLog`. Anyone who can read the email can call this.
+
+```ts
+emailDeliveries(requestId: string): Promise<EmailDelivery[]>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/deliveries" title="client.forwarding.redeliver">
+
+Queue an email for delivery again with the current URL and secret, and return the new delivery's id. Fails with a 409 when forwarding is off. Rate limited to 30 per minute.
+
+```ts
+redeliver(requestId: string): Promise<{ id: string }>
+```
+
 </ApiMethod>
 
 ## Templates
@@ -550,6 +828,8 @@ import {
   matchJsonField,
   matchAll,
   matchAny,
+  matchEmail,
+  isEmailRequest,
 } from "@webhooks-cc/sdk";
 
 matchMethod("POST"); // match by HTTP method
@@ -564,7 +844,11 @@ matchContentType("application/json"); // match content-type ignoring charset
 matchJsonField("type", "checkout"); // match top-level JSON field
 matchAll(matchMethod("POST"), matchHeader("stripe-signature"));
 matchAny(matchMethod("GET"), matchMethod("POST"));
+matchEmail({ tag: "run-42", subject: "Confirm" }); // match captured emails (see Emails)
+isEmailRequest(request); // true for a captured email with its parsed message
 ```
+
+`matchEmail` takes the [email criteria](#emails) and works as the `match` of `requests.waitFor()` and `captureDuring()`. It needs the parsed `email`, so it never matches requests from `subscribe()`; check `request.kind === "email"` there.
 
 ## Provider Detection
 
@@ -692,6 +976,7 @@ import {
   verifyBitbucketSignature,
   verifyResendSignature,
   verifyWorkOSSignature,
+  verifyForwardedEmail,
 } from "@webhooks-cc/sdk";
 
 // Universal verifier (dispatches by provider)
@@ -705,6 +990,26 @@ console.log(result.valid); // boolean
 const valid = await verifyStripeSignature(body, signatureHeader, secret);
 const valid = await verifyGitHubSignature(body, signatureHeader, secret);
 ```
+
+`verifyForwardedEmail` checks an email [forwarded](/docs/forwarding) to your server: the Standard Webhooks signature against the endpoint's `whsec_` secret and a timestamp within five minutes. It returns the typed `email.received` event, or throws `WebhookVerificationError` with a `code`. Pass the raw body (a string, `Uint8Array` or `ArrayBuffer`) before any JSON parsing.
+
+```ts
+verifyForwardedEmail(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options?: { toleranceSeconds?: number; now?: number } // defaults: 300, Date.now()
+): Promise<EmailReceivedEvent>
+
+// HeadersInput: a Fetch Headers, a plain object (Node and Express req.headers,
+// array values included) or name and value pairs
+type HeadersInput =
+  | Headers
+  | Record<string, string | string[] | undefined>
+  | Iterable<readonly [string, string]>;
+```
+
+`verifyStandardWebhookSignature(body, headers, secret)` accepts the same `HeadersInput`, including a Fetch `Headers`. It checks the signature only, not the timestamp. See [Signature Verification](/docs/sdk/signatures#forwarded-emails) for a full handler.
 
 ## Duration Strings
 
@@ -729,6 +1034,11 @@ interface Endpoint {
   isEphemeral?: boolean;
   expiresAt?: number;
   createdAt: number;
+  emailAddress?: string | null; // null for guest endpoints, which receive no email
+  showEmailExtracts?: boolean;
+  forwardEnabled?: boolean;
+  forwardUrl?: string | null; // only returned to the owner
+  hasForwardSecret?: boolean;
 }
 
 interface Request {
@@ -746,6 +1056,129 @@ interface Request {
   signatureVerified?: boolean | null;
   signatureError?: string | null;
   signingProvider?: string | null;
+  kind?: "http" | "email";
+  email?: EmailCapture | null; // the parsed message, for a captured email
+}
+
+// A captured email: method "EMAIL", path is the recipient address, body the raw message
+interface EmailRequest extends Request {
+  kind: "email";
+  email: EmailCapture;
+}
+
+interface EmailCapture {
+  subject: string | null;
+  from: EmailAddress[]; // EmailAddress: { name: string | null; address: string | null }
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  replyTo: EmailAddress[];
+  sender: EmailAddress[];
+  date: string | null;
+  messageId: string | null;
+  inReplyTo: string[];
+  tag: string | null; // the +tag of the address it was sent to
+  text: string | null; // up to 256 KB
+  html: string | null; // up to 256 KB
+  textFromHtml: boolean;
+  attachments: {
+    filename: string | null;
+    contentType: string;
+    size: number;
+    contentId: string | null;
+    inline: boolean;
+  }[];
+  auth: EmailAuth | null; // SPF, DKIM, DMARC and reverse DNS results
+  smtp: EmailSmtp | null; // client IP, HELO, TLS, envelope; smtp.test marks sample emails
+  parseError: boolean;
+  truncated: {
+    raw: boolean;
+    text: boolean;
+    html: boolean;
+    headers: boolean;
+    addresses: boolean;
+    attachments: boolean;
+  };
+}
+
+interface EmailCriteria {
+  tag?: string | null;
+  subject?: string | RegExp;
+  from?: string | RegExp;
+  to?: string | RegExp;
+}
+
+interface ListEmailsOptions extends EmailCriteria {
+  limit?: number; // emails fetched before filtering (default: 50)
+  since?: number;
+}
+
+interface WaitForEmailOptions extends EmailCriteria {
+  timeout?: number | string; // default: 60000
+  pollInterval?: number | string; // default: 1000
+  since?: number; // default: five minutes ago
+  match?: (email: EmailRequest) => boolean;
+}
+
+interface WaitForEmailsOptions extends WaitForEmailOptions {
+  count: number;
+}
+
+interface SendTestEmailResult {
+  status: "captured";
+  requestId: string | null;
+}
+
+interface ConfigureForwardingOptions {
+  url?: string | null;
+  enabled?: boolean;
+}
+
+interface ForwardingTestResult {
+  status: number | null; // null when no answer arrived
+  durationMs: number;
+  excerpt: string | null; // the start of your server's response body
+  error: string | null; // timeout, refused connection, TLS problem
+  delivered: boolean; // your server answered 2xx
+  sample: boolean; // no email had arrived, so a sample was sent
+}
+
+interface EmailDelivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;
+  finishedAt: number | null;
+  nextAttemptAt: number | null;
+  lastStatus: number | null;
+  lastError: string | null;
+  attemptLog: EmailDeliveryAttempt[];
+}
+
+interface EmailDeliveryAttempt {
+  attemptedAt: number;
+  status: number | null;
+  durationMs: number;
+  error: string | null;
+  responseExcerpt: string | null;
+}
+
+interface RecentEmailDelivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;
+  lastStatus: number | null;
+  lastError: string | null;
+  subject: string | null;
+}
+
+// The body forwarding posts; field by field in /docs/forwarding#the-request
+interface EmailReceivedEvent {
+  type: "email.received";
+  timestamp: string;
+  data: EmailReceivedData;
 }
 
 interface MockResponse {
@@ -815,9 +1248,12 @@ Errors include actionable recovery hints when the server message is generic.
 ```ts
 import {
   WebhooksCCError, // Base error (has statusCode)
-  UnauthorizedError, // 401 — includes link to get API key
-  NotFoundError, // 404 — suggests using endpoints.list()
-  RateLimitError, // 429 — includes retryAfter seconds
+  UnauthorizedError, // 401: includes link to get API key
+  NotFoundError, // 404: suggests using endpoints.list()
+  RateLimitError, // 429: includes retryAfter seconds
   TimeoutError, // Request timeout
+  WebhookVerificationError, // Thrown by verifyForwardedEmail(); has a code
 } from "@webhooks-cc/sdk";
 ```
+
+`WebhookVerificationError.code` is `"missing_headers"`, `"timestamp_out_of_range"`, `"invalid_signature"` or `"invalid_payload"`. Answer the first three with 401 and `invalid_payload` with 400.

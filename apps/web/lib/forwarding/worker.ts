@@ -1,5 +1,5 @@
 import { decryptSigningSecret } from "@/lib/crypto";
-import { buildEmailJson } from "@/lib/email-json";
+import { buildEmailJson } from "@webhooks-cc/sdk/email";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database";
 import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
