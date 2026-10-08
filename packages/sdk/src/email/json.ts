@@ -34,7 +34,11 @@ export function buildEmailJson(
   options: { includeExtracts?: boolean } = {}
 ): EmailReceivedEvent {
   const { email } = request;
-  const receivedAt = new Date(request.receivedAt).toISOString();
+  const receivedDate = new Date(request.receivedAt);
+  if (!Number.isFinite(request.receivedAt) || Number.isNaN(receivedDate.getTime())) {
+    throw new TypeError("buildEmailJson: receivedAt must be a valid millisecond timestamp");
+  }
+  const receivedAt = receivedDate.toISOString();
   const extracts = options.includeExtracts !== false ? extractFromEmail(email) : null;
   return {
     type: EMAIL_RECEIVED,
