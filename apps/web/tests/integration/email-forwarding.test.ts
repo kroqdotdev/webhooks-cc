@@ -212,6 +212,7 @@ describe("email forwarding", () => {
     if (error) throw error;
     const { error: rpcError } = await admin.rpc("record_email_delivery_attempt", {
       p_delivery_id: queued.id,
+      p_attempt: 0,
       p_succeeded: false,
       p_status: 503,
       p_duration_ms: 12,
@@ -223,6 +224,65 @@ describe("email forwarding", () => {
     expect((await deliveries(endpoint.id))[0]).toMatchObject({
       status: "failed",
       last_error: "The URL answered 503.",
+    });
+  });
+
+  it("keeps a late result as history without changing a settled or reclaimed delivery", async () => {
+    const endpoint = await forwardingEndpoint("/down");
+    const requestId = await capture(endpoint.slug);
+    const [queued] = await deliveries(endpoint.id);
+    // Held by "another worker": leased, so nothing else claims it meanwhile.
+    const lease = new Date(Date.now() + 60_000).toISOString();
+    await admin
+      .from("email_deliveries")
+      .update({ attempts: 2, locked_until: lease })
+      .eq("id", queued.id);
+
+    const late = (attempt: number) =>
+      admin.rpc("record_email_delivery_attempt", {
+        p_delivery_id: queued.id,
+        p_attempt: attempt,
+        p_succeeded: true,
+        p_status: 200,
+        p_duration_ms: 5,
+        p_error: null,
+        p_response_excerpt: "ok",
+        p_retry_in_seconds: null,
+      });
+
+    // A result from the first claim, whose lease another worker took over.
+    expect((await late(1)).error).toBeNull();
+    expect((await deliveries(endpoint.id))[0]).toMatchObject({ status: "pending", attempts: 2 });
+
+    // Forwarding turned off while the second send ran: its result does not revive it.
+    await updateEndpointBySlugForUser({ userId, slug: endpoint.slug, forwardEnabled: false });
+    expect((await late(2)).error).toBeNull();
+    expect((await deliveries(endpoint.id))[0]).toMatchObject({
+      request_id: requestId,
+      status: "failed",
+      last_error: "Forwarding was turned off.",
+    });
+
+    const { data: history } = await admin
+      .from("email_delivery_attempts")
+      .select("status")
+      .eq("delivery_id", queued.id);
+    expect(history).toHaveLength(2);
+  });
+
+  it("fails a delivery whose sends keep being interrupted", async () => {
+    const endpoint = await forwardingEndpoint("/never-reached");
+    await capture(endpoint.slug);
+    const [queued] = await deliveries(endpoint.id);
+    // Twelve claims that never recorded a result.
+    await admin
+      .from("email_deliveries")
+      .update({ attempts: 12, locked_until: null })
+      .eq("id", queued.id);
+    await runForwardingBatch();
+    expect((await deliveries(endpoint.id))[0]).toMatchObject({
+      status: "failed",
+      last_error: "The delivery was interrupted too many times.",
     });
   });
 

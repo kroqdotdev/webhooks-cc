@@ -50,6 +50,7 @@ async function record(claim: Claim, result: SendResult, retry: boolean): Promise
     result.error ?? (delivered ? null : `The URL answered ${result.status ?? "nothing"}.`);
   const { error: rpcError } = await createAdminClient().rpc("record_email_delivery_attempt", {
     p_delivery_id: claim.delivery_id,
+    p_attempt: claim.attempt,
     p_succeeded: delivered,
     p_status: result.status,
     p_duration_ms: result.durationMs,
@@ -69,13 +70,27 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   if (!claim.forward_url || !claim.forward_secret_encrypted) {
     return giveUp("Forwarding is not set up for this endpoint.");
   }
-  const secret = decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"));
-  const prepared = forwardRequest(
-    request,
-    { slug: claim.endpoint_slug, name: claim.endpoint_name },
-    secret,
-    claim.show_email_extracts
-  );
+  let prepared: ReturnType<typeof forwardRequest>;
+  try {
+    const secret = decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"));
+    prepared = forwardRequest(
+      request,
+      { slug: claim.endpoint_slug, name: claim.endpoint_name },
+      secret,
+      claim.show_email_extracts
+    );
+  } catch (error) {
+    // A server problem (SIGNING_SECRET_KEY missing or changed): retried on the
+    // usual schedule, so deliveries resume once it is fixed.
+    console.error("[forwarding] could not prepare delivery", claim.delivery_id, error);
+    const result = {
+      status: null,
+      durationMs: 0,
+      excerpt: null,
+      error: "The delivery could not be signed on this server.",
+    };
+    return record(claim, result, true);
+  }
   if (!prepared) return giveUp("Only emails are forwarded.");
   const result = await sendForward(
     claim.forward_url,

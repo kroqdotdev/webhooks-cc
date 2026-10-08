@@ -97,7 +97,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 | `data.attachments`           | Name, type and size of each attachment. The contents are not kept, so they are not forwarded.                                                         |
 | `data.auth`                  | The SPF, DKIM and DMARC results (`pass`, `fail`, `softfail`, `none`, ...) and the TLS version; `null` when a check did not run.                     |
 | `data.headers`               | Every header, lowercase names, repeated headers joined with a newline.                                                                               |
-| `data.test`                  | `true` for the dashboard's **Send test email** sample.                                                                                               |
+| `data.test`                  | `true` for the dashboard's **Send test email** sample, and for the sample **Send test delivery** posts while no email has arrived.                 |
 
 ## Verify the signature
 

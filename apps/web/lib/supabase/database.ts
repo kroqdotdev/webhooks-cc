@@ -689,6 +689,8 @@ export interface Database {
       record_email_delivery_attempt: {
         Args: {
           p_delivery_id: string;
+          /** The try the caller claimed; a result for an older claim is dropped. */
+          p_attempt: number;
           p_succeeded: boolean;
           p_status: number | null;
           p_duration_ms: number;

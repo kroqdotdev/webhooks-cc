@@ -561,6 +561,13 @@ function ForwardingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps[
     }
   };
   const copySecret = async () => {
+    try {
+      await copySecretOrThrow();
+    } catch (err) {
+      setSecretError(err instanceof Error ? err.message : "The secret could not be copied.");
+    }
+  };
+  const copySecretOrThrow = async () => {
     const value =
       secret ?? (accessToken ? await fetchForwardSecret(accessToken, endpoint.slug) : null);
     if (value && (await copyToClipboard(value))) {

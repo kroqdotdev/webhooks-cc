@@ -113,6 +113,18 @@ returns table (
 language sql
 security definer set search_path = ''
 as $$
+  -- Backstop: a delivery whose sends keep being interrupted before a result
+  -- is recorded (each claim counts a try) fails instead of being claimed
+  -- forever. The worker settles every recorded try well before this.
+  update public.email_deliveries
+     set status = 'failed',
+         last_error = 'The delivery was interrupted too many times.',
+         finished_at = now(),
+         locked_until = null
+   where status = 'pending'
+     and attempts >= 12
+     and (locked_until is null or locked_until <= now());
+
   with in_flight as (
     select d.endpoint_id, count(*)::integer as n
       from public.email_deliveries d
@@ -130,6 +142,7 @@ as $$
      where d.status = 'pending'
        and d.next_attempt_at <= now()
        and (d.locked_until is null or d.locked_until <= now())
+       and d.attempts < 12
        and e.forward_enabled
   ),
   candidates as (
@@ -165,10 +178,18 @@ grant execute on function public.claim_email_deliveries(integer, integer, intege
   to service_role;
 
 -- Records one try and settles the delivery: succeeded, pending again in
--- p_retry_in_seconds, or failed when that is null. A delivery deleted in the
--- meantime (its request went to retention) is ignored.
+-- p_retry_in_seconds, or failed when that is null. Every try is kept as
+-- history, but only the current claim changes the delivery: not a send that
+-- was still running when forwarding was turned off (the row is no longer
+-- pending), nor one whose lease ran out and was claimed again (attempts moved
+-- past p_attempt). A delivery deleted in the meantime (its request went to
+-- retention) is ignored.
+drop function if exists public.record_email_delivery_attempt(
+  uuid, boolean, integer, integer, text, text, integer
+);
 create or replace function public.record_email_delivery_attempt(
   p_delivery_id       uuid,
+  p_attempt           integer,
   p_succeeded         boolean,
   p_status            integer,
   p_duration_ms       integer,
@@ -180,8 +201,14 @@ returns void
 language plpgsql
 security definer set search_path = ''
 as $$
+declare
+  v_current boolean;
 begin
-  perform 1 from public.email_deliveries where id = p_delivery_id for update;
+  select status = 'pending' and attempts = p_attempt
+    into v_current
+    from public.email_deliveries
+   where id = p_delivery_id
+     for update;
   if not found then
     return;
   end if;
@@ -192,6 +219,10 @@ begin
     p_delivery_id, p_status, greatest(coalesce(p_duration_ms, 0), 0),
     left(p_error, 500), left(p_response_excerpt, 1024)
   );
+
+  if not v_current then
+    return;
+  end if;
 
   update public.email_deliveries
      set status = case
@@ -216,10 +247,10 @@ end;
 $$;
 
 revoke all on function public.record_email_delivery_attempt(
-  uuid, boolean, integer, integer, text, text, integer
+  uuid, integer, boolean, integer, integer, text, text, integer
 ) from public, anon, authenticated;
 grant execute on function public.record_email_delivery_attempt(
-  uuid, boolean, integer, integer, text, text, integer
+  uuid, integer, boolean, integer, integer, text, text, integer
 ) to service_role;
 
 -- 4. capture_webhook() queues the delivery. The body is 00049's with the

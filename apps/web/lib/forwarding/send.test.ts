@@ -85,6 +85,16 @@ describe("sendForward, direct", () => {
 });
 
 describe("sendForward, through the proxy", () => {
+  it("fails rather than sending directly when the proxy has no secret", async () => {
+    const before = lastRequest;
+    const result = await sendForward(`${base}/ok`, headers, "{}", {
+      ...local,
+      proxy: { url: `${base}/proxy`, secret: "" },
+    });
+    expect(result).toMatchObject({ status: null, error: expect.stringMatching(/NOTIFY_SECRET/) });
+    expect(lastRequest).toBe(before);
+  });
+
   it("reads the destination's status and body start from the proxy's answer", async () => {
     const result = await sendForward("https://api.example.com/hook", headers, "{}", {
       ...local,

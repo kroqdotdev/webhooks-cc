@@ -69,6 +69,13 @@ async function viaProxy(
   body: string,
   options: SendOptions & { proxy: { url: string; secret: string } }
 ): Promise<Omit<SendResult, "durationMs">> {
+  if (!options.proxy.secret) {
+    return {
+      status: null,
+      excerpt: null,
+      error: "Forwarding is not configured on this server (NOTIFY_SECRET is missing).",
+    };
+  }
   const response = await fetch(options.proxy.url, {
     method: "POST",
     headers: {

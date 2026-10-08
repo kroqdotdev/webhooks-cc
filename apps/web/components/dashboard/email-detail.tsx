@@ -40,6 +40,8 @@ interface EmailDetailProps {
     forwardEnabled?: boolean;
     /** Only the owner sees it. */
     forwardUrl?: string | null;
+    /** Forwarding was set up at some point, so emails may have delivery history. */
+    hasForwardSecret?: boolean;
   };
   /** The owner can redeliver and is pointed at the Forwarding settings. */
   canManageForwarding: boolean;
@@ -917,7 +919,10 @@ export function EmailDetail({
       : []),
     { id: "authentication", label: "Authentication" },
     { id: "raw", label: "Raw" },
-    ...(forwardEnabled ? [{ id: "deliveries" as const, label: "Deliveries" }] : []),
+    // Kept after forwarding is turned off, so past deliveries stay readable.
+    ...(forwardEnabled || endpoint.hasForwardSecret
+      ? [{ id: "deliveries" as const, label: "Deliveries" }]
+      : []),
   ];
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : tabs[0].id;
   const rawAvailable = !!raw && !email.truncated.raw;
