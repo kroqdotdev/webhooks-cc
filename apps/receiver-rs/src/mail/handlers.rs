@@ -91,6 +91,12 @@ struct DeliverRequest {
     /// True when the MX host answered 451 for this exact message before.
     #[serde(default)]
     retry: bool,
+    /// Set only by the dashboard's "Send test email". Stored as `smtp.test`,
+    /// so the dashboard can tell its own sample apart from real mail without
+    /// trusting anything in the message, which any sender controls. The MX
+    /// host never sets it.
+    #[serde(default)]
+    test: bool,
     /// Standard base64 of the message exactly as received. The MX host must
     /// not add trace headers to it: retries are matched by its hash.
     raw: String,
@@ -354,6 +360,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         auth,
         received_at,
         retry,
+        test,
         raw,
     } = request;
 
@@ -379,7 +386,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
             .unwrap_or_else(|_| Value::Object(Map::new()));
         let received_at = clamp_received_at(received_at, Utc::now());
         let client_ip = sanitize_ip(client_ip.trim());
-        let smtp_base = json!({
+        let mut smtp_base = json!({
             "helo": helo.as_deref().map(short_text),
             "client_ip": client_ip,
             "client_rdns": client_rdns.as_deref().map(short_text),
@@ -387,6 +394,9 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
             "tls": bounded_object(tls),
             "size": prepared.size,
         });
+        if test {
+            smtp_base["test"] = Value::Bool(true);
+        }
         let auth_doc = bounded_object(auth);
 
         for group in &groups {
@@ -924,6 +934,18 @@ mod tests {
         let big = json!({ "x": "y".repeat(MAX_META_BYTES) });
         assert_eq!(bounded_object(Some(big)), Value::Null);
         assert_eq!(bounded_object(Some(json!({"x": "a\u{0}b"}))), Value::Null);
+    }
+
+    #[test]
+    fn only_a_caller_that_says_so_marks_a_delivery_as_a_test() {
+        let mx: DeliverRequest =
+            serde_json::from_value(json!({"recipients": ["a@mailhooks.cc"], "raw": ""})).unwrap();
+        assert!(!mx.test);
+        let dashboard: DeliverRequest = serde_json::from_value(
+            json!({"recipients": ["a@mailhooks.cc"], "raw": "", "test": true}),
+        )
+        .unwrap();
+        assert!(dashboard.test);
     }
 
     #[test]

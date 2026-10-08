@@ -31,11 +31,18 @@ export interface SearchRequestRecord {
   email?: EmailCapture | null;
 }
 
+export type RequestKind = "http" | "email";
+
+export function isRequestKind(value: unknown): value is RequestKind {
+  return value === "http" || value === "email";
+}
+
 export interface SearchRequestsInput {
   userId: string;
   plan?: UserPlan;
   slug?: string;
   method?: string;
+  kind?: RequestKind;
   q?: string;
   from?: number;
   to?: number;
@@ -49,6 +56,7 @@ export interface CountSearchRequestsInput {
   plan?: UserPlan;
   slug?: string;
   method?: string;
+  kind?: RequestKind;
   q?: string;
   from?: number;
   to?: number;
@@ -158,6 +166,7 @@ export async function searchRequestsForUser(
     p_limit: clampLimit(input.limit),
     p_offset: clampOffset(input.offset),
     p_order: normalizeOrder(input.order),
+    p_kind: input.kind ?? null,
   });
 
   if (error) {
@@ -179,6 +188,7 @@ export async function countSearchRequestsForUser(input: CountSearchRequestsInput
     p_q: normalizeOptionalString(input.q),
     p_from_ms: normalizeTimestamp(input.from),
     p_to_ms: normalizeTimestamp(input.to),
+    p_kind: input.kind ?? null,
   });
 
   if (error) {

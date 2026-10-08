@@ -1,5 +1,4 @@
 import { createHmac, randomInt, randomUUID } from "node:crypto";
-import { TEST_EMAIL_HEADER } from "./test-email-header";
 
 /**
  * "Send test email": a sample message delivered straight to an endpoint
@@ -8,7 +7,12 @@ import { TEST_EMAIL_HEADER } from "./test-email-header";
  */
 
 export const DELIVER_PATH = "/internal/mail/deliver";
-export { TEST_EMAIL_HEADER };
+/**
+ * Marks the sample for whoever reads the raw message. The dashboard does not
+ * trust it (any sender can add it); it reads the receiver's `smtp.test`,
+ * set because the delivery below says `test: true`.
+ */
+export const TEST_EMAIL_HEADER = "X-Webhooks-Test";
 const FROM = "test@webhooks.cc";
 
 /** Hex HMAC-SHA256 of "{timestamp}.{METHOD}.{path}." followed by the body. */
@@ -87,6 +91,7 @@ export function testDeliveryBody(input: { to: string; raw: string; now?: Date })
     helo: "webhooks.cc",
     received_at: (input.now ?? new Date()).toISOString(),
     retry: false,
+    test: true,
     raw: Buffer.from(input.raw, "utf8").toString("base64"),
   });
 }

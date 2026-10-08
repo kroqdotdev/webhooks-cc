@@ -1,12 +1,18 @@
+import { isEmailItem, type KindFilter } from "@/types/request";
+
 export function buildRetainedCountParams(
   slug: string,
   methodFilter: string,
   searchQuery: string,
-  toMs?: number
+  toMs?: number,
+  kindFilter: KindFilter = "all"
 ): Record<string, string> {
   const params: Record<string, string> = { slug };
   if (methodFilter !== "ALL") {
     params.method = methodFilter;
+  }
+  if (kindFilter !== "all") {
+    params.kind = kindFilter;
   }
   if (searchQuery) {
     params.q = searchQuery;
@@ -26,15 +32,27 @@ export function retainedCountCutoff(requests: { receivedAt: number }[]): number 
   return requests.length > 0 ? requests[0].receivedAt + 1 : undefined;
 }
 
-/** Loaded requests newer than `afterMs` that pass the method filter. */
+/** Whether a request passes the method and kind filters. */
+export function matchesFilters(
+  request: { method: string; kind?: "http" | "email" },
+  methodFilter: string,
+  kindFilter: KindFilter = "all"
+): boolean {
+  return (
+    (methodFilter === "ALL" || request.method === methodFilter) &&
+    (kindFilter === "all" || isEmailItem(request) === (kindFilter === "email"))
+  );
+}
+
+/** Loaded requests newer than `afterMs` that pass the method and kind filters. */
 export function countLoadedAfter(
-  requests: { method: string; receivedAt: number }[],
+  requests: { method: string; receivedAt: number; kind?: "http" | "email" }[],
   afterMs: number,
-  methodFilter: string
+  methodFilter: string,
+  kindFilter: KindFilter = "all"
 ): number {
   return requests.filter(
-    (request) =>
-      request.receivedAt > afterMs && (methodFilter === "ALL" || request.method === methodFilter)
+    (request) => request.receivedAt > afterMs && matchesFilters(request, methodFilter, kindFilter)
   ).length;
 }
 

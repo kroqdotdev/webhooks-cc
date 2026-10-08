@@ -105,7 +105,14 @@ describe("toEmailCapture", () => {
       envelopeFrom: "no-reply@tidewater.app",
       envelopeTo: ["acme-signup-flow+signup@mailhooks.cc"],
       size: 1485,
+      test: false,
     });
+  });
+
+  it("marks a test only when the receiver says so", () => {
+    expect(toEmailCapture({ smtp: { test: true } })?.smtp?.test).toBe(true);
+    expect(toEmailCapture({ smtp: { test: "true" } })?.smtp?.test).toBe(false);
+    expect(toEmailCapture({ smtp: {} })?.smtp?.test).toBe(false);
   });
 
   it("reports checks that could not run", () => {

@@ -295,7 +295,8 @@ function ReceivingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["
           }}
           onSave={() =>
             void save({
-              ...(name !== initialName ? { name: name || undefined } : {}),
+              // An emptied name is saved as "" (the dashboard then shows the slug).
+              ...(name !== initialName ? { name: name.trim() } : {}),
               ...(extracts !== initialExtracts ? { showEmailExtracts: extracts } : {}),
             })
           }
@@ -913,7 +914,8 @@ export function EndpointSettingsPanel({
   focusSection,
 }: EndpointSettingsPanelProps) {
   // Owners see everything; members of a team the endpoint is shared with can
-  // rename it and change its responses (the API enforces the same split).
+  // rename it and change its responses, but not delete it (the API enforces
+  // the same split).
   const isOwner = endpoint.notificationUrl !== undefined;
   const sections = useMemo(
     () =>
@@ -925,9 +927,9 @@ export function EndpointSettingsPanel({
               { id: "notifications", label: "Notifications" },
               { id: "sharing", label: "Team sharing" },
               { id: "verification", label: "Signature verification" },
+              { id: "delete", label: "Delete endpoint" },
             ]
           : []),
-        { id: "delete", label: "Delete endpoint" },
       ] as { id: SettingsSection; label: string }[],
     [isOwner]
   );
@@ -996,7 +998,7 @@ export function EndpointSettingsPanel({
           {isOwner && <NotificationsSection endpoint={endpoint} />}
           {isOwner && <SharingSection endpointId={endpoint.id} />}
           {isOwner && <VerificationSection endpoint={endpoint} />}
-          <DeleteSection endpoint={endpoint} requestCount={requestCount} />
+          {isOwner && <DeleteSection endpoint={endpoint} requestCount={requestCount} />}
         </div>
       </div>
     </div>

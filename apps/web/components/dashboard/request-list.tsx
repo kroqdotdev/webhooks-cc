@@ -68,7 +68,6 @@ interface RequestListProps {
   /** Set for endpoints that receive email: shows the All / HTTP / Email switch. */
   kindFilter?: KindFilter;
   onKindFilterChange?: (kind: KindFilter) => void;
-  kindCounts?: Record<KindFilter, number>;
 }
 
 const KINDS: { id: KindFilter; label: string }[] = [
@@ -110,7 +109,6 @@ export function RequestList({
   timelineSlot,
   kindFilter = "all",
   onKindFilterChange,
-  kindCounts,
 }: RequestListProps) {
   const displayCount = totalCount ?? requests.length;
   const internalSearchRef = useRef<HTMLInputElement>(null);
@@ -206,6 +204,28 @@ export function RequestList({
   const renderTimestamp = (ts: number) =>
     relativeTime ? formatRelativeTimestamp(ts) : formatTimestamp(ts);
 
+  const loadMore = hasMore ? (
+    <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
+      <button
+        onClick={onLoadMore}
+        disabled={loadingMore}
+        className={cn(
+          "ui-btn-outline py-1.5! px-4! text-xs flex items-center gap-2",
+          loadingMore && "opacity-60 cursor-not-allowed"
+        )}
+      >
+        {loadingMore ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Loading...
+          </>
+        ) : (
+          "Load More"
+        )}
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -232,9 +252,10 @@ export function RequestList({
                 )}
               >
                 {kind.label}
-                {kindCounts && (
+                {/* The count of what is shown, from the server, so only the picked kind has one. */}
+                {kindFilter === kind.id && (
                   <span className="hidden @[300px]:inline font-mono font-normal opacity-70">
-                    {kindCounts[kind.id]}
+                    {displayCount}
                   </span>
                 )}
               </button>
@@ -295,6 +316,7 @@ export function RequestList({
       <div className="border-b-strong border-line px-3 py-2 flex items-center gap-2 shrink-0">
         {kindFilter !== "email" && (
           <select
+            aria-label="Method"
             value={methodFilter}
             onChange={(e) => onMethodFilterChange(e.target.value)}
             className="text-xs font-bold caps rounded-md border-strong border-line bg-background px-2 py-1 cursor-pointer"
@@ -354,9 +376,17 @@ export function RequestList({
             Searching...
           </div>
         ) : pinned.length === 0 && unpinned.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps">
-            {searchError ? "Search unavailable" : "No matching requests"}
-          </div>
+          <>
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold caps">
+              {searchError
+                ? "Search unavailable"
+                : hasMore
+                  ? "None in the newest requests"
+                  : "No matching requests"}
+            </div>
+            {/* A filter can match nothing loaded so far and still match older pages. */}
+            {loadMore}
+          </>
         ) : (
           <>
             {/* Pinned section */}
@@ -377,28 +407,7 @@ export function RequestList({
 
             {unpinned.map((request) => renderRow(request))}
 
-            {/* Load More button */}
-            {hasMore && (
-              <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
-                <button
-                  onClick={onLoadMore}
-                  disabled={loadingMore}
-                  className={cn(
-                    "ui-btn-outline py-1.5! px-4! text-xs flex items-center gap-2",
-                    loadingMore && "opacity-60 cursor-not-allowed"
-                  )}
-                >
-                  {loadingMore ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    "Load More"
-                  )}
-                </button>
-              </div>
-            )}
+            {loadMore}
           </>
         )}
       </div>

@@ -118,9 +118,9 @@ export function getMethodColor(method: string): string {
 
 export type KindFilter = "all" | "http" | "email";
 
-/** Whether a list item is a captured email (older clients may not send `kind`). */
+/** Whether a list item is a captured email (by method only for records without `kind`). */
 export function isEmailItem(item: { kind?: "http" | "email"; method: string }): boolean {
-  return item.kind === "email" || item.method === "EMAIL";
+  return item.kind ? item.kind === "email" : item.method === "EMAIL";
 }
 
 // Export for backwards compatibility, but prefer getMethodColor()

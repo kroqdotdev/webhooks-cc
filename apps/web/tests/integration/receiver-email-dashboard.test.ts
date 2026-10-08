@@ -95,7 +95,7 @@ describe("captured emails in the dashboard's data", () => {
       tag: "welcome",
       parseError: false,
     });
-    expect(request.email?.smtp).toMatchObject({ envelopeFrom: "test@webhooks.cc" });
+    expect(request.email?.smtp).toMatchObject({ envelopeFrom: "test@webhooks.cc", test: true });
     // What the "Found in this email" strip shows.
     const found = extractFromEmail(request.email!);
     expect(found.codes).toEqual([code]);

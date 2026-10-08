@@ -267,3 +267,37 @@ test("codes and links can be turned off for the endpoint", async ({ page }) => {
   await expect(shown(page.getByRole("heading", { name: SUBJECT }))).toBeVisible();
   await expect(shown(page.getByText("Found in this email"))).toHaveCount(0);
 });
+
+test("the email switch reaches emails older than the newest page", async ({ page }) => {
+  // 55 HTTP requests newer than the email push it off the first page of 50.
+  const base = Date.now();
+  const { error } = await admin.from("requests").insert(
+    Array.from({ length: 55 }, (_, i) => ({
+      endpoint_id: endpointId,
+      user_id: testUser.id,
+      method: "POST",
+      path: `/bulk/${i}`,
+      headers: { "content-type": "application/json" },
+      body: "{}",
+      query_params: {},
+      content_type: "application/json",
+      ip: "127.0.0.1",
+      size: 2,
+      received_at: new Date(base + 1000 + i).toISOString(),
+    }))
+  );
+  if (error) throw error;
+
+  await openDashboard(page);
+  // A method picked for HTTP must not hide every email once Email is chosen.
+  await shown(page.getByRole("combobox", { name: "Method" })).selectOption("POST");
+  const show = shown(page.getByRole("radiogroup", { name: "Show" }));
+  await show.getByRole("radio", { name: /^Email/ }).click();
+
+  await expect(shown(page.getByText("None in the newest requests"))).toBeVisible();
+  await shown(page.getByRole("button", { name: "Load More" })).click();
+  await expect(emailRow(page)).toBeVisible();
+
+  await show.getByRole("radio", { name: /^All/ }).click();
+  await expect(shown(page.getByRole("combobox", { name: "Method" }))).toHaveValue("ALL");
+});

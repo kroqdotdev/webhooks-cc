@@ -8,7 +8,6 @@ import { formatBytes } from "@/types/request";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
 import { extractFromEmail, type ExtractedLink } from "@/lib/email-extract";
 import { buildPreviewDocument, countRemoteImages } from "@/lib/email-preview";
-import { TEST_EMAIL_HEADER } from "@/lib/test-email-header";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
 
 type EmailTab = "preview" | "text" | "headers" | "attachments" | "authentication" | "raw";
@@ -536,9 +535,8 @@ export function EmailDetail({ request, showExtracts, note, onNoteChange }: Email
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
   const { copied, copy } = useCopy();
   const raw = useMemo(() => rawMessage(request), [request]);
-  const isTest = Object.keys(request.headers).some(
-    (name) => name.toLowerCase() === TEST_EMAIL_HEADER.toLowerCase()
-  );
+  // From the receiver, not the message: any sender can write a header.
+  const isTest = email?.smtp?.test === true;
   const extracts = useMemo(
     () => (email && showExtracts ? extractFromEmail(email) : { codes: [], links: [] }),
     [email, showExtracts]

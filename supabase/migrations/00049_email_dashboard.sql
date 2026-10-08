@@ -2,13 +2,16 @@
 --
 -- 1. endpoints.show_email_extracts: per-endpoint switch for the dashboard's
 --    "Found in this email" strip (codes and links). On by default.
--- 2. endpoint_daily_stats.emails: emails captured per endpoint and day, so
---    usage can split HTTP and email. Counting request rows instead would
---    undercount once retention has deleted them.
+-- 2. endpoint_daily_stats.emails: emails captured per endpoint and day, a
+--    count that outlives request retention and deletion like the others in
+--    that table. Backfilled in step 6 for email captured since 00048.
 -- 3. bump_endpoint_daily_stats() gains p_emails (default 0) and
 --    capture_webhook() passes it. capture_webhook() is otherwise unchanged
 --    from 00048; only the success-path bump differs.
--- 4. search_requests() returns kind, email and body_raw too (see below).
+-- 4. search_requests() returns kind, email and body_raw too, and both it and
+--    search_requests_count() take p_kind to filter by kind (see below).
+-- 5. A partial index on email rows for the usage split's period count.
+-- 6. The endpoint_daily_stats.emails backfill.
 --
 -- Apply in autocommit mode (see AGENTS.md); the function swap below runs in
 -- one transaction so no capture ever sees the old bump function missing.
@@ -336,13 +339,16 @@ commit;
 -- 4. search_requests() also returns kind, email and body_raw, so search
 --    results and older pages show emails as emails, and a message that is
 --    not valid UTF-8 keeps its exact bytes for the raw view and the .eml
---    download. A changed result type needs drop and create; the body is
---    00044's with the three columns added.
+--    download. It and search_requests_count() take p_kind ('http' or
+--    'email'), so the dashboard's kind switch pages through the database
+--    rather than filtering what it has loaded. A changed signature needs
+--    drop and create; the bodies are 00044's with the columns and the kind
+--    filter added.
 begin;
 
 drop function if exists public.search_requests(uuid, text, text, text, text, bigint, bigint, integer, integer, text);
 
-CREATE OR REPLACE FUNCTION public.search_requests(p_user_id uuid, p_plan text DEFAULT NULL::text, p_slug text DEFAULT NULL::text, p_method text DEFAULT NULL::text, p_q text DEFAULT NULL::text, p_from_ms bigint DEFAULT NULL::bigint, p_to_ms bigint DEFAULT NULL::bigint, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0, p_order text DEFAULT 'desc'::text)
+CREATE OR REPLACE FUNCTION public.search_requests(p_user_id uuid, p_plan text DEFAULT NULL::text, p_slug text DEFAULT NULL::text, p_method text DEFAULT NULL::text, p_q text DEFAULT NULL::text, p_from_ms bigint DEFAULT NULL::bigint, p_to_ms bigint DEFAULT NULL::bigint, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0, p_order text DEFAULT 'desc'::text, p_kind text DEFAULT NULL::text)
  RETURNS TABLE(id text, slug text, method text, path text, headers jsonb, body text, query_params jsonb, content_type text, ip text, size integer, received_at bigint, kind text, email jsonb, body_raw bytea)
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -405,6 +411,7 @@ begin
          and ($10 is null or r.endpoint_id = $10)
          and ($2 is null or e.slug = $2)
          and ($3 is null or $3 = ''ALL'' or r.method = $3)
+         and ($11 is null or r.kind = $11)
          and (
            $4 is null
            or r.path ilike ''%%'' || $4 || ''%%''
@@ -428,6 +435,7 @@ begin
          and r.user_id is distinct from $1
          and ($2 is null or e.slug = $2)
          and ($3 is null or $3 = ''ALL'' or r.method = $3)
+         and ($11 is null or r.kind = $11)
          and (
            $4 is null
            or r.path ilike ''%%'' || $4 || ''%%''
@@ -454,13 +462,175 @@ begin
     v_offset
   )
   using p_user_id, nullif(btrim(p_slug), ''), nullif(btrim(p_method), ''), v_q, v_from, v_to,
-        v_retention_cutoff, v_shared_ids, v_free_cutoff, v_endpoint_id;
+        v_retention_cutoff, v_shared_ids, v_free_cutoff, v_endpoint_id, nullif(btrim(p_kind), '');
 end;
 $$;
 
-revoke all on function public.search_requests(uuid, text, text, text, text, bigint, bigint, integer, integer, text) from public, anon, authenticated;
-grant execute on function public.search_requests(uuid, text, text, text, text, bigint, bigint, integer, integer, text) to service_role;
+revoke all on function public.search_requests(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text) from public, anon, authenticated;
+grant execute on function public.search_requests(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text) to service_role;
+
+drop function if exists public.search_requests_count(uuid, text, text, text, text, bigint, bigint);
+
+CREATE OR REPLACE FUNCTION public.search_requests_count(p_user_id uuid, p_plan text DEFAULT NULL::text, p_slug text DEFAULT NULL::text, p_method text DEFAULT NULL::text, p_q text DEFAULT NULL::text, p_from_ms bigint DEFAULT NULL::bigint, p_to_ms bigint DEFAULT NULL::bigint, p_kind text DEFAULT NULL::text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $$
+declare
+  v_plan text := coalesce(p_plan, 'pro');
+  v_slug text := nullif(btrim(p_slug), '');
+  v_method text := nullif(btrim(p_method), '');
+  v_kind text := nullif(btrim(p_kind), '');
+  v_from timestamptz := case
+    when p_from_ms is null then null
+    else to_timestamp(p_from_ms::double precision / 1000.0)
+  end;
+  v_to timestamptz := case
+    when p_to_ms is null then null
+    else to_timestamp(p_to_ms::double precision / 1000.0)
+  end;
+  v_retention_cutoff timestamptz := case
+    when v_plan = 'free' then now() - interval '7 days'
+    else null
+  end;
+  v_free_cutoff timestamptz := now() - interval '7 days';
+  v_q text := nullif(btrim(p_q), '');
+  v_shared_ids uuid[];
+  v_owned integer;
+  v_shared integer;
+  v_endpoint_id uuid;
+begin
+  if v_plan not in ('free', 'pro') then
+    raise exception 'invalid plan' using errcode = '22023';
+  end if;
+
+  select coalesce(array_agg(distinct te.endpoint_id), '{}'::uuid[])
+  into v_shared_ids
+  from public.team_endpoints te
+  join public.team_members tm on tm.team_id = te.team_id
+  join public.teams t on t.id = te.team_id
+  where tm.user_id = p_user_id
+    and t.subscription_status is not null;
+
+  -- Slug-scoped counts read only that endpoint's rows. Static statements in
+  -- PL/pgSQL may run on a cached generic plan, where an "id is null or ..."
+  -- guard would not use the index, so the scoped count is its own branch.
+  if v_slug is not null then
+    select e.id into v_endpoint_id from public.endpoints e where e.slug = v_slug;
+    if v_endpoint_id is null then
+      return 0;
+    end if;
+
+    select count(*)::integer
+    into v_owned
+    from public.requests r
+    left join public.endpoints e on e.id = r.endpoint_id
+    left join public.users u on u.id = e.user_id
+    where r.endpoint_id = v_endpoint_id
+      and (
+        (r.user_id = p_user_id
+          and (v_retention_cutoff is null or r.team_id is not null or r.received_at >= v_retention_cutoff))
+        or (v_endpoint_id = any(v_shared_ids)
+          and r.user_id is distinct from p_user_id
+          and (r.team_id is not null or u.plan is distinct from 'free' or r.received_at >= v_free_cutoff))
+      )
+      and (v_method is null or v_method = 'ALL' or r.method = v_method)
+      and (v_kind is null or r.kind = v_kind)
+      and (
+        v_q is null
+        or r.path ilike '%' || v_q || '%'
+        or r.body ilike '%' || v_q || '%'
+        or r.headers::text ilike '%' || v_q || '%'
+      )
+      and (v_from is null or r.received_at >= v_from)
+      and (v_to is null or r.received_at <= v_to);
+
+    return coalesce(v_owned, 0);
+  end if;
+
+  select count(*)::integer
+  into v_owned
+  from public.requests r
+  join public.endpoints e on e.id = r.endpoint_id
+  where r.user_id = p_user_id
+    and (v_slug is null or e.slug = v_slug)
+    and (v_method is null or v_method = 'ALL' or r.method = v_method)
+    and (v_kind is null or r.kind = v_kind)
+    and (
+      v_q is null
+      or r.path ilike '%' || v_q || '%'
+      or r.body ilike '%' || v_q || '%'
+      or r.headers::text ilike '%' || v_q || '%'
+    )
+    and (v_from is null or r.received_at >= v_from)
+    and (v_to is null or r.received_at <= v_to)
+    and (v_retention_cutoff is null or r.team_id is not null or r.received_at >= v_retention_cutoff);
+
+  select count(*)::integer
+  into v_shared
+  from public.requests r
+  join public.endpoints e on e.id = r.endpoint_id
+  left join public.users u on u.id = e.user_id
+  where r.endpoint_id = any(v_shared_ids)
+    and r.user_id is distinct from p_user_id
+    and (v_slug is null or e.slug = v_slug)
+    and (v_method is null or v_method = 'ALL' or r.method = v_method)
+    and (v_kind is null or r.kind = v_kind)
+    and (
+      v_q is null
+      or r.path ilike '%' || v_q || '%'
+      or r.body ilike '%' || v_q || '%'
+      or r.headers::text ilike '%' || v_q || '%'
+    )
+    and (v_from is null or r.received_at >= v_from)
+    and (v_to is null or r.received_at <= v_to)
+    and (r.team_id is not null or u.plan is distinct from 'free' or r.received_at >= v_free_cutoff);
+
+  return coalesce(v_owned, 0) + coalesce(v_shared, 0);
+end;
+$$;
+
+revoke all on function public.search_requests_count(uuid, text, text, text, text, bigint, bigint, text) from public, anon, authenticated;
+grant execute on function public.search_requests_count(uuid, text, text, text, text, bigint, bigint, text) to service_role;
 
 commit;
+
+-- 5. The usage split counts a user's emails in the current period from the
+--    request rows (they outlive a period: Free keeps 7 days for a 24-hour
+--    period, Pro 31 for 30). Partial, so only email captures write to it and
+--    the HTTP capture path pays nothing.
+create index concurrently if not exists requests_user_email_time
+  on public.requests (user_id, received_at)
+  where kind = 'email';
+
+-- 6. Backfill endpoint_daily_stats.emails for email captured since 00048,
+--    before step 3's capture_webhook() counted it. The rollup rows are locked
+--    first, so a capture running now either committed before the count (and
+--    is in it) or bumps the row after this commits (and is not); greatest()
+--    keeps bumps for email the user has since deleted.
+do $$
+begin
+  perform 1
+    from public.endpoint_daily_stats s
+   where (s.endpoint_id, s.day) in (
+           select r.endpoint_id, (r.received_at at time zone 'UTC')::date
+             from public.requests r
+            where r.kind = 'email')
+     for update of s;
+
+  update public.endpoint_daily_stats s
+     set emails = greatest(s.emails, c.n)
+    from (
+      select r.endpoint_id, (r.received_at at time zone 'UTC')::date as day, count(*)::integer as n
+        from public.requests r
+       where r.kind = 'email'
+       group by 1, 2
+    ) c
+   where s.endpoint_id = c.endpoint_id
+     and s.day = c.day
+     and s.emails < c.n;
+end
+$$;
 
 notify pgrst, 'reload schema';

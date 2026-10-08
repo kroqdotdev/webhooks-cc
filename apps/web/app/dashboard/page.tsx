@@ -48,6 +48,7 @@ import {
   computeShowHasMore,
   countLoadedAfter,
   incrementRetainedCount,
+  matchesFilters,
   retainedCountCutoff,
 } from "@/lib/dashboard-count";
 import { createRefreshScheduler } from "@/lib/refresh-scheduler";
@@ -57,7 +58,7 @@ import type {
   AnyRequestSummary,
   Request,
 } from "@/types/request";
-import { isEmailItem, type KindFilter } from "@/types/request";
+import type { KindFilter } from "@/types/request";
 import { toEmailSummary } from "@/lib/email-capture";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
@@ -465,15 +466,24 @@ export default function DashboardPage() {
     setSelectedClickHouseDetail(clickHouseDetailMap.current.get(selectedId) ?? null);
   }, [selectedId, selectedRecentRequest]);
 
-  const prevMethodFilter = useRef(methodFilter);
+  // Older pages are fetched with the filters, so a filter change starts over.
+  const prevListFilters = useRef(`${methodFilter}|${kindFilter}`);
   useEffect(() => {
-    if (prevMethodFilter.current !== methodFilter) {
-      prevMethodFilter.current = methodFilter;
+    const filters = `${methodFilter}|${kindFilter}`;
+    if (prevListFilters.current !== filters) {
+      prevListFilters.current = filters;
       setOlderRequests([]);
       setHasMore(false);
       setHasLoadedOlderPage(false);
     }
-  }, [methodFilter]);
+  }, [methodFilter, kindFilter]);
+
+  const handleKindFilterChange = useCallback((kind: KindFilter) => {
+    setKindFilter(kind);
+    // The method picker is hidden for email, so a method left over from HTTP
+    // would hide every email with no way to clear it.
+    if (kind === "email") setMethodFilter("ALL");
+  }, []);
 
   const handleLoadMore = useCallback(async () => {
     if (!currentEndpoint || loadingMore) return;
@@ -491,6 +501,7 @@ export default function DashboardPage() {
       order: "desc",
     };
     if (methodFilter !== "ALL") params.method = methodFilter;
+    if (kindFilter !== "all") params.kind = kindFilter;
     if (toTimestamp != null) params.to = String(Math.floor(toTimestamp) - 1);
 
     try {
@@ -510,6 +521,7 @@ export default function DashboardPage() {
     olderRequests,
     recentRequests,
     methodFilter,
+    kindFilter,
     fetchFromClickHouse,
     storeClickHouseResults,
   ]);
@@ -537,6 +549,7 @@ export default function DashboardPage() {
         order: "desc",
       };
       if (methodFilter !== "ALL") params.method = methodFilter;
+      if (kindFilter !== "all") params.kind = kindFilter;
 
       const { data: results, ok } = await fetchFromClickHouse(params);
       if (requestSeq !== searchResultsRequestSeq.current) return;
@@ -551,7 +564,14 @@ export default function DashboardPage() {
 
       setSearchLoading(false);
     },
-    [currentEndpoint, debouncedSearch, methodFilter, fetchFromClickHouse, storeClickHouseResults]
+    [
+      currentEndpoint,
+      debouncedSearch,
+      methodFilter,
+      kindFilter,
+      fetchFromClickHouse,
+      storeClickHouseResults,
+    ]
   );
 
   useEffect(() => {
@@ -577,7 +597,13 @@ export default function DashboardPage() {
       !debouncedSearch && counted[0]?.endpointId === currentEndpointId
         ? retainedCountCutoff(counted)
         : undefined;
-    const params = buildRetainedCountParams(currentSlug, methodFilter, debouncedSearch, cutoff);
+    const params = buildRetainedCountParams(
+      currentSlug,
+      methodFilter,
+      debouncedSearch,
+      cutoff,
+      kindFilter
+    );
 
     const { count, ok } = await fetchCountFromClickHouse(params);
     if (requestSeq !== retainedCountRequestSeq.current) return;
@@ -585,10 +611,17 @@ export default function DashboardPage() {
       setRetainedTotalCount(
         cutoff === undefined
           ? count
-          : count + countLoadedAfter(countedRequestsRef.current, cutoff, methodFilter)
+          : count + countLoadedAfter(countedRequestsRef.current, cutoff, methodFilter, kindFilter)
       );
     }
-  }, [currentSlug, currentEndpointId, methodFilter, debouncedSearch, fetchCountFromClickHouse]);
+  }, [
+    currentSlug,
+    currentEndpointId,
+    methodFilter,
+    kindFilter,
+    debouncedSearch,
+    fetchCountFromClickHouse,
+  ]);
 
   useEffect(() => {
     refreshRetainedCountRef.current = refreshRetainedCount;
@@ -614,7 +647,7 @@ export default function DashboardPage() {
       return;
     }
     void refreshRetainedCount();
-  }, [currentSlug, accessToken, methodFilter, debouncedSearch, refreshRetainedCount]);
+  }, [currentSlug, accessToken, methodFilter, kindFilter, debouncedSearch, refreshRetainedCount]);
 
   useEffect(() => {
     if (!currentSlug || !accessToken) return;
@@ -738,16 +771,11 @@ export default function DashboardPage() {
     return [...recentSummaries, ...olderSummaries];
   }, [recentRequests, olderRequests, searchResults, debouncedSearch, methodFilter]);
 
-  // All / HTTP / Email, counted before the switch filters them.
-  const kindCounts = useMemo(() => {
-    const email = allItems.filter(isEmailItem).length;
-    return { all: allItems.length, http: allItems.length - email, email };
-  }, [allItems]);
   const displayedItems = useMemo(
     () =>
       kindFilter === "all"
         ? allItems
-        : allItems.filter((item) => isEmailItem(item) === (kindFilter === "email")),
+        : allItems.filter((item) => matchesFilters(item, "ALL", kindFilter)),
     [allItems, kindFilter]
   );
 
@@ -785,7 +813,7 @@ export default function DashboardPage() {
           // whole page for now and let the server fill in the rest.
           const matched = recentRequests
             .slice(0, previousIdx >= 0 ? previousIdx : recentRequests.length)
-            .filter((request) => methodFilter === "ALL" || request.method === methodFilter).length;
+            .filter((request) => matchesFilters(request, methodFilter, kindFilter)).length;
           setRetainedTotalCount((prev) => incrementRetainedCount(prev, matched));
           if (previousIdx === -1) {
             countSchedulerRef.current?.schedule();
@@ -796,7 +824,7 @@ export default function DashboardPage() {
 
     prevTopSummaryId.current = topId;
     countedRequestsRef.current = recentRequests;
-  }, [recentRequests, liveMode, debouncedSearch, methodFilter]);
+  }, [recentRequests, liveMode, debouncedSearch, methodFilter, kindFilter]);
 
   useEffect(() => {
     if (recentRequests.length > 0 && !selectedId) {
@@ -810,6 +838,7 @@ export default function DashboardPage() {
     setNewCount(0);
     prevTopSummaryId.current = null;
     setMethodFilter("ALL");
+    setKindFilter("all");
     setSearchInput("");
     setDebouncedSearch("");
     setOlderRequests([]);
@@ -846,6 +875,7 @@ export default function DashboardPage() {
       order: "desc",
     };
     if (methodFilter !== "ALL") params.method = methodFilter;
+    if (kindFilter !== "all") params.kind = kindFilter;
     if (debouncedSearch) params.q = debouncedSearch;
 
     const { data: results, ok } = await fetchFromClickHouse(params);
@@ -858,7 +888,7 @@ export default function DashboardPage() {
     if (results.length >= 200) {
       alert("Exported first 200 requests. Use search filters to narrow the export.");
     }
-  }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
+  }, [currentEndpoint, methodFilter, kindFilter, debouncedSearch, fetchFromClickHouse]);
 
   const handleExportCsv = useCallback(async () => {
     if (!currentEndpoint) return;
@@ -868,6 +898,7 @@ export default function DashboardPage() {
       order: "desc",
     };
     if (methodFilter !== "ALL") params.method = methodFilter;
+    if (kindFilter !== "all") params.kind = kindFilter;
     if (debouncedSearch) params.q = debouncedSearch;
 
     const { data: results, ok } = await fetchFromClickHouse(params);
@@ -880,7 +911,7 @@ export default function DashboardPage() {
     if (results.length >= 200) {
       alert("Exported first 200 requests. Use search filters to narrow the export.");
     }
-  }, [currentEndpoint, methodFilter, debouncedSearch, fetchFromClickHouse]);
+  }, [currentEndpoint, methodFilter, kindFilter, debouncedSearch, fetchFromClickHouse]);
 
   // Keyboard shortcuts — use refs for frequently-changing values so the
   // listener doesn't re-register on every state change (rerender-dependencies).
@@ -1082,8 +1113,9 @@ export default function DashboardPage() {
                   viewMode={viewMode}
                   onViewModeChange={setViewMode}
                   kindFilter={kindFilter}
-                  onKindFilterChange={currentEndpoint.emailAddress ? setKindFilter : undefined}
-                  kindCounts={kindCounts}
+                  onKindFilterChange={
+                    currentEndpoint.emailAddress ? handleKindFilterChange : undefined
+                  }
                   timelineSlot={
                     <RequestTimeline
                       requests={displayedItems}
@@ -1193,8 +1225,9 @@ export default function DashboardPage() {
                 onTogglePin={handleTogglePin}
                 noteIds={noteIds}
                 kindFilter={kindFilter}
-                onKindFilterChange={currentEndpoint.emailAddress ? setKindFilter : undefined}
-                kindCounts={kindCounts}
+                onKindFilterChange={
+                  currentEndpoint.emailAddress ? handleKindFilterChange : undefined
+                }
               />
             )}
           </div>

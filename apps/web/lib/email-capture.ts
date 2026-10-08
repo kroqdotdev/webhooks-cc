@@ -51,6 +51,11 @@ export interface EmailSmtp {
   envelopeTo: string[];
   /** Size of the whole message as received, in bytes. */
   size: number | null;
+  /**
+   * The dashboard's own "Send test email" sample. Set by the receiver only
+   * for that signed delivery, never from anything in the message.
+   */
+  test: boolean;
 }
 
 export interface EmailCapture {
@@ -187,6 +192,7 @@ function asSmtp(value: Json | undefined): EmailSmtp | null {
     envelopeFrom: asString(smtp.envelope_from),
     envelopeTo: asStrings(smtp.envelope_to),
     size: asNumber(smtp.size),
+    test: smtp.test === true,
   };
 }
 

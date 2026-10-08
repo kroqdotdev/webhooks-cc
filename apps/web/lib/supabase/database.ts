@@ -657,6 +657,7 @@ export interface Database {
           p_limit?: number | null;
           p_offset?: number | null;
           p_order?: string | null;
+          p_kind?: string | null;
         };
         Returns: Array<{
           id: string;
@@ -685,6 +686,7 @@ export interface Database {
           p_q?: string | null;
           p_from_ms?: number | null;
           p_to_ms?: number | null;
+          p_kind?: string | null;
         };
         Returns: number;
       };

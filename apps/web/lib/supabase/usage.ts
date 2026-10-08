@@ -45,7 +45,9 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
   const periodActive = Number.isFinite(periodEndMs) && periodEndMs > now;
   const used = user.plan === "free" && !periodActive ? 0 : user.requests_used;
   const emails =
-    used > 0 && user.period_start ? await countPeriodEmails(userId, user.period_start) : 0;
+    used > 0 && user.period_start
+      ? await countPeriodEmails(userId, user.period_start, user.plan === "free")
+      : 0;
 
   return {
     used,
@@ -59,50 +61,37 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
 }
 
 /**
- * Emails billed to the user since the period began. Team-billed endpoints
- * count against the team's pool, so their rows are left out.
- *
- * Whole days after the period's first day come from the daily rollup, which
- * outlives deleted requests. The first day is counted from the request rows,
- * because a period can start partway through a day and the rollup cannot say
- * which of that day's emails belong to the previous period. An email deleted
- * on that first day is missed, which only moves it to the HTTP side of a
- * display-only split.
+ * Emails billed to the user since the period began, counted from the request
+ * rows through the partial index requests_user_email_time (migration 00049).
+ * The rows outlive a period (Free keeps 7 days for a 24-hour period, Pro 31
+ * for 30); an email the user deleted is missed, which only moves it to the
+ * HTTP side of a display-only split. Team-billed rows count against the
+ * team's pool, so they are left out.
  *
  * A lazy Free period starts at its first capture, with `period_start` from
  * the database clock and that capture's `received_at` from the receiver (or
- * the MX host) a moment earlier, so the first-day count starts
- * PERIOD_START_SLACK_MS before `period_start`.
+ * the MX host) a moment earlier, so a Free count starts PERIOD_START_SLACK_MS
+ * before `period_start`. A Pro period starts at renewal, not at a capture,
+ * so its count starts exactly there.
  */
 const PERIOD_START_SLACK_MS = 5 * 60_000;
 
-async function countPeriodEmails(userId: string, periodStart: string): Promise<number> {
-  const start = new Date(periodStart);
-  if (!Number.isFinite(start.getTime())) return 0;
-  const countFrom = new Date(start.getTime() - PERIOD_START_SLACK_MS);
-  const startDay = start.toISOString().slice(0, 10);
-  const nextDay = new Date(`${startDay}T00:00:00.000Z`);
-  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-
+async function countPeriodEmails(
+  userId: string,
+  periodStart: string,
+  lazyPeriod: boolean
+): Promise<number> {
+  const start = Date.parse(periodStart);
+  if (!Number.isFinite(start)) return 0;
+  const from = lazyPeriod ? start - PERIOD_START_SLACK_MS : start;
   const admin = createAdminClient();
-  const [laterDays, firstDay] = await Promise.all([
-    admin
-      .from("endpoint_daily_stats")
-      .select("emails")
-      .eq("user_id", userId)
-      .is("team_id", null)
-      .gt("day", startDay),
-    admin
-      .from("requests")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("kind", "email")
-      .is("team_id", null)
-      .gte("received_at", countFrom.toISOString())
-      .lt("received_at", nextDay.toISOString()),
-  ]);
-  if (laterDays.error) throw laterDays.error;
-  if (firstDay.error) throw firstDay.error;
-  const later = (laterDays.data ?? []).reduce((total, row) => total + Number(row.emails ?? 0), 0);
-  return later + (firstDay.count ?? 0);
+  const { count, error } = await admin
+    .from("requests")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("kind", "email")
+    .is("team_id", null)
+    .gte("received_at", new Date(from).toISOString());
+  if (error) throw error;
+  return count ?? 0;
 }

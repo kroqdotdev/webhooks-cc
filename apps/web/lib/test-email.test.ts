@@ -52,6 +52,8 @@ describe("buildTestEmail", () => {
       envelope_from: "test@webhooks.cc",
       received_at: "2026-10-08T09:30:00.000Z",
       retry: false,
+      // What the dashboard trusts to call it a test, not the header.
+      test: true,
     });
     expect(Buffer.from(body.raw, "base64").toString("utf8")).toBe(email.raw);
   });

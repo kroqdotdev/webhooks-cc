@@ -193,11 +193,15 @@ function SendMenu({ slug, canEmail }: { slug: string; canEmail: boolean }) {
 
   return (
     <>
+      {/* Always in the accessibility tree so the result is announced; a bubble
+          under Send on narrow screens, inline text next to it on wide ones. */}
       <span
         role="status"
         aria-live="polite"
         className={cn(
-          "hidden lg:block text-xs max-w-[260px] truncate",
+          !status
+            ? "sr-only"
+            : "absolute right-0 top-full z-20 mt-2 w-max max-w-[min(280px,calc(100vw-2rem))] rounded-md border-strong border-line bg-card px-2.5 py-1.5 text-xs shadow-raised-sm lg:static lg:mt-0 lg:w-auto lg:max-w-[260px] lg:truncate lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
           status?.kind === "error" ? "text-destructive" : "text-muted-foreground"
         )}
         title={status?.text}
@@ -286,7 +290,7 @@ export function EndpointBar({
             </span>
           )}
         </div>
-        <div className="order-2 md:order-3 ml-auto flex items-center gap-2">
+        <div className="relative order-2 md:order-3 ml-auto flex items-center gap-2">
           <div className="hidden md:block">
             <SetupMenu hasRequests={hasRequests} onOpenGuide={() => setGuideOpen(true)} />
           </div>
