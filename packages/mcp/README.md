@@ -58,7 +58,7 @@ Get your API key at [webhooks.cc/account](https://webhooks.cc/account).
 
 ## What it exposes
 
-The server exposes `35` tools, `3` prompts, and `3` resource surfaces.
+The server exposes `44` tools, `3` prompts, and `3` resource surfaces.
 
 ### Endpoint tools
 
@@ -83,6 +83,27 @@ The server exposes `35` tools, `3` prompts, and `3` resource surfaces.
 - `extract_from_request`
 - `verify_signature`
 - `clear_requests`
+
+### Email tools
+
+Every endpoint on an account receives email at `{slug}@mailhooks.cc` (and `{slug}+{tag}@mailhooks.cc`). These tools read it, with the one-time code and main link already picked out, unless the endpoint's owner turned that off:
+
+- `list_emails`
+- `get_email`
+- `wait_for_email`
+- `send_test_email`
+
+The request tools and resources return emails too (filter with `kind`), without the raw message or the HTML part and with the text cut at 8,000 characters; `get_email` returns the HTML.
+
+### Forwarding tools
+
+Forward every captured email to a URL as signed JSON (owner only):
+
+- `configure_forwarding`
+- `get_forwarding_secret` (returns the `whsec_` secret; with `rotate: true`, replaces it)
+- `test_forwarding`
+- `list_deliveries`
+- `redeliver_email`
 
 ### Send and test tools
 

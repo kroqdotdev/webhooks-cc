@@ -242,6 +242,16 @@ export default function EmailTestingPage() {
             returns the same emails with <code className="font-mono">kind=email</code>, so Cypress,
             Selenium or any runner that can make an HTTP call works too.
           </p>
+          <p className="text-sm text-muted-foreground mt-3">
+            Step by step:{" "}
+            <Link
+              href="/docs/guides/test-signup-emails-playwright"
+              className="text-primary font-bold hover:underline"
+            >
+              test signup and login emails in Playwright
+            </Link>
+            , with a fixture per test, magic links and CI.
+          </p>
         </section>
 
         <section className="mb-12">

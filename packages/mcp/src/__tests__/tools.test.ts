@@ -1,13 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import {
   NotFoundError,
   RateLimitError,
   WebhooksCC,
   WebhooksCCError,
+  buildEmailJson,
+  type EmailCapture,
+  type EmailRequest,
   type Request,
 } from "@webhooks-cc/sdk";
+import { registerResources } from "../resources";
 import { registerTools, registerAgentRegistrationTools } from "../tools";
 
 const EXPECTED_TOOLS = [
@@ -40,6 +45,15 @@ const EXPECTED_TOOLS = [
   "list_team_members",
   "share_endpoint",
   "unshare_endpoint",
+  "list_emails",
+  "get_email",
+  "wait_for_email",
+  "send_test_email",
+  "configure_forwarding",
+  "get_forwarding_secret",
+  "test_forwarding",
+  "list_deliveries",
+  "redeliver_email",
   "how_to_register",
   "register_agent",
   "check_claim",
@@ -151,6 +165,29 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       invites: { list: vi.fn(), accept: vi.fn(), decline: vi.fn() },
       ...(overrides.teams ?? {}),
     },
+    emails: {
+      address: vi.fn((slug: string, tag?: string) =>
+        tag ? `${slug}+${tag}@mailhooks.cc` : `${slug}@mailhooks.cc`
+      ),
+      list: vi.fn(),
+      get: vi.fn(),
+      latest: vi.fn(),
+      waitFor: vi.fn(),
+      waitForAll: vi.fn(),
+      sendTest: vi.fn(),
+      toJson: vi.fn(),
+      ...(overrides.emails ?? {}),
+    },
+    forwarding: {
+      configure: vi.fn(),
+      secret: vi.fn(),
+      rotateSecret: vi.fn(),
+      test: vi.fn(),
+      deliveries: vi.fn(),
+      emailDeliveries: vi.fn(),
+      redeliver: vi.fn(),
+      ...(overrides.forwarding ?? {}),
+    },
     flow: vi.fn(),
     sendTo: vi.fn(),
     buildRequest: vi.fn(),
@@ -186,7 +223,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(35);
+    expect(Object.keys(tools)).toHaveLength(44);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1074,6 +1111,616 @@ function getRegistrationTools(): Record<string, RegisteredTool> {
     ])
   );
 }
+
+function makeEmail(id: string, overrides: Partial<EmailCapture> = {}): EmailRequest {
+  const email: EmailCapture = {
+    subject: "Confirm your email",
+    from: [{ name: "Tidewater", address: "no-reply@tidewater.app" }],
+    to: [{ name: null, address: "acme+run-1@mailhooks.cc" }],
+    cc: [],
+    replyTo: [],
+    sender: [],
+    date: null,
+    messageId: null,
+    inReplyTo: [],
+    tag: "run-1",
+    text: "Your code is 482913. Confirm: https://app.tidewater.app/confirm?t=1",
+    html: "<p>Your code is 482913</p>",
+    textFromHtml: false,
+    attachments: [],
+    auth: null,
+    smtp: null,
+    parseError: false,
+    truncated: {
+      raw: false,
+      text: false,
+      html: false,
+      headers: false,
+      addresses: false,
+      attachments: false,
+    },
+    ...overrides,
+  };
+  return {
+    ...makeRequest({ id, method: "EMAIL", path: "acme+run-1@mailhooks.cc", body: "raw mime" }),
+    kind: "email",
+    email,
+  };
+}
+
+function emailClient(overrides: Partial<WebhooksCC> = {}, showEmailExtracts = true) {
+  return createMockClient({
+    endpoints: {
+      get: vi.fn(async (slug: string) => ({
+        id: "ep_1",
+        slug,
+        name: "Acme signups",
+        createdAt: 1,
+        showEmailExtracts,
+      })),
+    } as unknown as WebhooksCC["endpoints"],
+    emails: {
+      address: vi.fn((slug: string, tag?: string) =>
+        tag ? `${slug}+${tag}@mailhooks.cc` : `${slug}@mailhooks.cc`
+      ),
+      toJson: vi.fn(
+        (
+          email: EmailRequest,
+          options: {
+            endpoint?: { slug: string; name?: string | null };
+            includeExtracts?: boolean;
+          } = {}
+        ) =>
+          buildEmailJson(
+            { ...email, email: email.email },
+            options.endpoint ?? { slug: "acme" },
+            options
+          )
+      ),
+      ...(overrides.emails ?? {}),
+    } as unknown as WebhooksCC["emails"],
+    ...(overrides.forwarding ? { forwarding: overrides.forwarding } : {}),
+    ...(overrides.requests ? { requests: overrides.requests } : {}),
+  });
+}
+
+describe("email and forwarding tools", () => {
+  it("lists emails with their code and link", async () => {
+    const list = vi.fn(async () => [makeEmail("e1")]);
+    const tools = getRegisteredTools(emailClient({ emails: { list } as never }));
+    const result = parseJsonResult(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 25, tag: "run-1" })
+    );
+    expect(list).toHaveBeenCalledWith(
+      "acme",
+      expect.objectContaining({ limit: 100, tag: "run-1" })
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "e1",
+        address: "acme+run-1@mailhooks.cc",
+        tag: "run-1",
+        subject: "Confirm your email",
+        from: "Tidewater <no-reply@tidewater.app>",
+        code: "482913",
+        link: "https://app.tidewater.app/confirm?t=1",
+        attachments: 0,
+      }),
+    ]);
+  });
+
+  it("searches the newest 100 emails when filtering and returns at most limit", async () => {
+    const list = vi.fn(async () => [makeEmail("e1"), makeEmail("e2"), makeEmail("e3")]);
+    const tools = getRegisteredTools(emailClient({ emails: { list } as never }));
+    const filtered = parseJsonResult(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 2, subject: "Confirm" })
+    );
+    expect(list).toHaveBeenLastCalledWith("acme", expect.objectContaining({ limit: 100 }));
+    expect(filtered.map((email: { id: string }) => email.id)).toEqual(["e1", "e2"]);
+
+    await tools.list_emails.handler({ endpointSlug: "acme", limit: 2 });
+    expect(list).toHaveBeenLastCalledWith("acme", expect.objectContaining({ limit: 2 }));
+  });
+
+  it("leaves codes and links out when the endpoint turned them off", async () => {
+    const list = vi.fn(async () => [makeEmail("e1")]);
+    const tools = getRegisteredTools(emailClient({ emails: { list } as never }, false));
+    const [summary] = parseJsonResult(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect(summary).not.toHaveProperty("code");
+    expect(summary).not.toHaveProperty("link");
+  });
+
+  it("honours the endpoint's setting in get_email and wait_for_email", async () => {
+    const get = vi.fn(async () => makeEmail("e1"));
+    const waitFor = vi.fn(async () => makeEmail("e2"));
+    const client = emailClient({ emails: { get, waitFor } as never }, false);
+    const tools = getRegisteredTools(client);
+
+    const byId = parseJsonResult(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    // The slug comes from the address the email arrived at, without its +tag.
+    expect(client.endpoints.get).toHaveBeenLastCalledWith("acme");
+    const waited = parseJsonResult(
+      await tools.wait_for_email.handler({
+        endpointSlug: "acme",
+        timeout: "30s",
+        includeHtml: true,
+      })
+    );
+    for (const detail of [byId, waited]) {
+      expect(detail).not.toHaveProperty("code");
+      expect(detail).not.toHaveProperty("link");
+      expect(detail).not.toHaveProperty("codes");
+      expect(detail).not.toHaveProperty("links");
+      expect(detail.endpoint).toEqual({ slug: "acme", name: "Acme signups" });
+    }
+  });
+
+  it("keeps a large email within the output budget, code and link first", async () => {
+    const html = `<p>Your code is 482913</p>${'<a href="https://app.tidewater.app/x">"x"</a>'.repeat(2000)}`;
+    const get = vi.fn(async () =>
+      makeEmail("e1", { html, text: `Your code is 482913. ${"y".repeat(20_000)}` })
+    );
+    const tools = getRegisteredTools(emailClient({ emails: { get } as never }));
+    const result = await tools.get_email.handler({ requestId: "e1", includeHtml: true });
+    const text = result.content[0].text;
+    expect(text.length).toBeLessThanOrEqual(32_768);
+    const detail = JSON.parse(text);
+    expect(Object.keys(detail).slice(0, 2)).toEqual(["code", "link"]);
+    expect(detail.code).toBe("482913");
+    expect(detail.htmlTruncated).toBe(true);
+    expect(html.startsWith(detail.html)).toBe(true);
+    expect(detail.html.length).toBeGreaterThan(1000);
+    expect(detail.htmlSize).toBe(html.length);
+    expect(detail.textTruncated).toBe(true);
+  });
+
+  it("stays valid JSON when the headers and links alone are too big", async () => {
+    const headers = Object.fromEntries(
+      Array.from({ length: 60 }, (_, i) => [`x-ms-exchange-header-${i}`, "h".repeat(250)])
+    );
+    const links = Array.from(
+      { length: 20 },
+      (_, i) => `https://u123.ct.sendgrid.net/ls/click?upn=${i}${"q".repeat(480)}`
+    );
+    const big = {
+      ...makeEmail("e1", {
+        text: `Your code is 482913. ${links.join(" ")} ${"t".repeat(10_000)}`,
+        html: `<p>Your code is 482913</p>${links.map((url) => `<a href="${url}">Open ${url}</a>`).join("")}`,
+      }),
+      headers,
+    };
+    const get = vi.fn(async () => big);
+    const list = vi.fn(async () => [big, big]);
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get } as never,
+        requests: { get, list } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    for (const includeHtml of [false, true]) {
+      const text = (await tools.get_email.handler({ requestId: "e1", includeHtml })).content[0]
+        .text;
+      expect(text.length).toBeLessThanOrEqual(32_768);
+      const detail = JSON.parse(text);
+      expect(Object.keys(detail).slice(0, 2)).toEqual(["code", "link"]);
+      expect(detail.code).toBe("482913");
+      expect(detail.headersOmitted).toBe("60 headers left out to fit the output");
+    }
+
+    const single = (await tools.get_request.handler({ requestId: "e1" })).content[0].text;
+    expect(single.length).toBeLessThanOrEqual(32_768);
+    expect(JSON.parse(single).email.subject).toBe("Confirm your email");
+
+    const listed = JSON.parse(
+      (await tools.list_requests.handler({ endpointSlug: "acme", limit: 25 })).content[0].text
+    );
+    const items = Array.isArray(listed) ? listed : listed.items;
+    expect(items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  /** Valid JSON within the output cap, with no lone surrogate that strict parsers reject. */
+  function expectValidOutput(result: { content: { text: string }[] }) {
+    const text = result.content[0].text;
+    expect(text.length).toBeLessThanOrEqual(32_768);
+    expect(text).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
+    return JSON.parse(text);
+  }
+
+  it("stays valid JSON for emails no step but the last can shrink", async () => {
+    const address = (i: number) => ({
+      name: `Recipient ${i} ${"n".repeat(60)}`,
+      address: `r${i}@example.com`,
+    });
+    const attachment = (i: number) => ({
+      filename: `report-${i}-${"f".repeat(80)}.pdf`,
+      contentType: "application/pdf",
+      size: 1000,
+      contentId: null,
+      inline: false,
+    });
+    const crowded = makeEmail("e1", {
+      to: Array.from({ length: 100 }, (_, i) => address(i)),
+      cc: Array.from({ length: 100 }, (_, i) => address(i + 100)),
+      attachments: Array.from({ length: 100 }, (_, i) => attachment(i)) as never,
+    });
+    const longLabel = makeEmail("e2", {
+      html: `<p>Your code is 482913</p><a href="https://app.tidewater.app/digest">${"word ".repeat(9000)}</a>`,
+      text: `Your code is 482913. ${"t".repeat(5000)}`,
+    });
+    const get = vi.fn(async (id: string) => (id === "e1" ? crowded : longLabel));
+    const list = vi.fn(async () => [crowded, crowded]);
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get } as never,
+        requests: { get, list } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    for (const requestId of ["e1", "e2"]) {
+      for (const includeHtml of [false, true]) {
+        const detail = expectValidOutput(await tools.get_email.handler({ requestId, includeHtml }));
+        expect(detail.code).toBe("482913");
+      }
+      expectValidOutput(await tools.get_request.handler({ requestId }));
+    }
+    const crowdedDetail = expectValidOutput(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(crowdedDetail.to).toHaveLength(5);
+    expect(crowdedDetail.toTotal).toBe(100);
+
+    const listed = expectValidOutput(
+      await tools.list_requests.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect((Array.isArray(listed) ? listed : listed.items).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("bounds a long sender list in request tools and resources", async () => {
+    const senders = Array.from({ length: 100 }, (_, i) => ({
+      name: `Sender ${i} ${"\u0001".repeat(150)}${"s".repeat(150)}`,
+      address: `s${i}@example.com`,
+    }));
+    const crowded = { ...makeEmail("f1", { from: senders }), receivedAt: Date.now() };
+    const list = vi.fn(async () => [crowded]);
+    const get = vi.fn(async () => crowded);
+    const client = emailClient({ requests: { list, get } as unknown as WebhooksCC["requests"] });
+    const tools = getRegisteredTools(client);
+
+    const single = expectValidOutput(await tools.get_request.handler({ requestId: "f1" }));
+    expect(single.email.fromTotal).toBe(100);
+    expect(single.email.subject).toBe("Confirm your email");
+    const listed = expectValidOutput(
+      await tools.list_requests.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect((Array.isArray(listed) ? listed : listed.items).length).toBe(1);
+    const waited = expectValidOutput(
+      await tools.wait_for_requests.handler({ endpointSlug: "acme", count: 1, timeout: "5s" })
+    );
+    expect(waited.requests).toHaveLength(1);
+
+    const server = new McpServer({ name: "test", version: "0.0.0" });
+    const resourceSpy = vi.spyOn(server, "registerResource");
+    registerResources(server, client);
+    const details = resourceSpy.mock.calls.find((call) => call[0] === "request-details")!;
+    const read = (await (
+      details[3] as unknown as (
+        uri: URL,
+        variables: Record<string, string>
+      ) => Promise<{ contents: { text: string }[] }>
+    )(new URL("webhooks://request/f1"), { id: "f1" })) as { contents: { text: string }[] };
+    expect(read.contents[0].text.length).toBeLessThanOrEqual(32_768);
+  });
+
+  it("keeps the whole text once the other fields are gone, and drops a link too long to use", async () => {
+    // Control characters print as six characters each, so five of these per list are still too many.
+    const person = (i: number) => ({
+      name: `${i} ${"\u0001".repeat(1000)}`,
+      address: `p${i}@example.com`,
+    });
+    const people = Array.from({ length: 100 }, (_, i) => person(i));
+    const text = `Your code is 482913. ${"w".repeat(3300)}`;
+    const crowded = makeEmail("c1", {
+      to: people,
+      cc: people,
+      replyTo: people,
+      sender: people,
+      text,
+    });
+    const hugeLink = makeEmail("l1", {
+      text: `Your code is 482913. Open https://app.tidewater.app/confirm?t=${"z".repeat(256_000)}`,
+      html: null,
+    });
+    const get = vi.fn(async (id: string) => (id === "c1" ? crowded : hugeLink));
+    const list = vi.fn(async () => [hugeLink]);
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get, list } as never,
+        requests: { get } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    const detail = expectValidOutput(
+      await tools.get_email.handler({ requestId: "c1", includeHtml: false })
+    );
+    expect(detail.text).toBe(text);
+    expect(detail.trimmed).toEqual(expect.any(String));
+    const request = expectValidOutput(await tools.get_request.handler({ requestId: "c1" }));
+    expect(request.email.text).toBe(text);
+
+    const linked = expectValidOutput(
+      await tools.get_email.handler({ requestId: "l1", includeHtml: false })
+    );
+    expect(linked.subject).toBe("Confirm your email");
+    expect(linked.link).toBeNull();
+    expect(linked.linkOmitted).toMatch(/characters long/);
+    expect(linked.code).toBe("482913");
+    const summaries = expectValidOutput(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].link).toBeNull();
+  });
+
+  it("returns a large email with codes and links turned off", async () => {
+    const big = makeEmail("x1", {
+      subject: "\u0001".repeat(4000),
+      from: [{ name: "\u0001".repeat(1000), address: "no-reply@tidewater.app" }],
+      text: `Your code is 482913. ${"t".repeat(20_000)}`,
+    });
+    const get = vi.fn(async () => big);
+    const waitFor = vi.fn(async () => big);
+    const tools = getRegisteredTools(emailClient({ emails: { get, waitFor } as never }, false));
+    for (const includeHtml of [false, true]) {
+      const results = [
+        await tools.get_email.handler({ requestId: "x1", includeHtml }),
+        await tools.wait_for_email.handler({ endpointSlug: "acme", timeout: "30s", includeHtml }),
+      ];
+      for (const result of results) {
+        expect(result.isError).toBeFalsy();
+        const detail = expectValidOutput(result);
+        expect(detail.id).toBe("x1");
+        expect(detail).not.toHaveProperty("code");
+        expect(detail).not.toHaveProperty("link");
+      }
+    }
+  });
+
+  it("keeps a list_emails line short when the subject and sender are huge", async () => {
+    const big = makeEmail("s1", {
+      subject: "\u0001".repeat(4000),
+      from: [{ name: "\u0001".repeat(1000), address: "\u0001".repeat(1000) }],
+      text: `Open https://app.tidewater.app/confirm?t=${"z".repeat(7900)}`,
+    });
+    const list = vi.fn(async () => [big]);
+    const tools = getRegisteredTools(emailClient({ emails: { list } as never }));
+    const summaries = expectValidOutput(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].subject).toHaveLength(1000);
+  });
+
+  it("never cuts an email's text in the middle of an emoji", async () => {
+    const get = vi.fn(async () =>
+      makeEmail("e1", { text: `${"a".repeat(7999)}${"😀".repeat(10)}` })
+    );
+    const tools = getRegisteredTools(emailClient({ emails: { get } as never }));
+    const detail = expectValidOutput(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(detail.text).toBe("a".repeat(7999));
+    expect(detail.textTruncated).toBe(true);
+  });
+
+  it("keeps wait_for_requests valid JSON when the requests are too big together", async () => {
+    const newsletters = Array.from({ length: 4 }, (_, i) => ({
+      ...makeEmail(`n${i}`, { text: `Issue ${i} ${"x".repeat(10_000)}` }),
+      receivedAt: Date.now() + i,
+    }));
+    const list = vi.fn(async () => newsletters);
+    const tools = getRegisteredTools(
+      emailClient({ requests: { list } as unknown as WebhooksCC["requests"] })
+    );
+    const result = expectValidOutput(
+      await tools.wait_for_requests.handler({ endpointSlug: "acme", count: 4, timeout: "5s" })
+    );
+    expect(result.truncated).toBe(true);
+    expect(result.returned).toBe(result.requests.length);
+    expect(result.requests.length).toBeGreaterThanOrEqual(1);
+    expect(result.complete).toBe(true);
+  });
+
+  it("waits 30 seconds by default, under the usual MCP client timeout", () => {
+    const tools = getRegisteredTools(emailClient());
+    const schema = z.object(tools.wait_for_email.schema as z.ZodRawShape);
+    expect(schema.parse({ endpointSlug: "acme" }).timeout).toBe("30s");
+  });
+
+  it("gets one email, trims long text and leaves out the HTML unless asked", async () => {
+    const get = vi.fn(async () => makeEmail("e1", { text: "x".repeat(9000) + " code 482913" }));
+    const tools = getRegisteredTools(emailClient({ emails: { get } as never }));
+    const detail = parseJsonResult(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(detail.endpoint).toEqual({ slug: "acme", name: "Acme signups" });
+    expect(detail.text).toHaveLength(8000);
+    expect(detail.textTruncated).toBe(true);
+    expect(detail).not.toHaveProperty("html");
+    expect(detail.htmlSize).toBe("<p>Your code is 482913</p>".length);
+    expect(detail.id).toBe("e1");
+    expect(detail.code).toBe("482913");
+  });
+
+  it("needs exactly one of requestId and endpointSlug, and reports a missing email", async () => {
+    const latest = vi.fn(async () => null);
+    const tools = getRegisteredTools(emailClient({ emails: { latest } as never }));
+    const both = await tools.get_email.handler({
+      requestId: "e1",
+      endpointSlug: "acme",
+      includeHtml: false,
+    });
+    expect(both.isError).toBe(true);
+    const none = await tools.get_email.handler({ endpointSlug: "acme", includeHtml: false });
+    expect(none.isError).toBe(true);
+    expect(JSON.parse(none.content[0].text).code).toBe("not_found");
+  });
+
+  it("waits for an email with the given criteria", async () => {
+    const waitFor = vi.fn(async () => makeEmail("e2"));
+    const tools = getRegisteredTools(emailClient({ emails: { waitFor } as never }));
+    const detail = parseJsonResult(
+      await tools.wait_for_email.handler({
+        endpointSlug: "acme",
+        tag: "run-1",
+        subject: "Confirm",
+        timeout: "60s",
+        includeHtml: true,
+      })
+    );
+    expect(waitFor).toHaveBeenCalledWith(
+      "acme",
+      expect.objectContaining({ tag: "run-1", subject: "Confirm", timeout: "60s" })
+    );
+    expect(detail.html).toBe("<p>Your code is 482913</p>");
+  });
+
+  it("sends a test email and reports its address", async () => {
+    const sendTest = vi.fn(async () => ({ status: "captured", requestId: "e3" }));
+    const tools = getRegisteredTools(emailClient({ emails: { sendTest } as never }));
+    expect(
+      parseJsonResult(await tools.send_test_email.handler({ slug: "acme", tag: "t1" }))
+    ).toEqual({ status: "captured", requestId: "e3", address: "acme+t1@mailhooks.cc" });
+  });
+
+  it("configures forwarding and reads or rotates the secret", async () => {
+    const forwarding = {
+      configure: vi.fn(async () => ({
+        id: "ep_1",
+        slug: "acme",
+        createdAt: 1,
+        forwardEnabled: true,
+        forwardUrl: "https://example.com/in",
+        hasForwardSecret: true,
+      })),
+      secret: vi.fn(async () => "whsec_a"),
+      rotateSecret: vi.fn(async () => "whsec_b"),
+      test: vi.fn(async () => ({ status: 204, delivered: true })),
+      deliveries: vi.fn(async () => []),
+      emailDeliveries: vi.fn(async () => [{ id: "d1" }]),
+      redeliver: vi.fn(async () => ({ id: "d2" })),
+    };
+    const tools = getRegisteredTools(emailClient({ forwarding } as never));
+    expect(
+      parseJsonResult(
+        await tools.configure_forwarding.handler({
+          slug: "acme",
+          url: "https://example.com/in",
+          enabled: true,
+        })
+      )
+    ).toEqual({
+      slug: "acme",
+      forwardEnabled: true,
+      forwardUrl: "https://example.com/in",
+      hasForwardSecret: true,
+    });
+    expect(
+      parseJsonResult(await tools.get_forwarding_secret.handler({ slug: "acme", rotate: false }))
+    ).toEqual({ secret: "whsec_a", rotated: false });
+    expect(
+      parseJsonResult(await tools.get_forwarding_secret.handler({ slug: "acme", rotate: true }))
+    ).toEqual({ secret: "whsec_b", rotated: true });
+    expect(parseJsonResult(await tools.test_forwarding.handler({ slug: "acme" }))).toEqual({
+      status: 204,
+      delivered: true,
+    });
+    expect(
+      parseJsonResult(await tools.list_deliveries.handler({ requestId: "e1", limit: 5 }))
+    ).toEqual([{ id: "d1" }]);
+    await tools.list_deliveries.handler({ endpointSlug: "acme", limit: 10 });
+    expect(forwarding.deliveries).toHaveBeenCalledWith("acme", { limit: 10 });
+    expect((await tools.list_deliveries.handler({ limit: 5 })).isError).toBe(true);
+    expect(parseJsonResult(await tools.redeliver_email.handler({ requestId: "e1" }))).toEqual({
+      id: "d2",
+    });
+  });
+
+  it("leaves an email's raw message and HTML out of request tools", async () => {
+    const big = makeEmail("e1", {
+      html: "<p>x</p>".repeat(30_000),
+      text: "z".repeat(20_000),
+    });
+    const list = vi.fn(async () => [big, makeRequest({ id: "h1", kind: "http" })]);
+    const get = vi.fn(async () => big);
+    const tools = getRegisteredTools(
+      emailClient({ requests: { list, get } as unknown as WebhooksCC["requests"] })
+    );
+    const listed = parseJsonResult(
+      await tools.list_requests.handler({ endpointSlug: "acme", limit: 25, kind: undefined })
+    );
+    expect(listed).toHaveLength(2);
+    const [email, http] = listed;
+    expect(email).not.toHaveProperty("body");
+    expect(email).not.toHaveProperty("bodyRaw");
+    expect(email.rawMessageOmitted).toEqual(expect.any(String));
+    expect(email.size).toBe(big.size);
+    expect(email.email.subject).toBe("Confirm your email");
+    expect(email.email).not.toHaveProperty("html");
+    expect(email.email.htmlSize).toBe(big.email.html!.length);
+    expect(email.email.text).toHaveLength(8000);
+    expect(email.email.textTruncated).toBe(true);
+    expect(http.body).toBeDefined();
+
+    const single = await tools.get_request.handler({ requestId: "e1" });
+    expect(single.content[0].text.length).toBeLessThanOrEqual(32_768);
+    expect(JSON.parse(single.content[0].text).email.subject).toBe("Confirm your email");
+
+    await tools.list_requests.handler({ endpointSlug: "acme", limit: 25, kind: "email" });
+    expect(list).toHaveBeenLastCalledWith("acme", expect.objectContaining({ kind: "email" }));
+  });
+
+  it("leaves an email's raw message and HTML out of resources too", async () => {
+    const email = makeEmail("e1");
+    const client = emailClient({
+      requests: {
+        list: vi.fn(async () => [email]),
+        get: vi.fn(async () => email),
+      } as unknown as WebhooksCC["requests"],
+    });
+    const server = new McpServer({ name: "test", version: "0.0.0" });
+    const resourceSpy = vi.spyOn(server, "registerResource");
+    registerResources(server, client);
+    const handlers = Object.fromEntries(
+      resourceSpy.mock.calls.map((call) => [
+        call[0],
+        call[3] as unknown as (
+          uri: URL,
+          variables: Record<string, string>
+        ) => Promise<{ contents: { text: string }[] }>,
+      ])
+    );
+    const recent = await handlers["endpoint-recent-requests"](
+      new URL("webhooks://endpoint/acme/recent"),
+      { slug: "acme" }
+    );
+    const details = await handlers["request-details"](new URL("webhooks://request/e1"), {
+      id: "e1",
+    });
+    for (const request of [
+      JSON.parse(recent.contents[0].text).requests[0],
+      JSON.parse(details.contents[0].text),
+    ]) {
+      expect(request).not.toHaveProperty("body");
+      expect(request.email).not.toHaveProperty("html");
+      expect(request.email.subject).toBe("Confirm your email");
+    }
+  });
+});
 
 describe("agent registration tools", () => {
   it("registers the unauthenticated on-ramp tools", () => {

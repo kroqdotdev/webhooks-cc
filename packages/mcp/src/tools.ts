@@ -22,11 +22,28 @@ import {
   verifySignature,
   WebhooksCC,
   WebhooksCCError,
+  extractCode,
+  extractLink,
+  type EmailRequest,
   type Request,
   type VerifyProvider,
 } from "@webhooks-cc/sdk";
+import {
+  capExtracts,
+  capLists,
+  compactRequest,
+  cutEmailText,
+  cutStringToFit,
+  jsonSize,
+  keepOnly,
+  MAX_OUTPUT,
+  omitHeaders,
+  shrinkToFit,
+  sliceText,
+  TEXT_FLOOR,
+} from "./compact";
 
-const MAX_BODY_SIZE = 32_768;
+const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 const TIME_SEPARATOR = " — ";
 
@@ -45,6 +62,12 @@ const httpUrlSchema = z
     { message: "Only http and https URLs are supported" }
   );
 const methodSchema = z.enum(HTTP_METHODS).default("POST").describe("HTTP method (default: POST)");
+const kindSchema = z
+  .enum(["http", "email"])
+  .optional()
+  .describe('Only HTTP requests ("http") or only captured emails ("email")');
+/** With a tag, subject or sender filter, `list_emails` searches this many of the newest emails. */
+const EMAIL_SCAN_LIMIT = 100;
 const durationOrTimestampSchema = z.union([z.string(), z.number()]);
 const ruleConditionSchema = z
   .object({
@@ -183,6 +206,30 @@ function serializeJson(value: unknown, limit = MAX_BODY_SIZE): string {
   }
 
   return full.slice(0, limit) + `\n... [truncated, ${full.length} chars total]`;
+}
+
+/**
+ * `value` with the array `value[key]` cut to as many leading items as fit
+ * the output, the way serializeJson cuts a top-level array, so an object
+ * wrapping a list stays valid JSON.
+ */
+function fitArrayField(value: Record<string, unknown>, key: string): Record<string, unknown> {
+  const items = value[key];
+  if (!Array.isArray(items) || jsonSize(value) <= MAX_BODY_SIZE) return value;
+  const cut = (count: number) => ({
+    ...value,
+    [key]: items.slice(0, count),
+    truncated: true,
+    returned: count,
+  });
+  let low = 0;
+  let high = items.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (jsonSize(cut(mid)) <= MAX_BODY_SIZE) low = mid;
+    else high = mid - 1;
+  }
+  return cut(low);
 }
 
 function jsonContent(value: unknown): ToolResult {
@@ -429,6 +476,136 @@ async function summarizeResponse(response: Response): Promise<{
   };
 }
 
+interface EmailEndpointView {
+  endpoint: { slug: string; name: string | null };
+  /** Whether codes and links may be shown for the endpoint's emails (its owner can turn that off). */
+  includeExtracts: boolean;
+}
+
+async function emailEndpointView(client: WebhooksCC, slug: string): Promise<EmailEndpointView> {
+  const endpoint = await client.endpoints.get(slug);
+  return {
+    endpoint: { slug: endpoint.slug, name: endpoint.name ?? null },
+    includeExtracts: endpoint.showEmailExtracts !== false,
+  };
+}
+
+function emailSlugFromAddress(address: string): string {
+  const local = address.slice(0, Math.max(0, address.lastIndexOf("@")));
+  return local.split("+")[0].toLowerCase();
+}
+
+/** A main link in `list_emails` longer than this is left out, so one email cannot fill the list. */
+const MAX_SUMMARY_LINK = 8_000;
+
+/** `link`, or null and a note with its length when it is longer than `max`. */
+function boundedLink(link: string | null | undefined, max: number) {
+  if (link == null || link.length <= max) return { link: link ?? null };
+  return {
+    link: null,
+    linkOmitted: `The main link is ${link.length} characters long, too long for the output`,
+  };
+}
+
+/** Longest subject and sender kept in a `list_emails` line, so one email cannot fill the list. */
+const MAX_SUMMARY_FIELD = 1_000;
+
+/** One line per email for list output. */
+function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
+  const from = email.email.from[0];
+  const sender = from ? (from.name ? `${from.name} <${from.address ?? ""}>` : from.address) : null;
+  const subject = email.email.subject;
+  return {
+    id: email.id,
+    receivedAt: new Date(email.receivedAt).toISOString(),
+    address: email.path,
+    tag: email.email.tag,
+    subject: subject === null ? null : sliceText(subject, MAX_SUMMARY_FIELD),
+    from: sender == null ? null : sliceText(sender, MAX_SUMMARY_FIELD),
+    ...(includeExtracts
+      ? { code: extractCode(email), ...boundedLink(extractLink(email), MAX_SUMMARY_LINK) }
+      : {}),
+    attachments: email.email.attachments.length,
+  };
+}
+
+/** Fields of an email detail kept when it has to shrink to its essentials. */
+const ESSENTIAL_DETAIL_FIELDS = [
+  "code",
+  "link",
+  "id",
+  "endpoint",
+  "receivedAt",
+  "address",
+  "tag",
+  "subject",
+  "from",
+  "size",
+  "test",
+  "text",
+  "textTruncated",
+  "htmlSize",
+  "html",
+  "htmlTruncated",
+];
+
+/**
+ * An email as `get_email` and `wait_for_email` return it: the forwarding
+ * JSON's data, trimmed to the output budget so it stays valid JSON. The code
+ * and link come first and the text is cut at MAX_EMAIL_TEXT. If that is
+ * still too big, the headers go first, then extra codes and links, then the
+ * extra entries of the address and attachment lists; then the HTML (when
+ * asked for) is cut and the text is cut down to TEXT_FLOOR characters; then
+ * only the essentials stay, a main link too long to use is left out, and the
+ * text gets what room is left; and at last the subject is cut, so it always
+ * fits.
+ */
+function emailDetail(
+  client: WebhooksCC,
+  email: EmailRequest,
+  view: EmailEndpointView,
+  includeHtml: boolean
+) {
+  const { data } = client.emails.toJson(email, {
+    endpoint: view.endpoint,
+    includeExtracts: view.includeExtracts,
+  });
+  const { html, text: fullText, ...rest } = data;
+  const { text, cut } = cutEmailText(fullText ?? null);
+  const restoreText = () => {
+    detail.text = text;
+    if (cut) detail.textTruncated = true;
+    else delete detail.textTruncated;
+  };
+  const detail: Record<string, unknown> = {
+    ...(view.includeExtracts ? { code: extractCode(email), link: extractLink(email) } : {}),
+    ...rest,
+    text,
+    ...(cut ? { textTruncated: true } : {}),
+    htmlSize: html?.length ?? 0,
+    ...(includeHtml && html !== null ? { html } : {}),
+  };
+  shrinkToFit(detail, MAX_BODY_SIZE, [
+    () => omitHeaders(detail),
+    () => capExtracts(detail),
+    () => capLists(detail),
+    () => cutStringToFit(detail, detail, "html", "htmlTruncated", MAX_BODY_SIZE),
+    () => cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE, TEXT_FLOOR),
+    // Down to the essentials (and without a main link too long to use) there
+    // may be room for more of the text again.
+    () => {
+      keepOnly(detail, ESSENTIAL_DETAIL_FIELDS);
+      if (view.includeExtracts) {
+        Object.assign(detail, boundedLink(detail.link as string | null, MAX_BODY_SIZE / 2));
+      }
+      restoreText();
+      cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE);
+    },
+    () => cutStringToFit(detail, detail, "subject", "subjectTruncated", MAX_BODY_SIZE),
+  ]);
+  return detail;
+}
+
 /** Register all webhook tools on an MCP server instance. */
 export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
@@ -606,7 +783,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "update_endpoint",
-    "Update an endpoint name, mock response, conditional response rules, or signing configuration.",
+    "Update an endpoint name, mock response, conditional response rules, signing configuration, or whether codes and links are picked out of its emails.",
     {
       slug: z.string().describe("The endpoint slug to update"),
       name: z.string().optional().describe("New display name"),
@@ -643,6 +820,10 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .describe(
           "Custom signature header name (only for generic-hmac provider), or null to clear"
         ),
+      showEmailExtracts: z
+        .boolean()
+        .optional()
+        .describe("Pick codes and links out of emails (dashboard and forwarded JSON). Owner only."),
     },
     withErrorHandling(
       async ({
@@ -654,6 +835,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         signingProvider,
         signingSecret,
         signingHeader,
+        showEmailExtracts,
       }) => {
         const endpoint = await client.endpoints.update(slug, {
           name,
@@ -663,6 +845,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
           signingProvider,
           signingSecret,
           signingHeader,
+          showEmailExtracts,
         });
         return jsonContent(endpoint);
       }
@@ -796,15 +979,16 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "list_requests",
-    "List recent captured requests for an endpoint.",
+    "List recent captured requests for an endpoint, HTTP requests and emails together (filter with kind). For emails, list_emails is shorter.",
     {
       endpointSlug: z.string().describe("The endpoint slug"),
       limit: z.number().int().min(1).max(100).default(25).describe("Max requests to return"),
       since: z.number().optional().describe("Only return requests after this timestamp in ms"),
+      kind: kindSchema,
     },
-    withErrorHandling(async ({ endpointSlug, limit, since }) => {
-      const requests = await client.requests.list(endpointSlug, { limit, since });
-      return jsonContent(requests);
+    withErrorHandling(async ({ endpointSlug, limit, since, kind }) => {
+      const requests = await client.requests.list(endpointSlug, { limit, since, kind });
+      return jsonContent(requests.map(compactRequest));
     })
   );
 
@@ -814,6 +998,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     {
       slug: z.string().optional().describe("Filter to a specific endpoint slug"),
       method: z.string().optional().describe("Filter by HTTP method"),
+      kind: kindSchema,
       q: z.string().optional().describe("Free-text search across path, body, and headers"),
       from: durationOrTimestampSchema
         .optional()
@@ -825,10 +1010,11 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
       offset: z.number().int().min(0).max(10_000).default(0).describe("Result offset"),
       order: z.enum(["asc", "desc"]).default("desc").describe("Sort order by received time"),
     },
-    withErrorHandling(async ({ slug, method, q, from, to, limit, offset, order }) => {
+    withErrorHandling(async ({ slug, method, kind, q, from, to, limit, offset, order }) => {
       const results = await client.requests.search({
         slug,
         method,
+        kind,
         q,
         from,
         to,
@@ -836,7 +1022,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         offset,
         order,
       });
-      return jsonContent(results);
+      return jsonContent(results.map(compactRequest));
     })
   );
 
@@ -846,6 +1032,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     {
       slug: z.string().optional().describe("Filter to a specific endpoint slug"),
       method: z.string().optional().describe("Filter by HTTP method"),
+      kind: kindSchema,
       q: z.string().optional().describe("Free-text search across path, body, and headers"),
       from: durationOrTimestampSchema
         .optional()
@@ -854,8 +1041,8 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .optional()
         .describe('End time as a timestamp or duration like "1h" or "7d"'),
     },
-    withErrorHandling(async ({ slug, method, q, from, to }) => {
-      const count = await client.requests.count({ slug, method, q, from, to });
+    withErrorHandling(async ({ slug, method, kind, q, from, to }) => {
+      const count = await client.requests.count({ slug, method, kind, q, from, to });
       return jsonContent({ count });
     })
   );
@@ -866,7 +1053,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     { requestId: z.string().describe("The request ID") },
     withErrorHandling(async ({ requestId }) => {
       const request = await client.requests.get(requestId);
-      return jsonContent(request);
+      return jsonContent(compactRequest(request));
     })
   );
 
@@ -884,7 +1071,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     },
     withErrorHandling(async ({ endpointSlug, timeout, pollInterval }) => {
       const request = await client.requests.waitFor(endpointSlug, { timeout, pollInterval });
-      return jsonContent(request);
+      return jsonContent(compactRequest(request));
     })
   );
 
@@ -909,7 +1096,9 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         pollInterval,
         method,
       });
-      return jsonContent(result);
+      return jsonContent(
+        fitArrayField({ ...result, requests: result.requests.map(compactRequest) }, "requests")
+      );
     })
   );
 
@@ -1315,6 +1504,205 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         });
       }
     )
+  );
+
+  server.tool(
+    "list_emails",
+    "List the emails an endpoint received at its mailhooks.cc address, newest first: subject, sender, tag, and the one-time code and main link found in each.",
+    {
+      endpointSlug: z.string().describe("The endpoint slug"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(25)
+        .describe(
+          `Max emails to return. With tag, subject or from, the newest ${EMAIL_SCAN_LIMIT} emails are searched.`
+        ),
+      since: z.number().optional().describe("Only emails received after this timestamp in ms"),
+      tag: z
+        .string()
+        .optional()
+        .describe("Only emails sent to {slug}+{tag}@mailhooks.cc (exact, case-sensitive)"),
+      subject: z.string().optional().describe("Only emails whose subject contains this text"),
+      from: z.string().optional().describe("Only emails from this address (case-insensitive)"),
+    },
+    withErrorHandling(async ({ endpointSlug, limit, since, tag, subject, from }) => {
+      // The SDK filters after listing, so a filter has to look past the newest `limit` emails.
+      const filtered = tag !== undefined || subject !== undefined || from !== undefined;
+      const scan = filtered ? Math.max(limit, EMAIL_SCAN_LIMIT) : limit;
+      const [emails, view] = await Promise.all([
+        client.emails.list(endpointSlug, { limit: scan, since, tag, subject, from }),
+        emailEndpointView(client, endpointSlug),
+      ]);
+      return jsonContent(
+        emails.slice(0, limit).map((email) => summarizeEmail(email, view.includeExtracts))
+      );
+    })
+  );
+
+  server.tool(
+    "get_email",
+    "Get one captured email: by requestId, or the newest at an endpoint (optionally with a tag). Returns the parsed message with its one-time code and main link.",
+    {
+      requestId: z.string().optional().describe("The email's request ID"),
+      endpointSlug: z
+        .string()
+        .optional()
+        .describe("Get the newest email at this endpoint instead (with requestId unset)"),
+      tag: z.string().optional().describe("With endpointSlug: only emails sent to this +tag"),
+      includeHtml: z
+        .boolean()
+        .default(false)
+        .describe("Include the HTML part (default: false, only its size)"),
+    },
+    withErrorHandling(async ({ requestId, endpointSlug, tag, includeHtml }) => {
+      if ((requestId === undefined) === (endpointSlug === undefined)) {
+        throw new Error("Pass exactly one of requestId or endpointSlug");
+      }
+      const email = requestId
+        ? await client.emails.get(requestId)
+        : await client.emails.latest(endpointSlug!, { tag });
+      if (!email) {
+        throw new NotFoundError(
+          `No email at ${endpointSlug}${tag ? ` with tag "${tag}"` : ""} yet. Send one with send_test_email, or wait with wait_for_email.`
+        );
+      }
+      const view = await emailEndpointView(
+        client,
+        endpointSlug ?? emailSlugFromAddress(email.path)
+      );
+      return jsonContent(emailDetail(client, email, view, includeHtml));
+    })
+  );
+
+  server.tool(
+    "wait_for_email",
+    "Wait for an email to arrive at an endpoint (for example after triggering a signup), then return it with its one-time code and main link. Use a tag per run to find your own email.",
+    {
+      endpointSlug: z.string().describe("The endpoint slug"),
+      tag: z.string().optional().describe("Only emails sent to {slug}+{tag}@mailhooks.cc"),
+      subject: z.string().optional().describe("Only emails whose subject contains this text"),
+      from: z.string().optional().describe("Only emails from this address (case-insensitive)"),
+      timeout: durationOrTimestampSchema
+        .default("30s")
+        .describe(
+          'How long to wait (default "30s"). Keep it under your MCP client\'s request timeout, often 60 seconds.'
+        ),
+      since: z
+        .number()
+        .optional()
+        .describe("Only emails received after this timestamp in ms (default: five minutes ago)"),
+      includeHtml: z.boolean().default(false).describe("Include the HTML part (default: false)"),
+    },
+    withErrorHandling(async ({ endpointSlug, tag, subject, from, timeout, since, includeHtml }) => {
+      const [email, view] = await Promise.all([
+        client.emails.waitFor(endpointSlug, { tag, subject, from, timeout, since }),
+        emailEndpointView(client, endpointSlug),
+      ]);
+      return jsonContent(emailDetail(client, email, view, includeHtml));
+    })
+  );
+
+  server.tool(
+    "send_test_email",
+    "Deliver a sample email (with a 6-digit code and a link) to an endpoint, optionally to a +tag address. It counts as one request and skips SMTP, so sender checks do not run on it.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      tag: z.string().optional().describe("Deliver to {slug}+{tag}@mailhooks.cc"),
+    },
+    withErrorHandling(async ({ slug, tag }) => {
+      const result = await client.emails.sendTest(slug, { tag });
+      return jsonContent({ ...result, address: client.emails.address(slug, tag) });
+    })
+  );
+
+  server.tool(
+    "configure_forwarding",
+    "Set the URL captured emails are forwarded to (as signed JSON) and turn forwarding on or off. Owner only. Saving the first URL creates the signing secret.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      url: httpUrlSchema
+        .nullable()
+        .optional()
+        .describe("https URL on a public host name, or null to remove it (forwarding must be off)"),
+      enabled: z
+        .boolean()
+        .optional()
+        .describe("Turn forwarding on (needs a URL) or off (fails deliveries still waiting)"),
+    },
+    withErrorHandling(async ({ slug, url, enabled }) => {
+      const endpoint = await client.forwarding.configure(slug, { url, enabled });
+      return jsonContent({
+        slug: endpoint.slug,
+        forwardEnabled: endpoint.forwardEnabled ?? false,
+        forwardUrl: endpoint.forwardUrl ?? null,
+        hasForwardSecret: endpoint.hasForwardSecret ?? false,
+      });
+    })
+  );
+
+  server.tool(
+    "get_forwarding_secret",
+    "Read (or with rotate: true, replace) the whsec_ secret forwarded emails are signed with. Owner only. Treat the value as a credential: put it in the handler's environment, not in code.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      rotate: z
+        .boolean()
+        .default(false)
+        .describe("Replace the secret; every delivery from now on uses the new one"),
+    },
+    withErrorHandling(async ({ slug, rotate }) => {
+      const secret = rotate
+        ? await client.forwarding.rotateSecret(slug)
+        : await client.forwarding.secret(slug);
+      return jsonContent({ secret, rotated: rotate });
+    })
+  );
+
+  server.tool(
+    "test_forwarding",
+    "Post the endpoint's newest email (or a sample) to its forwarding URL once and report what the server answered. Works with forwarding on or off; nothing is retried or logged.",
+    { slug: z.string().describe("The endpoint slug") },
+    withErrorHandling(async ({ slug }) => {
+      return jsonContent(await client.forwarding.test(slug));
+    })
+  );
+
+  server.tool(
+    "list_deliveries",
+    "List forwarding deliveries: an endpoint's latest (endpointSlug), or every try of one email (requestId).",
+    {
+      endpointSlug: z.string().optional().describe("List the endpoint's latest deliveries"),
+      requestId: z.string().optional().describe("List every delivery and try of this email"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .default(5)
+        .describe("With endpointSlug: max deliveries"),
+    },
+    withErrorHandling(async ({ endpointSlug, requestId, limit }) => {
+      if ((requestId === undefined) === (endpointSlug === undefined)) {
+        throw new Error("Pass exactly one of endpointSlug or requestId");
+      }
+      return jsonContent(
+        requestId
+          ? await client.forwarding.emailDeliveries(requestId)
+          : await client.forwarding.deliveries(endpointSlug!, { limit })
+      );
+    })
+  );
+
+  server.tool(
+    "redeliver_email",
+    "Forward a captured email again with the endpoint's current URL and secret. Owner only; fails while forwarding is off.",
+    { requestId: z.string().describe("The email's request ID") },
+    withErrorHandling(async ({ requestId }) => {
+      return jsonContent(await client.forwarding.redeliver(requestId));
+    })
   );
 
   server.tool(

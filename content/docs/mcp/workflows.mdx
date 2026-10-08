@@ -3,7 +3,7 @@ title: "Agent Workflows"
 description: "Multi-turn conversation examples showing how AI agents use webhooks.cc MCP tools to create endpoints, inspect payloads, debug integrations, and verify webhook flows."
 section: mcp
 order: 3
-lastUpdated: 2026-05-15
+lastUpdated: 2026-10-08
 schema: none
 keywords: ["MCP workflows", "AI agent webhook testing", "Claude Code webhooks", "webhook debugging"]
 seo:
@@ -52,6 +52,43 @@ Agent: [calls get_request] Headers:
 ```
 
 This workflow validates that your handler receives correctly signed payloads and returns the expected response.
+
+## Test a signup email
+
+Have the agent drive a signup and read the confirmation email, without a real inbox. Every endpoint on an account receives email at `{slug}@mailhooks.cc`; a `+tag` per run keeps runs apart.
+
+```
+You: "Sign up on localhost:3000 with a webhooks.cc address and confirm the account"
+Agent: [calls create_endpoint] Created "signup-check" with slug k3m9x2a7qp; its address is k3m9x2a7qp@mailhooks.cc
+       [fills the signup form with k3m9x2a7qp+run-1@mailhooks.cc in the browser]
+       [calls wait_for_email with endpointSlug: "k3m9x2a7qp", tag: "run-1"]
+       Email "Confirm your email" from no-reply@yourapp.dev arrived after 2 s
+       code: 482913, link: http://localhost:3000/confirm?token=Zk3q9v
+       [enters 482913 in the confirmation form] Account confirmed
+
+You: "Did SPF and DKIM pass?"
+Agent: [calls get_email] SPF pass, DKIM pass, DMARC pass for yourapp.dev
+```
+
+`wait_for_email` and `get_email` return the parsed message with the one-time `code` and main `link` already picked out. Use `send_test_email` to try the flow before the app sends real mail.
+
+## Forward emails to a handler
+
+Let the agent wire up [email forwarding](/docs/forwarding) for a handler it is building.
+
+```
+You: "Forward that endpoint's email to https://api.yourapp.dev/inbound and check the handler works"
+Agent: [calls configure_forwarding with url] Saved; a signing secret was created
+       [calls get_forwarding_secret] Put the secret in the handler's FORWARD_SECRET
+       [calls test_forwarding] Your server answered 204 in 180 ms
+       [calls configure_forwarding with enabled: true] Forwarding is on
+
+You: "A customer says their email never reached us"
+Agent: [calls list_deliveries with endpointSlug] The latest delivery is still pending after 3 attempts; your server answered 500 each time
+       [calls list_deliveries with requestId] Your server answered "TypeError: cannot read 'from'"
+       [after the fix, calls redeliver_email] Queued a new delivery
+       [calls list_deliveries with requestId] Delivered, 204
+```
 
 ## Debug missing webhooks
 
@@ -197,5 +234,5 @@ Returns full details of a single captured request -- headers, body, IP, timestam
 <LinkCard
   href="/docs/mcp/tools"
   title="Tool Reference"
-  description="Complete parameter reference for all 25 MCP tools."
+  description="Complete parameter reference for all 44 MCP tools."
 />

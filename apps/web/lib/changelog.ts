@@ -16,9 +16,9 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.35.3";
-export const CLI_VERSION = "1.3.2";
+export const CLI_VERSION = "1.4.0";
 export const SDK_VERSION = "1.12.0";
-export const MCP_VERSION = "1.9.0";
+export const MCP_VERSION = "1.10.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
@@ -31,6 +31,17 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Agents can no longer register with an address at mailhooks.cc: its codes can be read through webhooks.cc itself, so it proved nothing",
       "Each rate limit now counts on its own: a one-minute limit no longer erased the history of an hourly one from the same IP, which let agent registration run far above its hourly limit",
       "IPv6 clients are rate-limited per /64, so a fresh address per request no longer gets a fresh limit",
+    ],
+  },
+  {
+    version: "0.35.2",
+    date: "2026-10-08",
+    title: "MCP Email Docs",
+    track: "web",
+    items: [
+      "The MCP tools reference and workflows cover the email and forwarding tools, with a signup-email walkthrough",
+      "New guide: testing signup and login emails in Playwright",
+      "The CLI reference covers whk get and whk requests, including how emails are shown",
     ],
   },
   {
@@ -1043,6 +1054,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.4.0",
+    date: "2026-10-08",
+    title: "Emails in the Terminal",
+    track: "cli",
+    items: [
+      "whk requests list shows a captured email's subject next to the address it arrived at, and EMAIL gets its own colour",
+      "whk requests get on an email shows the sender, recipient, subject, tag, attachments and text part instead of the raw message; --json still has every header and the raw message",
+      "whk create and whk get print the endpoint's mailhooks.cc email address",
+      "An email's subject, sender and attachment names stay on one line, so a sender cannot fake rows in the list",
+      "whk get no longer shows a request count of 0 when the API sends none",
+    ],
+  },
+  {
     version: "1.3.2",
     date: "2026-10-08",
     title: "Emails Stay Out of the Tunnel",
@@ -1471,6 +1495,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.10.0",
+    date: "2026-10-08",
+    title: "Email and Forwarding Tools",
+    track: "mcp",
+    items: [
+      "`list_emails`, `get_email` and `wait_for_email` read the email an endpoint receives at mailhooks.cc, with the one-time code and main link picked out, so an agent can complete a signup or login flow itself",
+      "`send_test_email` delivers a sample email, optionally to a +tag address",
+      "`configure_forwarding`, `get_forwarding_secret`, `test_forwarding`, `list_deliveries` and `redeliver_email` manage email forwarding",
+      "`list_requests`, `search_requests` and `count_requests` take `kind`; request tools and resources leave out an email's raw message and HTML part and cut its text, so one email cannot use up the output; `update_endpoint` takes `showEmailExtracts`",
+      "`get_email` and `wait_for_email` put the code and link first and trim a large email to fit the output (headers, then extra codes, links, addresses and attachments, then HTML and text, then all but the essentials), so the result stays valid JSON; `wait_for_email` waits 30 seconds by default, under the usual client timeout; `list_emails` with a tag, subject or sender searches the newest 100 emails",
+      "44 tools (SDK 1.12.0)",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-10-02",

@@ -1,5 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Request, WebhooksCC } from "@webhooks-cc/sdk";
+import { compactRequest } from "./compact";
 
 const ENDPOINTS_RESOURCE_URI = "webhooks://endpoints";
 const ENDPOINT_RECENT_TEMPLATE_URI = "webhooks://endpoint/{slug}/recent";
@@ -112,7 +113,7 @@ export function registerResources(server: McpServer, client: WebhooksCC): void {
 
       return jsonResource(uri.toString(), {
         endpoint,
-        requests,
+        requests: requests.map(compactRequest),
       });
     }
   );
@@ -131,7 +132,7 @@ export function registerResources(server: McpServer, client: WebhooksCC): void {
     async (uri, variables) => {
       const id = variableToString(variables.id, "id");
       const request = await client.requests.get(id);
-      return jsonResource(uri.toString(), request);
+      return jsonResource(uri.toString(), compactRequest(request));
     }
   );
 }
