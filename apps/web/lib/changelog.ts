@@ -15,7 +15,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.1";
+export const APP_VERSION = "0.35.2";
 export const CLI_VERSION = "1.4.0";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.0";
@@ -23,7 +23,7 @@ export const MCP_VERSION = "1.10.0";
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
   {
-    version: "0.35.1",
+    version: "0.35.2",
     date: "2026-10-08",
     title: "MCP Email Docs",
     track: "web",
@@ -31,6 +31,15 @@ export const CHANGELOG: ChangelogEntry[] = [
       "The MCP tools reference and workflows cover the email and forwarding tools, with a signup-email walkthrough",
       "New guide: testing signup and login emails in Playwright",
       "The CLI reference covers whk get and whk requests, including how emails are shown",
+    ],
+  },
+  {
+    version: "0.35.1",
+    date: "2026-10-08",
+    title: "Landing Counters After Deploys",
+    track: "web",
+    items: [
+      "The developer, endpoint and webhook counters on the landing page no longer disappear for the first minutes after a release",
     ],
   },
   {
