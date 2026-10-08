@@ -3,7 +3,7 @@ title: "Tunneling"
 description: "Forward webhooks to your local development server in one command. No port forwarding, no deploy — inspect every request as it arrives."
 section: cli
 order: 3
-lastUpdated: 2026-03-10
+lastUpdated: 2026-10-08
 schema: howto
 keywords: ["webhook tunnel", "localhost forwarding", "webhook forward", "local development"]
 seo:
@@ -75,6 +75,8 @@ whk listen <slug>
 4. Your local server processes it as if the sender called it directly.
 
 Sensitive headers (Authorization, Cookie) from the original request are filtered out before forwarding. Use `-H` to inject authentication headers your local server needs.
+
+Only HTTP requests are tunneled. [Emails](/docs/email-capture) the endpoint receives are listed as not tunneled, because an email is a raw message sent to an address, not an HTTP request your server could handle. To receive emails in your app as JSON, use [forwarding](/docs/forwarding).
 
 ## Tips
 

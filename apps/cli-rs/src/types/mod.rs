@@ -128,6 +128,19 @@ pub struct CapturedRequest {
     /// Provider that verified the signature (e.g., "stripe", "github")
     #[serde(rename = "signingProvider", default)]
     pub signing_provider: Option<String>,
+    /// "email" for a captured email, "http" otherwise. The SSE stream leaves it out.
+    #[serde(default)]
+    pub kind: Option<String>,
+}
+
+impl CapturedRequest {
+    /// A captured email (sent to the endpoint's mailhooks.cc address). Its
+    /// `path` is the recipient address and its body a raw MIME message, so it
+    /// must never be sent on as an HTTP request. The stream has no `kind`, so
+    /// the method is checked too.
+    pub fn is_email(&self) -> bool {
+        self.kind.as_deref() == Some("email") || self.method.eq_ignore_ascii_case("EMAIL")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +206,7 @@ impl From<SearchHit> for CapturedRequest {
             signature_verified: None,
             signature_error: None,
             signing_provider: None,
+            kind: None,
         }
     }
 }

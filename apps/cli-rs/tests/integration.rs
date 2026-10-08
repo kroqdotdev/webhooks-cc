@@ -326,6 +326,7 @@ fn make_captured_request(
         signature_verified: None,
         signature_error: None,
         signing_provider: None,
+        kind: None,
     }
 }
 
@@ -401,6 +402,35 @@ async fn test_tunnel_forward_binary_body_raw_exact_bytes() {
         received, raw_bytes,
         "forwarded body should be byte-exact, not lossy UTF-8"
     );
+
+    drop(shutdown_tx);
+}
+
+#[tokio::test]
+async fn test_tunnel_does_not_forward_emails() {
+    let (base_url, mut body_rx, shutdown_tx) = start_echo_server().await;
+    let tunnel = whk::tunnel::Tunnel::new(base_url, HashMap::new()).unwrap();
+
+    // As the stream delivers it: no kind, method EMAIL, the recipient address as the path.
+    let mut req = make_captured_request(
+        "EMAIL",
+        "acme+run@mailhooks.cc",
+        Some("Subject: Your code\r\n\r\nYour code is 482913".into()),
+        None,
+    );
+    assert!(req.is_email());
+    let result = tunnel.forward(&req).await;
+    assert!(!result.success);
+    assert_eq!(result.error.as_deref(), Some(whk::tunnel::EMAIL_NOT_TUNNELED));
+
+    // From the REST API: kind is set.
+    req.method = "POST".into();
+    req.kind = Some("email".into());
+    assert!(req.is_email());
+    assert!(!tunnel.forward(&req).await.success);
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(body_rx.try_recv().is_err(), "nothing may reach the local server");
 
     drop(shutdown_tx);
 }
