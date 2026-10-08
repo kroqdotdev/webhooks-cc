@@ -80,4 +80,7 @@ export interface SharedEndpoint {
   /** The endpoint's capture address; shared endpoints always have an owner. */
   emailAddress: string | null;
   showEmailExtracts: boolean;
+  /** Forwarding state without the URL (owner-only): enough to show delivery history. */
+  forwardEnabled: boolean;
+  hasForwardSecret: boolean;
 }

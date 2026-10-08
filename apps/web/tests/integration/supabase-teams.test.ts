@@ -688,6 +688,9 @@ describe("Teams Integration", () => {
       // Members see the endpoint's email address, so the email UI works for them too.
       expect(ep!.emailAddress?.startsWith(`${endpointSlug}@`)).toBe(true);
       expect(ep!.showEmailExtracts).toBe(true);
+      // Forwarding state without its URL, so members can read delivery history.
+      expect(ep!.forwardEnabled).toBe(false);
+      expect(ep!.hasForwardSecret).toBe(false);
     });
 
     it("owner does not see their own endpoint in shared list", async () => {

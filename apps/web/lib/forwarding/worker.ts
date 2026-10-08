@@ -44,10 +44,16 @@ export function forwardRequest(
   return { body, headers: forwardHeaders(secret, request.id, body) };
 }
 
+/** Postgres text cannot hold NUL; a response that has one must still be recorded. */
+function storable(text: string | null): string | null {
+  return text === null ? null : text.replaceAll("\u0000", "");
+}
+
 async function record(claim: Claim, result: SendResult, retry: boolean): Promise<void> {
   const delivered = isDelivered(result);
-  const error =
-    result.error ?? (delivered ? null : `The URL answered ${result.status ?? "nothing"}.`);
+  const error = storable(
+    result.error ?? (delivered ? null : `The URL answered ${result.status ?? "nothing"}.`)
+  );
   const { error: rpcError } = await createAdminClient().rpc("record_email_delivery_attempt", {
     p_delivery_id: claim.delivery_id,
     p_attempt: claim.attempt,
@@ -55,7 +61,7 @@ async function record(claim: Claim, result: SendResult, retry: boolean): Promise
     p_status: result.status,
     p_duration_ms: result.durationMs,
     p_error: error,
-    p_response_excerpt: result.excerpt,
+    p_response_excerpt: storable(result.excerpt),
     p_retry_in_seconds: delivered || !retry ? null : retryDelaySeconds(claim.attempt),
   });
   if (rpcError) throw rpcError;

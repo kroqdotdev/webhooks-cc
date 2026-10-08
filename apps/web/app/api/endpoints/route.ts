@@ -51,6 +51,8 @@ export async function GET(request: Request) {
       fromTeams: ep.fromTeams,
       emailAddress: ep.emailAddress,
       showEmailExtracts: ep.showEmailExtracts,
+      forwardEnabled: ep.forwardEnabled,
+      hasForwardSecret: ep.hasForwardSecret,
     }));
 
     return Response.json({ owned, shared });

@@ -97,7 +97,8 @@ async function excerpt(response: Response): Promise<string | null> {
     offset += part.length;
     if (offset >= bytes.length) break;
   }
-  return new TextDecoder().decode(bytes);
+  // Postgres text cannot hold NUL, and the web app stores this excerpt.
+  return new TextDecoder().decode(bytes).replaceAll("\u0000", "");
 }
 
 async function forward(request: Request, targetUrl: string): Promise<Response> {

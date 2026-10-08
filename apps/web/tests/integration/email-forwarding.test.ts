@@ -44,6 +44,7 @@ beforeAll(async () => {
     req.on("end", () => {
       received.push({ path: req.url ?? "", headers: req.headers, body });
       if (req.url === "/down") res.writeHead(503).end("busy");
+      else if (req.url === "/nul") res.writeHead(200).end("ok\u0000done");
       else res.writeHead(200).end('{"ok":true}');
     });
   });
@@ -181,6 +182,18 @@ describe("email forwarding", () => {
         secret
       )
     ).toBe(true);
+  });
+
+  it("records a delivery whose answer contains a NUL byte", async () => {
+    const endpoint = await forwardingEndpoint("/nul");
+    await capture(endpoint.slug);
+    const [row] = await drain(endpoint.id);
+    expect(row).toMatchObject({ status: "succeeded", attempts: 1 });
+    const { data: attempts } = await admin
+      .from("email_delivery_attempts")
+      .select("response_excerpt")
+      .eq("delivery_id", row.id);
+    expect(attempts).toEqual([{ response_excerpt: "okdone" }]);
   });
 
   it("schedules a retry after a failure and keeps the answer", async () => {
