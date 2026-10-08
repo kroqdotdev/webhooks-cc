@@ -219,6 +219,60 @@ for (const style of ["classic", "clean"] as const) {
   }
 }
 
+test("the preview disarms links, redirects and SVG in a hostile email", async ({ page }) => {
+  const subject = "Hostile preview";
+  const html = [
+    '<body style="background:#fafafa">',
+    '<meta http-equiv="ref&#x72;esh" content="0;url=https://evil.example/refresh">',
+    '<p><a href="https://evil.example/self" target="_self">Self link</a></p>',
+    '<p><a href="https://evil.example/top" TARGET=_top>Top link</a></p>',
+    '<svg><a href="https://evil.example/svg"><text y="20">SVG link</text></a></svg>',
+    '<form><button formaction="https://evil.example/form" formtarget="_self">Go</button></form>',
+    "</body>",
+  ].join("");
+  const to = `${endpointSlug}@mailhooks.cc`;
+  const { error } = await admin.from("requests").insert({
+    endpoint_id: endpointId,
+    user_id: testUser.id,
+    method: "EMAIL",
+    path: to,
+    headers: { subject },
+    body: `Subject: ${subject}\r\nContent-Type: text/html\r\n\r\n${html}`,
+    query_params: {},
+    content_type: "message/rfc822",
+    ip: "127.0.0.1",
+    size: html.length,
+    // Older than the Tidewater email, which the other tests expect to be the newest.
+    received_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+    kind: "email",
+    email: { subject, html, to: [{ name: null, address: to }], from: [], attachments: [] },
+  });
+  if (error) throw error;
+
+  await openDashboard(page);
+  await page.getByRole("button", { name: new RegExp(`EMAIL ${subject}`) }).click();
+  const frameElement = shown(page.locator('iframe[title="Email preview"]'));
+  const frame = frameElement.contentFrame();
+  await expect(frame.getByText("Self link")).toBeVisible();
+
+  // No targets but the frame's own <base>, no redirect, no SVG; links keep
+  // their href (and so their look).
+  await expect(frame.locator("[target]:not(base), [formtarget]")).toHaveCount(0);
+  await expect(frame.locator("base")).toHaveCount(1);
+  await expect(frame.locator('meta[http-equiv="refresh" i]')).toHaveCount(0);
+  await expect(frame.locator("svg")).toHaveCount(0);
+  await expect(frame.locator('a[href="https://evil.example/self"]')).toHaveCount(1);
+  await expect(frame.locator("body")).toHaveAttribute("style", "background:#fafafa");
+
+  // Clicking a link leaves the preview where it is.
+  await frame.getByText("Self link").click();
+  await page.waitForTimeout(500);
+  await expect(frame.getByText("Self link")).toBeVisible();
+  expect(
+    await frameElement.evaluate((el) => (el as HTMLIFrameElement).contentWindow?.location.href)
+  ).toBe("about:srcdoc");
+});
+
 test("the kind switch filters the list", async ({ page }) => {
   await openDashboard(page);
   const show = page.getByRole("radiogroup", { name: "Show" });

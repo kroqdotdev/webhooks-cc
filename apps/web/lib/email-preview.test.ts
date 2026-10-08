@@ -21,14 +21,25 @@ describe("buildPreviewDocument", () => {
     const doc = buildPreviewDocument("<p>Hi</p>", { allowRemoteImages: false });
     const policyAt = doc.indexOf("Content-Security-Policy");
     const baseAt = doc.indexOf('<base target="_blank">');
-    const emailAt = doc.indexOf("<p>Hi</p>");
+    const bodyAt = doc.indexOf("</head><body>");
     expect(policyAt).toBeGreaterThan(0);
     expect(baseAt).toBeGreaterThan(policyAt);
-    expect(emailAt).toBeGreaterThan(baseAt);
+    expect(bodyAt).toBeGreaterThan(baseAt);
   });
 
-  it("disarms the email's own meta, base and link tags", () => {
-    const doc = buildPreviewDocument(
+  it("shows nothing of the email without a DOM parser to sanitize it", () => {
+    // Node has no DOMParser; the browser path is covered by tests/e2e/email-capture.spec.ts.
+    const doc = buildPreviewDocument('<a href="https://evil.example" target="_self">x</a>', {
+      allowRemoteImages: false,
+    });
+    expect(doc).not.toContain("evil.example");
+    expect(doc).toContain("</head><body></body></html>");
+  });
+});
+
+describe("disarmTags", () => {
+  it("renames meta, base, link, svg and math start tags however they are written", () => {
+    const html = disarmTags(
       [
         '<meta http-equiv="refresh" content="0;url=https://evil.example">',
         "<META HTTP-EQUIV=Refresh content=1>",
@@ -38,23 +49,20 @@ describe("buildPreviewDocument", () => {
         '<base href="https://evil.example/">',
         '<link rel="preconnect" href="https://evil.example">',
         '<LINK rel="dns-prefetch" href="//evil.example">',
+        '<svg><a href="https://evil.example"><text>x</text></a></svg>',
+        "<math><mi>x</mi></math>",
         "<p>x</p>",
-      ].join(""),
-      { allowRemoteImages: true }
+      ].join("")
     );
-    // Only the document's own charset and policy metas and its base remain.
-    expect(doc.match(/<meta\b/gi)).toHaveLength(2);
-    expect(doc.match(/<base\b/gi)).toHaveLength(1);
-    expect(doc.match(/<link\b/gi)).toBeNull();
-    expect(doc).toContain('<x-meta http-equiv="refresh"');
-    expect(doc).toContain("<p>x</p>");
+    expect(html.match(/<(meta|base|link|svg|math)\b/gi)).toBeNull();
+    expect(html).toContain('<x-meta http-equiv="refresh"');
+    expect(html).toContain("<x-svg><a href=");
+    expect(html).toContain("<p>x</p>");
   });
-});
 
-describe("disarmTags", () => {
   it("leaves other tags and text alone", () => {
-    expect(disarmTags('<metadata><p class="meta">base and link</p><linked>')).toBe(
-      '<metadata><p class="meta">base and link</p><linked>'
+    expect(disarmTags('<metadata><p class="meta">base, link and svg</p><linked>')).toBe(
+      '<metadata><p class="meta">base, link and svg</p><linked>'
     );
   });
 });
@@ -72,5 +80,22 @@ describe("countRemoteImages", () => {
     ].join("");
     expect(countRemoteImages(html)).toBe(5);
     expect(countRemoteImages("<p>No images</p>")).toBe(0);
+  });
+
+  it("sees through character references and whitespace in a URL", () => {
+    expect(countRemoteImages('<img src="&#104;ttps://tidewater.app/a.png">')).toBe(1);
+    expect(countRemoteImages('<img src="https&colon;//tidewater.app/a.png">')).toBe(1);
+    expect(countRemoteImages('<img src="ht\ntps://tidewater.app/a.png">')).toBe(1);
+    expect(countRemoteImages('<div style="background:u&#114;l(https://x.example/b.png)">')).toBe(1);
+  });
+
+  it("counts anything not plainly embedded, and nothing that is", () => {
+    // Relative and odd URLs would still load from somewhere.
+    expect(countRemoteImages('<img src="logo.png">')).toBe(1);
+    expect(countRemoteImages('<img src="  DATA:image/png;base64,AAAA">')).toBe(0);
+    expect(
+      countRemoteImages('<img srcset="data:image/png;base64,AAAA 1x, https://x.example/a.png 2x">')
+    ).toBe(1);
+    expect(countRemoteImages('<rect fill="url(#gradient)">')).toBe(0);
   });
 });

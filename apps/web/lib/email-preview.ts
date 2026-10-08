@@ -13,22 +13,116 @@
  *   sender the email was opened, and from which IP.
  * - <base target="_blank">: link clicks would open a new window, which the
  *   sandbox forbids, so they do nothing.
- * - The email's own <meta>, <base> and <link> elements are disarmed: a meta
- *   refresh navigates the frame (the CSP and the sandbox do not stop that),
- *   a base would retarget links, and link preconnect or dns-prefetch reach
- *   the network outside the CSP. See `disarmTags`.
+ * - The email is disarmed first (see `sanitizeEmailHtml`): its own <meta>,
+ *   <base> and <link> elements, its link targets, and inline SVG and MathML.
+ *   The sandbox does not stop a frame navigating itself, which a meta
+ *   refresh or a link with target="_self" would do.
  *
  * Email HTML is written for a white background, so the document is white in
  * dark mode too.
  */
 
-const DISARMED_TAG = /<(meta|base|link)\b/gi;
-const REMOTE_IMAGE =
-  /<img\b[^>]*?\bsrc(?:set)?\s*=\s*["']?\s*(?:https?:)?\/\/|\bbackground\s*=\s*["']?\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\//gi;
+/**
+ * Start tags renamed to an unknown, inert element (<x-meta ...>):
+ * - meta: a refresh navigates the frame, and the CSP does not stop it;
+ * - base: would retarget the email's links;
+ * - link: preconnect and dns-prefetch reach the network outside the CSP;
+ * - svg, math: their links follow other rules than HTML's, and most mail
+ *   clients do not render inline SVG or MathML anyway.
+ */
+const DISARMED_TAG = /<(meta|base|link|svg|math)\b/gi;
+/**
+ * Renames those start tags on the raw markup, before anything parses it.
+ * Element names cannot be entity-encoded, so such an element can only come
+ * from those literal letters, however its attributes are written
+ * ("ref&#x72;esh" included). The inserted "x-" cannot join surrounding text
+ * into a new match, so one pass is enough. With svg and math gone, the
+ * markup has no foreign content, so parsing it here and again in the frame
+ * builds the same tree.
+ */
+export function disarmTags(html: string): string {
+  return html.replace(DISARMED_TAG, "<x-$1");
+}
 
-/** How many remote images (img, background attributes, CSS url()) the email would load. */
+/**
+ * The email's HTML as it goes into the preview frame: `disarmTags`, then the
+ * browser's own parser (inert: scripting is off and nothing loads) drops
+ * every target and formtarget attribute, so all links fall back to the
+ * frame's <base target="_blank">, which the sandbox blocks. The email's head
+ * and body are kept, body attributes included. Without a DOM parser (server
+ * rendering) there is nothing safe to show, so the preview stays empty until
+ * the browser builds it.
+ */
+export function sanitizeEmailHtml(html: string): string {
+  if (typeof DOMParser === "undefined") return "";
+  const doc = new DOMParser().parseFromString(disarmTags(html), "text/html");
+  for (const element of doc.querySelectorAll("[target], [formtarget]")) {
+    element.removeAttribute("target");
+    element.removeAttribute("formtarget");
+  }
+  return doc.head.innerHTML + doc.body.outerHTML;
+}
+
+const CHAR_REF =
+  /&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos|colon|sol|period|lpar|rpar|tab|newline|nbsp));?/gi;
+const NAMED_REFS: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  colon: ":",
+  sol: "/",
+  period: ".",
+  lpar: "(",
+  rpar: ")",
+  tab: "\t",
+  newline: "\n",
+  nbsp: " ",
+};
+const IMAGE_ATTRIBUTE =
+  /\b(src|srcset|poster|background)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+const CSS_URL = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\)/gi;
+
+/** Decodes the character references a URL could hide behind, for scanning only. */
+function decodeCharRefs(html: string): string {
+  return html.replace(CHAR_REF, (match, dec?: string, hex?: string, name?: string) => {
+    if (dec || hex) {
+      const codePoint = parseInt((dec ?? hex)!, dec ? 10 : 16);
+      return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : "";
+    }
+    return NAMED_REFS[name!.toLowerCase()] ?? match;
+  });
+}
+
+/** Embedded in the message (data:, cid:) or a reference within it (#id). */
+function isEmbedded(value: string): boolean {
+  // URL parsing drops tabs and newlines anywhere, and spaces around the URL.
+  const url = Array.from(value)
+    .filter((char) => char.charCodeAt(0) > 0x20)
+    .join("")
+    .toLowerCase();
+  return url === "" || url.startsWith("data:") || url.startsWith("cid:") || url.startsWith("#");
+}
+
+/**
+ * How many image references (src, srcset, poster and background attributes,
+ * CSS url()) would load from outside the message. Anything not plainly
+ * embedded counts, so an obfuscated URL still offers "Load images" rather
+ * than staying blocked for good; counting too many only shows the button.
+ */
 export function countRemoteImages(html: string): number {
-  return html.match(REMOTE_IMAGE)?.length ?? 0;
+  const decoded = decodeCharRefs(html);
+  let count = 0;
+  for (const match of decoded.matchAll(IMAGE_ATTRIBUTE)) {
+    const value = match[2] ?? match[3] ?? match[4] ?? "";
+    const urls = match[1].toLowerCase() === "srcset" ? value.split(/,\s+/) : [value];
+    if (urls.some((url) => !isEmbedded(url.trim().split(/\s+/)[0] ?? ""))) count++;
+  }
+  for (const match of decoded.matchAll(CSS_URL)) {
+    if (!isEmbedded(match[1] ?? match[2] ?? match[3] ?? "")) count++;
+  }
+  return count;
 }
 
 export function previewPolicy(allowRemoteImages: boolean): string {
@@ -36,23 +130,10 @@ export function previewPolicy(allowRemoteImages: boolean): string {
   return `default-src 'none'; style-src 'unsafe-inline'; img-src ${images}; font-src data:`;
 }
 
-/**
- * Renames every <meta, <base and <link start tag to an unknown, inert
- * element (<x-meta ...>). It works on the raw markup without parsing it: an
- * HTML element with one of those names can only come from that literal start
- * tag, however its attributes are written (entity-encoded "ref&#x72;esh"
- * included), and the inserted "x-" cannot join surrounding text into a new
- * match, so one pass is enough.
- */
-export function disarmTags(html: string): string {
-  return html.replace(DISARMED_TAG, "<x-$1");
-}
-
 export function buildPreviewDocument(
   html: string,
   options: { allowRemoteImages: boolean }
 ): string {
-  const cleaned = disarmTags(html);
   return [
     "<!doctype html><html><head>",
     '<meta charset="utf-8">',
@@ -62,7 +143,7 @@ export function buildPreviewDocument(
     "body{padding:16px;font:14px/1.5 Arial,Helvetica,sans-serif;overflow-wrap:anywhere}",
     "img{max-width:100%;height:auto}</style>",
     "</head><body>",
-    cleaned,
+    sanitizeEmailHtml(html),
     "</body></html>",
   ].join("");
 }
