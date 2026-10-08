@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.0";
+export const APP_VERSION = "0.35.1";
 export const CLI_VERSION = "1.3.1";
 export const SDK_VERSION = "1.12.0";
-export const MCP_VERSION = "1.9.0";
+export const MCP_VERSION = "1.10.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.1",
+    date: "2026-10-08",
+    title: "MCP Email Docs",
+    track: "web",
+    items: [
+      "The MCP tools reference and workflows cover the email and forwarding tools, with a signup-email walkthrough",
+    ],
+  },
   {
     version: "0.35.0",
     date: "2026-10-08",
@@ -1430,6 +1439,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.10.0",
+    date: "2026-10-08",
+    title: "Email and Forwarding Tools",
+    track: "mcp",
+    items: [
+      "`list_emails`, `get_email` and `wait_for_email` read the email an endpoint receives at mailhooks.cc, with the one-time code and main link picked out, so an agent can complete a signup or login flow itself",
+      "`send_test_email` delivers a sample email, optionally to a +tag address",
+      "`configure_forwarding`, `get_forwarding_secret`, `test_forwarding`, `list_deliveries` and `redeliver_email` manage email forwarding",
+      "`list_requests`, `search_requests` and `count_requests` take `kind`; request tools replace an email's raw message with its size; `update_endpoint` takes `showEmailExtracts`",
+      "44 tools (SDK 1.12.0)",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-10-02",

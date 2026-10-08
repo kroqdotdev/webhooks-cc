@@ -95,6 +95,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Test Shopify Webhooks", href: "/docs/guides/test-shopify-webhooks" },
       { title: "Verify Signatures", href: "/docs/guides/verify-webhook-signatures", isNew: true },
       { title: "Webhook Testing in CI/CD", href: "/docs/guides/webhook-testing-ci-cd" },
+      {
+        title: "Test Signup Emails in Playwright",
+        href: "/docs/guides/test-signup-emails-playwright",
+        isNew: true,
+      },
     ],
   },
   {
