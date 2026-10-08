@@ -54,6 +54,8 @@ services:
       GOTRUE_MAILER_TEMPLATES_RECOVERY: https://webhooks.cc/email-templates/recovery.html
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: Confirm your webhooks.cc account
       GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your webhooks.cc password
+      GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
+      GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/public/hook_before_user_created
 ```
 
 Dev override (templates fetched from the Next dev server on the Docker host,
@@ -68,6 +70,8 @@ services:
       GOTRUE_MAILER_TEMPLATES_RECOVERY: http://host.docker.internal:3000/email-templates/recovery.html
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: Confirm your webhooks.cc account
       GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your webhooks.cc password
+      GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
+      GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/public/hook_before_user_created
     extra_hosts:
       - host.docker.internal:host-gateway
 
@@ -89,6 +93,21 @@ The upstream repo also defines an Inbucket `mail` service in
 ("always use a fresh database when developing") and recreating `db` would wipe
 the dev database. Defining `mail` in the override, as above, avoids the overlay
 entirely.
+
+### Before-user-created hook
+
+The two `GOTRUE_HOOK_BEFORE_USER_CREATED_*` lines make GoTrue call
+`public.hook_before_user_created()` (migration `00052`) before it creates any
+user through signup, OAuth (GitHub, Google), magic link or OTP, invite, or
+anonymous sign-in. It refuses addresses at the capture domain
+(`mailhooks.cc` and its subdomains) with a 403: mail there can be read
+through webhooks.cc itself, so such an address would let one endpoint
+confirm any number of accounts. The admin API (`auth.admin.createUser`) does
+not call the hook; agent registration, its only user here, checks the
+domain in the app. Existing users and email changes are not affected.
+
+**Apply migration 00052 before adding these lines.** While the function is
+missing, GoTrue fails every signup with a 500.
 
 ## 3. Apply
 
@@ -140,6 +159,14 @@ curl -s -H "apikey: <anon>" -H "Content-Type: application/json" \
 # a real signup sends mail (dev: visible at http://localhost:9000, mailbox "cfg-check")
 curl -s -H "apikey: <anon>" -H "Content-Type: application/json" \
   -d '{"email":"cfg-check@webhooks-test.local","password":"a-valid-password"}' <api url>/auth/v1/signup
+
+# the capture domain is refused before any user or email is created
+curl -s -H "apikey: <anon>" -H "Content-Type: application/json" \
+  -d '{"email":"cfg-check@mailhooks.cc","password":"a-valid-password"}' <api url>/auth/v1/signup
+# expect: {"code":403,"error_code":"unknown","msg":"Addresses at mailhooks.cc cannot be used for an account. ..."}
+
+# the hook ran (one line per signup attempt)
+docker logs supabase-auth --since 5m | grep run_hook
 ```
 
 Delete the `cfg-check` auth user afterwards (Studio, or

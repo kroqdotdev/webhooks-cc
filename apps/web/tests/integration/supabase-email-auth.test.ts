@@ -3,9 +3,10 @@
  *
  * Environmental requirements beyond the usual env vars (like the
  * receiver-dependent suites): the dev GoTrue must carry the email-auth config
- * from infra/supabase/gotrue-email-auth.md (password min length 8, real SMTP)
- * and the `supabase-mail` Inbucket container must be up, because anon signUp
- * sends a confirmation email and fails at the SMTP hop without it.
+ * from infra/supabase/gotrue-email-auth.md (password min length 8, real SMTP,
+ * the before-user-created hook from migration 00052) and the `supabase-mail`
+ * Inbucket container must be up, because anon signUp sends a confirmation
+ * email and fails at the SMTP hop without it.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
@@ -93,6 +94,28 @@ describe("Email/password auth", () => {
       expect(data.user).toBeNull();
       expect(error).toBeTruthy();
       expect(error!.code).toBe("weak_password");
+    });
+
+    it("refuses an address at the capture domain (before-user-created hook, 00052)", async () => {
+      const { data, error } = await anonClient().auth.signUp({
+        email: `test-email-auth-${ts}+tag@mailhooks.cc`,
+        password: VALID_PASSWORD,
+      });
+
+      expect(data.user).toBeNull();
+      expect(error).toBeTruthy();
+      expect(error!.status).toBe(403);
+      expect(error!.message).toContain("mailhooks.cc");
+    });
+
+    it("refuses a capture-domain address for magic link signup too", async () => {
+      const { error } = await anonClient().auth.signInWithOtp({
+        email: `test-email-auth-otp-${ts}@MailHooks.CC`,
+        options: { shouldCreateUser: true },
+      });
+
+      expect(error).toBeTruthy();
+      expect(error!.status).toBe(403);
     });
 
     it("rejects signInWithPassword before the email is confirmed", async () => {
