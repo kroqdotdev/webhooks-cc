@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { imgSrcDirective } from "@/lib/csp-img-src";
 
 /**
  * Proxy: Supabase session refresh + security headers.
@@ -96,7 +97,7 @@ export async function proxy(request: NextRequest) {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eu-assets.i.posthog.com https://f.webhooks.cc",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com",
+    imgSrcDirective(pathname),
     "font-src 'self'",
     `connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} ${webhookOrigin} https://eu-assets.i.posthog.com https://f.webhooks.cc`,
     "object-src 'none'",

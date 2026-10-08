@@ -24,6 +24,14 @@ describe("buildRetainedCountParams", () => {
   test("includes the upper bound when given", () => {
     expect(buildRetainedCountParams("demo", "ALL", "", 1001)).toEqual({ slug: "demo", to: "1001" });
   });
+
+  test("includes the kind when one is picked", () => {
+    expect(buildRetainedCountParams("demo", "ALL", "", undefined, "email")).toEqual({
+      slug: "demo",
+      kind: "email",
+    });
+    expect(buildRetainedCountParams("demo", "ALL", "", undefined, "all")).toEqual({ slug: "demo" });
+  });
 });
 
 describe("retainedCountCutoff", () => {
@@ -51,6 +59,18 @@ describe("countLoadedAfter", () => {
   test("applies the method filter", () => {
     expect(countLoadedAfter(requests, 0, "POST")).toBe(2);
     expect(countLoadedAfter(requests, 1500, "GET")).toBe(1);
+  });
+
+  test("applies the kind filter", () => {
+    const mixed = [
+      { method: "EMAIL", kind: "email" as const, receivedAt: 3000 },
+      { method: "POST", kind: "http" as const, receivedAt: 2000 },
+      // An HTTP request whose method happens to be EMAIL is still HTTP.
+      { method: "EMAIL", kind: "http" as const, receivedAt: 1500 },
+    ];
+    expect(countLoadedAfter(mixed, 0, "ALL", "email")).toBe(1);
+    expect(countLoadedAfter(mixed, 0, "ALL", "http")).toBe(2);
+    expect(countLoadedAfter(mixed, 0, "ALL", "all")).toBe(3);
   });
 });
 

@@ -497,7 +497,13 @@ function BodyCopyDropdown({
   );
 }
 
-function NoteBar({ note, onChange }: { note: string | null; onChange: (note: string) => void }) {
+export function NoteBar({
+  note,
+  onChange,
+}: {
+  note: string | null;
+  onChange: (note: string) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note ?? "");
   const inputRef = useRef<HTMLInputElement>(null);

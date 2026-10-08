@@ -2,6 +2,7 @@ import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
+import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const PRO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -23,6 +24,8 @@ type SelectedRequestRow = Pick<
   | "size"
   | "received_at"
   | "team_id"
+  | "kind"
+  | "email"
 > & {
   signature_verified?: boolean | null;
   signature_error?: string | null;
@@ -50,6 +53,9 @@ export interface RequestRecord {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  /** "email" for captured emails (`email` is set), "http" for everything else. */
+  kind: "http" | "email";
+  email?: EmailCapture | null;
 }
 
 export interface PaginatedRequestPage {
@@ -110,11 +116,16 @@ function isAsciiHex(bytes: Buffer): boolean {
 function normalizeRequest(row: SelectedRequestRow): RequestRecord {
   const headers = asStringRecord(row.headers);
   const body = row.body ?? undefined;
-  const detection = deriveWebhookDetection({
-    headers,
-    body,
-    contentType: row.content_type ?? undefined,
-  });
+  const kind = row.kind === "email" ? "email" : "http";
+  // Provider detection reads webhook headers and payloads; emails have neither.
+  const detection =
+    kind === "email"
+      ? { detectedProvider: null, detectedEvent: null }
+      : deriveWebhookDetection({
+          headers,
+          body,
+          contentType: row.content_type ?? undefined,
+        });
 
   return {
     id: row.id,
@@ -134,6 +145,8 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     signingProvider: row.signing_provider ?? null,
     detectedProvider: detection.detectedProvider,
     detectedEvent: detection.detectedEvent,
+    kind,
+    email: kind === "email" ? toEmailCapture(row.email) : null,
   };
 }
 
@@ -254,7 +267,7 @@ export async function getRequestByIdForUser(
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("id", requestId)
     .returns<SelectedRequestRow>()
@@ -308,7 +321,7 @@ export async function listRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -375,7 +388,7 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("endpoint_id", endpoint.id);
 
@@ -436,7 +449,7 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   const query = admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .eq("endpoint_id", endpoint.id);
 

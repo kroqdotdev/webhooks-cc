@@ -42,6 +42,7 @@ export const NAV_SECTIONS: NavSection[] = [
         isNew: true,
       },
       { title: "Requests", href: "/docs/requests", isNew: true },
+      { title: "Email Capture", href: "/docs/email-capture", isNew: true },
       { title: "Mock Responses", href: "/docs/mock-responses" },
       { title: "Dashboard Features", href: "/docs/dashboard-features", isNew: true },
       { title: "Notification Webhooks", href: "/docs/notification-webhooks", isNew: true },

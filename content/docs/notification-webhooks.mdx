@@ -3,7 +3,7 @@ title: "Notification Webhooks"
 description: "Get notified the moment a webhook arrives. POST a JSON summary to Slack, Discord, Microsoft Teams, or any custom webhook-compatible service — no polling required."
 section: dashboard
 order: 7
-lastUpdated: 2026-04-03
+lastUpdated: 2026-10-07
 schema: none
 keywords:
   ["webhook notification", "slack webhook", "discord webhook", "webhook alerts", "notification URL"]
@@ -18,9 +18,9 @@ Add a notification URL to any endpoint and the receiver will POST a JSON summary
 
 ## Setup
 
-1. Open endpoint settings (gear icon in the dashboard URL bar)
-2. In the **Notification Webhook** section, paste your notification URL
-3. Click **Save Changes**
+1. Open the endpoint's **Settings** tab in the dashboard
+2. In the **Notifications** section, paste your notification URL
+3. Click **Save changes**
 
 That's it. The next webhook that hits your endpoint will trigger a notification.
 
@@ -47,6 +47,8 @@ The receiver sends a POST request with a JSON body:
 | `ip`         | string | Client IP address of the webhook sender                         |
 | `receivedAt` | string | ISO 8601 timestamp                                              |
 | `preview`    | string | First 200 characters of the request body (truncated with `...`) |
+
+For [captured emails](/docs/email-capture), `method` is `EMAIL`, `path` is the recipient address, and `preview` is the subject followed by the start of the text.
 
 ## Rate limiting
 

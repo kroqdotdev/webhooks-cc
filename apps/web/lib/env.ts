@@ -34,6 +34,11 @@ const serverEnvSchema = z
     SUPABASE_URL: z.string().url(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
     RECEIVER_INTERNAL_URL: z.string().url(),
+    // The receiver's private mail listener, for "Send test email" (the same
+    // signed API the MX host uses). Optional: without it test emails are off.
+    MAIL_INGEST_URL: z.string().url().optional(),
+    // The domain endpoints receive email on (the MX host's MAIL_DOMAINS).
+    EMAIL_CAPTURE_DOMAIN: z.string().min(1).default("mailhooks.cc"),
     ENDPOINT_CREATE_RATE_LIMIT: z.coerce.number().int().min(1).default(30),
     ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
     MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
@@ -128,6 +133,8 @@ export function serverEnv() {
       SUPABASE_URL: process.env.SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       RECEIVER_INTERNAL_URL: process.env.RECEIVER_INTERNAL_URL,
+      MAIL_INGEST_URL: process.env.MAIL_INGEST_URL || undefined,
+      EMAIL_CAPTURE_DOMAIN: process.env.EMAIL_CAPTURE_DOMAIN || undefined,
       ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,
       ENDPOINT_CREATE_RATE_WINDOW_MS: process.env.ENDPOINT_CREATE_RATE_WINDOW_MS,
       MAX_EPHEMERAL_ENDPOINTS: process.env.MAX_EPHEMERAL_ENDPOINTS,

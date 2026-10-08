@@ -3,7 +3,7 @@ title: "Mock Responses"
 description: "Control what your endpoint returns to the sender. Set status codes, response headers, body content, response delay, and conditional response rules to simulate real API behavior."
 section: dashboard
 order: 4
-lastUpdated: 2026-04-09
+lastUpdated: 2026-10-07
 schema: none
 keywords:
   [
@@ -28,9 +28,11 @@ By default, endpoints return `200 OK` with an empty body. Configure a mock respo
 
 When a webhook hits your endpoint, the receiver captures the request and returns your configured response. The request is stored in the database immediately — the sender then sees your custom status code, headers, and body after any configured delay.
 
+Mock responses and rules apply to HTTP requests. [Emails](/docs/email-capture) sent to the endpoint's address are always accepted with a standard mail server reply.
+
 ## Configuration
 
-Open endpoint settings (gear icon in the URL bar) to configure the mock response:
+Open the endpoint's **Settings** tab in the dashboard and find **HTTP responses** to configure the mock response:
 
 - **Status code** — any valid HTTP status (100-599). Common choices: 200, 201, 204, 400, 404, 500.
 - **Response headers** — key-value pairs sent back to the caller. Example: `Content-Type: application/json`
@@ -50,7 +52,7 @@ Response rules let you return different responses based on the incoming request.
 
 ### Setting up rules
 
-In endpoint settings, click **Add Rule** to create a conditional response rule. Each rule has:
+Under **HTTP responses** on the Settings tab, click **Add Rule** to create a conditional response rule. Each rule has:
 
 - **Name** — optional label for your reference (e.g. "Stripe invoice paid")
 - **Logic** — **ALL conditions (AND)** or **ANY condition (OR)**

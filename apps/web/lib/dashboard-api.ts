@@ -1,5 +1,6 @@
 "use client";
 
+import type { EmailCapture } from "@/lib/email-capture";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
 export interface ResponseRuleCondition {
@@ -42,6 +43,10 @@ export interface DashboardEndpoint {
   signingProvider?: string | null;
   hasSigningSecret?: boolean;
   signingHeader?: string | null;
+  /** Address that delivers email here; null for endpoints without an owner. */
+  emailAddress?: string | null;
+  /** Show codes and links found in captured emails. */
+  showEmailExtracts?: boolean;
 }
 
 export interface TeamEndpointShare {
@@ -93,6 +98,7 @@ function toDashboardRequest(record: {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -103,6 +109,8 @@ function toDashboardRequest(record: {
   signingProvider?: string | null;
   detectedProvider?: string | null;
   detectedEvent?: string | null;
+  kind?: "http" | "email";
+  email?: EmailCapture | null;
 }): Request {
   return {
     _id: record.id,
@@ -112,6 +120,7 @@ function toDashboardRequest(record: {
     path: record.path,
     headers: record.headers,
     body: record.body,
+    bodyRaw: record.bodyRaw,
     queryParams: record.queryParams,
     contentType: record.contentType,
     ip: record.ip,
@@ -122,7 +131,25 @@ function toDashboardRequest(record: {
     signingProvider: record.signingProvider ?? null,
     detectedProvider: record.detectedProvider ?? null,
     detectedEvent: record.detectedEvent ?? null,
+    kind: record.kind ?? "http",
+    email: record.email ?? null,
   };
+}
+
+/** Delivers a sample email to the endpoint (see app/api/send-test-email). */
+export async function sendTestEmail(
+  accessToken: string,
+  slug: string
+): Promise<{ status: "captured"; requestId: string | null }> {
+  const response = await fetch(
+    "/api/send-test-email",
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug }),
+    })
+  );
+  return readJson<{ status: "captured"; requestId: string | null }>(response);
 }
 
 export async function fetchDashboardEndpoints(

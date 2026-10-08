@@ -3,13 +3,14 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import type { AnyRequestSummary } from "@/types/request";
 
-/** Method to fill color for SVG dots, from the --method-* tokens in globals.css */
+/** Method to fill color for SVG dots, from the --method-* and --kind-email tokens in globals.css */
 const METHOD_FILL: Record<string, string> = {
   GET: "hsl(var(--method-get))",
   POST: "hsl(var(--method-post))",
   PUT: "hsl(var(--method-put))",
   PATCH: "hsl(var(--method-put))",
   DELETE: "hsl(var(--method-delete))",
+  EMAIL: "hsl(var(--kind-email))",
 };
 const DEFAULT_FILL = "hsl(0, 0%, 60%)";
 

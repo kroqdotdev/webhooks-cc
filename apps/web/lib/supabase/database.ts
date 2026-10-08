@@ -253,6 +253,7 @@ export interface Database {
           signing_provider: string | null;
           signing_secret_encrypted: string | null;
           signing_header: string | null;
+          show_email_extracts: boolean;
         };
         Insert: {
           id?: string;
@@ -269,6 +270,7 @@ export interface Database {
           signing_provider?: string | null;
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
+          show_email_extracts?: boolean;
         };
         Update: {
           id?: string;
@@ -285,6 +287,7 @@ export interface Database {
           signing_provider?: string | null;
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
+          show_email_extracts?: boolean;
         };
         Relationships: [];
       };
@@ -375,6 +378,8 @@ export interface Database {
           created_at: string;
           quota_email_sent_at: string | null;
           quota_email_claimed_at: string | null;
+          emails_used: number;
+          emails_period_start: string | null;
         };
         Insert: {
           id: string;
@@ -393,6 +398,8 @@ export interface Database {
           created_at?: string;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
+          emails_used?: number;
+          emails_period_start?: string | null;
         };
         Update: {
           id?: string;
@@ -411,6 +418,8 @@ export interface Database {
           created_at?: string;
           quota_email_sent_at?: string | null;
           quota_email_claimed_at?: string | null;
+          emails_used?: number;
+          emails_period_start?: string | null;
         };
         Relationships: [];
       };
@@ -593,6 +602,7 @@ export interface Database {
           team_billed: number;
           quota_rejected: number;
           bytes: number;
+          emails: number;
         };
         Insert: Record<string, never>;
         Update: Record<string, never>;
@@ -653,6 +663,7 @@ export interface Database {
           p_limit?: number | null;
           p_offset?: number | null;
           p_order?: string | null;
+          p_kind?: string | null;
         };
         Returns: Array<{
           id: string;
@@ -666,6 +677,10 @@ export interface Database {
           ip: string;
           size: number;
           received_at: number;
+          kind: "http" | "email";
+          email: Json | null;
+          /** bytea, as PostgREST's hex text. */
+          body_raw: string | null;
         }>;
       };
       search_requests_count: {
@@ -677,6 +692,7 @@ export interface Database {
           p_q?: string | null;
           p_from_ms?: number | null;
           p_to_ms?: number | null;
+          p_kind?: string | null;
         };
         Returns: number;
       };

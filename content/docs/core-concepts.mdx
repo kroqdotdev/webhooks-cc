@@ -3,7 +3,7 @@ title: "Core Concepts"
 description: "Learn the core concepts of webhooks.cc — endpoints, slugs, request capture, mock responses, CLI tunneling, and quotas — and how they fit your webhook testing workflow."
 section: getting-started
 order: 3
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-07
 schema: none
 keywords: ["webhook concepts", "webhook endpoint", "webhook testing concepts", "webhook capture"]
 seo:
@@ -79,13 +79,13 @@ await client.endpoints.update(endpoint.slug, {
 });
 ```
 
-You can also set mock responses from the dashboard (gear icon), CLI (`whk update`), or MCP server.
+You can also set mock responses from the dashboard (the endpoint's Settings tab), CLI (`whk update`), or MCP server.
 
 ## Notification webhooks
 
 Add a notification URL to any endpoint and the receiver will POST a JSON summary (slug, method, path, timestamp, body preview) after each captured request. Works with Slack, Discord, Microsoft Teams, or any service that accepts HTTP POST.
 
-Configure from the dashboard settings dialog, the SDK, or the MCP server. See the [notification webhooks guide](/docs/notification-webhooks) for setup details.
+Configure from the endpoint's Settings tab in the dashboard, the SDK, or the MCP server. See the [notification webhooks guide](/docs/notification-webhooks) for setup details.
 
 ## Ephemeral endpoints
 

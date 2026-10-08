@@ -3,7 +3,7 @@ title: "Webhook.site vs webhooks.cc"
 description: "Compare Webhook.site and webhooks.cc for webhook testing. Feature comparison, pricing, automation capabilities, and when to use each tool."
 section: guides
 order: 9
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-07
 schema: faq
 keywords:
   [
@@ -17,7 +17,7 @@ seo:
   ogDescription: "Compare Webhook.site and webhooks.cc for webhook development and testing. Feature comparison, pricing, automation, and use cases."
 ---
 
-Webhook.site and webhooks.cc both capture and inspect incoming webhooks. Beyond that core overlap, they are different products built for different workflows. Webhook.site has evolved into a low-code automation platform with 40+ Custom Actions, email/DNS testing, scheduled requests, and built-in databases. webhooks.cc focuses on developer tooling: a TypeScript SDK for CI/CD testing, a standalone CLI, provider-specific signing, and an MCP server for AI agents.
+Webhook.site and webhooks.cc both capture and inspect incoming webhooks. Beyond that core overlap, they are different products built for different workflows. Webhook.site has evolved into a low-code automation platform with 40+ Custom Actions, email/DNS testing, scheduled requests, and built-in databases. webhooks.cc focuses on developer tooling: a TypeScript SDK for CI/CD testing, a standalone CLI, provider-specific signing, an MCP server for AI agents, and email capture on every account endpoint.
 
 This comparison covers where each tool fits, what each does well, and when you should use one over the other.
 
@@ -35,7 +35,7 @@ This comparison covers where each tool fits, what each does well, and when you s
 | MCP server for AI agents        | Yes                                           | No                                          |
 | CI/CD testing utilities         | Yes (sendTo, withEndpoint, captureDuring)     | No                                          |
 | Request replay                  | Yes (to any URL, from dashboard or SDK)       | Yes                                         |
-| Email testing                   | No                                            | Yes (DKIM/SPF validation, attachments)      |
+| Email testing                   | Yes (SPF/DKIM/DMARC, codes and links)         | Yes (DKIM/SPF validation, attachments)      |
 | DNS testing                     | No                                            | Yes (DNSHook, dynamic DNS responses)        |
 | Scheduled requests              | No                                            | Yes (cron-like schedules)                   |
 | Built-in databases              | No                                            | Yes (Pro/Enterprise)                        |
@@ -54,7 +54,7 @@ This comparison covers where each tool fits, what each does well, and when you s
 
 **Custom Actions.** This is Webhook.site's headline feature and has no equivalent in webhooks.cc. Custom Actions are a visual workflow builder that chains operations on every incoming request: extract JSON fields, forward to other services, query databases, send emails, write to S3, post to Slack/Discord, generate PDFs, resize images, and more. If you need webhook-triggered automation without writing code, Custom Actions are genuinely powerful.
 
-**Email and DNS testing.** Each Webhook.site URL also receives emails (at `@emailhook.site`) and DNS queries (at `dnshook.site`). Email capture includes DKIM/SPF validation and attachment handling. DNS capture supports dynamic responses. webhooks.cc handles HTTP webhooks only.
+**DNS testing and attachments.** Each Webhook.site URL also receives DNS queries (at `dnshook.site`), with dynamic responses; webhooks.cc has no DNS capture. Both capture email: Webhook.site at `@emailhook.site`, webhooks.cc at `@mailhooks.cc` for endpoints on an account, with SPF, DKIM and DMARC results and the one-time codes and links picked out. Webhook.site keeps attachment contents; webhooks.cc lists attachment names, types and sizes only. See [Email Capture](/docs/email-capture).
 
 **Scheduled requests.** Webhook.site can send HTTP requests on a cron schedule -- useful for uptime monitoring, cache warming, or periodic data pulls. webhooks.cc does not have scheduled requests.
 
@@ -109,7 +109,7 @@ webhooks.cc includes all features on every tier -- the only difference between F
 **Use Webhook.site when:**
 
 - You need visual workflow automation triggered by webhooks (Custom Actions)
-- You need email or DNS testing alongside HTTP webhooks
+- You need DNS testing, or email attachments kept in full
 - You need scheduled HTTP requests (cron jobs)
 - You want an OpenAPI mock server
 - You need enterprise features: custom domains, SSO, multi-user access
@@ -118,19 +118,18 @@ webhooks.cc includes all features on every tier -- the only difference between F
 **Use both when:**
 
 - You use Webhook.site's Custom Actions for prototyping webhook workflows, then switch to webhooks.cc's SDK for deterministic CI/CD tests
-- You need email testing (Webhook.site) alongside webhook capture and signing (webhooks.cc)
 
 ## FAQ
 
 <FAQ>
 <FAQItem question="Is webhooks.cc a drop-in replacement for Webhook.site?">
 
-For basic webhook inspection, yes. For Custom Actions, email/DNS testing, scheduled requests, or enterprise features, no. webhooks.cc focuses on developer tooling (SDK, CLI, MCP, provider signing) while Webhook.site focuses on low-code automation. They solve overlapping but distinct problems.
+For basic webhook and email inspection, yes. For Custom Actions, DNS testing, scheduled requests, or enterprise features, no. webhooks.cc focuses on developer tooling (SDK, CLI, MCP, provider signing) while Webhook.site focuses on low-code automation. They solve overlapping but distinct problems.
 
 </FAQItem>
 <FAQItem question="Which has a better free tier?">
 
-For developers testing webhooks, webhooks.cc's free tier is more useful: all features are available, including signing, forwarding, replay, SDK access, and MCP. Webhook.site's free tier is more restrictive -- no Custom Actions, no CLI forwarding, no API access, and URLs expire after 7 days. However, Webhook.site's free tier captures emails and DNS queries, which webhooks.cc does not support at all.
+For developers testing webhooks, webhooks.cc's free tier is more useful: all features are available, including signing, forwarding, replay, SDK access, and MCP. Webhook.site's free tier is more restrictive -- no Custom Actions, no CLI forwarding, no API access, and URLs expire after 7 days. Both capture email on the free tier; Webhook.site's also captures DNS queries, which webhooks.cc does not support.
 
 </FAQItem>
 <FAQItem question="Which is better for CI/CD?">

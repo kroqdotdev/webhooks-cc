@@ -44,7 +44,7 @@ const ROWS = [
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
   ["Stable URLs", "Yes — slug-based", "No — random per session"],
   ["Custom subdomains", "No", "Yes (often unavailable)"],
-  ["Non-HTTP protocols", "No (HTTP webhooks only)", "No (HTTP only)"],
+  ["Non-HTTP protocols", "Email capture (no TCP tunnels)", "No (HTTP only)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT)"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "None"],
   ["Free tier features", "Every individual feature", "Fully free"],

@@ -54,6 +54,7 @@ const AUDITED_ENDPOINT_FIELDS = [
   "signingProvider",
   "signingSecret",
   "signingHeader",
+  "showEmailExtracts",
 ] as const;
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -69,6 +70,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   // Validate name type and length if provided
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length > 100)) {
     return Response.json({ error: "Invalid name" }, { status: 400 });
+  }
+
+  if (body.showEmailExtracts !== undefined && typeof body.showEmailExtracts !== "boolean") {
+    return Response.json({ error: "Invalid showEmailExtracts" }, { status: 400 });
   }
 
   const notifCheck = validateNotificationUrl(body.notificationUrl);
@@ -218,6 +223,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         body.signingSecret === undefined ? undefined : (body.signingSecret as string | null),
       signingHeader:
         body.signingHeader === undefined ? undefined : (body.signingHeader as string | null),
+      showEmailExtracts: body.showEmailExtracts as boolean | undefined,
     });
 
     await auditUserAction(request, auth.userId, {

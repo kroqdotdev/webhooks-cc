@@ -49,6 +49,8 @@ export async function GET(request: Request) {
       createdAt: ep.createdAt,
       fromTeam: ep.fromTeam,
       fromTeams: ep.fromTeams,
+      emailAddress: ep.emailAddress,
+      showEmailExtracts: ep.showEmailExtracts,
     }));
 
     return Response.json({ owned, shared });
