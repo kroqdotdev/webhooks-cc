@@ -16,7 +16,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 };
 
 export const APP_VERSION = "0.35.1";
-export const CLI_VERSION = "1.3.2";
+export const CLI_VERSION = "1.4.0";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.0";
 
@@ -29,6 +29,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "web",
     items: [
       "The MCP tools reference and workflows cover the email and forwarding tools, with a signup-email walkthrough",
+      "New guide: testing signup and login emails in Playwright",
+      "The CLI reference covers whk get and whk requests, including how emails are shown",
     ],
   },
   {
@@ -1031,6 +1033,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.4.0",
+    date: "2026-10-08",
+    title: "Emails in the Terminal",
+    track: "cli",
+    items: [
+      "whk requests list shows a captured email's subject next to the address it arrived at, and EMAIL gets its own colour",
+      "whk requests get on an email shows the sender, recipient, subject, tag, attachments and text part instead of the raw message; --json still has every header and the raw message",
+      "whk create and whk get print the endpoint's mailhooks.cc email address",
+    ],
+  },
   {
     version: "1.3.2",
     date: "2026-10-08",

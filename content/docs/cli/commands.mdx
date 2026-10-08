@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-03-10
+lastUpdated: 2026-10-08
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -53,7 +53,7 @@ whk auth status
 
 ## create
 
-Create a new endpoint. An optional name can be provided; the slug is auto-generated.
+Create a new endpoint. An optional name can be provided; the slug is auto-generated. It prints the endpoint's webhook URL and its email address (`{slug}@mailhooks.cc`, see [Email Capture](/docs/email-capture)).
 
 ```bash
 whk create [name]
@@ -80,6 +80,14 @@ whk list --team Payments
 | Flag     | Description                                                                                             |
 | -------- | ------------------------------------------------------------------------------------------------------- |
 | `--team` | Only endpoints tied to this team (id or name): shared with you from it, or yours that are shared with it |
+
+## get
+
+Show an endpoint's details: webhook URL, email address, name, request count, mock response, and team shares.
+
+```bash
+whk get <slug>
+```
 
 ## delete
 
@@ -132,9 +140,26 @@ When signature verification is configured, listen shows verification status inli
 14:32:05 POST /webhook ✗ stripe  423 B
 ```
 
+## requests
+
+List, read, search, count, clear, and export captured requests. Run `whk requests <command> --help` for each command's flags.
+
+```bash
+whk requests list <slug>          # newest first, --limit (default 25), --since, --cursor
+whk requests get <request-id>
+```
+
+Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the address they arrived at, and their subject:
+
+```
+2026-10-08 16:47:20 EMAIL acme+run-7@mailhooks.cc Confirm your email 1.2 KB
+```
+
+`whk requests get` on an email shows the sender, recipient, subject, tag, attachments, and text part instead of the raw message. Add `--json` for the headers and the raw message; the HTML and the sender checks are in the dashboard.
+
 ## replay
 
-Replay a captured request to a target URL.
+Replay a captured request to a target URL. Emails cannot be replayed as HTTP requests; to send them to your server, use [forwarding](/docs/forwarding).
 
 ```bash
 whk replay <request-id>
