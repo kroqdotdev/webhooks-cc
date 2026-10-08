@@ -39,6 +39,7 @@ import {
   MAX_OUTPUT,
   omitHeaders,
   shrinkToFit,
+  sliceText,
   TEXT_FLOOR,
 } from "./compact";
 
@@ -498,24 +499,29 @@ function emailSlugFromAddress(address: string): string {
 const MAX_SUMMARY_LINK = 8_000;
 
 /** `link`, or null and a note with its length when it is longer than `max`. */
-function boundedLink(link: string | null, max: number) {
-  if (link === null || link.length <= max) return { link };
+function boundedLink(link: string | null | undefined, max: number) {
+  if (link == null || link.length <= max) return { link: link ?? null };
   return {
     link: null,
     linkOmitted: `The main link is ${link.length} characters long, too long for the output`,
   };
 }
 
+/** Longest subject and sender kept in a `list_emails` line, so one email cannot fill the list. */
+const MAX_SUMMARY_FIELD = 1_000;
+
 /** One line per email for list output. */
 function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
   const from = email.email.from[0];
+  const sender = from ? (from.name ? `${from.name} <${from.address ?? ""}>` : from.address) : null;
+  const subject = email.email.subject;
   return {
     id: email.id,
     receivedAt: new Date(email.receivedAt).toISOString(),
     address: email.path,
     tag: email.email.tag,
-    subject: email.email.subject,
-    from: from ? (from.name ? `${from.name} <${from.address ?? ""}>` : from.address) : null,
+    subject: subject === null ? null : sliceText(subject, MAX_SUMMARY_FIELD),
+    from: sender == null ? null : sliceText(sender, MAX_SUMMARY_FIELD),
     ...(includeExtracts
       ? { code: extractCode(email), ...boundedLink(extractLink(email), MAX_SUMMARY_LINK) }
       : {}),
@@ -589,7 +595,9 @@ function emailDetail(
     // may be room for more of the text again.
     () => {
       keepOnly(detail, ESSENTIAL_DETAIL_FIELDS);
-      Object.assign(detail, boundedLink(detail.link as string | null, MAX_BODY_SIZE / 2));
+      if (view.includeExtracts) {
+        Object.assign(detail, boundedLink(detail.link as string | null, MAX_BODY_SIZE / 2));
+      }
       restoreText();
       cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE);
     },

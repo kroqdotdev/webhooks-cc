@@ -1466,6 +1466,45 @@ describe("email and forwarding tools", () => {
     expect(summaries[0].link).toBeNull();
   });
 
+  it("returns a large email with codes and links turned off", async () => {
+    const big = makeEmail("x1", {
+      subject: "\u0001".repeat(4000),
+      from: [{ name: "\u0001".repeat(1000), address: "no-reply@tidewater.app" }],
+      text: `Your code is 482913. ${"t".repeat(20_000)}`,
+    });
+    const get = vi.fn(async () => big);
+    const waitFor = vi.fn(async () => big);
+    const tools = getRegisteredTools(emailClient({ emails: { get, waitFor } as never }, false));
+    for (const includeHtml of [false, true]) {
+      const results = [
+        await tools.get_email.handler({ requestId: "x1", includeHtml }),
+        await tools.wait_for_email.handler({ endpointSlug: "acme", timeout: "30s", includeHtml }),
+      ];
+      for (const result of results) {
+        expect(result.isError).toBeFalsy();
+        const detail = expectValidOutput(result);
+        expect(detail.id).toBe("x1");
+        expect(detail).not.toHaveProperty("code");
+        expect(detail).not.toHaveProperty("link");
+      }
+    }
+  });
+
+  it("keeps a list_emails line short when the subject and sender are huge", async () => {
+    const big = makeEmail("s1", {
+      subject: "\u0001".repeat(4000),
+      from: [{ name: "\u0001".repeat(1000), address: "\u0001".repeat(1000) }],
+      text: `Open https://app.tidewater.app/confirm?t=${"z".repeat(7900)}`,
+    });
+    const list = vi.fn(async () => [big]);
+    const tools = getRegisteredTools(emailClient({ emails: { list } as never }));
+    const summaries = expectValidOutput(
+      await tools.list_emails.handler({ endpointSlug: "acme", limit: 25 })
+    );
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].subject).toHaveLength(1000);
+  });
+
   it("never cuts an email's text in the middle of an emoji", async () => {
     const get = vi.fn(async () =>
       makeEmail("e1", { text: `${"a".repeat(7999)}${"😀".repeat(10)}` })
