@@ -685,6 +685,9 @@ describe("Teams Integration", () => {
       expect(ep!.name).toBe("Team Test Endpoint");
       expect(ep!.fromTeam.teamId).toBe(teamId);
       expect(ep!.ownerId).toBe(ownerId);
+      // Members see the endpoint's email address, so the email UI works for them too.
+      expect(ep!.emailAddress?.startsWith(`${endpointSlug}@`)).toBe(true);
+      expect(ep!.showEmailExtracts).toBe(true);
     });
 
     it("owner does not see their own endpoint in shared list", async () => {

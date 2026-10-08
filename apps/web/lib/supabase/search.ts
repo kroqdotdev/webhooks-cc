@@ -2,6 +2,7 @@ import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
+import { byteaToBase64 } from "./requests";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -17,6 +18,8 @@ export interface SearchRequestRecord {
   path: string;
   headers: Record<string, string>;
   body?: string;
+  /** Base64 of the exact bytes, when the body was not valid UTF-8. */
+  bodyRaw?: string;
   queryParams: Record<string, string>;
   contentType?: string;
   ip: string;
@@ -106,6 +109,7 @@ function normalizeSearchRow(row: SearchRpcRow): SearchRequestRecord {
     path: row.path,
     headers,
     body,
+    bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
     contentType: row.content_type ?? undefined,
     ip: row.ip,

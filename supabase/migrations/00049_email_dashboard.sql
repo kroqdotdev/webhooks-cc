@@ -8,7 +8,7 @@
 -- 3. bump_endpoint_daily_stats() gains p_emails (default 0) and
 --    capture_webhook() passes it. capture_webhook() is otherwise unchanged
 --    from 00048; only the success-path bump differs.
--- 4. search_requests() returns kind and email too (see below).
+-- 4. search_requests() returns kind, email and body_raw too (see below).
 --
 -- Apply in autocommit mode (see AGENTS.md); the function swap below runs in
 -- one transaction so no capture ever sees the old bump function missing.
@@ -333,15 +333,17 @@ grant execute on function public.capture_webhook(
 
 commit;
 
--- 4. search_requests() also returns kind and email, so search results can
---    show emails as emails. A changed result type needs drop and create;
---    the body is 00044's with the two columns added.
+-- 4. search_requests() also returns kind, email and body_raw, so search
+--    results and older pages show emails as emails, and a message that is
+--    not valid UTF-8 keeps its exact bytes for the raw view and the .eml
+--    download. A changed result type needs drop and create; the body is
+--    00044's with the three columns added.
 begin;
 
 drop function if exists public.search_requests(uuid, text, text, text, text, bigint, bigint, integer, integer, text);
 
 CREATE OR REPLACE FUNCTION public.search_requests(p_user_id uuid, p_plan text DEFAULT NULL::text, p_slug text DEFAULT NULL::text, p_method text DEFAULT NULL::text, p_q text DEFAULT NULL::text, p_from_ms bigint DEFAULT NULL::bigint, p_to_ms bigint DEFAULT NULL::bigint, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0, p_order text DEFAULT 'desc'::text)
- RETURNS TABLE(id text, slug text, method text, path text, headers jsonb, body text, query_params jsonb, content_type text, ip text, size integer, received_at bigint, kind text, email jsonb)
+ RETURNS TABLE(id text, slug text, method text, path text, headers jsonb, body text, query_params jsonb, content_type text, ip text, size integer, received_at bigint, kind text, email jsonb, body_raw bytea)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
@@ -396,7 +398,7 @@ begin
   return query execute format(
     'with owned as (
        select r.id, e.slug, r.method, r.path, r.headers, r.body, r.query_params,
-              r.content_type, r.ip, r.size, r.received_at, r.kind, r.email
+              r.content_type, r.ip, r.size, r.received_at, r.kind, r.email, r.body_raw
        from public.requests r
        join public.endpoints e on e.id = r.endpoint_id
        where r.user_id = $1
@@ -417,7 +419,7 @@ begin
      ),
      shared as (
        select r.id, e.slug, r.method, r.path, r.headers, r.body, r.query_params,
-              r.content_type, r.ip, r.size, r.received_at, r.kind, r.email
+              r.content_type, r.ip, r.size, r.received_at, r.kind, r.email, r.body_raw
        from public.requests r
        join public.endpoints e on e.id = r.endpoint_id
        left join public.users u on u.id = e.user_id
@@ -442,7 +444,7 @@ begin
             nullif(x.body, ''''), x.query_params, nullif(x.content_type, ''''),
             x.ip, x.size,
             floor(extract(epoch from x.received_at) * 1000)::bigint,
-            x.kind, x.email
+            x.kind, x.email, x.body_raw
      from (select * from owned union all select * from shared) x
      order by x.received_at %1$s
      limit %3$s offset %4$s',

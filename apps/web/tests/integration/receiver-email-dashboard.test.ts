@@ -130,4 +130,81 @@ describe("captured emails in the dashboard's data", () => {
     expect(updated?.showEmailExtracts).toBe(false);
     expect((await getEndpointBySlugForUser(userId, slug))?.showEmailExtracts).toBe(false);
   });
+
+  it("leaves out emails from the end of the previous period on the day a period begins", async () => {
+    const DAY = 86_400_000;
+    const firstDay = new Date(Date.now() - 3 * DAY).toISOString().slice(0, 10);
+    const secondDay = new Date(Date.parse(`${firstDay}T00:00:00Z`) + DAY)
+      .toISOString()
+      .slice(0, 10);
+    // Captured through capture_webhook so the request rows and the daily
+    // rollup both get them, on the day each was received.
+    for (const receivedAt of [
+      `${firstDay}T11:00:00Z`,
+      `${firstDay}T13:00:00Z`,
+      `${secondDay}T09:00:00Z`,
+    ]) {
+      const { data, error } = await admin.rpc("capture_webhook", {
+        p_slug: slug,
+        p_method: "EMAIL",
+        p_path: `${slug}@mailhooks.cc`,
+        p_headers: { subject: "Earlier" },
+        p_body: "Subject: Earlier\r\n\r\nx\r\n",
+        p_query_params: {},
+        p_content_type: "message/rfc822",
+        p_ip: "192.0.2.10",
+        p_received_at: receivedAt,
+        p_body_raw: null,
+        p_kind: "email",
+        p_email: { subject: "Earlier" },
+        p_dedupe_key: null,
+        p_retry: false,
+        p_size: null,
+      });
+      expect(error).toBeNull();
+      expect((data as { status: string }).status).toBe("ok");
+    }
+    // The period began at 12:00 on the first day: 11:00 belongs to the one before.
+    const period = await admin
+      .from("users")
+      .update({ period_start: `${firstDay}T12:00:00Z`, requests_used: 10 })
+      .eq("id", userId);
+    expect(period.error).toBeNull();
+
+    // 13:00 on the first day, the second day's rollup, and today's test email.
+    const usage = await getUsageForUser(userId);
+    expect(usage).toMatchObject({ used: 10, emails: 3 });
+  });
+
+  it("keeps the exact bytes of an email that is not UTF-8 in search results", async () => {
+    // Latin-1 "é": the text body gets a replacement character, body_raw the real byte.
+    const raw = Buffer.concat([
+      Buffer.from("Subject: Caf", "latin1"),
+      Buffer.from([0xe9]),
+      Buffer.from(" latin1\r\n\r\nx\r\n", "latin1"),
+    ]);
+    const { data, error } = await admin.rpc("capture_webhook", {
+      p_slug: slug,
+      p_method: "EMAIL",
+      p_path: `${slug}@mailhooks.cc`,
+      p_headers: { subject: "Caf\ufffd latin1" },
+      p_body: raw.toString("utf8"),
+      p_query_params: {},
+      p_content_type: "message/rfc822",
+      p_ip: "192.0.2.10",
+      p_received_at: new Date().toISOString(),
+      p_body_raw: `\\x${raw.toString("hex")}`,
+      p_kind: "email",
+      p_email: { subject: "Caf\ufffd latin1" },
+      p_dedupe_key: null,
+      p_retry: false,
+      p_size: null,
+    });
+    expect(error).toBeNull();
+    expect((data as { status: string }).status).toBe("ok");
+
+    const results = await searchRequestsForUser({ userId, slug, q: "latin1" });
+    expect(results).toHaveLength(1);
+    expect(results[0].bodyRaw).toBe(raw.toString("base64"));
+  });
 });

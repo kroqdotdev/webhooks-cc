@@ -672,6 +672,8 @@ export interface Database {
           received_at: number;
           kind: "http" | "email";
           email: Json | null;
+          /** bytea, as PostgREST's hex text. */
+          body_raw: string | null;
         }>;
       };
       search_requests_count: {

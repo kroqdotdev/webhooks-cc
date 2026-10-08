@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildPreviewDocument, countRemoteImages, previewPolicy } from "./email-preview";
+import {
+  buildPreviewDocument,
+  countRemoteImages,
+  disarmTags,
+  previewPolicy,
+} from "./email-preview";
 
 describe("previewPolicy", () => {
   it("allows inline styles and embedded images only, until remote images are asked for", () => {
@@ -22,14 +27,35 @@ describe("buildPreviewDocument", () => {
     expect(emailAt).toBeGreaterThan(baseAt);
   });
 
-  it("removes meta refresh and the email's own base tag", () => {
+  it("disarms the email's own meta, base and link tags", () => {
     const doc = buildPreviewDocument(
-      '<meta http-equiv="refresh" content="0;url=https://evil.example"><META HTTP-EQUIV=Refresh content="1"><base href="https://evil.example/"><p>x</p>',
+      [
+        '<meta http-equiv="refresh" content="0;url=https://evil.example">',
+        "<META HTTP-EQUIV=Refresh content=1>",
+        '<meta http-equiv="ref&#x72;esh" content="0;url=https://evil.example/encoded">',
+        "<meta/http-equiv=refresh content=0>",
+        '<me<meta>ta http-equiv="refresh" content="0">',
+        '<base href="https://evil.example/">',
+        '<link rel="preconnect" href="https://evil.example">',
+        '<LINK rel="dns-prefetch" href="//evil.example">',
+        "<p>x</p>",
+      ].join(""),
       { allowRemoteImages: true }
     );
-    expect(doc).not.toMatch(/refresh/i);
-    expect(doc).not.toContain("evil.example");
-    expect(doc.match(/<base\b/g)).toHaveLength(1);
+    // Only the document's own charset and policy metas and its base remain.
+    expect(doc.match(/<meta\b/gi)).toHaveLength(2);
+    expect(doc.match(/<base\b/gi)).toHaveLength(1);
+    expect(doc.match(/<link\b/gi)).toBeNull();
+    expect(doc).toContain('<x-meta http-equiv="refresh"');
+    expect(doc).toContain("<p>x</p>");
+  });
+});
+
+describe("disarmTags", () => {
+  it("leaves other tags and text alone", () => {
+    expect(disarmTags('<metadata><p class="meta">base and link</p><linked>')).toBe(
+      '<metadata><p class="meta">base and link</p><linked>'
+    );
   });
 });
 

@@ -88,7 +88,7 @@ interface UpdateEndpointInput {
 }
 
 /** Endpoints without an owner get no email: guest captures are readable by anyone with the slug. */
-function emailAddress(slug: string, userId: string | null): string | null {
+export function emailAddress(slug: string, userId: string | null): string | null {
   return userId ? `${slug}@${serverEnv().EMAIL_CAPTURE_DOMAIN}` : null;
 }
 

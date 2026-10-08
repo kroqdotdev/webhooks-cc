@@ -13,15 +13,16 @@
  *   sender the email was opened, and from which IP.
  * - <base target="_blank">: link clicks would open a new window, which the
  *   sandbox forbids, so they do nothing.
- * - Meta refresh tags (the CSP does not stop them navigating the frame) and
- *   any <base> of the email's own are removed.
+ * - The email's own <meta>, <base> and <link> elements are disarmed: a meta
+ *   refresh navigates the frame (the CSP and the sandbox do not stop that),
+ *   a base would retarget links, and link preconnect or dns-prefetch reach
+ *   the network outside the CSP. See `disarmTags`.
  *
  * Email HTML is written for a white background, so the document is white in
  * dark mode too.
  */
 
-const META_REFRESH = /<meta\b[^>]*http-equiv\s*=\s*["']?\s*refresh[^>]*>/gi;
-const BASE_TAG = /<base\b[^>]*>/gi;
+const DISARMED_TAG = /<(meta|base|link)\b/gi;
 const REMOTE_IMAGE =
   /<img\b[^>]*?\bsrc(?:set)?\s*=\s*["']?\s*(?:https?:)?\/\/|\bbackground\s*=\s*["']?\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\//gi;
 
@@ -35,11 +36,23 @@ export function previewPolicy(allowRemoteImages: boolean): string {
   return `default-src 'none'; style-src 'unsafe-inline'; img-src ${images}; font-src data:`;
 }
 
+/**
+ * Renames every <meta, <base and <link start tag to an unknown, inert
+ * element (<x-meta ...>). It works on the raw markup without parsing it: an
+ * HTML element with one of those names can only come from that literal start
+ * tag, however its attributes are written (entity-encoded "ref&#x72;esh"
+ * included), and the inserted "x-" cannot join surrounding text into a new
+ * match, so one pass is enough.
+ */
+export function disarmTags(html: string): string {
+  return html.replace(DISARMED_TAG, "<x-$1");
+}
+
 export function buildPreviewDocument(
   html: string,
   options: { allowRemoteImages: boolean }
 ): string {
-  const cleaned = html.replace(META_REFRESH, "").replace(BASE_TAG, "");
+  const cleaned = disarmTags(html);
   return [
     "<!doctype html><html><head>",
     '<meta charset="utf-8">',
