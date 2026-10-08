@@ -98,8 +98,10 @@ function isSiteStats(value: unknown): value is SiteStats {
 
 // The Docker image is built without the service-role key, so the page
 // prerendered into it would ship without the counters until the first
-// revalidation, about ten minutes after every deploy. Without the key, read
-// the public stats route of the deployment the build is for instead.
+// revalidation, up to ten minutes after the build. Without the key, read the
+// public stats route of the deployment the build is for instead. A failure
+// is logged so it shows up in the build log rather than as a page without
+// counters.
 async function getPublicSiteStats(): Promise<SiteStats | null> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!appUrl) return null;
@@ -108,10 +110,17 @@ async function getPublicSiteStats(): Promise<SiteStats | null> {
       next: { revalidate },
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[landing] /api/stats at ${appUrl} returned ${res.status}; no counters`);
+      return null;
+    }
     const data: unknown = await res.json();
-    return isSiteStats(data) ? data : null;
-  } catch {
+    if (isSiteStats(data)) return data;
+    console.warn(`[landing] /api/stats at ${appUrl} returned an unexpected shape; no counters`);
+    return null;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[landing] could not read /api/stats at ${appUrl}: ${reason}; no counters`);
     return null;
   }
 }
