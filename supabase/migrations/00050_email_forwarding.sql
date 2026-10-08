@@ -10,7 +10,8 @@
 --    record_email_delivery_attempt(), which schedules the next one. Rows go
 --    with their request and their endpoint.
 -- 3. email_delivery_attempts: the outcome of every try, for the dashboard.
--- 4. capture_webhook() queues the delivery; otherwise unchanged from 00049.
+-- 4. capture_webhook() queues the delivery (step 5b); otherwise unchanged
+--    from 00049.
 --
 -- Service role only, like every other table here: the dashboard reads
 -- deliveries through server routes.
@@ -254,7 +255,7 @@ grant execute on function public.record_email_delivery_attempt(
 ) to service_role;
 
 -- 4. capture_webhook() queues the delivery. The body is 00049's with the
---    endpoint lookup reading forward_enabled and step 4b added.
+--    endpoint lookup reading forward_enabled and step 5b added.
 begin;
 
 create or replace function public.capture_webhook(
@@ -494,17 +495,22 @@ begin
   )
   returning id into v_request_id;
 
-  -- 4b. Forwarding: queue the delivery in the capture's own transaction, so
-  -- a captured email is never lost before it is queued. The web app's worker
-  -- sends it (claim_email_deliveries).
-  if v_kind = 'email' and v_endpoint.forward_enabled then
-    insert into public.email_deliveries (request_id, endpoint_id)
-    values (v_request_id, v_endpoint.id);
-  end if;
-
   -- 5. Increment endpoint request count (ephemeral already incremented above)
   if not (v_endpoint.is_ephemeral and v_endpoint.user_id is null) then
     perform public.increment_endpoint_request_count(v_endpoint.id, 1);
+  end if;
+
+  -- 5b. Forwarding: queue the delivery in the capture's own transaction, so
+  -- a captured email is never lost before it is queued; the web app's worker
+  -- sends it (claim_email_deliveries). Step 5 holds the endpoint row (email
+  -- always has an owner), so forward_enabled is read again under that lock:
+  -- turning forwarding off either committed first and is seen here, or waits
+  -- for this capture and then settles the queued row with the others.
+  if v_kind = 'email' and v_endpoint.forward_enabled then
+    if (select e.forward_enabled from public.endpoints e where e.id = v_endpoint.id) then
+      insert into public.email_deliveries (request_id, endpoint_id)
+      values (v_request_id, v_endpoint.id);
+    end if;
   end if;
 
   perform public.bump_endpoint_daily_stats(

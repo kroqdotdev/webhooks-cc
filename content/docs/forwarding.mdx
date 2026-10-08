@@ -89,7 +89,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`                       | Always `email.received`.                                                                                                                             |
 | `timestamp`                  | When the email arrived. The same on every copy of one email.                                                                                         |
-| `data.id`                    | The email's id in webhooks.cc, also used for `webhook-id`.                                                                                           |
+| `data.id`                    | The email's id in webhooks.cc. `webhook-id` is `msg_` followed by this id without its dashes.                                                    |
 | `data.address`, `data.tag`   | The address the email arrived at, and its `+tag` if it had one.                                                                                      |
 | `data.from`                  | The first `From` address, or `null`.                                                                                                                 |
 | `data.text`, `data.html`     | The text and HTML parts, up to 256 KB each; `truncated` says when one was cut. `text` is derived from the HTML when the email has no text part.      |
