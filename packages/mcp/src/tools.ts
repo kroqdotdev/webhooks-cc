@@ -28,9 +28,17 @@ import {
   type Request,
   type VerifyProvider,
 } from "@webhooks-cc/sdk";
-import { compactRequest, cutEmailText } from "./compact";
+import {
+  capExtracts,
+  compactRequest,
+  cutEmailText,
+  cutStringToFit,
+  MAX_OUTPUT,
+  omitHeaders,
+  shrinkToFit,
+} from "./compact";
 
-const MAX_BODY_SIZE = 32_768;
+const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 const TIME_SEPARATOR = " — ";
 
@@ -475,9 +483,10 @@ function summarizeEmail(email: EmailRequest, includeExtracts: boolean) {
 
 /**
  * An email as `get_email` and `wait_for_email` return it: the forwarding
- * JSON's data, trimmed to the output budget. The code and link come first so
- * a cut never loses them, the text is cut at MAX_EMAIL_TEXT, and the HTML,
- * when asked for, gets what is left of the budget.
+ * JSON's data, trimmed to the output budget. The code and link come first
+ * and the text is cut at MAX_EMAIL_TEXT. If that is still too big, the
+ * headers go first, then extra codes and links, then the HTML (when asked
+ * for) and the text are cut to what is left, so the result stays valid JSON.
  */
 function emailDetail(
   client: WebhooksCC,
@@ -497,29 +506,15 @@ function emailDetail(
     text,
     ...(cut ? { textTruncated: true } : {}),
     htmlSize: html?.length ?? 0,
+    ...(includeHtml && html !== null ? { html } : {}),
   };
-  if (!includeHtml || html === null) return detail;
-  return { ...detail, ...fitHtml(detail, html) };
-}
-
-/** The longest start of `html` that keeps `detail` with it within MAX_BODY_SIZE. */
-function fitHtml(
-  detail: Record<string, unknown>,
-  html: string
-): { html: string; htmlTruncated?: true } {
-  const whole = { ...detail, html };
-  if (JSON.stringify(whole, null, 2).length <= MAX_BODY_SIZE) return { html };
-  const base = JSON.stringify({ ...detail, html: "", htmlTruncated: true }, null, 2).length;
-  // The serialized slice replaces the two characters of the empty string.
-  const budget = MAX_BODY_SIZE - base + 2;
-  let low = 0;
-  let high = html.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    if (JSON.stringify(html.slice(0, mid)).length <= budget) low = mid;
-    else high = mid - 1;
-  }
-  return { html: html.slice(0, low), htmlTruncated: true };
+  shrinkToFit(detail, MAX_BODY_SIZE, [
+    () => omitHeaders(detail),
+    () => capExtracts(detail),
+    () => cutStringToFit(detail, detail, "html", "htmlTruncated", MAX_BODY_SIZE),
+    () => cutStringToFit(detail, detail, "text", "textTruncated", MAX_BODY_SIZE),
+  ]);
+  return detail;
 }
 
 /** Register all webhook tools on an MCP server instance. */

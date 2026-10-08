@@ -173,7 +173,7 @@ Run a full end-to-end test: create endpoint, set mock response, send webhook, wa
 
 ### list_requests
 
-List captured requests for an endpoint, newest first. Emails come back with `kind: "email"` and the parsed message in `email`, without the raw message or the HTML part (`email.htmlSize` gives its length; `size` is the message size in bytes), and with the text cut at 8,000 characters. The other request tools and the MCP resources return emails the same way; use `get_email` for the HTML.
+List captured requests for an endpoint, newest first. Emails come back with `kind: "email"` and the parsed message in `email`, without the raw message or the HTML part (`email.htmlSize` gives its length; `size` is the message size in bytes), and with the text cut at 8,000 characters. An email that is still too big loses its headers (`headersOmitted`) and then more of its text. The other request tools and the MCP resources return emails the same way; use `get_email` for the HTML.
 
 | Parameter      | Type     | Required | Description                                            |
 | -------------- | -------- | -------- | ------------------------------------------------------ |
@@ -272,7 +272,7 @@ List the emails an endpoint received, newest first, one line each: `id`, `receiv
 
 ### get_email
 
-Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with a `tag`). Pass exactly one of the two. Returns the parsed message in the shape of [forwarded JSON](/docs/forwarding) (`subject`, `from`, `to`, `text`, `attachments`, `auth`, `headers`, ...) with `code` and `link` first. The text is cut at 8,000 characters (`textTruncated: true`), and the HTML is left out (`htmlSize` gives its length) unless `includeHtml` is set. Tool output is capped at 32 KB, so a large HTML part is cut to fit (`htmlTruncated: true`).
+Get one email: by `requestId`, or the newest at `endpointSlug` (optionally with a `tag`). Pass exactly one of the two. Returns the parsed message in the shape of [forwarded JSON](/docs/forwarding) (`subject`, `from`, `to`, `text`, `attachments`, `auth`, `headers`, ...) with `code` and `link` first. The text is cut at 8,000 characters (`textTruncated: true`), and the HTML is left out (`htmlSize` gives its length) unless `includeHtml` is set. Tool output is capped at 32 KB, so a large email is trimmed to fit and stays valid JSON: first its headers are left out (`headersOmitted`), then codes and links past the first 10 (`codesTruncated`, `linksTruncated`), then the HTML and the text are cut (`htmlTruncated`, `textTruncated`).
 
 | Parameter      | Type      | Required | Description                                   |
 | -------------- | --------- | -------- | --------------------------------------------- |
@@ -453,6 +453,56 @@ Example:
 ### describe
 
 Self-documenting schema of all available operations and their parameters. No parameters.
+
+## Agent registration
+
+These tools are available with or without an API key, so an agent that has no credential yet can get one ([auth.md](https://webhooks.cc/auth.md)). Without `WHK_API_KEY`, the server exposes only these six. None of them needs authentication.
+
+### how_to_register
+
+Explain the registration flows and link the auth.md document. Call it first when there is no API key. No parameters.
+
+### register_agent
+
+Register anonymously. Returns a `whcc_` API key that works at once in a bounded sandbox (ephemeral endpoints, reading its own captures), and a `userCode` and `claimUrl` a human uses to bind the key to their account.
+
+| Parameter    | Type     | Required | Description                                       |
+| ------------ | -------- | -------- | ------------------------------------------------- |
+| `clientName` | `string` | no       | A name for this agent, recorded on the issued key |
+
+### check_claim
+
+Check whether a human has claimed an anonymous registration's key. Poll it after `register_agent` until `status` is `claimed`.
+
+| Parameter    | Type     | Required | Description                            |
+| ------------ | -------- | -------- | -------------------------------------- |
+| `claimToken` | `string` | yes      | The `claimToken` from `register_agent` |
+
+### register_agent_with_email
+
+Register with a verified email address. webhooks.cc emails a one-time code to it, and the key is withheld until `verify_agent_otp` confirms the code. Returns a `claimToken`.
+
+| Parameter    | Type     | Required | Description                                       |
+| ------------ | -------- | -------- | ------------------------------------------------- |
+| `email`      | `string` | yes      | The address to verify and bind the key to         |
+| `clientName` | `string` | no       | A name for this agent, recorded on the issued key |
+
+### verify_agent_otp
+
+Finish an email registration with the code the human received. Returns the `whcc_` API key, bound to the verified address.
+
+| Parameter    | Type     | Required | Description                                       |
+| ------------ | -------- | -------- | ------------------------------------------------- |
+| `claimToken` | `string` | yes      | The `claimToken` from `register_agent_with_email` |
+| `otp`        | `string` | yes      | The one-time code from the email                  |
+
+### register_agent_with_idjag
+
+Register with an identity assertion (ID-JAG) JWT from a provider webhooks.cc trusts. The key comes back at once, with no human claim step. No provider is trusted yet, so this flow is not available on webhooks.cc today.
+
+| Parameter   | Type     | Required | Description                                |
+| ----------- | -------- | -------- | ------------------------------------------ |
+| `assertion` | `string` | yes      | The ID-JAG assertion JWT from the provider |
 
 <Callout type="info">
   For provider templates in `send_webhook` and `send_to`, `secret` is required for every signed

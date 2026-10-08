@@ -1278,6 +1278,51 @@ describe("email and forwarding tools", () => {
     expect(detail.textTruncated).toBe(true);
   });
 
+  it("stays valid JSON when the headers and links alone are too big", async () => {
+    const headers = Object.fromEntries(
+      Array.from({ length: 60 }, (_, i) => [`x-ms-exchange-header-${i}`, "h".repeat(250)])
+    );
+    const links = Array.from(
+      { length: 20 },
+      (_, i) => `https://u123.ct.sendgrid.net/ls/click?upn=${i}${"q".repeat(480)}`
+    );
+    const big = {
+      ...makeEmail("e1", {
+        text: `Your code is 482913. ${links.join(" ")} ${"t".repeat(10_000)}`,
+        html: `<p>Your code is 482913</p>${links.map((url) => `<a href="${url}">Open ${url}</a>`).join("")}`,
+      }),
+      headers,
+    };
+    const get = vi.fn(async () => big);
+    const list = vi.fn(async () => [big, big]);
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get } as never,
+        requests: { get, list } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    for (const includeHtml of [false, true]) {
+      const text = (await tools.get_email.handler({ requestId: "e1", includeHtml })).content[0]
+        .text;
+      expect(text.length).toBeLessThanOrEqual(32_768);
+      const detail = JSON.parse(text);
+      expect(Object.keys(detail).slice(0, 2)).toEqual(["code", "link"]);
+      expect(detail.code).toBe("482913");
+      expect(detail.headersOmitted).toBe("60 headers left out to fit the output");
+    }
+
+    const single = (await tools.get_request.handler({ requestId: "e1" })).content[0].text;
+    expect(single.length).toBeLessThanOrEqual(32_768);
+    expect(JSON.parse(single).email.subject).toBe("Confirm your email");
+
+    const listed = JSON.parse(
+      (await tools.list_requests.handler({ endpointSlug: "acme", limit: 25 })).content[0].text
+    );
+    const items = Array.isArray(listed) ? listed : listed.items;
+    expect(items.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("waits 30 seconds by default, under the usual MCP client timeout", () => {
     const tools = getRegisteredTools(emailClient());
     const schema = z.object(tools.wait_for_email.schema as z.ZodRawShape);

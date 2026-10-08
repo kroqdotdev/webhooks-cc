@@ -84,9 +84,10 @@ Agent: [calls configure_forwarding with url] Saved; a signing secret was created
        [calls configure_forwarding with enabled: true] Forwarding is on
 
 You: "A customer says their email never reached us"
-Agent: [calls list_deliveries with endpointSlug] Latest delivery failed after 3 attempts, last answer 500
+Agent: [calls list_deliveries with endpointSlug] The latest delivery is still pending after 3 attempts; your server answered 500 each time
        [calls list_deliveries with requestId] Your server answered "TypeError: cannot read 'from'"
-       [after the fix, calls redeliver_email] Delivered, 204
+       [after the fix, calls redeliver_email] Queued a new delivery
+       [calls list_deliveries with requestId] Delivered, 204
 ```
 
 ## Debug missing webhooks
