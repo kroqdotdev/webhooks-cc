@@ -214,7 +214,7 @@ curl -X POST https://webhooks.cc/api/send-test-email \
   -d '{"slug": "abc123"}'
 ```
 
-Returns `{ "status": "captured", "requestId": "..." }`. Guest endpoints return `400`, an endpoint whose quota is used up returns `409`. Rate limited to 10 requests per minute.
+Returns `{ "status": "captured", "requestId": "..." }`. A slug you cannot access returns `404`, and so does a guest endpoint, since only endpoints on an account receive email. An endpoint whose quota is used up returns `409`. Rate limited to 10 requests per minute.
 
 ## Forwarding
 

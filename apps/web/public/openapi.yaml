@@ -981,7 +981,7 @@ paths:
                     type: ["string", "null"]
                     description: ID of the captured email
         "400":
-          description: Invalid JSON or slug, or a guest endpoint (only endpoints on an account receive email)
+          description: Invalid JSON or slug
           content:
             application/json:
               schema:
@@ -989,7 +989,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: |
+            No endpoint with that slug that you own or that is shared with you. Guest endpoints
+            answer `404` too: they belong to no account, and only endpoints on an account receive
+            email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: The endpoint's request quota is used up
           headers:
@@ -1772,6 +1779,8 @@ components:
             - type: string
               format: uri
               maxLength: 2048
+            - type: string
+              const: ""
             - type: "null"
           description: |
             URL to forward captured emails to, or null (or `""`) to remove it. Must be `https` on a
