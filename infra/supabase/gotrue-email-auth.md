@@ -107,7 +107,20 @@ not call the hook; agent registration, its only user here, checks the
 domain in the app. Existing users and email changes are not affected.
 
 **Apply migration 00052 before adding these lines.** While the function is
-missing, GoTrue fails every signup with a 500.
+missing, GoTrue fails every signup with a 500. Before enabling, check that
+`supabase_auth_admin` can reach the function:
+
+```sql
+select has_schema_privilege('supabase_auth_admin', 'public', 'USAGE'),
+       has_function_privilege('supabase_auth_admin', 'public.hook_before_user_created(jsonb)', 'EXECUTE');
+-- expect: t | t
+```
+
+Recreate only `auth` (`docker compose up -d --no-deps auth`) and watch its
+log: a malformed hook URI stops GoTrue from starting at all, which takes
+down every sign-in, not only signups. To roll back, remove the two lines
+(or set `..._ENABLED` to `"false"`) and recreate `auth` again; never drop the
+function while the hook is on.
 
 ## 3. Apply
 

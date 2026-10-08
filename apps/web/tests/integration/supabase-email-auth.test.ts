@@ -116,6 +116,7 @@ describe("Email/password auth", () => {
 
       expect(error).toBeTruthy();
       expect(error!.status).toBe(403);
+      expect(error!.message).toContain("mailhooks.cc");
     });
 
     it("rejects signInWithPassword before the email is confirmed", async () => {

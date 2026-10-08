@@ -8,9 +8,10 @@
 -- already refuses these addresses in the app (web 0.35.3).
 --
 -- GoTrue calls this function before it creates a user through signup,
--- OAuth, magic link or OTP, invite and anonymous sign-in. The admin API
--- does not call it; the app checks on its own there. Existing users and
--- email changes are not affected.
+-- OAuth, magic link or OTP, invite (including the admin invite and
+-- generate_link endpoints) and anonymous sign-in. Admin createUser does not
+-- call it; agent registration, its only user here, checks in the app.
+-- Existing users and email changes are not affected.
 --
 -- Turned on in the auth container with
 --   GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
@@ -24,7 +25,7 @@
 create or replace function public.hook_before_user_created(event jsonb)
 returns jsonb
 language plpgsql
-immutable
+stable
 set search_path = ''
 as $$
 declare

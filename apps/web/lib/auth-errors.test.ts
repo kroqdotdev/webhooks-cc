@@ -55,6 +55,7 @@ describe("describeLoginError", () => {
       "That link is invalid or has expired. Sign in, or request a new link."
     );
     expect(describeLoginError("oauth_denied")).toMatch(/cancelled/);
+    expect(describeLoginError("capture_domain_email")).toMatch(/mailhooks\.cc/);
     expect(describeLoginError("oauth_error")).toMatch(/provider returned an error/);
   });
 
