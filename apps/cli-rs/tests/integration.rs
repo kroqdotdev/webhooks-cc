@@ -424,7 +424,6 @@ async fn test_tunnel_does_not_forward_emails() {
     assert_eq!(result.error.as_deref(), Some(whk::tunnel::EMAIL_NOT_TUNNELED));
 
     // From the REST API: kind is set.
-    req.method = "POST".into();
     req.kind = Some("email".into());
     assert!(req.is_email());
     assert!(!tunnel.forward(&req).await.success);
@@ -433,6 +432,17 @@ async fn test_tunnel_does_not_forward_emails() {
     assert!(body_rx.try_recv().is_err(), "nothing may reach the local server");
 
     drop(shutdown_tx);
+}
+
+#[test]
+fn test_custom_email_method_over_http_is_not_an_email() {
+    // A sender may use EMAIL as a custom HTTP method; that is still an HTTP request.
+    let mut req = make_captured_request("EMAIL", "/hooks/inbound", None, None);
+    assert!(!req.is_email(), "stream: an HTTP path means HTTP");
+    req.kind = Some("http".into());
+    assert!(!req.is_email(), "REST: kind wins");
+    req.path = "odd@example.com".into();
+    assert!(!req.is_email(), "REST: kind wins even for an odd path");
 }
 
 #[tokio::test]
