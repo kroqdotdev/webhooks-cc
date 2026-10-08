@@ -106,7 +106,7 @@ Set `"mockResponse": null` to clear the mock response and return to the default 
 
 Set `"showEmailExtracts": false` to stop picking out codes and links in emails. `forwardEnabled` and `forwardUrl` are covered under [Forwarding](#forwarding).
 
-Team members can change `name`, `mockResponse`, `responseRules`, and `showEmailExtracts` on shared endpoints. Notification, signing, and forwarding settings are owner only and return `403` for anyone else.
+Team members can change `name`, `mockResponse`, and `responseRules` on shared endpoints. `showEmailExtracts` and the notification, signing, and forwarding settings are owner only and return `403` for anyone else, because `showEmailExtracts` also decides what forwarding sends.
 
 ### Delete endpoint
 

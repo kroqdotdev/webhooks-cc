@@ -204,11 +204,13 @@ function Switch({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   id: string;
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -217,9 +219,11 @@ function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-6 w-11 shrink-0 items-center border-strong border-line rounded-lg cursor-pointer transition-colors",
+        "disabled:cursor-not-allowed disabled:opacity-60",
         "clean:rounded-full",
         checked ? "bg-primary" : "bg-muted"
       )}
@@ -268,7 +272,13 @@ function useSave(slug: string) {
 // Sections
 // ---------------------------------------------------------------------------
 
-function ReceivingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
+function ReceivingSection({
+  endpoint,
+  isOwner,
+}: {
+  endpoint: EndpointSettingsPanelProps["endpoint"];
+  isOwner: boolean;
+}) {
   const initialName = endpoint.name ?? "";
   const initialExtracts = endpoint.showEmailExtracts !== false;
   const [name, setName] = useState(initialName);
@@ -352,6 +362,8 @@ function ReceivingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["
                 Verification codes and links are picked out of each email and shown above the
                 preview, with copy buttons. Turn this off for endpoints that receive mail you would
                 rather not have scanned.
+                {!isOwner &&
+                  " Only the endpoint's owner can change this, because it also decides what forwarding sends."}
               </p>
             </div>
             <Switch
@@ -359,6 +371,7 @@ function ReceivingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["
               checked={extracts}
               onChange={setExtracts}
               label="Show codes and links found in emails"
+              disabled={!isOwner}
             />
           </div>
         </>
@@ -1227,8 +1240,8 @@ export function EndpointSettingsPanel({
   focusSection,
 }: EndpointSettingsPanelProps) {
   // Owners see everything; members of a team the endpoint is shared with can
-  // rename it and change its responses, but not delete it (the API enforces
-  // the same split).
+  // rename it and change its responses, but not change its email setting or
+  // delete it (the API enforces the same split).
   const isOwner = endpoint.notificationUrl !== undefined;
   const sections = useMemo(
     () =>
@@ -1307,7 +1320,7 @@ export function EndpointSettingsPanel({
       </nav>
       <div ref={scroller} className="flex-1 overflow-y-auto">
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
-          <ReceivingSection endpoint={endpoint} />
+          <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
           <ResponsesSection endpoint={endpoint} />
           {isOwner && <ForwardingSection endpoint={endpoint} />}
           {isOwner && <NotificationsSection endpoint={endpoint} />}

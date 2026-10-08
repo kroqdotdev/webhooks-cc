@@ -129,7 +129,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   const updatedFields = AUDITED_ENDPOINT_FIELDS.filter((field) => body[field] !== undefined);
 
   try {
-    // Allow team members to edit (they can rename + change mock response)
+    // Team members can rename the endpoint and change its responses
     const access = await resolveEndpointAccess(auth.userId, slug);
     if (!access) {
       return Response.json({ error: "Endpoint not found" }, { status: 404 });
@@ -140,13 +140,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       body.signingSecret !== undefined ||
       body.signingHeader !== undefined;
     const forwardingTouched = body.forwardEnabled !== undefined || body.forwardUrl !== undefined;
+    // showEmailExtracts also decides whether codes and links are in the JSON
+    // forwarded to the owner's server, so a team member must not change it.
     const ownerOnlyConfigTouched =
-      body.notificationUrl !== undefined || signingConfigTouched || forwardingTouched;
+      body.notificationUrl !== undefined ||
+      body.showEmailExtracts !== undefined ||
+      signingConfigTouched ||
+      forwardingTouched;
 
     if (!access.isOwner && ownerOnlyConfigTouched) {
       return Response.json(
         {
-          error: "Only the endpoint owner can update notification, forwarding or signing settings",
+          error:
+            "Only the endpoint owner can update email, notification, forwarding or signing settings",
         },
         { status: 403 }
       );

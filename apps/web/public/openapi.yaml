@@ -156,9 +156,10 @@ paths:
         Update an endpoint. Only the fields you send change.
         Set `mockResponse` to `null` to clear the mock response.
 
-        Team members can update `name`, `mockResponse`, `responseRules`, and `showEmailExtracts`
-        on endpoints shared with them. Only the owner can change `notificationUrl`, the signing
-        settings, `forwardEnabled`, and `forwardUrl`; anyone else who sends one gets `403`.
+        Team members can update `name`, `mockResponse`, and `responseRules` on endpoints shared
+        with them. Only the owner can change `showEmailExtracts` (it also decides whether forwarded
+        JSON includes codes and links), `notificationUrl`, the signing settings, `forwardEnabled`,
+        and `forwardUrl`; anyone else who sends one gets `403`.
 
         **Forwarding:** `forwardEnabled: true` needs a `forwardUrl`, sent in the same request or
         saved before. Saving the first URL (or turning forwarding on) creates the endpoint's signing
