@@ -82,7 +82,6 @@ const NAMED_REFS: Record<string, string> = {
 };
 const IMAGE_ATTRIBUTE =
   /\b(src|srcset|poster|background)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
-const CSS_URL = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\)/gi;
 
 /** Decodes the character references a URL could hide behind, for scanning only. */
 function decodeCharRefs(html: string): string {
@@ -93,6 +92,60 @@ function decodeCharRefs(html: string): string {
     }
     return NAMED_REFS[name!.toLowerCase()] ?? match;
   });
+}
+
+/**
+ * Lowercases A to Z only. `toLowerCase()` can change a string's length
+ * ("İ" becomes two code units), and the scans below find positions in the
+ * lowercased copy and slice the original with them.
+ */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+}
+
+function isWordChar(char: string | undefined): boolean {
+  return char !== undefined && /\w/.test(char);
+}
+
+/**
+ * The values of every CSS `url(...)`: quoted (`url("a")`, `url('a')`, the
+ * quote then a closing parenthesis) or not (everything up to the next `)`).
+ * A scan rather than a regex, because a regex that looks for the next `)`
+ * after every `url(` takes quadratic time on a message full of `url(`
+ * without one; the next quote and parenthesis are found once and reused.
+ */
+function cssUrls(text: string): string[] {
+  const lower = asciiLower(text);
+  const values: string[] = [];
+  const next: Record<string, number> = { '"': -1, "'": -1, ")": -1 };
+  const nextAt = (char: string, from: number): number => {
+    if (next[char] !== -2 && next[char] < from) next[char] = text.indexOf(char, from);
+    if (next[char] === -1) next[char] = -2; // none left
+    return next[char] === -2 ? -1 : next[char];
+  };
+  let index = 0;
+  while (index < text.length) {
+    const at = lower.indexOf("url(", index);
+    if (at === -1) break;
+    index = at + 4;
+    if (isWordChar(text[at - 1])) continue;
+    let start = index;
+    while (start < text.length && /\s/.test(text[start])) start++;
+    const quote = text[start];
+    if (quote === '"' || quote === "'") {
+      const end = nextAt(quote, start + 1);
+      if (end !== -1 && text[end + 1] === ")") {
+        values.push(text.slice(start + 1, end));
+        index = end + 2;
+        continue;
+      }
+    }
+    const close = nextAt(")", start);
+    if (close === -1) break;
+    values.push(text.slice(start, close));
+    index = close + 1;
+  }
+  return values;
 }
 
 /** What loading an image reference would take. */
@@ -128,8 +181,8 @@ export function countImageReferences(html: string): { remote: number; inline: nu
     const urls = match[1].toLowerCase() === "srcset" ? value.split(/,\s+/) : [value];
     add(urls.map((url) => classify(url.trim().split(/\s+/)[0] ?? "")));
   }
-  for (const match of decoded.matchAll(CSS_URL)) {
-    add([classify(match[1] ?? match[2] ?? match[3] ?? "")]);
+  for (const value of cssUrls(decoded)) {
+    add([classify(value)]);
   }
   return counts;
 }
