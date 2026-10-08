@@ -118,7 +118,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "What does the JSON contain?",
     answer:
-      "The sender, recipients, subject, date, message id, the text and HTML parts, the one-time codes and links found in the email, the name, type and size of each attachment, the SPF, DKIM and DMARC results, and every header. It is the same JSON each email's JSON tab shows in the dashboard.",
+      "The sender, recipients, subject, date, message id, the text and HTML parts, the one-time codes and links found in the email, the name, type and size of each attachment, the SPF, DKIM and DMARC results, and every header. It is the same JSON each email's JSON tab shows in the dashboard. The codes and links fields are left out when the endpoint's owner turned off \"Show codes and links found in emails\", so treat them as optional.",
   },
   {
     question: "How are forwarded emails signed?",
@@ -219,7 +219,10 @@ export default function EmailToWebhookPage() {
           </div>
           <p className="text-sm text-muted-foreground mt-3">
             Shortened. The full JSON also carries the endpoint, cc and reply-to addresses, the date,
-            the message id, the size and which parts were cut.
+            the message id, the size and which parts were cut.{" "}
+            <code className="font-mono">codes</code> and <code className="font-mono">links</code>{" "}
+            are left out when the endpoint&apos;s owner turned off &quot;Show codes and links found
+            in emails&quot;.
           </p>
         </section>
 

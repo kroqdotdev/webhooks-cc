@@ -184,7 +184,7 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: |
-            A team member sent an owner-only field (notification, signing, or forwarding settings),
+            A team member sent an owner-only field (email, notification, signing, or forwarding settings),
             or the API key belongs to an unclaimed agent
           content:
             application/json:
