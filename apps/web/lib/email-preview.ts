@@ -94,6 +94,15 @@ function decodeCharRefs(html: string): string {
   });
 }
 
+/**
+ * Lowercases A to Z only. `toLowerCase()` can change a string's length
+ * ("İ" becomes two code units), and the scans below find positions in the
+ * lowercased copy and slice the original with them.
+ */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+}
+
 function isWordChar(char: string | undefined): boolean {
   return char !== undefined && /\w/.test(char);
 }
@@ -106,7 +115,7 @@ function isWordChar(char: string | undefined): boolean {
  * without one; the next quote and parenthesis are found once and reused.
  */
 function cssUrls(text: string): string[] {
-  const lower = text.toLowerCase();
+  const lower = asciiLower(text);
   const values: string[] = [];
   const next: Record<string, number> = { '"': -1, "'": -1, ")": -1 };
   const nextAt = (char: string, from: number): number => {

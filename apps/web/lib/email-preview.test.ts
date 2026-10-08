@@ -125,6 +125,13 @@ describe("countImageReferences on hostile input", () => {
     }
   });
 
+  it("counts url() after characters whose lowercase is longer", () => {
+    expect(countImageReferences("İİİİ { background: URL(https://x.io/a.png) }")).toEqual({
+      remote: 1,
+      inline: 0,
+    });
+  });
+
   it("reads quoted, unquoted and spaced url() values", () => {
     const html =
       'a { background: url( "https://x.io/a.png" ) } b { background: url(cid:part) }' +

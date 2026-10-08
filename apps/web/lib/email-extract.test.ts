@@ -188,6 +188,20 @@ describe("tag handling edge cases", () => {
     ]);
   });
 
+  it("keeps positions right after characters whose lowercase is longer", () => {
+    // "İ" lowercases to two code units; the scans must still slice the right text.
+    const html =
+      "<p>İİİ</p><style>x</style><A HREF='https://x.io/verify'>Verify now</A> code 482913";
+    const found = extractFromEmail({ subject: null, text: null, html });
+    expect(found.links[0]).toEqual({
+      url: "https://x.io/verify",
+      label: "Verify now",
+      action: true,
+    });
+    expect(found.codes).toEqual(["482913"]);
+    expect(htmlToText(html)).toBe("İİİ\nVerify now code 482913");
+  });
+
   it("trims trailing punctuation from links in text", () => {
     const { links } = extractFromEmail({
       subject: null,

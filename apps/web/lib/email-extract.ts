@@ -71,6 +71,15 @@ function decodeEntities(value: string): string {
   );
 }
 
+/**
+ * Lowercases A to Z only. `toLowerCase()` can change a string's length
+ * ("İ" becomes two code units), and the scans below find positions in the
+ * lowercased copy and slice the original with them.
+ */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+}
+
 function isWordChar(code: number): boolean {
   return (
     (code >= 48 && code <= 57) ||
@@ -97,7 +106,7 @@ const SKIPPED_ELEMENTS = /<(script|style|head)\b/gi;
  * name has no closing tag ahead, it is not searched for again.
  */
 function dropSkippedElements(html: string): string {
-  const lower = html.toLowerCase();
+  const lower = asciiLower(html);
   const unclosed = new Set<string>();
   let out = "";
   let copied = 0;
@@ -139,7 +148,7 @@ function stripTags(html: string): string {
 
 /** Each `<a href=...>label</a>`: the href and the raw HTML of its label. */
 function findAnchors(html: string): { href: string; label: string }[] {
-  const lower = html.toLowerCase();
+  const lower = asciiLower(html);
   const anchors: { href: string; label: string }[] = [];
   let index = 0;
   let close = -1;
