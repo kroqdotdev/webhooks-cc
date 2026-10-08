@@ -1008,7 +1008,7 @@ interface Delivery {
 ### Limits
 
 - The URL must be `https` on a public host name, at most 2048 characters: no IP addresses, `localhost`, private networks, credentials in the URL, or mail, database and other internal ports.
-- Requests come from Cloudflare's network, not a fixed address. Do not allowlist IPs; check the signature.
+- On webhooks.cc, requests come from Cloudflare's network, not a fixed address (a self-hosted copy without the notify proxy sends from its own server). Do not allowlist IPs; check the signature.
 - An email whose JSON would be larger than 10 MB is not forwarded.
 - Deliveries are kept as long as the email itself.
 
