@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.0";
+export const APP_VERSION = "0.35.1";
 export const CLI_VERSION = "1.3.2";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.9.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.1",
+    date: "2026-10-08",
+    title: "Landing Counters After Deploys",
+    track: "web",
+    items: [
+      "The developer, endpoint and webhook counters on the landing page no longer disappear for the first minutes after a release",
+    ],
+  },
   {
     version: "0.35.0",
     date: "2026-10-08",
