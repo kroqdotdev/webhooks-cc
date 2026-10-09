@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.4";
+export const APP_VERSION = "0.35.5";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.5",
+    date: "2026-10-08",
+    title: "Claimed Endpoints Keep Their Requests",
+    track: "web",
+    items: [
+      "Requests a guest endpoint received before you signed in and kept it now belong to your account: search finds them, and they follow your plan's retention",
+    ],
+  },
   {
     version: "0.35.4",
     date: "2026-10-08",
