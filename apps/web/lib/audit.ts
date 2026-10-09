@@ -66,6 +66,8 @@ export interface AuditUserActionInput {
 }
 
 const MAX_USER_AGENT = 256;
+/** Longest string kept in agent event metadata; agents choose some of it (client_name). */
+const MAX_AGENT_METADATA_STRING = 100;
 const MAX_TARGET_ID = 128;
 const MAX_REASON = 300;
 
@@ -166,8 +168,22 @@ export async function auditAgentEvent(
     team_id: null,
     target_user_id: input.targetUserId ?? null,
     target_id: truncate(input.targetId, MAX_TARGET_ID),
-    metadata: { ...input.metadata, status: input.status },
+    metadata: { ...boundStrings(input.metadata ?? {}), status: input.status },
   });
+}
+
+/**
+ * Cuts string values to MAX_AGENT_METADATA_STRING. Agents pick values such
+ * as client_name, and a row over the metadata size check (4 KB) would be
+ * rejected and lost, so an agent could otherwise keep itself out of the trail.
+ */
+function boundStrings(metadata: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value.slice(0, MAX_AGENT_METADATA_STRING) : value,
+    ])
+  );
 }
 
 /** The domain of an email address, for audit metadata (never the whole address). */

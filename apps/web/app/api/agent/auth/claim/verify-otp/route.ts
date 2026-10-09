@@ -35,7 +35,6 @@ export async function POST(request: Request) {
       await auditAgentEvent(request, {
         action: "agent.claim.confirmed",
         status: 200,
-        targetId: registrationId ?? null,
         targetUserId: result.userId,
         metadata: { flow: "verified_email" },
       });
@@ -53,7 +52,6 @@ export async function POST(request: Request) {
       await auditAgentEvent(request, {
         action: "agent.claim.refused",
         status: result.error === "otp_invalid" ? 401 : 429,
-        targetId: registrationId ?? null,
         metadata: { flow: "verified_email", code: result.error },
       });
     }
