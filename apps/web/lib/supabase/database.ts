@@ -574,9 +574,9 @@ export interface Database {
         Row: {
           id: number;
           occurred_at: string;
-          actor_type: "user" | "polar" | "system";
+          actor_type: "user" | "polar" | "system" | "agent";
           actor_user_id: string | null;
-          via: "session" | "api_key" | null;
+          via: "session" | "api_key" | "agent_token" | null;
           user_agent: string | null;
           action: string;
           outcome: "ok" | "refused" | "error";
@@ -587,9 +587,9 @@ export interface Database {
         };
         Insert: {
           occurred_at?: string;
-          actor_type: "user" | "polar" | "system";
+          actor_type: "user" | "polar" | "system" | "agent";
           actor_user_id?: string | null;
-          via?: "session" | "api_key" | null;
+          via?: "session" | "api_key" | "agent_token" | null;
           user_agent?: string | null;
           action: string;
           outcome?: "ok" | "refused" | "error";

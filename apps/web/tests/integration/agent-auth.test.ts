@@ -291,7 +291,21 @@ describe("Agent Auth (auth.md) Integration", () => {
     const body = await res.json();
 
     expect(body.credential).toMatch(/^whcc_/);
-    expect(body.credential_expires).toBeNull();
+    // An unclaimed key lives as long as its claim.
+    expect(body.credential_expires).toBe(body.claim_token_expires);
+
+    const { data: audit } = await admin
+      .from("audit_events")
+      .select("action, actor_type, outcome, metadata")
+      .eq("target_id", body.registration_id);
+    expect(audit).toEqual([
+      expect.objectContaining({
+        action: "agent.registration.created",
+        actor_type: "agent",
+        outcome: "ok",
+        metadata: expect.objectContaining({ flow: "anonymous", client_name: "anon-test-agent" }),
+      }),
+    ]);
     expect(Array.isArray(body.scopes)).toBe(true);
     expect(body.scopes.length).toBeGreaterThan(0);
     expect(body.claim_token).toMatch(/^clm_/);

@@ -40,6 +40,17 @@ export type AuditAction =
   | "team.subscription_resumed"
   | "team.seats_changed";
 
+/** Agent registration (auth.md) events: no signed-in user is behind most of them. */
+export type AgentAuditAction =
+  | "agent.registration.created"
+  | "agent.registration.refused"
+  | "agent.claim.requested"
+  | "agent.claim.confirmed"
+  | "agent.claim.refused"
+  | "agent.token.revoked"
+  | "agent.sandbox.endpoint_created"
+  | "agent.sandbox.full";
+
 export type AuditOutcome = "ok" | "refused" | "error";
 
 export interface AuditUserActionInput {
@@ -73,9 +84,9 @@ const POLAR_FIELDS = [
 ] as const;
 
 type AuditRow = {
-  actor_type: "user" | "polar" | "system";
+  actor_type: "user" | "polar" | "system" | "agent";
   actor_user_id: string | null;
-  via: "session" | "api_key" | null;
+  via: "session" | "api_key" | "agent_token" | null;
   user_agent: string | null;
   action: string;
   outcome: AuditOutcome;
@@ -124,6 +135,50 @@ export async function auditUserAction(
     target_id: truncate(input.targetId, MAX_TARGET_ID),
     metadata,
   });
+}
+
+/**
+ * Records an agent registration, claim or sandbox event. The actor is the
+ * agent unless `actorUserId` is set (a signed-in human confirming a claim).
+ * Only ids and our own codes go in: never credentials, claim tokens, codes,
+ * or full email addresses (`metadata.email_domain` at most).
+ */
+export async function auditAgentEvent(
+  request: Request,
+  input: {
+    action: AgentAuditAction;
+    /** HTTP status the route answered with; 2xx is ok, 4xx refused, 5xx error. */
+    status: number;
+    /** The registration (agent_claims) id, or the endpoint for sandbox events. */
+    targetId?: string | null;
+    actorUserId?: string | null;
+    targetUserId?: string | null;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<void> {
+  await recordAuditEvent({
+    actor_type: input.actorUserId ? "user" : "agent",
+    actor_user_id: input.actorUserId ?? null,
+    via: input.actorUserId ? requestVia(request) : null,
+    user_agent: truncate(request.headers.get("user-agent"), MAX_USER_AGENT),
+    action: input.action,
+    outcome: outcomeForStatus(input.status),
+    team_id: null,
+    target_user_id: input.targetUserId ?? null,
+    target_id: truncate(input.targetId, MAX_TARGET_ID),
+    metadata: { ...input.metadata, status: input.status },
+  });
+}
+
+/** The domain of an email address, for audit metadata (never the whole address). */
+export function emailDomain(email: string): string | null {
+  const at = email.lastIndexOf("@");
+  return at === -1
+    ? null
+    : email
+        .slice(at + 1)
+        .toLowerCase()
+        .slice(0, 253);
 }
 
 /** `customer_seat.claimed` becomes `polar.customer_seat.claimed`. */

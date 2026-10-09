@@ -211,7 +211,7 @@ Response:
   "registration_type": "anonymous",
   "credential_type": "api_key",
   "credential": "whcc_...",
-  "credential_expires": null,
+  "credential_expires": "<iso8601>",
   "scopes": ["webhooks:read", "webhooks:write"],
   "claim_url": "${claimPage}",
   "claim_token": "clm_...",
@@ -224,6 +224,10 @@ Response:
 The credential works immediately in a bounded sandbox before it is claimed: an
 unclaimed key may create ephemeral endpoints and read only its own captured
 requests at \`${appUrl}/api/agent/sandbox/endpoints\`. See "Sandbox" below.
+
+An unclaimed credential lives only as long as its claim: \`credential_expires\`
+equals \`claim_token_expires\`, 15 minutes after registration, and the key is
+deleted within 10 minutes after that. Claiming it removes the expiry.
 
 ### 2. Verified email (OTP)
 

@@ -2,6 +2,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 import { verifyVerifiedEmailOtp } from "@/lib/agent/agent-auth";
 import { sendError } from "@appsignal/nodejs";
+import { auditAgentEvent } from "@/lib/audit";
 
 /**
  * verified_email OTP completion (auth.md). Unauthenticated: the agent submits
@@ -31,6 +32,13 @@ export async function POST(request: Request) {
     });
 
     if (result.ok) {
+      await auditAgentEvent(request, {
+        action: "agent.claim.confirmed",
+        status: 200,
+        targetId: registrationId ?? null,
+        targetUserId: result.userId,
+        metadata: { flow: "verified_email" },
+      });
       return Response.json({
         registration_id: registrationId,
         status: "claimed",
@@ -38,6 +46,15 @@ export async function POST(request: Request) {
         credential: result.credential,
         credential_expires: null,
         scopes: result.scopes,
+      });
+    }
+
+    if (result.error === "otp_invalid" || result.error === "too_many_keys") {
+      await auditAgentEvent(request, {
+        action: "agent.claim.refused",
+        status: result.error === "otp_invalid" ? 401 : 429,
+        targetId: registrationId ?? null,
+        metadata: { flow: "verified_email", code: result.error },
       });
     }
 

@@ -75,10 +75,34 @@ export interface EndpointRecord {
   hasForwardSecret: boolean;
 }
 
+/**
+ * Sandbox endpoints of unclaimed agent keys are ownerless temporary endpoints
+ * named `sandbox:<keyId>`. They are not guest endpoints: the guest routes must
+ * not read or claim them, and they count against their own pool.
+ */
+export const SANDBOX_NAME_PREFIX = "sandbox:";
+
+/** PostgREST filter for ownerless rows that are not sandbox endpoints (`name` is null for guests). */
+const NOT_SANDBOX = `name.is.null,name.not.like.${SANDBOX_NAME_PREFIX}*`;
+
+/** Thrown when a temporary endpoint cannot be created because its pool is full. */
+export class EphemeralCapacityError extends Error {
+  constructor(readonly pool: "guest" | "sandbox") {
+    super(
+      pool === "sandbox"
+        ? "The agent sandbox is full. Please try again later."
+        : "Too many active demo endpoints. Please try again later."
+    );
+    this.name = "EphemeralCapacityError";
+  }
+}
+
 interface CreateEndpointInput {
   userId?: string;
   name?: string;
   isEphemeral?: boolean;
+  /** An agent sandbox endpoint: counted against the sandbox pool, not the guest pool. */
+  sandbox?: boolean;
   expiresAt?: number;
   mockResponse?: Record<string, unknown>;
   responseRules?: unknown[] | null;
@@ -213,22 +237,31 @@ async function findOwnedEndpoint(userId: string, slug: string): Promise<OwnedEnd
   return data;
 }
 
-async function enforceEphemeralCapacity(): Promise<void> {
+async function enforceEphemeralCapacity(pool: "guest" | "sandbox"): Promise<void> {
   const admin = createAdminClient();
   const nowIso = new Date().toISOString();
 
-  const { count, error } = await admin
+  let query = admin
     .from("endpoints")
     .select("id", { count: "exact", head: true })
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso);
+  query =
+    pool === "sandbox"
+      ? query.is("user_id", null).like("name", `${SANDBOX_NAME_PREFIX}%`)
+      : query.or(`user_id.not.is.null,${NOT_SANDBOX}`);
+  const { count, error } = await query;
 
   if (error) {
     throw error;
   }
 
-  if ((count ?? 0) >= serverEnv().MAX_EPHEMERAL_ENDPOINTS) {
-    throw new Error("Too many active demo endpoints. Please try again later.");
+  const limit =
+    pool === "sandbox"
+      ? serverEnv().AGENT_SANDBOX_MAX_ENDPOINTS
+      : serverEnv().MAX_EPHEMERAL_ENDPOINTS;
+  if ((count ?? 0) >= limit) {
+    throw new EphemeralCapacityError(pool);
   }
 }
 
@@ -272,6 +305,7 @@ export async function createEndpointForUser({
   userId,
   name,
   isEphemeral = false,
+  sandbox = false,
   expiresAt,
   mockResponse,
   responseRules,
@@ -282,7 +316,7 @@ export async function createEndpointForUser({
   const ephemeral = isEphemeral || expiresAt !== undefined;
 
   if (ephemeral) {
-    await enforceEphemeralCapacity();
+    await enforceEphemeralCapacity(sandbox ? "sandbox" : "guest");
   }
 
   const expiresAtIso =
@@ -330,6 +364,7 @@ export async function getGuestEndpointBySlug(slug: string) {
     .eq("slug", slug.toLowerCase())
     .eq("is_ephemeral", true)
     .is("user_id", null)
+    .or(NOT_SANDBOX)
     .maybeSingle();
 
   if (error) {
@@ -369,6 +404,7 @@ export async function claimGuestEndpoint(
     .is("user_id", null)
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
+    .or(NOT_SANDBOX)
     .select(ENDPOINT_COLUMNS)
     .returns<SelectedEndpointRow>()
     .maybeSingle();

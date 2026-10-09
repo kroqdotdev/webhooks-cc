@@ -3,6 +3,7 @@ import { parseJsonBody } from "@/lib/request-validation";
 import { verifyLogoutToken } from "@/lib/agent/id-jag";
 import { revokeForIssuerSubject } from "@/lib/agent/agent-auth";
 import { sendError } from "@appsignal/nodejs";
+import { auditAgentEvent } from "@/lib/audit";
 
 /**
  * POST /api/agent/auth/revoke — provider-driven revocation (auth.md logout+jwt).
@@ -73,7 +74,12 @@ export async function POST(request: Request) {
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
 
-    await revokeForIssuerSubject(result.iss, result.sub);
+    const revoked = await revokeForIssuerSubject(result.iss, result.sub);
+    await auditAgentEvent(request, {
+      action: "agent.token.revoked",
+      status: 200,
+      metadata: { issuer: result.iss, revoked },
+    });
 
     return new Response(null, { status: 200 });
   } catch (error) {
