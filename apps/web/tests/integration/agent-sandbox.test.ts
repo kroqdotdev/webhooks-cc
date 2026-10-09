@@ -482,4 +482,42 @@ describe("Agent Sandbox (unclaimed-key) Integration", () => {
     const getAfter = await h.sandboxGet(bearerGet(SANDBOX_URL, credential));
     expect(getAfter.status).toBe(403);
   });
+
+  // -------------------------------------------------------------------------
+  // Guest routes and pools: a sandbox endpoint is not a guest endpoint.
+  // -------------------------------------------------------------------------
+  it("keeps sandbox endpoints out of the guest read and claim paths, and audits the create", async () => {
+    const { credential } = await mintAnonymousKey("sandbox-guest-paths-agent");
+    const res = await h.sandboxPost(
+      jsonRequest(SANDBOX_URL, {}, { authorization: `Bearer ${credential}` })
+    );
+    expect(res.status).toBe(201);
+    const sandbox = await res.json();
+    createdEndpointIds.add(sandbox.id);
+
+    const { getGuestEndpointBySlug, claimGuestEndpoint, createGuestEndpoint } =
+      await import("@/lib/supabase/endpoints");
+    expect(await getGuestEndpointBySlug(sandbox.slug)).toBeNull();
+    expect(await claimGuestEndpoint(realUserId, sandbox.slug)).toBeNull();
+    const { data: still } = await admin
+      .from("endpoints")
+      .select("user_id")
+      .eq("id", sandbox.id)
+      .single();
+    expect(still!.user_id).toBeNull();
+
+    // An ordinary guest endpoint (name null) is still readable and claimable.
+    const guest = await createGuestEndpoint();
+    createdEndpointIds.add(guest.id);
+    expect((await getGuestEndpointBySlug(guest.slug))?.id).toBe(guest.id);
+    expect((await claimGuestEndpoint(realUserId, guest.slug))?.id).toBe(guest.id);
+
+    const { data: audit } = await admin
+      .from("audit_events")
+      .select("action, actor_type, outcome")
+      .eq("target_id", sandbox.id);
+    expect(audit).toEqual([
+      { action: "agent.sandbox.endpoint_created", actor_type: "agent", outcome: "ok" },
+    ]);
+  });
 });

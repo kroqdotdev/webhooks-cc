@@ -62,6 +62,7 @@ const serverEnvSchema = z
     ENDPOINT_CREATE_RATE_LIMIT: z.coerce.number().int().min(1).default(30),
     ENDPOINT_CREATE_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
     MAX_EPHEMERAL_ENDPOINTS: z.coerce.number().int().min(1).default(500),
+    AGENT_SANDBOX_MAX_ENDPOINTS: z.coerce.number().int().min(1).default(200),
     EPHEMERAL_TTL_HOURS: z.coerce.number().min(0.1).default(12),
     // Polar seat-based Teams product. Optional so deploys without Teams billing keep working;
     // getPolarTeamsCheckoutConfig() throws at call time when it is missing.
@@ -162,6 +163,7 @@ export function serverEnv() {
       ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,
       ENDPOINT_CREATE_RATE_WINDOW_MS: process.env.ENDPOINT_CREATE_RATE_WINDOW_MS,
       MAX_EPHEMERAL_ENDPOINTS: process.env.MAX_EPHEMERAL_ENDPOINTS,
+      AGENT_SANDBOX_MAX_ENDPOINTS: process.env.AGENT_SANDBOX_MAX_ENDPOINTS,
       EPHEMERAL_TTL_HOURS: process.env.EPHEMERAL_TTL_HOURS,
       POLAR_TEAMS_PRODUCT_ID: process.env.POLAR_TEAMS_PRODUCT_ID,
       RESEND_API_KEY: process.env.RESEND_API_KEY,

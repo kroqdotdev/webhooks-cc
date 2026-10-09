@@ -9,6 +9,7 @@ import {
 } from "@/lib/agent/agent-auth";
 import { verifyIdJag } from "@/lib/agent/id-jag";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
+import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { isPlainEmailAddress } from "@/lib/request-validation";
 import { sendError } from "@appsignal/nodejs";
 
@@ -111,6 +112,12 @@ export async function POST(request: Request) {
       const result = await createAnonymousRegistration({
         clientName: optionalClientName(body),
       });
+      await auditAgentEvent(request, {
+        action: "agent.registration.created",
+        status: 200,
+        targetId: result.registration_id,
+        metadata: { flow: "anonymous", client_name: optionalClientName(body) ?? null },
+      });
       return applyRateLimitHeaders(Response.json(result, { status: 200 }), rateLimit);
     }
 
@@ -134,6 +141,11 @@ export async function POST(request: Request) {
       // itself, so one account could verify any number of +tag addresses and
       // mint a new account for each.
       if (isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
+        await auditAgentEvent(request, {
+          action: "agent.registration.refused",
+          status: 400,
+          metadata: { flow: "verified_email", code: "capture_domain" },
+        });
         return Response.json(
           {
             error: "invalid_email",
@@ -145,6 +157,16 @@ export async function POST(request: Request) {
       const claim = await issueVerifiedEmailClaim({
         email: emailValue,
         clientName: optionalClientName(body),
+      });
+      await auditAgentEvent(request, {
+        action: "agent.claim.requested",
+        status: 200,
+        targetId: claim.registration_id,
+        metadata: {
+          flow: "verified_email",
+          email_domain: emailDomain(emailValue),
+          client_name: optionalClientName(body) ?? null,
+        },
       });
       return applyRateLimitHeaders(
         Response.json(
@@ -175,6 +197,11 @@ export async function POST(request: Request) {
       if (!issued.ok) {
         return Response.json({ error: issued.error }, { status: 400 });
       }
+      await auditAgentEvent(request, {
+        action: "agent.registration.created",
+        status: 200,
+        metadata: { flow: "identity_assertion", issuer: verified.iss },
+      });
       return applyRateLimitHeaders(
         Response.json(
           {
@@ -194,6 +221,11 @@ export async function POST(request: Request) {
   } catch (err) {
     // Capacity/throttle limits surface as their own status + auth.md code.
     if (err instanceof AgentRequestError) {
+      await auditAgentEvent(request, {
+        action: "agent.registration.refused",
+        status: err.status,
+        metadata: { flow: flowType ?? null, code: err.code },
+      });
       return applyRateLimitHeaders(
         Response.json({ error: err.code }, { status: err.status }),
         rateLimit

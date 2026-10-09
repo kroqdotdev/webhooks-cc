@@ -7,8 +7,15 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({ from }),
 }));
 
-const { auditPolarEvent, auditUserAction, outcomeForStatus, polarAuditAction, requestVia } =
-  await import("./audit");
+const {
+  auditAgentEvent,
+  auditPolarEvent,
+  auditUserAction,
+  emailDomain,
+  outcomeForStatus,
+  polarAuditAction,
+  requestVia,
+} = await import("./audit");
 
 function request(headers: Record<string, string>): Request {
   return new Request("https://webhooks.cc/api/teams", { method: "POST", headers });
@@ -108,5 +115,41 @@ describe("audit", () => {
         metadata: { id: "seat-1", status: "revoked", subscription_id: "sub-1" },
       })
     );
+  });
+
+  it("records agent events as the agent, with long agent-chosen strings cut", async () => {
+    await auditAgentEvent(request({ "user-agent": "agent/1" }), {
+      action: "agent.registration.created",
+      status: 200,
+      targetId: "reg-1",
+      metadata: { flow: "anonymous", client_name: "x".repeat(5000) },
+    });
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor_type: "agent",
+        actor_user_id: null,
+        via: null,
+        action: "agent.registration.created",
+        outcome: "ok",
+        target_id: "reg-1",
+        metadata: { flow: "anonymous", client_name: "x".repeat(100), status: 200 },
+      })
+    );
+  });
+
+  it("records a human confirming a claim as the user", async () => {
+    await auditAgentEvent(request({ authorization: "Bearer jwt" }), {
+      action: "agent.claim.confirmed",
+      status: 200,
+      actorUserId: "user-1",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ actor_type: "user", actor_user_id: "user-1", via: "session" })
+    );
+  });
+
+  it("keeps only the domain of an email address", () => {
+    expect(emailDomain("Dev@Example.COM")).toBe("example.com");
+    expect(emailDomain("no-at-sign")).toBeNull();
   });
 });

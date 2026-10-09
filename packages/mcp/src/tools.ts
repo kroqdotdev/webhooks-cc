@@ -1746,7 +1746,7 @@ export function registerAgentRegistrationTools(server: McpServer): void {
       return jsonContent({
         ...WebhooksCC.describeRegistration(baseUrl),
         next_steps: [
-          "Easiest: call register_agent (anonymous) to get a key immediately, then have a human run claim_agent with the returned userCode while logged in to webhooks.cc.",
+          "Easiest: call register_agent (anonymous) to get a key immediately, then ask a human to open the returned claimUrl while signed in to webhooks.cc and enter the userCode. Poll check_claim until it says claimed.",
           "Or set WHK_API_KEY to an existing whcc_ key and use the authenticated tools.",
         ],
       });
@@ -1755,7 +1755,7 @@ export function registerAgentRegistrationTools(server: McpServer): void {
 
   server.tool(
     "register_agent",
-    "Self-register for a webhooks.cc API credential via the anonymous auth.md flow. Returns a whcc_ API key that works immediately in a bounded sandbox, plus a short userCode and claimUrl a human uses to bind the key to their account. No authentication required. After registering, set WHK_API_KEY to the returned credential.",
+    "Self-register for a webhooks.cc API credential via the anonymous auth.md flow. Returns a whcc_ API key, plus a short userCode and claimUrl a human uses to bind the key to their account. Until a human claims it, the key only works with the sandbox API (/api/agent/sandbox/endpoints), not with these tools, and it is deleted about 15 minutes after registration. No authentication required.",
     {
       clientName: z
         .string()
@@ -1775,7 +1775,7 @@ export function registerAgentRegistrationTools(server: McpServer): void {
           instructions: `Ask a human to open ${reg.claimUrl} while logged in to webhooks.cc and either enter the code ${reg.userCode} or open ${reg.claimUrl}?token=${reg.claimToken}. Then call check_claim with the claimToken.`,
         },
         usage:
-          "Set WHK_API_KEY to `credential` to use the authenticated tools. Before it is claimed the key can create ephemeral endpoints and read its own captured requests in the sandbox.",
+          "Until a human claims it, the key only works with the sandbox API at /api/agent/sandbox/endpoints (create temporary endpoints, read their requests), and it is deleted about 15 minutes after registration. Once check_claim says claimed, set WHK_API_KEY to `credential` and restart the MCP server to use the authenticated tools.",
       });
     })
   );

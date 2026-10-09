@@ -146,6 +146,11 @@ describe("agent auth.md — hosted /auth.md document", () => {
     expect(md).toContain("identity_assertion");
   });
 
+  test("says an unclaimed credential expires with its claim", () => {
+    expect(md).toContain('"credential_expires": "<iso8601>"');
+    expect(md).toMatch(/deleted within 10 minutes/);
+  });
+
   test("documents the whcc_ credential prefix", () => {
     expect(md).toContain("whcc_");
   });

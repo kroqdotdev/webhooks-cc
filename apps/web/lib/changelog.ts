@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.5";
+export const APP_VERSION = "0.35.6";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.12.0";
-export const MCP_VERSION = "1.10.0";
+export const MCP_VERSION = "1.10.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.35.6",
+    date: "2026-10-09",
+    title: "Agent Registration Fixes",
+    track: "web",
+    items: [
+      "An anonymous agent key's response and /auth.md now say when it expires: with its claim, 15 minutes after registration, unless a human claims it",
+      "Agent sandbox endpoints have their own capacity pool and can no longer be read or claimed through the guest routes",
+      "Agent registrations, claims and sandbox endpoints are recorded in the audit trail",
+    ],
+  },
   {
     version: "0.35.5",
     date: "2026-10-08",
@@ -1521,6 +1532,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.10.1",
+    date: "2026-10-09",
+    title: "Agent Registration Wording",
+    track: "mcp",
+    items: [
+      "`how_to_register` and `register_agent` describe the claim step correctly and say that an unclaimed key only works with the sandbox and expires about 15 minutes after registration",
+    ],
+  },
   {
     version: "1.10.0",
     date: "2026-10-08",

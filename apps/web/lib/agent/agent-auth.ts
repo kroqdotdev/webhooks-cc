@@ -112,7 +112,12 @@ export interface AnonymousRegistration {
   registration_type: "anonymous";
   credential_type: "api_key";
   credential: string;
-  credential_expires: null;
+  /**
+   * An unclaimed key lives as long as its claim: the cleanup job deletes it
+   * within ten minutes after `claim_token_expires`. Claiming it removes the
+   * expiry.
+   */
+  credential_expires: string;
   scopes: string[];
   claim_url: string;
   claim_token: string;
@@ -221,7 +226,7 @@ export async function createAnonymousRegistration(args: {
     registration_type: "anonymous",
     credential_type: "api_key",
     credential: rawKey,
-    credential_expires: null,
+    credential_expires: expiresAt,
     scopes,
     claim_url: claimUrl(),
     claim_token: claimToken,

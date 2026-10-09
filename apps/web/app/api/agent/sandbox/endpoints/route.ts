@@ -34,7 +34,12 @@
 import { authenticateRequest, extractBearerToken } from "@/lib/api-auth";
 import { parseJsonBody } from "@/lib/request-validation";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
-import { createEndpointForUser } from "@/lib/supabase/endpoints";
+import {
+  createEndpointForUser,
+  EphemeralCapacityError,
+  SANDBOX_NAME_PREFIX,
+} from "@/lib/supabase/endpoints";
+import { auditAgentEvent } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashApiKey } from "@/lib/supabase/api-keys";
 import { serverEnv } from "@/lib/env";
@@ -47,7 +52,7 @@ const SANDBOX_CREATE_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 /** Marker stored in endpoints.name to bind a sandbox endpoint to its owning key. */
 function sandboxMarker(keyId: string): string {
-  return `sandbox:${keyId}`;
+  return `${SANDBOX_NAME_PREFIX}${keyId}`;
 }
 
 function jsonError(error: string, status: number): Response {
@@ -257,11 +262,13 @@ export async function POST(request: Request) {
     }
 
     // Create an ephemeral, unowned endpoint. createEndpointForUser enforces the
-    // global MAX_EPHEMERAL_ENDPOINTS cap and applies the bounded EPHEMERAL_TTL.
+    // sandbox pool (AGENT_SANDBOX_MAX_ENDPOINTS, separate from the guest pool's
+    // MAX_EPHEMERAL_ENDPOINTS) and applies the bounded EPHEMERAL_TTL.
     // userId is left undefined -> user_id NULL; the name marker binds it to the
     // key for isolation on every subsequent read.
     const created = await createEndpointForUser({
       isEphemeral: true,
+      sandbox: true,
       name: sandboxMarker(authed.keyId),
     });
 
@@ -270,7 +277,7 @@ export async function POST(request: Request) {
     // MAX_SANDBOX_ENDPOINTS_PER_KEY. Re-count this key's sandbox endpoints (same
     // marker filter); if we are now over the cap, roll back the row we just
     // created and return the same 429. This is not perfectly race-free, but the
-    // global MAX_EPHEMERAL_ENDPOINTS cap (enforced in createEndpointForUser)
+    // sandbox pool cap (enforced in createEndpointForUser)
     // remains the hard backstop.
     const afterCreate = await listSandboxEndpointIds(authed.keyId);
     if (afterCreate.length > MAX_SANDBOX_ENDPOINTS_PER_KEY) {
@@ -285,6 +292,12 @@ export async function POST(request: Request) {
       );
     }
 
+    await auditAgentEvent(request, {
+      action: "agent.sandbox.endpoint_created",
+      status: 201,
+      targetId: created.id,
+      metadata: { key_id: authed.keyId },
+    });
     return applyRateLimitHeaders(
       Response.json(
         {
@@ -305,9 +318,17 @@ export async function POST(request: Request) {
       rateLimit
     );
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Too many active demo endpoints")) {
+    if (error instanceof EphemeralCapacityError) {
+      await auditAgentEvent(request, {
+        action: "agent.sandbox.full",
+        status: 429,
+        metadata: { key_id: authed.keyId },
+      });
       return applyRateLimitHeaders(
-        jsonError("Sandbox capacity is full. Please try again later.", 429),
+        jsonError(
+          "The agent sandbox is full. Please try again later, or ask a human to sign up and claim this credential.",
+          429
+        ),
         rateLimit
       );
     }

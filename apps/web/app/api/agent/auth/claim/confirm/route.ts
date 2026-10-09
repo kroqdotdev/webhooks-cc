@@ -3,6 +3,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 import { claimAnonymousForUser, claimAnonymousByUserCode } from "@/lib/agent/agent-auth";
 import { sendError } from "@appsignal/nodejs";
+import { auditAgentEvent } from "@/lib/audit";
 
 /**
  * In-app claim confirmation (auth.md). A logged-in browser (NOT the agent, NOT
@@ -13,6 +14,13 @@ import { sendError } from "@appsignal/nodejs";
  *   - `claim_token` — the one-time clm_ token from the claim link, or
  *   - `user_code`   — the short human-typed code (e.g. "ABCD-EFGH").
  */
+const CLAIM_ERROR_STATUS: Record<string, number> = {
+  claim_expired: 410,
+  invalid_claim_token: 400,
+  previously_claimed: 409,
+  too_many_keys: 429,
+};
+
 export async function POST(request: Request) {
   const auth = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
@@ -43,9 +51,24 @@ export async function POST(request: Request) {
       ? await claimAnonymousForUser(claimToken, auth.userId)
       : await claimAnonymousByUserCode(userCode!, auth.userId);
 
+    const method = claimToken ? "claim_token" : "user_code";
     if (result.ok) {
+      await auditAgentEvent(request, {
+        action: "agent.claim.confirmed",
+        status: 200,
+        actorUserId: auth.userId,
+        targetUserId: auth.userId,
+        metadata: { flow: "anonymous", method, client_name: result.clientName },
+      });
       return Response.json({ status: "claimed" });
     }
+
+    await auditAgentEvent(request, {
+      action: "agent.claim.refused",
+      status: CLAIM_ERROR_STATUS[result.error] ?? 500,
+      actorUserId: auth.userId,
+      metadata: { flow: "anonymous", method, code: result.error },
+    });
 
     switch (result.error) {
       case "claim_expired":

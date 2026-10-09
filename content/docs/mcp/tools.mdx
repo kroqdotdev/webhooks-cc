@@ -464,7 +464,7 @@ Explain the registration flows and link the auth.md document. Call it first when
 
 ### register_agent
 
-Register anonymously. Returns a `whcc_` API key that works at once in a bounded sandbox (ephemeral endpoints, reading its own captures), and a `userCode` and `claimUrl` a human uses to bind the key to their account.
+Register anonymously. Returns a `whcc_` API key and a `userCode` and `claimUrl` a human uses to bind the key to their account. Until it is claimed, the key only works with the sandbox API (ephemeral endpoints, reading its own captures), and it is deleted about 15 minutes after registration.
 
 | Parameter    | Type     | Required | Description                                       |
 | ------------ | -------- | -------- | ------------------------------------------------- |
