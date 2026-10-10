@@ -123,7 +123,11 @@ const encoder = new TextEncoder();
  * is compressed once, then each attempt writes its digits after the
  * leftover prefix bytes and hashes the last one or two blocks.
  */
-function* solveOne(challenge: string, index: number, difficulty: number): Generator<number, string> {
+function* solveOne(
+  challenge: string,
+  index: number,
+  difficulty: number
+): Generator<number, string> {
   const prefix = encoder.encode(`${challenge}.${index}.`);
   const fullBlocks = Math.floor(prefix.length / 64);
   const w = new Uint32Array(64);

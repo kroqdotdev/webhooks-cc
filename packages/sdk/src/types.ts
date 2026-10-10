@@ -618,8 +618,14 @@ export interface RetryOptions {
  * Configuration options for the WebhooksCC client.
  */
 export interface ClientOptions {
-  /** API key for authentication (format: whcc_...) */
-  apiKey: string;
+  /** API key for authentication (format: whcc_...). Or give `getAccessToken`. */
+  apiKey?: string;
+  /**
+   * Supplies the bearer instead of a fixed `apiKey`, for tokens that expire
+   * (an agent's access token). Called before each request; with
+   * `forceRefresh` after a 401, once, before the request is retried.
+   */
+  getAccessToken?: (options?: { forceRefresh?: boolean }) => Promise<string>;
   /** Base URL for the API (default: https://webhooks.cc) */
   baseUrl?: string;
   /** Base URL for sending webhooks (default: https://go.webhooks.cc) */

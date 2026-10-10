@@ -93,6 +93,8 @@ const REGISTER_RECOVERY_HINTS: Record<string, string> = {
   invalid_issuer: "The ID-JAG issuer is not trusted by this service.",
   invalid_audience: "The ID-JAG audience must be this service's resource URL.",
   missing_verified_email: "The assertion must carry a verified email.",
+  endpoint_moved:
+    "This flow moved to auth.md v0.6. Use WebhooksCC.sandbox() or WebhooksCC.agent.registerServiceAuth().",
 };
 
 /** Thrown when a register endpoint returns a non-2xx response. */

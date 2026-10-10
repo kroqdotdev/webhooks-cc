@@ -21,10 +21,13 @@ describe("sha256Hex", () => {
 });
 
 describe("solveChallenge", () => {
-  it.each(fixture.vectors)("finds the server's nonces at difficulty $difficulty x $count", async (vector) => {
-    const nonces = await solveChallenge({ ...vector, algorithm: "sha256-zero-bits" });
-    expect(nonces).toEqual(vector.nonces);
-  });
+  it.each(fixture.vectors)(
+    "finds the server's nonces at difficulty $difficulty x $count",
+    async (vector) => {
+      const nonces = await solveChallenge({ ...vector, algorithm: "sha256-zero-bits" });
+      expect(nonces).toEqual(vector.nonces);
+    }
+  );
 
   it("produces hashes with the leading zero bits, for long challenges too", async () => {
     // A prefix that ends close to a block boundary exercises the two-block tail.
