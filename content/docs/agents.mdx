@@ -1,6 +1,6 @@
 ---
 title: "AI Agents: Sandbox and Registration"
-description: "AI agents can use webhooks.cc without an account: register through the auth.md protocol, solve a short proof of work, and capture webhooks in a 24-hour sandbox. Limits, lifetimes, and how access works."
+description: "AI agents can use webhooks.cc without an account: register through the auth.md protocol, solve a short proof of work, and capture webhooks in a 24-hour sandbox. Limits, lifetimes, and how to connect an agent to your account."
 section: getting-started
 order: 6
 lastUpdated: 2026-10-10
@@ -47,16 +47,27 @@ Sandbox endpoints only capture. They answer every webhook with a plain `200` and
 4. **Get an access token.** The agent exchanges the assertion at `POST /api/oauth2/token` for an access token that lasts one hour. It can exchange again for a new one until the registration expires.
 5. **Use the sandbox.** With that token the agent creates endpoints at `/api/agent/sandbox/endpoints` and reads what they captured.
 
-Each IP address can register 5 times an hour. An agent that cannot run code, and so cannot solve the challenge, needs a person to sign up instead.
+Each IP address can register 5 times an hour. An agent that cannot run code, and so cannot solve the challenge, can register with your email instead (`"type": "service_auth"`): it gets no sandbox, and nothing works until you connect it as described below.
 
 ## Connecting an agent to your account
 
-Coming in the next release. You will open a link the agent gives you, sign in, and type the code the agent shows. The agent's sandbox endpoints then become ordinary endpoints in your account, with the requests they already captured, and the agent can use the full API on your behalf.
+When you want to keep what an agent set up, or let it work in your account, connect it:
 
-Until then, give an agent full access by creating an [API key](/docs/api) in your account settings and handing it to the agent, or by configuring the [MCP server](/docs/mcp) with one.
+1. The agent names your email and gets a link and a 6-digit code. It shows you both, for example: "Open this link, sign in, and enter 123456".
+2. Open the link and sign in, or sign up, with that email address. A link for someone else's address does not work in your account.
+3. Check the page: it shows the name the agent gave itself, when it registered, and which sandbox endpoints will move into your account. Enter the code, or decline.
+
+After you connect it:
+
+- Its sandbox endpoints become ordinary endpoints in your account, with the same URLs and the requests they already captured. They no longer expire, and new captures count against your plan.
+- The agent can use the API on your behalf, like an API key: manage endpoints and read what they capture. It cannot change your API keys, billing or account settings.
+- You get an email saying an agent was connected.
+
+The code works for 15 minutes and for 5 tries; the agent can ask for a new one. An account can connect up to 10 agents.
 
 ## Revocation and expiry
 
+- Disconnect a connected agent under **Account, Connected agents**. Its access stops at once; endpoints it brought stay in your account.
 - An agent can drop one of its access tokens at `POST /api/oauth2/revoke`.
 - An unclaimed registration stops working 24 hours after registration; its tokens, endpoints and captured requests are deleted within minutes after that. There is nothing to clean up.
-- Agents that used the earlier version of the protocol (auth.md 0.1) get `410 endpoint_moved` from the old registration endpoint and a pointer to `/auth.md`.
+- Agents that used the earlier version of the protocol (auth.md 0.1) get `410 endpoint_moved` from the old registration endpoint and a pointer to `/auth.md`. Its email-code flow keeps working for older SDK and MCP versions until November 30, 2026.

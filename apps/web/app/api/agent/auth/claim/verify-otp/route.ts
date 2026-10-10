@@ -3,14 +3,20 @@ import { parseJsonBody } from "@/lib/request-validation";
 import { verifyVerifiedEmailOtp } from "@/lib/agent/agent-auth";
 import { sendError } from "@appsignal/nodejs";
 import { auditAgentEvent } from "@/lib/audit";
+import { deprecated } from "@/lib/agent/legacy";
 
 /**
  * verified_email OTP completion (auth.md). Unauthenticated: the agent submits
  * the 6-digit OTP it received by email along with its claim_token. On success
  * the credential is minted and returned HERE (withheld until OTP confirmation),
  * bound to the matched-or-JIT-provisioned user for the verified email.
+ * Deprecated with the rest of auth.md v0.1; every answer says so.
  */
 export async function POST(request: Request) {
+  return deprecated(await verifyOtp(request));
+}
+
+async function verifyOtp(request: Request): Promise<Response> {
   const rateLimited = await checkRateLimit(request, "agent-verify-otp", 10);
   if (rateLimited) return rateLimited;
 

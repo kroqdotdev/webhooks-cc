@@ -30,7 +30,7 @@ import type { IdJagSuccess } from "./id-jag";
  * place they work.
  */
 
-type RegistrationRow = Database["public"]["Tables"]["agent_registrations"]["Row"];
+export type RegistrationRow = Database["public"]["Tables"]["agent_registrations"]["Row"];
 
 const generateClaimTokenBody = customAlphabet(
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
@@ -339,16 +339,28 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
     expiresAtMs = Math.min(now + ACCESS_TOKEN_TTL_SECONDS * 1000, registrationExpires);
   }
 
+  return mintAccessToken(registration, { userId, scopes, expiresAtMs });
+}
+
+/**
+ * Inserts an access token for the registration and keeps at most
+ * MAX_LIVE_TOKENS of them. `userId` is null for a pre-claim token.
+ */
+export async function mintAccessToken(
+  registration: RegistrationRow,
+  input: { userId: string | null; scopes: string[]; expiresAtMs: number }
+): Promise<AccessToken> {
+  const admin = createAdminClient();
   const rawKey = generateApiKey();
   const { error: insertError } = await admin.from("api_keys").insert({
-    user_id: userId,
+    user_id: input.userId,
     key_hash: hashApiKey(rawKey),
     key_prefix: rawKey.slice(0, 12),
     name: registration.client_name
       ? `Agent token (${registration.client_name})`
       : `Agent token (${registration.kind})`,
-    expires_at: new Date(expiresAtMs).toISOString(),
-    scopes,
+    expires_at: new Date(input.expiresAtMs).toISOString(),
+    scopes: input.scopes,
     is_agent_issued: true,
     client_name: registration.client_name,
     claimed_at: registration.claimed_at,
@@ -360,8 +372,8 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
 
   return {
     accessToken: rawKey,
-    expiresIn: Math.max(1, Math.floor((expiresAtMs - now) / 1000)),
-    scope: scopes.join(" "),
+    expiresIn: Math.max(1, Math.floor((input.expiresAtMs - Date.now()) / 1000)),
+    scope: input.scopes.join(" "),
     registration,
   };
 }

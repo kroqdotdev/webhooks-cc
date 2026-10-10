@@ -181,7 +181,15 @@ describe("agent identity (auth.md v0.6)", () => {
       expect(as.token_endpoint).toBe(`${APP}/api/oauth2/token`);
       expect(as.jwks_uri).toBe(`${APP}/.well-known/jwks.json`);
       // This suite trusts a test issuer, so identity_assertion is offered.
-      expect(as.agent_auth.identity_types_supported).toEqual(["anonymous", "identity_assertion"]);
+      expect(as.agent_auth.identity_types_supported).toEqual([
+        "anonymous",
+        "service_auth",
+        "identity_assertion",
+      ]);
+      expect(as.grant_types_supported).toEqual([
+        "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "urn:workos:agent-auth:grant-type:claim",
+      ]);
       expect(as.agent_auth.anonymous.proof_of_work.challenge_endpoint).toBe(
         `${APP}/api/agent/identity/challenge`
       );
@@ -354,12 +362,6 @@ describe("agent identity (auth.md v0.6)", () => {
         env.AGENT_ANONYMOUS_ENABLED = true;
       }
 
-      const serviceAuth = await routes.identity(
-        jsonPost("/api/agent/identity", { type: "service_auth", login_hint: "dev@example.com" })
-      );
-      expect(serviceAuth.status).toBe(400);
-      expect((await serviceAuth.json()).error).toBe("service_auth_not_enabled");
-
       const unknown = await routes.identity(jsonPost("/api/agent/identity", { type: "magic" }));
       expect((await unknown.json()).error).toBe("invalid_request");
       const notJson = await routes.identity(
@@ -368,7 +370,7 @@ describe("agent identity (auth.md v0.6)", () => {
       expect((await notJson.json()).error).toBe("invalid_request");
 
       const claim = await routes.claim(jsonPost("/api/agent/identity/claim", {}));
-      expect(claim.status).toBe(503);
+      expect(claim.status).toBe(400);
     });
   });
 
@@ -439,9 +441,9 @@ describe("agent identity (auth.md v0.6)", () => {
         [{ grant_type: JWT_BEARER }, 400, "invalid_request"],
         [{ assertion: body.identity_assertion }, 400, "invalid_request"],
         [
-          { grant_type: "urn:workos:agent-auth:grant-type:claim", claim_token: "clm_x" },
+          { grant_type: "urn:workos:agent-auth:grant-type:claim", claim_token: "clm_unknown" },
           400,
-          "unsupported_grant_type",
+          "invalid_grant",
         ],
         [{ grant_type: "client_credentials" }, 400, "unsupported_grant_type"],
         [{ grant_type: JWT_BEARER, assertion: "eyJhbGciOiJFUzI1NiJ9.e30.x" }, 400, "invalid_grant"],

@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ApiKeyDialog } from "@/components/account/api-key-dialog";
+import { ConnectedAgents } from "@/components/account/connected-agents";
 import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
 import { PastDueBanner } from "@/components/billing/past-due-banner";
@@ -514,6 +515,8 @@ export default function AccountPage() {
           )}
         </div>
       </section>
+
+      <ConnectedAgents accessToken={accessToken} />
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-destructive">Danger Zone</h2>

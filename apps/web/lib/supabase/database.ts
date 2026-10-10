@@ -755,6 +755,37 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      start_agent_claim_attempt: {
+        Args: {
+          p_claim_token_hash: string;
+          p_attempt_token_hash: string;
+          p_user_code_hash: string;
+          p_login_hint: string | null;
+          p_attempt_seconds: number;
+          p_max_attempts: number;
+        };
+        Returns: Json;
+      };
+      complete_agent_claim: {
+        Args: {
+          p_attempt_token_hash: string;
+          p_user_code_hash: string;
+          p_user_id: string;
+          p_user_email: string;
+          p_max_agents: number;
+          p_max_failures: number;
+          p_max_adopt?: number | null;
+        };
+        Returns: Json;
+      };
+      deny_agent_claim_attempt: {
+        Args: { p_attempt_token_hash: string; p_user_email: string };
+        Returns: Json;
+      };
+      revoke_agent_registration: {
+        Args: { p_id: string; p_user_id: string };
+        Returns: boolean;
+      };
       create_sandbox_endpoint: {
         Args: {
           p_registration_id: string;

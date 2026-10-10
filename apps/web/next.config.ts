@@ -31,6 +31,19 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [{ key: "Link", value: `<${appUrl}/auth.md>; rel="auth.md"` }],
       },
+      {
+        // The auth.md v0.1 routes are deprecated (RFC 9745); the routes set
+        // Deprecation and Sunset. A later rule's Link replaces the one above,
+        // so this one carries both relations. `:path*` matches the bare
+        // /api/agent/auth too.
+        source: "/api/agent/auth/:path*",
+        headers: [
+          {
+            key: "Link",
+            value: `<${appUrl}/auth.md>; rel="auth.md", <${appUrl}/auth.md>; rel="deprecation"`,
+          },
+        ],
+      },
     ];
   },
   async redirects() {

@@ -48,6 +48,7 @@ export type AgentAuditAction =
   | "agent.claim.requested"
   | "agent.claim.confirmed"
   | "agent.claim.refused"
+  | "agent.claim.denied"
   | "agent.token.issued"
   | "agent.token.revoked"
   | "agent.registration.revoked"

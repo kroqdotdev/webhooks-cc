@@ -2,7 +2,7 @@ import { checkRateLimitWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit"
 import { parseJsonBody } from "@/lib/request-validation";
 import { serverEnv } from "@/lib/env";
 import { AgentRequestError, issueVerifiedEmailClaim } from "@/lib/agent/agent-auth";
-import { endpointMoved } from "@/lib/agent/legacy";
+import { deprecated, endpointMoved } from "@/lib/agent/legacy";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { isPlainEmailAddress } from "@/lib/request-validation";
@@ -10,8 +10,8 @@ import { sendError } from "@appsignal/nodejs";
 
 /**
  * The auth.md v0.1 registration endpoint. Only `verified_email` still works
- * here, until its sunset: it needs a human to read an emailed code and never
- * reaches the sandbox. Anonymous and ID-JAG registration moved to
+ * here, deprecated until its sunset (VERIFIED_EMAIL_SUNSET_AT): it needs a
+ * human to read an emailed code and never reaches the sandbox. Anonymous and ID-JAG registration moved to
  * POST /api/agent/identity (auth.md v0.6) and answer 410 with a pointer to
  * /auth.md: legacy anonymous keys would skip the proof of work and the
  * sandbox pool.
@@ -110,19 +110,21 @@ export async function POST(request: Request) {
         client_name: optionalClientName(body) ?? null,
       },
     });
-    return applyRateLimitHeaders(
-      Response.json(
-        {
-          registration_id: claim.registration_id,
-          registration_type: claim.registration_type,
-          claim_url: claim.claim_url,
-          claim_token: claim.claim_token,
-          claim_token_expires: claim.claim_token_expires,
-          post_claim_scopes: claim.post_claim_scopes,
-        },
-        { status: 200 }
-      ),
-      rateLimit
+    return deprecated(
+      applyRateLimitHeaders(
+        Response.json(
+          {
+            registration_id: claim.registration_id,
+            registration_type: claim.registration_type,
+            claim_url: claim.claim_url,
+            claim_token: claim.claim_token,
+            claim_token_expires: claim.claim_token_expires,
+            post_claim_scopes: claim.post_claim_scopes,
+          },
+          { status: 200 }
+        ),
+        rateLimit
+      )
     );
   } catch (err) {
     // Capacity/throttle limits surface as their own status + auth.md code.
