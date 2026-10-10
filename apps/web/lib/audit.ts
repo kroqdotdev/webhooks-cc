@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
+import { isAgentTokenRequest } from "@/lib/agent/token-requests";
 
 /**
  * Audit trail for state-changing account, team, billing, and endpoint actions
@@ -47,8 +48,11 @@ export type AgentAuditAction =
   | "agent.claim.requested"
   | "agent.claim.confirmed"
   | "agent.claim.refused"
+  | "agent.token.issued"
   | "agent.token.revoked"
+  | "agent.registration.revoked"
   | "agent.sandbox.endpoint_created"
+  | "agent.sandbox.endpoint_deleted"
   | "agent.sandbox.full";
 
 export type AuditOutcome = "ok" | "refused" | "error";
@@ -104,8 +108,13 @@ export function outcomeForStatus(status: number): AuditOutcome {
   return "ok";
 }
 
-/** API keys are `whcc_` bearers; every other bearer is a dashboard session JWT. */
-export function requestVia(request: Request): "session" | "api_key" {
+/**
+ * API keys are `whcc_` bearers; every other bearer is a dashboard session JWT.
+ * An agent access token is a `whcc_` key too, told apart by the bearer check
+ * that admitted the request.
+ */
+export function requestVia(request: Request): "session" | "api_key" | "agent_token" {
+  if (isAgentTokenRequest(request)) return "agent_token";
   const header = request.headers.get("Authorization") ?? "";
   return header.startsWith("Bearer whcc_") ? "api_key" : "session";
 }
@@ -151,7 +160,7 @@ export async function auditAgentEvent(
     action: AgentAuditAction;
     /** HTTP status the route answered with; 2xx is ok, 4xx refused, 5xx error. */
     status: number;
-    /** The registration (agent_claims) id, or the endpoint for sandbox events. */
+    /** The registration id (agent_claims for the legacy email flow). */
     targetId?: string | null;
     actorUserId?: string | null;
     targetUserId?: string | null;

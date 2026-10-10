@@ -1,0 +1,31 @@
+{
+  "secret": "test-vector-secret-not-used-anywhere-else",
+  "audience": "https://webhooks.cc",
+  "issuedAt": "2026-10-10T12:00:00.000Z",
+  "vectors": [
+    {
+      "challenge": "pow1.eyJ2IjoxLCJpZCI6Ijc3dkNDc291ZjFCcXgwNjAzblotOFEiLCJpYXQiOjE3OTE2MzM2MDAsImV4cCI6MTc5MTYzMzkwMCwiZCI6MCwibiI6MSwiYXVkIjoiaHR0cHM6Ly93ZWJob29rcy5jYyJ9.2orpj-t2mH7HIBiPN-okoh7M7DD_4VnzYtvlruDwXgs",
+      "difficulty": 0,
+      "count": 1,
+      "nonces": ["0"]
+    },
+    {
+      "challenge": "pow1.eyJ2IjoxLCJpZCI6IjVsNGpyM3JoMUk5ejRZWUZTZW5zamciLCJpYXQiOjE3OTE2MzM2MDEsImV4cCI6MTc5MTYzMzkwMSwiZCI6NCwibiI6MywiYXVkIjoiaHR0cHM6Ly93ZWJob29rcy5jYyJ9.LoXSWTcuPKdZbXkVrzzz-35EQun1vr723B4UcajIbLQ",
+      "difficulty": 4,
+      "count": 3,
+      "nonces": ["15", "12", "8"]
+    },
+    {
+      "challenge": "pow1.eyJ2IjoxLCJpZCI6IjBDLVc4NVRlQjA3bXd1Z3FLNk5OcnciLCJpYXQiOjE3OTE2MzM2MDIsImV4cCI6MTc5MTYzMzkwMiwiZCI6OCwibiI6NCwiYXVkIjoiaHR0cHM6Ly93ZWJob29rcy5jYyJ9.o1znI-wueBLBPvXMHUE4IccLyiDfhOI0-kTs5taZsbE",
+      "difficulty": 8,
+      "count": 4,
+      "nonces": ["30", "308", "67", "76"]
+    },
+    {
+      "challenge": "pow1.eyJ2IjoxLCJpZCI6ImRLX3M0dC1qUXc4M2FGVTZnREFHWFEiLCJpYXQiOjE3OTE2MzM2MDMsImV4cCI6MTc5MTYzMzkwMywiZCI6MTIsIm4iOjIsImF1ZCI6Imh0dHBzOi8vd2ViaG9va3MuY2MifQ.tjUkvSqeJiwabML6SE0VBBkTJCnoXObXCoPdxE6byZA",
+      "difficulty": 12,
+      "count": 2,
+      "nonces": ["12865", "3938"]
+    }
+  ]
+}

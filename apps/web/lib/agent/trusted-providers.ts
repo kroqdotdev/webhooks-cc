@@ -6,7 +6,7 @@ import { serverEnv } from "@/lib/env";
  * Trusted ID-JAG providers for the agent auth.md identity_assertion flow.
  *
  * Providers are configured via the `AGENT_IDJAG_PROVIDERS` env var (a JSON
- * array) — NOT a DB table — so the trust set is deployment config and cannot
+ * array), NOT a DB table, so the trust set is deployment config and cannot
  * be mutated at runtime. Each entry pins an issuer (`iss`) and how to resolve
  * its JWKS:
  *   - inline `jwks` (a JWK Set object) -> jose.createLocalJWKSet (hermetic;
@@ -18,14 +18,14 @@ import { serverEnv } from "@/lib/env";
  * providers are trusted, so any assertion resolves to `invalid_issuer`.
  */
 
-/** Reject non-https URLs — issuer and JWKS endpoints must never use plaintext. */
+/** Reject non-https URLs: issuer and JWKS endpoints must never use plaintext. */
 const httpsUrl = z
   .string()
   .url()
   .refine((s) => s.startsWith("https://"), { message: "must use https://" });
 
 const trustedProviderSchema = z.object({
-  /** Issuer identifier — must be an absolute https URL matching the JWT `iss`. */
+  /** Issuer identifier: must be an absolute https URL matching the JWT `iss`. */
   iss: httpsUrl,
   /** Optional explicit JWKS endpoint. Defaults to `${iss}/.well-known/jwks.json`. */
   jwks_uri: httpsUrl.optional(),
@@ -68,6 +68,15 @@ export function getTrustedProvider(iss: string): TrustedProvider | null {
   return loadProviders().find((p) => p.iss === iss) ?? null;
 }
 
+/** True when at least one ID-JAG issuer is trusted (none in production). */
+export function hasTrustedProviders(): boolean {
+  try {
+    return loadProviders().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolve (and memoize) the JWKS key resolver for a trusted provider. Inline
  * `jwks` yields a local key set; otherwise a remote, caching key set is built
@@ -79,7 +88,7 @@ export function getJwksResolver(provider: TrustedProvider): JwksResolver {
 
   let resolver: JwksResolver;
   if (provider.jwks !== undefined) {
-    // Local JWK Set — no network. jose's createLocalJWKSet and the remote
+    // Local JWK Set, no network. jose's createLocalJWKSet and the remote
     // variant share the same call signature for jwtVerify.
     resolver = jose.createLocalJWKSet(
       provider.jwks as Parameters<typeof jose.createLocalJWKSet>[0]

@@ -75,24 +75,10 @@ export interface EndpointRecord {
   hasForwardSecret: boolean;
 }
 
-/**
- * Sandbox endpoints of unclaimed agent keys are ownerless temporary endpoints
- * named `sandbox:<keyId>`. They are not guest endpoints: the guest routes must
- * not read or claim them, and they count against their own pool.
- */
-export const SANDBOX_NAME_PREFIX = "sandbox:";
-
-/** PostgREST filter for ownerless rows that are not sandbox endpoints (`name` is null for guests). */
-const NOT_SANDBOX = `name.is.null,name.not.like.${SANDBOX_NAME_PREFIX}*`;
-
-/** Thrown when a temporary endpoint cannot be created because its pool is full. */
+/** Thrown when a temporary endpoint cannot be created because the guest pool is full. */
 export class EphemeralCapacityError extends Error {
-  constructor(readonly pool: "guest" | "sandbox") {
-    super(
-      pool === "sandbox"
-        ? "The agent sandbox is full. Please try again later."
-        : "Too many active demo endpoints. Please try again later."
-    );
+  constructor() {
+    super("Too many active demo endpoints. Please try again later.");
     this.name = "EphemeralCapacityError";
   }
 }
@@ -101,8 +87,6 @@ interface CreateEndpointInput {
   userId?: string;
   name?: string;
   isEphemeral?: boolean;
-  /** An agent sandbox endpoint: counted against the sandbox pool, not the guest pool. */
-  sandbox?: boolean;
   expiresAt?: number;
   mockResponse?: Record<string, unknown>;
   responseRules?: unknown[] | null;
@@ -237,31 +221,22 @@ async function findOwnedEndpoint(userId: string, slug: string): Promise<OwnedEnd
   return data;
 }
 
-async function enforceEphemeralCapacity(pool: "guest" | "sandbox"): Promise<void> {
+/** Agent sandbox endpoints have a pool of their own (create_sandbox_endpoint). */
+async function enforceEphemeralCapacity(): Promise<void> {
   const admin = createAdminClient();
-  const nowIso = new Date().toISOString();
-
-  let query = admin
+  const { count, error } = await admin
     .from("endpoints")
     .select("id", { count: "exact", head: true })
     .eq("is_ephemeral", true)
-    .gt("expires_at", nowIso);
-  query =
-    pool === "sandbox"
-      ? query.is("user_id", null).like("name", `${SANDBOX_NAME_PREFIX}%`)
-      : query.or(`user_id.not.is.null,${NOT_SANDBOX}`);
-  const { count, error } = await query;
+    .gt("expires_at", new Date().toISOString())
+    .is("agent_registration_id", null);
 
   if (error) {
     throw error;
   }
 
-  const limit =
-    pool === "sandbox"
-      ? serverEnv().AGENT_SANDBOX_MAX_ENDPOINTS
-      : serverEnv().MAX_EPHEMERAL_ENDPOINTS;
-  if ((count ?? 0) >= limit) {
-    throw new EphemeralCapacityError(pool);
+  if ((count ?? 0) >= serverEnv().MAX_EPHEMERAL_ENDPOINTS) {
+    throw new EphemeralCapacityError();
   }
 }
 
@@ -305,7 +280,6 @@ export async function createEndpointForUser({
   userId,
   name,
   isEphemeral = false,
-  sandbox = false,
   expiresAt,
   mockResponse,
   responseRules,
@@ -316,7 +290,7 @@ export async function createEndpointForUser({
   const ephemeral = isEphemeral || expiresAt !== undefined;
 
   if (ephemeral) {
-    await enforceEphemeralCapacity(sandbox ? "sandbox" : "guest");
+    await enforceEphemeralCapacity();
   }
 
   const expiresAtIso =
@@ -355,6 +329,8 @@ export async function createEndpointForUser({
  * Guest-visible endpoint lookup. Only unowned ephemeral endpoints qualify:
  * signed-in users (and the SDK's `ephemeral: true`) create owned ephemeral
  * endpoints too, and those must never be readable without authentication.
+ * Agent sandbox endpoints are unowned as well, but only their registration's
+ * token may read them.
  */
 export async function getGuestEndpointBySlug(slug: string) {
   const admin = createAdminClient();
@@ -364,7 +340,7 @@ export async function getGuestEndpointBySlug(slug: string) {
     .eq("slug", slug.toLowerCase())
     .eq("is_ephemeral", true)
     .is("user_id", null)
-    .or(NOT_SANDBOX)
+    .is("agent_registration_id", null)
     .maybeSingle();
 
   if (error) {
@@ -404,7 +380,7 @@ export async function claimGuestEndpoint(
     .is("user_id", null)
     .eq("is_ephemeral", true)
     .gt("expires_at", nowIso)
-    .or(NOT_SANDBOX)
+    .is("agent_registration_id", null)
     .select(ENDPOINT_COLUMNS)
     .returns<SelectedEndpointRow>()
     .maybeSingle();
@@ -626,4 +602,134 @@ export async function deleteEndpointBySlugForUser(userId: string, slug: string):
   }
 
   return !!data;
+}
+
+// ---------------------------------------------------------------------------
+// Agent sandbox endpoints (auth.md v0.6). They belong to an agent
+// registration, never to a user, and expire with it. Every read is scoped by
+// the registration id taken from the bearer's api_keys row, which the agent
+// never sees.
+// ---------------------------------------------------------------------------
+
+type SandboxEndpointRow = SelectedEndpointRow & { request_count: number };
+
+export interface SandboxEndpointRecord extends EndpointRecord {
+  requestCount: number;
+}
+
+const SANDBOX_ENDPOINT_COLUMNS = `${ENDPOINT_COLUMNS}, request_count`;
+
+function normalizeSandboxEndpoint(row: SandboxEndpointRow): SandboxEndpointRecord {
+  return { ...normalizeEndpoint(row), requestCount: row.request_count };
+}
+
+export type CreateSandboxEndpointResult =
+  | { status: "ok"; endpoint: SandboxEndpointRecord }
+  | { status: "registration_inactive" }
+  | { status: "endpoint_limit" }
+  | { status: "pool_full" };
+
+/**
+ * Creates a sandbox endpoint through create_sandbox_endpoint(), which checks
+ * the registration, its endpoint cap and the pool under one lock. A slug
+ * collision comes back as a unique violation and is retried with a new slug.
+ */
+export async function createSandboxEndpoint(
+  registrationId: string,
+  limits: { maxEndpoints: number; poolSize: number }
+): Promise<CreateSandboxEndpointResult> {
+  const admin = createAdminClient();
+  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
+    const { data, error } = await admin.rpc("create_sandbox_endpoint", {
+      p_registration_id: registrationId,
+      p_slug: nanoidSlug(),
+      p_max_endpoints: limits.maxEndpoints,
+      p_pool_size: limits.poolSize,
+    });
+    if (error) {
+      if (error.code === "23505") continue;
+      throw error;
+    }
+    const result = data as { status: string; id?: string };
+    if (result.status === "ok" && result.id) {
+      const { data: row, error: readError } = await admin
+        .from("endpoints")
+        .select(SANDBOX_ENDPOINT_COLUMNS)
+        .eq("id", result.id)
+        .returns<SandboxEndpointRow>()
+        .single();
+      if (readError) throw readError;
+      return { status: "ok", endpoint: normalizeSandboxEndpoint(row) };
+    }
+    if (
+      result.status === "registration_inactive" ||
+      result.status === "endpoint_limit" ||
+      result.status === "pool_full"
+    ) {
+      return { status: result.status };
+    }
+    throw new Error(`Unexpected create_sandbox_endpoint status: ${result.status}`);
+  }
+  throw new Error("Failed to generate unique slug");
+}
+
+/** Live sandbox endpoints in the pool, across all registrations. */
+export async function countLiveSandboxEndpoints(): Promise<number> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from("endpoints")
+    .select("id", { count: "exact", head: true })
+    .not("agent_registration_id", "is", null)
+    .gt("expires_at", new Date().toISOString());
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function listSandboxEndpoints(
+  registrationId: string
+): Promise<SandboxEndpointRecord[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("endpoints")
+    .select(SANDBOX_ENDPOINT_COLUMNS)
+    .eq("agent_registration_id", registrationId)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .returns<SandboxEndpointRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeSandboxEndpoint);
+}
+
+export async function getSandboxEndpointBySlug(
+  registrationId: string,
+  slug: string
+): Promise<SandboxEndpointRecord | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("endpoints")
+    .select(SANDBOX_ENDPOINT_COLUMNS)
+    .eq("agent_registration_id", registrationId)
+    .eq("slug", slug.toLowerCase())
+    .gt("expires_at", new Date().toISOString())
+    .returns<SandboxEndpointRow>()
+    .maybeSingle();
+  if (error) throw error;
+  return data ? normalizeSandboxEndpoint(data) : null;
+}
+
+/** Frees the pool slot; its captures go with it. */
+export async function deleteSandboxEndpointBySlug(
+  registrationId: string,
+  slug: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("endpoints")
+    .delete()
+    .eq("agent_registration_id", registrationId)
+    .eq("slug", slug.toLowerCase())
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id ?? null;
 }

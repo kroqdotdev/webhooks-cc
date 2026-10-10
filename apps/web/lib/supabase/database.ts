@@ -22,6 +22,8 @@ export interface Database {
           claimed_at: string | null;
           // Minted by the CLI device flow (rotation-eligible) — migration 00033.
           is_device_auth: boolean;
+          // Set on agent access tokens (auth.md v0.6), migration 00055.
+          agent_registration_id: string | null;
         };
         Insert: {
           id?: string;
@@ -37,6 +39,7 @@ export interface Database {
           client_name?: string | null;
           claimed_at?: string | null;
           is_device_auth?: boolean;
+          agent_registration_id?: string | null;
         };
         Update: {
           id?: string;
@@ -52,6 +55,7 @@ export interface Database {
           client_name?: string | null;
           claimed_at?: string | null;
           is_device_auth?: boolean;
+          agent_registration_id?: string | null;
         };
         Relationships: [];
       };
@@ -110,6 +114,82 @@ export interface Database {
           status?: "pending" | "claimed";
           claimed_by_user_id?: string | null;
           expires_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // One row per agent registration (auth.md v0.6), migration 00055.
+      agent_registrations: {
+        Row: {
+          id: string;
+          kind: "anonymous" | "service_auth" | "identity_assertion";
+          user_id: string | null;
+          client_name: string | null;
+          claim_token_hash: string | null;
+          expires_at: string;
+          claimed_at: string | null;
+          claim_consumed_at: string | null;
+          revoked_at: string | null;
+          pow_challenge_id: string | null;
+          sandbox_requests_used: number;
+          sandbox_request_limit: number;
+          attempt_token_hash: string | null;
+          attempt_user_code_hash: string | null;
+          attempt_login_hint: string | null;
+          attempt_expires_at: string | null;
+          attempt_failures: number;
+          attempts_issued: number;
+          attempt_denied_at: string | null;
+          idjag_iss: string | null;
+          idjag_sub: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          kind: "anonymous" | "service_auth" | "identity_assertion";
+          user_id?: string | null;
+          client_name?: string | null;
+          claim_token_hash?: string | null;
+          expires_at: string;
+          claimed_at?: string | null;
+          claim_consumed_at?: string | null;
+          revoked_at?: string | null;
+          pow_challenge_id?: string | null;
+          sandbox_requests_used?: number;
+          sandbox_request_limit?: number;
+          attempt_token_hash?: string | null;
+          attempt_user_code_hash?: string | null;
+          attempt_login_hint?: string | null;
+          attempt_expires_at?: string | null;
+          attempt_failures?: number;
+          attempts_issued?: number;
+          attempt_denied_at?: string | null;
+          idjag_iss?: string | null;
+          idjag_sub?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          kind?: "anonymous" | "service_auth" | "identity_assertion";
+          user_id?: string | null;
+          client_name?: string | null;
+          claim_token_hash?: string | null;
+          expires_at?: string;
+          claimed_at?: string | null;
+          claim_consumed_at?: string | null;
+          revoked_at?: string | null;
+          pow_challenge_id?: string | null;
+          sandbox_requests_used?: number;
+          sandbox_request_limit?: number;
+          attempt_token_hash?: string | null;
+          attempt_user_code_hash?: string | null;
+          attempt_login_hint?: string | null;
+          attempt_expires_at?: string | null;
+          attempt_failures?: number;
+          attempts_issued?: number;
+          attempt_denied_at?: string | null;
+          idjag_iss?: string | null;
+          idjag_sub?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -257,6 +337,8 @@ export interface Database {
           forward_enabled: boolean;
           forward_url: string | null;
           forward_secret_encrypted: string | null;
+          // Agent sandbox endpoints (migration 00055); never set with user_id.
+          agent_registration_id: string | null;
         };
         Insert: {
           id?: string;
@@ -277,6 +359,7 @@ export interface Database {
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
+          agent_registration_id?: string | null;
         };
         Update: {
           id?: string;
@@ -297,6 +380,7 @@ export interface Database {
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
+          agent_registration_id?: string | null;
         };
         Relationships: [];
       };
@@ -671,6 +755,15 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      create_sandbox_endpoint: {
+        Args: {
+          p_registration_id: string;
+          p_slug: string;
+          p_max_endpoints: number;
+          p_pool_size: number;
+        };
+        Returns: Json;
+      };
       claim_email_deliveries: {
         Args: { p_limit?: number; p_per_endpoint?: number; p_lease_seconds?: number };
         Returns: Array<{

@@ -25,6 +25,14 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_UI_STYLE_SPLIT: z.coerce.number().int().min(0).max(100).default(0),
 });
 
+/** Blank values (an empty line in an env file) count as unset. */
+function blankToUndefined<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    schema
+  );
+}
+
 const serverEnvSchema = z
   .object({
     CAPTURE_SHARED_SECRET: z.string().min(1),
@@ -101,9 +109,34 @@ const serverEnvSchema = z
     AGENT_REGISTER_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(3_600_000),
     AGENT_IDJAG_RATE_LIMIT: z.coerce.number().int().min(1).default(60),
     AGENT_IDJAG_PROVIDERS: z.string().default("[]"),
-    // Global cap on outstanding unclaimed anonymous agent keys (DoS backstop,
-    // analogous to MAX_PENDING_CODES for device auth).
-    AGENT_MAX_PENDING_ANONYMOUS: z.coerce.number().int().min(1).default(2000),
+    // Agent registration (auth.md v0.6, lib/agent). Identity assertions are
+    // ES256 JWTs signed with this P-256 key (PKCS#8 PEM; newlines may be
+    // written as \n). The kid defaults to the key's RFC 7638 thumbprint. A
+    // retired key's public JWK (JSON) stays in /.well-known/jwks.json until its
+    // assertions have expired. Without the key, registration answers
+    // temporarily_unavailable.
+    AGENT_ASSERTION_SIGNING_KEY: blankToUndefined(z.string().optional()),
+    AGENT_ASSERTION_SIGNING_KID: blankToUndefined(z.string().max(128).optional()),
+    AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK: blankToUndefined(z.string().optional()),
+    // HMAC key for proof-of-work challenges (32 random bytes, base64). The
+    // previous secret keeps challenges issued before a rotation valid.
+    AGENT_POW_SECRET: blankToUndefined(z.string().min(32).optional()),
+    AGENT_POW_SECRET_PREVIOUS: blankToUndefined(z.string().min(32).optional()),
+    // Leading zero bits per sub-puzzle and the number of sub-puzzles: the
+    // expected work is AGENT_POW_COUNT x 2^AGENT_POW_DIFFICULTY hashes.
+    AGENT_POW_DIFFICULTY: z.coerce.number().int().min(0).max(24).default(18),
+    AGENT_POW_COUNT: z.coerce.number().int().min(1).max(64).default(32),
+    // Anonymous registration (the sandbox). Off answers anonymous_not_enabled.
+    AGENT_ANONYMOUS_ENABLED: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => (typeof v === "string" ? v !== "false" && v !== "0" : v))
+      .default(true),
+    // Anonymous registrations per hour across all clients, and per IPv4 /24
+    // or IPv6 /48 (the per-address limit is AGENT_REGISTER_RATE_LIMIT).
+    AGENT_ANONYMOUS_GLOBAL_RATE: z.coerce.number().int().min(1).default(100),
+    AGENT_REGISTER_WIDE_RATE_LIMIT: z.coerce.number().int().min(1).default(20),
+    // Live unclaimed anonymous registrations at once (backstop).
+    AGENT_MAX_LIVE_ANONYMOUS: z.coerce.number().int().min(1).default(500),
     // Per-email cap on concurrent pending verified_email OTP claims (anti-spam /
     // brute-force throttle).
     AGENT_MAX_PENDING_OTP_PER_EMAIL: z.coerce.number().int().min(1).default(3),
@@ -179,7 +212,17 @@ export function serverEnv() {
       AGENT_REGISTER_RATE_WINDOW_MS: process.env.AGENT_REGISTER_RATE_WINDOW_MS,
       AGENT_IDJAG_RATE_LIMIT: process.env.AGENT_IDJAG_RATE_LIMIT,
       AGENT_IDJAG_PROVIDERS: process.env.AGENT_IDJAG_PROVIDERS,
-      AGENT_MAX_PENDING_ANONYMOUS: process.env.AGENT_MAX_PENDING_ANONYMOUS,
+      AGENT_ASSERTION_SIGNING_KEY: process.env.AGENT_ASSERTION_SIGNING_KEY,
+      AGENT_ASSERTION_SIGNING_KID: process.env.AGENT_ASSERTION_SIGNING_KID,
+      AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK: process.env.AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK,
+      AGENT_POW_SECRET: process.env.AGENT_POW_SECRET,
+      AGENT_POW_SECRET_PREVIOUS: process.env.AGENT_POW_SECRET_PREVIOUS,
+      AGENT_POW_DIFFICULTY: process.env.AGENT_POW_DIFFICULTY,
+      AGENT_POW_COUNT: process.env.AGENT_POW_COUNT,
+      AGENT_ANONYMOUS_ENABLED: process.env.AGENT_ANONYMOUS_ENABLED,
+      AGENT_ANONYMOUS_GLOBAL_RATE: process.env.AGENT_ANONYMOUS_GLOBAL_RATE,
+      AGENT_REGISTER_WIDE_RATE_LIMIT: process.env.AGENT_REGISTER_WIDE_RATE_LIMIT,
+      AGENT_MAX_LIVE_ANONYMOUS: process.env.AGENT_MAX_LIVE_ANONYMOUS,
       AGENT_MAX_PENDING_OTP_PER_EMAIL: process.env.AGENT_MAX_PENDING_OTP_PER_EMAIL,
     });
   }

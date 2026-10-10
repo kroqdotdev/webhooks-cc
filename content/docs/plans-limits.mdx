@@ -3,7 +3,7 @@ title: "Plans & Limits"
 description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
 section: getting-started
 order: 4
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 schema: faq
 keywords:
   [
@@ -25,6 +25,7 @@ seo:
 | Plan      | Requests         | Period   | Retention | Endpoints                    | Price            |
 | --------- | ---------------- | -------- | --------- | ---------------------------- | ---------------- |
 | Guest     | 25               | 12 hours | 12 hours  | Ephemeral only (12hr TTL)    | Free (no signup) |
+| Agent     | 100 per agent    | 24 hours | 24 hours  | 3 at a time (24hr TTL)       | Free (no signup) |
 | Free      | 50               | 24 hours | 7 days    | Unlimited, never expire      | Free             |
 | **Pro**   | 100,000          | 30 days  | 31 days   | Unlimited, never expire      | $8/month         |
 | **Teams** | 100,000 per seat | 30 days  | 31 days   | Endpoints shared to the team | $12/seat/month   |
@@ -38,6 +39,8 @@ Endpoints created by logged-in users (Free or Pro) **never expire**. They persis
 ## How billing periods work
 
 **Guest** — no account required. Ephemeral endpoints auto-delete after 12 hours along with all captured requests. Each ephemeral endpoint has a 25-request cap.
+
+**Agent**: an AI agent that registers without an account gets a sandbox of 3 endpoints for 24 hours, with 25 requests per endpoint and 100 in all. See [AI agents](/docs/agents).
 
 **Free** — billing periods activate lazily. Your 24-hour window starts when your first webhook request is captured, not when you sign up. Once the period expires, the counter resets and the next request starts a new 24-hour window.
 

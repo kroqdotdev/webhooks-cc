@@ -549,3 +549,60 @@ export async function clearRequestsForEndpointByUser(input: {
     complete: true,
   };
 }
+
+/**
+ * Requests captured by an agent sandbox endpoint, newest first. The caller
+ * has already matched the endpoint to the bearer's registration. Sandbox
+ * requests live as long as the endpoint (at most a day), so no retention
+ * cutoff applies.
+ */
+export async function listRequestsForSandboxEndpoint(
+  endpointId: string,
+  input: { since?: number; limit?: number; maxLimit: number }
+): Promise<RequestRecord[]> {
+  const admin = createAdminClient();
+  const query = admin
+    .from("requests")
+    .select(
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+    )
+    .eq("endpoint_id", endpointId);
+  if (input.since !== undefined) {
+    query.gte("received_at", new Date(input.since).toISOString());
+  }
+  const { data, error } = await query
+    .order("received_at", { ascending: false })
+    .limit(Math.min(clampLimit(input.limit, input.maxLimit), input.maxLimit))
+    .returns<SelectedRequestRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeRequest);
+}
+
+/** One request, only when one of the registration's sandbox endpoints captured it. */
+export async function getSandboxRequest(
+  registrationId: string,
+  requestId: string
+): Promise<RequestRecord | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("requests")
+    .select(
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+    )
+    .eq("id", requestId)
+    .returns<SelectedRequestRow>()
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as SelectedRequestRow | null;
+  if (!row) return null;
+
+  const { data: endpoint, error: endpointError } = await admin
+    .from("endpoints")
+    .select("id")
+    .eq("id", row.endpoint_id)
+    .eq("agent_registration_id", registrationId)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (endpointError) throw endpointError;
+  return endpoint ? normalizeRequest(row) : null;
+}

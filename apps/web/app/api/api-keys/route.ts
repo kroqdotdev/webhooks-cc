@@ -14,6 +14,9 @@ export async function GET(request: Request) {
     .from("api_keys")
     .select("id, name, key_prefix, created_at, expires_at, last_used_at")
     .eq("user_id", auth.userId)
+    // Agent access tokens are short-lived and belong to their registration;
+    // the account lists them as connected agents, not as keys.
+    .is("agent_registration_id", null)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -45,7 +48,8 @@ export async function POST(request: Request) {
   const { count, error: countError } = await admin
     .from("api_keys")
     .select("id", { count: "exact", head: true })
-    .eq("user_id", auth.userId);
+    .eq("user_id", auth.userId)
+    .is("agent_registration_id", null);
 
   if (countError) {
     console.error("Failed to count API keys:", countError);
@@ -103,6 +107,7 @@ export async function DELETE(request: Request) {
     .delete()
     .eq("id", keyId)
     .eq("user_id", auth.userId)
+    .is("agent_registration_id", null)
     .select("key_prefix");
 
   if (error) {

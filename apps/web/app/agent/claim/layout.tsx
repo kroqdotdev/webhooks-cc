@@ -1,8 +1,8 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Claim Agent Credential",
-  description: "Claim an API credential for a registered AI agent.",
+  title: "Connect an Agent",
+  description: "Connect a registered AI agent to your webhooks.cc account.",
   path: "/agent/claim",
   noIndex: true,
 });

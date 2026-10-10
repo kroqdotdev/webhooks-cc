@@ -1,38 +1,25 @@
 import { checkRateLimitWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 import { serverEnv } from "@/lib/env";
-import {
-  AgentRequestError,
-  createAnonymousRegistration,
-  issueVerifiedEmailClaim,
-  issueIdJagCredential,
-} from "@/lib/agent/agent-auth";
-import { verifyIdJag } from "@/lib/agent/id-jag";
+import { AgentRequestError, issueVerifiedEmailClaim } from "@/lib/agent/agent-auth";
+import { endpointMoved } from "@/lib/agent/legacy";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { isPlainEmailAddress } from "@/lib/request-validation";
 import { sendError } from "@appsignal/nodejs";
 
 /**
- * Agent self-registration dispatcher (WorkOS auth.md). One POST endpoint backs
- * all three registration flows, selected by `body.type`:
- *
- *   - anonymous           — mint an unowned whcc_ key immediately (returned now).
- *   - verified_email      — issue an OTP; the credential is withheld until the
- *                           OTP is confirmed at the claim ceremony.
- *   - identity_assertion  — ID-JAG (verified synchronously) or, when paired with
- *                           assertion_type=verified_email, the OTP flow.
- *
- * IP rate limiting distinguishes the cheap/unverified flows (anonymous,
- * verified_email) from the verified identity_assertion path, which gets a higher
- * per-IP limit. The OTP/credential mechanics live in lib/agent/agent-auth.ts and
- * lib/agent/id-jag.ts; this route only validates input and dispatches.
+ * The auth.md v0.1 registration endpoint. Only `verified_email` still works
+ * here, until its sunset: it needs a human to read an emailed code and never
+ * reaches the sandbox. Anonymous and ID-JAG registration moved to
+ * POST /api/agent/identity (auth.md v0.6) and answer 410 with a pointer to
+ * /auth.md: legacy anonymous keys would skip the proof of work and the
+ * sandbox pool.
  */
 
-const ID_JAG_ASSERTION_TYPE = "urn:ietf:params:oauth:token-type:id-jag";
 const VERIFIED_EMAIL_ASSERTION_TYPE = "verified_email";
 
-/** Request body size cap (matches parseJsonBody usage below). */
+/** Request body size cap. */
 const MAX_BODY_BYTES = 16 * 1024;
 
 function isString(value: unknown): value is string {
@@ -43,60 +30,39 @@ function optionalClientName(body: Record<string, unknown>): string | undefined {
   return isString(body.client_name) ? body.client_name : undefined;
 }
 
-export async function POST(request: Request) {
-  // The ID-JAG flow may arrive either as the RFC-style raw assertion (the JWT
-  // IS the body, with Content-Type: application/jwt) or JSON-wrapped. Normalize
-  // both to a single JSON-shaped `body`. Every other flow is JSON.
-  let body: Record<string, unknown>;
-  const contentType = request.headers.get("content-type") ?? "";
-  if (contentType.includes("application/jwt")) {
-    // Reject oversized bodies before reading, using the declared length when present.
-    const contentLength = request.headers.get("content-length");
-    if (contentLength) {
-      const declared = parseInt(contentLength, 10);
-      if (!isNaN(declared) && declared > MAX_BODY_BYTES) {
-        return Response.json(
-          { error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` },
-          { status: 413 }
-        );
-      }
-    }
-    // Bound the read even when Content-Length is absent or spoofed.
-    const raw = await request.text();
-    if (raw.length > MAX_BODY_BYTES) {
-      return Response.json(
-        { error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` },
-        { status: 413 }
-      );
-    }
-    body = {
-      type: "identity_assertion",
-      assertion_type: ID_JAG_ASSERTION_TYPE,
-      assertion: raw.trim(),
-    };
-  } else {
-    const parsed = await parseJsonBody(request, MAX_BODY_BYTES);
-    if ("error" in parsed) return parsed.error;
-    body = parsed.data as Record<string, unknown>;
-  }
+const MOVED =
+  "Agent registration moved to auth.md v0.6: POST /api/agent/identity. Read /auth.md for the flow.";
 
-  // The flow is selected by `type`; accept the `identity_type` alias too (the
-  // auth.md spec uses that name in places). Either resolves to `flowType`.
+export async function POST(request: Request) {
+  // The v0.1 ID-JAG flow accepted the raw assertion as the body.
+  if ((request.headers.get("content-type") ?? "").includes("application/jwt")) {
+    return endpointMoved(MOVED);
+  }
+  const parsed = await parseJsonBody(request, MAX_BODY_BYTES);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as Record<string, unknown>;
+
+  // The flow is selected by `type`; accept the `identity_type` alias too.
   const flowType = isString(body.type)
     ? body.type
     : isString(body.identity_type)
       ? body.identity_type
       : undefined;
 
-  // IP rate limit. identity_assertion is verified and gets a higher limit;
-  // anonymous/verified_email share the lower registration limit. Same window.
-  const isIdJagFlow =
-    flowType === "identity_assertion" && body.assertion_type === ID_JAG_ASSERTION_TYPE;
+  const isVerifiedEmailFlow =
+    flowType === "verified_email" ||
+    (flowType === "identity_assertion" && body.assertion_type === VERIFIED_EMAIL_ASSERTION_TYPE);
+  if (!isVerifiedEmailFlow) {
+    if (flowType === "anonymous" || flowType === "identity_assertion") {
+      return endpointMoved(MOVED);
+    }
+    return Response.json({ error: "invalid_request" }, { status: 400 });
+  }
 
   const rateLimit = await checkRateLimitWithInfo(
     request,
-    isIdJagFlow ? "agent-register-idjag" : "agent-register",
-    isIdJagFlow ? serverEnv().AGENT_IDJAG_RATE_LIMIT : serverEnv().AGENT_REGISTER_RATE_LIMIT,
+    "agent-register",
+    serverEnv().AGENT_REGISTER_RATE_LIMIT,
     serverEnv().AGENT_REGISTER_RATE_WINDOW_MS
   );
   if (rateLimit.response) {
@@ -104,120 +70,60 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Anonymous — immediate unowned credential.
-    if (flowType === "anonymous") {
-      if (body.requested_credential_type !== "api_key") {
-        return Response.json({ error: "unsupported_credential_type" }, { status: 400 });
-      }
-      const result = await createAnonymousRegistration({
-        clientName: optionalClientName(body),
-      });
-      await auditAgentEvent(request, {
-        action: "agent.registration.created",
-        status: 200,
-        targetId: result.registration_id,
-        metadata: { flow: "anonymous", client_name: optionalClientName(body) ?? null },
-      });
-      return applyRateLimitHeaders(Response.json(result, { status: 200 }), rateLimit);
+    const emailValue = isString(body.assertion)
+      ? body.assertion
+      : isString(body.email)
+        ? body.email
+        : null;
+    // Bound length before the regex so worst-case backtracking is capped (ReDoS guard).
+    if (!emailValue || !isPlainEmailAddress(emailValue)) {
+      return Response.json({ error: "invalid_email" }, { status: 400 });
     }
-
-    // Verified email (OTP). Either an explicit verified_email type, or an
-    // identity_assertion whose assertion_type selects the email flow.
-    const isVerifiedEmailFlow =
-      flowType === "verified_email" ||
-      (flowType === "identity_assertion" && body.assertion_type === VERIFIED_EMAIL_ASSERTION_TYPE);
-
-    if (isVerifiedEmailFlow) {
-      const emailValue = isString(body.assertion)
-        ? body.assertion
-        : isString(body.email)
-          ? body.email
-          : null;
-      // Bound length before the regex so worst-case backtracking is capped (ReDoS guard).
-      if (!emailValue || !isPlainEmailAddress(emailValue)) {
-        return Response.json({ error: "invalid_email" }, { status: 400 });
-      }
-      // Codes sent to the capture domain can be read through webhooks.cc
-      // itself, so one account could verify any number of +tag addresses and
-      // mint a new account for each.
-      if (isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
-        await auditAgentEvent(request, {
-          action: "agent.registration.refused",
-          status: 400,
-          metadata: { flow: "verified_email", code: "capture_domain" },
-        });
-        return Response.json(
-          {
-            error: "invalid_email",
-            error_description: `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN} cannot be used to register`,
-          },
-          { status: 400 }
-        );
-      }
-      const claim = await issueVerifiedEmailClaim({
-        email: emailValue,
-        clientName: optionalClientName(body),
-      });
+    // Codes sent to the capture domain can be read through webhooks.cc
+    // itself, so one account could verify any number of +tag addresses and
+    // mint a new account for each.
+    if (isCaptureDomainAddress(emailValue, serverEnv().EMAIL_CAPTURE_DOMAIN)) {
       await auditAgentEvent(request, {
-        action: "agent.claim.requested",
-        status: 200,
-        targetId: claim.registration_id,
-        metadata: {
-          flow: "verified_email",
-          email_domain: emailDomain(emailValue),
-          client_name: optionalClientName(body) ?? null,
+        action: "agent.registration.refused",
+        status: 400,
+        metadata: { flow: "verified_email", code: "capture_domain" },
+      });
+      return Response.json(
+        {
+          error: "invalid_email",
+          error_description: `Addresses at ${serverEnv().EMAIL_CAPTURE_DOMAIN} cannot be used to register`,
         },
-      });
-      return applyRateLimitHeaders(
-        Response.json(
-          {
-            registration_id: claim.registration_id,
-            registration_type: claim.registration_type,
-            claim_url: claim.claim_url,
-            claim_token: claim.claim_token,
-            claim_token_expires: claim.claim_token_expires,
-            post_claim_scopes: claim.post_claim_scopes,
-          },
-          { status: 200 }
-        ),
-        rateLimit
+        { status: 400 }
       );
     }
-
-    // Identity assertion (ID-JAG). Verified synchronously via JWKS.
-    if (isIdJagFlow) {
-      if (!isString(body.assertion)) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      const verified = await verifyIdJag(body.assertion);
-      if (!verified.ok) {
-        return Response.json({ error: verified.error }, { status: 400 });
-      }
-      const issued = await issueIdJagCredential(verified);
-      if (!issued.ok) {
-        return Response.json({ error: issued.error }, { status: 400 });
-      }
-      await auditAgentEvent(request, {
-        action: "agent.registration.created",
-        status: 200,
-        metadata: { flow: "identity_assertion", issuer: verified.iss },
-      });
-      return applyRateLimitHeaders(
-        Response.json(
-          {
-            credential: issued.value.credential,
-            credential_type: issued.value.credential_type,
-            credential_expires: issued.value.credential_expires,
-            scopes: issued.value.scopes,
-          },
-          { status: 200 }
-        ),
-        rateLimit
-      );
-    }
-
-    // Unknown / unsupported request shape.
-    return Response.json({ error: "invalid_request" }, { status: 400 });
+    const claim = await issueVerifiedEmailClaim({
+      email: emailValue,
+      clientName: optionalClientName(body),
+    });
+    await auditAgentEvent(request, {
+      action: "agent.claim.requested",
+      status: 200,
+      targetId: claim.registration_id,
+      metadata: {
+        flow: "verified_email",
+        email_domain: emailDomain(emailValue),
+        client_name: optionalClientName(body) ?? null,
+      },
+    });
+    return applyRateLimitHeaders(
+      Response.json(
+        {
+          registration_id: claim.registration_id,
+          registration_type: claim.registration_type,
+          claim_url: claim.claim_url,
+          claim_token: claim.claim_token,
+          claim_token_expires: claim.claim_token_expires,
+          post_claim_scopes: claim.post_claim_scopes,
+        },
+        { status: 200 }
+      ),
+      rateLimit
+    );
   } catch (err) {
     // Capacity/throttle limits surface as their own status + auth.md code.
     if (err instanceof AgentRequestError) {
