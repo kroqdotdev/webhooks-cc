@@ -2,7 +2,13 @@ import { sendError } from "@appsignal/nodejs";
 import { checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ASSERTION_REVOKED_EVENT } from "@/lib/agent/constants";
-import { forgetJti, recordJti, verifySecurityEvent, type IdJagError } from "@/lib/agent/id-jag";
+import { readBoundedBody } from "@/lib/agent/http";
+import {
+  recordJti,
+  securityEventSeen,
+  verifySecurityEvent,
+  type IdJagError,
+} from "@/lib/agent/id-jag";
 
 /**
  * POST /api/agent/event/notify: the Security Event Token receiver (RFC 8935
@@ -12,9 +18,12 @@ import { forgetJti, recordJti, verifySecurityEvent, type IdJagError } from "@/li
  * (the delegation goes too, so the next ID-JAG starts over). Unknown events
  * are ignored (RFC 8417 2.2).
  *
- * 202 with no body on success, also for a SET already processed, so a
- * provider retrying after a lost answer is not told it failed. Errors are
- * RFC 8935 2.4's `{ err, description }`.
+ * 202 with no body once the events are processed, and for a SET processed
+ * before, so a provider retrying after a lost answer is not told it failed.
+ * Revocation is idempotent, so the jti is recorded only after it succeeded:
+ * a duplicate that arrives while the first delivery is still running, or
+ * after it failed, is processed again rather than acknowledged unseen.
+ * Errors are RFC 8935 2.4's `{ err, description }`.
  */
 
 const MAX_SET_BYTES = 16 * 1024;
@@ -45,12 +54,12 @@ export async function POST(request: Request) {
   if (contentType.toLowerCase() !== "application/secevent+jwt") {
     return setError(400, "invalid_request", "Send the SET as application/secevent+jwt.");
   }
-  const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > MAX_SET_BYTES) {
+  const body = await readBoundedBody(request, MAX_SET_BYTES);
+  if (!body) {
     return setError(400, "invalid_request", "The SET is too large.");
   }
-  const jwt = (await request.text()).trim();
-  if (!jwt || jwt.length > MAX_SET_BYTES) {
+  const jwt = new TextDecoder().decode(body).trim();
+  if (!jwt) {
     return setError(400, "invalid_request", "Send one SET as the request body.");
   }
 
@@ -64,24 +73,20 @@ export async function POST(request: Request) {
       return setError(400, err, description);
     }
 
-    // A jti seen before was processed already: acknowledge it again.
-    if (!(await recordJti(verified.jti, verified.iss, "set", verified.retainUntil))) {
+    if (await securityEventSeen(verified.jti, verified.iss)) {
       return new Response(null, { status: 202 });
     }
 
-    try {
-      if (Object.hasOwn(verified.events, ASSERTION_REVOKED_EVENT)) {
-        const { error } = await createAdminClient().rpc("revoke_agent_delegation", {
-          p_iss: verified.iss,
-          p_sub: verified.sub,
-        });
-        if (error) throw error;
-      }
-    } catch (error) {
-      // Let the provider's retry through.
-      await forgetJti(verified.jti).catch(() => {});
-      throw error;
+    if (Object.hasOwn(verified.events, ASSERTION_REVOKED_EVENT)) {
+      const { error } = await createAdminClient().rpc("revoke_agent_delegation", {
+        p_iss: verified.iss,
+        p_sub: verified.sub,
+      });
+      if (error) throw error;
     }
+    // From here on a replay is acknowledged without being processed again.
+    // False means a concurrent duplicate recorded it first, which is fine.
+    await recordJti(verified.jti, verified.iss, "set", verified.retainUntil);
     return new Response(null, { status: 202 });
   } catch (error) {
     sendError(error instanceof Error ? error : new Error(String(error)));

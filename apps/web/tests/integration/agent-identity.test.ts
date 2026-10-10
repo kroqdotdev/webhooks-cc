@@ -923,6 +923,26 @@ describe("agent identity (auth.md v0.6)", () => {
         expect(res.status).toBe(400);
         expect((await res.json()).err).toBe(err);
       }
+
+      // Oversize and streamed without a Content-Length: refused while reading.
+      const streamed = await eventPost(
+        new Request(`${APP}/api/agent/event/notify`, {
+          method: "POST",
+          headers: { "content-type": "application/secevent+jwt", "x-forwarded-for": nextIp() },
+          body: new ReadableStream({
+            start(controller) {
+              for (let i = 0; i < 40; i++) controller.enqueue(new Uint8Array(1024).fill(97));
+              controller.close();
+            },
+          }),
+          duplex: "half",
+        } as RequestInit)
+      );
+      expect(streamed.status).toBe(400);
+      expect(await streamed.json()).toEqual({
+        err: "invalid_request",
+        description: "The SET is too large.",
+      });
     });
   });
 

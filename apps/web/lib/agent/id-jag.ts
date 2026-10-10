@@ -114,10 +114,16 @@ export async function recordJti(
   return true;
 }
 
-/** Forgets a jti again, so a SET whose processing failed can be delivered again. */
-export async function forgetJti(jti: string): Promise<void> {
-  const { error } = await jtiClient().from("agent_idjag_jti").delete().eq("jti", jti);
+/** True when this issuer's Security Event Token with this jti was processed. */
+export async function securityEventSeen(jti: string, issuer: string): Promise<boolean> {
+  const { count, error } = await jtiClient()
+    .from("agent_idjag_jti")
+    .select("jti", { count: "exact", head: true })
+    .eq("jti", jti)
+    .eq("issuer", issuer)
+    .eq("purpose", "set");
   if (error) throw error;
+  return (count ?? 0) > 0;
 }
 
 interface VerifyOptions {
@@ -333,8 +339,9 @@ export type SecurityEventResult = SecurityEventSuccess | IdJagFailure;
 /**
  * Verify a Security Event Token (RFC 8417) through the same trust path as an
  * ID-JAG. Its audience is this service, as the issuer or the resource. The
- * jti is not consumed here: the receiver records it and forgets it again if
- * processing fails, so the provider's retry is not mistaken for a replay.
+ * jti is not consumed here: the receiver records it once the event has been
+ * processed, so a delivery that failed or is still running is never
+ * acknowledged on its behalf.
  */
 export async function verifySecurityEvent(jwt: string): Promise<SecurityEventResult> {
   const verified = await verifyTrusted(jwt, {
