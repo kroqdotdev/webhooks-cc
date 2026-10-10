@@ -20,6 +20,10 @@ export interface ApiKeyValidationResult {
   plan: UserPlan;
   /** True when the key was minted by the agent auth.md flows (may be unowned). */
   isAgentIssued?: boolean;
+  /** The api_keys row. */
+  keyId?: string;
+  /** Set when the key is an agent access token (auth.md v0.6). */
+  agentRegistrationId?: string | null;
 }
 
 export function generateApiKey(): string {
@@ -61,7 +65,7 @@ export async function validateApiKeyWithMetadata(
 
   const { data: keyRow, error: keyError } = await admin
     .from("api_keys")
-    .select("id, user_id, expires_at, is_agent_issued, scopes")
+    .select("id, user_id, expires_at, is_agent_issued, scopes, agent_registration_id")
     .eq("key_hash", keyHash)
     .maybeSingle();
 
@@ -89,6 +93,8 @@ export async function validateApiKeyWithMetadata(
       userId: null,
       plan: "free",
       isAgentIssued: true,
+      keyId: keyRow.id,
+      agentRegistrationId: keyRow.agent_registration_id,
     };
   }
 
@@ -120,5 +126,7 @@ export async function validateApiKeyWithMetadata(
     userId: keyRow.user_id,
     plan: userRow.plan,
     isAgentIssued: keyRow.is_agent_issued ?? false,
+    keyId: keyRow.id,
+    agentRegistrationId: keyRow.agent_registration_id,
   };
 }

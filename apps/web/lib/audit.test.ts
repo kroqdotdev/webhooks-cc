@@ -16,6 +16,7 @@ const {
   polarAuditAction,
   requestVia,
 } = await import("./audit");
+const { markAgentTokenRequest } = await import("./agent/token-requests");
 
 function request(headers: Record<string, string>): Request {
   return new Request("https://webhooks.cc/api/teams", { method: "POST", headers });
@@ -35,6 +36,14 @@ describe("audit", () => {
     expect(outcomeForStatus(400)).toBe("refused");
     expect(outcomeForStatus(404)).toBe("refused");
     expect(outcomeForStatus(500)).toBe("error");
+  });
+
+  it("tells agent access tokens from API keys once the bearer check marked them", () => {
+    const agent = request({ Authorization: "Bearer whcc_agent" });
+    expect(requestVia(agent)).toBe("api_key");
+    markAgentTokenRequest(agent);
+    expect(requestVia(agent)).toBe("agent_token");
+    expect(requestVia(request({ Authorization: "Bearer whcc_agent" }))).toBe("api_key");
   });
 
   it("tells API keys from dashboard sessions", () => {

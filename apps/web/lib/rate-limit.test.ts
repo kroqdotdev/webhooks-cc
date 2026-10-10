@@ -3,6 +3,7 @@ import {
   checkRateLimitByKeyWithInfo,
   checkRateLimitWithInfo,
   rateLimitIpBucket,
+  rateLimitWideIpBucket,
 } from "./rate-limit";
 
 // No REDIS_URL in the unit suite, so these run against the in-memory fallback.
@@ -91,5 +92,15 @@ describe("rate limit buckets", () => {
     await checkRateLimitByKeyWithInfo("cleanup-minute", 10, 60_000);
     random.mockRestore();
     expect((await checkRateLimitByKeyWithInfo("cleanup-hourly", 1, hour)).allowed).toBe(false);
+  });
+});
+
+describe("rateLimitWideIpBucket", () => {
+  it("counts IPv4 by its /24 and IPv6 by its /48", () => {
+    expect(rateLimitWideIpBucket("203.0.113.7")).toBe("203.0.113.0/24");
+    expect(rateLimitWideIpBucket("::ffff:203.0.113.7")).toBe("203.0.113.0/24");
+    expect(rateLimitWideIpBucket("2001:db8:abcd:12::1")).toBe("2001:0db8:abcd::/48");
+    expect(rateLimitWideIpBucket("2001:DB8:ABCD:FFFF::9")).toBe("2001:0db8:abcd::/48");
+    expect(rateLimitWideIpBucket("unknown")).toBe("unknown");
   });
 });

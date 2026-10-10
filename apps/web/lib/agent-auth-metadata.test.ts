@@ -1,6 +1,6 @@
 // Pin the app URL BEFORE importing anything that calls publicEnv(). publicEnv()
 // is lazy-evaluated and memoized on first call, reading process.env at that
-// point — so these assignments must precede the import below.
+// point, so these assignments must precede the import below.
 //
 // The metadata builders under test only read NEXT_PUBLIC_APP_URL, but
 // publicEnv() validates the FULL public schema on first access. The unit
@@ -17,7 +17,7 @@ import { describe, expect, test } from "vitest";
 // PURE builders only. We deliberately do NOT import the route handlers or any
 // DB/email lib: those pull in the admin client and secret-only env (e.g.
 // SUPABASE_SERVICE_ROLE_KEY) which may be unset in CI. This is the CI-protected
-// shape test — it must run with no DB and no network.
+// shape test: it must run with no DB and no network.
 import {
   buildAuthMd,
   buildAuthMdUrl,
@@ -27,22 +27,15 @@ import {
 
 const APP_URL = "https://webhooks.cc";
 
-describe("agent auth.md — Protected Resource Metadata (RFC 9728)", () => {
+describe("agent auth.md: Protected Resource Metadata (RFC 9728)", () => {
   const prm = buildProtectedResourceMetadata();
 
   test("resource is the protected API audience", () => {
     expect(prm.resource).toBe(`${APP_URL}/api/`);
   });
 
-  test("advertises a human-readable resource name/documentation", () => {
-    // The PRM must carry a resource_name or resource_documentation so agents
-    // can identify the service. We accept either field being present.
-    const named =
-      ("resource_name" in prm &&
-        typeof (prm as Record<string, unknown>).resource_name === "string" &&
-        ((prm as Record<string, unknown>).resource_name as string).length > 0) ||
-      (typeof prm.resource_documentation === "string" && prm.resource_documentation.length > 0);
-    expect(named).toBe(true);
+  test("points agents at /auth.md for documentation", () => {
+    expect(prm.resource_documentation).toBe(`${APP_URL}/auth.md`);
   });
 
   test("points at this app as its authorization server (matches the AS issuer)", () => {
@@ -50,9 +43,13 @@ describe("agent auth.md — Protected Resource Metadata (RFC 9728)", () => {
     expect(prm.authorization_servers).toEqual([APP_URL]);
   });
 
-  test("advertises advisory scopes", () => {
-    expect(prm.scopes_supported).toContain("webhooks:read");
-    expect(prm.scopes_supported).toContain("webhooks:write");
+  test("advertises the sandbox and account scopes", () => {
+    expect(prm.scopes_supported).toEqual(["webhooks:sandbox", "webhooks:read", "webhooks:write"]);
+  });
+
+  test("names the service and its logo for consent screens", () => {
+    expect(prm.resource_name).toBe("webhooks.cc");
+    expect(prm.resource_logo_uri).toBe(`${APP_URL}/icon-512.png`);
   });
 
   test("bearer credential travels in the Authorization header", () => {
@@ -60,64 +57,66 @@ describe("agent auth.md — Protected Resource Metadata (RFC 9728)", () => {
   });
 });
 
-describe("agent auth.md — Authorization Server Metadata", () => {
-  const as = buildAuthorizationServerMetadata();
+describe("agent auth.md: Authorization Server Metadata", () => {
+  const as = buildAuthorizationServerMetadata({ idJagEnabled: false });
 
-  test("agent_auth.skill points at the hosted auth.md", () => {
-    expect(as.agent_auth.skill).toBe(`${APP_URL}/auth.md`);
+  test("pins the v0.6 discovery document", () => {
+    expect(as).toEqual({
+      resource: `${APP_URL}/api/`,
+      authorization_servers: [APP_URL],
+      scopes_supported: ["webhooks:sandbox", "webhooks:read", "webhooks:write"],
+      bearer_methods_supported: ["header"],
+      issuer: APP_URL,
+      token_endpoint: `${APP_URL}/api/oauth2/token`,
+      revocation_endpoint: `${APP_URL}/api/oauth2/revoke`,
+      jwks_uri: `${APP_URL}/.well-known/jwks.json`,
+      grant_types_supported: ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+      service_documentation: `${APP_URL}/auth.md`,
+      agent_auth: {
+        skill: `${APP_URL}/auth.md`,
+        identity_endpoint: `${APP_URL}/api/agent/identity`,
+        claim_endpoint: `${APP_URL}/api/agent/identity/claim`,
+        identity_types_supported: ["anonymous"],
+        anonymous: {
+          credential_types_supported: ["access_token"],
+          proof_of_work: {
+            challenge_endpoint: `${APP_URL}/api/agent/identity/challenge`,
+            algorithms_supported: ["sha256-zero-bits"],
+          },
+          sandbox: {
+            endpoints_url: `${APP_URL}/api/agent/sandbox/endpoints`,
+            lifetime_seconds: 86400,
+            max_endpoints: 3,
+            max_requests_per_endpoint: 25,
+            max_requests: 100,
+          },
+        },
+        register_uri: `${APP_URL}/api/agent/identity`,
+        claim_uri: `${APP_URL}/api/agent/identity/claim`,
+      },
+    });
   });
 
-  test("register/claim/revocation URIs are absolute under the app URL", () => {
-    for (const uri of [
-      as.agent_auth.register_uri,
-      as.agent_auth.claim_uri,
-      as.agent_auth.revocation_uri,
-    ]) {
-      expect(typeof uri).toBe("string");
-      expect(uri.startsWith(`${APP_URL}/`)).toBe(true);
-      // Must be a parseable absolute URL on the canonical origin.
-      expect(new URL(uri).origin).toBe(APP_URL);
-    }
+  test("does not advertise endpoints that do not exist", () => {
+    expect(as).not.toHaveProperty("authorization_endpoint");
+    expect(as).not.toHaveProperty("registration_endpoint");
+    expect(as.agent_auth).not.toHaveProperty("events_endpoint");
   });
 
-  test("identity_types_supported lists all three supported flows", () => {
-    expect(as.agent_auth.identity_types_supported).toEqual([
+  test("offers identity_assertion only while an issuer is trusted", () => {
+    expect(as.agent_auth).not.toHaveProperty("identity_assertion");
+    const trusting = buildAuthorizationServerMetadata({ idJagEnabled: true });
+    expect(trusting.agent_auth.identity_types_supported).toEqual([
       "anonymous",
-      "verified_email",
       "identity_assertion",
     ]);
-  });
-
-  test("identity_assertion advertises only the ID-JAG assertion type", () => {
-    // verified_email is an identity TYPE, not an assertion token format, so it
-    // belongs in identity_types_supported (asserted below) — not here.
-    expect(as.agent_auth.identity_assertion.assertion_types_supported).toEqual([
-      "urn:ietf:params:oauth:token-type:id-jag",
-    ]);
-  });
-
-  test("identity_types_supported still includes verified_email", () => {
-    expect(as.agent_auth.identity_types_supported).toContain("verified_email");
-  });
-
-  test("anonymous flow advertises the api_key credential", () => {
-    expect(as.agent_auth.anonymous.credential_types_supported).toContain("api_key");
-  });
-
-  test("events_supported is a non-empty array carrying the revoked event schema", () => {
-    expect(Array.isArray(as.agent_auth.events_supported)).toBe(true);
-    expect(as.agent_auth.events_supported.length).toBeGreaterThan(0);
-
-    const revokedSchemaUri = `${APP_URL}/.well-known/agent-events/revoked`;
-    const hasRevokedSchema = as.agent_auth.events_supported.some((event) => {
-      const values = Object.values(event as Record<string, unknown>);
-      return values.includes(revokedSchemaUri);
+    expect(trusting.agent_auth.identity_assertion).toEqual({
+      assertion_types_supported: ["urn:ietf:params:oauth:token-type:id-jag"],
     });
-    expect(hasRevokedSchema).toBe(true);
   });
 });
 
-describe("agent auth.md — proactive discovery pointers", () => {
+describe("agent auth.md: proactive discovery pointers", () => {
   test("buildAuthMdUrl points at the hosted /auth.md on the app URL", () => {
     // Backs the root <head> <link rel="auth.md"> so probing agents can find the
     // doc without first hitting a 401 (RFC 9728) or reading the well-known docs.
@@ -126,47 +125,76 @@ describe("agent auth.md — proactive discovery pointers", () => {
   });
 
   test("the head link target matches the authorization server skill pointer", () => {
-    const as = buildAuthorizationServerMetadata();
+    const as = buildAuthorizationServerMetadata({ idJagEnabled: false });
     expect(buildAuthMdUrl()).toBe(as.agent_auth.skill);
   });
 });
 
-describe("agent auth.md — hosted /auth.md document", () => {
-  const md = buildAuthMd();
-  const as = buildAuthorizationServerMetadata();
+describe("agent auth.md: hosted /auth.md document", () => {
+  const md = buildAuthMd({ idJagEnabled: false });
+  const as = buildAuthorizationServerMetadata({ idJagEnabled: false });
 
-  test("returns a non-empty markdown string", () => {
-    expect(typeof md).toBe("string");
-    expect(md.length).toBeGreaterThan(0);
+  test("follows the auth.md steps", () => {
+    for (const step of [
+      "## Step 1: Discover",
+      "## Step 2: Pick a method",
+      "## Step 3: Register",
+      "## Step 4: Claim ceremony",
+      "## Step 5: Exchange the assertion",
+      "## Step 6: Use the access token",
+    ]) {
+      expect(md).toContain(step);
+    }
   });
 
-  test("documents all three registration flows", () => {
-    expect(md).toContain("anonymous");
-    expect(md).toContain("verified_email");
-    expect(md).toContain("identity_assertion");
+  test("names every endpoint the discovery document advertises", () => {
+    for (const url of [
+      as.token_endpoint,
+      as.revocation_endpoint,
+      as.agent_auth.identity_endpoint,
+      as.agent_auth.claim_endpoint,
+      as.agent_auth.anonymous.proof_of_work.challenge_endpoint,
+      as.agent_auth.anonymous.sandbox.endpoints_url,
+    ]) {
+      expect(md).toContain(url);
+    }
   });
 
-  test("says an unclaimed credential expires with its claim", () => {
-    expect(md).toContain('"credential_expires": "<iso8601>"');
-    expect(md).toMatch(/deleted within 10 minutes/);
+  test("states the lifetimes and limits", () => {
+    expect(md).toContain(
+      "| Unclaimed registration, its identity assertion and its sandbox | 24 hours |"
+    );
+    expect(md).toContain("| Access token | 60 minutes");
+    expect(md).toContain("25 per endpoint, 100 per registration");
   });
 
-  test("documents the whcc_ credential prefix", () => {
-    expect(md).toContain("whcc_");
+  test("writes discovery URLs as plain links, not code spans", () => {
+    // A scanner once requested `/.well-known/oauth-protected-resource%60`.
+    expect(md).toContain(
+      `- Protected Resource Metadata: ${APP_URL}/.well-known/oauth-protected-resource\n`
+    );
+    expect(md).not.toContain("`" + APP_URL + "/.well-known/");
   });
 
-  test("documents the in-app claim ceremony path", () => {
-    // Either the bare claim path or the full claim_uri must appear.
-    const hasClaimPath = md.includes("/agent/claim") || md.includes(as.agent_auth.claim_uri);
-    expect(hasClaimPath).toBe(true);
+  test("documents the proof of work with working solvers", () => {
+    expect(md).toContain("sha256-zero-bits");
+    expect(md).toContain("<challenge>.<i>.<nonce>");
+    expect(md).toContain("def solve(challenge: str, difficulty: int, count: int)");
+    expect(md).toContain('import { createHash } from "node:crypto";');
   });
 
-  test("documents the OTP step for the verified_email flow", () => {
-    expect(md.toLowerCase()).toContain("otp");
+  test("says ID-JAG has no trusted issuer unless one is configured", () => {
+    expect(md).toContain("`issuer_not_enabled`");
+    expect(buildAuthMd({ idJagEnabled: true })).toContain(
+      "accepted from the issuers this deployment trusts"
+    );
   });
 
-  test("documents the revocation section", () => {
-    expect(md.toLowerCase()).toContain("revocation");
-    expect(md).toContain(as.agent_auth.revocation_uri);
+  test("points old clients at the 410", () => {
+    expect(md).toContain("endpoint_moved");
+  });
+
+  test("contains no em dashes", () => {
+    expect(md).not.toContain("\u2014");
   });
 });

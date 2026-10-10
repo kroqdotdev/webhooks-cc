@@ -50,7 +50,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - Email to webhook overview: https://webhooks.cc/email-to-webhook
 - REST API: https://webhooks.cc/docs/api
 - OpenAPI spec: https://webhooks.cc/openapi.yaml
-- Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents register for an API credential
+- Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents get a sandbox and a credential without an account
 - GitHub: https://github.com/kroqdotdev/webhooks-cc
 - npm (SDK): https://www.npmjs.com/package/@webhooks-cc/sdk
 - npm (MCP): https://www.npmjs.com/package/@webhooks-cc/mcp

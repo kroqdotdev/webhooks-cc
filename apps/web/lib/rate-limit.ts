@@ -91,6 +91,21 @@ export function rateLimitIpBucket(ip: string): string {
 }
 
 /**
+ * A coarser bucket for limits that should also hold against a client moving
+ * between nearby addresses: IPv4 by its /24, IPv6 by its /48.
+ */
+export function rateLimitWideIpBucket(ip: string): string {
+  const bucket = rateLimitIpBucket(ip);
+  if (bucket.endsWith("::/64")) {
+    return `${bucket.split(":").slice(0, 3).join(":")}::/48`;
+  }
+  if (isIPv4(bucket)) {
+    return `${bucket.split(".").slice(0, 3).join(".")}.0/24`;
+  }
+  return bucket;
+}
+
+/**
  * The storage key of a limit. The window is part of it, so two limits that
  * happen to share a key never trim each other's history: each check trims
  * its bucket to its own window.
@@ -271,6 +286,17 @@ export async function checkRateLimitWithInfo(
 ): Promise<RateLimitInfo> {
   const bucket = rateLimitIpBucket(getClientIp(request));
   return checkRateLimitByKeyWithInfo(`ip:${scope}:${bucket}`, maxRequests, windowMs);
+}
+
+/** Like {@link checkRateLimitWithInfo}, counted per IPv4 /24 or IPv6 /48. */
+export async function checkWideRateLimitWithInfo(
+  request: Request,
+  scope: string,
+  maxRequests: number,
+  windowMs: number = 60_000
+): Promise<RateLimitInfo> {
+  const bucket = rateLimitWideIpBucket(getClientIp(request));
+  return checkRateLimitByKeyWithInfo(`ipwide:${scope}:${bucket}`, maxRequests, windowMs);
 }
 
 /**

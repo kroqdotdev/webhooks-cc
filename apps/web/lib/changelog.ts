@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.35.6";
+export const APP_VERSION = "0.36.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.36.0",
+    date: "2026-10-10",
+    title: "Agent Sandbox on auth.md v0.6",
+    track: "web",
+    items: [
+      "AI agents register through auth.md v0.6: a short proof of work, then a signed identity assertion they exchange for one-hour access tokens at /api/oauth2/token",
+      "An agent without an account gets a 24-hour sandbox: 3 endpoints, 25 captured requests each and 100 in all, readable only with its own token",
+      "/auth.md, the discovery documents and a new AI Agents docs page describe the flow; the claim ceremony that connects an agent to your account follows in the next release",
+      "Anonymous and ID-JAG registration on the old auth.md v0.1 endpoints answer 410 with a pointer to /auth.md; email verification keeps working for older SDK and MCP versions",
+    ],
+  },
   {
     version: "0.35.6",
     date: "2026-10-09",

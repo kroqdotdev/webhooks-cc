@@ -68,6 +68,8 @@ describe("Supabase Control Plane Integration", () => {
       userId: testUserId,
       plan: "free",
       isAgentIssued: false,
+      keyId: expect.any(String),
+      agentRegistrationId: null,
     });
 
     const { data: keyRow, error: keyError } = await admin

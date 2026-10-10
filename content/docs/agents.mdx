@@ -1,0 +1,62 @@
+---
+title: "AI Agents: Sandbox and Registration"
+description: "AI agents can use webhooks.cc without an account: register through the auth.md protocol, solve a short proof of work, and capture webhooks in a 24-hour sandbox. Limits, lifetimes, and how access works."
+section: getting-started
+order: 6
+lastUpdated: 2026-10-10
+schema: tech-article
+keywords:
+  [
+    "auth.md",
+    "AI agent registration",
+    "agent sandbox",
+    "webhook testing for AI agents",
+    "agentic registration",
+    "agent access token",
+  ]
+seo:
+  ogTitle: "AI Agents on webhooks.cc: Sandbox and Registration"
+  ogDescription: "An AI agent can register without an account, solve a short proof of work, and capture webhooks in a 24-hour sandbox. Limits, lifetimes, and the auth.md flow."
+---
+
+An AI agent can use webhooks.cc before anyone signs up. It registers itself through [auth.md](/auth.md), the agent registration protocol webhooks.cc implements (version 0.6), and gets a **sandbox**: a few temporary endpoints that capture webhooks for a day and that only the agent can read.
+
+The full protocol, with request and response examples, is at [webhooks.cc/auth.md](/auth.md). Agents read that document directly; this page explains the same flow for people.
+
+## What an agent gets without an account
+
+- Up to **3 endpoints** at a time, each with a capture URL like `https://go.webhooks.cc/w/<slug>`.
+- **25 captured requests per endpoint** and **100 per registration** in all.
+- The registration and its endpoints expire **24 hours** after the agent registered, and are deleted, with everything they captured, within minutes after that.
+- Captures are readable only with the agent's own access token. Nobody else can list or read them, and they never appear in anyone's dashboard.
+
+Sandbox endpoints only capture. They answer every webhook with a plain `200` and have no mock responses, notification webhooks, signature verification, email address, or forwarding. When an endpoint or the registration has used its requests, the capture URL answers `429`.
+
+| | Sandbox (agent) | Guest (browser) | Free account |
+| --- | --- | --- | --- |
+| Endpoints | 3 at a time | Temporary, from the home page | Unlimited |
+| Requests | 25 per endpoint, 100 in all | 25 per endpoint | 50 per day |
+| Lifetime | 24 hours | 12 hours | Never expire |
+| Who can read captures | The agent's token | Anyone with the link | You and your team |
+
+## How registration works
+
+1. **Discover.** The agent finds the registration endpoints in `/.well-known/oauth-authorization-server`, or follows the `WWW-Authenticate` header of any `401` from the API.
+2. **Prove some work.** Anonymous registration needs a solved proof-of-work challenge from `POST /api/agent/identity/challenge`: many SHA-256 hashes, a few seconds of CPU. It keeps scripts from filling the sandbox for free. A registration request without one gets a challenge back, so an agent needs no extra knowledge.
+3. **Register.** `POST /api/agent/identity` with `{ "type": "anonymous", "proof_of_work": ... }` returns a signed identity assertion and a claim token.
+4. **Get an access token.** The agent exchanges the assertion at `POST /api/oauth2/token` for an access token that lasts one hour. It can exchange again for a new one until the registration expires.
+5. **Use the sandbox.** With that token the agent creates endpoints at `/api/agent/sandbox/endpoints` and reads what they captured.
+
+Each IP address can register 5 times an hour. An agent that cannot run code, and so cannot solve the challenge, needs a person to sign up instead.
+
+## Connecting an agent to your account
+
+Coming in the next release. You will open a link the agent gives you, sign in, and type the code the agent shows. The agent's sandbox endpoints then become ordinary endpoints in your account, with the requests they already captured, and the agent can use the full API on your behalf.
+
+Until then, give an agent full access by creating an [API key](/docs/api) in your account settings and handing it to the agent, or by configuring the [MCP server](/docs/mcp) with one.
+
+## Revocation and expiry
+
+- An agent can drop one of its access tokens at `POST /api/oauth2/revoke`.
+- An unclaimed registration stops working 24 hours after registration; its tokens, endpoints and captured requests are deleted within minutes after that. There is nothing to clean up.
+- Agents that used the earlier version of the protocol (auth.md 0.1) get `410 endpoint_moved` from the old registration endpoint and a pointer to `/auth.md`.

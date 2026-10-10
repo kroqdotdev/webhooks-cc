@@ -1,11 +1,12 @@
 import { buildAuthMd } from "@/lib/agent/metadata";
+import { hasTrustedProviders } from "@/lib/agent/trusted-providers";
 
-// Hosted auth.md discovery document describing the agent-registration protocol
-// (anonymous, verified_email OTP, identity_assertion/ID-JAG) plus the in-app
-// claim ceremony, error catalog, and revocation. The markdown is built by the
-// pure buildAuthMd() helper, which sources hostnames from NEXT_PUBLIC_APP_URL.
+// Whether an ID-JAG issuer is trusted is runtime configuration.
+export const dynamic = "force-dynamic";
+
+/** Hosted auth.md: how an agent registers, uses the sandbox and gets tokens. */
 export async function GET() {
-  return new Response(buildAuthMd(), {
+  return new Response(buildAuthMd({ idJagEnabled: hasTrustedProviders() }), {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
       "Cache-Control": "public, max-age=300",

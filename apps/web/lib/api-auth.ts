@@ -6,6 +6,7 @@
 import { publicEnv } from "./env";
 import { createAdminClient } from "./supabase/admin";
 import { validateApiKeyWithMetadata } from "./supabase/api-keys";
+import { markAgentTokenRequest } from "./agent/token-requests";
 
 export type UserPlan = "free" | "pro";
 
@@ -19,6 +20,10 @@ export interface ApiKeyValidation {
   plan?: UserPlan;
   /** True when the bearer is an agent-issued key (auth.md flows). */
   isAgentIssued?: boolean;
+  /** The api_keys row, for API-key bearers. */
+  keyId?: string;
+  /** The agent registration, when the bearer is an agent access token. */
+  agentRegistrationId?: string | null;
 }
 
 /**
@@ -114,7 +119,13 @@ export async function validateApiKeyWithPlan(apiKey: string): Promise<ApiKeyVali
  * request themselves. Those routes are intentionally NOT modified here.
  */
 export type AuthResult =
-  | { success: true; userId: string | null; isAgentIssued?: boolean }
+  | {
+      success: true;
+      userId: string | null;
+      isAgentIssued?: boolean;
+      keyId?: string;
+      agentRegistrationId?: string | null;
+    }
   | { success: false; response: Response };
 
 /**
@@ -153,7 +164,14 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
     };
   }
 
-  return { success: true, userId: result.userId, isAgentIssued: result.isAgentIssued };
+  if (result.agentRegistrationId) markAgentTokenRequest(request);
+  return {
+    success: true,
+    userId: result.userId,
+    isAgentIssued: result.isAgentIssued,
+    keyId: result.keyId,
+    agentRegistrationId: result.agentRegistrationId ?? null,
+  };
 }
 
 /**
