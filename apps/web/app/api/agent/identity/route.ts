@@ -39,6 +39,7 @@ import {
   cleanClientName,
   createAnonymousRegistration,
   createIdJagRegistration,
+  powChallengeUsed,
   sandboxEndpointsUrl,
 } from "@/lib/agent/registrations";
 
@@ -142,16 +143,20 @@ async function registerAnonymous(
     audience: issuer(),
   });
   if (!verified.ok) {
-    await auditAgentEvent(request, {
-      action: "agent.registration.refused",
-      status: 400,
-      metadata: { kind: "anonymous", code: "invalid_challenge", reason: verified.reason },
-    });
-    return agentError(
-      400,
-      "invalid_challenge",
-      `The proof of work was not accepted (${verified.reason}). Solve this new challenge.`,
-      { ...(await newRegistrationChallenge()), challenge_endpoint: challengeEndpointUrl() }
+    return refuseChallenge(
+      request,
+      verified.reason,
+      `The proof of work was not accepted (${verified.reason}). Solve this new challenge.`
+    );
+  }
+
+  // A replayed challenge is refused before the global rate, which only
+  // counts fresh work: one solved challenge must not use it up.
+  if (await powChallengeUsed(verified.id)) {
+    return refuseChallenge(
+      request,
+      "replayed",
+      "This proof-of-work challenge was already used. Solve this new challenge."
     );
   }
 
@@ -183,7 +188,7 @@ async function registerAnonymous(
       status: error.status,
       metadata: { kind: "anonymous", code: error.code },
     });
-    // A replayed challenge gets a fresh one, like any other refused proof.
+    // A concurrent replay lost the insert: a fresh challenge, like any other refused proof.
     if (error.code === "invalid_challenge") {
       return agentError(error.status, error.code, error.description, {
         ...(await newRegistrationChallenge()),
@@ -239,6 +244,23 @@ async function registerAnonymous(
     ),
     perIp
   );
+}
+
+/** 400 invalid_challenge with a fresh challenge, recorded in the audit trail. */
+async function refuseChallenge(
+  request: Request,
+  reason: string,
+  description: string
+): Promise<Response> {
+  await auditAgentEvent(request, {
+    action: "agent.registration.refused",
+    status: 400,
+    metadata: { kind: "anonymous", code: "invalid_challenge", reason },
+  });
+  return agentError(400, "invalid_challenge", description, {
+    ...(await newRegistrationChallenge()),
+    challenge_endpoint: challengeEndpointUrl(),
+  });
 }
 
 async function registerIdJag(request: Request, body: Record<string, unknown>): Promise<Response> {

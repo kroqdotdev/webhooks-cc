@@ -353,6 +353,11 @@ describe("agent sandbox", () => {
       slugParams(second.slug)
     );
     expect(badLimit.status).toBe(400);
+    const farFuture = await routes.sandboxRequests(
+      bearer("GET", `${SANDBOX}/${second.slug}/requests?since=1e300`, agent.token),
+      slugParams(second.slug)
+    );
+    expect(farFuture.status).toBe(400);
   });
 
   it("captures through the receiver and answers 429 at the cap", async () => {

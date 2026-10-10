@@ -27,7 +27,7 @@ The full protocol, with request and response examples, is at [webhooks.cc/auth.m
 
 - Up to **3 endpoints** at a time, each with a capture URL like `https://go.webhooks.cc/w/<slug>`.
 - **25 captured requests per endpoint** and **100 per registration** in all.
-- Everything is deleted **24 hours** after the agent registered.
+- The registration and its endpoints expire **24 hours** after the agent registered, and are deleted, with everything they captured, within minutes after that.
 - Captures are readable only with the agent's own access token. Nobody else can list or read them, and they never appear in anyone's dashboard.
 
 Sandbox endpoints only capture. They answer every webhook with a plain `200` and have no mock responses, notification webhooks, signature verification, email address, or forwarding. When an endpoint or the registration has used its requests, the capture URL answers `429`.
@@ -58,5 +58,5 @@ Until then, give an agent full access by creating an [API key](/docs/api) in you
 ## Revocation and expiry
 
 - An agent can drop one of its access tokens at `POST /api/oauth2/revoke`.
-- An unclaimed registration, its tokens, endpoints and captured requests are deleted 24 hours after registration. There is nothing to clean up.
+- An unclaimed registration stops working 24 hours after registration; its tokens, endpoints and captured requests are deleted within minutes after that. There is nothing to clean up.
 - Agents that used the earlier version of the protocol (auth.md 0.1) get `410 endpoint_moved` from the old registration endpoint and a pointer to `/auth.md`.

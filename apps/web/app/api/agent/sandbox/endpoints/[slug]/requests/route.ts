@@ -5,6 +5,8 @@ import { authenticateSandbox, sandboxNotFound } from "@/lib/agent/sandbox";
 import { getSandboxEndpointBySlug } from "@/lib/supabase/endpoints";
 import { listRequestsForSandboxEndpoint } from "@/lib/supabase/requests";
 
+const MAX_DATE_MS = 8.64e15;
+
 /**
  * Requests a sandbox endpoint captured, newest first: `?since=<ms>` keeps
  * those received at or after it, `?limit=` caps the list (at most 100). The
@@ -23,7 +25,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (parsedLimit !== undefined && (!Number.isFinite(parsedLimit) || parsedLimit < 1)) {
     return agentError(400, "invalid_request", "limit must be a positive number.");
   }
-  if (parsedSince !== undefined && (!Number.isFinite(parsedSince) || parsedSince < 0)) {
+  // Past 8.64e15 ms a Date is invalid and toISOString() would throw.
+  if (
+    parsedSince !== undefined &&
+    (!Number.isFinite(parsedSince) || parsedSince < 0 || parsedSince > MAX_DATE_MS)
+  ) {
     return agentError(400, "invalid_request", "since must be a timestamp in milliseconds.");
   }
 

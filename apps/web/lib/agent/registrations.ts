@@ -122,6 +122,21 @@ async function liveAnonymousCount(): Promise<number> {
 }
 
 /**
+ * True when a registration already used this proof-of-work challenge. The
+ * unique column still decides concurrent replays; this only keeps a replay
+ * from counting against the global rate.
+ */
+export async function powChallengeUsed(challengeId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from("agent_registrations")
+    .select("id", { count: "exact", head: true })
+    .eq("pow_challenge_id", challengeId);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+/**
  * Creates an anonymous registration for a verified proof of work. The
  * challenge id goes into a unique column, so a challenge registers once; a
  * refusal before the insert (the live cap) leaves it usable until it expires.

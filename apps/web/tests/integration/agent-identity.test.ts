@@ -271,9 +271,19 @@ describe("agent identity (auth.md v0.6)", () => {
 
     it("refuses a reused, tampered or unsolved challenge with a fresh one", async () => {
       const { proof } = await registerAnonymous(routes, created);
-      const replay = await routes.identity(
-        jsonPost("/api/agent/identity", { type: "anonymous", proof_of_work: proof })
-      );
+      // A replay is refused before the global rate, so it cannot use it up:
+      // with the global rate at zero it still answers invalid_challenge.
+      const env = routes.serverEnv();
+      const originalRate = env.AGENT_ANONYMOUS_GLOBAL_RATE;
+      env.AGENT_ANONYMOUS_GLOBAL_RATE = 0;
+      let replay: Response;
+      try {
+        replay = await routes.identity(
+          jsonPost("/api/agent/identity", { type: "anonymous", proof_of_work: proof })
+        );
+      } finally {
+        env.AGENT_ANONYMOUS_GLOBAL_RATE = originalRate;
+      }
       expect(replay.status).toBe(400);
       const replayBody = await replay.json();
       expect(replayBody.error).toBe("invalid_challenge");

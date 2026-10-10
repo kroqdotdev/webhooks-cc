@@ -397,7 +397,7 @@ On a 401 with a previously working token, exchange the assertion again
 - \`POST ${u.revoke}\` with \`token=<access_token>\` (form-encoded) drops one
   access token. Always 200. Your assertion still works.
 - Every token, endpoint and capture of an unclaimed registration is deleted
-  when it expires.
+  within minutes after it expires.
 
 ## Errors
 
