@@ -91,16 +91,16 @@ class AgentSession {
    * The sandbox, registered on first use and again after it expired. Tool
    * calls can run in parallel: this.sandbox is read again after every await,
    * and a new sandbox is assigned with no await in between, so parallel
-   * calls share one registration.
+   * calls share one registration. Calls waiting on a registration that fails
+   * get its error (a 429 asks them to wait); the next call starts again.
    */
   async sandboxClient(): Promise<SandboxClient> {
     while (this.sandbox) {
       const pending = this.sandbox;
-      const existing = await this.existingSandbox();
-      if (existing) return existing;
-      // That one failed or expired. Another call may have started the next
-      // one meanwhile, which the loop then waits for.
-      if (this.sandbox === pending) this.sandbox = null;
+      const sandbox = await pending;
+      if (!this.expired(pending, sandbox)) return sandbox;
+      // Another call may have started the next one meanwhile; the loop then
+      // waits for it.
     }
     const created = WebhooksCC.sandbox({
       baseUrl: this.baseUrl,
@@ -116,21 +116,28 @@ class AgentSession {
 
   /** The live sandbox, if one was registered; never registers one. */
   async existingSandbox(): Promise<SandboxClient | null> {
-    if (!this.sandbox) return null;
     const pending = this.sandbox;
+    if (!pending) return null;
     let sandbox: SandboxClient;
     try {
       sandbox = await pending;
     } catch {
-      if (this.sandbox === pending) this.sandbox = null;
       return null;
     }
-    if (sandbox.expiresAt.getTime() <= Date.now()) {
-      if (this.sandbox === pending) this.sandbox = null;
-      if (this.claim?.kind === "sandbox") this.claim = null;
-      return null;
+    return this.expired(pending, sandbox) ? null : sandbox;
+  }
+
+  /** True when the sandbox is past its 24 hours; then it is dropped. */
+  private expired(pending: Promise<SandboxClient>, sandbox: SandboxClient): boolean {
+    if (sandbox.expiresAt.getTime() > Date.now()) return false;
+    if (this.sandbox === pending) this.sandbox = null;
+    if (
+      this.claim?.kind === "sandbox" &&
+      this.claim.claimToken === sandbox.registration.claimToken
+    ) {
+      this.claim = null;
     }
-    return sandbox;
+    return true;
   }
 
   async requireSandbox(): Promise<SandboxClient> {

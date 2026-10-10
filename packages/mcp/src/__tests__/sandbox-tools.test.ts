@@ -174,6 +174,31 @@ describe("sandbox tools (no API key)", () => {
     expect(fresh.endpoints.create).toHaveBeenCalledTimes(2);
   });
 
+  it("parallel calls share a failed registration's error; the next call retries", async () => {
+    const sandbox = fakeSandbox();
+    const spy = vi
+      .spyOn(WebhooksCC, "sandbox")
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new AgentAuthError("rate_limited", 429, "Wait.")), 20)
+          )
+      )
+      .mockResolvedValueOnce(sandbox as unknown as SandboxClient);
+    const { call } = await connect();
+    const failed = await Promise.all([
+      call("create_endpoint"),
+      call("create_endpoint"),
+      call("create_endpoint"),
+    ]);
+    expect(failed.every((result) => result.isError)).toBe(true);
+    expect(failed[2].body.message).toContain("rate_limited");
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    expect((await call("create_endpoint")).isError).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it("refuses what needs an account", async () => {
     vi.spyOn(WebhooksCC, "sandbox").mockResolvedValue(fakeSandbox() as unknown as SandboxClient);
     const { call } = await connect();
