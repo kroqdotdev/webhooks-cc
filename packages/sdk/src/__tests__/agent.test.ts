@@ -261,7 +261,9 @@ describe("sandbox client", () => {
       ...sandboxRoutes(state)
     );
     const sandbox = await WebhooksCC.sandbox({ baseUrl: BASE });
-    await expect(sandbox.requests.waitForAll("abc123", { count: 26 })).rejects.toThrow(RangeError);
+    await expect(
+      sandbox.requests.waitForAll("abc123", { count: 26, timeout: 100 })
+    ).rejects.toThrow(RangeError);
     expect(requestPolls).not.toHaveBeenCalled();
   });
 

@@ -27,7 +27,7 @@ import type { Endpoint, Request, WaitForAllOptions, WaitForOptions } from "./typ
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 /** Re-exchange this long before a token expires. */
 const REFRESH_MARGIN_MS = 60_000;
-/** Captures one sandbox endpoint takes before it answers 429. */
+/** Captures one sandbox endpoint takes before it answers 429 (as on the server). */
 const SANDBOX_REQUESTS_PER_ENDPOINT = 25;
 
 /** The registration-wide limits and what is used of them. */
@@ -243,13 +243,13 @@ export class SandboxClient {
 
     waitForAll: async (slug: string, options: WaitForAllOptions): Promise<Request[]> => {
       validatePathSegment(slug, "slug");
-      // More than one endpoint ever captures could only time out.
+      // A count above what one endpoint can capture could only time out.
       if (
         Number.isFinite(options.count) &&
         Math.floor(options.count) > SANDBOX_REQUESTS_PER_ENDPOINT
       ) {
         throw new RangeError(
-          `A sandbox endpoint captures at most ${SANDBOX_REQUESTS_PER_ENDPOINT} requests; count cannot be more.`
+          `A sandbox endpoint captures at most ${SANDBOX_REQUESTS_PER_ENDPOINT} requests, so count must be at most ${SANDBOX_REQUESTS_PER_ENDPOINT}.`
         );
       }
       const limit = Math.min(100, waitListLimit(options.count));
