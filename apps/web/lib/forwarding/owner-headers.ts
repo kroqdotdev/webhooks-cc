@@ -1,4 +1,5 @@
 import { decryptSigningSecret, encryptSigningSecret } from "@/lib/crypto";
+import { PROXY_CONTROL_HEADERS } from "./proxy-headers";
 
 /**
  * Headers an endpoint's owner adds to forwarded requests (for example the
@@ -43,6 +44,9 @@ export function refusedHeaderName(name: string): string | null {
   }
   if (lower.startsWith("webhooks-cc-")) {
     return `${name} is reserved for the headers webhooks.cc adds.`;
+  }
+  if (PROXY_CONTROL_HEADERS.has(lower)) {
+    return `${name} is reserved by webhooks.cc.`;
   }
   return null;
 }

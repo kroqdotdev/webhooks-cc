@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
+import { PROXY_CONTROL_HEADERS } from "./proxy-headers";
 import type { Outgoing } from "./relay";
 import { checkForwardUrl, resolveForwardTarget } from "./target";
 
@@ -79,11 +80,7 @@ async function viaProxy(
       error: "Forwarding is not configured on this server (NOTIFY_SECRET is missing).",
     };
   }
-  const proxyHeaders: Record<string, string> = {
-    "x-target-url": outgoing.url,
-    "x-auth": options.proxy.secret,
-    "x-proxy-mode": outgoing.mode,
-  };
+  const proxyHeaders: Record<string, string> = {};
   let body: string | null;
   if (outgoing.mode === "relay") {
     // The Worker sends this method, these headers and these bytes as they are.
@@ -94,11 +91,18 @@ async function viaProxy(
       body: outgoing.body ? outgoing.body.toString("base64") : null,
     });
   } else {
-    // The Worker passes the content type and webhook headers through.
-    for (const [name, value] of outgoing.headers) proxyHeaders[name] = value;
+    // The Worker passes the content type and webhook headers through; the
+    // proxy's own control headers can never come from here.
+    for (const [name, value] of outgoing.headers) {
+      if (!PROXY_CONTROL_HEADERS.has(name.toLowerCase())) proxyHeaders[name] = value;
+    }
     // Forward mode carries JSON (signed JSON, chat), which is text.
     body = outgoing.body ? outgoing.body.toString("utf8") : null;
   }
+  // Set last, so they always win.
+  proxyHeaders["x-target-url"] = outgoing.url;
+  proxyHeaders["x-auth"] = options.proxy.secret;
+  proxyHeaders["x-proxy-mode"] = outgoing.mode;
   const response = await fetch(options.proxy.url, {
     method: "POST",
     headers: proxyHeaders,

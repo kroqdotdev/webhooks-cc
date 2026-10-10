@@ -159,16 +159,21 @@ export function outgoingFor(
     for (const [name, value] of settings.ownerHeaders) headers[name] = value;
     return { outgoing: jsonForward(settings.url, headers, prepared.body) };
   }
-  return {
-    outgoing: buildRelay(request, {
-      forwardUrl: settings.url,
-      appendPath: settings.appendPath,
-      slug: settings.slug,
-      attempt: settings.attempt,
-      secret: settings.secret,
-      ownerHeaders: settings.ownerHeaders,
-    }),
-  };
+  try {
+    return {
+      outgoing: buildRelay(request, {
+        forwardUrl: settings.url,
+        appendPath: settings.appendPath,
+        slug: settings.slug,
+        attempt: settings.attempt,
+        secret: settings.secret,
+        ownerHeaders: settings.ownerHeaders,
+      }),
+    };
+  } catch (error) {
+    // A captured path that would leave the owner's path (relay.ts): never sent.
+    return { reason: error instanceof Error ? error.message : "The request cannot be forwarded." };
+  }
 }
 
 function prepare(

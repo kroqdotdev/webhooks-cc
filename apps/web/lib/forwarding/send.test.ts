@@ -108,4 +108,43 @@ describe("sendForward, through the proxy", () => {
     expect(lastRequest?.headers["x-auth"]).toBe("s");
     expect(lastRequest?.headers["webhook-id"]).toBe("msg_1");
   });
+
+  it("never lets a delivery's headers steer the proxy", async () => {
+    const result = await sendForward(
+      jsonForward(
+        "https://api.example.com/hook",
+        {
+          ...headers,
+          "X-Target-URL": "https://evil.example",
+          "x-auth": "nope",
+          "x-proxy-mode": "x",
+        },
+        "{}"
+      ),
+      { ...local, proxy: { url: `${base}/proxy`, secret: "s" } }
+    );
+    expect(result.excerpt).toBe("to https://api.example.com/hook");
+    expect(lastRequest?.headers["x-auth"]).toBe("s");
+    expect(lastRequest?.headers["x-proxy-mode"]).toBe("forward");
+  });
+
+  it("sends a relay as a JSON envelope with the method, headers and base64 body", async () => {
+    const bytes = Buffer.from([0, 255, 1]);
+    await sendForward(
+      {
+        method: "PATCH",
+        url: "https://api.example.com/hook",
+        headers: [["x-api-key", "k"]],
+        body: bytes,
+        mode: "relay",
+      },
+      { ...local, proxy: { url: `${base}/proxy`, secret: "s" } }
+    );
+    expect(lastRequest?.headers["x-proxy-mode"]).toBe("relay");
+    expect(JSON.parse(lastRequest!.body)).toEqual({
+      method: "PATCH",
+      headers: [["x-api-key", "k"]],
+      body: bytes.toString("base64"),
+    });
+  });
 });

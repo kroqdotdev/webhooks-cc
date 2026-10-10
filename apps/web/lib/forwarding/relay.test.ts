@@ -57,6 +57,22 @@ describe("destinationUrl", () => {
     );
   });
 
+  it("never leaves the forwarding URL's path", () => {
+    expect(destinationUrl("https://dest.example/hooks", "/../../admin", null, true)).toBe(
+      "https://dest.example/hooks/admin"
+    );
+    expect(destinationUrl("https://dest.example/hooks", "/a/./../b/..", null, true)).toBe(
+      "https://dest.example/hooks/a/b"
+    );
+    expect(destinationUrl("https://dest.example/hooks", "/..", null, true)).toBe(
+      "https://dest.example/hooks"
+    );
+    // A decoded "%2e%2e" arrives as text "%2e%2e" and is sent encoded, not resolved.
+    expect(destinationUrl("https://dest.example/hooks", "/%2e%2e/x", null, true)).toBe(
+      "https://dest.example/hooks/%252e%252e/x"
+    );
+  });
+
   it("encodes what a path cannot hold", () => {
     expect(destinationUrl("https://dest.example", "/a b/ø?#", null, true)).toBe(
       "https://dest.example/a%20b/%C3%B8%3F%23"
@@ -143,6 +159,8 @@ describe("owner headers", () => {
     expect(refusedHeaderName("webhook-signature")).toMatch(/Standard Webhooks/);
     expect(refusedHeaderName("Webhooks-CC-Received-At")).toMatch(/reserved/);
     expect(refusedHeaderName("bad name")).toMatch(/not a valid header name/);
+    expect(refusedHeaderName("X-Target-URL")).toMatch(/reserved by webhooks.cc/);
+    expect(refusedHeaderName("x-auth")).toMatch(/reserved by webhooks.cc/);
   });
 
   it("checks a submitted set", () => {

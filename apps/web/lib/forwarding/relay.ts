@@ -67,6 +67,11 @@ function encodePath(path: string): string {
 /**
  * The forwarding URL, with the captured path appended and the captured query
  * after any query the URL has itself.
+ *
+ * The path comes from whoever sent the webhook, so it may never leave the
+ * owner's path: "." and ".." segments are dropped (the stored path is
+ * already decoded, and URL parsing would resolve them, %2e forms included),
+ * and a result outside the owner's path is refused.
  */
 export function destinationUrl(
   forwardUrl: string,
@@ -77,7 +82,15 @@ export function destinationUrl(
   const url = new URL(forwardUrl);
   if (appendPath && path && path !== "/") {
     const base = url.pathname.replace(/\/+$/, "");
-    url.pathname = `${base}${encodePath(path.startsWith("/") ? path : `/${path}`)}`;
+    const segments = path
+      .split("/")
+      .filter((segment) => segment !== "." && segment !== "..")
+      .map(encodePath);
+    const appended = segments.join("/").replace(/^\/*/, "/");
+    if (appended !== "/") url.pathname = `${base}${appended}`;
+    if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) {
+      throw new Error("The captured path would leave the forwarding URL's path.");
+    }
   }
   const own = url.search.replace(/^\?/, "");
   const captured = (queryRaw ?? "").replace(/^\?/, "");
