@@ -21,6 +21,7 @@ import {
   type RegisterAnonymousOptions,
 } from "./agent";
 import { collectMatchingRequests, validatePathSegment, waitListLimit, WebhooksCC } from "./client";
+import { RateLimitError, WebhooksCCError } from "./errors";
 import type { Endpoint, Request, WaitForAllOptions, WaitForOptions } from "./types";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
@@ -46,14 +47,18 @@ export interface SandboxOptions extends RegisterAnonymousOptions {
   webhookUrl?: string;
 }
 
-/** A refused sandbox call: `code` is the server's (sandbox_full, ...). */
-export class SandboxError extends Error {
+/**
+ * A refused sandbox call: `code` is the server's (sandbox_full, ...). A
+ * WebhooksCCError, so `requests.waitFor()` stops on a 4xx refusal instead of
+ * polling until it times out.
+ */
+export class SandboxError extends WebhooksCCError {
   constructor(
     readonly code: string,
     readonly status: number,
     message: string
   ) {
-    super(message);
+    super(status, message);
     this.name = "SandboxError";
   }
 }
@@ -154,7 +159,18 @@ export class SandboxClient {
       if (response.status === 401 && attempt === 0) continue;
       if (response.status === 204) return undefined as T;
       const text = await response.text();
-      const json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      let json: Record<string, unknown> = {};
+      try {
+        json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      } catch {
+        // A proxy's HTML error page: the status still says what happened.
+        if (response.ok) throw new SandboxError("invalid_response", response.status, "Not JSON");
+      }
+      // A rate limit is worth waiting out, like the rest of the SDK does.
+      if (response.status === 429) {
+        const retryAfter = Number(response.headers.get("retry-after"));
+        throw new RateLimitError(Number.isFinite(retryAfter) ? retryAfter : undefined);
+      }
       if (!response.ok) {
         throw new SandboxError(
           String(json.error ?? `http_${response.status}`),

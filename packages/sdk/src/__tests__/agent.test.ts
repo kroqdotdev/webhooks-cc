@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentAuthError, exchange, pollClaim, registerAnonymous, waitForClaim } from "../agent";
 import { WebhooksCC } from "../client";
+import { WebhooksCCError } from "../errors";
 import { SandboxError } from "../sandbox";
 
 const BASE = "https://agent.test";
@@ -247,6 +248,31 @@ describe("sandbox client", () => {
     const refused = await sandbox.endpoints.create().catch((error) => error);
     expect(refused).toBeInstanceOf(SandboxError);
     expect(refused).toMatchObject({ code: "sandbox_full", status: 503 });
+  });
+
+  it("waitFor stops at once on a sandbox refusal, and tolerates an HTML error page", async () => {
+    const state = { exchanges: 0, rejectFirstToken: false };
+    let html = true;
+    mockFetch(
+      (url) => {
+        if (!url.pathname.endsWith("/requests")) return undefined;
+        if (html) {
+          html = false;
+          return { status: 502, body: undefined };
+        }
+        return { status: 403, body: { error: "sandbox_closed", error_description: "Claimed." } };
+      },
+      ...sandboxRoutes(state)
+    );
+    const sandbox = await WebhooksCC.sandbox({ baseUrl: BASE });
+    const started = Date.now();
+    const refused = await sandbox.requests
+      .waitFor("abc123", { timeout: 20_000, pollInterval: 10 })
+      .catch((error) => error);
+    expect(refused).toBeInstanceOf(SandboxError);
+    expect(refused).toBeInstanceOf(WebhooksCCError);
+    expect(refused).toMatchObject({ code: "sandbox_closed", status: 403 });
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it("a client built on getAccessToken renews its token after a 401", async () => {
