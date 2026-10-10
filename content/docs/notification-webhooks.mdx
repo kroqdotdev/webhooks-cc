@@ -81,7 +81,7 @@ Slack posts the `text` field: the endpoint, the method and path, and the start o
 2. Click **New Webhook**, choose a channel, and copy the webhook URL
 3. Paste it into your endpoint's notification URL field as it is
 
-Discord posts the `content` field. Discord's Slack-compatible form of the URL (ending in `/slack`) works too and posts `text`.
+Discord posts the `content` field and, for these URLs, pings nobody. Use the plain URL rather than Discord's Slack-compatible form (ending in `/slack`): that form posts `text` instead, and its handling of mentions is not documented.
 
 ## Microsoft Teams
 
@@ -102,7 +102,7 @@ const endpoint = await client.endpoints.create({
 
 // Update later
 await client.endpoints.update("my-endpoint", {
-  notificationUrl: "https://discord.com/api/webhooks/.../slack",
+  notificationUrl: "https://discord.com/api/webhooks/...",
 });
 
 // Clear it

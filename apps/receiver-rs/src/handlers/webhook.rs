@@ -534,7 +534,7 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
                     req = req.header("X-Sender-IP", &info.ip);
                 }
 
-                req.send().await.map_err(|_| NotifyFailure::new("send"))?
+                req.send().await.map_err(send_failure)?
             } else {
                 // Direct delivery with SSRF protection
                 let target = resolve_notification_target(&info.url)
@@ -556,7 +556,7 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
                     req = req.header("X-Sender-IP", &info.ip);
                 }
 
-                req.send().await.map_err(|_| NotifyFailure::new("send"))?
+                req.send().await.map_err(send_failure)?
             };
 
             // Slack answers 400 no_text to a body it cannot show, and the
@@ -607,6 +607,15 @@ impl NotifyFailure {
             status: None,
         }
     }
+}
+
+/// The client's own timeout fires before the outer one, so it is a timeout.
+fn send_failure(error: reqwest::Error) -> NotifyFailure {
+    NotifyFailure::new(if error.is_timeout() {
+        "timeout"
+    } else {
+        "send"
+    })
 }
 
 /// One `notification delivery failed` line per slug per window: a broken

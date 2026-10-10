@@ -110,7 +110,7 @@ fn is_discord(url: &str) -> bool {
     let Some(host) = parsed.host_str() else {
         return false;
     };
-    let host = host.to_ascii_lowercase();
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
     ["discord.com", "discordapp.com"]
         .iter()
         .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
@@ -231,6 +231,7 @@ mod tests {
             "https://discordapp.com/api/webhooks/1/abc",
             "https://canary.discord.com/api/webhooks/1/abc",
             "https://ptb.Discord.com/api/webhooks/1/abc",
+            "https://discord.com./api/webhooks/1/abc",
         ] {
             let payload = notification_payload(&fields("POST", "/", "@everyone", url));
             assert_eq!(payload["allowed_mentions"], json!({ "parse": [] }), "{url}");
