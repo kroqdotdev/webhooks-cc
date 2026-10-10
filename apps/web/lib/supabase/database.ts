@@ -786,6 +786,26 @@ export interface Database {
         Args: { p_id: string; p_user_id: string };
         Returns: boolean;
       };
+      link_agent_idjag_identity: {
+        Args: {
+          p_iss: string;
+          p_sub: string;
+          p_login_hint: string;
+          p_jit_user_id: string | null;
+          p_claim_token_hash: string;
+          p_attempt_token_hash: string;
+          p_user_code_hash: string;
+          p_lifetime_seconds: number;
+          p_attempt_seconds: number;
+          p_max_attempts: number;
+          p_max_pending: number;
+        };
+        Returns: Json;
+      };
+      revoke_agent_delegation: {
+        Args: { p_iss: string; p_sub: string };
+        Returns: string[];
+      };
       create_sandbox_endpoint: {
         Args: {
           p_registration_id: string;

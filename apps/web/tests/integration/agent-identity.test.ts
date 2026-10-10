@@ -1,10 +1,11 @@
 /**
  * @fileoverview Agent registration on auth.md v0.6: discovery, the
- * proof-of-work challenge, anonymous and ID-JAG registration, the token
- * endpoint (jwt-bearer grant) and RFC 7009 revocation, registration expiry
- * and cleanup.
+ * proof-of-work challenge, anonymous and ID-JAG registration (auth_time,
+ * the step-up for existing accounts, provider Security Event Tokens), the
+ * token endpoint (jwt-bearer grant) and RFC 7009 revocation, registration
+ * expiry and cleanup.
  *
- * Needs the local Supabase stack with migration 00055 applied, and
+ * Needs the local Supabase stack with migrations up to 00057 applied, and
  * AGENT_ASSERTION_SIGNING_KEY plus AGENT_POW_SECRET in .env.local. Run with:
  *   cd apps/web && npx vitest run --config vitest.config.ts tests/integration/agent-identity.test.ts
  *
@@ -25,6 +26,7 @@ import {
   formPost,
   jsonPost,
   loadAgentRoutes,
+  nextIp,
   registerAnonymous,
   sandboxAgent,
   sha256Hex,
@@ -40,6 +42,9 @@ const IDJAG_EMAIL = `agent-idjag-${RUN}@webhooks-test.local`;
 const USER_EMAIL = `agent-identity-user-${RUN}@webhooks-test.local`;
 const PASSWORD = "TestPassword123!";
 const JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+const CLAIM_GRANT = "urn:workos:agent-auth:grant-type:claim";
+const ID_JAG_TYPE = "urn:ietf:params:oauth:token-type:id-jag";
+const REVOKED_EVENT = "https://schemas.workos.com/events/agent/auth/identity/assertion/revoked";
 
 const created = new Set<string>();
 const createdJtis = new Set<string>();
@@ -52,18 +57,27 @@ let jwksGet: () => Promise<Response>;
 let endpointsGet: (request: Request) => Promise<Response>;
 let endpointsPost: (request: Request) => Promise<Response>;
 let apiKeysGet: (request: Request) => Promise<Response>;
+let attemptGet: (request: Request) => Promise<Response>;
+let completePost: (request: Request) => Promise<Response>;
+let eventPost: (request: Request) => Promise<Response>;
 let cleanupExpired: () => Promise<number>;
 let idJagKey: CryptoKey;
 let userApiKey: string;
 let userSession: string;
 
-async function mintIdJag(sub: string, overrides: { iss?: string } = {}): Promise<string> {
+async function mintIdJag(
+  sub: string,
+  overrides: { iss?: string; email?: string; authTime?: number | null } = {}
+): Promise<string> {
   const jti = randomUUID();
   createdJtis.add(jti);
+  const authTime =
+    overrides.authTime === undefined ? Math.floor(Date.now() / 1000) - 60 : overrides.authTime;
   return new jose.SignJWT({
     client_id: TEST_ISS,
-    email: IDJAG_EMAIL,
+    email: overrides.email ?? IDJAG_EMAIL,
     email_verified: true,
+    ...(authTime === null ? {} : { auth_time: authTime }),
   })
     .setProtectedHeader({ alg: "ES256", typ: "oauth-id-jag+jwt", kid: "test-idjag-1" })
     .setIssuer(overrides.iss ?? TEST_ISS)
@@ -73,6 +87,58 @@ async function mintIdJag(sub: string, overrides: { iss?: string } = {}): Promise
     .setExpirationTime("5m")
     .setJti(jti)
     .sign(idJagKey);
+}
+
+function presentIdJag(assertion: string): Promise<Response> {
+  return routes.identity(
+    jsonPost("/api/agent/identity", {
+      type: "identity_assertion",
+      assertion_type: ID_JAG_TYPE,
+      assertion,
+    })
+  );
+}
+
+/** A Security Event Token from the test provider (or as overridden). */
+async function mintSet(
+  sub: string | null,
+  overrides: {
+    iss?: string;
+    aud?: string;
+    events?: unknown;
+    key?: CryptoKey;
+    iat?: number;
+    typ?: string;
+  } = {}
+): Promise<string> {
+  const jti = randomUUID();
+  createdJtis.add(jti);
+  const set = new jose.SignJWT({
+    events: overrides.events === undefined ? { [REVOKED_EVENT]: {} } : overrides.events,
+  })
+    .setProtectedHeader({ alg: "ES256", typ: overrides.typ ?? "secevent+jwt", kid: "test-idjag-1" })
+    .setIssuer(overrides.iss ?? TEST_ISS)
+    .setAudience(overrides.aud ?? APP)
+    .setIssuedAt(overrides.iat)
+    .setJti(jti);
+  if (sub) set.setSubject(sub);
+  return set.sign(overrides.key ?? idJagKey);
+}
+
+function postSet(jwt: string, contentType = "application/secevent+jwt"): Promise<Response> {
+  return eventPost(
+    new Request(`${APP}/api/agent/event/notify`, {
+      method: "POST",
+      headers: { "content-type": contentType, "x-forwarded-for": nextIp() },
+      body: jwt,
+    })
+  );
+}
+
+async function userIdFor(email: string): Promise<string> {
+  const { data } = await admin.from("users").select("id").eq("email", email).single();
+  createdUserIds.add(data!.id);
+  return data!.id;
 }
 
 async function auditRows(action: string, targetId: string) {
@@ -90,19 +156,23 @@ describe("agent identity (auth.md v0.6)", () => {
     idJagKey = privateKey;
     const jwk = { ...(await jose.exportJWK(publicKey)), kid: "test-idjag-1", alg: "ES256" };
     process.env.AGENT_IDJAG_PROVIDERS = JSON.stringify([
-      { iss: TEST_ISS, jwks: { keys: [jwk] }, algs: ["ES256"] },
+      { iss: TEST_ISS, jwks: { keys: [jwk] }, algs: ["ES256"], display_name: "Test IdP" },
     ]);
 
     routes = await loadAgentRoutes();
-    const [prm, as, authMd, jwks, endpoints, apiKeys, trusted] = await Promise.all([
-      import("@/app/.well-known/oauth-protected-resource/route"),
-      import("@/app/.well-known/oauth-authorization-server/route"),
-      import("@/app/auth.md/route"),
-      import("@/app/.well-known/jwks.json/route"),
-      import("@/app/api/endpoints/route"),
-      import("@/app/api/api-keys/route"),
-      import("@/lib/agent/trusted-providers"),
-    ]);
+    const [prm, as, authMd, jwks, endpoints, apiKeys, trusted, attempt, completeMod, event] =
+      await Promise.all([
+        import("@/app/.well-known/oauth-protected-resource/route"),
+        import("@/app/.well-known/oauth-authorization-server/route"),
+        import("@/app/auth.md/route"),
+        import("@/app/.well-known/jwks.json/route"),
+        import("@/app/api/endpoints/route"),
+        import("@/app/api/api-keys/route"),
+        import("@/lib/agent/trusted-providers"),
+        import("@/app/api/agent/identity/claim/attempt/route"),
+        import("@/app/api/agent/identity/claim/complete/route"),
+        import("@/app/api/agent/event/notify/route"),
+      ]);
     trusted.__resetTrustedProviders();
     prmGet = prm.GET;
     asGet = as.GET;
@@ -111,6 +181,9 @@ describe("agent identity (auth.md v0.6)", () => {
     endpointsGet = endpoints.GET;
     endpointsPost = endpoints.POST;
     apiKeysGet = apiKeys.GET;
+    attemptGet = attempt.GET;
+    completePost = completeMod.POST;
+    eventPost = event.POST;
     cleanupExpired = async () => {
       const { data, error } = await admin.rpc("cleanup_expired_agent_registrations");
       if (error) throw error;
@@ -659,6 +732,197 @@ describe("agent identity (auth.md v0.6)", () => {
         jsonPost("/api/agent/identity", { type: "identity_assertion", assertion: "x" })
       );
       expect((await wrongType.json()).error).toBe("invalid_request");
+    });
+
+    it("answers login_required without a recent auth_time", async () => {
+      const sub = `stale-${RUN}`;
+      const now = Math.floor(Date.now() / 1000);
+      for (const authTime of [null, now - 7200]) {
+        const res = await presentIdJag(await mintIdJag(sub, { authTime }));
+        expect(res.status).toBe(401);
+        expect(res.headers.get("www-authenticate")).toMatch(
+          /^AgentAuth error="login_required", max_age="3600", error_description="/
+        );
+        expect(await res.json()).toMatchObject({ error: "login_required", max_age: 3600 });
+      }
+      const { count } = await admin
+        .from("agent_registrations")
+        .select("id", { count: "exact", head: true })
+        .eq("idjag_sub", sub);
+      expect(count).toBe(0);
+    });
+
+    it("links an existing account only after its human confirms", async () => {
+      const sub = `existing-${RUN}`;
+      const first = await presentIdJag(await mintIdJag(sub, { email: USER_EMAIL }));
+      expect(first.status).toBe(401);
+      expect(first.headers.get("www-authenticate")).toMatch(
+        /^AgentAuth error="interaction_required", error_description="/
+      );
+      const body = await first.json();
+      created.add(body.registration_id);
+      expect(body).toMatchObject({
+        error: "interaction_required",
+        registration_type: "identity_assertion",
+        claim_url: `${APP}/api/agent/identity/claim`,
+        post_claim_scopes: ["webhooks:read", "webhooks:write"],
+        claim: { interval: 5 },
+      });
+      expect(body.claim_token).toMatch(/^clm_/);
+      expect(body.claim.user_code).toMatch(/^\d{6}$/);
+      expect(body.claim.verification_uri).toContain("/agent/claim?attempt=cat_");
+      // Nothing is bound yet.
+      const { data: pending } = await admin
+        .from("agent_registrations")
+        .select("user_id, claimed_at, attempt_login_hint")
+        .eq("id", body.registration_id)
+        .single();
+      expect(pending).toEqual({ user_id: null, claimed_at: null, attempt_login_hint: USER_EMAIL });
+
+      // The registration keeps its email: /claim cannot point it at someone else.
+      const elsewhere = await routes.claim(
+        jsonPost("/api/agent/identity/claim", {
+          claim_token: body.claim_token,
+          email: `someone-else-${RUN}@webhooks-test.local`,
+        })
+      );
+      expect((await elsewhere.json()).error).toBe("invalid_login_hint");
+
+      // Presenting the identity again re-issues the ceremony on the same
+      // registration; the earlier claim token stops working.
+      const again = await presentIdJag(await mintIdJag(sub, { email: USER_EMAIL }));
+      expect(again.status).toBe(401);
+      const second = await again.json();
+      expect(second.registration_id).toBe(body.registration_id);
+      expect(second.claim_token).not.toBe(body.claim_token);
+      const stale = await routes.token(
+        formPost("/api/oauth2/token", { grant_type: CLAIM_GRANT, claim_token: body.claim_token })
+      );
+      expect((await stale.json()).error).toBe("invalid_grant");
+
+      // The claim page names the provider from the trust list.
+      const attempt = new URL(second.claim.verification_uri).searchParams.get("attempt")!;
+      const view = await attemptGet(
+        bearer("GET", `/api/agent/identity/claim/attempt?attempt=${attempt}`, userSession)
+      );
+      expect(await view.json()).toMatchObject({
+        kind: "identity_assertion",
+        provider: "Test IdP",
+        emailMatches: true,
+        state: "pending",
+      });
+
+      const done = await completePost(
+        bearer("POST", "/api/agent/identity/claim/complete", userSession, {
+          claim_attempt_token: attempt,
+          user_code: second.claim.user_code,
+        })
+      );
+      expect(done.status).toBe(200);
+      const collected = await routes.token(
+        formPost("/api/oauth2/token", { grant_type: CLAIM_GRANT, claim_token: second.claim_token })
+      );
+      expect(collected.status).toBe(200);
+      const tokens = await collected.json();
+      expect(tokens.scope).toBe("webhooks:read webhooks:write");
+      const userId = await userIdFor(USER_EMAIL);
+      const { data: linkedRow } = await admin
+        .from("agent_registrations")
+        .select("user_id, claimed_at")
+        .eq("id", body.registration_id)
+        .single();
+      expect(linkedRow?.user_id).toBe(userId);
+
+      // From now on the identity registers directly, to the same delegation.
+      const linked = await presentIdJag(await mintIdJag(sub, { email: USER_EMAIL }));
+      expect(linked.status).toBe(200);
+      const linkedBody = await linked.json();
+      expect(linkedBody.registration_id).toBe(body.registration_id);
+      expect((await exchange(routes, linkedBody.identity_assertion)).status).toBe(200);
+    });
+  });
+
+  describe("security events (RFC 8935)", () => {
+    it("revokes an identity's registration and tokens; the next link needs its human", async () => {
+      const sub = `set-${RUN}`;
+      const email = `agent-set-${RUN}@webhooks-test.local`;
+      const res = await presentIdJag(await mintIdJag(sub, { email }));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      created.add(body.registration_id);
+      await userIdFor(email);
+      expect((await exchange(routes, body.identity_assertion)).status).toBe(200);
+
+      const set = await mintSet(sub);
+      const accepted = await postSet(set);
+      expect(accepted.status).toBe(202);
+      expect(await accepted.text()).toBe("");
+
+      const { data: row } = await admin
+        .from("agent_registrations")
+        .select("revoked_at")
+        .eq("id", body.registration_id)
+        .single();
+      expect(row?.revoked_at).not.toBeNull();
+      const { count } = await admin
+        .from("api_keys")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_registration_id", body.registration_id);
+      expect(count).toBe(0);
+      expect((await exchange(routes, body.identity_assertion)).body.error).toBe("invalid_grant");
+      const audit = await auditRows("agent.registration.revoked", body.registration_id);
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        actor_type: "system",
+        metadata: { kind: "identity_assertion", source: "security_event", issuer: TEST_ISS },
+      });
+
+      // The same SET again is acknowledged and changes nothing.
+      expect((await postSet(set)).status).toBe(202);
+
+      // The account exists now, so the identity needs its human again.
+      const again = await presentIdJag(await mintIdJag(sub, { email }));
+      expect(again.status).toBe(401);
+      const againBody = await again.json();
+      created.add(againBody.registration_id);
+      expect(againBody.error).toBe("interaction_required");
+      expect(againBody.registration_id).not.toBe(body.registration_id);
+    });
+
+    it("ignores unknown events and refuses SETs it cannot trust", async () => {
+      // The typ may carry the application/ prefix (RFC 7515 4.1.9).
+      const unknown = await mintSet(`nobody-${RUN}`, {
+        events: { "urn:x": {} },
+        typ: "application/secevent+jwt",
+      });
+      expect((await postSet(unknown)).status).toBe(202);
+
+      const { privateKey: otherKey } = await jose.generateKeyPair("ES256");
+      const cases: [Promise<Response>, string][] = [
+        [postSet(await mintSet(`x-${RUN}`), "application/json"), "invalid_request"],
+        [
+          postSet(await mintSet(`x-${RUN}`, { iss: "https://untrusted.example" })),
+          "invalid_issuer",
+        ],
+        [
+          postSet(await mintSet(`x-${RUN}`, { aud: "https://elsewhere.example" })),
+          "invalid_audience",
+        ],
+        [postSet(await mintSet(`x-${RUN}`, { key: otherKey })), "invalid_key"],
+        [
+          postSet(await mintSet(`x-${RUN}`, { iat: Math.floor(Date.now() / 1000) - 2 * 86400 })),
+          "invalid_request",
+        ],
+        [postSet(await mintSet(`x-${RUN}`, { events: null })), "invalid_request"],
+        [postSet(await mintSet(null)), "invalid_request"],
+        [postSet(await mintSet(`x-${RUN}`, { typ: "JWT" })), "invalid_request"],
+        [postSet("not-a-jwt"), "invalid_request"],
+      ];
+      for (const [pending, err] of cases) {
+        const res = await pending;
+        expect(res.status).toBe(400);
+        expect((await res.json()).err).toBe(err);
+      }
     });
   });
 

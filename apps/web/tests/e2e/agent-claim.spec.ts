@@ -11,7 +11,8 @@ import {
 /**
  * The agent claim page (/agent/claim?attempt=...): signed-out redirect, the
  * request summary, a wrong code, connecting, declining, the wrong account,
- * and Connected Agents in Account, in both styles and both themes.
+ * an identity provider's link request, and Connected Agents in Account, in
+ * both styles and both themes.
  * Registrations and attempts are seeded with the service role, hashed the
  * way lib/agent/claims.ts hashes them.
  */
@@ -28,7 +29,7 @@ function sha256(value: string): string {
 
 async function seedAttempt(
   loginHint: string,
-  options: { clientName?: string; endpoint?: boolean } = {}
+  options: { clientName?: string; endpoint?: boolean; idjagIss?: string } = {}
 ): Promise<{ attempt: string; code: string; slug: string | null; registrationId: string }> {
   const attempt = `cat_${randomBytes(24)
     .toString("base64url")
@@ -41,8 +42,13 @@ async function seedAttempt(
   const { data, error } = await admin
     .from("agent_registrations")
     .insert({
-      kind: "anonymous",
-      client_name: options.clientName ?? "E2E agent",
+      ...(options.idjagIss
+        ? {
+            kind: "identity_assertion" as const,
+            idjag_iss: options.idjagIss,
+            idjag_sub: `e2e-${randomBytes(8).toString("hex")}`,
+          }
+        : { kind: "anonymous" as const, client_name: options.clientName ?? "E2E agent" }),
       claim_token_hash: sha256(`clm_${randomBytes(16).toString("hex")}`),
       expires_at: new Date(now + 86_400_000).toISOString(),
       attempt_token_hash: attemptHash,
@@ -145,6 +151,36 @@ for (const style of ["classic", "clean"] as const) {
       expect(endpoint).toEqual({ user_id: owner.id, agent_registration_id: null });
     });
   }
+}
+
+for (const style of ["classic", "clean"] as const) {
+  test(`links an identity provider's identity in ${style}`, async ({ page }) => {
+    // No provider is trusted in development, so the page falls back to the
+    // issuer's host; a trusted one shows its display_name.
+    const { attempt, code, registrationId } = await seedAttempt(owner.email, {
+      endpoint: false,
+      idjagIss: "https://idp.e2e.example",
+    });
+    await openAs(page, owner, `/agent/claim?attempt=${attempt}`, { style, theme: "dark" });
+    const panel = page.getByTestId("agent-claim");
+    await expect(panel.getByRole("heading", { name: "Connect an agent" })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(panel.getByText("is asking to link this account")).toBeVisible();
+    await expect(panel.getByText("Identity provider")).toBeVisible();
+    await expect(panel.getByText("idp.e2e.example").first()).toBeVisible();
+    await expect(panel.getByText("name given by the agent")).toHaveCount(0);
+
+    await panel.getByLabel("Code from the agent").fill(code);
+    await panel.getByRole("button", { name: "Connect" }).click();
+    await expect(panel.getByRole("heading", { name: "Agent connected" })).toBeVisible();
+    const { data } = await admin
+      .from("agent_registrations")
+      .select("user_id, claimed_at")
+      .eq("id", registrationId)
+      .single();
+    expect(data?.user_id).toBe(owner.id);
+  });
 }
 
 test("shows the wrong account and offers to switch", async ({ page }) => {

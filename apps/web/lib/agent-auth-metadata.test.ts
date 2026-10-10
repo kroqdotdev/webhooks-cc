@@ -79,7 +79,11 @@ describe("agent auth.md: Authorization Server Metadata", () => {
         skill: `${APP_URL}/auth.md`,
         identity_endpoint: `${APP_URL}/api/agent/identity`,
         claim_endpoint: `${APP_URL}/api/agent/identity/claim`,
+        events_endpoint: `${APP_URL}/api/agent/event/notify`,
         identity_types_supported: ["anonymous", "service_auth"],
+        events_supported: [
+          "https://schemas.workos.com/events/agent/auth/identity/assertion/revoked",
+        ],
         anonymous: {
           credential_types_supported: ["access_token"],
           proof_of_work: {
@@ -103,7 +107,6 @@ describe("agent auth.md: Authorization Server Metadata", () => {
   test("does not advertise endpoints that do not exist", () => {
     expect(as).not.toHaveProperty("authorization_endpoint");
     expect(as).not.toHaveProperty("registration_endpoint");
-    expect(as.agent_auth).not.toHaveProperty("events_endpoint");
   });
 
   test("offers identity_assertion only while an issuer is trusted", () => {
@@ -157,6 +160,7 @@ describe("agent auth.md: hosted /auth.md document", () => {
       as.revocation_endpoint,
       as.agent_auth.identity_endpoint,
       as.agent_auth.claim_endpoint,
+      as.agent_auth.events_endpoint,
       as.agent_auth.anonymous.proof_of_work.challenge_endpoint,
       as.agent_auth.anonymous.sandbox.endpoints_url,
     ]) {
@@ -192,6 +196,16 @@ describe("agent auth.md: hosted /auth.md document", () => {
     expect(buildAuthMd({ idJagEnabled: true })).toContain(
       "accepted from the issuers this deployment trusts"
     );
+  });
+
+  test("documents auth_time freshness, the step-up and provider revocation", () => {
+    const trusting = buildAuthMd({ idJagEnabled: true, idJagMaxAuthAgeSeconds: 900 });
+    expect(trusting).toContain("`auth_time` within the last 900 seconds");
+    expect(trusting).toContain("`interaction_required`");
+    expect(md).toContain("| `login_required` (401) |");
+    expect(md).toContain("| `interaction_required` (401) |");
+    expect(md).toContain("an `auth_time` within the last\n3600 seconds");
+    expect(md).toContain("application/secevent+jwt");
   });
 
   test("points old clients at the 410", () => {

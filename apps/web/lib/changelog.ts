@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.37.1";
+export const APP_VERSION = "0.37.2";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.13.0";
 export const MCP_VERSION = "1.10.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.37.2",
+    date: "2026-10-10",
+    title: "Identity-Provider Sign-In for Agents, Hardened",
+    track: "web",
+    items: [
+      "An agent signing in through a trusted identity provider (ID-JAG) is never linked to an existing account silently: the account's owner confirms it with a code on the same page used to connect any agent, which names the provider",
+      "ID-JAG sign-ins need a recent `auth_time` (one hour by default) and otherwise answer `login_required`, as auth.md v0.5 requires",
+      "Identity providers can revoke an agent's link with a Security Event Token at /api/agent/event/notify, now listed in the discovery document",
+      "No identity provider is trusted on webhooks.cc yet; this readies the flow for the first one",
+    ],
+  },
   {
     version: "0.37.1",
     date: "2026-10-10",

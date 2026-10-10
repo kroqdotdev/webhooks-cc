@@ -65,6 +65,15 @@ After you connect it:
 
 The code works for 15 minutes and for 5 tries; the agent can ask for a new one. An account can connect up to 10 agents.
 
+## Agents that sign in through an identity provider
+
+auth.md also lets an agent present a signed statement from an identity provider it runs on (an ID-JAG) instead of registering anonymously. webhooks.cc trusts no identity provider yet, so this path answers `issuer_not_enabled` today. Once one is trusted, these rules apply:
+
+- The provider must have seen you sign in within the last hour. An older sign-in is refused with `login_required`, and the agent has to send you back to the provider.
+- If the provider vouches for an email that already has a webhooks.cc account, nothing is linked until you confirm it on the same page as above, signed in as that email. The page names the provider. After that, the agent can sign in through the provider directly.
+- If no account has that email, one is created for it.
+- The provider can revoke the link at any time; the agent's access stops at once.
+
 ## Revocation and expiry
 
 - Disconnect a connected agent under **Account, Connected agents**. Its access stops at once; endpoints it brought stay in your account.

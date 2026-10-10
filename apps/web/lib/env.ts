@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS } from "./agent/constants";
 
 /**
  * Centralized environment variable validation.
@@ -109,6 +110,13 @@ const serverEnvSchema = z
     AGENT_REGISTER_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(3_600_000),
     AGENT_IDJAG_RATE_LIMIT: z.coerce.number().int().min(1).default(60),
     AGENT_IDJAG_PROVIDERS: z.string().default("[]"),
+    // auth.md v0.5: an ID-JAG whose auth_time is older than this answers
+    // login_required, and the agent has the user sign in at the provider again.
+    AGENT_IDJAG_MAX_AUTH_AGE_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .default(DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS),
     // Agent registration (auth.md v0.6, lib/agent). Identity assertions are
     // ES256 JWTs signed with this P-256 key (PKCS#8 PEM; newlines may be
     // written as \n). The kid defaults to the key's RFC 7638 thumbprint. A
@@ -214,6 +222,7 @@ export function serverEnv() {
       AGENT_REGISTER_RATE_WINDOW_MS: process.env.AGENT_REGISTER_RATE_WINDOW_MS,
       AGENT_IDJAG_RATE_LIMIT: process.env.AGENT_IDJAG_RATE_LIMIT,
       AGENT_IDJAG_PROVIDERS: process.env.AGENT_IDJAG_PROVIDERS,
+      AGENT_IDJAG_MAX_AUTH_AGE_SECONDS: process.env.AGENT_IDJAG_MAX_AUTH_AGE_SECONDS,
       AGENT_ASSERTION_SIGNING_KEY: process.env.AGENT_ASSERTION_SIGNING_KEY,
       AGENT_ASSERTION_SIGNING_KID: process.env.AGENT_ASSERTION_SIGNING_KID,
       AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK: process.env.AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK,

@@ -33,6 +33,11 @@ export const POST_CLAIM_SCOPES = ["webhooks:read", "webhooks:write"];
 export const JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 export const CLAIM_GRANT = "urn:workos:agent-auth:grant-type:claim";
 export const ID_JAG_ASSERTION_TYPE = "urn:ietf:params:oauth:token-type:id-jag";
+/** The Security Event Token schema handled at events_endpoint (auth.md v0.3). */
+export const ASSERTION_REVOKED_EVENT =
+  "https://schemas.workos.com/events/agent/auth/identity/assertion/revoked";
+/** Default for AGENT_IDJAG_MAX_AUTH_AGE_SECONDS (auth.md v0.5). */
+export const DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS = 60 * 60;
 
 /** Longest client_name kept; the column allows 64. */
 export const MAX_CLIENT_NAME = 64;
