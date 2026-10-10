@@ -247,6 +247,9 @@ const MAX_DELAY_MS: u64 = 30_000;
 
 /// Maximum body preview length in notification payloads (characters, not bytes).
 pub(crate) const NOTIFICATION_PREVIEW_LEN: usize = 200;
+/// Maximum body excerpt the notification message shows (characters). Slack
+/// accepts far more; past this a chat message stops being readable.
+pub(crate) const NOTIFICATION_MESSAGE_LEN: usize = 3_000;
 
 /// Maximum entries in the rate limiter before a full prune is triggered.
 const NOTIFICATION_LIMITER_MAX: usize = 10_000;
@@ -296,6 +299,12 @@ pub fn new_notification_limiter() -> NotificationLimiter {
 
 /// Truncate a string to at most `max_chars` characters (including "..." suffix).
 /// Safe for multi-byte UTF-8 — never splits a character.
+/// A notification's timestamp: RFC 3339 in UTC with milliseconds
+/// (`2026-10-10T15:25:09.231Z`), the shape most event payloads use.
+pub(crate) fn notification_time(at: chrono::DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
 pub(crate) fn truncate_preview(s: &str, max_chars: usize) -> String {
     let char_count = s.chars().count();
     if char_count <= max_chars {
@@ -426,6 +435,9 @@ pub(crate) struct NotificationInfo {
     pub(crate) path: String,
     pub(crate) ip: String,
     pub(crate) preview: String,
+    /// The longer excerpt the chat message shows.
+    pub(crate) body: String,
+    /// RFC 3339 UTC with milliseconds (`notification_time`).
     pub(crate) received_at: String,
     /// When set, notifications route through this Cloudflare Worker proxy
     /// so the destination sees a Cloudflare IP instead of the origin server.
@@ -434,6 +446,8 @@ pub(crate) struct NotificationInfo {
     pub(crate) proxy_secret: Option<String>,
     /// Minimum interval between notifications for the same endpoint.
     pub(crate) cooldown: std::time::Duration,
+    /// Skips the cooldown (NOTIFICATION_COOLDOWN_EXEMPT).
+    pub(crate) exempt: bool,
     /// Overall timeout budget for DNS resolution + HTTP POST.
     pub(crate) timeout_secs: u64,
 }
@@ -443,8 +457,9 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
     tokio::spawn(async move {
         // Rate limit: skip if we notified this endpoint within the cooldown period.
         // Try Redis first (distributed), fall back to in-memory on error or absence.
-        let mut use_in_memory = info.redis.is_none();
-        if let Some(mut conn) = info.redis.clone() {
+        // Exempt endpoints are not limited here at all.
+        let mut use_in_memory = info.redis.is_none() && !info.exempt;
+        if let Some(mut conn) = info.redis.clone().filter(|_| !info.exempt) {
             let key = format!("whcc:notify:{}", info.slug);
             // 100ms timeout — if Redis doesn't respond on localhost, fall back fast
             let redis_result = tokio::time::timeout(
@@ -510,6 +525,7 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
             ip: &info.ip,
             received_at: &info.received_at,
             preview: &info.preview,
+            body: &info.body,
             target_url: &info.url,
         });
         let result = tokio::time::timeout(outer_timeout, async {
@@ -1088,6 +1104,7 @@ async fn handle_webhook_inner(
                         && !url.is_empty()
                     {
                         let preview = truncate_preview(&body_str, NOTIFICATION_PREVIEW_LEN);
+                        let message_body = truncate_preview(&body_str, NOTIFICATION_MESSAGE_LEN);
                         spawn_notification(NotificationInfo {
                             limiter: state.notification_limiter.clone(),
                             redis: state.redis.clone(),
@@ -1097,11 +1114,16 @@ async fn handle_webhook_inner(
                             path: req_path.clone(),
                             ip: ip.clone(),
                             preview,
-                            received_at: received_at.to_rfc3339(),
+                            body: message_body,
+                            received_at: notification_time(received_at),
                             proxy_url: state.config.notify_proxy_url.clone(),
                             proxy_secret: state.config.notify_secret.clone(),
                             cooldown: std::time::Duration::from_secs(
                                 state.config.notification_cooldown_secs,
+                            ),
+                            exempt: state.config.notification_cooldown_exempt(
+                                &slug,
+                                capture.billing_key.as_deref(),
                             ),
                             timeout_secs: state.config.notification_timeout_secs,
                         });
@@ -1605,6 +1627,14 @@ mod tests {
         assert!(result.ends_with("..."));
         // 47 emojis + "..." = 50 chars total
         assert_eq!(result.chars().count(), 50);
+    }
+
+    #[test]
+    fn notification_time_is_utc_with_milliseconds() {
+        let at = chrono::DateTime::parse_from_rfc3339("2026-10-10T15:25:09.231456789+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(notification_time(at), "2026-10-10T15:25:09.231Z");
     }
 
     #[test]

@@ -37,8 +37,8 @@ use super::parse::{self, ParsedEmail, StoredBody};
 use crate::AppState;
 use crate::handlers::log_throttle::LogThrottle;
 use crate::handlers::webhook::{
-    DbFailure, NOTIFICATION_PREVIEW_LEN, NotificationInfo, classify_db_error, resolve_billing_key,
-    sanitize_ip, spawn_notification, sqlstate_of, strip_nul, truncate_preview,
+    DbFailure, NOTIFICATION_PREVIEW_LEN, NotificationInfo, classify_db_error, notification_time,
+    resolve_billing_key, sanitize_ip, spawn_notification, sqlstate_of, strip_nul, truncate_preview,
 };
 use crate::metrics;
 
@@ -583,10 +583,14 @@ async fn capture_for_slug(
                     path: path.clone(),
                     ip: input.client_ip.to_string(),
                     preview: notification_preview(&input.prepared.parsed),
-                    received_at: input.received_at.to_rfc3339(),
+                    body: notification_preview(&input.prepared.parsed),
+                    received_at: notification_time(input.received_at),
                     proxy_url: state.config.notify_proxy_url.clone(),
                     proxy_secret: state.config.notify_secret.clone(),
                     cooldown: Duration::from_secs(state.config.notification_cooldown_secs),
+                    exempt: state
+                        .config
+                        .notification_cooldown_exempt(slug, capture.billing_key.as_deref()),
                     timeout_secs: state.config.notification_timeout_secs,
                 });
             }

@@ -133,7 +133,8 @@ describe("quoteSeatChange", () => {
     ).toBe(0);
   });
 
-  test("Kargo's fourth seat would have cost $11.66", () => {
+  // The amounts of a real Polar order: a fourth seat about 20 hours into the period.
+  test("a fourth seat added 20 hours into the period costs $11.66", () => {
     const quote = quoteSeatChange({
       currentSeats: 3,
       newSeats: 4,
