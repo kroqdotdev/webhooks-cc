@@ -8,7 +8,6 @@ import { countLiveSandboxEndpoints } from "@/lib/supabase/endpoints";
 import { signAssertion, verifyAssertion } from "./assertion";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
-  CLAIMED_ASSERTION_TTL_SECONDS,
   MAX_CLIENT_NAME,
   MAX_LIVE_TOKENS,
   POST_CLAIM_SCOPES,
@@ -16,7 +15,6 @@ import {
   UNCLAIMED_LIFETIME_SECONDS,
 } from "./constants";
 import { AgentError } from "./errors";
-import type { IdJagSuccess } from "./id-jag";
 
 /**
  * Agent registrations (auth.md v0.6). One `agent_registrations` row per
@@ -189,89 +187,6 @@ export async function createAnonymousRegistration(input: {
 
   const sandboxFull = (await sandboxPoolUsage()) >= serverEnv().AGENT_SANDBOX_MAX_ENDPOINTS;
   return { registration: data, claimToken, assertion, sandboxFull };
-}
-
-// ---------------------------------------------------------------------------
-// identity_assertion (ID-JAG). Ported unchanged from the v0.1 flow: no
-// trusted provider exists (AGENT_IDJAG_PROVIDERS is empty in production), and
-// the auth_time and interaction_required checks v0.5 asks for come before any
-// provider is trusted.
-// ---------------------------------------------------------------------------
-
-export interface IdJagRegistration {
-  registration: RegistrationRow;
-  assertion: string;
-  assertionExpires: Date;
-}
-
-export async function createIdJagRegistration(
-  verified: IdJagSuccess,
-  resolveUser: (email: string, name: string | null) => Promise<string>
-): Promise<IdJagRegistration> {
-  // Only a verified email may resolve or provision an account; verifyIdJag
-  // already drops an unverified one, and this repeats the check.
-  if (!verified.email || !verified.emailVerified) {
-    throw new AgentError(400, "invalid_request", "The assertion carries no verified email.");
-  }
-  const userId = await resolveUser(verified.email, verified.name ?? null);
-  const admin = createAdminClient();
-  const now = new Date();
-
-  // One live registration per (iss, sub): a repeat registration gets a new
-  // assertion for the same row.
-  const { data: existing, error: lookupError } = await admin
-    .from("agent_registrations")
-    .select("*")
-    .eq("idjag_iss", verified.iss)
-    .eq("idjag_sub", verified.sub)
-    .is("revoked_at", null)
-    .maybeSingle();
-  if (lookupError) throw lookupError;
-
-  let registration = existing;
-  if (!registration) {
-    const { data, error } = await admin
-      .from("agent_registrations")
-      .insert({
-        kind: "identity_assertion",
-        user_id: userId,
-        claimed_at: now.toISOString(),
-        // expires_at is the unclaimed lifetime; a registration claimed from
-        // the start has none left.
-        expires_at: now.toISOString(),
-        idjag_iss: verified.iss,
-        idjag_sub: verified.sub,
-      })
-      .select("*")
-      .single();
-    if (error) {
-      // A concurrent registration of the same identity won the insert.
-      if (!isUniqueViolation(error)) throw error;
-      const { data: winner, error: winnerError } = await admin
-        .from("agent_registrations")
-        .select("*")
-        .eq("idjag_iss", verified.iss)
-        .eq("idjag_sub", verified.sub)
-        .is("revoked_at", null)
-        .single();
-      if (winnerError) throw winnerError;
-      registration = winner;
-    } else {
-      registration = data;
-    }
-  }
-  if (registration.user_id !== userId) {
-    throw new AgentError(400, "invalid_request", "This identity is linked to another account.");
-  }
-
-  const assertionExpires = new Date(now.getTime() + CLAIMED_ASSERTION_TTL_SECONDS * 1000);
-  const assertion = await signAssertion({
-    registrationId: registration.id,
-    stage: "claimed",
-    expiresAt: assertionExpires,
-    email: verified.email.toLowerCase(),
-  });
-  return { registration, assertion, assertionExpires };
 }
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,8 @@ import { serverEnv } from "@/lib/env";
  *     used by the integration test so no HTTP fetch is needed), or
  *   - `jwks_uri` (or the default `${iss}/.well-known/jwks.json`) ->
  *     jose.createRemoteJWKSet (cached, refetches once on a kid miss).
+ * `display_name` is what the claim page calls the provider when one of its
+ * identities asks to link an existing account; it never comes from a token.
  *
  * Empty default (`"[]"`) means ID-JAG is advertised in discovery but no
  * providers are trusted, so any assertion resolves to `invalid_issuer`.
@@ -33,6 +35,8 @@ const trustedProviderSchema = z.object({
   jwks: z.unknown().optional(),
   /** Permitted signing algorithms for this provider. */
   algs: z.array(z.string()).default(["ES256", "RS256"]),
+  /** Shown to humans on the claim page; defaults to the issuer's host. */
+  display_name: z.string().min(1).max(64).optional(),
 });
 
 export type TrustedProvider = z.infer<typeof trustedProviderSchema>;
@@ -66,6 +70,25 @@ function loadProviders(): TrustedProvider[] {
  */
 export function getTrustedProvider(iss: string): TrustedProvider | null {
   return loadProviders().find((p) => p.iss === iss) ?? null;
+}
+
+/**
+ * The provider's name for humans: the trust list's display_name, else the
+ * issuer's host. Also for an issuer since removed from the list.
+ */
+export function providerDisplayName(iss: string): string {
+  let provider: TrustedProvider | null = null;
+  try {
+    provider = getTrustedProvider(iss);
+  } catch {
+    provider = null;
+  }
+  if (provider?.display_name) return provider.display_name;
+  try {
+    return new URL(iss).host;
+  } catch {
+    return iss.slice(0, 64);
+  }
 }
 
 /** True when at least one ID-JAG issuer is trusted (none in production). */

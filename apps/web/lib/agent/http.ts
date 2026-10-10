@@ -8,6 +8,43 @@ import { AgentError } from "./errors";
 export const MAX_AGENT_BODY_BYTES = 16 * 1024;
 
 /**
+ * Reads the body, stopping as soon as it passes `max` bytes, whatever the
+ * Content-Length says (a chunked body has none). Null when it is longer or
+ * cannot be read.
+ */
+export async function readBoundedBody(request: Request, max: number): Promise<Uint8Array | null> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!request.body) return new Uint8Array(0);
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+/**
  * Reads a JSON object or (for the OAuth endpoints) a form-encoded body,
  * bounded in size. Returns null when the body is missing, too large, or not
  * an object; callers answer invalid_request.
@@ -16,17 +53,9 @@ export async function readAgentBody(
   request: Request,
   options: { form?: boolean } = {}
 ): Promise<Record<string, unknown> | null> {
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > MAX_AGENT_BODY_BYTES) return null;
-
-  let buffer: ArrayBuffer;
-  try {
-    buffer = await request.arrayBuffer();
-  } catch {
-    return null;
-  }
-  if (buffer.byteLength === 0 || buffer.byteLength > MAX_AGENT_BODY_BYTES) return null;
-  const text = new TextDecoder().decode(buffer);
+  const body = await readBoundedBody(request, MAX_AGENT_BODY_BYTES);
+  if (!body || body.byteLength === 0) return null;
+  const text = new TextDecoder().decode(body);
 
   const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
   if (options.form && contentType.includes("application/x-www-form-urlencoded")) {

@@ -20,6 +20,7 @@ interface AttemptView {
   state: "pending" | "expired" | "denied" | "locked";
   clientName: string | null;
   kind: "anonymous" | "service_auth" | "identity_assertion";
+  provider: string | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -310,18 +311,34 @@ function AttemptPanel(props: {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-2 text-center">Connect an agent</h1>
-      <p className="text-muted-foreground mb-6 text-center">
-        An AI agent asks to use webhooks.cc as <span className="font-mono">{view.signedInAs}</span>.
-      </p>
+      {view.provider ? (
+        <p className="text-muted-foreground mb-6 text-center">
+          <span className="font-medium text-foreground">{view.provider}</span> is asking to link
+          this account so the agent it runs can act on your behalf as{" "}
+          <span className="font-mono">{view.signedInAs}</span>.
+        </p>
+      ) : (
+        <p className="text-muted-foreground mb-6 text-center">
+          An AI agent asks to use webhooks.cc as{" "}
+          <span className="font-mono">{view.signedInAs}</span>.
+        </p>
+      )}
 
       <dl className="ui-card ui-card-static p-4 mb-6 space-y-2 text-sm">
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Agent</dt>
-          <dd className="text-right">
-            <span className="font-medium break-all">{view.clientName ?? "Unnamed agent"}</span>
-            <span className="block text-xs text-muted-foreground">name given by the agent</span>
-          </dd>
-        </div>
+        {view.provider ? (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Identity provider</dt>
+            <dd className="text-right font-medium break-all">{view.provider}</dd>
+          </div>
+        ) : (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Agent</dt>
+            <dd className="text-right">
+              <span className="font-medium break-all">{view.clientName ?? "Unnamed agent"}</span>
+              <span className="block text-xs text-muted-foreground">name given by the agent</span>
+            </dd>
+          </div>
+        )}
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Registered</dt>
           <dd>{new Date(view.registeredAt).toLocaleString()}</dd>

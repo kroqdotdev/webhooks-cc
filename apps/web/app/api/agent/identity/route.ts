@@ -7,7 +7,6 @@ import {
   checkWideRateLimitWithInfo,
 } from "@/lib/rate-limit";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
-import { AgentRequestError, resolveOrProvisionUser } from "@/lib/agent/agent-auth";
 import { assertionSigningConfigured } from "@/lib/agent/assertion";
 import {
   ID_JAG_ASSERTION_TYPE,
@@ -37,13 +36,13 @@ import {
   createServiceAuthRegistration,
   normalizeLoginHint,
 } from "@/lib/agent/claims";
-import { verifyIdJag } from "@/lib/agent/id-jag";
+import { linkIdJagIdentity } from "@/lib/agent/delegations";
+import { maxAuthAgeSeconds, verifyIdJag } from "@/lib/agent/id-jag";
 import { verifySolution } from "@/lib/agent/pow";
 import {
   claimEndpointUrl,
   cleanClientName,
   createAnonymousRegistration,
-  createIdJagRegistration,
   powChallengeUsed,
   sandboxEndpointsUrl,
 } from "@/lib/agent/registrations";
@@ -56,7 +55,10 @@ import {
  *   - service_auth: the agent names its human's email and gets a claim
  *     attempt; nothing works until that human completes it signed in.
  *   - identity_assertion (ID-JAG): only for trusted providers, of which
- *     production has none.
+ *     production has none. A sign-in at the provider older than
+ *     AGENT_IDJAG_MAX_AUTH_AGE_SECONDS answers login_required; an identity
+ *     whose email belongs to an existing account answers
+ *     interaction_required with a claim attempt until its human confirms.
  *
  * Errors are `{ error, error_description }` with auth.md's codes.
  */
@@ -352,36 +354,111 @@ async function registerIdJag(request: Request, body: Record<string, unknown>): P
         "This identity provider is not trusted here. Register anonymously instead."
       );
     }
+    if (verified.error === "auth_time_missing" || verified.error === "auth_time_too_old") {
+      const maxAge = maxAuthAgeSeconds();
+      const description =
+        verified.error === "auth_time_missing"
+          ? `The ID-JAG carries no auth_time; max allowed age is ${maxAge}s. Re-authenticate at the provider and request a fresh ID-JAG.`
+          : `auth_time is ${verified.authAge}s old; max allowed is ${maxAge}s. Re-authenticate at the provider and request a fresh ID-JAG.`;
+      return agentError(
+        401,
+        "login_required",
+        description,
+        { max_age: maxAge },
+        {
+          "WWW-Authenticate": `AgentAuth error="login_required", max_age="${maxAge}", error_description="${description}"`,
+        }
+      );
+    }
     return agentError(400, "invalid_request", `The assertion was rejected (${verified.error}).`);
   }
   if (!(await assertionSigningConfigured())) {
     return agentError(503, "temporarily_unavailable", "Agent registration is not available.");
   }
 
-  let created;
+  let link;
   try {
-    created = await createIdJagRegistration(verified, resolveOrProvisionUser);
+    link = await linkIdJagIdentity(verified);
   } catch (error) {
-    if (error instanceof AgentRequestError) {
-      return agentError(400, "invalid_request", "The assertion's email cannot be used here.");
+    if (error instanceof AgentError) {
+      await auditAgentEvent(request, {
+        action: "agent.registration.refused",
+        status: error.status,
+        metadata: { kind: "identity_assertion", code: error.code, issuer: verified.iss },
+      });
     }
     throw error;
   }
 
-  await auditAgentEvent(request, {
-    action: "agent.registration.created",
-    status: 200,
-    targetId: created.registration.id,
-    targetUserId: created.registration.user_id,
-    metadata: { kind: "identity_assertion", issuer: verified.iss },
-  });
+  if (link.status === "interaction_required") {
+    const { registration, claimToken, attempt } = link;
+    if (link.created) {
+      // State changes that succeeded; the 401 asks the human to confirm them.
+      await auditAgentEvent(request, {
+        action: "agent.registration.created",
+        status: 200,
+        targetId: registration.id,
+        metadata: { kind: "identity_assertion", issuer: verified.iss, linked: false },
+      });
+    }
+    await auditAgentEvent(request, {
+      action: "agent.claim.requested",
+      status: 200,
+      targetId: registration.id,
+      metadata: {
+        kind: "identity_assertion",
+        attempt: attempt.attempt,
+        login_hint_domain: emailDomain(registration.attempt_login_hint ?? ""),
+      },
+    });
+    const description =
+      "This identity's email belongs to an existing webhooks.cc account. Show the human verification_uri and user_code, then poll the claim grant.";
+    return applyRateLimitHeaders(
+      Response.json(
+        {
+          error: "interaction_required",
+          error_description: description,
+          registration_id: registration.id,
+          registration_type: "identity_assertion",
+          claim_url: claimEndpointUrl(),
+          claim_token: claimToken,
+          claim_token_expires: new Date(registration.expires_at).toISOString(),
+          post_claim_scopes: POST_CLAIM_SCOPES,
+          claim: claimAttemptBlock(attempt),
+        },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control": "no-store",
+            "WWW-Authenticate": `AgentAuth error="interaction_required", error_description="${description}"`,
+          },
+        }
+      ),
+      limit
+    );
+  }
+
+  if (link.created) {
+    await auditAgentEvent(request, {
+      action: "agent.registration.created",
+      status: 200,
+      targetId: link.registration.id,
+      targetUserId: link.registration.user_id,
+      metadata: {
+        kind: "identity_assertion",
+        issuer: verified.iss,
+        linked: true,
+        account_created: link.provisioned,
+      },
+    });
+  }
   return applyRateLimitHeaders(
     Response.json(
       {
-        registration_id: created.registration.id,
+        registration_id: link.registration.id,
         registration_type: "identity_assertion",
-        identity_assertion: created.assertion,
-        assertion_expires: created.assertionExpires.toISOString(),
+        identity_assertion: link.assertion,
+        assertion_expires: link.assertionExpires.toISOString(),
         scopes: POST_CLAIM_SCOPES,
       },
       { headers: { "Cache-Control": "no-store" } }

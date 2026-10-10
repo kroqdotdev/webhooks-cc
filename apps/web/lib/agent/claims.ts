@@ -17,6 +17,7 @@ import {
   USER_CODE_TTL_SECONDS,
 } from "./constants";
 import { AgentError } from "./errors";
+import { providerDisplayName } from "./trusted-providers";
 import {
   generateClaimToken,
   hashClaimToken,
@@ -121,7 +122,7 @@ export function claimAttemptBlock(attempt: ClaimAttempt) {
   };
 }
 
-function newAttemptSecrets() {
+export function newAttemptSecrets() {
   const attemptToken = generateAttemptToken();
   const attemptTokenHash = hashAttemptToken(attemptToken);
   const userCode = generateUserCode();
@@ -284,6 +285,8 @@ export interface AttemptView {
   state: AttemptState;
   clientName: string | null;
   kind: RegistrationRow["kind"];
+  /** For an ID-JAG identity: its provider, named by our trust list. */
+  provider: string | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -347,6 +350,10 @@ export async function readClaimAttempt(
     state,
     clientName: registration.client_name,
     kind: registration.kind,
+    provider:
+      registration.kind === "identity_assertion" && registration.idjag_iss
+        ? providerDisplayName(registration.idjag_iss)
+        : null,
     registeredAt: Date.parse(registration.created_at),
     attemptExpiresAt: attemptExpires,
     requestedFor: maskEmail(hint),

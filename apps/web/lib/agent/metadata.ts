@@ -1,9 +1,11 @@
 import { publicEnv } from "@/lib/env";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  ASSERTION_REVOKED_EVENT,
   CLAIM_GRANT,
   CLAIMED_ASSERTION_TTL_SECONDS,
   CLAIM_POLL_INTERVAL_SECONDS,
+  DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS,
   MAX_CLAIM_ATTEMPTS,
   MAX_CODE_FAILURES,
   MAX_CONNECTED_AGENTS,
@@ -34,6 +36,8 @@ import {
 export interface AgentMetadataOptions {
   /** True when AGENT_IDJAG_PROVIDERS trusts at least one issuer. */
   idJagEnabled: boolean;
+  /** AGENT_IDJAG_MAX_AUTH_AGE_SECONDS, quoted in /auth.md. */
+  idJagMaxAuthAgeSeconds?: number;
 }
 
 /** Resource identifier of the protected API (the audience of an ID-JAG). */
@@ -53,6 +57,7 @@ function urls(appUrl: string) {
     claim: `${appUrl}/api/agent/identity/claim`,
     token: `${appUrl}/api/oauth2/token`,
     revoke: `${appUrl}/api/oauth2/revoke`,
+    events: `${appUrl}/api/agent/event/notify`,
     sandbox: `${appUrl}/api/agent/sandbox/endpoints`,
     sandboxRequest: `${appUrl}/api/agent/sandbox/requests`,
     docs: `${appUrl}/docs/agents`,
@@ -107,8 +112,10 @@ export interface AgentAuthMetadata {
   skill: string;
   identity_endpoint: string;
   claim_endpoint: string;
+  events_endpoint: string;
   identity_types_supported: string[];
   identity_assertion?: { assertion_types_supported: string[] };
+  events_supported: string[];
   anonymous: {
     credential_types_supported: string[];
     proof_of_work: { challenge_endpoint: string; algorithms_supported: string[] };
@@ -162,6 +169,8 @@ export function buildAuthorizationServerMetadata(
       skill: u.authMd,
       identity_endpoint: u.identity,
       claim_endpoint: u.claim,
+      // Where trusted ID-JAG providers push Security Event Tokens (RFC 8935).
+      events_endpoint: u.events,
       // An agent only tries identity_assertion when it is listed (AUTH.md Step 2).
       identity_types_supported: options.idJagEnabled
         ? ["anonymous", "service_auth", "identity_assertion"]
@@ -169,6 +178,7 @@ export function buildAuthorizationServerMetadata(
       ...(options.idJagEnabled
         ? { identity_assertion: { assertion_types_supported: [ID_JAG_ASSERTION_TYPE] } }
         : {}),
+      events_supported: [ASSERTION_REVOKED_EVENT],
       anonymous: {
         credential_types_supported: ["access_token"],
         // Our extensions; generic clients ignore unknown members.
@@ -208,6 +218,7 @@ function hours(seconds: number): string {
 export function buildAuthMd(options: AgentMetadataOptions): string {
   const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
   const u = urls(appUrl);
+  const maxAuthAge = options.idJagMaxAuthAgeSeconds ?? DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS;
 
   return `# webhooks.cc agent registration (auth.md)
 
@@ -264,7 +275,14 @@ lists the endpoints below.
   at Step 4b.
 - **identity_assertion** (ID-JAG): ${
     options.idJagEnabled
-      ? "accepted from the issuers this deployment trusts."
+      ? `accepted from the issuers this deployment trusts. The assertion needs an
+  \`auth_time\` within the last ${maxAuthAge} seconds, else the answer is 401
+  \`login_required\`: have your user sign in at your provider again and mint a
+  fresh ID-JAG. When its verified email belongs to an existing account that
+  has not linked your provider identity yet, the answer is 401
+  \`interaction_required\` with the same fields as a service_auth
+  registration: continue at Step 4b. Once the human confirms, the next ID-JAG
+  for the same identity registers directly.`
       : "no identity provider is trusted yet; it answers `issuer_not_enabled`."
   }
 
@@ -507,6 +525,9 @@ On a 401 with a previously working token, exchange the assertion again
   within minutes after it expires.
 - The human can disconnect a claimed agent under Account, Connected agents:
   your tokens stop working and the assertion answers \`invalid_grant\`.
+- An identity provider can revoke an ID-JAG identity with a Security Event
+  Token at ${u.events}. Its registration and tokens go, and the assertion
+  answers \`invalid_grant\`.
 
 ## Errors
 
@@ -524,6 +545,8 @@ On a 401 with a previously working token, exchange the assertion again
 | \`claim_expired\` (410) | claim | The registration expired. Register again. |
 | \`too_many_attempts\` (429) | claim | ${MAX_CLAIM_ATTEMPTS} attempts used. Register again. |
 | \`issuer_not_enabled\` (400) | identity | Your identity provider is not trusted here. |
+| \`login_required\` (401) | identity (ID-JAG) | \`auth_time\` is missing or older than \`max_age\`. Re-authenticate the user at your provider and mint a fresh ID-JAG. |
+| \`interaction_required\` (401) | identity (ID-JAG) | The email belongs to an existing account. Run the claim ceremony from Step 4b with the \`claim\` block in the body. |
 | \`invalid_request\` (400) | any | Fix the request body. |
 | \`rate_limited\` (429) | any | Wait for \`Retry-After\` seconds. |
 | \`temporarily_unavailable\` (503) | identity | Retry after \`Retry-After\` seconds. |
@@ -550,6 +573,22 @@ the steps above.
 Trusted issuers are deployment configuration (\`AGENT_IDJAG_PROVIDERS\`),
 never changeable at runtime. An assertion must use \`typ: oauth-id-jag+jwt\`,
 come from a trusted issuer, target audience \`${u.resource}\`, carry a unique
-\`jti\` and a verified email (\`email_verified: true\`), and be unexpired.
+\`jti\`, an \`iat\` within the last hour, an \`auth_time\` within the last
+${maxAuthAge} seconds and a verified email (\`email_verified: true\`), and be
+unexpired.
+
+An identity \`(iss, sub)\` links to an account in this order: the account it
+was linked to before; else, when an account has the verified email, nothing
+links until the human signed in to it confirms (\`interaction_required\`);
+else a new account is created for the email.
+
+To revoke an identity, POST a Security Event Token (RFC 8417) to
+${u.events} with \`Content-Type: application/secevent+jwt\`: \`typ:
+secevent+jwt\`, signed with the same keys, \`aud\` \`${appUrl}\`, a unique
+\`jti\`, \`iat\` within the last 24 hours, the identity's \`sub\`, and
+\`events\` containing \`${ASSERTION_REVOKED_EVENT}\`. Every registration of
+that identity is revoked with its tokens, and the next ID-JAG for it links
+again as above. The answer is 202 with no body (also for a SET already
+received), or 400 with \`{ "err", "description" }\` (RFC 8935).
 `;
 }
