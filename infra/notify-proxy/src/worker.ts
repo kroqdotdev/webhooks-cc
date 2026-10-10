@@ -138,6 +138,37 @@ async function forward(request: Request, targetUrl: string): Promise<Response> {
   }
 }
 
+/**
+ * Ensures the notification JSON body contains a top-level `text` field (required
+ * by Slack incoming webhooks and Discord `/slack` endpoints) and `content` field
+ * (for standard Discord webhooks) without disturbing any other properties.
+ */
+function formatNotificationPayload(raw: string): string {
+  try {
+    const data = JSON.parse(raw);
+    if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+      if (!("text" in data) && ("slug" in data || "preview" in data)) {
+        const slug = typeof data.slug === "string" && data.slug ? `*${data.slug}*` : "endpoint";
+        const method = typeof data.method === "string" && data.method ? data.method : "POST";
+        const path = typeof data.path === "string" ? data.path : "/";
+        const safePreview =
+          typeof data.preview === "string" && data.preview.length > 0
+            ? `\n\`\`\`\n${data.preview.replaceAll("```", "'''")}\n\`\`\``
+            : "";
+        const formatted = `New webhook on ${slug} (\`${method} ${path}\`)${safePreview}`;
+        data.text = formatted;
+        if (!("content" in data)) {
+          data.content = formatted;
+        }
+        return JSON.stringify(data);
+      }
+    }
+  } catch {
+    // Non-JSON, relay original
+  }
+  return raw;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== "POST") {
@@ -163,8 +194,9 @@ export default {
       return new Response("Blocked target", { status: 403 });
     }
 
-    // Read original body and sender IP header
-    const body = await request.text();
+    // Read original body, ensure Slack/Discord compatibility, and read sender IP header
+    const rawBody = await request.text();
+    const body = formatNotificationPayload(rawBody);
     const senderIp = request.headers.get("X-Sender-IP");
 
     // Build forwarded headers
