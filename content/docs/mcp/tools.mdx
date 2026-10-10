@@ -1,14 +1,14 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 44 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 38 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 44 MCP tools available to AI coding agents. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 38 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -454,55 +454,39 @@ Example:
 
 Self-documenting schema of all available operations and their parameters. No parameters.
 
-## Agent registration
+## Without an API key: the agent sandbox
 
-These tools are available with or without an API key, so an agent that has no credential yet can get one ([auth.md](https://webhooks.cc/auth.md)). Without `WHK_API_KEY`, the server exposes only these six. None of them needs authentication.
+A server started without `WHK_API_KEY` registers these ten tools instead of the ones above. The seven endpoint and request tools have the same names and arguments as the full tools, but run in the [agent sandbox](/docs/agents) ([auth.md](https://webhooks.cc/auth.md)): up to 3 endpoints at a time, 25 captured requests each and 100 in all, deleted 24 hours after the sandbox was created. Captures are readable only by this agent.
 
-### how_to_register
+| Tool               | In the sandbox                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_endpoint`  | Creates a capture endpoint. The first call registers the sandbox (a few seconds of proof of work). `mockResponse`, `responseRules`, `notificationUrl` and the signing options are refused; `name` and `expiresIn` are ignored. |
+| `list_endpoints`   | This agent's sandbox endpoints; empty before the first `create_endpoint`. `team` is refused.                                           |
+| `get_endpoint`     | One sandbox endpoint, with its limits and usage                                                                                        |
+| `delete_endpoint`  | Frees a slot; the 100-request budget is not refunded                                                                                   |
+| `list_requests`    | Captured requests, newest first (HTTP only)                                                                                            |
+| `get_request`      | One captured request                                                                                                                   |
+| `wait_for_request` | Waits for a capture                                                                                                                    |
 
-Explain the registration flows and link the auth.md document. Call it first when there is no API key. No parameters.
+### connect_account
 
-### register_agent
+Connect the agent to a human's account. Returns `verificationUri`, a 6-digit `userCode` and a `tellTheHuman` line to show them: they sign in or sign up with that email and enter the code. With a sandbox, its endpoints move into the account with what they captured; without one, the agent registers for that human directly. Calling it again gives a new code.
 
-Register anonymously. Returns a `whcc_` API key and a `userCode` and `claimUrl` a human uses to bind the key to their account. Until it is claimed, the key only works with the sandbox API (ephemeral endpoints, reading its own captures), and it is deleted about 15 minutes after registration.
+| Parameter | Type     | Required | Description                                                          |
+| --------- | -------- | -------- | -------------------------------------------------------------------- |
+| `email`   | `string` | yes      | The human's email address; only someone signed in as it can connect |
 
-| Parameter    | Type     | Required | Description                                       |
-| ------------ | -------- | -------- | ------------------------------------------------- |
-| `clientName` | `string` | no       | A name for this agent, recorded on the issued key |
+### wait_for_connection
 
-### check_claim
+Wait for the human to enter the code. On success the full tools for their account replace the sandbox tools (the server sends `notifications/tools/list_changed`). Otherwise it returns `status` `waiting` (call it again), `expired` (call `connect_account` for a new code) or `declined`. The connection lasts while the server runs; set `WHK_API_KEY` for a lasting setup.
 
-Check whether a human has claimed an anonymous registration's key. Poll it after `register_agent` until `status` is `claimed`.
+| Parameter        | Type     | Required | Description                                         |
+| ---------------- | -------- | -------- | --------------------------------------------------- |
+| `timeoutSeconds` | `number` | no       | How long to wait, 1 to 600 seconds (default 45)     |
 
-| Parameter    | Type     | Required | Description                            |
-| ------------ | -------- | -------- | -------------------------------------- |
-| `claimToken` | `string` | yes      | The `claimToken` from `register_agent` |
+### about_sandbox
 
-### register_agent_with_email
-
-Register with a verified email address. webhooks.cc emails a one-time code to it, and the key is withheld until `verify_agent_otp` confirms the code. Returns a `claimToken`.
-
-| Parameter    | Type     | Required | Description                                       |
-| ------------ | -------- | -------- | ------------------------------------------------- |
-| `email`      | `string` | yes      | The address to verify and bind the key to         |
-| `clientName` | `string` | no       | A name for this agent, recorded on the issued key |
-
-### verify_agent_otp
-
-Finish an email registration with the code the human received. Returns the `whcc_` API key, bound to the verified address.
-
-| Parameter    | Type     | Required | Description                                       |
-| ------------ | -------- | -------- | ------------------------------------------------- |
-| `claimToken` | `string` | yes      | The `claimToken` from `register_agent_with_email` |
-| `otp`        | `string` | yes      | The one-time code from the email                  |
-
-### register_agent_with_idjag
-
-Register with an identity assertion (ID-JAG) JWT from a provider webhooks.cc trusts. The key comes back at once, with no human claim step. No provider is trusted yet, so this flow is not available on webhooks.cc today.
-
-| Parameter   | Type     | Required | Description                                |
-| ----------- | -------- | -------- | ------------------------------------------ |
-| `assertion` | `string` | yes      | The ID-JAG assertion JWT from the provider |
+The sandbox limits, what needs an account, and how to connect one. No parameters and no network call.
 
 <Callout type="info">
   For provider templates in `send_webhook` and `send_to`, `secret` is required for every signed

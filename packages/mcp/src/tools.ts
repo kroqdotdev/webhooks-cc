@@ -158,11 +158,84 @@ const mockResponseSchema = z.object({
     ),
 });
 
+// Argument shapes the sandbox tools share with the full ones (sandbox-tools.ts),
+// so a tool keeps its arguments when the server swaps to the full set.
+
+export const createEndpointShape = {
+  name: z.string().optional().describe("Display name for the endpoint"),
+  ephemeral: z.boolean().optional().describe("Create a temporary endpoint that auto-expires"),
+  expiresIn: durationOrTimestampSchema
+    .optional()
+    .describe('Auto-expire after this duration, for example "12h"'),
+  mockResponse: mockResponseSchema
+    .optional()
+    .describe("Optional mock response to return when the endpoint receives a request"),
+  responseRules: responseRulesSchema
+    .optional()
+    .describe(
+      "Conditional response rules. Each rule has conditions and a response. First matching rule wins."
+    ),
+  notificationUrl: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      "URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"
+    ),
+  signingProvider: z
+    .string()
+    .optional()
+    .describe(
+      "Signing provider for automatic signature verification (e.g. stripe, github, shopify)"
+    ),
+  signingSecret: z
+    .string()
+    .optional()
+    .describe(
+      "Signing secret (encrypted server-side, never returned). Required when signingProvider is set."
+    ),
+  signingHeader: z
+    .string()
+    .optional()
+    .describe("Custom signature header name. Only used with generic-hmac provider."),
+};
+
+export const listEndpointsShape = {
+  team: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Team id or name (case-insensitive). Keeps endpoints shared with you from that team and endpoints you own that are shared with it."
+    ),
+};
+
+export const getEndpointShape = { slug: z.string().describe("The endpoint slug") };
+
+export const deleteEndpointShape = { slug: z.string().describe("The endpoint slug to delete") };
+
+export const listRequestsShape = {
+  endpointSlug: z.string().describe("The endpoint slug"),
+  limit: z.number().int().min(1).max(100).default(25).describe("Max requests to return"),
+  since: z.number().optional().describe("Only return requests after this timestamp in ms"),
+  kind: kindSchema,
+};
+
+export const getRequestShape = { requestId: z.string().describe("The request ID") };
+
+export const waitForRequestShape = {
+  endpointSlug: z.string().describe("The endpoint slug to monitor"),
+  timeout: durationOrTimestampSchema.default("30s").describe('How long to wait, for example "30s"'),
+  pollInterval: durationOrTimestampSchema
+    .optional()
+    .describe('Interval between polls, for example "500ms" or "1s"'),
+};
+
 type TextContent = { type: "text"; text: string };
-type ToolResult = { content: TextContent[]; isError?: boolean };
+export type ToolResult = { content: TextContent[]; isError?: boolean };
 
 /** Create a text content response for MCP tools. */
-function textContent(text: string): ToolResult {
+export function textContent(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
 
@@ -232,7 +305,7 @@ function fitArrayField(value: Record<string, unknown>, key: string): Record<stri
   return cut(low);
 }
 
-function jsonContent(value: unknown): ToolResult {
+export function jsonContent(value: unknown): ToolResult {
   return textContent(serializeJson(value));
 }
 
@@ -300,7 +373,7 @@ function serializeError(error: unknown): string {
 }
 
 /** Wrap a tool handler with error handling that returns structured MCP errors. */
-function withErrorHandling<T>(
+export function withErrorHandling<T>(
   handler: (args: T) => Promise<ToolResult>
 ): (args: T) => Promise<ToolResult> {
   return async (args: T) => {
@@ -611,44 +684,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "create_endpoint",
     "Create a webhook endpoint. Returns the endpoint slug, URL, and metadata.",
-    {
-      name: z.string().optional().describe("Display name for the endpoint"),
-      ephemeral: z.boolean().optional().describe("Create a temporary endpoint that auto-expires"),
-      expiresIn: durationOrTimestampSchema
-        .optional()
-        .describe('Auto-expire after this duration, for example "12h"'),
-      mockResponse: mockResponseSchema
-        .optional()
-        .describe("Optional mock response to return when the endpoint receives a request"),
-      responseRules: responseRulesSchema
-        .optional()
-        .describe(
-          "Conditional response rules. Each rule has conditions and a response. First matching rule wins."
-        ),
-      notificationUrl: z
-        .string()
-        .url()
-        .optional()
-        .describe(
-          "URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"
-        ),
-      signingProvider: z
-        .string()
-        .optional()
-        .describe(
-          "Signing provider for automatic signature verification (e.g. stripe, github, shopify)"
-        ),
-      signingSecret: z
-        .string()
-        .optional()
-        .describe(
-          "Signing secret (encrypted server-side, never returned). Required when signingProvider is set."
-        ),
-      signingHeader: z
-        .string()
-        .optional()
-        .describe("Custom signature header name. Only used with generic-hmac provider."),
-    },
+    createEndpointShape,
     withErrorHandling(
       async ({
         name,
@@ -705,15 +741,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "list_endpoints",
     "List webhook endpoints: those you own (with sharedWith) and those shared with you through teams (with fromTeam). Optionally keep only one team's endpoints.",
-    {
-      team: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          "Team id or name (case-insensitive). Keeps endpoints shared with you from that team and endpoints you own that are shared with it."
-        ),
-    },
+    listEndpointsShape,
     withErrorHandling(async ({ team }) => {
       const endpoints = await client.endpoints.list({ team });
       return jsonContent(endpoints);
@@ -774,7 +802,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "get_endpoint",
     "Get details for a specific webhook endpoint by slug.",
-    { slug: z.string().describe("The endpoint slug") },
+    getEndpointShape,
     withErrorHandling(async ({ slug }) => {
       const endpoint = await client.endpoints.get(slug);
       return jsonContent(endpoint);
@@ -855,7 +883,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "delete_endpoint",
     "Delete a webhook endpoint and all its captured requests.",
-    { slug: z.string().describe("The endpoint slug to delete") },
+    deleteEndpointShape,
     withErrorHandling(async ({ slug }) => {
       await client.endpoints.delete(slug);
       return textContent(`Endpoint "${slug}" deleted.`);
@@ -980,12 +1008,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "list_requests",
     "List recent captured requests for an endpoint, HTTP requests and emails together (filter with kind). For emails, list_emails is shorter.",
-    {
-      endpointSlug: z.string().describe("The endpoint slug"),
-      limit: z.number().int().min(1).max(100).default(25).describe("Max requests to return"),
-      since: z.number().optional().describe("Only return requests after this timestamp in ms"),
-      kind: kindSchema,
-    },
+    listRequestsShape,
     withErrorHandling(async ({ endpointSlug, limit, since, kind }) => {
       const requests = await client.requests.list(endpointSlug, { limit, since, kind });
       return jsonContent(requests.map(compactRequest));
@@ -1050,7 +1073,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "get_request",
     "Get full details for a specific captured request by ID.",
-    { requestId: z.string().describe("The request ID") },
+    getRequestShape,
     withErrorHandling(async ({ requestId }) => {
       const request = await client.requests.get(requestId);
       return jsonContent(compactRequest(request));
@@ -1060,15 +1083,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
   server.tool(
     "wait_for_request",
     "Wait for a request to arrive at an endpoint.",
-    {
-      endpointSlug: z.string().describe("The endpoint slug to monitor"),
-      timeout: durationOrTimestampSchema
-        .default("30s")
-        .describe('How long to wait, for example "30s"'),
-      pollInterval: durationOrTimestampSchema
-        .optional()
-        .describe('Interval between polls, for example "500ms" or "1s"'),
-    },
+    waitForRequestShape,
     withErrorHandling(async ({ endpointSlug, timeout, pollInterval }) => {
       const request = await client.requests.waitFor(endpointSlug, { timeout, pollInterval });
       return jsonContent(compactRequest(request));
@@ -1712,142 +1727,6 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
     withErrorHandling(async () => {
       const description = client.describe();
       return jsonContent(description);
-    })
-  );
-
-  registerAgentRegistrationTools(server);
-}
-
-/**
- * Resolve the webhooks.cc app base URL the SAME way the client/server does, so
- * the unauthenticated registration tools hit the right deployment. The
- * registration on-ramp is unauthenticated by design (an agent uses it BEFORE it
- * has a key), so these tools never touch the authenticated client.
- */
-function resolveBaseUrl(): string {
-  return process.env.WHK_BASE_URL ?? "https://webhooks.cc";
-}
-
-/**
- * Agent self-registration tools (auth.md). These are UNAUTHENTICATED — they let
- * an agent that does NOT yet have a webhooks.cc credential obtain one, then
- * configure the MCP server with the returned key (WHK_API_KEY). Registered on
- * every server so a probing agent can always discover the on-ramp via
- * `describe` / `how_to_register`.
- */
-export function registerAgentRegistrationTools(server: McpServer): void {
-  const baseUrl = resolveBaseUrl();
-
-  server.tool(
-    "how_to_register",
-    "Explain how an agent self-registers for a webhooks.cc API credential (auth.md). Call this FIRST when you have no API key. Returns the three registration flows and the auth.md documentation URL. No authentication required.",
-    {},
-    withErrorHandling(async () => {
-      return jsonContent({
-        ...WebhooksCC.describeRegistration(baseUrl),
-        next_steps: [
-          "Easiest: call register_agent (anonymous) to get a key immediately, then ask a human to open the returned claimUrl while signed in to webhooks.cc and enter the userCode. Poll check_claim until it says claimed.",
-          "Or set WHK_API_KEY to an existing whcc_ key and use the authenticated tools.",
-        ],
-      });
-    })
-  );
-
-  server.tool(
-    "register_agent",
-    "Self-register for a webhooks.cc API credential via the anonymous auth.md flow. Returns a whcc_ API key, plus a short userCode and claimUrl a human uses to bind the key to their account. Until a human claims it, the key only works with the sandbox API (/api/agent/sandbox/endpoints), not with these tools, and it is deleted about 15 minutes after registration. No authentication required.",
-    {
-      clientName: z
-        .string()
-        .optional()
-        .describe("A human-readable name for this agent, recorded on the issued key"),
-    },
-    withErrorHandling(async ({ clientName }) => {
-      const reg = await WebhooksCC.register.anonymous({ baseUrl, clientName });
-      return jsonContent({
-        credential: reg.credential,
-        scopes: reg.scopes,
-        claim: {
-          userCode: reg.userCode,
-          claimUrl: reg.claimUrl,
-          claimToken: reg.claimToken,
-          expiresAt: reg.claimTokenExpires,
-          instructions: `Ask a human to open ${reg.claimUrl} while logged in to webhooks.cc and either enter the code ${reg.userCode} or open ${reg.claimUrl}?token=${reg.claimToken}. Then call check_claim with the claimToken.`,
-        },
-        usage:
-          "Until a human claims it, the key only works with the sandbox API at /api/agent/sandbox/endpoints (create temporary endpoints, read their requests), and it is deleted about 15 minutes after registration. Once check_claim says claimed, set WHK_API_KEY to `credential` and restart the MCP server to use the authenticated tools.",
-      });
-    })
-  );
-
-  server.tool(
-    "check_claim",
-    "Check whether an anonymous registration's API key has been claimed by a human yet. Poll this after register_agent until status is 'claimed'. No authentication required.",
-    {
-      claimToken: z.string().describe("The claimToken returned by register_agent"),
-    },
-    withErrorHandling(async ({ claimToken }) => {
-      const poll = await WebhooksCC.register.pollClaim(claimToken, { baseUrl });
-      return jsonContent(poll);
-    })
-  );
-
-  server.tool(
-    "register_agent_with_email",
-    "Self-register via the verified_email auth.md flow: webhooks.cc emails a one-time code to the address. The credential is WITHHELD until the code is confirmed with verify_agent_otp. Returns a claimToken to pass to verify_agent_otp. No authentication required.",
-    {
-      email: z
-        .string()
-        .email({ message: "Invalid email address" })
-        .describe("The email address to verify and bind the credential to"),
-      clientName: z
-        .string()
-        .optional()
-        .describe("A human-readable name for this agent, recorded on the issued key"),
-    },
-    withErrorHandling(async ({ email, clientName }) => {
-      const challenge = await WebhooksCC.register.withEmail(email, { baseUrl, clientName });
-      return jsonContent({
-        claimToken: challenge.claimToken,
-        expiresAt: challenge.claimTokenExpires,
-        postClaimScopes: challenge.postClaimScopes,
-        next_step: `A one-time code was emailed to ${email}. Ask the human for it, then call verify_agent_otp with this claimToken and the code.`,
-      });
-    })
-  );
-
-  server.tool(
-    "verify_agent_otp",
-    "Complete the verified_email flow: submit the emailed OTP with the claimToken from register_agent_with_email. On success returns the whcc_ API key (bound to the verified email). Set WHK_API_KEY to it. No authentication required.",
-    {
-      claimToken: z.string().describe("The claimToken returned by register_agent_with_email"),
-      otp: z.string().describe("The one-time code the human received by email"),
-    },
-    withErrorHandling(async ({ claimToken, otp }) => {
-      const issued = await WebhooksCC.register.confirmEmailOtp({ claimToken, otp }, { baseUrl });
-      return jsonContent({
-        credential: issued.credential,
-        scopes: issued.scopes,
-        usage: "Set WHK_API_KEY to `credential` to use the authenticated tools.",
-      });
-    })
-  );
-
-  server.tool(
-    "register_agent_with_idjag",
-    "Self-register via the identity_assertion (ID-JAG) auth.md flow: present a verified identity-assertion JWT (urn:ietf:params:oauth:token-type:id-jag) from a trusted provider. The credential is returned synchronously — no human claim step. No webhooks.cc authentication required, but only works if webhooks.cc trusts your provider.",
-    {
-      assertion: z
-        .string()
-        .describe("The ID-JAG assertion JWT (typ oauth-id-jag+jwt) from a trusted provider"),
-    },
-    withErrorHandling(async ({ assertion }) => {
-      const issued = await WebhooksCC.register.withIdJag(assertion, { baseUrl });
-      return jsonContent({
-        credential: issued.credential,
-        scopes: issued.scopes,
-        usage: "Set WHK_API_KEY to `credential` to use the authenticated tools.",
-      });
     })
   );
 }

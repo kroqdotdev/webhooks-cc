@@ -2,7 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebhooksCC } from "@webhooks-cc/sdk";
 import { registerPrompts } from "./prompts";
 import { registerResources } from "./resources";
-import { registerTools, registerAgentRegistrationTools } from "./tools";
+import { registerSandboxTools } from "./sandbox-tools";
+import { registerTools } from "./tools";
 
 declare const PKG_VERSION: string | undefined;
 
@@ -32,25 +33,25 @@ export interface CreateServerOptions {
 export function createServer(options: CreateServerOptions = {}): McpServer {
   const apiKey = options.apiKey ?? process.env.WHK_API_KEY;
 
-  const server = new McpServer({
-    name: "webhooks-cc",
-    version: VERSION,
-  });
+  const webhookUrl = options.webhookUrl ?? process.env.WHK_WEBHOOK_URL;
+  const baseUrl = options.baseUrl ?? process.env.WHK_BASE_URL;
 
-  // No API key yet: boot a minimal server exposing ONLY the unauthenticated
-  // agent self-registration on-ramp (auth.md). This lets an agent learn how to
-  // register and obtain a credential, instead of failing to start. Once it has
-  // a key (WHK_API_KEY), the full tool surface is registered below.
+  const server = new McpServer(
+    { name: "webhooks-cc", version: VERSION },
+    // Connecting an account swaps every tool at once: one list_changed, not dozens.
+    { debouncedNotificationMethods: ["notifications/tools/list_changed"] }
+  );
+
+  // No API key: the agent sandbox (auth.md v0.6). The endpoint and request
+  // tools work without an account, and connect_account / wait_for_connection
+  // swap in the full tools once a human connects the agent to their account.
   if (!apiKey) {
-    registerAgentRegistrationTools(server);
+    registerSandboxTools(server, { baseUrl, webhookUrl });
+    registerPrompts(server);
     return server;
   }
 
-  const client = new WebhooksCC({
-    apiKey,
-    webhookUrl: options.webhookUrl ?? process.env.WHK_WEBHOOK_URL,
-    baseUrl: options.baseUrl ?? process.env.WHK_BASE_URL,
-  });
+  const client = new WebhooksCC({ apiKey, webhookUrl, baseUrl });
 
   registerTools(server, client);
   registerPrompts(server);
@@ -59,6 +60,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   return server;
 }
 
-export { registerTools, registerAgentRegistrationTools } from "./tools";
+export { registerTools } from "./tools";
+export { registerSandboxTools, registerAgentRegistrationTools } from "./sandbox-tools";
+export type { SandboxToolOptions } from "./sandbox-tools";
 export { registerPrompts } from "./prompts";
 export { registerResources } from "./resources";
