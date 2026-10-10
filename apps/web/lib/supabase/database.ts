@@ -337,6 +337,14 @@ export interface Database {
           forward_enabled: boolean;
           forward_url: string | null;
           forward_secret_encrypted: string | null;
+          // Forwarding beyond email (migration 00058).
+          forward_http: boolean;
+          forward_email: boolean;
+          forward_format: "as_received" | "json" | "chat" | null;
+          forward_headers_encrypted: string | null;
+          forward_append_path: boolean;
+          forward_retry_seconds: number;
+          forward_keep_order: boolean;
           // Agent sandbox endpoints (migration 00055); never set with user_id.
           agent_registration_id: string | null;
         };
@@ -359,6 +367,13 @@ export interface Database {
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
+          forward_http?: boolean;
+          forward_email?: boolean;
+          forward_format?: "as_received" | "json" | "chat" | null;
+          forward_headers_encrypted?: string | null;
+          forward_append_path?: boolean;
+          forward_retry_seconds?: number;
+          forward_keep_order?: boolean;
           agent_registration_id?: string | null;
         };
         Update: {
@@ -380,6 +395,13 @@ export interface Database {
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
+          forward_http?: boolean;
+          forward_email?: boolean;
+          forward_format?: "as_received" | "json" | "chat" | null;
+          forward_headers_encrypted?: string | null;
+          forward_append_path?: boolean;
+          forward_retry_seconds?: number;
+          forward_keep_order?: boolean;
           agent_registration_id?: string | null;
         };
         Relationships: [];
@@ -395,6 +417,7 @@ export interface Database {
           headers: Json;
           body: string | null;
           body_raw: string | null;
+          query_raw: string | null;
           query_params: Json;
           content_type: string | null;
           ip: string;
@@ -417,6 +440,7 @@ export interface Database {
           headers?: Json;
           body?: string | null;
           body_raw?: string | null;
+          query_raw?: string | null;
           query_params?: Json;
           content_type?: string | null;
           ip: string;
@@ -439,6 +463,7 @@ export interface Database {
           headers?: Json;
           body?: string | null;
           body_raw?: string | null;
+          query_raw?: string | null;
           query_params?: Json;
           content_type?: string | null;
           ip?: string;
@@ -707,6 +732,7 @@ export interface Database {
           request_id: string;
           endpoint_id: string;
           status: "pending" | "succeeded" | "failed";
+          kind: "http" | "email";
           attempts: number;
           next_attempt_at: string;
           locked_until: string | null;
@@ -720,6 +746,7 @@ export interface Database {
           request_id: string;
           endpoint_id: string;
           status?: "pending" | "succeeded" | "failed";
+          kind?: "http" | "email";
           attempts?: number;
           next_attempt_at?: string;
           locked_until?: string | null;
@@ -822,9 +849,17 @@ export interface Database {
           request_id: string;
           endpoint_id: string;
           attempt: number;
+          kind: "http" | "email";
+          /** When the delivery was queued; retries stop after the endpoint's window. */
+          queued_at: string;
           forward_url: string | null;
           /** base64 of the AES-GCM ciphertext (see lib/crypto.ts). */
           forward_secret_encrypted: string | null;
+          forward_format: "as_received" | "json" | "chat" | null;
+          /** base64 of the AES-GCM ciphertext of the owner's headers. */
+          forward_headers_encrypted: string | null;
+          forward_append_path: boolean;
+          forward_retry_seconds: number;
           show_email_extracts: boolean;
           endpoint_slug: string;
           endpoint_name: string | null;
@@ -832,6 +867,15 @@ export interface Database {
       };
       queue_email_redelivery: {
         Args: { p_request_id: string; p_endpoint_id: string };
+        Returns: string | null;
+      };
+      queue_capture_delivery: {
+        Args: {
+          p_request_id: string;
+          p_endpoint_id: string;
+          p_kind: "http" | "email";
+          p_max_pending?: number;
+        };
         Returns: string | null;
       };
       record_email_delivery_attempt: {

@@ -6,7 +6,7 @@ import { listDeliveriesForRequest, queueRedelivery } from "@/lib/supabase/forwar
 import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 
-/** Every forwarded copy of one email, with its attempts. Anyone who can read the email. */
+/** Every forwarded copy of one captured request, with its attempts. Anyone who can read it. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -22,7 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-/** Forwards the email again, with the endpoint's current settings. Owner only. */
+/** Forwards the request (HTTP or email) again, with the endpoint's current settings. Owner only. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -35,27 +35,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   try {
     const captured = await getRequestByIdForUser(auth.userId, id);
-    if (!captured || captured.kind !== "email") {
-      return reply({ error: "Email not found" }, 404);
-    }
+    if (!captured) return reply({ error: "Request not found" }, 404);
     const { data: endpoint, error } = await createAdminClient()
       .from("endpoints")
-      .select("slug, forward_enabled")
+      .select("slug, forward_enabled, forward_http, forward_email")
       .eq("id", captured.endpointId)
       .maybeSingle();
     if (error) throw error;
     const access = endpoint ? await resolveEndpointAccess(auth.userId, endpoint.slug) : null;
-    if (!endpoint || !access?.isOwner) return reply({ error: "Email not found" }, 404);
-    if (!endpoint.forward_enabled) {
-      return reply({ error: "Turn forwarding on for this endpoint first." }, 409);
-    }
+    if (!endpoint || !access?.isOwner) return reply({ error: "Request not found" }, 404);
+    const kindOn = captured.kind === "email" ? endpoint.forward_email : endpoint.forward_http;
+    const off =
+      captured.kind === "email"
+        ? "Turn on forwarding of emails for this endpoint first."
+        : "Turn on forwarding of HTTP requests for this endpoint first.";
+    if (!endpoint.forward_enabled || !kindOn) return reply({ error: off }, 409);
 
     const deliveryId = await queueRedelivery(captured.id, captured.endpointId);
-    if (!deliveryId) {
-      return reply({ error: "Turn forwarding on for this endpoint first." }, 409);
-    }
+    if (!deliveryId) return reply({ error: off }, 409);
     await auditUserAction(request, auth.userId, {
-      action: "email.redelivery_queued",
+      action: captured.kind === "email" ? "email.redelivery_queued" : "request.redelivery_queued",
       status: 200,
       targetId: endpoint.slug,
       metadata: { requestId: captured.id },

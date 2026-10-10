@@ -26,6 +26,7 @@ export type AuditAction =
   | "endpoint.claimed"
   | "endpoint.forward_secret_rotated"
   | "email.redelivery_queued"
+  | "request.redelivery_queued"
   | "team.created"
   | "team.renamed"
   | "team.deleted"

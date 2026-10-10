@@ -14,7 +14,8 @@ export function generateForwardSecret(): string {
   return `whsec_${randomBytes(24).toString("base64")}`;
 }
 
-function secretKey(secret: string): Buffer {
+/** The HMAC key of a forwarding secret ("whsec_" and base64, or bare base64). */
+export function secretKey(secret: string): Buffer {
   return Buffer.from(secret.startsWith("whsec_") ? secret.slice(6) : secret, "base64");
 }
 

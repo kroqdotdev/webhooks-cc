@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { isDelivered, sendForward } from "./send";
+import { isDelivered, jsonForward, sendForward } from "./send";
 
 let server: Server;
 let base: string;
@@ -44,7 +44,7 @@ const headers = { "content-type": "application/json", "webhook-id": "msg_1" };
 
 describe("sendForward, direct", () => {
   it("posts the body with its headers and keeps the response start", async () => {
-    const result = await sendForward(`${base}/ok`, headers, '{"a":1}', local);
+    const result = await sendForward(jsonForward(`${base}/ok`, headers, '{"a":1}'), local);
     expect(result).toMatchObject({ status: 200, excerpt: '{"received":true}', error: null });
     expect(isDelivered(result)).toBe(true);
     expect(lastRequest?.body).toBe('{"a":1}');
@@ -52,25 +52,28 @@ describe("sendForward, direct", () => {
   });
 
   it("does not follow redirects, which do not count as delivered", async () => {
-    const result = await sendForward(`${base}/redirect`, headers, "{}", local);
+    const result = await sendForward(jsonForward(`${base}/redirect`, headers, "{}"), local);
     expect(result.status).toBe(302);
     expect(isDelivered(result)).toBe(false);
   });
 
   it("keeps only the first 1 KB of a response", async () => {
-    const result = await sendForward(`${base}/big`, headers, "{}", local);
+    const result = await sendForward(jsonForward(`${base}/big`, headers, "{}"), local);
     expect(result.status).toBe(500);
     expect(result.excerpt!.length).toBeLessThanOrEqual(1024 + 16 * 1024);
     expect(result.excerpt!.length).toBeGreaterThanOrEqual(1024);
   });
 
   it("gives up after the timeout", async () => {
-    const result = await sendForward(`${base}/hang`, headers, "{}", { ...local, timeoutMs: 300 });
+    const result = await sendForward(jsonForward(`${base}/hang`, headers, "{}"), {
+      ...local,
+      timeoutMs: 300,
+    });
     expect(result).toMatchObject({ status: null, error: "No answer within 1 s." });
   });
 
   it("refuses local addresses unless allowed", async () => {
-    const result = await sendForward(`${base}/ok`, headers, "{}", {
+    const result = await sendForward(jsonForward(`${base}/ok`, headers, "{}"), {
       ...local,
       allowPrivate: false,
     });
@@ -79,7 +82,7 @@ describe("sendForward, direct", () => {
   });
 
   it("reports a refused connection", async () => {
-    const result = await sendForward("http://127.0.0.1:1/x", headers, "{}", local);
+    const result = await sendForward(jsonForward("http://127.0.0.1:1/x", headers, "{}"), local);
     expect(result).toMatchObject({ status: null, error: "The connection was refused." });
   });
 });
@@ -87,7 +90,7 @@ describe("sendForward, direct", () => {
 describe("sendForward, through the proxy", () => {
   it("fails rather than sending directly when the proxy has no secret", async () => {
     const before = lastRequest;
-    const result = await sendForward(`${base}/ok`, headers, "{}", {
+    const result = await sendForward(jsonForward(`${base}/ok`, headers, "{}"), {
       ...local,
       proxy: { url: `${base}/proxy`, secret: "" },
     });
@@ -96,7 +99,7 @@ describe("sendForward, through the proxy", () => {
   });
 
   it("reads the destination's status and body start from the proxy's answer", async () => {
-    const result = await sendForward("https://api.example.com/hook", headers, "{}", {
+    const result = await sendForward(jsonForward("https://api.example.com/hook", headers, "{}"), {
       ...local,
       proxy: { url: `${base}/proxy`, secret: "s" },
     });

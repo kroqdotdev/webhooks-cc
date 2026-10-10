@@ -1,11 +1,13 @@
 import { decryptSigningSecret, encryptSigningSecret } from "@/lib/crypto";
+import { decryptOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { generateForwardSecret } from "@/lib/forwarding/sign";
 import { createAdminClient } from "./admin";
 
 /**
- * Email forwarding data for the routes: the endpoint's secret, the queue
- * (email_deliveries, migration 00050) and its attempts. The worker claims
- * and records deliveries through its own RPCs (lib/forwarding/worker.ts).
+ * Forwarding data for the routes: the endpoint's secret and headers, the
+ * queue (email_deliveries, migrations 00050 and 00058, which holds both kinds)
+ * and its attempts. The worker claims and records deliveries through its own
+ * RPCs (lib/forwarding/worker.ts).
  */
 
 export interface DeliveryAttempt {
@@ -19,6 +21,7 @@ export interface DeliveryAttempt {
 export interface Delivery {
   id: string;
   requestId: string;
+  kind: "http" | "email";
   status: "pending" | "succeeded" | "failed";
   attempts: number;
   createdAt: number;
@@ -33,17 +36,28 @@ export interface Delivery {
 export interface RecentDelivery {
   id: string;
   requestId: string;
+  kind: Delivery["kind"];
   status: Delivery["status"];
   attempts: number;
   createdAt: number;
+  /** When it was delivered or given up, null while pending. */
+  finishedAt: number | null;
   lastStatus: number | null;
   lastError: string | null;
+  /** The destination's time on the latest try. */
+  lastDurationMs: number | null;
+  /** What was forwarded: an email's subject, an HTTP request's method and path. */
   subject: string | null;
+  method: string | null;
+  path: string | null;
+  /** When webhooks.cc received the request. */
+  receivedAt: number | null;
 }
 
 interface DeliveryRow {
   id: string;
   request_id: string;
+  kind: Delivery["kind"];
   status: Delivery["status"];
   attempts: number;
   created_at: string;
@@ -116,7 +130,7 @@ export async function listDeliveriesForRequest(requestId: string): Promise<Deliv
   const { data, error } = await admin
     .from("email_deliveries")
     .select(
-      "id, request_id, status, attempts, created_at, finished_at, next_attempt_at, last_status, last_error"
+      "id, request_id, kind, status, attempts, created_at, finished_at, next_attempt_at, last_status, last_error"
     )
     .eq("request_id", requestId)
     .order("created_at", { ascending: false })
@@ -140,6 +154,7 @@ export async function listDeliveriesForRequest(requestId: string): Promise<Deliv
   return rows.map((row) => ({
     id: row.id,
     requestId: row.request_id,
+    kind: row.kind ?? "email",
     status: row.status,
     attempts: row.attempts,
     createdAt: millis(row.created_at) ?? 0,
@@ -164,37 +179,95 @@ export async function listRecentDeliveries(
   endpointId: string,
   limit = 5
 ): Promise<RecentDelivery[]> {
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("email_deliveries")
     .select(
-      "id, request_id, status, attempts, created_at, last_status, last_error, requests(subject:email->>subject)"
+      "id, request_id, kind, status, attempts, created_at, finished_at, last_status, last_error, requests(subject:email->>subject, method, path, received_at)"
     )
     .eq("endpoint_id", endpointId)
     .order("created_at", { ascending: false })
-    .limit(Math.min(Math.max(limit, 1), 20));
+    .limit(Math.min(Math.max(limit, 1), 50));
   if (error) throw error;
-  return (data ?? []).map((row) => {
-    const request = row.requests as unknown as { subject: string | null } | null;
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: attempts, error: attemptsError } = await admin
+    .from("email_delivery_attempts")
+    .select("delivery_id, attempted_at, duration_ms")
+    .in(
+      "delivery_id",
+      rows.map((row) => row.id)
+    )
+    .order("attempted_at", { ascending: false })
+    .limit(500);
+  if (attemptsError) throw attemptsError;
+  const lastDuration = new Map<string, number>();
+  for (const attempt of attempts ?? []) {
+    if (!lastDuration.has(attempt.delivery_id)) {
+      lastDuration.set(attempt.delivery_id, attempt.duration_ms);
+    }
+  }
+
+  return rows.map((row) => {
+    const request = row.requests as unknown as {
+      subject: string | null;
+      method: string | null;
+      path: string | null;
+      received_at: string | null;
+    } | null;
     return {
       id: row.id,
       requestId: row.request_id,
+      kind: (row.kind as RecentDelivery["kind"]) ?? "email",
       status: row.status,
       attempts: row.attempts,
       createdAt: millis(row.created_at) ?? 0,
+      finishedAt: millis(row.finished_at),
       lastStatus: row.last_status,
       lastError: row.last_error,
+      lastDurationMs: lastDuration.get(row.id) ?? null,
       subject: request?.subject ?? null,
+      method: request?.method ?? null,
+      path: request?.path ?? null,
+      receivedAt: millis(request?.received_at ?? null),
     };
   });
 }
 
+/** The owner's forwarding headers in plain text, for a test delivery. */
+export async function getForwardOwnerHeaders(
+  userId: string,
+  slug: string
+): Promise<[string, string][]> {
+  const { data, error } = await createAdminClient()
+    .from("endpoints")
+    .select("forward_headers_encrypted")
+    .eq("user_id", userId)
+    .eq("slug", slug.toLowerCase())
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.forward_headers_encrypted) return [];
+  return decryptOwnerHeaders(
+    Buffer.from(data.forward_headers_encrypted.replace(/^\\x/, ""), "hex")
+  );
+}
+
 /** The newest email the endpoint captured, for a test delivery. */
 export async function getNewestEmailRequestId(endpointId: string): Promise<string | null> {
+  return getNewestRequestId(endpointId, "email");
+}
+
+/** The newest request of one kind the endpoint captured, for a test delivery. */
+export async function getNewestRequestId(
+  endpointId: string,
+  kind: "http" | "email"
+): Promise<string | null> {
   const { data, error } = await createAdminClient()
     .from("requests")
     .select("id")
     .eq("endpoint_id", endpointId)
-    .eq("kind", "email")
+    .eq("kind", kind)
     .order("received_at", { ascending: false })
     .limit(1)
     .maybeSingle();

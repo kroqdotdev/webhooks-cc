@@ -1,14 +1,19 @@
 import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
+import type { Outgoing } from "./relay";
 import { checkForwardUrl, resolveForwardTarget } from "./target";
 
 /**
- * Sends one forwarded email. Through the notify proxy (a Cloudflare Worker,
+ * Sends one delivery. Through the notify proxy (a Cloudflare Worker,
  * infra/notify-proxy) when one is configured, so the box's IP stays hidden,
  * as notifications do; otherwise directly, with the connection pinned to
  * addresses checked by target.ts. Redirects are never followed: only a 2xx
  * from the URL itself counts as delivered.
+ *
+ * A JSON forward (signed JSON, chat) uses the proxy's forward mode; a relay
+ * (an HTTP request as received) its relay mode, which takes the method,
+ * headers and base64 body as JSON.
  */
 
 export interface SendResult {
@@ -64,9 +69,7 @@ function describeError(error: unknown, timeoutMs: number): string {
 }
 
 async function viaProxy(
-  target: string,
-  headers: Record<string, string>,
-  body: string,
+  outgoing: Outgoing,
   options: SendOptions & { proxy: { url: string; secret: string } }
 ): Promise<Omit<SendResult, "durationMs">> {
   if (!options.proxy.secret) {
@@ -76,16 +79,29 @@ async function viaProxy(
       error: "Forwarding is not configured on this server (NOTIFY_SECRET is missing).",
     };
   }
+  const proxyHeaders: Record<string, string> = {
+    "x-target-url": outgoing.url,
+    "x-auth": options.proxy.secret,
+    "x-proxy-mode": outgoing.mode,
+  };
+  let body: string | null;
+  if (outgoing.mode === "relay") {
+    // The Worker sends this method, these headers and these bytes as they are.
+    proxyHeaders["content-type"] = "application/json";
+    body = JSON.stringify({
+      method: outgoing.method,
+      headers: outgoing.headers,
+      body: outgoing.body ? outgoing.body.toString("base64") : null,
+    });
+  } else {
+    // The Worker passes the content type and webhook headers through.
+    for (const [name, value] of outgoing.headers) proxyHeaders[name] = value;
+    // Forward mode carries JSON (signed JSON, chat), which is text.
+    body = outgoing.body ? outgoing.body.toString("utf8") : null;
+  }
   const response = await fetch(options.proxy.url, {
     method: "POST",
-    headers: {
-      ...headers,
-      "x-target-url": target,
-      "x-auth": options.proxy.secret,
-      // The Worker passes the webhook headers through and answers with the
-      // destination's status and body start as JSON.
-      "x-proxy-mode": "forward",
-    },
+    headers: proxyHeaders,
     body,
     redirect: "manual",
     signal: AbortSignal.timeout(options.timeoutMs + 5000),
@@ -102,11 +118,14 @@ async function viaProxy(
   try {
     result = JSON.parse(text);
   } catch {
-    // An older proxy without the forward mode answers plain text.
+    // An older proxy without this mode answers plain text.
     return {
       status: null,
       excerpt: null,
-      error: "The forwarding proxy does not support forwarding yet.",
+      error:
+        outgoing.mode === "relay"
+          ? "The forwarding proxy does not support forwarding requests as received yet."
+          : "The forwarding proxy does not support forwarding yet.",
     };
   }
   if (result.error) return { status: null, excerpt: null, error: result.error.slice(0, 300) };
@@ -114,12 +133,10 @@ async function viaProxy(
 }
 
 async function direct(
-  target: string,
-  headers: Record<string, string>,
-  body: string,
+  outgoing: Outgoing,
   options: SendOptions
 ): Promise<Omit<SendResult, "durationMs">> {
-  const check = checkForwardUrl(target, { allowPrivate: options.allowPrivate });
+  const check = checkForwardUrl(outgoing.url, { allowPrivate: options.allowPrivate });
   if (!check.ok) return { status: null, excerpt: null, error: check.reason };
   const addresses = await resolveForwardTarget(check.url, { allowPrivate: options.allowPrivate });
 
@@ -131,11 +148,24 @@ async function direct(
   const client = check.url.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
+    // An object, not raw pairs, so Node still sets Host; a repeated name
+    // becomes a list.
+    const headers: Record<string, string | string[]> = {};
+    for (const [name, value] of outgoing.headers) {
+      const existing = headers[name];
+      headers[name] =
+        existing === undefined
+          ? value
+          : Array.isArray(existing)
+            ? [...existing, value]
+            : [existing, value];
+    }
+    if (outgoing.body) headers["content-length"] = String(outgoing.body.byteLength);
     const request = client.request(
       check.url,
       {
-        method: "POST",
-        headers: { ...headers, "content-length": String(Buffer.byteLength(body)) },
+        method: outgoing.method,
+        headers,
         lookup: pinned,
       },
       (response) => {
@@ -170,22 +200,28 @@ async function direct(
       clearTimeout(timer);
       reject(error);
     });
-    request.end(body);
+    request.end(outgoing.body ?? undefined);
   });
 }
 
-export async function sendForward(
-  target: string,
-  headers: Record<string, string>,
-  body: string,
-  options: SendOptions
-): Promise<SendResult> {
+/** A signed JSON or chat delivery: a POST with these headers and this body. */
+export function jsonForward(url: string, headers: Record<string, string>, body: string): Outgoing {
+  return {
+    method: "POST",
+    url,
+    headers: Object.entries(headers),
+    body: Buffer.from(body, "utf8"),
+    mode: "forward",
+  };
+}
+
+export async function sendForward(outgoing: Outgoing, options: SendOptions): Promise<SendResult> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   try {
     const result = options.proxy
-      ? await viaProxy(target, headers, body, { ...options, proxy: options.proxy })
-      : await direct(target, headers, body, options);
+      ? await viaProxy(outgoing, { ...options, proxy: options.proxy })
+      : await direct(outgoing, options);
     return { ...result, durationMs: elapsed() };
   } catch (error) {
     return {

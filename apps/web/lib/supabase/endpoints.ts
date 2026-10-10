@@ -1,4 +1,9 @@
 import { customAlphabet } from "nanoid";
+import {
+  decryptOwnerHeaders,
+  encryptOwnerHeaders,
+  maskOwnerHeaders,
+} from "@/lib/forwarding/owner-headers";
 import { createAdminClient } from "./admin";
 import { serverEnv } from "../env";
 import type { Database, Json } from "./database";
@@ -30,11 +35,18 @@ type SelectedEndpointRow = Pick<
   forward_enabled?: boolean;
   forward_url?: string | null;
   forward_secret_encrypted?: string | null;
+  forward_http?: boolean;
+  forward_email?: boolean;
+  forward_format?: "as_received" | "json" | "chat" | null;
+  forward_headers_encrypted?: string | null;
+  forward_append_path?: boolean;
+  forward_retry_seconds?: number;
+  forward_keep_order?: boolean;
 };
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, forward_enabled, forward_url, forward_secret_encrypted";
+  "id, user_id, slug, name, mock_response, response_rules, notification_url, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, forward_enabled, forward_url, forward_secret_encrypted, forward_http, forward_email, forward_format, forward_headers_encrypted, forward_append_path, forward_retry_seconds, forward_keep_order";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -67,12 +79,34 @@ export interface EndpointRecord {
   emailAddress?: string | null;
   /** Show the codes and links found in captured emails in the dashboard. */
   showEmailExtracts: boolean;
-  /** Forward every captured email to forwardUrl as signed JSON (lib/forwarding). */
+  /** Forwarding is on: the kinds below go to forwardUrl (lib/forwarding). */
   forwardEnabled: boolean;
   /** Owner-only, like notificationUrl. */
   forwardUrl: string | null;
   /** Whether a forwarding secret exists (never the secret itself). */
   hasForwardSecret: boolean;
+  /** Which captured requests are forwarded. */
+  forwardHttp: boolean;
+  forwardEmail: boolean;
+  /** "auto" picks from the URL: chat for Slack and Discord, else as received (HTTP) and signed JSON (email). */
+  forwardFormat: ForwardFormatSetting;
+  /** Append the path after the slug to forwardUrl (HTTP requests). */
+  forwardAppendPath: boolean;
+  /** Stop retrying after: 0 (one try), 3600 or 86400 seconds. */
+  forwardRetrySeconds: number;
+  /** One delivery at a time, in capture order. */
+  forwardKeepOrder: boolean;
+  /** The owner's headers: names and masked values (owner-only). */
+  forwardHeaders: { name: string; value: string }[];
+}
+
+export type ForwardFormatSetting = "auto" | "as_received" | "chat";
+export const FORWARD_RETRY_CHOICES = [0, 3600, 86400] as const;
+
+/** One header the owner submits; a null value keeps the stored value of that name. */
+export interface ForwardHeaderInput {
+  name: string;
+  value: string | null;
 }
 
 /** Thrown when a temporary endpoint cannot be created because the guest pool is full. */
@@ -108,6 +142,14 @@ interface UpdateEndpointInput {
   forwardEnabled?: boolean;
   /** Validated by the route (lib/forwarding/target.ts). */
   forwardUrl?: string | null;
+  forwardHttp?: boolean;
+  forwardEmail?: boolean;
+  forwardFormat?: ForwardFormatSetting;
+  forwardAppendPath?: boolean;
+  forwardRetrySeconds?: number;
+  forwardKeepOrder?: boolean;
+  /** The whole set; validated by the route (lib/forwarding/owner-headers.ts). */
+  forwardHeaders?: ForwardHeaderInput[];
 }
 
 /** Endpoints without an owner get no email: guest captures are readable by anyone with the slug. */
@@ -178,7 +220,38 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     forwardEnabled: row.forward_enabled ?? false,
     forwardUrl: row.forward_url ?? null,
     hasForwardSecret: !!row.forward_secret_encrypted,
+    forwardHttp: row.forward_http ?? false,
+    forwardEmail: row.forward_email ?? true,
+    forwardFormat:
+      row.forward_format === "as_received" || row.forward_format === "json"
+        ? "as_received"
+        : row.forward_format === "chat"
+          ? "chat"
+          : "auto",
+    forwardAppendPath: row.forward_append_path ?? true,
+    forwardRetrySeconds: row.forward_retry_seconds ?? 86400,
+    forwardKeepOrder: row.forward_keep_order ?? false,
+    forwardHeaders: maskedForwardHeaders(row.forward_headers_encrypted),
   };
+}
+
+/** The owner's headers as the dashboard shows them; never the values. */
+function maskedForwardHeaders(
+  encrypted: string | null | undefined
+): { name: string; value: string }[] {
+  if (!encrypted) return [];
+  try {
+    return maskOwnerHeaders(decryptOwnerHeaders(byteaToBuffer(encrypted)));
+  } catch {
+    return [];
+  }
+}
+
+/** PostgREST returns bytea as "\\x..." hex text. */
+function byteaToBuffer(value: string): Buffer {
+  return value.startsWith("\\x")
+    ? Buffer.from(value.slice(2), "hex")
+    : Buffer.from(value, "base64");
 }
 
 async function generateUniqueSlug(): Promise<string> {
@@ -402,6 +475,13 @@ export async function updateEndpointBySlugForUser({
   showEmailExtracts,
   forwardEnabled,
   forwardUrl,
+  forwardHttp,
+  forwardEmail,
+  forwardFormat,
+  forwardAppendPath,
+  forwardRetrySeconds,
+  forwardKeepOrder,
+  forwardHeaders,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
@@ -509,6 +589,39 @@ export async function updateEndpointBySlugForUser({
   }
   if (forwardUrl !== undefined) {
     updates.forward_url = forwardUrl;
+  }
+  if (forwardHttp !== undefined) updates.forward_http = forwardHttp;
+  if (forwardEmail !== undefined) updates.forward_email = forwardEmail;
+  if (forwardFormat !== undefined) {
+    updates.forward_format = forwardFormat === "auto" ? null : forwardFormat;
+  }
+  if (forwardAppendPath !== undefined) updates.forward_append_path = forwardAppendPath;
+  if (forwardRetrySeconds !== undefined) updates.forward_retry_seconds = forwardRetrySeconds;
+  if (forwardKeepOrder !== undefined) updates.forward_keep_order = forwardKeepOrder;
+  if (forwardHeaders !== undefined) {
+    // Values the client left null keep what is stored under that name.
+    const { data, error } = await admin
+      .from("endpoints")
+      .select("forward_headers_encrypted")
+      .eq("user_id", userId)
+      .eq("slug", slug.toLowerCase())
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const stored = new Map(
+      (data.forward_headers_encrypted
+        ? decryptOwnerHeaders(byteaToBuffer(data.forward_headers_encrypted))
+        : []
+      ).map(([name, value]) => [name.toLowerCase(), value])
+    );
+    const next: [string, string][] = [];
+    for (const header of forwardHeaders) {
+      const value = header.value ?? stored.get(header.name.toLowerCase());
+      if (value === undefined) throw new Error(`Enter a value for ${header.name}.`);
+      next.push([header.name, value]);
+    }
+    const encrypted = encryptOwnerHeaders(next);
+    updates.forward_headers_encrypted = encrypted ? `\\x${encrypted.toString("hex")}` : null;
   }
   if (newForwardSecret) {
     const { encryptSigningSecret } = await import("@/lib/crypto");
