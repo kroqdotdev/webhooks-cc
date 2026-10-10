@@ -877,9 +877,6 @@ describe("agent identity (auth.md v0.6)", () => {
         metadata: { kind: "identity_assertion", source: "security_event", issuer: TEST_ISS },
       });
 
-      // The same SET again is acknowledged and changes nothing.
-      expect((await postSet(set)).status).toBe(202);
-
       // The account exists now, so the identity needs its human again.
       const again = await presentIdJag(await mintIdJag(sub, { email }));
       expect(again.status).toBe(401);
@@ -887,6 +884,16 @@ describe("agent identity (auth.md v0.6)", () => {
       created.add(againBody.registration_id);
       expect(againBody.error).toBe("interaction_required");
       expect(againBody.registration_id).not.toBe(body.registration_id);
+
+      // The same SET again is acknowledged without being processed again: the
+      // identity's new registration stays.
+      expect((await postSet(set)).status).toBe(202);
+      const { data: kept } = await admin
+        .from("agent_registrations")
+        .select("revoked_at")
+        .eq("id", againBody.registration_id)
+        .single();
+      expect(kept?.revoked_at).toBeNull();
     });
 
     it("ignores unknown events and refuses SETs it cannot trust", async () => {
