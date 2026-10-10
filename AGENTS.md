@@ -114,6 +114,7 @@ Env vars are validated with zod in `apps/web/lib/env.ts` and loaded in `apps/rec
 - Production is real and serves paying users. Do not deploy, restart production services, apply migrations to production, publish packages, or change Polar or Supabase instance configuration unless the task explicitly asks for it. Production runs on a separate host and deploys through the private operations repository; do not build or deploy from a development machine.
 - Ask before anything that costs money or sends real email: Polar checkouts, invites to real addresses, notification tests against third-party URLs.
 - Never source `.env.local` wholesale in shell scripts or paste secrets into logs, PR bodies, or commit messages. Extract single variables when needed.
+- The repository is public, and git history cannot practically be scrubbed: customer names, email addresses, endpoint slugs, team ids and billing details never go into code, tests, comments, commit messages, or PR and issue text. Describe a customer report generically ("a customer reported") and use neutral examples (Acme, made-up slugs).
 - New `public` functions are service-role only. Grant client EXECUTE in a migration only when the function is meant to be called from the browser.
 - Never add `revoke` or `grant` statements to `handle_new_user()`; it runs as `supabase_auth_admin` from an auth trigger.
 
