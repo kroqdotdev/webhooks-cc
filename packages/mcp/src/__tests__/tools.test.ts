@@ -1807,9 +1807,7 @@ describe("agent registration tools", () => {
     const result = await tools.how_to_register.handler({});
     const body = parseJsonResult(result as { content: Array<{ text: string }> });
     expect(body.protocol).toBe("auth.md");
-    expect(Object.keys(body.flows)).toEqual(
-      expect.arrayContaining(["anonymous", "verified_email", "identity_assertion"])
-    );
+    expect(Object.keys(body.flows)).toEqual(["anonymous", "service_auth", "identity_assertion"]);
     expect(Array.isArray(body.next_steps)).toBe(true);
   });
 

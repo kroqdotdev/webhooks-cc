@@ -878,14 +878,16 @@ export class WebhooksCC {
       version: SDK_VERSION,
       registration: {
         description:
-          "Agent self-registration (auth.md) for obtaining a credential before you have one. Use the STATIC WebhooksCC.register.* methods (no client instance needed). See WebhooksCC.describeRegistration() for the flows.",
+          "Webhook capture without an API key, for AI agents (auth.md v0.6). Use the STATIC WebhooksCC.sandbox() and WebhooksCC.agent.* methods (no client instance needed). See WebhooksCC.describeRegistration().",
         params: {
-          anonymous:
-            "WebhooksCC.register.anonymous(opts?) -> mint an unowned key + user_code for in-app claim",
-          verified_email:
-            "WebhooksCC.register.withEmail(email) then confirmEmailOtp({ claimToken, otp })",
-          identity_assertion: "WebhooksCC.register.withIdJag(assertion)",
-          pollClaim: "WebhooksCC.register.pollClaim(claimToken) / waitForClaim(claimToken)",
+          sandbox:
+            "WebhooksCC.sandbox(opts?) -> SandboxClient: endpoints.create/list/get/delete, requests.list/get/waitFor/waitForAll (3 endpoints, 25 requests each, 100 in all, 24 hours)",
+          claim:
+            "sandbox.claim({ email }) -> { verificationUri, userCode } to show a human; sandbox.waitForClaim() -> WebhooksCC for their account",
+          service_auth:
+            "WebhooksCC.agent.registerServiceAuth({ email }) -> a claim for that human; no sandbox",
+          steps:
+            "WebhooksCC.agent.discover/challenge/solveChallenge/registerAnonymous/exchange/startClaim/pollClaim/waitForClaim/revoke",
         },
       },
       endpoints: {

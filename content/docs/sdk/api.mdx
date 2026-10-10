@@ -3,7 +3,7 @@ title: "API Reference"
 description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -17,7 +17,9 @@ seo:
 import { WebhooksCC } from "@webhooks-cc/sdk";
 
 const client = new WebhooksCC({
-  apiKey: string,        // Required. Your API key.
+  apiKey: string,        // Your API key. Required unless getAccessToken is given.
+  getAccessToken?: (o?: { forceRefresh?: boolean }) => Promise<string>,
+                         // Optional. Supplies an expiring token instead (agents).
   baseUrl?: string,      // Optional. Override API base URL.
   webhookUrl?: string,   // Optional. Override webhook receiver URL.
   timeout?: number,      // Optional. Request timeout in ms (default: 30000).
@@ -797,6 +799,66 @@ const result = await client
   .cleanup()
   .run();
 ```
+
+</ApiMethod>
+
+## Sandbox and Agent Registration
+
+AI agents can use webhooks.cc without an API key. `WebhooksCC.sandbox()` registers through [auth.md](/auth.md), solves the proof-of-work challenge (about 3 seconds), and returns a sandbox client: up to 3 endpoints, 25 captured requests each and 100 in all, deleted 24 hours after registration. See [AI Agents](/docs/agents) for the limits and how a human connects an agent.
+
+<ApiMethod method="POST" path="/api/agent/identity" title="WebhooksCC.sandbox">
+
+```ts
+const sandbox = await WebhooksCC.sandbox({ clientName: "my-agent" });
+
+const endpoint = await sandbox.endpoints.create(); // endpoint.url captures webhooks
+const request = await sandbox.requests.waitFor(endpoint.slug, { timeout: "60s" });
+
+await sandbox.endpoints.list();
+await sandbox.requests.list(endpoint.slug, { limit: 10 });
+await sandbox.endpoints.delete(endpoint.slug); // frees a slot; the budget is not refunded
+```
+
+Sandbox endpoints only capture: no mock responses, notifications, signature verification, email or forwarding. Refusals throw `SandboxError` with the server's `code`: `sandbox_endpoint_limit` at 3 endpoints, `sandbox_full` when the shared sandbox is full. The access token renews itself.
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/api/agent/identity/claim" title="sandbox.claim / sandbox.waitForClaim">
+
+Connects the agent to a human's account. Show them the link and the code together; only someone signed in with that email can complete it.
+
+```ts
+const { verificationUri, userCode } = await sandbox.claim({ email: "dev@example.com" });
+console.log(`Open ${verificationUri}, sign in, and enter ${userCode}`);
+
+const client = await sandbox.waitForClaim(); // a WebhooksCC acting for that account
+const endpoints = await client.endpoints.list(); // includes the sandbox endpoints
+```
+
+`waitForClaim()` rejects with `AgentAuthError` `expired_token` when the 15-minute code runs out (call `claim()` again for a new one), or `access_denied` when the human declines. After the claim the sandbox client stops working; the returned client renews its token from the claimed assertion for 90 days.
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="(protocol)" title="WebhooksCC.agent">
+
+The protocol steps one by one, for callers who drive auth.md themselves:
+
+```ts
+WebhooksCC.agent.discover({ baseUrl? })
+WebhooksCC.agent.challenge()                      // a proof-of-work challenge
+WebhooksCC.agent.solveChallenge(challenge, { signal? })
+WebhooksCC.agent.registerAnonymous({ clientName? })   // challenge + solve + register
+WebhooksCC.agent.registerServiceAuth({ email, clientName? }) // no sandbox; a human must connect it
+WebhooksCC.agent.exchange({ assertion })          // one-hour access token
+WebhooksCC.agent.startClaim({ claimToken, email? })
+WebhooksCC.agent.pollClaim({ claimToken })
+WebhooksCC.agent.waitForClaim({ claimToken, timeout? })
+WebhooksCC.agent.revoke({ token })
+```
+
+The solver refuses challenges above 2^26 hashes, yields to the event loop about every 50 ms, and works in Node and browsers.
+
+`WebhooksCC.register.*` (auth.md 0.1) is deprecated: anonymous and ID-JAG registration throw `AgentRegisterError` with code `endpoint_moved`, and the email flow stops working on November 30, 2026.
 
 </ApiMethod>
 

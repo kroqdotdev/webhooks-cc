@@ -138,20 +138,18 @@ describe("agent registration on-ramp", () => {
     const desc = WebhooksCC.describeRegistration(BASE_URL);
     expect(desc.protocol).toBe("auth.md");
     expect(desc.documentation).toBe(`${BASE_URL}/auth.md`);
-    expect(Object.keys(desc.flows)).toEqual(
-      expect.arrayContaining(["anonymous", "verified_email", "identity_assertion"])
-    );
+    expect(Object.keys(desc.flows)).toEqual(["anonymous", "service_auth", "identity_assertion"]);
   });
 
   it("describeRegistration is also a standalone export", () => {
     const d = describeRegistration(BASE_URL);
-    expect(d.flows.anonymous.method).toContain("/api/agent/auth");
+    expect(d.flows.anonymous.method).toBe(`POST ${BASE_URL}/api/agent/identity`);
   });
 
   it("instance describe() includes the registration on-ramp block", () => {
     const client = new WebhooksCC({ apiKey: "whcc_test", baseUrl: BASE_URL });
     const described = client.describe();
     expect(described.registration).toBeDefined();
-    expect(described.registration?.params.anonymous).toContain("anonymous");
+    expect(described.registration?.params.sandbox).toContain("WebhooksCC.sandbox(");
   });
 });
