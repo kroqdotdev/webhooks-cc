@@ -195,6 +195,8 @@ describe("auth.md v0.1 routes", () => {
       jsonPost("/api/agent/auth", { type: "verified_email", email: "someone@mailhooks.cc" })
     );
     expect(res.status).toBe(400);
+    // Refusals carry the deprecation headers too.
+    expect(res.headers.get("sunset")).toBe("Mon, 30 Nov 2026 00:00:00 GMT");
     expect((await res.json()).error).toBe("invalid_email");
   });
 });

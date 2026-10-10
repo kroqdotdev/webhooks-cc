@@ -249,7 +249,19 @@ lists the endpoints below.
 - **anonymous**: you have neither. Gives you the sandbox right away; a
   claim is optional.
 - **service_auth**: you have only your user's email. Nothing works until
-  they complete the claim ceremony; no proof of work and no sandbox.
+  they complete the claim ceremony; no proof of work and no sandbox:
+
+  \`\`\`http
+  POST ${u.identity}
+  Content-Type: application/json
+
+  { "type": "service_auth", "login_hint": "user@example.com", "client_name": "my-agent" }
+  \`\`\`
+
+  The response carries \`registration_id\`, \`claim_url\`, \`claim_token\`,
+  \`claim_token_expires\`, \`post_claim_scopes\` and the first claim attempt as
+  \`claim: { user_code, expires_in, verification_uri, interval }\`. Continue
+  at Step 4b.
 - **identity_assertion** (ID-JAG): ${
     options.idJagEnabled
       ? "accepted from the issuers this deployment trusts."
@@ -457,14 +469,16 @@ Response (200):
 { "access_token": "whcc_...", "token_type": "Bearer", "expires_in": ${ACCESS_TOKEN_TTL_SECONDS}, "scope": "${PRE_CLAIM_SCOPES.join(" ")}" }
 \`\`\`
 
-The same assertion mints new tokens until it expires. \`invalid_grant\` means
+A claimed assertion (Step 4c) gets \`"scope": "${POST_CLAIM_SCOPES.join(" ")}"\`
+instead. The same assertion mints new tokens until it expires. \`invalid_grant\` means
 the registration expired or was revoked: register again (Step 3). There is
 no refresh token.
 
-## Step 6: Use the access token (the sandbox)
+## Step 6: Use the access token
 
-Send \`Authorization: Bearer whcc_...\`. An unclaimed registration's token
-works only on the sandbox:
+Send \`Authorization: Bearer whcc_...\`. A claimed agent's token works on the
+whole API at \`${u.resource}\` (except account settings such as API keys and
+billing). An unclaimed registration's token works only on the sandbox:
 
 | Call | Result |
 | --- | --- |

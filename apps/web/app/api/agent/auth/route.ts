@@ -59,6 +59,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_request" }, { status: 400 });
   }
 
+  // Every verified_email answer, errors included, says it is deprecated.
+  return deprecated(await verifiedEmail(request, body, flowType));
+}
+
+async function verifiedEmail(
+  request: Request,
+  body: Record<string, unknown>,
+  flowType: string | undefined
+): Promise<Response> {
   const rateLimit = await checkRateLimitWithInfo(
     request,
     "agent-register",
@@ -110,21 +119,19 @@ export async function POST(request: Request) {
         client_name: optionalClientName(body) ?? null,
       },
     });
-    return deprecated(
-      applyRateLimitHeaders(
-        Response.json(
-          {
-            registration_id: claim.registration_id,
-            registration_type: claim.registration_type,
-            claim_url: claim.claim_url,
-            claim_token: claim.claim_token,
-            claim_token_expires: claim.claim_token_expires,
-            post_claim_scopes: claim.post_claim_scopes,
-          },
-          { status: 200 }
-        ),
-        rateLimit
-      )
+    return applyRateLimitHeaders(
+      Response.json(
+        {
+          registration_id: claim.registration_id,
+          registration_type: claim.registration_type,
+          claim_url: claim.claim_url,
+          claim_token: claim.claim_token,
+          claim_token_expires: claim.claim_token_expires,
+          post_claim_scopes: claim.post_claim_scopes,
+        },
+        { status: 200 }
+      ),
+      rateLimit
     );
   } catch (err) {
     // Capacity/throttle limits surface as their own status + auth.md code.
