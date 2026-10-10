@@ -58,7 +58,7 @@ Get your API key at [webhooks.cc/account](https://webhooks.cc/account).
 
 ## What it exposes
 
-The server exposes `44` tools, `3` prompts, and `3` resource surfaces.
+The server exposes `38` tools, `3` prompts, and `3` resource surfaces with an API key, and `10` sandbox tools without one.
 
 ### Endpoint tools
 
@@ -127,16 +127,14 @@ Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) a
 - `get_usage` (personal plan plus each subscribed team's pool)
 - `describe`
 
-### Agent registration tools
+### Without an API key: the agent sandbox
 
-Registered on every server, with or without an API key, so an agent that has no credential yet can obtain one (auth.md):
+Started without `WHK_API_KEY`, the server registers sandbox tools instead ([auth.md](https://webhooks.cc/auth.md)):
 
-- `how_to_register`
-- `register_agent`
-- `check_claim`
-- `register_agent_with_email`
-- `verify_agent_otp`
-- `register_agent_with_idjag`
+- `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`: the same names and arguments as the full tools, in a sandbox of up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers it (a few seconds of proof of work).
+- `connect_account`: returns a link and a 6-digit code for a human to connect the agent to their account.
+- `wait_for_connection`: waits for the human, then replaces the sandbox tools with the full tools for that account (`notifications/tools/list_changed`).
+- `about_sandbox`: the limits and how to connect, without a network call.
 
 ## Prompts
 

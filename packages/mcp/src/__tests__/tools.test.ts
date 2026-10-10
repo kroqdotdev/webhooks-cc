@@ -13,7 +13,7 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools, registerAgentRegistrationTools } from "../tools";
+import { registerTools } from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -54,12 +54,6 @@ const EXPECTED_TOOLS = [
   "test_forwarding",
   "list_deliveries",
   "redeliver_email",
-  "how_to_register",
-  "register_agent",
-  "check_claim",
-  "register_agent_with_email",
-  "verify_agent_otp",
-  "register_agent_with_idjag",
 ];
 
 type RegisteredTool = {
@@ -223,7 +217,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(44);
+    expect(Object.keys(tools)).toHaveLength(38);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1096,22 +1090,6 @@ describe("registerTools", () => {
   });
 });
 
-function getRegistrationTools(): Record<string, RegisteredTool> {
-  const server = new McpServer({ name: "test", version: "0.0.0" });
-  const toolSpy = vi.spyOn(server, "tool");
-  registerAgentRegistrationTools(server);
-  return Object.fromEntries(
-    toolSpy.mock.calls.map((call) => [
-      call[0] as string,
-      {
-        description: call[1] as string,
-        schema: call[2],
-        handler: call[3] as RegisteredTool["handler"],
-      },
-    ])
-  );
-}
-
 function makeEmail(id: string, overrides: Partial<EmailCapture> = {}): EmailRequest {
   const email: EmailCapture = {
     subject: "Confirm your email",
@@ -1722,142 +1700,14 @@ describe("email and forwarding tools", () => {
   });
 });
 
-describe("agent registration tools", () => {
-  it("registers the unauthenticated on-ramp tools", () => {
-    const tools = getRegistrationTools();
-    expect(Object.keys(tools).sort()).toEqual(
-      [
-        "check_claim",
-        "how_to_register",
-        "register_agent",
-        "register_agent_with_email",
-        "verify_agent_otp",
-        "register_agent_with_idjag",
-      ].sort()
-    );
-  });
-
-  it("register_agent_with_email begins the verified_email flow via the static SDK helper", async () => {
-    const spy = vi.spyOn(WebhooksCC.register, "withEmail").mockResolvedValue({
-      registrationId: "reg-email",
-      claimToken: "clm_email",
-      claimUrl: "https://webhooks.cc/agent/claim",
-      claimTokenExpires: "2026-01-01T00:00:00Z",
-      postClaimScopes: ["webhooks:read"],
-    });
-    try {
-      const tools = getRegistrationTools();
-      const result = await tools.register_agent_with_email.handler({
-        email: "dev@example.com",
-        clientName: "agent",
-      });
-      const body = parseJsonResult(result as { content: Array<{ text: string }> });
-      expect(body.claimToken).toBe("clm_email");
-      expect(spy).toHaveBeenCalledWith(
-        "dev@example.com",
-        expect.objectContaining({ clientName: "agent" })
-      );
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("verify_agent_otp completes the verified_email flow via the static SDK helper", async () => {
-    const spy = vi.spyOn(WebhooksCC.register, "confirmEmailOtp").mockResolvedValue({
-      credential: "whcc_email",
-      credentialType: "api_key",
-      scopes: ["webhooks:read"],
-    });
-    try {
-      const tools = getRegistrationTools();
-      const result = await tools.verify_agent_otp.handler({
-        claimToken: "clm_email",
-        otp: "123456",
-      });
-      const body = parseJsonResult(result as { content: Array<{ text: string }> });
-      expect(body.credential).toBe("whcc_email");
-      expect(spy).toHaveBeenCalledWith(
-        { claimToken: "clm_email", otp: "123456" },
-        expect.anything()
-      );
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("register_agent_with_idjag drives the identity_assertion flow via the static SDK helper", async () => {
-    const spy = vi.spyOn(WebhooksCC.register, "withIdJag").mockResolvedValue({
-      credential: "whcc_idjag",
-      credentialType: "api_key",
-      scopes: ["webhooks:read"],
-    });
-    try {
-      const tools = getRegistrationTools();
-      const result = await tools.register_agent_with_idjag.handler({ assertion: "ey.jwt.sig" });
-      const body = parseJsonResult(result as { content: Array<{ text: string }> });
-      expect(body.credential).toBe("whcc_idjag");
-      expect(spy).toHaveBeenCalledWith("ey.jwt.sig", expect.anything());
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("how_to_register returns the auth.md discovery without a network call", async () => {
-    const tools = getRegistrationTools();
-    const result = await tools.how_to_register.handler({});
-    const body = parseJsonResult(result as { content: Array<{ text: string }> });
-    expect(body.protocol).toBe("auth.md");
-    expect(Object.keys(body.flows)).toEqual(["anonymous", "service_auth", "identity_assertion"]);
-    expect(Array.isArray(body.next_steps)).toBe(true);
-  });
-
-  it("register_agent drives the anonymous flow via the static SDK helper", async () => {
-    const spy = vi.spyOn(WebhooksCC.register, "anonymous").mockResolvedValue({
-      registrationId: "reg-1",
-      credential: "whcc_anon",
-      scopes: ["webhooks:read"],
-      claimUrl: "https://webhooks.cc/agent/claim",
-      claimToken: "clm_abc",
-      userCode: "ABCD-EFGH",
-      claimTokenExpires: "2026-01-01T00:00:00Z",
-      postClaimScopes: ["webhooks:read"],
-    });
-    try {
-      const tools = getRegistrationTools();
-      const result = await tools.register_agent.handler({ clientName: "agent" });
-      const body = parseJsonResult(result as { content: Array<{ text: string }> });
-      expect(body.credential).toBe("whcc_anon");
-      expect(body.claim.userCode).toBe("ABCD-EFGH");
-      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ clientName: "agent" }));
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("check_claim polls via the static SDK helper", async () => {
-    const spy = vi.spyOn(WebhooksCC.register, "pollClaim").mockResolvedValue({ status: "claimed" });
-    try {
-      const tools = getRegistrationTools();
-      const result = await tools.check_claim.handler({ claimToken: "clm_abc" });
-      const body = parseJsonResult(result as { content: Array<{ text: string }> });
-      expect(body.status).toBe("claimed");
-      expect(spy).toHaveBeenCalled();
-    } finally {
-      spy.mockRestore();
-    }
-  });
-});
-
 describe("createServer", () => {
-  it("boots a keyless on-ramp server without an API key (registration tools only)", async () => {
+  it("boots the sandbox tools without an API key", async () => {
     const { createServer } = await import("../index");
     const saved = process.env.WHK_API_KEY;
     delete process.env.WHK_API_KEY;
     try {
-      // Previously this threw; now it boots a minimal server exposing the
-      // unauthenticated auth.md registration on-ramp so an agent can obtain a key.
+      // The tools it lists are pinned in sandbox-tools.test.ts.
       const server = createServer();
-      expect(server).toBeDefined();
       expect(server.server).toBeDefined();
     } finally {
       if (saved) process.env.WHK_API_KEY = saved;

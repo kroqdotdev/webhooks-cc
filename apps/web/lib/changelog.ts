@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.37.2";
+export const APP_VERSION = "0.37.3";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.13.0";
-export const MCP_VERSION = "1.10.1";
+export const MCP_VERSION = "1.11.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.37.3",
+    date: "2026-10-10",
+    title: "MCP Sandbox Docs",
+    track: "web",
+    items: [
+      "The MCP docs describe the sandbox tools a server gets without an API key, and how an agent connects to your account from there",
+    ],
+  },
   {
     version: "0.37.2",
     date: "2026-10-10",
@@ -1603,6 +1612,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.11.0",
+    date: "2026-10-10",
+    title: "Agent Sandbox Without an API Key",
+    track: "mcp",
+    items: [
+      "Without `WHK_API_KEY` the server works at once: `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request` and `wait_for_request` run in the agent sandbox (3 endpoints, 25 requests each and 100 in all, for 24 hours), registered on first use through auth.md v0.6",
+      "`connect_account` gives the agent a link and a 6-digit code for you; after you enter it, `wait_for_connection` swaps in the full tools for your account, sandbox endpoints included",
+      "`about_sandbox` explains the limits and the connection without a network call",
+      "The auth.md v0.1 registration tools (`how_to_register`, `register_agent`, `check_claim`, `register_agent_with_email`, `verify_agent_otp`, `register_agent_with_idjag`) are gone: the server answers the anonymous and ID-JAG ones with 410 since the move to auth.md v0.6, and its emailed-code flow stops on November 30, 2026; `connect_account` replaces it",
+    ],
+  },
   {
     version: "1.10.1",
     date: "2026-10-09",
