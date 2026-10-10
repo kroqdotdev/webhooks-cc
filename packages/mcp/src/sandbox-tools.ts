@@ -87,10 +87,21 @@ class AgentSession {
     readonly clientName: string
   ) {}
 
-  /** The sandbox, registered on first use and again after it expired. */
+  /**
+   * The sandbox, registered on first use and again after it expired. Tool
+   * calls can run in parallel: this.sandbox is read again after every await,
+   * and a new sandbox is assigned with no await in between, so parallel
+   * calls share one registration.
+   */
   async sandboxClient(): Promise<SandboxClient> {
-    const existing = await this.existingSandbox();
-    if (existing) return existing;
+    while (this.sandbox) {
+      const pending = this.sandbox;
+      const existing = await this.existingSandbox();
+      if (existing) return existing;
+      // That one failed or expired. Another call may have started the next
+      // one meanwhile, which the loop then waits for.
+      if (this.sandbox === pending) this.sandbox = null;
+    }
     const created = WebhooksCC.sandbox({
       baseUrl: this.baseUrl,
       webhookUrl: this.webhookUrl,
@@ -111,6 +122,7 @@ class AgentSession {
     try {
       sandbox = await pending;
     } catch {
+      if (this.sandbox === pending) this.sandbox = null;
       return null;
     }
     if (sandbox.expiresAt.getTime() <= Date.now()) {

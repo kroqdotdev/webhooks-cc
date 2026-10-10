@@ -136,6 +136,44 @@ describe("sandbox tools (no API key)", () => {
     expect((await call("delete_endpoint", { slug: "sbx1" })).body).toEqual({ deleted: "sbx1" });
   });
 
+  it("parallel first calls share one sandbox", async () => {
+    const sandbox = fakeSandbox();
+    const spy = vi
+      .spyOn(WebhooksCC, "sandbox")
+      .mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve(sandbox as unknown as SandboxClient), 20)
+          )
+      );
+    const { call } = await connect();
+    const created = await Promise.all([
+      call("create_endpoint"),
+      call("create_endpoint"),
+      call("create_endpoint"),
+    ]);
+    expect(created.every((result) => !result.isError)).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(sandbox.endpoints.create).toHaveBeenCalledTimes(3);
+  });
+
+  it("replaces an expired sandbox once, however many calls notice", async () => {
+    const expired = { ...fakeSandbox(), expiresAt: new Date(Date.now() - 1000) };
+    const fresh = fakeSandbox();
+    const spy = vi
+      .spyOn(WebhooksCC, "sandbox")
+      .mockResolvedValueOnce(expired as unknown as SandboxClient)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => setTimeout(() => resolve(fresh as unknown as SandboxClient), 20))
+      );
+    const { call } = await connect();
+    await call("create_endpoint");
+    await Promise.all([call("create_endpoint"), call("create_endpoint")]);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(fresh.endpoints.create).toHaveBeenCalledTimes(2);
+  });
+
   it("refuses what needs an account", async () => {
     vi.spyOn(WebhooksCC, "sandbox").mockResolvedValue(fakeSandbox() as unknown as SandboxClient);
     const { call } = await connect();
