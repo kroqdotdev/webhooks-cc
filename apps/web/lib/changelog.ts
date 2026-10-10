@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.36.0";
+export const APP_VERSION = "0.36.1";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.36.1",
+    date: "2026-10-10",
+    title: "Notifications That Slack and Discord Can Show",
+    track: "web",
+    items: [
+      "Notification webhooks now carry a ready-made message (`text` for Slack, `content` for Discord), so Slack incoming webhooks post them instead of rejecting them, and plain Discord webhook URLs work without the /slack suffix",
+      "Text from the incoming request is escaped for Slack, long paths are shortened, and Discord notifications cannot ping @everyone",
+      "Emails are announced as emails, and a notification URL that answers with an error is now recorded on our side",
+      "The notification docs no longer claim Slack shows the raw JSON, and explain Microsoft Teams after the retirement of Office 365 connectors",
+    ],
+  },
   {
     version: "0.36.0",
     date: "2026-10-10",

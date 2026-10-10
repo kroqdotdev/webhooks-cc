@@ -1,20 +1,20 @@
 ---
 title: "Notification Webhooks"
-description: "Get notified the moment a webhook arrives. POST a JSON summary to Slack, Discord, Microsoft Teams, or any custom webhook-compatible service — no polling required."
+description: "Get notified the moment a webhook arrives. The receiver POSTs a JSON summary with a ready-made message to Slack, Discord, or any service that accepts JSON, with no polling."
 section: dashboard
 order: 7
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-10
 schema: none
 keywords:
   ["webhook notification", "slack webhook", "discord webhook", "webhook alerts", "notification URL"]
 seo:
   ogTitle: "Webhook Notifications Guide"
-  ogDescription: "Get notified the moment a webhook arrives. POST a JSON summary to Slack, Discord, Microsoft Teams, or any custom webhook-compatible service — no polling required."
+  ogDescription: "Get notified the moment a webhook arrives. The receiver POSTs a JSON summary with a ready-made message to Slack, Discord, or any service that accepts JSON."
 ---
 
-Get alerted the instant a webhook arrives — no need to watch the dashboard.
+Get alerted the instant a webhook arrives, without watching the dashboard.
 
-Add a notification URL to any endpoint and the receiver will POST a JSON summary after each captured request. Works with Slack incoming webhooks, Discord webhooks, Microsoft Teams connectors, or any service that accepts HTTP POST with a JSON body.
+Add a notification URL to any endpoint and the receiver POSTs a JSON summary after each captured request. The summary carries a ready-made message, so Slack incoming webhooks and Discord webhooks show it as they are. Any other service that accepts an HTTP POST with a JSON body can read the fields.
 
 ## Setup
 
@@ -22,7 +22,7 @@ Add a notification URL to any endpoint and the receiver will POST a JSON summary
 2. In the **Notifications** section, paste your notification URL
 3. Click **Save changes**
 
-That's it. The next webhook that hits your endpoint will trigger a notification.
+That's it. The next webhook that hits your endpoint triggers a notification.
 
 ## Payload format
 
@@ -35,30 +35,36 @@ The receiver sends a POST request with a JSON body:
   "path": "/webhooks/stripe",
   "ip": "203.0.113.42",
   "receivedAt": "2026-04-03T12:34:56.789Z",
-  "preview": "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_test..."
+  "preview": "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_test...",
+  "text": "New webhook on *my-endpoint* (`POST /webhooks/stripe`)\n```\n{\"type\":\"checkout.session.completed\",...\n```",
+  "content": "New webhook on *my-endpoint* (`POST /webhooks/stripe`)\n```\n{\"type\":\"checkout.session.completed\",...\n```"
 }
 ```
 
-| Field        | Type   | Description                                                     |
-| ------------ | ------ | --------------------------------------------------------------- |
-| `slug`       | string | Endpoint slug that received the webhook                         |
-| `method`     | string | HTTP method of the incoming request                             |
-| `path`       | string | Request path after the slug                                     |
-| `ip`         | string | Client IP address of the webhook sender                         |
-| `receivedAt` | string | ISO 8601 timestamp                                              |
-| `preview`    | string | First 200 characters of the request body (truncated with `...`) |
+| Field        | Type   | Description                                                                 |
+| ------------ | ------ | --------------------------------------------------------------------------- |
+| `slug`       | string | Endpoint slug that received the webhook                                     |
+| `method`     | string | HTTP method of the incoming request                                         |
+| `path`       | string | Request path after the slug                                                 |
+| `ip`         | string | Client IP address of the webhook sender                                     |
+| `receivedAt` | string | ISO 8601 timestamp                                                          |
+| `preview`    | string | First 200 characters of the request body (truncated with `...`)             |
+| `text`       | string | The message for Slack: `<`, `>` and `&` from the request are escaped        |
+| `content`    | string | The same message for Discord, unescaped and under Discord's 2,000 characters |
 
-For [captured emails](/docs/email-capture), `method` is `EMAIL`, `path` is the recipient address, and `preview` is the subject followed by the start of the text.
+In the message, paths longer than 100 characters are shortened; the `path` field keeps the whole path. When the URL is a Discord webhook, the body also sets `allowed_mentions` to `{ "parse": [] }`, so an `@everyone` in a webhook pings nobody.
+
+For [captured emails](/docs/email-capture), `method` is `EMAIL`, `path` is the recipient address, `preview` is the subject followed by the start of the text, and the message reads "New email to ...".
 
 ## Rate limiting
 
-Notifications are rate-limited to **one per second per endpoint**. If your endpoint receives a burst of webhooks, only the first notification fires — subsequent ones within the cooldown window are silently skipped. This prevents flooding your Slack channel during high-traffic periods.
+Notifications are rate-limited to **one per second per endpoint**. If your endpoint receives a burst of webhooks, only the first notification fires; later ones within the cooldown window are skipped. This keeps a burst from flooding your channel.
 
 ## Delivery behavior
 
-- **Fire-and-forget** — notifications don't block the webhook response. The sender gets their response immediately regardless of notification delivery.
-- **No retries** — if the notification URL is unreachable or returns an error, it's silently dropped. The captured request is unaffected.
-- **5-second timeout** — the receiver gives up after 5 seconds to avoid resource exhaustion.
+- **Fire-and-forget:** notifications don't block the webhook response. The sender gets their response immediately regardless of notification delivery.
+- **No retries:** if the notification URL is unreachable or answers with an error status, the notification is dropped. The captured request is unaffected.
+- **5-second timeout:** the receiver gives up after 5 seconds.
 
 ## Slack setup
 
@@ -67,14 +73,19 @@ Notifications are rate-limited to **one per second per endpoint**. If your endpo
 3. Choose a channel and copy the webhook URL
 4. Paste into your endpoint's notification URL field
 
-Slack will display the JSON payload as a code block. For richer formatting, route through a small serverless function that transforms the payload into [Slack Block Kit](https://api.slack.com/block-kit) format.
+Slack posts the `text` field: the endpoint, the method and path, and the start of the body in a code block. For richer formatting, route the JSON through a small serverless function that turns it into [Slack Block Kit](https://api.slack.com/block-kit) blocks.
 
 ## Discord setup
 
 1. In Discord, go to **Server Settings > Integrations > Webhooks**
 2. Click **New Webhook**, choose a channel, and copy the webhook URL
-3. Append `/slack` to the URL (Discord's Slack-compatible endpoint): `https://discord.com/api/webhooks/.../slack`
-4. Paste into your endpoint's notification URL field
+3. Paste it into your endpoint's notification URL field as it is
+
+Discord posts the `content` field and, for these URLs, pings nobody. Use the plain URL rather than Discord's Slack-compatible form (ending in `/slack`): that form posts `text` instead, and its handling of mentions is not documented.
+
+## Microsoft Teams
+
+Microsoft retired the Office 365 connectors in Teams in 2026. Their replacement, Teams Workflows webhooks, expects an [Adaptive Card](https://adaptivecards.microsoft.com/), not this JSON, so a Workflows URL does not post these notifications as they are. Create a Power Automate flow with the trigger **When a Teams webhook request is received** that reads `text` from the body and posts it to a channel, and use the flow's URL as the notification URL.
 
 ## SDK and MCP
 
@@ -91,7 +102,7 @@ const endpoint = await client.endpoints.create({
 
 // Update later
 await client.endpoints.update("my-endpoint", {
-  notificationUrl: "https://discord.com/api/webhooks/.../slack",
+  notificationUrl: "https://discord.com/api/webhooks/...",
 });
 
 // Clear it

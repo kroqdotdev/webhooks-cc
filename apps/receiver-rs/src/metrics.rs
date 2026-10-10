@@ -30,10 +30,15 @@ const CAPTURE_FAILED_TOTAL: &str = "webhooks_capture_failed_total";
 /// check or capture handled by the internal mail API (see `mail::handlers`).
 const MAIL_INGEST_TOTAL: &str = "webhooks_mail_ingest_total";
 
+/// `webhooks_notification_failed_total{reason}`: one increment per
+/// notification that did not reach its URL (see `spawn_notification`).
+const NOTIFICATION_FAILED_TOTAL: &str = "webhooks_notification_failed_total";
+
 struct CaptureInstruments {
     total: Counter<u64>,
     failed: Counter<u64>,
     mail: Counter<u64>,
+    notification_failed: Counter<u64>,
 }
 
 fn instruments() -> &'static CaptureInstruments {
@@ -52,6 +57,10 @@ fn instruments() -> &'static CaptureInstruments {
             mail: meter
                 .u64_counter(MAIL_INGEST_TOTAL)
                 .with_description("Mail recipient checks and captures by outcome")
+                .build(),
+            notification_failed: meter
+                .u64_counter(NOTIFICATION_FAILED_TOTAL)
+                .with_description("Notifications that did not reach their URL, by reason")
                 .build(),
         }
     })
@@ -83,6 +92,15 @@ pub fn mail_ingest(outcome: &'static str) {
         .add(1, &[KeyValue::new("outcome", outcome)]);
 }
 
+/// Record a notification that failed: `status` (the URL answered non-2xx),
+/// `send` (no answer), `target` (the URL was refused before sending),
+/// `client` or `timeout`.
+pub fn notification_failed(reason: &'static str) {
+    instruments()
+        .notification_failed
+        .add(1, &[KeyValue::new("reason", reason)]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,5 +115,6 @@ mod tests {
         capture_failed("permanent");
         mail_ingest("captured");
         mail_ingest("transient");
+        notification_failed("status");
     }
 }

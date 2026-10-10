@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 use super::capture_limiter::CaptureLimiter;
 use super::log_throttle::LogThrottle;
+use super::notification_payload::{NotificationFields, notification_payload};
 use super::rules::{self, RequestContext, ResponseRule};
 use crate::AppState; // ResponseRule needed for deserialization
 use crate::metrics;
@@ -502,24 +503,24 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
         let outer_timeout = std::time::Duration::from_secs(info.timeout_secs);
         let inner_timeout =
             std::time::Duration::from_secs(info.timeout_secs.saturating_sub(1).max(1));
+        let payload = notification_payload(&NotificationFields {
+            slug: &info.slug,
+            method: &info.method,
+            path: &info.path,
+            ip: &info.ip,
+            received_at: &info.received_at,
+            preview: &info.preview,
+            target_url: &info.url,
+        });
         let result = tokio::time::timeout(outer_timeout, async {
-            let payload = serde_json::json!({
-                "slug": info.slug,
-                "method": info.method,
-                "path": info.path,
-                "ip": info.ip,
-                "receivedAt": info.received_at,
-                "preview": info.preview,
-            });
-
             // Route through Cloudflare Worker proxy when configured,
             // otherwise deliver directly with SSRF-safe DNS pinning.
-            if let Some(ref proxy_url) = info.proxy_url {
+            let response = if let Some(ref proxy_url) = info.proxy_url {
                 let client = reqwest::Client::builder()
                     .timeout(inner_timeout)
                     .redirect(reqwest::redirect::Policy::none())
                     .build()
-                    .map_err(|_| "failed to build client")?;
+                    .map_err(|_| NotifyFailure::new("client"))?;
 
                 let mut req = client
                     .post(proxy_url)
@@ -533,18 +534,21 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
                     req = req.header("X-Sender-IP", &info.ip);
                 }
 
-                req.send().await.map_err(|_| "proxy POST failed")?;
+                req.send().await.map_err(send_failure)?
             } else {
                 // Direct delivery with SSRF protection
-                let target = resolve_notification_target(&info.url).await?;
-                validate_direct_notification_target(&target)?;
+                let target = resolve_notification_target(&info.url)
+                    .await
+                    .map_err(|_| NotifyFailure::new("target"))?;
+                validate_direct_notification_target(&target)
+                    .map_err(|_| NotifyFailure::new("target"))?;
 
                 let pinned_client = reqwest::Client::builder()
                     .timeout(inner_timeout)
                     .redirect(reqwest::redirect::Policy::none())
                     .resolve_to_addrs(&target.host, &target.addrs)
                     .build()
-                    .map_err(|_| "failed to build client")?;
+                    .map_err(|_| NotifyFailure::new("client"))?;
 
                 let mut req = pinned_client.post(&target.url).json(&payload);
 
@@ -552,23 +556,73 @@ pub(crate) fn spawn_notification(info: NotificationInfo) {
                     req = req.header("X-Sender-IP", &info.ip);
                 }
 
-                req.send().await.map_err(|_| "POST failed")?;
-            }
+                req.send().await.map_err(send_failure)?
+            };
 
-            Ok::<(), &'static str>(())
+            // Slack answers 400 no_text to a body it cannot show, and the
+            // proxy answers 502 when the target fails: both are failures.
+            let status = response.status();
+            if !status.is_success() {
+                return Err(NotifyFailure {
+                    reason: "status",
+                    status: Some(status.as_u16()),
+                });
+            }
+            Ok::<(), NotifyFailure>(())
         })
         .await;
 
-        match result {
-            Ok(Err(reason)) => {
-                tracing::debug!(slug = slug_ref, reason, "notification delivery failed");
+        let failure = match result {
+            Ok(Ok(())) => None,
+            Ok(Err(failure)) => Some(failure),
+            Err(_) => Some(NotifyFailure::new("timeout")),
+        };
+        if let Some(failure) = failure {
+            metrics::notification_failed(failure.reason);
+            if let Some(suppressed) =
+                notification_log_throttle().check(&slug_ref, std::time::Instant::now())
+            {
+                tracing::info!(
+                    slug = slug_ref,
+                    reason = failure.reason,
+                    status = failure.status,
+                    suppressed,
+                    "notification delivery failed"
+                );
             }
-            Err(_) => {
-                tracing::debug!(slug = slug_ref, "notification timed out");
-            }
-            Ok(Ok(())) => {}
         }
     });
+}
+
+/// Why a notification did not arrive, for the metric label and the log.
+struct NotifyFailure {
+    reason: &'static str,
+    status: Option<u16>,
+}
+
+impl NotifyFailure {
+    fn new(reason: &'static str) -> Self {
+        Self {
+            reason,
+            status: None,
+        }
+    }
+}
+
+/// The client's own timeout fires before the outer one, so it is a timeout.
+fn send_failure(error: reqwest::Error) -> NotifyFailure {
+    NotifyFailure::new(if error.is_timeout() {
+        "timeout"
+    } else {
+        "send"
+    })
+}
+
+/// One `notification delivery failed` line per slug per window: a broken
+/// notification URL fails on every capture, and the metric counts them all.
+fn notification_log_throttle() -> &'static LogThrottle {
+    static THROTTLE: OnceLock<LogThrottle> = OnceLock::new();
+    THROTTLE.get_or_init(|| LogThrottle::new(QUOTA_LOG_WINDOW, QUOTA_LOG_MAX_SLUGS))
 }
 
 /// Build an HTTP response from a mock_response configuration.
