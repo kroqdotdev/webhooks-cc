@@ -14,8 +14,13 @@
 //!   `allowed_mentions: { parse: [] }` so `@everyone` in a payload pings
 //!   nobody;
 //! - backticks in the method and path cannot close the inline code span,
-//!   and the preview cannot close its code block;
+//!   and the body cannot close its code block;
 //! - long paths are shortened.
+//!
+//! The message shows when the receiver took the capture (`Received ...`,
+//! UTC with milliseconds) and a longer excerpt of the body than `preview`:
+//! up to `NOTIFICATION_MESSAGE_LEN` characters for Slack, and for Discord as
+//! much as fits under its cap, cut inside the code block so it still closes.
 
 use serde_json::{Value, json};
 
@@ -25,6 +30,10 @@ const PATH_SHOWN_CHARS: usize = 100;
 const METHOD_SHOWN_CHARS: usize = 16;
 /// Discord rejects `content` over 2,000 characters; stay clear of it.
 const CONTENT_MAX_CHARS: usize = 1_900;
+/// The code block's fences and newlines around the body.
+const CODE_BLOCK_CHARS: usize = "\n```\n".len() + "\n```".len();
+/// Below this much room, a Discord message leaves the body out.
+const MIN_BODY_SHOWN_CHARS: usize = 20;
 
 /// What a notification says, borrowed from the capture.
 pub(crate) struct NotificationFields<'a> {
@@ -32,8 +41,12 @@ pub(crate) struct NotificationFields<'a> {
     pub method: &'a str,
     pub path: &'a str,
     pub ip: &'a str,
+    /// RFC 3339 in UTC, as the payload's `receivedAt` and the message show it.
     pub received_at: &'a str,
+    /// The documented `preview` field (the first 200 characters).
     pub preview: &'a str,
+    /// The longer excerpt of the body the message shows.
+    pub body: &'a str,
     /// The notification URL, to recognise Discord.
     pub target_url: &'a str,
 }
@@ -47,8 +60,8 @@ pub(crate) fn notification_payload(fields: &NotificationFields<'_>) -> Value {
         "ip": fields.ip,
         "receivedAt": fields.received_at,
         "preview": fields.preview,
-        "text": message(fields, slack_escape),
-        "content": shorten(&message(fields, |s| s.to_string()), CONTENT_MAX_CHARS),
+        "text": message(fields, slack_escape, usize::MAX),
+        "content": discord_content(fields),
     });
     if is_discord(fields.target_url) {
         payload["allowed_mentions"] = json!({ "parse": [] });
@@ -56,21 +69,41 @@ pub(crate) fn notification_payload(fields: &NotificationFields<'_>) -> Value {
     payload
 }
 
-/// The message, with `escape` applied to every part the sender controls.
-fn message(fields: &NotificationFields<'_>, escape: fn(&str) -> String) -> String {
+/// The message, with `escape` applied to every part the sender controls and
+/// the body cut to `body_max` characters.
+fn message(fields: &NotificationFields<'_>, escape: fn(&str) -> String, body_max: usize) -> String {
+    let mut text = headline(fields, escape);
+    if !fields.body.is_empty() && body_max >= MIN_BODY_SHOWN_CHARS {
+        let body = escape(&shorten(fields.body, body_max).replace("```", "'''"));
+        text.push_str(&format!("\n```\n{body}\n```"));
+    }
+    text
+}
+
+/// What arrived where, and when.
+fn headline(fields: &NotificationFields<'_>, escape: fn(&str) -> String) -> String {
     let slug = escape(&no_markup(fields.slug));
     let path = escape(&no_backticks(&shorten(fields.path, PATH_SHOWN_CHARS)));
-    let mut text = if fields.method == "EMAIL" {
+    let what = if fields.method == "EMAIL" {
         format!("New email to *{slug}* (`{path}`)")
     } else {
         let method = escape(&no_backticks(&shorten(fields.method, METHOD_SHOWN_CHARS)));
         format!("New webhook on *{slug}* (`{method} {path}`)")
     };
-    if !fields.preview.is_empty() {
-        let preview = escape(&fields.preview.replace("```", "'''"));
-        text.push_str(&format!("\n```\n{preview}\n```"));
-    }
-    text
+    format!("{what}\nReceived {} (UTC)", fields.received_at)
+}
+
+/// Discord's `content`: the body gets the room the headline leaves, so the
+/// code block closes; the final cut only matters for absurd paths.
+fn discord_content(fields: &NotificationFields<'_>) -> String {
+    let room = CONTENT_MAX_CHARS
+        .saturating_sub(headline(fields, as_is).chars().count() + CODE_BLOCK_CHARS);
+    shorten(&message(fields, as_is, room), CONTENT_MAX_CHARS)
+}
+
+/// Discord does not decode entities, so its text goes out unescaped.
+fn as_is(s: &str) -> String {
+    s.to_string()
 }
 
 /// Slack's three control characters, as its formatting docs ask.
@@ -127,12 +160,13 @@ mod tests {
         url: &'a str,
     ) -> NotificationFields<'a> {
         NotificationFields {
-            slug: "w2gp0nucu1",
+            slug: "demo4slug1",
             method,
             path,
             ip: "203.0.113.9",
-            received_at: "2026-10-10T08:00:00+00:00",
+            received_at: "2026-10-10T08:00:00.123Z",
             preview,
+            body: preview,
             target_url: url,
         }
     }
@@ -143,15 +177,15 @@ mod tests {
     #[test]
     fn keeps_the_six_fields_and_adds_text_and_content() {
         let payload = notification_payload(&fields("POST", "/stripe", "{\"id\":1}", SLACK));
-        assert_eq!(payload["slug"], "w2gp0nucu1");
+        assert_eq!(payload["slug"], "demo4slug1");
         assert_eq!(payload["method"], "POST");
         assert_eq!(payload["path"], "/stripe");
         assert_eq!(payload["ip"], "203.0.113.9");
-        assert_eq!(payload["receivedAt"], "2026-10-10T08:00:00+00:00");
+        assert_eq!(payload["receivedAt"], "2026-10-10T08:00:00.123Z");
         assert_eq!(payload["preview"], "{\"id\":1}");
         assert_eq!(
             payload["text"],
-            "New webhook on *w2gp0nucu1* (`POST /stripe`)\n```\n{\"id\":1}\n```"
+            "New webhook on *demo4slug1* (`POST /stripe`)\nReceived 2026-10-10T08:00:00.123Z (UTC)\n```\n{\"id\":1}\n```"
         );
         assert_eq!(payload["content"], payload["text"]);
         assert!(payload.get("allowed_mentions").is_none());
@@ -176,7 +210,7 @@ mod tests {
     fn backticks_cannot_break_out_of_the_code() {
         let payload = notification_payload(&fields("PO`ST", "/x`y", "a ``` b", SLACK));
         let text = payload["text"].as_str().unwrap();
-        assert!(text.starts_with("New webhook on *w2gp0nucu1* (`PO'ST /x'y`)"));
+        assert!(text.starts_with("New webhook on *demo4slug1* (`PO'ST /x'y`)\n"));
         assert!(text.contains("\n```\na ''' b\n```"));
         assert_eq!(text.matches("```").count(), 2);
     }
@@ -208,20 +242,52 @@ mod tests {
     fn announces_emails_as_emails() {
         let payload = notification_payload(&fields(
             "EMAIL",
-            "w2gp0nucu1@mailhooks.cc",
+            "demo4slug1@mailhooks.cc",
             "Your code\n123456",
             SLACK,
         ));
         assert_eq!(
             payload["text"],
-            "New email to *w2gp0nucu1* (`w2gp0nucu1@mailhooks.cc`)\n```\nYour code\n123456\n```"
+            "New email to *demo4slug1* (`demo4slug1@mailhooks.cc`)\nReceived 2026-10-10T08:00:00.123Z (UTC)\n```\nYour code\n123456\n```"
         );
     }
 
     #[test]
     fn omits_the_code_block_without_a_preview() {
         let payload = notification_payload(&fields("GET", "/", "", SLACK));
-        assert_eq!(payload["text"], "New webhook on *w2gp0nucu1* (`GET /`)");
+        assert_eq!(
+            payload["text"],
+            "New webhook on *demo4slug1* (`GET /`)\nReceived 2026-10-10T08:00:00.123Z (UTC)"
+        );
+    }
+
+    #[test]
+    fn shows_the_longer_body_and_keeps_preview_short() {
+        // An event payload longer than the 200-character preview.
+        let body = format!(
+            "{{\"Application\": \"Acme\", \"Pad\": \"{}\"}}",
+            "x".repeat(2_400)
+        );
+        let mut f = fields("POST", "/", &body[..200], SLACK);
+        f.body = &body;
+        let payload = notification_payload(&f);
+        assert_eq!(payload["preview"].as_str().unwrap().chars().count(), 200);
+        let text = payload["text"].as_str().unwrap();
+        assert!(text.contains(&body));
+        assert!(text.ends_with("\"}\n```"));
+    }
+
+    #[test]
+    fn discord_cuts_the_body_inside_a_closed_code_block() {
+        let body = "y".repeat(2_400);
+        let mut f = fields("POST", "/hooks", "", DISCORD);
+        f.body = &body;
+        let payload = notification_payload(&f);
+        let content = payload["content"].as_str().unwrap();
+        assert!(content.chars().count() <= 1_900);
+        assert!(content.contains("Received 2026-10-10T08:00:00.123Z (UTC)"));
+        assert!(content.ends_with("…\n```"));
+        assert_eq!(content.matches("```").count(), 2);
     }
 
     #[test]
@@ -252,7 +318,12 @@ mod tests {
         let mut f = fields("POST", "/", "", SLACK);
         f.slug = "a*b<c>";
         let payload = notification_payload(&f);
-        assert_eq!(payload["text"], "New webhook on *abc* (`POST /`)");
+        assert!(
+            payload["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("New webhook on *abc* (`POST /`)\n")
+        );
         assert_eq!(payload["slug"], "a*b<c>");
     }
 }

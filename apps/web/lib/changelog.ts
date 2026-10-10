@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.37.3";
+export const APP_VERSION = "0.37.4";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.13.0";
 export const MCP_VERSION = "1.11.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.37.4",
+    date: "2026-10-10",
+    title: "Notifications Show the Whole Payload and When It Arrived",
+    track: "web",
+    items: [
+      "Slack and Discord notifications show up to 3,000 characters of the body instead of the 200-character preview; Discord messages are cut inside the code block, so it always closes",
+      "Every notification message says when the request arrived (UTC, to the millisecond), and `receivedAt` in the JSON uses the same format, so you can measure how long a webhook took to reach webhooks.cc",
+    ],
+  },
   {
     version: "0.37.3",
     date: "2026-10-10",

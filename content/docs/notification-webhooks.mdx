@@ -36,8 +36,8 @@ The receiver sends a POST request with a JSON body:
   "ip": "203.0.113.42",
   "receivedAt": "2026-04-03T12:34:56.789Z",
   "preview": "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_test...",
-  "text": "New webhook on *my-endpoint* (`POST /webhooks/stripe`)\n```\n{\"type\":\"checkout.session.completed\",...\n```",
-  "content": "New webhook on *my-endpoint* (`POST /webhooks/stripe`)\n```\n{\"type\":\"checkout.session.completed\",...\n```"
+  "text": "New webhook on *my-endpoint* (`POST /webhooks/stripe`)\nReceived 2026-04-03T12:34:56.789Z (UTC)\n```\n{\"type\":\"checkout.session.completed\",...}\n```",
+  "content": "New webhook on *my-endpoint* (`POST /webhooks/stripe`)\nReceived 2026-04-03T12:34:56.789Z (UTC)\n```\n{\"type\":\"checkout.session.completed\",...}\n```"
 }
 ```
 
@@ -47,10 +47,12 @@ The receiver sends a POST request with a JSON body:
 | `method`     | string | HTTP method of the incoming request                                         |
 | `path`       | string | Request path after the slug                                                 |
 | `ip`         | string | Client IP address of the webhook sender                                     |
-| `receivedAt` | string | ISO 8601 timestamp                                                          |
+| `receivedAt` | string | When the receiver took the request, ISO 8601 in UTC with milliseconds       |
 | `preview`    | string | First 200 characters of the request body (truncated with `...`)             |
 | `text`       | string | The message for Slack: `<`, `>` and `&` from the request are escaped        |
 | `content`    | string | The same message for Discord, unescaped and under Discord's 2,000 characters |
+
+The message names the endpoint, the method and path, and when the request arrived (`Received ...`, the same UTC time as `receivedAt`), followed by the body: up to 3,000 characters in `text`, and as much as fits in `content`, cut inside the code block so it still closes. Use `receivedAt` to measure how long a webhook took to reach webhooks.cc: it is taken when the receiver handles the request, after our CDN edge.
 
 In the message, paths longer than 100 characters are shortened; the `path` field keeps the whole path. When the URL is a Discord webhook, the body also sets `allowed_mentions` to `{ "parse": [] }`, so an `@everyone` in a webhook pings nobody.
 

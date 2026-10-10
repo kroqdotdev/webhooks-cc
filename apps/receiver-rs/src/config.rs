@@ -23,6 +23,10 @@ pub struct Config {
     pub redis_url: Option<String>,
     pub max_body_size: usize,
     pub notification_cooldown_secs: u64,
+    /// Endpoint slugs and billing keys (`team:<id>`, `user:<id>`) whose
+    /// notifications skip the cooldown. An escape hatch for one customer's
+    /// burst tests, set in the environment and removed again afterwards.
+    pub notification_cooldown_exempt: Vec<String>,
     pub notification_timeout_secs: u64,
     /// AES-256-GCM key for decrypting signing secrets (base64-decoded, 32 bytes).
     /// Optional: when absent, signature verification is silently skipped.
@@ -73,6 +77,10 @@ impl std::fmt::Debug for Config {
             .field(
                 "notification_cooldown_secs",
                 &self.notification_cooldown_secs,
+            )
+            .field(
+                "notification_cooldown_exempt",
+                &self.notification_cooldown_exempt,
             )
             .field("notification_timeout_secs", &self.notification_timeout_secs)
             .field(
@@ -129,6 +137,8 @@ impl Config {
         let redis_url = env::var("REDIS_URL").ok().filter(|v| !v.is_empty());
         let max_body_size: usize = parse_env_or("RECEIVER_MAX_BODY_SIZE", 1_048_576).max(1024);
         let notification_cooldown_secs: u64 = parse_env_or("NOTIFICATION_COOLDOWN_SECS", 1).max(1);
+        let notification_cooldown_exempt =
+            parse_list(&env::var("NOTIFICATION_COOLDOWN_EXEMPT").unwrap_or_default());
         let capture_max_inflight_per_account: usize =
             parse_env_or("CAPTURE_MAX_INFLIGHT_PER_ACCOUNT", 4);
         let notification_timeout_secs: u64 = parse_env_or("NOTIFICATION_TIMEOUT_SECS", 5).max(2);
@@ -178,6 +188,7 @@ impl Config {
             redis_url,
             max_body_size,
             notification_cooldown_secs,
+            notification_cooldown_exempt,
             notification_timeout_secs,
             signing_secret_key,
             webhook_base_url,
@@ -209,6 +220,7 @@ impl Config {
             redis_url: None,
             max_body_size: 1_048_576,
             notification_cooldown_secs: 1,
+            notification_cooldown_exempt: Vec::new(),
             notification_timeout_secs: 5,
             signing_secret_key: None,
             webhook_base_url: None,
@@ -217,6 +229,23 @@ impl Config {
             mail_domains: vec!["mailhooks.cc".into()],
         }
     }
+}
+
+impl Config {
+    /// True when notifications for this endpoint skip the cooldown.
+    pub fn notification_cooldown_exempt(&self, slug: &str, billing_key: Option<&str>) -> bool {
+        self.notification_cooldown_exempt
+            .iter()
+            .any(|entry| entry == slug || Some(entry.as_str()) == billing_key)
+    }
+}
+
+/// Comma-separated list, trimmed, without empty entries.
+fn parse_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|entry| entry.trim().to_string())
+        .filter(|entry| !entry.is_empty())
+        .collect()
 }
 
 /// Comma-separated domain list, trimmed, lowercased, without trailing dots.
@@ -229,7 +258,22 @@ fn parse_mail_domains(raw: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_mail_domains;
+    use super::{Config, parse_list, parse_mail_domains};
+
+    #[test]
+    fn cooldown_exemptions_match_a_slug_or_a_billing_key() {
+        let mut config = Config::for_tests();
+        config.notification_cooldown_exempt = parse_list(" team:abc , demo4slug1,, ");
+        assert_eq!(
+            config.notification_cooldown_exempt,
+            vec!["team:abc", "demo4slug1"]
+        );
+        assert!(config.notification_cooldown_exempt("other", Some("team:abc")));
+        assert!(config.notification_cooldown_exempt("demo4slug1", None));
+        assert!(!config.notification_cooldown_exempt("other", Some("team:abd")));
+        assert!(!config.notification_cooldown_exempt("other", None));
+        assert!(!Config::for_tests().notification_cooldown_exempt("demo4slug1", Some("team:abc")));
+    }
 
     #[test]
     fn mail_domains_are_normalised() {
