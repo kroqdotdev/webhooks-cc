@@ -1,6 +1,6 @@
 {
   "name": "@webhooks-cc/sdk",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "TypeScript SDK for webhooks.cc \u2014 create endpoints, capture requests, assert in tests",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
