@@ -222,3 +222,22 @@ export type {
   RecentEmailDelivery,
 } from "./types";
 export type { WebhookFlowResult, WebhookFlowVerifyOptions } from "./flow";
+export {
+  AgentAuthError,
+  discover as discoverAgentAuth,
+  registerServiceAuth,
+  exchange as exchangeAgentAssertion,
+  startClaim as startAgentClaim,
+} from "./agent";
+export type {
+  AccessToken as AgentAccessToken,
+  AgentDiscovery,
+  AnonymousRegistration as AgentAnonymousRegistration,
+  ClaimAttempt as AgentClaimAttempt,
+  ClaimPoll as AgentClaimPoll,
+  ServiceAuthRegistration,
+} from "./agent";
+export { SandboxClient, SandboxError } from "./sandbox";
+export type { SandboxEndpoint, SandboxLimits, SandboxOptions } from "./sandbox";
+export { solveChallenge, PowError, MAX_POW_WORK_BITS } from "./pow";
+export type { PowChallenge, SolveOptions } from "./pow";

@@ -33,6 +33,25 @@ env:
   WHK_API_KEY: ${{ secrets.WHK_API_KEY }}
 ```
 
+## Without an API key (AI agents)
+
+An agent can capture webhooks before anyone signs up. `WebhooksCC.sandbox()` registers through [auth.md](https://webhooks.cc/auth.md), solves a short proof of work (about 3 seconds) and returns a sandbox: up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours.
+
+```ts
+import { WebhooksCC } from "@webhooks-cc/sdk";
+
+const sandbox = await WebhooksCC.sandbox({ clientName: "my-agent" });
+const endpoint = await sandbox.endpoints.create();
+const request = await sandbox.requests.waitFor(endpoint.slug, { timeout: "60s" });
+
+// Connect it to a human's account: they open the link, sign in and enter the code.
+const { verificationUri, userCode } = await sandbox.claim({ email: "dev@example.com" });
+console.log(`Open ${verificationUri}, sign in, and enter ${userCode}`);
+const client = await sandbox.waitForClaim(); // a WebhooksCC for that account
+```
+
+`WebhooksCC.agent.*` exposes the auth.md steps one by one. See [AI Agents](https://webhooks.cc/docs/agents).
+
 ## Quick start
 
 ```typescript

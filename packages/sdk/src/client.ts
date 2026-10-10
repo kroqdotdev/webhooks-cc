@@ -83,6 +83,9 @@ import {
   describeRegistration,
   type RegistrationDescription,
 } from "./register";
+import * as agentSteps from "./agent";
+import { solveChallenge } from "./pow";
+import { createSandbox, type SandboxClient, type SandboxOptions } from "./sandbox";
 
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
@@ -199,7 +202,7 @@ const SAFE_PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_-]+$/;
  * Validates that a URL path segment contains only safe characters.
  * Prevents path traversal attacks by rejecting "..", "/", and special characters.
  */
-function validatePathSegment(segment: string, name: string): void {
+export function validatePathSegment(segment: string, name: string): void {
   if (!SAFE_PATH_SEGMENT_REGEX.test(segment)) {
     throw new Error(
       `Invalid ${name}: must contain only alphanumeric characters, hyphens, and underscores`
@@ -560,11 +563,11 @@ function normalizeWaitCount(count: number): number {
 }
 
 /** The page size waitForAll polls with: twice the count, between 100 and 1000. */
-function waitListLimit(count: number): number {
+export function waitListLimit(count: number): number {
   return Math.min(1000, Math.max(100, normalizeWaitCount(count) * 2));
 }
 
-async function collectMatchingRequests(
+export async function collectMatchingRequests(
   fetchRequests: (since: number) => Promise<Request[]>,
   options: WaitForAllOptions
 ): Promise<Request[]> {
@@ -633,7 +636,8 @@ async function collectMatchingRequests(
  * response validation.
  */
 export class WebhooksCC {
-  private readonly apiKey: string;
+  private readonly apiKey: string | undefined;
+  private readonly getAccessToken: ClientOptions["getAccessToken"];
   private readonly baseUrl: string;
   private readonly webhookUrl: string;
   private readonly timeout: number;
@@ -642,10 +646,13 @@ export class WebhooksCC {
   private readonly emailDomain: string;
 
   constructor(options: ClientOptions) {
-    if (!options.apiKey || typeof options.apiKey !== "string") {
-      throw new Error("Missing or invalid apiKey. Get one at https://webhooks.cc/account");
+    if (typeof options.getAccessToken !== "function") {
+      if (!options.apiKey || typeof options.apiKey !== "string") {
+        throw new Error("Missing or invalid apiKey. Get one at https://webhooks.cc/account");
+      }
     }
     this.apiKey = options.apiKey;
+    this.getAccessToken = options.getAccessToken;
     this.baseUrl = stripTrailingSlashes(options.baseUrl ?? DEFAULT_BASE_URL);
     this.webhookUrl = stripTrailingSlashes(options.webhookUrl ?? DEFAULT_WEBHOOK_URL);
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
@@ -655,20 +662,50 @@ export class WebhooksCC {
   }
 
   /**
-   * Agent self-registration on-ramp (auth.md). STATIC because an agent uses
-   * these BEFORE it has a credential — no client instance is required. Obtain a
-   * key via the anonymous, verified_email, or identity_assertion flow, then
-   * `new WebhooksCC({ apiKey })` with the returned `credential`.
+   * Webhook capture without an account, for AI agents (auth.md v0.6).
+   * Registers anonymously (a few seconds of proof of work), and returns a
+   * sandbox client: 3 endpoints, 25 captures each and 100 in all, for 24
+   * hours. `claim()` and `waitForClaim()` connect it to a human's account.
    *
    * @example
    * ```ts
-   * const reg = await WebhooksCC.register.anonymous({ clientName: "my-agent" });
-   * console.log(`Ask a human to claim code ${reg.userCode} at ${reg.claimUrl}`);
-   * const claimed = await WebhooksCC.register.waitForClaim(reg.claimToken);
-   * if (claimed.status === "claimed") {
-   *   const client = new WebhooksCC({ apiKey: reg.credential });
-   * }
+   * const sandbox = await WebhooksCC.sandbox({ clientName: "my-agent" });
+   * const endpoint = await sandbox.endpoints.create();
+   * const request = await sandbox.requests.waitFor(endpoint.slug, { timeout: "60s" });
+   *
+   * const { verificationUri, userCode } = await sandbox.claim({ email: "dev@example.com" });
+   * console.log(`Open ${verificationUri}, sign in, and enter ${userCode}`);
+   * const client = await sandbox.waitForClaim(); // a WebhooksCC for that account
    * ```
+   */
+  static sandbox(options: SandboxOptions = {}): Promise<SandboxClient> {
+    return createSandbox(options);
+  }
+
+  /**
+   * The auth.md v0.6 steps one by one, for callers who drive the protocol
+   * themselves. `WebhooksCC.sandbox()` runs them in order.
+   */
+  static agent = {
+    discover: agentSteps.discover,
+    challenge: agentSteps.challenge,
+    solveChallenge,
+    registerAnonymous: agentSteps.registerAnonymous,
+    registerServiceAuth: agentSteps.registerServiceAuth,
+    exchange: agentSteps.exchange,
+    startClaim: agentSteps.startClaim,
+    pollClaim: agentSteps.pollClaim,
+    waitForClaim: agentSteps.waitForClaim,
+    revoke: agentSteps.revoke,
+  };
+
+  /**
+   * The auth.md v0.1 registration helpers.
+   *
+   * @deprecated The server moved to auth.md v0.6: anonymous and ID-JAG
+   * registration answer 410 (`AgentRegisterError` with code
+   * `endpoint_moved`), and the email flow stops on 2026-11-30. Use
+   * `WebhooksCC.sandbox()` or `WebhooksCC.agent.*`.
    */
   static register = {
     anonymous: registerAnonymous,
@@ -688,9 +725,27 @@ export class WebhooksCC {
     return describeRegistration(baseUrl ?? DEFAULT_BASE_URL);
   }
 
+  /**
+   * The bearer for the next request: the API key, or a token from
+   * getAccessToken. A token that cannot be had is a 401, never retried as a
+   * network error.
+   */
+  private async bearer(forceRefresh = false): Promise<string> {
+    if (!this.getAccessToken) return this.apiKey as string;
+    try {
+      return await this.getAccessToken({ forceRefresh });
+    } catch (error) {
+      if (error instanceof WebhooksCCError) throw error;
+      throw new UnauthorizedError(
+        `Could not get an access token: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
+    let refreshed = false;
 
     while (true) {
       attempt++;
@@ -708,7 +763,7 @@ export class WebhooksCC {
         const response = await fetch(url, {
           method,
           headers: {
-            Authorization: `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${await this.bearer()}`,
             "Content-Type": "application/json",
           },
           body: body ? JSON.stringify(body) : undefined,
@@ -716,6 +771,14 @@ export class WebhooksCC {
         });
 
         const durationMs = Date.now() - start;
+
+        // An expiring token: renew it once and retry right away.
+        if (response.status === 401 && this.getAccessToken && !refreshed) {
+          refreshed = true;
+          await this.bearer(true);
+          attempt--;
+          continue;
+        }
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -815,14 +878,16 @@ export class WebhooksCC {
       version: SDK_VERSION,
       registration: {
         description:
-          "Agent self-registration (auth.md) for obtaining a credential before you have one. Use the STATIC WebhooksCC.register.* methods (no client instance needed). See WebhooksCC.describeRegistration() for the flows.",
+          "Webhook capture without an API key, for AI agents (auth.md v0.6). Use the STATIC WebhooksCC.sandbox() and WebhooksCC.agent.* methods (no client instance needed). See WebhooksCC.describeRegistration().",
         params: {
-          anonymous:
-            "WebhooksCC.register.anonymous(opts?) -> mint an unowned key + user_code for in-app claim",
-          verified_email:
-            "WebhooksCC.register.withEmail(email) then confirmEmailOtp({ claimToken, otp })",
-          identity_assertion: "WebhooksCC.register.withIdJag(assertion)",
-          pollClaim: "WebhooksCC.register.pollClaim(claimToken) / waitForClaim(claimToken)",
+          sandbox:
+            "WebhooksCC.sandbox(opts?) -> SandboxClient: endpoints.create/list/get/delete, requests.list/get/waitFor/waitForAll (3 endpoints, 25 requests each, 100 in all, 24 hours)",
+          claim:
+            "sandbox.claim({ email }) -> { verificationUri, userCode } to show a human; sandbox.waitForClaim() -> WebhooksCC for their account",
+          service_auth:
+            "WebhooksCC.agent.registerServiceAuth({ email }) -> a claim for that human; no sandbox",
+          steps:
+            "WebhooksCC.agent.discover/challenge/solveChallenge/registerAnonymous/exchange/startClaim/pollClaim/waitForClaim/revoke",
         },
       },
       endpoints: {
@@ -1991,7 +2056,7 @@ export class WebhooksCC {
       validatePathSegment(slug, "slug");
       const { signal, timeout, reconnect = false, onReconnect } = options;
       const baseUrl = this.baseUrl;
-      const apiKey = this.apiKey;
+      const bearer = (forceRefresh?: boolean) => this.bearer(forceRefresh);
       const timeoutMs = timeout !== undefined ? parseDuration(timeout) : undefined;
       const idleTimeoutMs = normalizeStreamIdleTimeout(options.idleTimeout);
       const maxReconnectAttempts = Math.max(0, Math.floor(options.maxReconnectAttempts ?? 5));
@@ -2114,7 +2179,7 @@ export class WebhooksCC {
             let response: globalThis.Response;
             try {
               response = await fetch(url, {
-                headers: { Authorization: `Bearer ${apiKey}` },
+                headers: { Authorization: `Bearer ${await bearer()}` },
                 signal: connectionController.signal,
               });
             } finally {

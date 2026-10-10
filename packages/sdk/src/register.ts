@@ -93,6 +93,8 @@ const REGISTER_RECOVERY_HINTS: Record<string, string> = {
   invalid_issuer: "The ID-JAG issuer is not trusted by this service.",
   invalid_audience: "The ID-JAG audience must be this service's resource URL.",
   missing_verified_email: "The assertion must carry a verified email.",
+  endpoint_moved:
+    "This flow moved to auth.md v0.6. Use WebhooksCC.sandbox() or WebhooksCC.agent.registerServiceAuth().",
 };
 
 /** Thrown when a register endpoint returns a non-2xx response. */
@@ -341,18 +343,18 @@ export function describeRegistration(baseUrl: string = DEFAULT_BASE_URL): Regist
     flows: {
       anonymous: {
         description:
-          "WebhooksCC.register.anonymous() — mint an unowned whcc_ key immediately; a human claims it in-app via the returned userCode or claimUrl. Works in the sandbox before claiming. Poll with WebhooksCC.register.pollClaim().",
-        method: `POST ${base}/api/agent/auth`,
+          "WebhooksCC.sandbox() (or WebhooksCC.agent.registerAnonymous()) - solve a short proof of work and register; the identity assertion exchanges for one-hour access tokens to a 24-hour sandbox. A human can connect it to their account with sandbox.claim({ email }).",
+        method: `POST ${base}/api/agent/identity`,
       },
-      verified_email: {
+      service_auth: {
         description:
-          "WebhooksCC.register.withEmail(email) then WebhooksCC.register.confirmEmailOtp({ claimToken, otp }) — receive a 6-digit OTP by email and confirm it to get a key bound to that address.",
-        method: `POST ${base}/api/agent/auth + /api/agent/auth/claim/verify-otp`,
+          "WebhooksCC.agent.registerServiceAuth({ email }) - register for a human you know by email; nothing works until they sign in and enter the code. Poll with WebhooksCC.agent.waitForClaim().",
+        method: `POST ${base}/api/agent/identity`,
       },
       identity_assertion: {
         description:
-          "WebhooksCC.register.withIdJag(assertion) — present a verified ID-JAG assertion from a trusted provider; the key is returned synchronously.",
-        method: `POST ${base}/api/agent/auth`,
+          "An ID-JAG from an identity provider this deployment trusts (none on webhooks.cc yet).",
+        method: `POST ${base}/api/agent/identity`,
       },
     },
   };

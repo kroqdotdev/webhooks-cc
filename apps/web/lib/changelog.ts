@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.37.0";
+export const APP_VERSION = "0.37.1";
 export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.12.0";
+export const SDK_VERSION = "1.13.0";
 export const MCP_VERSION = "1.10.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.37.1",
+    date: "2026-10-10",
+    title: "SDK Sandbox Docs",
+    track: "web",
+    items: [
+      "The SDK reference covers `WebhooksCC.sandbox()`, connecting an agent to an account from code, and the auth.md steps in `WebhooksCC.agent`",
+    ],
+  },
   {
     version: "0.37.0",
     date: "2026-10-10",
@@ -1318,6 +1327,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.13.0",
+    date: "2026-10-10",
+    title: "Agent Sandbox",
+    track: "sdk",
+    items: [
+      "`WebhooksCC.sandbox()` captures webhooks without an API key: it registers through auth.md v0.6, solves the proof of work (about 3 seconds) and returns a client for up to 3 endpoints, 25 requests each and 100 in all, for 24 hours",
+      "`sandbox.claim({ email })` and `sandbox.waitForClaim()` connect the agent to a human's account and return a `WebhooksCC` for it, whose token renews itself",
+      "`WebhooksCC.agent.*` exposes each auth.md step: discover, challenge, solveChallenge, registerAnonymous, registerServiceAuth, exchange, startClaim, pollClaim, waitForClaim and revoke",
+      "A dependency-free proof-of-work solver for Node and browsers that yields to the event loop and refuses more than 2^26 hashes",
+      "`new WebhooksCC({ getAccessToken })` accepts an expiring token instead of an API key and renews it once after a 401",
+      "`WebhooksCC.register.*` is deprecated: the server answers its anonymous and ID-JAG flows with 410 (`AgentRegisterError` code `endpoint_moved`), and its email flow stops on November 30, 2026",
+    ],
+  },
   {
     version: "1.12.0",
     date: "2026-10-08",
