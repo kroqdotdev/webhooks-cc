@@ -207,7 +207,7 @@ export async function sandboxAgent(
   routes: AgentRoutes,
   created: Set<string>,
   clientName?: string
-): Promise<{ registrationId: string; token: string; assertion: string }> {
+): Promise<{ registrationId: string; token: string; assertion: string; claimToken: string }> {
   const { body } = await registerAnonymous(routes, created, clientName);
   const exchanged = await exchange(routes, body.identity_assertion);
   if (exchanged.status !== 200) throw new Error(`exchange ${exchanged.status}`);
@@ -215,6 +215,7 @@ export async function sandboxAgent(
     registrationId: body.registration_id,
     token: exchanged.body.access_token as string,
     assertion: body.identity_assertion,
+    claimToken: body.claim_token,
   };
 }
 

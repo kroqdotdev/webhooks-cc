@@ -6,7 +6,7 @@ import {
   checkRateLimitWithInfo,
   checkWideRateLimitWithInfo,
 } from "@/lib/rate-limit";
-import { auditAgentEvent } from "@/lib/audit";
+import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { AgentRequestError, resolveOrProvisionUser } from "@/lib/agent/agent-auth";
 import { assertionSigningConfigured } from "@/lib/agent/assertion";
 import {
@@ -32,6 +32,11 @@ import {
   powSecrets,
   readAgentBody,
 } from "@/lib/agent/http";
+import {
+  claimAttemptBlock,
+  createServiceAuthRegistration,
+  normalizeLoginHint,
+} from "@/lib/agent/claims";
 import { verifyIdJag } from "@/lib/agent/id-jag";
 import { verifySolution } from "@/lib/agent/pow";
 import {
@@ -48,9 +53,10 @@ import {
  *
  *   - anonymous: needs a solved proof-of-work challenge (our extension);
  *     returns an identity assertion for the sandbox and a claim token.
+ *   - service_auth: the agent names its human's email and gets a claim
+ *     attempt; nothing works until that human completes it signed in.
  *   - identity_assertion (ID-JAG): only for trusted providers, of which
  *     production has none.
- *   - service_auth: arrives with the claim ceremony.
  *
  * Errors are `{ error, error_description }` with auth.md's codes.
  */
@@ -73,11 +79,7 @@ export async function POST(request: Request) {
       case "identity_assertion":
         return await registerIdJag(request, body);
       case "service_auth":
-        return agentError(
-          400,
-          "service_auth_not_enabled",
-          "service_auth arrives with the next release. Register anonymously to use the sandbox until then."
-        );
+        return await registerServiceAuth(request, body);
       default:
         return agentError(
           400,
@@ -261,6 +263,66 @@ async function refuseChallenge(
     ...(await newRegistrationChallenge()),
     challenge_endpoint: challengeEndpointUrl(),
   });
+}
+
+async function registerServiceAuth(
+  request: Request,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const env = serverEnv();
+  const limit = await checkRateLimitWithInfo(
+    request,
+    "agent-identity-service-auth",
+    env.AGENT_REGISTER_RATE_LIMIT,
+    env.AGENT_REGISTER_RATE_WINDOW_MS
+  );
+  if (limit.response) return rateLimitedResponse(limit.response);
+
+  const loginHint = normalizeLoginHint(body.login_hint);
+  const clientName = cleanClientName(body.client_name);
+  let created;
+  try {
+    created = await createServiceAuthRegistration({ loginHint, clientName });
+  } catch (error) {
+    if (error instanceof AgentError) {
+      await auditAgentEvent(request, {
+        action: "agent.registration.refused",
+        status: error.status,
+        metadata: { kind: "service_auth", code: error.code },
+      });
+    }
+    throw error;
+  }
+
+  const { registration, claimToken, attempt } = created;
+  await auditAgentEvent(request, {
+    action: "agent.registration.created",
+    status: 200,
+    targetId: registration.id,
+    metadata: { kind: "service_auth", client_name: clientName },
+  });
+  await auditAgentEvent(request, {
+    action: "agent.claim.requested",
+    status: 200,
+    targetId: registration.id,
+    metadata: { kind: "service_auth", attempt: 1, login_hint_domain: emailDomain(loginHint) },
+  });
+
+  return applyRateLimitHeaders(
+    Response.json(
+      {
+        registration_id: registration.id,
+        registration_type: "service_auth",
+        claim_url: claimEndpointUrl(),
+        claim_token: claimToken,
+        claim_token_expires: new Date(registration.expires_at).toISOString(),
+        post_claim_scopes: POST_CLAIM_SCOPES,
+        claim: claimAttemptBlock(attempt),
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    ),
+    limit
+  );
 }
 
 async function registerIdJag(request: Request, body: Record<string, unknown>): Promise<Response> {

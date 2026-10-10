@@ -36,3 +36,21 @@ export const ID_JAG_ASSERTION_TYPE = "urn:ietf:params:oauth:token-type:id-jag";
 
 /** Longest client_name kept; the column allows 64. */
 export const MAX_CLIENT_NAME = 64;
+
+/** A claim attempt's code lives this long (D14: covers sign-up with email confirmation). */
+export const USER_CODE_TTL_SECONDS = 15 * 60;
+/** Seconds an agent waits between claim polls (RFC 8628 interval). */
+export const CLAIM_POLL_INTERVAL_SECONDS = 5;
+/** Attempts a registration may start; each replaces the one before. */
+export const MAX_CLAIM_ATTEMPTS = 10;
+/** Wrong codes that end an attempt. */
+export const MAX_CODE_FAILURES = 5;
+/** Connected (claimed, unrevoked) agents per account (D7). */
+export const MAX_CONNECTED_AGENTS = 10;
+
+/**
+ * The auth.md v0.1 verified_email flow is deprecated from the v0.6 claim
+ * ceremony on and removed after the sunset (RFC 9745, RFC 8594).
+ */
+export const VERIFIED_EMAIL_DEPRECATED_AT = "2026-10-10T00:00:00Z";
+export const VERIFIED_EMAIL_SUNSET_AT = "2026-11-30T00:00:00Z";

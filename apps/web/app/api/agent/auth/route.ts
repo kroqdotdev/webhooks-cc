@@ -2,7 +2,7 @@ import { checkRateLimitWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit"
 import { parseJsonBody } from "@/lib/request-validation";
 import { serverEnv } from "@/lib/env";
 import { AgentRequestError, issueVerifiedEmailClaim } from "@/lib/agent/agent-auth";
-import { endpointMoved } from "@/lib/agent/legacy";
+import { deprecated, endpointMoved } from "@/lib/agent/legacy";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { isPlainEmailAddress } from "@/lib/request-validation";
@@ -10,8 +10,8 @@ import { sendError } from "@appsignal/nodejs";
 
 /**
  * The auth.md v0.1 registration endpoint. Only `verified_email` still works
- * here, until its sunset: it needs a human to read an emailed code and never
- * reaches the sandbox. Anonymous and ID-JAG registration moved to
+ * here, deprecated until its sunset (VERIFIED_EMAIL_SUNSET_AT): it needs a
+ * human to read an emailed code and never reaches the sandbox. Anonymous and ID-JAG registration moved to
  * POST /api/agent/identity (auth.md v0.6) and answer 410 with a pointer to
  * /auth.md: legacy anonymous keys would skip the proof of work and the
  * sandbox pool.
@@ -59,6 +59,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_request" }, { status: 400 });
   }
 
+  // Every verified_email answer, errors included, says it is deprecated.
+  return deprecated(await verifiedEmail(request, body, flowType));
+}
+
+async function verifiedEmail(
+  request: Request,
+  body: Record<string, unknown>,
+  flowType: string | undefined
+): Promise<Response> {
   const rateLimit = await checkRateLimitWithInfo(
     request,
     "agent-register",

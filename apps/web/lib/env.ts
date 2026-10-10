@@ -137,6 +137,8 @@ const serverEnvSchema = z
     AGENT_REGISTER_WIDE_RATE_LIMIT: z.coerce.number().int().min(1).default(20),
     // Live unclaimed anonymous registrations at once (backstop).
     AGENT_MAX_LIVE_ANONYMOUS: z.coerce.number().int().min(1).default(500),
+    // Unclaimed service_auth registrations naming one email at a time.
+    AGENT_MAX_PENDING_PER_LOGIN_HINT: z.coerce.number().int().min(1).default(3),
     // Per-email cap on concurrent pending verified_email OTP claims (anti-spam /
     // brute-force throttle).
     AGENT_MAX_PENDING_OTP_PER_EMAIL: z.coerce.number().int().min(1).default(3),
@@ -223,6 +225,7 @@ export function serverEnv() {
       AGENT_ANONYMOUS_GLOBAL_RATE: process.env.AGENT_ANONYMOUS_GLOBAL_RATE,
       AGENT_REGISTER_WIDE_RATE_LIMIT: process.env.AGENT_REGISTER_WIDE_RATE_LIMIT,
       AGENT_MAX_LIVE_ANONYMOUS: process.env.AGENT_MAX_LIVE_ANONYMOUS,
+      AGENT_MAX_PENDING_PER_LOGIN_HINT: process.env.AGENT_MAX_PENDING_PER_LOGIN_HINT,
       AGENT_MAX_PENDING_OTP_PER_EMAIL: process.env.AGENT_MAX_PENDING_OTP_PER_EMAIL,
     });
   }

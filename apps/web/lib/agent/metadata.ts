@@ -1,6 +1,14 @@
 import { publicEnv } from "@/lib/env";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  CLAIM_GRANT,
+  CLAIMED_ASSERTION_TTL_SECONDS,
+  CLAIM_POLL_INTERVAL_SECONDS,
+  MAX_CLAIM_ATTEMPTS,
+  MAX_CODE_FAILURES,
+  MAX_CONNECTED_AGENTS,
+  USER_CODE_TTL_SECONDS,
+  VERIFIED_EMAIL_SUNSET_AT,
   ID_JAG_ASSERTION_TYPE,
   JWT_BEARER_GRANT,
   MAX_LIVE_TOKENS,
@@ -148,7 +156,7 @@ export function buildAuthorizationServerMetadata(
     token_endpoint: u.token,
     revocation_endpoint: u.revoke,
     jwks_uri: u.jwks,
-    grant_types_supported: [JWT_BEARER_GRANT],
+    grant_types_supported: [JWT_BEARER_GRANT, CLAIM_GRANT],
     service_documentation: u.authMd,
     agent_auth: {
       skill: u.authMd,
@@ -156,8 +164,8 @@ export function buildAuthorizationServerMetadata(
       claim_endpoint: u.claim,
       // An agent only tries identity_assertion when it is listed (AUTH.md Step 2).
       identity_types_supported: options.idJagEnabled
-        ? ["anonymous", "identity_assertion"]
-        : ["anonymous"],
+        ? ["anonymous", "service_auth", "identity_assertion"]
+        : ["anonymous", "service_auth"],
       ...(options.idJagEnabled
         ? { identity_assertion: { assertion_types_supported: [ID_JAG_ASSERTION_TYPE] } }
         : {}),
@@ -206,8 +214,9 @@ export function buildAuthMd(options: AgentMetadataOptions): string {
 You are an agent. webhooks.cc implements [auth.md v0.6](https://github.com/workos/auth.md)
 agent registration. Without an account you can register anonymously, solve a
 short proof of work, and use a sandbox: capture webhooks on up to
-${SANDBOX_MAX_ENDPOINTS} temporary endpoints and read them back. Follow the
-steps in order.
+${SANDBOX_MAX_ENDPOINTS} temporary endpoints and read them back. When your
+human wants to keep them, or you need their account, run the claim ceremony:
+they sign in and type a code you show them. Follow the steps in order.
 
 Human-readable guide: ${u.docs}
 
@@ -220,6 +229,9 @@ Human-readable guide: ${u.docs}
 | Sandbox endpoints | ${SANDBOX_MAX_ENDPOINTS} at a time, each living until the registration expires |
 | Sandbox captures | ${SANDBOX_REQUESTS_PER_ENDPOINT} per endpoint, ${SANDBOX_REQUEST_BUDGET} per registration |
 | Proof-of-work challenge | valid ${POW_CHALLENGE_TTL_SECONDS / 60} minutes, single use |
+| Claim code (\`user_code\`) | ${USER_CODE_TTL_SECONDS / 60} minutes, ${MAX_CODE_FAILURES} wrong tries; ${MAX_CLAIM_ATTEMPTS} attempts per registration |
+| Claimed assertion | ${CLAIMED_ASSERTION_TTL_SECONDS / 86400} days |
+| Connected agents per account | ${MAX_CONNECTED_AGENTS} |
 | Anonymous registrations | 5 per hour per IP address |
 
 ## Step 1: Discover
@@ -234,9 +246,22 @@ lists the endpoints below.
 
 ## Step 2: Pick a method
 
-- **anonymous**: available. Gives you the sandbox right away.
-- **service_auth** (you have the user's email): arrives with the claim
-  ceremony in the next release; today it answers \`service_auth_not_enabled\`.
+- **anonymous**: you have neither. Gives you the sandbox right away; a
+  claim is optional.
+- **service_auth**: you have only your user's email. Nothing works until
+  they complete the claim ceremony; no proof of work and no sandbox:
+
+  \`\`\`http
+  POST ${u.identity}
+  Content-Type: application/json
+
+  { "type": "service_auth", "login_hint": "user@example.com", "client_name": "my-agent" }
+  \`\`\`
+
+  The response carries \`registration_id\`, \`claim_url\`, \`claim_token\`,
+  \`claim_token_expires\`, \`post_claim_scopes\` and the first claim attempt as
+  \`claim: { user_code, expires_in, verification_uri, interval }\`. Continue
+  at Step 4b.
 - **identity_assertion** (ID-JAG): ${
     options.idJagEnabled
       ? "accepted from the issuers this deployment trusts."
@@ -342,10 +367,90 @@ it.
 
 ## Step 4: Claim ceremony
 
-Arrives in the next release: a human signs in to webhooks.cc, enters a code
-you show them, and your registration and its sandbox endpoints move into
-their account. Until then \`${u.claim}\` answers \`temporarily_unavailable\`.
-The claim token of a registration made now stays valid for its 24 hours.
+A human with a webhooks.cc account (or who signs up) connects you to it.
+For an anonymous registration this moves your sandbox endpoints, with what
+they captured, into their account and replaces your sandbox token with
+account credentials.
+
+### 4a. Start an attempt
+
+service_auth: the \`claim\` block of your Step 3 response is your first
+attempt. anonymous:
+
+\`\`\`http
+POST ${u.claim}
+Content-Type: application/json
+
+{ "claim_token": "clm_...", "email": "user@example.com" }
+\`\`\`
+
+\`\`\`json
+{
+  "registration_id": "<uuid>",
+  "claim_attempt_id": "cla_...",
+  "status": "initiated",
+  "expires_at": "<${USER_CODE_TTL_SECONDS / 60} minutes from now>",
+  "claim_attempt": {
+    "user_code": "123456",
+    "expires_in": ${USER_CODE_TTL_SECONDS},
+    "verification_uri": "${appUrl}/agent/claim?attempt=cat_...",
+    "interval": ${CLAIM_POLL_INTERVAL_SECONDS}
+  }
+}
+\`\`\`
+
+\`email\` binds the attempt: only someone signed in with that address can
+complete it. The same call starts a new attempt when a code ran out (a
+service_auth registration may leave \`email\` out); the previous link stops
+working. A registration may start ${MAX_CLAIM_ATTEMPTS} attempts.
+
+### 4b. Hand off to the human
+
+Show both in one message, for example:
+
+> Open this link, sign in (or sign up), and enter this 6-digit code: **123456**
+> ${appUrl}/agent/claim?attempt=cat_...
+
+The code goes into the page, not back to you. The page shows the human your
+\`client_name\` (labelled as self-reported), when you registered and which
+sandbox endpoints will move, and lets them decline.
+
+### 4c. Poll for completion
+
+\`\`\`http
+POST ${u.token}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=${CLAIM_GRANT}
+&claim_token=clm_...
+\`\`\`
+
+| Answer | Meaning |
+| --- | --- |
+| \`authorization_pending\` | Not done yet. Poll again after \`interval\` seconds. |
+| \`slow_down\` | You polled faster than \`interval\`. Wait longer. |
+| \`expired_token\` | The code ran out (or ${MAX_CODE_FAILURES} wrong codes were entered). Start a new attempt (4a); if that answers \`claim_expired\`, register again. |
+| \`access_denied\` | The human declined. |
+| \`invalid_grant\` | Unknown, revoked or already collected claim token. |
+
+Success is an OAuth token response plus a claimed identity assertion:
+
+\`\`\`json
+{
+  "access_token": "whcc_...",
+  "token_type": "Bearer",
+  "expires_in": ${ACCESS_TOKEN_TTL_SECONDS},
+  "scope": "${POST_CLAIM_SCOPES.join(" ")}",
+  "identity_assertion": "<service-signed JWT>",
+  "assertion_expires": "<${CLAIMED_ASSERTION_TTL_SECONDS / 86400} days from now>"
+}
+\`\`\`
+
+The claim token works once: the first successful poll uses it up, so keep
+the response. Your pre-claim tokens and assertion stop working. The access
+token acts for the human on the whole API (\`${u.resource}\`), except
+account settings such as API keys and billing. Mint new ones from the
+claimed assertion (Step 5); when it expires, the human repeats the claim.
 
 ## Step 5: Exchange the assertion
 
@@ -364,14 +469,16 @@ Response (200):
 { "access_token": "whcc_...", "token_type": "Bearer", "expires_in": ${ACCESS_TOKEN_TTL_SECONDS}, "scope": "${PRE_CLAIM_SCOPES.join(" ")}" }
 \`\`\`
 
-The same assertion mints new tokens until it expires. \`invalid_grant\` means
+A claimed assertion (Step 4c) gets \`"scope": "${POST_CLAIM_SCOPES.join(" ")}"\`
+instead. The same assertion mints new tokens until it expires. \`invalid_grant\` means
 the registration expired or was revoked: register again (Step 3). There is
 no refresh token.
 
-## Step 6: Use the access token (the sandbox)
+## Step 6: Use the access token
 
-Send \`Authorization: Bearer whcc_...\`. An unclaimed registration's token
-works only on the sandbox:
+Send \`Authorization: Bearer whcc_...\`. A claimed agent's token works on the
+whole API at \`${u.resource}\` (except account settings such as API keys and
+billing). An unclaimed registration's token works only on the sandbox:
 
 | Call | Result |
 | --- | --- |
@@ -398,6 +505,8 @@ On a 401 with a previously working token, exchange the assertion again
   access token. Always 200. Your assertion still works.
 - Every token, endpoint and capture of an unclaimed registration is deleted
   within minutes after it expires.
+- The human can disconnect a claimed agent under Account, Connected agents:
+  your tokens stop working and the assertion answers \`invalid_grant\`.
 
 ## Errors
 
@@ -409,13 +518,18 @@ On a 401 with a previously working token, exchange the assertion again
 | \`proof_of_work_required\` (400) | identity | Solve the challenge in the body and send it. |
 | \`invalid_challenge\` (400) | identity | The proof was wrong, expired or reused. Solve the fresh challenge in the body. |
 | \`anonymous_not_enabled\` (400) | identity | Anonymous registration is off. Ask a human to sign up. |
-| \`service_auth_not_enabled\` (400) | identity | Not available yet. Register anonymously. |
+| \`invalid_login_hint\` (400) | identity, claim | Give one plain email address; addresses at the capture domain are refused. |
+| \`invalid_claim_token\` (401) | claim | Unknown or revoked claim token. Register again. |
+| \`claimed_or_in_flight\` (409) | claim | Already claimed. Poll the claim grant. |
+| \`claim_expired\` (410) | claim | The registration expired. Register again. |
+| \`too_many_attempts\` (429) | claim | ${MAX_CLAIM_ATTEMPTS} attempts used. Register again. |
 | \`issuer_not_enabled\` (400) | identity | Your identity provider is not trusted here. |
 | \`invalid_request\` (400) | any | Fix the request body. |
 | \`rate_limited\` (429) | any | Wait for \`Retry-After\` seconds. |
-| \`temporarily_unavailable\` (503) | identity, claim | Retry after \`Retry-After\` seconds. |
+| \`temporarily_unavailable\` (503) | identity | Retry after \`Retry-After\` seconds. |
 | \`invalid_grant\` (400) | token | Register again. |
-| \`unsupported_grant_type\` (400) | token | Use the jwt-bearer grant. |
+| \`authorization_pending\`, \`slow_down\`, \`expired_token\`, \`access_denied\` (400) | token, claim grant | See 4c. |
+| \`unsupported_grant_type\` (400) | token | Use the jwt-bearer or the claim grant. |
 | \`invalid_target\` (400) | token | \`resource\` must be ${u.resource} or left out. |
 | \`sandbox_endpoint_limit\` (409) | sandbox | Delete an endpoint first. |
 | \`sandbox_full\` (503) | sandbox | Retry later, or ask a human to sign up. |
@@ -427,8 +541,9 @@ On a 401 with a previously working token, exchange the assertion again
 
 The v0.1 endpoints under \`${appUrl}/api/agent/auth\` answer 410
 \`endpoint_moved\`, except the \`verified_email\` flow, which keeps working for
-older SDK and MCP versions until it is retired. New agents should follow the
-steps above.
+older SDK and MCP versions until ${VERIFIED_EMAIL_SUNSET_AT.slice(0, 10)}. Its
+answers carry \`Deprecation\` and \`Sunset\` headers. New agents should follow
+the steps above.
 
 ## For identity providers (ID-JAG)
 

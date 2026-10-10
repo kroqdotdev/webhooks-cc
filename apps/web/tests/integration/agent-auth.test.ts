@@ -129,6 +129,9 @@ describe("auth.md v0.1 routes", () => {
       })
     );
     expect(reg.status).toBe(200);
+    // Deprecated until its sunset (RFC 9745, RFC 8594).
+    expect(reg.headers.get("deprecation")).toMatch(/^@\d+$/);
+    expect(reg.headers.get("sunset")).toBe("Mon, 30 Nov 2026 00:00:00 GMT");
     const regBody = await reg.json();
     expect(regBody.claim_token).toMatch(/^clm_/);
     expect(regBody.credential).toBeUndefined();
@@ -150,6 +153,7 @@ describe("auth.md v0.1 routes", () => {
       jsonPost("/api/agent/auth/claim/verify-otp", { claim_token: regBody.claim_token, otp: otp! })
     );
     expect(right.status).toBe(200);
+    expect(right.headers.get("sunset")).toBe("Mon, 30 Nov 2026 00:00:00 GMT");
     const rightBody = await right.json();
     expect(rightBody.credential).toMatch(/^whcc_/);
     apiKeyHashes.add(sha256Hex(rightBody.credential));
@@ -191,6 +195,8 @@ describe("auth.md v0.1 routes", () => {
       jsonPost("/api/agent/auth", { type: "verified_email", email: "someone@mailhooks.cc" })
     );
     expect(res.status).toBe(400);
+    // Refusals carry the deprecation headers too.
+    expect(res.headers.get("sunset")).toBe("Mon, 30 Nov 2026 00:00:00 GMT");
     expect((await res.json()).error).toBe("invalid_email");
   });
 });

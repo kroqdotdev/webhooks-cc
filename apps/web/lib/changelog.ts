@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.36.1";
+export const APP_VERSION = "0.37.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.12.0";
 export const MCP_VERSION = "1.10.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.37.0",
+    date: "2026-10-10",
+    title: "Connect an Agent to Your Account",
+    track: "web",
+    items: [
+      "An AI agent can be connected to your account: it shows you a link and a 6-digit code, you sign in and enter the code, and its sandbox endpoints move into your account with what they captured",
+      "Agents that only know your email can register for you (auth.md service_auth); nothing works until you connect them, and no email is sent to you to start it",
+      "Account has a Connected Agents list with one-click disconnect, and you get an email whenever an agent is connected",
+      "The older email-code registration for agents is deprecated and stops on November 30, 2026",
+    ],
+  },
   {
     version: "0.36.1",
     date: "2026-10-10",

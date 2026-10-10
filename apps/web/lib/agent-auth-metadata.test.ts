@@ -70,13 +70,16 @@ describe("agent auth.md: Authorization Server Metadata", () => {
       token_endpoint: `${APP_URL}/api/oauth2/token`,
       revocation_endpoint: `${APP_URL}/api/oauth2/revoke`,
       jwks_uri: `${APP_URL}/.well-known/jwks.json`,
-      grant_types_supported: ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+      grant_types_supported: [
+        "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "urn:workos:agent-auth:grant-type:claim",
+      ],
       service_documentation: `${APP_URL}/auth.md`,
       agent_auth: {
         skill: `${APP_URL}/auth.md`,
         identity_endpoint: `${APP_URL}/api/agent/identity`,
         claim_endpoint: `${APP_URL}/api/agent/identity/claim`,
-        identity_types_supported: ["anonymous"],
+        identity_types_supported: ["anonymous", "service_auth"],
         anonymous: {
           credential_types_supported: ["access_token"],
           proof_of_work: {
@@ -108,6 +111,7 @@ describe("agent auth.md: Authorization Server Metadata", () => {
     const trusting = buildAuthorizationServerMetadata({ idJagEnabled: true });
     expect(trusting.agent_auth.identity_types_supported).toEqual([
       "anonymous",
+      "service_auth",
       "identity_assertion",
     ]);
     expect(trusting.agent_auth.identity_assertion).toEqual({
