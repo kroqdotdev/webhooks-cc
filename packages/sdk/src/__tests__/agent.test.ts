@@ -250,6 +250,21 @@ describe("sandbox client", () => {
     expect(refused).toMatchObject({ code: "sandbox_full", status: 503 });
   });
 
+  it("refuses to wait for more requests than an endpoint can capture", async () => {
+    const state = { exchanges: 0, rejectFirstToken: false };
+    const requestPolls = vi.fn();
+    mockFetch(
+      (url) => {
+        if (url.pathname.endsWith("/requests")) requestPolls();
+        return undefined;
+      },
+      ...sandboxRoutes(state)
+    );
+    const sandbox = await WebhooksCC.sandbox({ baseUrl: BASE });
+    await expect(sandbox.requests.waitForAll("abc123", { count: 26 })).rejects.toThrow(RangeError);
+    expect(requestPolls).not.toHaveBeenCalled();
+  });
+
   it("waitFor stops at once on a sandbox refusal, and tolerates an HTML error page", async () => {
     const state = { exchanges: 0, rejectFirstToken: false };
     let html = true;
