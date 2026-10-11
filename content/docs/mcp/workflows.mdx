@@ -3,7 +3,7 @@ title: "Agent Workflows"
 description: "Multi-turn conversation examples showing how AI agents use webhooks.cc MCP tools to create endpoints, inspect payloads, debug integrations, and verify webhook flows."
 section: mcp
 order: 3
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-11
 schema: none
 keywords: ["MCP workflows", "AI agent webhook testing", "Claude Code webhooks", "webhook debugging"]
 seo:
@@ -72,22 +72,26 @@ Agent: [calls get_email] SPF pass, DKIM pass, DMARC pass for yourapp.dev
 
 `wait_for_email` and `get_email` return the parsed message with the one-time `code` and main `link` already picked out. Use `send_test_email` to try the flow before the app sends real mail.
 
-## Forward emails to a handler
+## Forward requests and emails to a handler
 
-Let the agent wire up [email forwarding](/docs/forwarding) for a handler it is building.
+Let the agent wire up [forwarding](/docs/forwarding) for a handler it is building.
 
 ```
-You: "Forward that endpoint's email to https://api.yourapp.dev/inbound and check the handler works"
-Agent: [calls configure_forwarding with url] Saved; a signing secret was created
+You: "Forward that endpoint's webhooks and email to https://api.yourapp.dev/inbound and check the handler works"
+Agent: [calls configure_forwarding with url, http: true, email: true] Saved; a signing secret was created
        [calls get_forwarding_secret] Put the secret in the handler's FORWARD_SECRET
        [calls test_forwarding] Your server answered 204 in 180 ms
        [calls configure_forwarding with enabled: true] Forwarding is on
 
 You: "A customer says their email never reached us"
-Agent: [calls list_deliveries with endpointSlug] The latest delivery is still pending after 3 attempts; your server answered 500 each time
+Agent: [calls list_deliveries with endpointSlug, status: failed] 3 failed in the last 24 h; your server answered 500 each time
        [calls list_deliveries with requestId] Your server answered "TypeError: cannot read 'from'"
-       [after the fix, calls redeliver_email] Queued a new delivery
-       [calls list_deliveries with requestId] Delivered, 204
+       [after the fix, calls redeliver with endpointSlug] Queued the 3 failed deliveries again
+       [calls list_deliveries with endpointSlug] All delivered, 204
+
+You: "How long do our pushes take to reach webhooks.cc?"
+Agent: [calls configure_forwarding with sentField: "publishedAt"] Deliveries now record the publish time
+       [calls list_deliveries with endpointSlug] The last 20 arrived 18 to 160 ms after publishedAt
 ```
 
 ## Debug missing webhooks

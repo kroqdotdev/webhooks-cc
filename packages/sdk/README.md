@@ -1,6 +1,6 @@
 # @webhooks-cc/sdk
 
-TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints, capture and search requests, wait for emails and read their codes and links, forward emails to your server, send signed test webhooks, verify provider signatures, and build webhook tests with less boilerplate.
+TypeScript SDK for [webhooks.cc](https://webhooks.cc). Create webhook endpoints, capture and search requests, wait for emails and read their codes and links, forward requests and emails to your server or Slack, send signed test webhooks, verify provider signatures, and build webhook tests with less boilerplate.
 
 ## Install
 
@@ -109,7 +109,7 @@ const client = new WebhooksCC({
 - `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `send`, `sendTemplate`
 - `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `count`, `clear`, `export`
 - `client.emails`: `address`, `list`, `get`, `latest`, `waitFor`, `waitForAll`, `sendTest`, `toJson`
-- `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `emailDeliveries`, `redeliver`
+- `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `summary`, `requestDeliveries`, `redeliver`, `redeliverFailed`
 - `client.templates`: `listProviders`, `get`
 - `client.teams`: `list`, `members`, `share`, `unshare`, `invite`, `invites.list`, `invites.accept`, `invites.decline`
 - top-level client methods: `usage()`, `sendTo()`, `buildRequest()`, `flow()`, `describe()`
@@ -305,24 +305,36 @@ no network code, so it fits in a browser bundle.
 
 ## Forwarding
 
-Forwarding posts every email an endpoint captures to your server as signed `email.received` JSON,
-retried for about a day until your server answers 2xx. Only the endpoint's owner can manage it.
+Forwarding sends every HTTP request and email an endpoint captures to your server or a Slack or
+Discord channel, queued, retried and logged. HTTP requests go as received (same method, headers and
+body bytes) or as signed JSON, emails as signed JSON, and either as a chat message for Slack and
+Discord URLs. Only the endpoint's owner can manage it.
 
 ```typescript
-await client.forwarding.configure(endpoint.slug, { url: "https://example.com/hooks/email" });
+await client.forwarding.configure(endpoint.slug, {
+  url: "https://example.com/hooks",
+  http: true,
+  email: true,
+  sentField: "publishedAt", // the sender's own timestamp in the JSON body, for timing
+});
 const secret = await client.forwarding.secret(endpoint.slug); // "whsec_..."
 
-const test = await client.forwarding.test(endpoint.slug); // posts the newest email or a sample once
+const test = await client.forwarding.test(endpoint.slug); // sends the newest request or a sample once
 console.log(test.delivered, test.status, test.excerpt);
 
 await client.forwarding.configure(endpoint.slug, { enabled: true });
 ```
 
-`client.forwarding` also has `rotateSecret(slug)`, `deliveries(slug, { limit })` (latest
-deliveries, 1 to 20, default 5), `emailDeliveries(requestId)` (every try of one email) and
-`redeliver(requestId)`. `configure({ url: null })` removes the URL once forwarding is off.
+`configure()` also takes `format` (`"auto"`, `"as_received"`, `"json"`, `"chat"`), `headers` (your
+own, at most 10), `appendPath`, `retrySeconds` (0, 3600 or 86400) and `keepOrder`.
+`client.forwarding` also has `rotateSecret(slug)`, `deliveries(slug, { limit, status, before })`
+(the delivery log), `summary(slug)`, `requestDeliveries(requestId)` (every try of one request),
+`redeliver(requestId)` and `redeliverFailed(slug)`. `configure({ url: null })` removes the URL once
+forwarding is off.
 
-Verify deliveries in your handler with `verifyForwardedEmail()`. It checks the Standard Webhooks
+In your handler, verify relayed requests with `verifyRelayedRequest()` (the
+`webhooks-cc-signature` header) and signed JSON with `verifyForwardedRequest()` or
+`verifyForwardedEmail()`. For a forwarded email, `verifyForwardedEmail()` checks the Standard Webhooks
 signature and that the timestamp is within five minutes, then returns the typed event. Pass the raw
 body (string, `Uint8Array`/`Buffer` or `ArrayBuffer`) and the headers as a Fetch `Headers`, a plain
 object such as Express's `req.headers`, or name and value pairs:

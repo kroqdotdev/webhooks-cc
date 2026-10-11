@@ -1,8 +1,11 @@
-import type {
-  Request as CapturedRequest,
-  SearchResult,
-  SignatureVerificationResult,
-  VerifySignatureOptions,
+import {
+  REQUEST_RECEIVED,
+  type RelayedRequestInfo,
+  type Request as CapturedRequest,
+  type RequestReceivedEvent,
+  type SearchResult,
+  type SignatureVerificationResult,
+  type VerifySignatureOptions,
 } from "./types";
 import { EMAIL_RECEIVED, type EmailReceivedEvent } from "./email/types";
 import { WebhookVerificationError } from "./errors";
@@ -1211,7 +1214,7 @@ export async function verifyStandardWebhookSignature(
   );
 }
 
-/** Options for `verifyForwardedEmail()`. */
+/** Options for `verifyForwardedEmail()` and `verifyForwardedRequest()`. */
 export interface VerifyForwardedEmailOptions {
   /** How far `webhook-timestamp` may be from now, in seconds (default: 300) */
   toleranceSeconds?: number;
@@ -1232,6 +1235,81 @@ function isEmailReceivedEvent(value: unknown): value is EmailReceivedEvent {
     !!data.headers &&
     typeof data.headers === "object"
   );
+}
+
+function isRequestReceivedEvent(value: unknown): value is RequestReceivedEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as { type?: unknown; timestamp?: unknown; data?: unknown };
+  if (event.type !== REQUEST_RECEIVED || typeof event.timestamp !== "string") return false;
+  const data = event.data as {
+    id?: unknown;
+    method?: unknown;
+    path?: unknown;
+    headers?: unknown;
+  } | null;
+  return (
+    !!data &&
+    typeof data === "object" &&
+    typeof data.id === "string" &&
+    typeof data.method === "string" &&
+    typeof data.path === "string" &&
+    !!data.headers &&
+    typeof data.headers === "object"
+  );
+}
+
+function bodyBytes(body: string | Uint8Array | ArrayBuffer): Uint8Array {
+  if (typeof body === "string") return new TextEncoder().encode(body);
+  return body instanceof ArrayBuffer ? new Uint8Array(body) : body;
+}
+
+function bodyText(body: string | Uint8Array | ArrayBuffer): string {
+  return typeof body === "string" ? body : new TextDecoder().decode(bodyBytes(body));
+}
+
+/** Checks the Standard Webhooks headers of a forwarded delivery and parses its JSON body. */
+async function verifySignedForward(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options: VerifyForwardedEmailOptions,
+  functionName: string
+): Promise<unknown> {
+  requireSecret(secret, functionName);
+  const text = bodyText(body);
+
+  const messageId = getHeader(headers, "webhook-id");
+  const timestampHeader = getHeader(headers, "webhook-timestamp");
+  const signatureHeader = getHeader(headers, "webhook-signature");
+  if (!messageId || !timestampHeader || !signatureHeader) {
+    throw new WebhookVerificationError(
+      "missing_headers",
+      "Missing webhook-id, webhook-timestamp or webhook-signature header"
+    );
+  }
+
+  const timestamp = Number(timestampHeader);
+  const tolerance = options.toleranceSeconds ?? 300;
+  const now = (options.now ?? Date.now()) / 1000;
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > tolerance) {
+    throw new WebhookVerificationError(
+      "timestamp_out_of_range",
+      `webhook-timestamp is more than ${tolerance} seconds from now`
+    );
+  }
+
+  if (!(await verifyStandardWebhookSignature(text, headers, secret))) {
+    throw new WebhookVerificationError(
+      "invalid_signature",
+      "The webhook-signature does not match the body and secret"
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new WebhookVerificationError("invalid_payload", "The body is not JSON");
+  }
 }
 
 /**
@@ -1272,45 +1350,7 @@ export async function verifyForwardedEmail(
   secret: string,
   options: VerifyForwardedEmailOptions = {}
 ): Promise<EmailReceivedEvent> {
-  requireSecret(secret, "verifyForwardedEmail");
-  const text =
-    typeof body === "string"
-      ? body
-      : new TextDecoder().decode(body instanceof ArrayBuffer ? new Uint8Array(body) : body);
-
-  const messageId = getHeader(headers, "webhook-id");
-  const timestampHeader = getHeader(headers, "webhook-timestamp");
-  const signatureHeader = getHeader(headers, "webhook-signature");
-  if (!messageId || !timestampHeader || !signatureHeader) {
-    throw new WebhookVerificationError(
-      "missing_headers",
-      "Missing webhook-id, webhook-timestamp or webhook-signature header"
-    );
-  }
-
-  const timestamp = Number(timestampHeader);
-  const tolerance = options.toleranceSeconds ?? 300;
-  const now = (options.now ?? Date.now()) / 1000;
-  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > tolerance) {
-    throw new WebhookVerificationError(
-      "timestamp_out_of_range",
-      `webhook-timestamp is more than ${tolerance} seconds from now`
-    );
-  }
-
-  if (!(await verifyStandardWebhookSignature(text, headers, secret))) {
-    throw new WebhookVerificationError(
-      "invalid_signature",
-      "The webhook-signature does not match the body and secret"
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new WebhookVerificationError("invalid_payload", "The body is not JSON");
-  }
+  const parsed = await verifySignedForward(body, headers, secret, options, "verifyForwardedEmail");
   if (!isEmailReceivedEvent(parsed)) {
     throw new WebhookVerificationError(
       "invalid_payload",
@@ -1318,6 +1358,110 @@ export async function verifyForwardedEmail(
     );
   }
   return parsed;
+}
+
+/**
+ * Verifies a captured HTTP request webhooks.cc forwarded as signed JSON (the
+ * "Signed JSON" format) and returns it: the same checks as
+ * `verifyForwardedEmail()`, for a `request.received` event.
+ *
+ * @throws WebhookVerificationError with `code` "missing_headers",
+ *   "timestamp_out_of_range", "invalid_signature" or "invalid_payload"
+ */
+export async function verifyForwardedRequest(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options: VerifyForwardedEmailOptions = {}
+): Promise<RequestReceivedEvent> {
+  const parsed = await verifySignedForward(
+    body,
+    headers,
+    secret,
+    options,
+    "verifyForwardedRequest"
+  );
+  if (!isRequestReceivedEvent(parsed)) {
+    throw new WebhookVerificationError(
+      "invalid_payload",
+      "The body is not a request.received event"
+    );
+  }
+  return parsed;
+}
+
+async function hmacSha256(key: Uint8Array, parts: Uint8Array[]): Promise<Uint8Array> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("crypto.subtle is required for signature verification");
+  }
+  const length = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const message = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) {
+    message.set(part, offset);
+    offset += part.byteLength;
+  }
+  const cryptoKey = await globalThis.crypto.subtle.importKey(
+    "raw",
+    key.slice().buffer as ArrayBuffer,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return new Uint8Array(
+    await globalThis.crypto.subtle.sign("HMAC", cryptoKey, message.buffer as ArrayBuffer)
+  );
+}
+
+/**
+ * Verifies that a request reached your server through webhooks.cc's
+ * forwarding as received (the "As received" format), by its
+ * `webhooks-cc-signature` header: "v1," and the base64 HMAC-SHA256, with
+ * your endpoint's `whsec_` secret, of the request id, a dot, the received-at
+ * time, a dot, and the raw body bytes. Returns the metadata headers.
+ *
+ * The sender's own signature (Stripe, GitHub, ...) still verifies with its
+ * own secret; this proves the copy came from your endpoint. There is no
+ * freshness window: a retry a day later carries the original received-at
+ * time. Remember `requestId` to ignore repeats. Pass the exact body bytes.
+ *
+ * @throws WebhookVerificationError with `code` "missing_headers" or
+ *   "invalid_signature"
+ */
+export async function verifyRelayedRequest(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string
+): Promise<RelayedRequestInfo> {
+  requireSecret(secret, "verifyRelayedRequest");
+  const requestId = getHeader(headers, "webhooks-cc-request-id");
+  const receivedAt = getHeader(headers, "webhooks-cc-received-at");
+  const signatureHeader = getHeader(headers, "webhooks-cc-signature");
+  if (!requestId || !receivedAt || !signatureHeader) {
+    throw new WebhookVerificationError(
+      "missing_headers",
+      "Missing webhooks-cc-request-id, webhooks-cc-received-at or webhooks-cc-signature header"
+    );
+  }
+  const expected = toBase64(
+    await hmacSha256(decodeStandardWebhookSecret(secret), [
+      new TextEncoder().encode(`${requestId}.${receivedAt}.`),
+      bodyBytes(body),
+    ])
+  );
+  if (!parseStandardSignatures(signatureHeader).some((given) => timingSafeEqual(given, expected))) {
+    throw new WebhookVerificationError(
+      "invalid_signature",
+      "The webhooks-cc-signature does not match the body and secret"
+    );
+  }
+  const attempt = Number(getHeader(headers, "webhooks-cc-attempt"));
+  return {
+    requestId,
+    receivedAt,
+    endpoint: getHeader(headers, "webhooks-cc-endpoint") ?? null,
+    attempt: Number.isInteger(attempt) && attempt > 0 ? attempt : null,
+  };
 }
 
 /**

@@ -3,7 +3,7 @@ title: "API Reference"
 description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-11
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -577,13 +577,18 @@ emailAddress("my-app", "run-42"); // "my-app+run-42@mailhooks.cc"
 
 ## Forwarding
 
-[Forwarding](/docs/forwarding) posts every email an endpoint captures to your server as signed `email.received` JSON, retried for about a day until your server answers 2xx. Only the endpoint's owner can manage it: for anyone else these methods throw `NotFoundError`, and `configure()` fails with a 403 for team members. Verify deliveries in your handler with [`verifyForwardedEmail()`](/docs/sdk/signatures#forwarded-emails).
+[Forwarding](/docs/forwarding) sends every HTTP request and email an endpoint captures to your server or a Slack or Discord channel, queued, retried and logged. HTTP requests go as received or as signed JSON, emails as signed JSON, and either as a chat message for Slack and Discord URLs. Only the endpoint's owner can manage it: for anyone else these methods throw `NotFoundError`, and `configure()` fails with a 403 for team members. In your handler, verify relayed requests with [`verifyRelayedRequest()`](/docs/sdk/signatures#forwarded-requests), signed JSON with [`verifyForwardedRequest()`](/docs/sdk/signatures#forwarded-requests) or [`verifyForwardedEmail()`](/docs/sdk/signatures#forwarded-emails).
 
 ```ts
-await client.forwarding.configure(slug, { url: "https://example.com/hooks/email" });
+await client.forwarding.configure(slug, {
+  url: "https://api.example.com/hooks",
+  http: true,
+  headers: [{ name: "Authorization", value: `Bearer ${process.env.HOOK_TOKEN}` }],
+  sentField: "publishedAt",
+});
 const secret = await client.forwarding.secret(slug); // put it in your handler
 
-const result = await client.forwarding.test(slug);
+const result = await client.forwarding.test(slug, { kind: "http" });
 if (result.delivered) {
   await client.forwarding.configure(slug, { enabled: true });
 }
@@ -591,7 +596,7 @@ if (result.delivered) {
 
 <ApiMethod method="PATCH" path="/endpoints/:slug" title="client.forwarding.configure">
 
-Set the forwarding URL and turn forwarding on or off. Returns the updated endpoint. Saving the first URL creates the endpoint's signing secret, so you can send a test delivery before turning forwarding on. Turning it off marks the deliveries still waiting as failed. Throws when neither option is given.
+Change the forwarding settings and return the updated endpoint. Only the options you pass change. Saving the first URL creates the endpoint's signing secret, so you can send a test delivery before turning forwarding on. Turning forwarding, or one kind of it, off marks the deliveries still waiting as failed. Throws when no option is given.
 
 ```ts
 configure(endpointSlug: string, options: ConfigureForwardingOptions): Promise<Endpoint>
@@ -599,11 +604,19 @@ configure(endpointSlug: string, options: ConfigureForwardingOptions): Promise<En
 
 <ParamTable>
 
-| Param          | Type             | Required | Description                                                                           |
-| -------------- | ---------------- | -------- | ------------------------------------------------------------------------------------- |
-| `endpointSlug` | `string`         | yes      | Endpoint slug                                                                         |
-| `url`          | `string \| null` | no       | An `https` URL on a public host name, or `null` to remove it (forwarding must be off) |
-| `enabled`      | `boolean`        | no       | Turn forwarding on or off. Turning it on needs a URL, sent now or saved before        |
+| Param          | Type                                           | Required | Description                                                                                                                                       |
+| -------------- | ---------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpointSlug` | `string`                                       | yes      | Endpoint slug                                                                                                                                     |
+| `url`          | `string \| null`                               | no       | An `https` URL on a public host name, or `null` to remove it (forwarding must be off)                                                             |
+| `enabled`      | `boolean`                                      | no       | Turn forwarding on or off. Turning it on needs a URL, sent now or saved before                                                                    |
+| `http`         | `boolean`                                      | no       | Forward HTTP requests                                                                                                                             |
+| `email`        | `boolean`                                      | no       | Forward emails                                                                                                                                    |
+| `format`       | `"auto" \| "as_received" \| "json" \| "chat"`  | no       | How deliveries go out; `"auto"` picks chat for Slack and Discord URLs and as received otherwise. See [Formats](/docs/forwarding#formats)          |
+| `headers`      | `{ name: string; value: string \| null }[]`    | no       | Your own headers, at most 10, for relayed and signed JSON deliveries. Replaces the whole list; `null` keeps the value stored under that name      |
+| `appendPath`   | `boolean`                                      | no       | Add the path after the slug to the URL for relayed requests (default `true`)                                                                      |
+| `retrySeconds` | `0 \| 3600 \| 86400`                           | no       | Retry failed deliveries for a day (default), an hour, or not at all                                                                               |
+| `keepOrder`    | `boolean`                                      | no       | One delivery at a time, in capture order (default `false`)                                                                                        |
+| `sentField`    | `string \| null`                               | no       | A JSON body field with the sender's own timestamp, such as `"publishedAt"` or `"data.publishedAt"`. See [Timing](/docs/forwarding#timing)         |
 
 </ParamTable>
 </ApiMethod>
@@ -630,49 +643,72 @@ rotateSecret(endpointSlug: string): Promise<string>
 
 <ApiMethod method="POST" path="/endpoints/:slug/forwarding/test" title="client.forwarding.test">
 
-Post the newest email (or a sample, when none has arrived) to the saved URL once and report what your server answered. Works with forwarding on or off; nothing is retried or logged. Fails with a 400 when no URL is saved. Rate limited to 10 per minute.
+Send the newest captured request of a kind (or a sample, when none has arrived) to the saved URL once, exactly as a delivery would go out, and report the answer. `kind` defaults to `"http"` when HTTP requests are forwarded, otherwise `"email"`. Works with forwarding on or off; nothing is retried or logged. Fails with a 400 when no URL is saved. Rate limited to 10 per minute.
 
 ```ts
-test(endpointSlug: string): Promise<ForwardingTestResult>
-// Returns: { status, durationMs, excerpt, error, delivered, sample }
+test(endpointSlug: string, options?: { kind?: "http" | "email" }): Promise<ForwardingTestResult>
+// Returns: { status, durationMs, excerpt, error, delivered, sample, kind, format, url, target, request, sender }
 ```
 
 </ApiMethod>
 
 <ApiMethod method="GET" path="/endpoints/:slug/deliveries" title="client.forwarding.deliveries">
 
-The endpoint's latest deliveries, newest first.
+The endpoint's delivery log, newest first. Each row has the status, your server's last answer and time, the format, the request's method and path (or an email's subject), when it was received, and `senderAt` when the request carried the sender's own timestamp.
 
 ```ts
-deliveries(endpointSlug: string, options?: { limit?: number }): Promise<RecentEmailDelivery[]>
+deliveries(endpointSlug: string, options?: ListDeliveriesOptions): Promise<DeliveryLogEntry[]>
 ```
 
 <ParamTable>
 
-| Param          | Type     | Required | Description          |
-| -------------- | -------- | -------- | -------------------- |
-| `endpointSlug` | `string` | yes      | Endpoint slug        |
-| `limit`        | `number` | no       | 1 to 20 (default: 5) |
+| Param          | Type                                 | Required | Description                                       |
+| -------------- | ------------------------------------ | -------- | ------------------------------------------------- |
+| `endpointSlug` | `string`                             | yes      | Endpoint slug                                     |
+| `limit`        | `number`                             | no       | 1 to 100 (default: 5)                             |
+| `status`       | `"all" \| "pending" \| "failed"`     | no       | `"pending"` is queued or retrying (default: all)  |
+| `before`       | `string`                             | no       | A row's `cursor`, to list the rows after it       |
 
 </ParamTable>
 </ApiMethod>
 
-<ApiMethod method="GET" path="/requests/:id/deliveries" title="client.forwarding.emailDeliveries">
+<ApiMethod method="GET" path="/endpoints/:slug/deliveries/summary" title="client.forwarding.summary">
 
-Every delivery of one email, with each try in `attemptLog`. Anyone who can read the email can call this.
+Delivered and failed among the last 24 hours, waiting now, and the failed and total counts the log's filters show. Each count stops at 100,000.
 
 ```ts
-emailDeliveries(requestId: string): Promise<EmailDelivery[]>
+summary(endpointSlug: string): Promise<DeliverySummary>
+// Returns: { last24h: { delivered, failed }, pending, failed, total }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id/deliveries" title="client.forwarding.requestDeliveries">
+
+Every delivery of one captured request or email, with each try in `attemptLog`. Anyone who can read the request can call this; team members get the destination's host without its path. `emailDeliveries()` is the older name for the same call.
+
+```ts
+requestDeliveries(requestId: string): Promise<ForwardingDelivery[]>
 ```
 
 </ApiMethod>
 
 <ApiMethod method="POST" path="/requests/:id/deliveries" title="client.forwarding.redeliver">
 
-Queue an email for delivery again with the current URL and secret, and return the new delivery's id. Fails with a 409 when forwarding is off. Rate limited to 30 per minute.
+Queue a request or email for delivery again with the current settings, and return the new delivery's id. It also sends one that was never forwarded. Fails with a 409 when forwarding of its kind is off. Rate limited to 30 per minute.
 
 ```ts
 redeliver(requestId: string): Promise<{ id: string }>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/deliveries/redeliver-failed" title="client.forwarding.redeliverFailed">
+
+Queue every request whose latest delivery failed again, oldest first, with the current settings. At most 1,000 deliveries wait at a time, so `queued` can be lower than the failed count; call it again once those are through. Fails with a 409 when forwarding is off. Rate limited to 10 per minute.
+
+```ts
+redeliverFailed(endpointSlug: string): Promise<{ queued: number }>
 ```
 
 </ApiMethod>

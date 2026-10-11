@@ -69,7 +69,7 @@ Nothing named `webhook-*` is added, because Standard Webhooks senders such as Sv
 
 ### Check that a relayed request came from webhooks.cc
 
-The provider's signature proves the provider sent it. To also check that it came through your endpoint, verify `webhooks-cc-signature`: the base64 HMAC-SHA256, with your secret, of the request id, a dot, the received-at time, a dot, and the raw body bytes, after `v1,`. The secret starts with `whsec_`; the key is the base64 after that prefix.
+The provider's signature proves the provider sent it. With the SDK, [`verifyRelayedRequest()`](/docs/sdk/signatures#forwarded-requests) does the check below. To also check that it came through your endpoint, verify `webhooks-cc-signature`: the base64 HMAC-SHA256, with your secret, of the request id, a dot, the received-at time, a dot, and the raw body bytes, after `v1,`. The secret starts with `whsec_`; the key is the base64 after that prefix.
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -350,7 +350,7 @@ To test the deployed handler through webhooks.cc instead, use **Send test delive
 
 ## Manage forwarding from code
 
-The SDK's `client.forwarding` methods turn forwarding on and off, set the URL, send test deliveries, and list and redeliver deliveries. What to forward, the format, your headers and the **Advanced** options are set in the dashboard or with the [REST API](/docs/api#forwarding) for now. Like the dashboard, they are for the endpoint's owner only: for anyone else they throw `NotFoundError`, and a team member's `configure()` fails with a 403.
+The SDK's `client.forwarding` methods do everything the **Forwarding** and **Deliveries** sections of Settings do, and the [MCP server](/docs/mcp/tools#configure_forwarding) has the same as tools. Like the dashboard, they are for the endpoint's owner only: for anyone else they throw `NotFoundError`, and a team member's `configure()` fails with a 403.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";
@@ -358,27 +358,38 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 const client = new WebhooksCC({ apiKey: process.env.WHK_API_KEY! });
 const slug = "my-endpoint";
 
-// Save the URL. The first one creates the signing secret.
-await client.forwarding.configure(slug, { url: "https://example.com/hooks/email" });
+// Save the URL and what to forward. The first URL creates the signing secret.
+await client.forwarding.configure(slug, {
+  url: "https://example.com/hooks",
+  http: true,
+  email: true,
+  headers: [{ name: "Authorization", value: `Bearer ${process.env.HOOK_TOKEN}` }],
+  sentField: "publishedAt",
+  keepOrder: true,
+});
 const secret = await client.forwarding.secret(slug); // "whsec_...", for your handler
 
-// Post the newest email (or a sample) once and see what your server answered
-const result = await client.forwarding.test(slug);
+// Send the newest request (or a sample) once and see what your server answered
+const result = await client.forwarding.test(slug, { kind: "http" });
 console.log(result.delivered, result.status, result.excerpt);
 
 // Turn forwarding on
 await client.forwarding.configure(slug, { enabled: true });
 
-// The latest deliveries, every try of one email, and a redelivery
-const recent = await client.forwarding.deliveries(slug, { limit: 10 });
-const deliveries = await client.forwarding.emailDeliveries(recent[0].requestId);
-await client.forwarding.redeliver(recent[0].requestId);
+// The log, its counts, every try of one request, and redeliveries
+const failed = await client.forwarding.deliveries(slug, { status: "failed", limit: 50 });
+const { last24h, pending } = await client.forwarding.summary(slug);
+if (failed.length > 0) {
+  const tries = await client.forwarding.requestDeliveries(failed[0].requestId);
+  await client.forwarding.redeliver(failed[0].requestId);
+}
+await client.forwarding.redeliverFailed(slug);
 
 // Replace a leaked secret; deliveries from now on are signed with the new one
 const newSecret = await client.forwarding.rotateSecret(slug);
 ```
 
-`configure({ enabled: false })` turns forwarding off and fails the deliveries still waiting; `configure({ url: null })` then removes the URL. `secret()` throws `NotFoundError` until a URL has been saved, and `redeliver()` fails with a 409 while forwarding is off. See the [SDK reference](/docs/sdk/api#forwarding) for every method and type.
+`configure()` changes only the options you pass. `configure({ enabled: false })` turns forwarding off and fails the deliveries still waiting; `configure({ url: null })` then removes the URL. `secret()` throws `NotFoundError` until a URL has been saved, and the redelivery methods fail with a 409 while forwarding is off. In your handler, `verifyRelayedRequest()`, `verifyForwardedRequest()` and `verifyForwardedEmail()` check deliveries ([Forwarded requests](/docs/sdk/signatures#forwarded-requests)). See the [SDK reference](/docs/sdk/api#forwarding) for every method and type.
 
 ## Limits
 

@@ -146,8 +146,11 @@ export {
   verifyResendSignature,
   verifyWorkOSSignature,
   verifyForwardedEmail,
+  verifyForwardedRequest,
+  verifyRelayedRequest,
   buildPayPalTransmissionMessage,
 } from "./verify";
+export { REQUEST_RECEIVED } from "./types";
 export type { HeadersInput, VerifyForwardedEmailOptions } from "./verify";
 export type { SSEFrame, ParseSSEOptions } from "./sse";
 export type {
@@ -220,6 +223,18 @@ export type {
   EmailDelivery,
   EmailDeliveryAttempt,
   RecentEmailDelivery,
+  ForwardFormatSetting,
+  ForwardRetrySeconds,
+  ForwardHeaderInput,
+  SenderTime,
+  DeliveryFormat,
+  DeliveryAttempt,
+  ForwardingDelivery,
+  DeliveryLogEntry,
+  ListDeliveriesOptions,
+  DeliverySummary,
+  RequestReceivedEvent,
+  RelayedRequestInfo,
 } from "./types";
 export type { WebhookFlowResult, WebhookFlowVerifyOptions } from "./flow";
 export {

@@ -3,7 +3,7 @@ title: "Tool Reference"
 description: "Complete reference for all 38 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-11
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
@@ -306,52 +306,64 @@ Deliver a sample email with a 6-digit code and a link, to try the email tools be
 
 ## Forwarding
 
-[Forwarding](/docs/forwarding) posts every email an endpoint captures to a URL as signed `email.received` JSON, retried for about a day until the server answers 2xx. Only the endpoint's owner can manage it.
+[Forwarding](/docs/forwarding) sends every HTTP request and email an endpoint captures to a URL or a Slack or Discord channel, queued, retried and logged with its timing. Only the endpoint's owner can manage it.
 
 ### configure_forwarding
 
-Set the URL and turn forwarding on or off. Saving the first URL creates the signing secret, so the agent can send a test delivery before turning forwarding on. Turning it off fails the deliveries still waiting. Returns `forwardEnabled`, `forwardUrl` and `hasForwardSecret`.
+Change the forwarding settings; only the arguments passed change. Saving the first URL creates the signing secret, so the agent can send a test delivery before turning forwarding on. Turning forwarding (or a kind) off fails the deliveries still waiting. Returns every forwarding setting, with header values masked.
 
-| Parameter | Type             | Required | Description                                                          |
-| --------- | ---------------- | -------- | -------------------------------------------------------------------- |
-| `slug`    | `string`         | yes      | Endpoint slug                                                        |
-| `url`     | `string \| null` | no       | `https` URL on a public host name, or `null` to remove it (when off) |
-| `enabled` | `boolean`        | no       | Turn forwarding on (needs a URL) or off                              |
+| Parameter      | Type                                          | Required | Description                                                                                         |
+| -------------- | --------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `slug`         | `string`                                      | yes      | Endpoint slug                                                                                       |
+| `url`          | `string \| null`                              | no       | `https` URL on a public host name, or `null` to remove it (when off)                                |
+| `enabled`      | `boolean`                                     | no       | Turn forwarding on (needs a URL) or off                                                             |
+| `http`         | `boolean`                                     | no       | Forward HTTP requests                                                                               |
+| `email`        | `boolean`                                     | no       | Forward emails                                                                                      |
+| `format`       | `"auto" \| "as_received" \| "json" \| "chat"` | no       | How deliveries go out; `auto` picks chat for Slack and Discord URLs                                |
+| `headers`      | `{ name, value \| null }[]`                   | no       | Your own headers (at most 10); replaces the list, `null` keeps a stored value                       |
+| `appendPath`   | `boolean`                                     | no       | Add the path after the slug to the URL for relayed requests (default `true`)                        |
+| `retrySeconds` | `0 \| 3600 \| 86400`                          | no       | How long failed deliveries are retried (default a day)                                              |
+| `keepOrder`    | `boolean`                                     | no       | One delivery at a time, in capture order                                                            |
+| `sentField`    | `string \| null`                              | no       | JSON body field with the sender's timestamp, such as `publishedAt`, for [timing](/docs/forwarding#timing) |
 
 ### get_forwarding_secret
 
 Read the `whsec_` secret deliveries are signed with, or replace it with `rotate: true`. The value is a credential and ends up in the agent's context: have the agent put it in the handler's environment, not in code.
 
-| Parameter | Type      | Required | Description                                        |
-| --------- | --------- | -------- | -------------------------------------------------- |
-| `slug`    | `string`  | yes      | Endpoint slug                                      |
-| `rotate`  | `boolean` | no       | Replace the secret (default `false`)               |
+| Parameter | Type      | Required | Description                          |
+| --------- | --------- | -------- | ------------------------------------ |
+| `slug`    | `string`  | yes      | Endpoint slug                        |
+| `rotate`  | `boolean` | no       | Replace the secret (default `false`) |
 
 ### test_forwarding
 
-Post the newest email (or a sample, if none has arrived) to the saved URL once and report the server's `status`, `durationMs`, the start of its answer (`excerpt`), `error` and `delivered`. Works with forwarding on or off; nothing is retried or logged.
+Send the newest captured request of a kind (or a sample, if none has arrived) to the saved URL once, exactly as a delivery would go out, and report the `status`, `durationMs`, the start of the answer (`excerpt`), `error`, `delivered`, the `format` and `target` used, and the sender's own timestamp when the request had one. Works with forwarding on or off; nothing is retried or logged.
 
-| Parameter | Type     | Required | Description   |
-| --------- | -------- | -------- | ------------- |
-| `slug`    | `string` | yes      | Endpoint slug |
+| Parameter | Type                | Required | Description                                                       |
+| --------- | ------------------- | -------- | ----------------------------------------------------------------- |
+| `slug`    | `string`            | yes      | Endpoint slug                                                     |
+| `kind`    | `"http" \| "email"` | no       | Which kind (default: HTTP when HTTP requests are forwarded)       |
 
 ### list_deliveries
 
-List an endpoint's latest deliveries (`endpointSlug`), or every delivery and try of one email (`requestId`). Pass exactly one.
+With `endpointSlug`, return the endpoint's delivery log with its counts: `{ summary, deliveries, nextCursor }`. Rows carry `senderAt` when the request had the sender's own timestamp, so `receivedAt - senderAt` is the time to reach webhooks.cc. With `requestId`, return every delivery and try of one request or email. Pass exactly one.
+
+| Parameter      | Type                              | Required | Description                                          |
+| -------------- | --------------------------------- | -------- | ---------------------------------------------------- |
+| `endpointSlug` | `string`                          | no       | The endpoint's delivery log                          |
+| `requestId`    | `string`                          | no       | Every delivery of this request, with each try        |
+| `limit`        | `number`                          | no       | With `endpointSlug`: 1 to 100 (default 20)           |
+| `status`       | `"all" \| "pending" \| "failed"`  | no       | With `endpointSlug`: filter (default `all`)          |
+| `before`       | `string`                          | no       | With `endpointSlug`: `nextCursor`, for older rows    |
+
+### redeliver
+
+Forward again with the current settings: one request or email (`requestId`, which also sends one that was never forwarded), or every request whose latest delivery failed (`endpointSlug`, oldest first, up to 1,000 at a time). Pass exactly one. Fails while forwarding is off.
 
 | Parameter      | Type     | Required | Description                                  |
 | -------------- | -------- | -------- | -------------------------------------------- |
-| `endpointSlug` | `string` | no       | The endpoint's latest deliveries             |
-| `requestId`    | `string` | no       | Every delivery of this email, with each try  |
-| `limit`        | `number` | no       | With `endpointSlug`: 1 to 20 (default 5)     |
-
-### redeliver_email
-
-Forward an email again with the current URL and secret. Fails while forwarding is off.
-
-| Parameter   | Type     | Required | Description            |
-| ----------- | -------- | -------- | ---------------------- |
-| `requestId` | `string` | yes      | The email's request ID |
+| `requestId`    | `string` | no       | The request or email to send again           |
+| `endpointSlug` | `string` | no       | Send every failed delivery of this endpoint  |
 
 ## Request analysis
 

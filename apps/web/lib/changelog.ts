@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.38.0";
+export const APP_VERSION = "0.38.1";
 export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.13.0";
-export const MCP_VERSION = "1.11.0";
+export const SDK_VERSION = "1.14.0";
+export const MCP_VERSION = "1.12.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.38.1",
+    date: "2026-10-11",
+    title: "Forwarding Docs for the SDK and MCP",
+    track: "web",
+    items: [
+      "The SDK and MCP docs cover every forwarding setting, the delivery log, redelivering everything that failed, and verifying forwarded HTTP requests",
+    ],
+  },
   {
     version: "0.38.0",
     date: "2026-10-11",
@@ -1375,6 +1384,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.14.0",
+    date: "2026-10-11",
+    title: "Forwarding for HTTP Requests",
+    track: "sdk",
+    items: [
+      "`forwarding.configure()` takes every setting: `http`, `email`, `format`, your own `headers`, `appendPath`, `retrySeconds`, `keepOrder` and `sentField` (the sender's timestamp in the body)",
+      "`forwarding.deliveries()` filters by `status` and pages with `before`, and its rows carry the format, the request's method and path, and the sender's timestamp",
+      "`forwarding.summary()`, `forwarding.redeliverFailed()` and `forwarding.requestDeliveries()`, which covers HTTP requests too (`emailDeliveries()` stays as its old name)",
+      "`forwarding.test()` takes a `kind` and reports the format, target and sender's timestamp it used",
+      "`verifyRelayedRequest()` checks the `webhooks-cc-signature` on a request relayed as received, and `verifyForwardedRequest()` a `request.received` event sent as signed JSON",
+    ],
+  },
+  {
     version: "1.13.0",
     date: "2026-10-10",
     title: "Agent Sandbox",
@@ -1638,6 +1660,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.12.0",
+    date: "2026-10-11",
+    title: "Forwarding for HTTP Requests",
+    track: "mcp",
+    items: [
+      "`configure_forwarding` takes every setting: which kinds, the format, your own headers, path, retries, order and the sent time field",
+      "`list_deliveries` returns an endpoint's log with its counts, filters by status and pages with a cursor; rows carry the sender's timestamp for timing",
+      "`test_forwarding` takes a `kind`",
+      "`redeliver` replaces `redeliver_email`: it sends one request or email again, or every failed delivery of an endpoint",
+    ],
+  },
   {
     version: "1.11.0",
     date: "2026-10-10",
