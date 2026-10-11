@@ -1,3 +1,4 @@
+import { isDiscordUrl } from "./chat";
 import { formatDuration, type SenderTime } from "./timing";
 
 /**
@@ -211,11 +212,5 @@ export function leadVerb(format: "as_received" | "json" | "chat"): string {
 
 /** The chat service a webhook URL belongs to, for sentences: "Slack", "Discord". */
 export function chatServiceName(url: string): string {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    if (host.endsWith("discord.com") || host.endsWith("discordapp.com")) return "Discord";
-  } catch {
-    // Not a URL: a server, then.
-  }
-  return "Slack";
+  return isDiscordUrl(url) ? "Discord" : "Slack";
 }
