@@ -82,6 +82,9 @@ export default function DashboardPage() {
   const accessToken = session?.access_token ?? null;
   const [endpoints, setEndpoints] = useState<DashboardEndpoint[] | undefined>(undefined);
   const [recentRequests, setRecentRequests] = useState<Request[]>([]);
+  // The endpoint whose first page of requests has arrived; until then an
+  // empty list means "loading", not "nothing captured yet".
+  const [requestsLoadedFor, setRequestsLoadedFor] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const endpointSlug = searchParams.get("endpoint");
 
@@ -378,11 +381,13 @@ export default function DashboardPage() {
       const nextRequests = await fetchDashboardRequests(accessToken, currentSlug, 50);
       if (requestSeq === recentRequestsRequestSeq.current) {
         setRecentRequests(nextRequests);
+        setRequestsLoadedFor(currentSlug);
       }
     } catch (error) {
       console.error("Failed to load dashboard requests:", error);
       if (requestSeq === recentRequestsRequestSeq.current) {
         setRecentRequests([]);
+        setRequestsLoadedFor(currentSlug);
       }
     }
   }, [accessToken, currentSlug]);
@@ -1101,7 +1106,10 @@ export default function DashboardPage() {
 
   if (!currentEndpoint) return null;
 
-  const hasRequests = recentRequests.length > 0;
+  // Only this endpoint's list counts: right after a switch the previous
+  // endpoint's requests are still in state until the new page arrives.
+  const requestsLoading = requestsLoadedFor !== currentEndpoint.slug;
+  const hasRequests = !requestsLoading && recentRequests.length > 0;
   const loadedCount = displayedItems.length;
   const initialCanLoadMore = recentRequests.length >= CLICKHOUSE_PAGE_SIZE;
   const showHasMore = computeShowHasMore({
@@ -1304,6 +1312,8 @@ export default function DashboardPage() {
             )}
           </div>
         </>
+      ) : requestsLoading ? (
+        <RequestsSkeleton />
       ) : (
         <WaitingForRequests
           slug={currentEndpoint.slug}
@@ -1393,7 +1403,15 @@ function DashboardSkeleton() {
           <Skeleton className="h-5 flex-1 max-w-md" />
         </div>
       </div>
-      {/* Content skeleton */}
+      <RequestsSkeleton />
+    </div>
+  );
+}
+
+/** The request list and detail while the first page of requests loads. */
+function RequestsSkeleton() {
+  return (
+    <div className="flex-1 flex flex-col" data-testid="requests-loading">
       <div className="flex-1 flex">
         {/* List skeleton */}
         <div className="w-80 shrink-0 border-r-strong border-line hidden md:block">

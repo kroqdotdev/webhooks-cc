@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.38.1";
+export const APP_VERSION = "0.38.2";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.14.0";
 export const MCP_VERSION = "1.12.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.38.2",
+    date: "2026-10-11",
+    title: "Forwarding Setup Fixes",
+    track: "web",
+    items: [
+      "Setting up forwarding proposes both HTTP requests and emails, so pasting a Slack or server URL forwards webhooks without an extra tick",
+      "The forwarding switch's help no longer suggests a test delivery is required before turning it on",
+      "Coming back to the dashboard shows the request list loading instead of briefly saying the endpoint is waiting for its first request",
+    ],
+  },
   {
     version: "0.38.1",
     date: "2026-10-11",
