@@ -55,14 +55,18 @@ test("coming back to the dashboard waits for the requests instead of showing the
 
   // Hold the request list back, so the moment before it arrives can be seen.
   let release: () => void = () => {};
+  let intercepted = false;
   const held = new Promise<void>((resolve) => (release = resolve));
   await page.route(`**/api/endpoints/${endpointSlug}/requests?*`, async (route) => {
+    intercepted = true;
     await held;
     await route.continue();
   });
 
   await page.goBack();
-  await expect(page.getByText("Loading E2E").first()).toBeVisible({ timeout: 15000 });
+  await expect.poll(() => intercepted, { timeout: 15000 }).toBe(true);
+  // The list is held back: the skeleton shows, the empty state does not.
+  await expect(page.getByTestId("requests-loading")).toBeVisible();
   await expect(page.getByText("Waiting for the first request")).toBeHidden();
 
   release();

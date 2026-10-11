@@ -1106,8 +1106,10 @@ export default function DashboardPage() {
 
   if (!currentEndpoint) return null;
 
-  const hasRequests = recentRequests.length > 0;
-  const requestsLoading = !hasRequests && requestsLoadedFor !== currentEndpoint.slug;
+  // Only this endpoint's list counts: right after a switch the previous
+  // endpoint's requests are still in state until the new page arrives.
+  const requestsLoading = requestsLoadedFor !== currentEndpoint.slug;
+  const hasRequests = !requestsLoading && recentRequests.length > 0;
   const loadedCount = displayedItems.length;
   const initialCanLoadMore = recentRequests.length >= CLICKHOUSE_PAGE_SIZE;
   const showHasMore = computeShowHasMore({
@@ -1409,7 +1411,7 @@ function DashboardSkeleton() {
 /** The request list and detail while the first page of requests loads. */
 function RequestsSkeleton() {
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col" data-testid="requests-loading">
       <div className="flex-1 flex">
         {/* List skeleton */}
         <div className="w-80 shrink-0 border-r-strong border-line hidden md:block">
