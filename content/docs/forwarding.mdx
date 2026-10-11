@@ -379,8 +379,10 @@ await client.forwarding.configure(slug, { enabled: true });
 // The log, its counts, every try of one request, and redeliveries
 const failed = await client.forwarding.deliveries(slug, { status: "failed", limit: 50 });
 const { last24h, pending } = await client.forwarding.summary(slug);
-const tries = await client.forwarding.requestDeliveries(failed[0].requestId);
-await client.forwarding.redeliver(failed[0].requestId);
+if (failed.length > 0) {
+  const tries = await client.forwarding.requestDeliveries(failed[0].requestId);
+  await client.forwarding.redeliver(failed[0].requestId);
+}
 await client.forwarding.redeliverFailed(slug);
 
 // Replace a leaked secret; deliveries from now on are signed with the new one

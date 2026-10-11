@@ -332,10 +332,9 @@ own, at most 10), `appendPath`, `retrySeconds` (0, 3600 or 86400) and `keepOrder
 `redeliver(requestId)` and `redeliverFailed(slug)`. `configure({ url: null })` removes the URL once
 forwarding is off.
 
-Verify relayed requests with `verifyRelayedRequest()` (the `webhooks-cc-signature` header) and
-signed JSON with `verifyForwardedRequest()` or `verifyForwardedEmail()`.
-
-Verify deliveries in your handler with `verifyForwardedEmail()`. It checks the Standard Webhooks
+In your handler, verify relayed requests with `verifyRelayedRequest()` (the
+`webhooks-cc-signature` header) and signed JSON with `verifyForwardedRequest()` or
+`verifyForwardedEmail()`. For a forwarded email, `verifyForwardedEmail()` checks the Standard Webhooks
 signature and that the timestamp is within five minutes, then returns the typed event. Pass the raw
 body (string, `Uint8Array`/`Buffer` or `ArrayBuffer`) and the headers as a Fetch `Headers`, a plain
 object such as Express's `req.headers`, or name and value pairs:
