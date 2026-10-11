@@ -186,11 +186,13 @@ describe("owner headers", () => {
         ["Authorization", "Bearer abcdefgh1234"],
         ["X-Short", "abc"],
         ["X-Api-Key", "sk_live_abcdefgh5678"],
+        ["X-Pair", "s3cretKey v2-abcdefgh"],
       ])
     ).toEqual([
       { name: "Authorization", value: "Bearer ••••1234" },
       { name: "X-Short", value: "••••" },
       { name: "X-Api-Key", value: "••••5678" },
+      { name: "X-Pair", value: "••••efgh" },
     ]);
   });
 });

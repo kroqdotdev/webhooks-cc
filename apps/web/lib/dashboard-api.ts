@@ -47,12 +47,29 @@ export interface DashboardEndpoint {
   emailAddress?: string | null;
   /** Show codes and links found in captured emails. */
   showEmailExtracts?: boolean;
-  /** Forward captured email to forwardUrl as signed JSON. */
+  /** Forward captured requests and emails to forwardUrl (lib/forwarding). */
   forwardEnabled?: boolean;
   /** Owner only. */
   forwardUrl?: string | null;
   hasForwardSecret?: boolean;
+  /** Which captured requests are forwarded. */
+  forwardHttp?: boolean;
+  forwardEmail?: boolean;
+  /** "auto" picks from the URL. */
+  forwardFormat?: ForwardFormatSetting;
+  forwardAppendPath?: boolean;
+  /** 0 (never), 3600 or 86400. */
+  forwardRetrySeconds?: number;
+  forwardKeepOrder?: boolean;
+  /** Owner only: names with masked values. */
+  forwardHeaders?: { name: string; value: string }[];
+  /** The JSON body field that holds when the sender sent the request. */
+  forwardSentField?: string | null;
 }
+
+export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
+export type DeliveryFormat = "as_received" | "json" | "chat";
+export type DeliveryStatus = "pending" | "succeeded" | "failed";
 
 export interface TeamEndpointShare {
   teamId: string;
@@ -158,6 +175,7 @@ export async function sendTestEmail(
 }
 
 export interface DeliveryAttempt {
+  /** When the result was recorded: the end of the try. It started durationMs earlier. */
   attemptedAt: number;
   status: number | null;
   durationMs: number;
@@ -165,29 +183,65 @@ export interface DeliveryAttempt {
   responseExcerpt: string | null;
 }
 
-export interface EmailDelivery {
+/** One forwarded copy of a captured request, with its tries (newest first). */
+export interface RequestDelivery {
   id: string;
   requestId: string;
-  status: "pending" | "succeeded" | "failed";
+  kind: "http" | "email";
+  status: DeliveryStatus;
   attempts: number;
   createdAt: number;
   finishedAt: number | null;
   nextAttemptAt: number | null;
   lastStatus: number | null;
   lastError: string | null;
+  /** Recorded with the first try; null while queued. */
+  format: DeliveryFormat | null;
+  /** Host and path (host only for chat webhooks and for team members); null while queued. */
+  target: string | null;
+  /** The sender's own timestamp and where it was read. */
+  senderAt: number | null;
+  senderSource: string | null;
   attemptLog: DeliveryAttempt[];
 }
 
-export interface RecentDelivery {
+/** @deprecated Use RequestDelivery: deliveries carry HTTP requests too. */
+export type EmailDelivery = RequestDelivery;
+
+/** One row of an endpoint's delivery log. */
+export interface LogDelivery {
   id: string;
   requestId: string;
-  status: EmailDelivery["status"];
+  kind: "http" | "email";
+  status: DeliveryStatus;
   attempts: number;
   createdAt: number;
+  finishedAt: number | null;
   lastStatus: number | null;
   lastError: string | null;
+  lastDurationMs: number | null;
   subject: string | null;
+  method: string | null;
+  path: string | null;
+  receivedAt: number | null;
+  nextAttemptAt: number | null;
+  format: DeliveryFormat | null;
+  senderAt: number | null;
+  senderSource: string | null;
+  /** Pass as `before` for older rows. */
+  cursor: string;
 }
+
+export interface DeliverySummary {
+  last24h: { delivered: number; failed: number };
+  /** Queued or retrying now. */
+  pending: number;
+  /** Among the deliveries still kept. */
+  failed: number;
+  total: number;
+}
+
+export type DeliveryLogFilter = "all" | "pending" | "failed";
 
 export interface ForwardTestResult {
   status: number | null;
@@ -195,8 +249,15 @@ export interface ForwardTestResult {
   excerpt: string | null;
   error: string | null;
   delivered: boolean;
-  /** No email had arrived yet, so a sample was sent. */
+  /** Nothing had arrived yet, so a sample was sent. */
   sample: boolean;
+  kind: "http" | "email";
+  format: DeliveryFormat;
+  /** The URL the test went to, path appended where it applies. */
+  url: string;
+  target: string | null;
+  request: { method: string; path: string; subject: string | null; receivedAt: number };
+  sender: { at: number; source: string; wholeSeconds: boolean } | null;
 }
 
 const endpointPath = (slug: string) => `/api/endpoints/${encodeURIComponent(slug)}`;
@@ -216,43 +277,102 @@ export async function rotateForwardSecret(accessToken: string, slug: string): Pr
 
 export async function sendForwardTest(
   accessToken: string,
-  slug: string
+  slug: string,
+  kind?: "http" | "email"
 ): Promise<ForwardTestResult> {
   const response = await fetch(
     `${endpointPath(slug)}/forwarding/test`,
-    withAuthHeaders(accessToken, { method: "POST" })
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(kind ? { kind } : {}),
+    })
   );
   return readJson<ForwardTestResult>(response);
 }
 
-export async function fetchRecentDeliveries(
+export async function fetchDeliveryLog(
   accessToken: string,
-  slug: string
-): Promise<RecentDelivery[]> {
+  slug: string,
+  options: { limit?: number; status?: DeliveryLogFilter; before?: string | null } = {}
+): Promise<LogDelivery[]> {
+  // URLSearchParams encodes the "+" in a cursor's offset.
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 50),
+    status: options.status ?? "all",
+  });
+  if (options.before) params.set("before", options.before);
   const response = await fetch(
-    `${endpointPath(slug)}/deliveries?limit=5`,
+    `${endpointPath(slug)}/deliveries?${params.toString()}`,
     withAuthHeaders(accessToken)
   );
-  return readJson<RecentDelivery[]>(response);
+  return readJson<LogDelivery[]>(response);
 }
 
-export async function fetchEmailDeliveries(
+export async function fetchDeliverySummary(
+  accessToken: string,
+  slug: string
+): Promise<DeliverySummary> {
+  const response = await fetch(
+    `${endpointPath(slug)}/deliveries/summary`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson<DeliverySummary>(response);
+}
+
+export class ForwardingOffError extends Error {}
+
+/** Queues every failed delivery again, oldest first. Throws ForwardingOffError on 409. */
+export async function redeliverAllFailed(
+  accessToken: string,
+  slug: string
+): Promise<{ queued: number }> {
+  const response = await fetch(
+    `${endpointPath(slug)}/deliveries/redeliver-failed`,
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  if (response.status === 409) {
+    const data = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new ForwardingOffError(data?.error ?? "Turn forwarding on first.");
+  }
+  return readJson<{ queued: number }>(response);
+}
+
+export async function fetchRequestDeliveries(
   accessToken: string,
   requestId: string
-): Promise<EmailDelivery[]> {
+): Promise<RequestDelivery[]> {
   const response = await fetch(
     `/api/requests/${encodeURIComponent(requestId)}/deliveries`,
     withAuthHeaders(accessToken)
   );
-  return readJson<EmailDelivery[]>(response);
+  return readJson<RequestDelivery[]>(response);
 }
 
-export async function redeliverEmail(accessToken: string, requestId: string): Promise<void> {
+/** Forwards the request again with the current settings. Throws ForwardingOffError on 409. */
+export async function redeliverRequest(accessToken: string, requestId: string): Promise<void> {
   const response = await fetch(
     `/api/requests/${encodeURIComponent(requestId)}/deliveries`,
     withAuthHeaders(accessToken, { method: "POST" })
   );
+  if (response.status === 409) {
+    const data = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new ForwardingOffError(data?.error ?? "Turn forwarding on first.");
+  }
   await readJson<{ id: string }>(response);
+}
+
+/** One captured request by id, for opening a delivery whose request the list has not loaded. */
+export async function fetchDashboardRequestById(
+  accessToken: string,
+  requestId: string
+): Promise<Request | null> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}`,
+    withAuthHeaders(accessToken)
+  );
+  if (response.status === 404) return null;
+  return toDashboardRequest(await readJson<Parameters<typeof toDashboardRequest>[0]>(response));
 }
 
 export async function fetchDashboardEndpoints(

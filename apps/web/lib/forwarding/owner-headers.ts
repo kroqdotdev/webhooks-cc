@@ -1,55 +1,30 @@
 import { decryptSigningSecret, encryptSigningSecret } from "@/lib/crypto";
-import { PROXY_CONTROL_HEADERS } from "./proxy-headers";
+import {
+  MAX_HEADER_VALUE_CHARS,
+  MAX_OWNER_HEADERS,
+  headerValueAllowed,
+  refusedHeaderName,
+} from "./header-rules";
 
 /**
  * Headers an endpoint's owner adds to forwarded requests (for example the
  * destination's `Authorization`). Stored as one encrypted JSON array, like
  * signing secrets; the API shows the names and a masked value, and saving
- * replaces the whole set.
+ * replaces the whole set. The rules themselves live in header-rules.ts, which
+ * the dashboard imports too.
  */
 
-export const MAX_OWNER_HEADERS = 10;
-const MAX_NAME = 64;
-const MAX_VALUE = 1024;
-/** RFC 9110 token characters. */
-const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const REFUSED = new Set([
-  "host",
-  "content-length",
-  "content-type",
-  "transfer-encoding",
-  "connection",
-  "upgrade",
-  "te",
-  "trailer",
-  "keep-alive",
-  "expect",
-]);
+export {
+  MAX_OWNER_HEADERS,
+  MAX_HEADER_NAME_CHARS,
+  MAX_HEADER_VALUE_CHARS,
+  headerNameIssue,
+  refusedHeaderName,
+} from "./header-rules";
 
 export type OwnerHeader = [string, string];
 
 export type OwnerHeadersCheck = { ok: true; headers: OwnerHeader[] } | { ok: false; error: string };
-
-/** Why a header name cannot be added, or null when it can. */
-export function refusedHeaderName(name: string): string | null {
-  const lower = name.toLowerCase();
-  if (!name || name.length > MAX_NAME || !TOKEN.test(name)) {
-    return `"${name.slice(0, MAX_NAME)}" is not a valid header name.`;
-  }
-  if (REFUSED.has(lower) || lower.startsWith("proxy-")) {
-    return `${name} is set by the request itself and cannot be added.`;
-  }
-  if (lower.startsWith("webhook-")) {
-    return `${name} is reserved for Standard Webhooks signatures.`;
-  }
-  if (lower.startsWith("webhooks-cc-")) {
-    return `${name} is reserved for the headers webhooks.cc adds.`;
-  }
-  if (PROXY_CONTROL_HEADERS.has(lower)) {
-    return `${name} is reserved by webhooks.cc.`;
-  }
-  return null;
-}
 
 /** Validates a set the owner submitted: `[{ name, value }]`. */
 export function checkOwnerHeaders(input: unknown): OwnerHeadersCheck {
@@ -64,10 +39,10 @@ export function checkOwnerHeaders(input: unknown): OwnerHeadersCheck {
     const value = typeof item?.value === "string" ? item.value : null;
     const refused = refusedHeaderName(name);
     if (refused) return { ok: false, error: refused };
-    if (value === null || value.length > MAX_VALUE || /[\r\n\0]/.test(value)) {
+    if (value === null || !headerValueAllowed(value)) {
       return {
         ok: false,
-        error: `The value of ${name} must be text up to ${MAX_VALUE} characters on one line.`,
+        error: `The value of ${name} must be text up to ${MAX_HEADER_VALUE_CHARS} characters on one line.`,
       };
     }
     if (seen.has(name.toLowerCase())) return { ok: false, error: `${name} is listed twice.` };
@@ -95,13 +70,22 @@ function maskValue(value: string): string {
   return value.length <= 8 ? "••••" : `••••${value.slice(-4)}`;
 }
 
+/** Authorization schemes shown in the clear; any other first word may be part of the secret. */
+const SCHEMES = new Set(["basic", "bearer", "bot", "digest", "token", "apikey"]);
+
 /**
- * What the dashboard shows: the name, a scheme word such as "Bearer" when
+ * What the dashboard shows: the name, a known scheme such as "Bearer" when
  * the value starts with one, and the last four characters of a long value.
  */
 export function maskOwnerHeaders(headers: OwnerHeader[]): { name: string; value: string }[] {
   return headers.map(([name, value]) => {
-    const scheme = /^([A-Za-z][A-Za-z0-9-]{0,19}) (\S.*)$/.exec(value);
-    return { name, value: scheme ? `${scheme[1]} ${maskValue(scheme[2])}` : maskValue(value) };
+    const scheme = /^([A-Za-z]+) (\S.*)$/.exec(value);
+    return {
+      name,
+      value:
+        scheme && SCHEMES.has(scheme[1].toLowerCase())
+          ? `${scheme[1]} ${maskValue(scheme[2])}`
+          : maskValue(value),
+    };
   });
 }

@@ -24,6 +24,7 @@ import { jsonToTypeScript } from "@/lib/json-to-typescript";
 import { JsonTree } from "./json-tree";
 import { SignatureTab, SignatureVerificationBadge } from "./signature-tab";
 import { ProviderBadge } from "./provider-badge";
+import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -46,6 +47,12 @@ interface RequestDetailProps {
   onOpenSettings?: () => void;
   /** Slug of the endpoint this request belongs to (used to prefill the manual-verify URL). */
   endpointSlug?: string;
+  /** Shows the Deliveries tab: the endpoint's forwarding, and whether this user may redeliver. */
+  deliveries?: {
+    endpoint: DeliveryEndpoint;
+    canRedeliver: boolean;
+    onOpenForwarding?: () => void;
+  };
 }
 
 /**
@@ -108,8 +115,8 @@ function generateCurlCommand(request: DisplayableRequest): string {
   return parts.join(" \\\n  ");
 }
 
-export type Tab = "body" | "headers" | "query" | "raw" | "signature";
-export const TABS: Tab[] = ["body", "headers", "query", "raw", "signature"];
+export type Tab = "body" | "headers" | "query" | "raw" | "signature" | "deliveries";
+export const TABS: Tab[] = ["body", "headers", "query", "raw", "signature", "deliveries"];
 
 export function RequestDetail({
   request,
@@ -120,10 +127,14 @@ export function RequestDetail({
   onNoteChange,
   onOpenSettings,
   endpointSlug,
+  deliveries,
 }: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
-  const tab = activeTab ?? internalTab;
   const setTab = onTabChange ?? setInternalTab;
+  // The Deliveries tab exists once the endpoint has (or had) a forwarding URL.
+  const tabs = deliveries ? TABS : TABS.filter((entry) => entry !== "deliveries");
+  const requested = activeTab ?? internalTab;
+  const tab = tabs.includes(requested) ? requested : "body";
 
   const [copied, setCopied] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -233,8 +244,8 @@ export function RequestDetail({
       {onNoteChange && <NoteBar note={note ?? null} onChange={onNoteChange} />}
 
       {/* Tabs */}
-      <div className="border-b-strong border-line flex shrink-0">
-        {TABS.map((t) => (
+      <div className="border-b-strong border-line flex shrink-0 overflow-x-auto [scrollbar-width:none]">
+        {tabs.map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -361,6 +372,16 @@ export function RequestDetail({
             request={request}
             onOpenSettings={onOpenSettings}
             endpointSlug={endpointSlug}
+          />
+        )}
+
+        {tab === "deliveries" && deliveries && (
+          <DeliveriesPane
+            key={requestId}
+            request={request}
+            endpoint={deliveries.endpoint}
+            canRedeliver={deliveries.canRedeliver}
+            onOpenForwarding={deliveries.onOpenForwarding}
           />
         )}
       </div>

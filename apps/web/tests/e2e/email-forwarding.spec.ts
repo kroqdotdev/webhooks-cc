@@ -121,7 +121,11 @@ async function captureEmail(subject: string) {
 test("set up forwarding: URL, secret, a test delivery, then on", async ({ page }) => {
   const section = await openSettings(page);
 
-  await section.getByLabel("URL").fill(hookUrl);
+  await section.getByLabel("Send to").fill(hookUrl);
+  // A server URL with only emails forwarded picks signed JSON.
+  await expect(
+    section.getByRole("radiogroup", { name: "Format" }).getByRole("radio", { name: "Signed JSON" })
+  ).toHaveAttribute("aria-checked", "true");
   await section.getByRole("button", { name: "Save changes" }).click();
   await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
 
@@ -133,7 +137,9 @@ test("set up forwarding: URL, secret, a test delivery, then on", async ({ page }
 
   // A test delivery: no email yet, so a signed sample.
   await section.getByRole("button", { name: "Send test delivery" }).click();
-  await expect(section.getByText(/^Delivered: 200 in \d+ ms/)).toBeVisible({ timeout: 20000 });
+  await expect(
+    section.getByText(/^Delivered\. Your server answered 200 in \d+ ms\. A sample email/)
+  ).toBeVisible({ timeout: 20000 });
   await expect(section.getByText('{"received":true}')).toBeVisible();
   const sample = received.at(-1)!;
   expect(JSON.parse(sample.body)).toMatchObject({ type: "email.received", data: { test: true } });
@@ -145,9 +151,13 @@ test("set up forwarding: URL, secret, a test delivery, then on", async ({ page }
     )
   ).toBe(true);
 
-  await section.getByRole("switch", { name: "Forward emails as JSON" }).click();
+  await section.getByRole("switch", { name: "Forward captured requests" }).click();
+  await expect(section.getByText("Forwarding turned on.")).toBeVisible();
   await section.getByRole("button", { name: "Save changes" }).click();
   await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+  await expect(
+    section.getByText("On. Every email captured here is sent to the URL below.")
+  ).toBeVisible();
   const { data } = await admin
     .from("endpoints")
     .select("forward_enabled, forward_url")
@@ -185,22 +195,32 @@ test("a captured email is forwarded, shown as delivered, and can be sent again",
     timeout: 15000,
   });
   await shown(page.getByRole("button", { name: /^Deliveries$/i })).click();
-  await expect(shown(page.getByText("Delivered", { exact: true }))).toBeVisible();
+  await expect(shown(page.getByText(/^Forwarded as signed JSON to /))).toBeVisible();
+  const cards = shown(page.getByRole("region", { name: /^(Delivery|Redelivery)$/ }));
+  await expect(cards.first()).toContainText("Delivered");
   await expect(shown(page.getByText("1 try"))).toBeVisible();
+  // The journey: received, then delivered; no Sent stop without a Date header.
+  await expect(
+    shown(page.getByRole("img", { name: /^Received at .*, delivered .* later at/ }))
+  ).toBeVisible();
 
   // Redeliver: the same email, the same webhook-id, a second delivery.
   const beforeRedelivery = received.length;
   await shown(page.getByRole("button", { name: "Redeliver" })).click();
+  await expect(
+    shown(page.getByText("Queued. The result shows here within a few seconds."))
+  ).toBeVisible();
   await expect.poll(() => received.length, { timeout: 20000 }).toBeGreaterThan(beforeRedelivery);
   expect(received.at(-1)!.headers["webhook-id"]).toBe(delivery.headers["webhook-id"]);
-  await expect(shown(page.getByText("Delivered", { exact: true }))).toHaveCount(2, {
-    timeout: 15000,
-  });
+  await expect(cards).toHaveCount(2, { timeout: 15000 });
+  await expect(cards.first()).toContainText("Redelivery");
+  await expect(cards.first()).toContainText("Delivered", { timeout: 15000 });
 });
 
 test("turning forwarding off stops it", async ({ page }) => {
   const section = await openSettings(page);
-  await section.getByRole("switch", { name: "Forward emails as JSON" }).click();
+  await section.getByRole("switch", { name: "Forward captured requests" }).click();
+  await expect(section.getByText("Forwarding turned off.")).toBeVisible();
   await section.getByRole("button", { name: "Save changes" }).click();
   await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
 
