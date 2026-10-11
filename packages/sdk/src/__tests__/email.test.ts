@@ -390,7 +390,7 @@ describe("client.forwarding", () => {
   it("returns the secret and rejects an empty configure", async () => {
     const client = createClient();
     await expect(client.forwarding.secret("acme")).resolves.toBe("whsec_abc");
-    await expect(client.forwarding.configure("acme", {})).rejects.toThrow(/url or enabled/);
+    await expect(client.forwarding.configure("acme", {})).rejects.toThrow(/at least one setting/);
   });
 });
 

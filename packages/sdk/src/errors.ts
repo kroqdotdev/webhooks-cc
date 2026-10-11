@@ -75,13 +75,14 @@ export class RateLimitError extends WebhooksCCError {
   }
 }
 
-/** Why `verifyForwardedEmail()` rejected a delivery. */
+/** Why `verifyForwardedEmail()`, `verifyForwardedRequest()` or `verifyRelayedRequest()` rejected a delivery. */
 export type WebhookVerificationErrorCode =
   "missing_headers" | "timestamp_out_of_range" | "invalid_signature" | "invalid_payload";
 
 /**
- * Thrown by `verifyForwardedEmail()` when a request is not a genuine,
- * recent forwarded email. Answer it with 401 (or 400 for `invalid_payload`).
+ * Thrown by `verifyForwardedEmail()`, `verifyForwardedRequest()` and
+ * `verifyRelayedRequest()` when a request is not a genuine forwarded
+ * delivery. Answer it with 401 (or 400 for `invalid_payload`).
  */
 export class WebhookVerificationError extends Error {
   constructor(

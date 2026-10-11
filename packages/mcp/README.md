@@ -97,13 +97,14 @@ The request tools and resources return emails too (filter with `kind`), without 
 
 ### Forwarding tools
 
-Forward every captured email to a URL as signed JSON (owner only):
+Forward every captured HTTP request and email to a URL or a Slack or Discord channel, as received,
+as signed JSON or as a chat message, retried and logged (owner only):
 
-- `configure_forwarding`
+- `configure_forwarding` (URL, on/off, kinds, format, your headers, path, retries, order, sent time field)
 - `get_forwarding_secret` (returns the `whsec_` secret; with `rotate: true`, replaces it)
 - `test_forwarding`
-- `list_deliveries`
-- `redeliver_email`
+- `list_deliveries` (the delivery log with its counts, or every try of one request)
+- `redeliver` (one request, or every failed delivery of an endpoint)
 
 ### Send and test tools
 

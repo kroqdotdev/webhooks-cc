@@ -53,7 +53,7 @@ const EXPECTED_TOOLS = [
   "get_forwarding_secret",
   "test_forwarding",
   "list_deliveries",
-  "redeliver_email",
+  "redeliver",
 ];
 
 type RegisteredTool = {
@@ -1584,13 +1584,28 @@ describe("email and forwarding tools", () => {
         forwardEnabled: true,
         forwardUrl: "https://example.com/in",
         hasForwardSecret: true,
+        forwardHttp: true,
+        forwardEmail: false,
+        forwardFormat: "as_received",
+        forwardHeaders: [{ name: "Authorization", value: "Bearer ••••" }],
+        forwardAppendPath: true,
+        forwardRetrySeconds: 3600,
+        forwardKeepOrder: true,
+        forwardSentField: "publishedAt",
       })),
       secret: vi.fn(async () => "whsec_a"),
       rotateSecret: vi.fn(async () => "whsec_b"),
       test: vi.fn(async () => ({ status: 204, delivered: true })),
-      deliveries: vi.fn(async () => []),
-      emailDeliveries: vi.fn(async () => [{ id: "d1" }]),
+      deliveries: vi.fn(async () => [{ id: "d1", cursor: "c1" }]),
+      summary: vi.fn(async () => ({
+        last24h: { delivered: 1, failed: 0 },
+        pending: 0,
+        failed: 0,
+        total: 1,
+      })),
+      requestDeliveries: vi.fn(async () => [{ id: "d1" }]),
       redeliver: vi.fn(async () => ({ id: "d2" })),
+      redeliverFailed: vi.fn(async () => ({ queued: 4 })),
     };
     const tools = getRegisteredTools(emailClient({ forwarding } as never));
     expect(
@@ -1599,6 +1614,12 @@ describe("email and forwarding tools", () => {
           slug: "acme",
           url: "https://example.com/in",
           enabled: true,
+          http: true,
+          email: false,
+          headers: [{ name: "Authorization", value: "Bearer t" }],
+          retrySeconds: 3600,
+          keepOrder: true,
+          sentField: "publishedAt",
         })
       )
     ).toEqual({
@@ -1606,6 +1627,24 @@ describe("email and forwarding tools", () => {
       forwardEnabled: true,
       forwardUrl: "https://example.com/in",
       hasForwardSecret: true,
+      forwardHttp: true,
+      forwardEmail: false,
+      forwardFormat: "as_received",
+      forwardHeaders: [{ name: "Authorization", value: "Bearer ••••" }],
+      forwardAppendPath: true,
+      forwardRetrySeconds: 3600,
+      forwardKeepOrder: true,
+      forwardSentField: "publishedAt",
+    });
+    expect(forwarding.configure).toHaveBeenCalledWith("acme", {
+      url: "https://example.com/in",
+      enabled: true,
+      http: true,
+      email: false,
+      headers: [{ name: "Authorization", value: "Bearer t" }],
+      retrySeconds: 3600,
+      keepOrder: true,
+      sentField: "publishedAt",
     });
     expect(
       parseJsonResult(await tools.get_forwarding_secret.handler({ slug: "acme", rotate: false }))
@@ -1617,15 +1656,35 @@ describe("email and forwarding tools", () => {
       status: 204,
       delivered: true,
     });
+    await tools.test_forwarding.handler({ slug: "acme", kind: "email" });
+    expect(forwarding.test).toHaveBeenLastCalledWith("acme", { kind: "email" });
     expect(
-      parseJsonResult(await tools.list_deliveries.handler({ requestId: "e1", limit: 5 }))
+      parseJsonResult(
+        await tools.list_deliveries.handler({ requestId: "e1", limit: 5, status: "all" })
+      )
     ).toEqual([{ id: "d1" }]);
-    await tools.list_deliveries.handler({ endpointSlug: "acme", limit: 10 });
-    expect(forwarding.deliveries).toHaveBeenCalledWith("acme", { limit: 10 });
-    expect((await tools.list_deliveries.handler({ limit: 5 })).isError).toBe(true);
-    expect(parseJsonResult(await tools.redeliver_email.handler({ requestId: "e1" }))).toEqual({
+    expect(
+      parseJsonResult(
+        await tools.list_deliveries.handler({ endpointSlug: "acme", limit: 1, status: "failed" })
+      )
+    ).toEqual({
+      summary: { last24h: { delivered: 1, failed: 0 }, pending: 0, failed: 0, total: 1 },
+      deliveries: [{ id: "d1", cursor: "c1" }],
+      nextCursor: "c1",
+    });
+    expect(forwarding.deliveries).toHaveBeenCalledWith("acme", {
+      limit: 1,
+      status: "failed",
+      before: undefined,
+    });
+    expect((await tools.list_deliveries.handler({ limit: 5, status: "all" })).isError).toBe(true);
+    expect(parseJsonResult(await tools.redeliver.handler({ requestId: "e1" }))).toEqual({
       id: "d2",
     });
+    expect(parseJsonResult(await tools.redeliver.handler({ endpointSlug: "acme" }))).toEqual({
+      queued: 4,
+    });
+    expect((await tools.redeliver.handler({})).isError).toBe(true);
   });
 
   it("leaves an email's raw message and HTML out of request tools", async () => {

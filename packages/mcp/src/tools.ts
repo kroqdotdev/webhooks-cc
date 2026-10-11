@@ -1635,7 +1635,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "configure_forwarding",
-    "Set the URL captured emails are forwarded to (as signed JSON) and turn forwarding on or off. Owner only. Saving the first URL creates the signing secret.",
+    "Change an endpoint's forwarding: the URL, on or off, which kinds (HTTP requests, emails), the format, your own headers, and the advanced options. Only the arguments you pass change. Owner only. Saving the first URL creates the signing secret. A Slack or Discord webhook URL gets a chat message automatically.",
     {
       slug: z.string().describe("The endpoint slug"),
       url: httpUrlSchema
@@ -1646,21 +1646,72 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .boolean()
         .optional()
         .describe("Turn forwarding on (needs a URL) or off (fails deliveries still waiting)"),
+      http: z.boolean().optional().describe("Forward HTTP requests"),
+      email: z.boolean().optional().describe("Forward emails"),
+      format: z
+        .enum(["auto", "as_received", "json", "chat"])
+        .optional()
+        .describe(
+          "auto (pick from the URL), as_received (relay HTTP requests unchanged; emails as signed JSON), json (signed JSON envelope for both kinds) or chat (Slack or Discord message)"
+        ),
+      headers: z
+        .array(
+          z.object({
+            name: z.string().describe("Header name, e.g. Authorization"),
+            value: z
+              .string()
+              .nullable()
+              .describe("Header value, or null to keep the value stored under this name"),
+          })
+        )
+        .max(10)
+        .optional()
+        .describe(
+          "Your own headers for every delivery (not chat). Replaces the whole list; [] removes them"
+        ),
+      appendPath: z
+        .boolean()
+        .optional()
+        .describe("Add the path after the slug to the URL for relayed requests (default true)"),
+      retrySeconds: z
+        .union([z.literal(0), z.literal(3600), z.literal(86400)])
+        .optional()
+        .describe("Retry failed deliveries for 86400 (default), 3600 or 0 seconds"),
+      keepOrder: z
+        .boolean()
+        .optional()
+        .describe("One delivery at a time, in capture order (default false)"),
+      sentField: z
+        .string()
+        .max(128)
+        .nullable()
+        .optional()
+        .describe(
+          "JSON body field with the sender's own timestamp, e.g. publishedAt or data.publishedAt; null clears it"
+        ),
     },
-    withErrorHandling(async ({ slug, url, enabled }) => {
-      const endpoint = await client.forwarding.configure(slug, { url, enabled });
+    withErrorHandling(async ({ slug, ...options }) => {
+      const endpoint = await client.forwarding.configure(slug, options);
       return jsonContent({
         slug: endpoint.slug,
         forwardEnabled: endpoint.forwardEnabled ?? false,
         forwardUrl: endpoint.forwardUrl ?? null,
         hasForwardSecret: endpoint.hasForwardSecret ?? false,
+        forwardHttp: endpoint.forwardHttp ?? false,
+        forwardEmail: endpoint.forwardEmail ?? false,
+        forwardFormat: endpoint.forwardFormat ?? "auto",
+        forwardHeaders: endpoint.forwardHeaders ?? [],
+        forwardAppendPath: endpoint.forwardAppendPath ?? true,
+        forwardRetrySeconds: endpoint.forwardRetrySeconds ?? 86400,
+        forwardKeepOrder: endpoint.forwardKeepOrder ?? false,
+        forwardSentField: endpoint.forwardSentField ?? null,
       });
     })
   );
 
   server.tool(
     "get_forwarding_secret",
-    "Read (or with rotate: true, replace) the whsec_ secret forwarded emails are signed with. Owner only. Treat the value as a credential: put it in the handler's environment, not in code.",
+    "Read (or with rotate: true, replace) the whsec_ secret forwarded deliveries are signed with. Owner only. Treat the value as a credential: put it in the handler's environment, not in code.",
     {
       slug: z.string().describe("The endpoint slug"),
       rotate: z
@@ -1678,45 +1729,74 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "test_forwarding",
-    "Post the endpoint's newest email (or a sample) to its forwarding URL once and report what the server answered. Works with forwarding on or off; nothing is retried or logged.",
-    { slug: z.string().describe("The endpoint slug") },
-    withErrorHandling(async ({ slug }) => {
-      return jsonContent(await client.forwarding.test(slug));
+    "Send the endpoint's newest captured request of a kind (or a sample) to its forwarding URL once, exactly as a delivery would go out, and report the answer. Works with forwarding on or off; nothing is retried or logged.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      kind: z
+        .enum(["http", "email"])
+        .optional()
+        .describe(
+          "Which kind to send (default: http when HTTP requests are forwarded, else email)"
+        ),
+    },
+    withErrorHandling(async ({ slug, kind }) => {
+      return jsonContent(await client.forwarding.test(slug, kind ? { kind } : {}));
     })
   );
 
   server.tool(
     "list_deliveries",
-    "List forwarding deliveries: an endpoint's latest (endpointSlug), or every try of one email (requestId).",
+    "List forwarding deliveries: an endpoint's delivery log with its counts (endpointSlug), or every delivery and try of one captured request or email (requestId). Rows carry senderAt when the request had the sender's own timestamp, so receivedAt - senderAt is the time to reach webhooks.cc.",
     {
-      endpointSlug: z.string().optional().describe("List the endpoint's latest deliveries"),
-      requestId: z.string().optional().describe("List every delivery and try of this email"),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(20)
-        .default(5)
-        .describe("With endpointSlug: max deliveries"),
+      endpointSlug: z.string().optional().describe("List the endpoint's delivery log"),
+      requestId: z.string().optional().describe("List every delivery and try of this request"),
+      limit: z.number().int().min(1).max(100).default(20).describe("With endpointSlug: max rows"),
+      status: z
+        .enum(["all", "pending", "failed"])
+        .default("all")
+        .describe("With endpointSlug: all, pending (queued or retrying) or failed"),
+      before: z
+        .string()
+        .optional()
+        .describe("With endpointSlug: a row's cursor, to list older rows"),
     },
-    withErrorHandling(async ({ endpointSlug, requestId, limit }) => {
+    withErrorHandling(async ({ endpointSlug, requestId, limit, status, before }) => {
       if ((requestId === undefined) === (endpointSlug === undefined)) {
         throw new Error("Pass exactly one of endpointSlug or requestId");
       }
-      return jsonContent(
-        requestId
-          ? await client.forwarding.emailDeliveries(requestId)
-          : await client.forwarding.deliveries(endpointSlug!, { limit })
-      );
+      if (requestId) return jsonContent(await client.forwarding.requestDeliveries(requestId));
+      const [summary, deliveries] = await Promise.all([
+        client.forwarding.summary(endpointSlug!),
+        client.forwarding.deliveries(endpointSlug!, { limit, status, before }),
+      ]);
+      return jsonContent({
+        summary,
+        deliveries,
+        nextCursor:
+          deliveries.length === limit ? (deliveries[deliveries.length - 1]?.cursor ?? null) : null,
+      });
     })
   );
 
   server.tool(
-    "redeliver_email",
-    "Forward a captured email again with the endpoint's current URL and secret. Owner only; fails while forwarding is off.",
-    { requestId: z.string().describe("The email's request ID") },
-    withErrorHandling(async ({ requestId }) => {
-      return jsonContent(await client.forwarding.redeliver(requestId));
+    "redeliver",
+    "Forward again with the endpoint's current settings: one captured request or email (requestId; it also sends one that was never forwarded), or every request whose latest delivery failed (endpointSlug, oldest first, up to 1,000 at a time). Owner only; fails while forwarding is off.",
+    {
+      requestId: z.string().optional().describe("The request or email to send again"),
+      endpointSlug: z
+        .string()
+        .optional()
+        .describe("Send every failed delivery of this endpoint again"),
+    },
+    withErrorHandling(async ({ requestId, endpointSlug }) => {
+      if ((requestId === undefined) === (endpointSlug === undefined)) {
+        throw new Error("Pass exactly one of requestId or endpointSlug");
+      }
+      return jsonContent(
+        requestId
+          ? await client.forwarding.redeliver(requestId)
+          : await client.forwarding.redeliverFailed(endpointSlug!)
+      );
     })
   );
 

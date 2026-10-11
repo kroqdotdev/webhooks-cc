@@ -47,12 +47,46 @@ export interface Endpoint {
   emailAddress?: string | null;
   /** Whether codes and links are picked out of emails (dashboard and forwarded JSON) */
   showEmailExtracts?: boolean;
-  /** Whether captured emails are forwarded to `forwardUrl` */
+  /** Whether forwarding is on: the kinds below go to `forwardUrl` */
   forwardEnabled?: boolean;
-  /** Where emails are forwarded (only returned to the endpoint's owner) */
+  /** Where captured requests are forwarded (only returned to the endpoint's owner) */
   forwardUrl?: string | null;
   /** Whether a forwarding secret exists (read it with `forwarding.secret()`) */
   hasForwardSecret?: boolean;
+  /** Whether HTTP requests are forwarded */
+  forwardHttp?: boolean;
+  /** Whether emails are forwarded */
+  forwardEmail?: boolean;
+  /** How deliveries go out; "auto" picks from the URL */
+  forwardFormat?: ForwardFormatSetting;
+  /** Your own headers, with masked values (only returned to the endpoint's owner) */
+  forwardHeaders?: { name: string; value: string }[];
+  /** Whether the path after the slug is added to the URL for relayed requests */
+  forwardAppendPath?: boolean;
+  /** How long failed deliveries are retried, in seconds */
+  forwardRetrySeconds?: ForwardRetrySeconds;
+  /** One delivery at a time, in capture order */
+  forwardKeepOrder?: boolean;
+  /** The JSON body field holding the sender's own timestamp */
+  forwardSentField?: string | null;
+}
+
+/**
+ * How forwarded deliveries go out: "as_received" relays HTTP requests with
+ * their method, headers and exact body (emails as signed JSON), "json" sends
+ * a signed `request.received` or `email.received` envelope, "chat" posts a
+ * Slack or Discord message, and "auto" picks chat for Slack and Discord
+ * webhook URLs and "as_received" otherwise.
+ */
+export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
+
+/** How long failed deliveries are retried: never, one hour or one day. */
+export type ForwardRetrySeconds = 0 | 3600 | 86400;
+
+/** One of your own headers for forwarded deliveries; a null value keeps the stored one. */
+export interface ForwardHeaderInput {
+  name: string;
+  value: string | null;
 }
 
 /** A single condition within a response rule. */
@@ -330,10 +364,26 @@ export interface UpdateEndpointOptions {
   signingHeader?: string | null;
   /** Pick codes and links out of emails (owner only) */
   showEmailExtracts?: boolean;
-  /** Forward captured emails to `forwardUrl` (owner only; needs a URL) */
+  /** Forward captured requests to `forwardUrl` (owner only; needs a URL) */
   forwardEnabled?: boolean;
-  /** Where to forward emails, or null to remove it once forwarding is off (owner only) */
+  /** Where to forward, or null to remove it once forwarding is off (owner only) */
   forwardUrl?: string | null;
+  /** Forward HTTP requests (owner only) */
+  forwardHttp?: boolean;
+  /** Forward emails (owner only) */
+  forwardEmail?: boolean;
+  /** Delivery format (owner only) */
+  forwardFormat?: ForwardFormatSetting;
+  /** The whole list of your headers, at most 10; a null value keeps the stored one (owner only) */
+  forwardHeaders?: ForwardHeaderInput[];
+  /** Add the path after the slug to the URL for relayed requests (owner only) */
+  forwardAppendPath?: boolean;
+  /** Retry failed deliveries for 0, 3600 or 86400 seconds (owner only) */
+  forwardRetrySeconds?: ForwardRetrySeconds;
+  /** One delivery at a time, in capture order (owner only) */
+  forwardKeepOrder?: boolean;
+  /** JSON body field with the sender's timestamp, such as "publishedAt", or null (owner only) */
+  forwardSentField?: string | null;
 }
 
 /**
@@ -869,31 +919,81 @@ export interface SendTestEmailResult {
   requestId: string | null;
 }
 
-/** Options for `forwarding.configure()`. */
+/** Options for `forwarding.configure()`. Only the fields you pass change. */
 export interface ConfigureForwardingOptions {
   /** https URL on a public host name, or null to remove it (forwarding must be off) */
   url?: string | null;
   /** Turn forwarding on or off. Turning it on needs a URL, sent now or saved before. */
   enabled?: boolean;
+  /** Forward HTTP requests */
+  http?: boolean;
+  /** Forward emails */
+  email?: boolean;
+  /** "auto" (default), "as_received", "json" or "chat" */
+  format?: ForwardFormatSetting;
+  /**
+   * Your own headers, sent with every relayed and signed JSON delivery (not
+   * chat), at most 10. Replaces the whole list; a null value keeps the value
+   * stored under that name.
+   */
+  headers?: ForwardHeaderInput[];
+  /** Add the path after the slug to the URL for relayed requests (default: true) */
+  appendPath?: boolean;
+  /** Retry failed deliveries for 86400 (default), 3600 or 0 seconds */
+  retrySeconds?: ForwardRetrySeconds;
+  /** One delivery at a time, in capture order (default: false) */
+  keepOrder?: boolean;
+  /**
+   * A JSON body field with the sender's own timestamp, such as "publishedAt"
+   * or "data.publishedAt"; null clears it. Deliveries then record it, and chat
+   * messages say how long after it each request arrived.
+   */
+  sentField?: string | null;
 }
 
-/** Result of `forwarding.test()`: one delivery of the newest email (or a sample) to the saved URL. */
+/** The sender's own timestamp, as read from a request. */
+export interface SenderTime {
+  /** Milliseconds since the epoch */
+  at: number;
+  /** Where it was read: the body field, or a header such as "webhook-timestamp" */
+  source: string;
+  /** The timestamp has whole seconds only */
+  wholeSeconds: boolean;
+}
+
+/** How a delivery went out. */
+export type DeliveryFormat = "as_received" | "json" | "chat";
+
+/** Result of `forwarding.test()`: one delivery of the newest request (or a sample) to the saved URL. */
 export interface ForwardingTestResult {
-  /** HTTP status your server answered, or null when no answer arrived */
+  /** HTTP status the URL answered, or null when no answer arrived */
   status: number | null;
   durationMs: number;
-  /** The start of your server's response body */
+  /** The start of the response body */
   excerpt: string | null;
   /** Why no answer arrived (timeout, refused connection, TLS problem) */
   error: string | null;
-  /** True when your server answered 2xx */
+  /** True when the URL answered 2xx */
   delivered: boolean;
-  /** No email had arrived yet, so a sample was sent */
+  /** Nothing of that kind had arrived yet, so a sample was sent */
   sample: boolean;
+  /** Which kind was sent */
+  kind?: "http" | "email";
+  /** How it went out */
+  format?: DeliveryFormat | null;
+  /** The URL it went to, path appended */
+  url?: string;
+  /** Host and path, as the delivery log records it */
+  target?: string | null;
+  /** What was sent */
+  request?: { method: string; path: string; subject: string | null; receivedAt: number };
+  /** The sender's own timestamp, when the request had one */
+  sender?: SenderTime | null;
 }
 
-/** One try of a forwarded email. */
-export interface EmailDeliveryAttempt {
+/** One try of a delivery. */
+export interface DeliveryAttempt {
+  /** When the try ended */
   attemptedAt: number;
   status: number | null;
   durationMs: number;
@@ -901,10 +1001,11 @@ export interface EmailDeliveryAttempt {
   responseExcerpt: string | null;
 }
 
-/** A forwarded email's delivery, with every try. */
-export interface EmailDelivery {
+/** One delivery of a captured request or email, with every try. */
+export interface ForwardingDelivery {
   id: string;
   requestId: string;
+  kind?: "http" | "email";
   status: "pending" | "succeeded" | "failed";
   attempts: number;
   createdAt: number;
@@ -913,18 +1014,112 @@ export interface EmailDelivery {
   nextAttemptAt: number | null;
   lastStatus: number | null;
   lastError: string | null;
-  attemptLog: EmailDeliveryAttempt[];
+  /** How it went out */
+  format?: DeliveryFormat | null;
+  /** Host and path it went to (the host only for chat webhooks and for team members) */
+  target?: string | null;
+  /** The sender's own timestamp and where it was read, when the request had one */
+  senderAt?: number | null;
+  senderSource?: string | null;
+  attemptLog: DeliveryAttempt[];
 }
 
-/** An endpoint's recent delivery, as `forwarding.deliveries()` lists it. */
-export interface RecentEmailDelivery {
+/** A row of an endpoint's delivery log, as `forwarding.deliveries()` lists it. */
+export interface DeliveryLogEntry {
   id: string;
   requestId: string;
-  status: EmailDelivery["status"];
+  kind?: "http" | "email";
+  status: ForwardingDelivery["status"];
   attempts: number;
   createdAt: number;
+  finishedAt?: number | null;
+  nextAttemptAt?: number | null;
   lastStatus: number | null;
   lastError: string | null;
-  /** The email's subject */
+  /** The destination's time on the latest try */
+  lastDurationMs?: number | null;
+  format?: DeliveryFormat | null;
+  /** The email's subject (emails) */
   subject: string | null;
+  /** The request's method and path (HTTP requests) */
+  method?: string | null;
+  path?: string | null;
+  /** When webhooks.cc received the request */
+  receivedAt?: number | null;
+  /** The sender's own timestamp, when the request had one */
+  senderAt?: number | null;
+  senderSource?: string | null;
+  /** Pass as `before` to list the rows after this one */
+  cursor?: string;
+}
+
+/** Options for `forwarding.deliveries()`. */
+export interface ListDeliveriesOptions {
+  /** 1 to 100 (default: 5) */
+  limit?: number;
+  /** "all" (default), "pending" (queued or retrying) or "failed" */
+  status?: "all" | "pending" | "failed";
+  /** A row's `cursor`: list the rows after it */
+  before?: string;
+}
+
+/** Result of `forwarding.summary()`. Each count stops at 100,000. */
+export interface DeliverySummary {
+  /** Among deliveries queued in the last 24 hours */
+  last24h: { delivered: number; failed: number };
+  /** Waiting now: queued or retrying */
+  pending: number;
+  /** Failed, among the deliveries still kept */
+  failed: number;
+  total: number;
+}
+
+/** @deprecated Use `ForwardingDelivery`. */
+export type EmailDelivery = ForwardingDelivery;
+/** @deprecated Use `DeliveryAttempt`. */
+export type EmailDeliveryAttempt = DeliveryAttempt;
+/** @deprecated Use `DeliveryLogEntry`. */
+export type RecentEmailDelivery = DeliveryLogEntry;
+
+/** The `type` of a captured HTTP request forwarded as signed JSON. */
+export const REQUEST_RECEIVED = "request.received";
+
+/**
+ * A captured HTTP request as forwarding posts it in the "Signed JSON" format
+ * (verify it with `verifyForwardedRequest()`): the same envelope as
+ * `email.received`, signed with Standard Webhooks headers.
+ */
+export interface RequestReceivedEvent {
+  type: typeof REQUEST_RECEIVED;
+  /** When webhooks.cc received the request, the same on every copy */
+  timestamp: string;
+  data: {
+    id: string;
+    endpoint: { slug: string; name: string | null };
+    receivedAt: string;
+    method: string;
+    path: string;
+    /** The query string as sent, without the "?" */
+    query: string | null;
+    headers: Record<string, string>;
+    contentType: string | null;
+    ip: string;
+    size: number;
+    /** The body as text, or null when it is empty or not UTF-8 */
+    body: string | null;
+    /** The exact bytes in base64 when the body is not valid UTF-8 */
+    bodyBase64: string | null;
+  };
+}
+
+/** What `verifyRelayedRequest()` read from a request forwarded as received. */
+export interface RelayedRequestInfo {
+  /** The request's id in webhooks.cc, the same on every try and redelivery */
+  requestId: string;
+  /** When webhooks.cc received it, RFC 3339 UTC with milliseconds */
+  receivedAt: string;
+  /** The endpoint's slug */
+  endpoint: string | null;
+  /** Which try this is, from 1 */
+  attempt: number | null;
 }

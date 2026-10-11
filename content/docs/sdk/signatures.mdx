@@ -3,7 +3,7 @@ title: "Signature Verification"
 description: "Verify webhook signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, and PayPal using the SDK."
 section: sdk
 order: 5
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-11
 schema: faq
 keywords:
   ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
@@ -16,7 +16,7 @@ seo:
 
 Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
 
-Emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifier, `verifyForwardedEmail`, which also checks the timestamp and returns the parsed email. See [Forwarded emails](#forwarded-emails).
+Requests and emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifiers: `verifyRelayedRequest` for requests relayed as received, `verifyForwardedRequest` and `verifyForwardedEmail` for signed JSON. See [Forwarded requests](#forwarded-requests) and [Forwarded emails](#forwarded-emails).
 
 Generic verifier (works with any supported provider):
 
@@ -575,6 +575,44 @@ const valid = await verifyStripeSignature(
   request.headers["stripe-signature"],
   process.env.STRIPE_WEBHOOK_SECRET!
 );
+```
+
+## Forwarded requests
+
+[Forwarding](/docs/forwarding) sends an HTTP request on in one of two ways, and each has a verifier.
+
+**As received** (the default for a server URL): the request arrives with its own method, headers and body, so the sender's signature (Stripe, GitHub, ...) still verifies with the sender's secret. To also check that the copy came through your endpoint, verify the `webhooks-cc-signature` header with `verifyRelayedRequest`. Pass the exact body bytes:
+
+```ts
+import { verifyRelayedRequest, WebhookVerificationError } from "@webhooks-cc/sdk";
+
+export async function POST(request: Request) {
+  const body = new Uint8Array(await request.arrayBuffer());
+  try {
+    const relay = await verifyRelayedRequest(body, request.headers, process.env.FORWARD_SECRET!);
+    console.log(relay.requestId, relay.receivedAt, relay.attempt);
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) return new Response(null, { status: 401 });
+    throw error;
+  }
+  // ...then verify the provider's own signature and handle the event
+  return new Response(null, { status: 204 });
+}
+```
+
+It returns `{ requestId, receivedAt, endpoint, attempt }` and throws `WebhookVerificationError` with code `missing_headers` or `invalid_signature`. There is no freshness window: a retry a day later still carries the original `receivedAt`. Remember `requestId` to ignore repeats.
+
+**Signed JSON** (when the endpoint's format is Signed JSON): the request arrives inside a `request.received` envelope with Standard Webhooks headers. `verifyForwardedRequest` makes the same checks as `verifyForwardedEmail` below and returns the event typed as a `RequestReceivedEvent`:
+
+```ts
+import { verifyForwardedRequest } from "@webhooks-cc/sdk";
+
+const event = await verifyForwardedRequest(
+  await request.text(),
+  request.headers,
+  process.env.FORWARD_SECRET!
+);
+console.log(event.data.method, event.data.path, event.data.body);
 ```
 
 ## Forwarded emails

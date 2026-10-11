@@ -1,3 +1,4 @@
+import { verifyForwardedRequest, verifyRelayedRequest } from "@webhooks-cc/sdk";
 import { describe, expect, it } from "vitest";
 import type { RequestRecord } from "@/lib/supabase/requests";
 import {
@@ -146,5 +147,34 @@ describe("chat pacing", () => {
     holdChat(url, 30, 0);
     expect(reserveChatSlot(url, 0)).toEqual({ wait: 0 });
     expect(reserveChatSlot(url, 0)).toEqual({ wait: 0 });
+  });
+});
+
+describe("the SDK verifies what the worker sends", () => {
+  it("as received: webhooks-cc-signature over the exact bytes", async () => {
+    const body = Buffer.from([0x7b, 0x00, 0xff, 0x7d]);
+    const prepared = outgoingFor(
+      captured({ body: undefined, bodyRaw: body.toString("base64") }),
+      settings()
+    );
+    if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+    const headers = Object.fromEntries(prepared.outgoing.headers);
+    await expect(verifyRelayedRequest(prepared.outgoing.body!, headers, SECRET)).resolves.toEqual({
+      requestId: "6b3f2c1e-0000-4000-8000-000000000001",
+      receivedAt: "2026-10-10T15:25:09.312Z",
+      endpoint: "order-events",
+      attempt: 1,
+    });
+  });
+
+  it("signed JSON: a request.received event with Standard Webhooks headers", async () => {
+    const prepared = outgoingFor(captured(), settings({ format: "json" }));
+    if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+    const event = await verifyForwardedRequest(
+      prepared.outgoing.body!.toString("utf8"),
+      Object.fromEntries(prepared.outgoing.headers),
+      SECRET
+    );
+    expect(event.data).toMatchObject({ method: "POST", path: "/stripe/events", query: "a=1" });
   });
 });

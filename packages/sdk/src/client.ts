@@ -52,8 +52,10 @@ import type {
   SendTestEmailResult,
   ConfigureForwardingOptions,
   ForwardingTestResult,
-  EmailDelivery,
-  RecentEmailDelivery,
+  ForwardingDelivery,
+  DeliveryLogEntry,
+  DeliverySummary,
+  ListDeliveriesOptions,
 } from "./types";
 import type { EmailReceivedEvent, RequestKind } from "./email/types";
 import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/address";
@@ -1165,8 +1167,21 @@ export class WebhooksCC {
       },
       forwarding: {
         configure: {
-          description: "Set the forwarding URL and turn forwarding on or off (owner only)",
-          params: { endpointSlug: "string", url: "string|null?", enabled: "boolean?" },
+          description:
+            "Change forwarding settings: URL, on/off, kinds, format, your headers, path, retries, order, sent time field (owner only)",
+          params: {
+            endpointSlug: "string",
+            url: "string|null?",
+            enabled: "boolean?",
+            http: "boolean?",
+            email: "boolean?",
+            format: '"auto"|"as_received"|"json"|"chat"?',
+            headers: "{ name, value: string|null }[]?",
+            appendPath: "boolean?",
+            retrySeconds: "0|3600|86400?",
+            keepOrder: "boolean?",
+            sentField: "string|null?",
+          },
         },
         secret: {
           description: "Read the endpoint's whsec_ signing secret",
@@ -1177,20 +1192,34 @@ export class WebhooksCC {
           params: { endpointSlug: "string" },
         },
         test: {
-          description: "Post the newest email (or a sample) to the URL once and report the answer",
-          params: { endpointSlug: "string" },
+          description:
+            "Send the newest request of a kind (or a sample) to the URL once and report the answer",
+          params: { endpointSlug: "string", kind: '"http"|"email"?' },
         },
         deliveries: {
-          description: "The endpoint's latest deliveries",
-          params: { endpointSlug: "string", limit: "number? (1-20)" },
+          description: "The endpoint's delivery log, newest first",
+          params: {
+            endpointSlug: "string",
+            limit: "number? (1-100)",
+            status: '"all"|"pending"|"failed"?',
+            before: "string? (a row's cursor)",
+          },
         },
-        emailDeliveries: {
-          description: "Every delivery of one email, with each try",
+        summary: {
+          description: "Delivered and failed in the last 24 h, waiting now, and totals",
+          params: { endpointSlug: "string" },
+        },
+        requestDeliveries: {
+          description: "Every delivery of one request or email, with each try",
           params: { requestId: "string" },
         },
         redeliver: {
-          description: "Send an email again with the current URL and secret",
+          description: "Send a request or email again with the current settings",
           params: { requestId: "string" },
+        },
+        redeliverFailed: {
+          description: "Send every request whose latest delivery failed again, oldest first",
+          params: { endpointSlug: "string" },
         },
       },
       teams: {
@@ -1575,28 +1604,43 @@ export class WebhooksCC {
   };
 
   /**
-   * Email forwarding: post every email an endpoint captures to your server
-   * as signed `email.received` JSON, retried for about a day. Only the
-   * endpoint's owner can manage it. Verify deliveries with
-   * `verifyForwardedEmail()`.
+   * Forwarding: send every HTTP request and email an endpoint captures to
+   * your server or a Slack or Discord channel, queued, retried and logged.
+   * HTTP requests go as received (verify with `verifyRelayedRequest()`) or
+   * as signed JSON (`verifyForwardedRequest()`), emails as signed JSON
+   * (`verifyForwardedEmail()`), either as a chat message for Slack and
+   * Discord URLs. Only the endpoint's owner can manage it.
    */
   forwarding = {
     /**
-     * Set the URL and turn forwarding on or off. Saving the first URL
-     * creates the endpoint's signing secret, so you can send a test delivery
-     * before turning forwarding on. Turning it off fails the deliveries
-     * still waiting.
+     * Change the forwarding settings; only the options you pass change.
+     * Saving the first URL creates the endpoint's signing secret, so you can
+     * send a test delivery before turning forwarding on. Turning it (or a
+     * kind) off fails the deliveries still waiting.
      */
     configure: async (
       endpointSlug: string,
       options: ConfigureForwardingOptions
     ): Promise<Endpoint> => {
       validatePathSegment(endpointSlug, "endpointSlug");
+      const fields: [keyof ConfigureForwardingOptions, string][] = [
+        ["url", "forwardUrl"],
+        ["enabled", "forwardEnabled"],
+        ["http", "forwardHttp"],
+        ["email", "forwardEmail"],
+        ["format", "forwardFormat"],
+        ["headers", "forwardHeaders"],
+        ["appendPath", "forwardAppendPath"],
+        ["retrySeconds", "forwardRetrySeconds"],
+        ["keepOrder", "forwardKeepOrder"],
+        ["sentField", "forwardSentField"],
+      ];
       const body: Record<string, unknown> = {};
-      if (options.url !== undefined) body.forwardUrl = options.url;
-      if (options.enabled !== undefined) body.forwardEnabled = options.enabled;
+      for (const [option, field] of fields) {
+        if (options[option] !== undefined) body[field] = options[option];
+      }
       if (Object.keys(body).length === 0) {
-        throw new Error("forwarding.configure needs url or enabled");
+        throw new Error("forwarding.configure needs at least one setting");
       }
       return this.request<Endpoint>("PATCH", `/endpoints/${endpointSlug}`, body);
     },
@@ -1622,41 +1666,84 @@ export class WebhooksCC {
     },
 
     /**
-     * Post the newest email (or a sample, when none has arrived) to the saved
-     * URL once and report what your server answered. Works with forwarding
-     * on or off; nothing is retried or logged.
+     * Send the newest captured request of a kind (or a sample, when none has
+     * arrived) to the saved URL once, exactly as a delivery would go out, and
+     * report the answer. `kind` defaults to "http" when HTTP requests are
+     * forwarded, otherwise "email". Works with forwarding on or off; nothing
+     * is retried or logged.
      */
-    test: async (endpointSlug: string): Promise<ForwardingTestResult> => {
+    test: async (
+      endpointSlug: string,
+      options: { kind?: "http" | "email" } = {}
+    ): Promise<ForwardingTestResult> => {
       validatePathSegment(endpointSlug, "endpointSlug");
       return this.request<ForwardingTestResult>(
         "POST",
-        `/endpoints/${endpointSlug}/forwarding/test`
+        `/endpoints/${endpointSlug}/forwarding/test`,
+        options.kind ? { kind: options.kind } : undefined
       );
     },
 
-    /** The endpoint's latest deliveries, newest first (limit 1 to 20, default 5). */
+    /**
+     * The endpoint's delivery log, newest first: `limit` 1 to 100 (default
+     * 5), `status` "all", "pending" or "failed", and `before` a row's
+     * `cursor` for older rows.
+     */
     deliveries: async (
       endpointSlug: string,
-      options: { limit?: number } = {}
-    ): Promise<RecentEmailDelivery[]> => {
+      options: ListDeliveriesOptions = {}
+    ): Promise<DeliveryLogEntry[]> => {
       validatePathSegment(endpointSlug, "endpointSlug");
-      const query = options.limit !== undefined ? `?limit=${options.limit}` : "";
-      return this.request<RecentEmailDelivery[]>(
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.status !== undefined) params.set("status", options.status);
+      if (options.before !== undefined) params.set("before", options.before);
+      const query = params.toString() ? `?${params.toString()}` : "";
+      return this.request<DeliveryLogEntry[]>(
         "GET",
         `/endpoints/${endpointSlug}/deliveries${query}`
       );
     },
 
-    /** Every delivery of one email, with each try. */
-    emailDeliveries: async (requestId: string): Promise<EmailDelivery[]> => {
-      validatePathSegment(requestId, "requestId");
-      return this.request<EmailDelivery[]>("GET", `/requests/${requestId}/deliveries`);
+    /** Delivered and failed in the last 24 hours, waiting now, and the log's totals. */
+    summary: async (endpointSlug: string): Promise<DeliverySummary> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      return this.request<DeliverySummary>("GET", `/endpoints/${endpointSlug}/deliveries/summary`);
     },
 
-    /** Send an email again with the current URL and secret. Fails with 409 when forwarding is off. */
+    /** Every delivery of one captured request or email, with each try. */
+    requestDeliveries: async (requestId: string): Promise<ForwardingDelivery[]> => {
+      validatePathSegment(requestId, "requestId");
+      return this.request<ForwardingDelivery[]>("GET", `/requests/${requestId}/deliveries`);
+    },
+
+    /** @deprecated Use `requestDeliveries()`, which covers HTTP requests too. */
+    emailDeliveries: async (requestId: string): Promise<ForwardingDelivery[]> => {
+      return this.forwarding.requestDeliveries(requestId);
+    },
+
+    /**
+     * Send a captured request or email again with the current settings (it
+     * also sends one that was never forwarded). Fails with 409 when
+     * forwarding of its kind is off.
+     */
     redeliver: async (requestId: string): Promise<{ id: string }> => {
       validatePathSegment(requestId, "requestId");
       return this.request<{ id: string }>("POST", `/requests/${requestId}/deliveries`);
+    },
+
+    /**
+     * Send every request whose latest delivery failed again, oldest first,
+     * with the current settings. At most 1,000 deliveries wait at a time, so
+     * `queued` can be lower than the failed count. Fails with 409 when
+     * forwarding is off.
+     */
+    redeliverFailed: async (endpointSlug: string): Promise<{ queued: number }> => {
+      validatePathSegment(endpointSlug, "endpointSlug");
+      return this.request<{ queued: number }>(
+        "POST",
+        `/endpoints/${endpointSlug}/deliveries/redeliver-failed`
+      );
     },
   };
 
