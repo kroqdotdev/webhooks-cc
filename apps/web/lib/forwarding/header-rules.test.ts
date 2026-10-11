@@ -18,6 +18,8 @@ describe("headerNameIssue", () => {
       expect(headerNameIssue(name)).toBe("delivery");
     }
     expect(headerNameIssue("X-Target-Url")).toBe("delivery");
+    // The notify proxy drops cf-* on the way out, so they could never arrive.
+    expect(headerNameIssue("CF-Access-Client-Id")).toBe("delivery");
   });
 
   it("refuses the signature and metadata prefixes", () => {
@@ -30,6 +32,9 @@ describe("headerNameIssue", () => {
       "Host is set by the request itself and cannot be added."
     );
     expect(refusedHeaderName("x-auth")).toBe("x-auth is reserved by webhooks.cc.");
+    expect(refusedHeaderName("CF-Access-Client-Id")).toBe(
+      "CF-Access-Client-Id is set by Cloudflare on the way out and cannot be added."
+    );
     expect(refusedHeaderName("Authorization")).toBeNull();
   });
 });

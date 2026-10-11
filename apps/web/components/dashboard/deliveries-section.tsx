@@ -97,7 +97,7 @@ export function DeliveriesSection({
         status: filter,
       });
       setRows((prev) => (prev && loadedOlder.current ? mergeRows(fresh, prev) : fresh));
-      if (fresh.length < PAGE_SIZE && !loadedOlder.current) setExhausted(true);
+      if (!loadedOlder.current) setExhausted(fresh.length < PAGE_SIZE);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deliveries could not be loaded.");

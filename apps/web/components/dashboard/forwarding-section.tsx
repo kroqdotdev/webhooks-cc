@@ -125,8 +125,9 @@ function rowIssue(row: HeaderRow, index: number, rows: HeaderRow[]): RowIssue | 
         issue.name = "webhook-* headers carry the Standard Webhooks signature. Pick another name.";
         break;
       case "delivery":
-        issue.name =
-          "Host, Content-Length and Transfer-Encoding are set by the delivery. Pick another name.";
+        issue.name = name.toLowerCase().startsWith("cf-")
+          ? "cf-* headers are set by Cloudflare on the way out. Pick another name."
+          : "Host, Content-Length and Transfer-Encoding are set by the delivery. Pick another name.";
         break;
       default: {
         const lower = name.toLowerCase();
@@ -278,6 +279,8 @@ export function ForwardingSection({
 
   // Saved values. The rows are keyed on their serialised form so that a
   // refetch with the same values does not discard edits.
+  // By value: a refetch returns a new array, and must not reset unsaved edits.
+  const headersJson = JSON.stringify(endpoint.forwardHeaders ?? []);
   const initial = useMemo(
     () => ({
       enabled: endpoint.forwardEnabled === true,
@@ -289,7 +292,7 @@ export function ForwardingSection({
       retry: (endpoint.forwardRetrySeconds ?? 86400) as Retry,
       keepOrder: endpoint.forwardKeepOrder === true,
       sentField: endpoint.forwardSentField ?? "",
-      headersJson: JSON.stringify(endpoint.forwardHeaders ?? []),
+      headersJson,
     }),
     [
       endpoint.forwardEnabled,
@@ -301,7 +304,7 @@ export function ForwardingSection({
       endpoint.forwardRetrySeconds,
       endpoint.forwardKeepOrder,
       endpoint.forwardSentField,
-      endpoint.forwardHeaders,
+      headersJson,
     ]
   );
   const initialRows = useMemo(
@@ -727,8 +730,8 @@ export function ForwardingSection({
         <div className="pt-4 border-t border-line/20">
           {sameAsNotification ? (
             <p className="text-xs text-destructive max-w-[62ch]">
-              This is also the notification URL, so the channel gets each request twice. Keep one of
-              the two.
+              This is also the notification URL, so the channel gets requests twice. Keep one of the
+              two.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground max-w-[62ch]">

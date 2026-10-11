@@ -31,7 +31,7 @@ export const DELIVERY_SET_HEADERS = new Set([
 export type HeaderNameIssue =
   /** Empty, too long, or not a token. */
   | "invalid"
-  /** Host, Content-Length, Transfer-Encoding, the proxy's own headers. */
+  /** Host, Content-Length, Transfer-Encoding, cf-*, the proxy's own headers. */
   | "delivery"
   /** webhook-*: Standard Webhooks signatures. */
   | "webhook"
@@ -42,7 +42,10 @@ export type HeaderNameIssue =
 export function headerNameIssue(name: string): HeaderNameIssue | null {
   if (!name || name.length > MAX_HEADER_NAME_CHARS || !HEADER_TOKEN.test(name)) return "invalid";
   const lower = name.toLowerCase();
-  if (DELIVERY_SET_HEADERS.has(lower) || lower.startsWith("proxy-")) return "delivery";
+  // The notify proxy drops cf-* and proxy-* headers (infra/notify-proxy relay mode).
+  if (DELIVERY_SET_HEADERS.has(lower) || lower.startsWith("proxy-") || lower.startsWith("cf-")) {
+    return "delivery";
+  }
   if (lower.startsWith("webhook-")) return "webhook";
   if (lower.startsWith("webhooks-cc-")) return "webhooks-cc";
   if (PROXY_CONTROL_HEADERS.has(lower)) return "delivery";
@@ -57,7 +60,9 @@ export function refusedHeaderName(name: string): string | null {
     case "delivery":
       return PROXY_CONTROL_HEADERS.has(name.toLowerCase())
         ? `${name} is reserved by webhooks.cc.`
-        : `${name} is set by the request itself and cannot be added.`;
+        : name.toLowerCase().startsWith("cf-")
+          ? `${name} is set by Cloudflare on the way out and cannot be added.`
+          : `${name} is set by the request itself and cannot be added.`;
     case "webhook":
       return `${name} is reserved for Standard Webhooks signatures.`;
     case "webhooks-cc":

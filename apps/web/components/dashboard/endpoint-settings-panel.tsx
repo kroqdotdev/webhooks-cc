@@ -371,8 +371,8 @@ function NotificationsSection({ endpoint }: { endpoint: EndpointSettingsPanelPro
         help={
           duplicate ? (
             <p className="text-destructive">
-              This is also the forwarding URL, so the channel gets each request twice. Keep one of
-              the two.
+              This is also the forwarding URL, so the channel gets requests twice. Keep one of the
+              two.
             </p>
           ) : (
             <p>

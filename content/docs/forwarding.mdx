@@ -108,7 +108,7 @@ def from_webhooks_cc(raw_body: bytes, headers: dict, secret: str) -> bool:
 
 ## Signed JSON
 
-Emails are always sent this way to a server URL, and HTTP requests are when you pick **Signed JSON**, so one handler can take both. The body is a JSON envelope, and the request carries [Standard Webhooks](https://www.standardwebhooks.com) headers.
+Emails are sent this way to a server URL unless you pick **Chat message**, and HTTP requests are when you pick **Signed JSON**, so one handler can take both. The body is a JSON envelope, and the request carries [Standard Webhooks](https://www.standardwebhooks.com) headers.
 
 ### An email
 
@@ -294,7 +294,7 @@ Slack takes about one message a second per webhook and Discord a few every two s
 
 Add up to 10 headers to every delivery, for example the `Authorization` your server expects. They are added to relayed requests and signed JSON, not to chat messages, and replace a header of the same name the sender sent. Values are stored encrypted and shown masked after saving; to change one, replace it.
 
-Names up to 64 characters, values up to 1,024 characters on one line. These names cannot be added, because the delivery or webhooks.cc sets them: `Host`, `Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`, `Trailer`, `Keep-Alive`, `Expect`, `Proxy-*`, `webhook-*`, `webhooks-cc-*`, `X-Target-URL`, `X-Auth`, `X-Proxy-Mode` and `X-Sender-IP`.
+Names up to 64 characters, values up to 1,024 characters on one line. These names cannot be added, because the delivery or webhooks.cc sets them: `Host`, `Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`, `Trailer`, `Keep-Alive`, `Expect`, `Proxy-*`, `webhook-*`, `webhooks-cc-*`, `X-Target-URL`, `X-Auth`, `X-Proxy-Mode`, `X-Sender-IP` and `CF-*` (Cloudflare sets those on the way out).
 
 ## Timing
 
@@ -388,4 +388,4 @@ const newSecret = await client.forwarding.rotateSecret(slug);
 
 ## Forwarding or notifications?
 
-[Notifications](/docs/notification-webhooks) are a heads-up: at most one message a second per endpoint, sent at once, never retried or logged. Forwarding is every request, queued, retried and logged. Use notifications to glance at activity in a channel, and forwarding when every request has to arrive, in your channel or on your server. Both can be on at once; when they point at the same channel it gets each request twice.
+[Notifications](/docs/notification-webhooks) are a heads-up: at most one message a second per endpoint, sent at once, never retried or logged. Forwarding is every request, queued, retried and logged. Use notifications to glance at activity in a channel, and forwarding when every request has to arrive, in your channel or on your server. Both can be on at once; when they point at the same channel, every request that also triggers a notification arrives there twice.

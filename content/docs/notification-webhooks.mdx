@@ -60,7 +60,7 @@ For [captured emails](/docs/email-capture), `method` is `EMAIL`, `path` is the r
 
 ## Notifications or forwarding?
 
-A notification is a heads-up: at most one message a second per endpoint, sent at once, never retried and not logged. When every request has to reach your channel or your server, use [forwarding](/docs/forwarding) instead: it posts the same message to Slack or Discord for every request (or relays the request to your server), retries until it is accepted, and logs each delivery with its timing. Both can be on at once; if they point at the same channel, it gets each request twice.
+A notification is a heads-up: at most one message a second per endpoint, sent at once, never retried and not logged. When every request has to reach your channel or your server, use [forwarding](/docs/forwarding) instead: it posts the same message to Slack or Discord for every request (or relays the request to your server), retries until it is accepted, and logs each delivery with its timing. Both can be on at once; if they point at the same channel, every request that also triggers a notification arrives there twice.
 
 ## Rate limiting
 
