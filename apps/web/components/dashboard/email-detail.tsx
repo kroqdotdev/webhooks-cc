@@ -160,9 +160,22 @@ function Verdicts({
     );
   }
   const auth = email.auth;
+  const spam = spamChip(email);
   if (!auth || auth.error) {
     return (
-      <p className="text-xs text-muted-foreground">Sender checks could not run for this email.</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <p className="text-xs text-muted-foreground">Sender checks could not run for this email.</p>
+        {spam && (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="cursor-pointer"
+            title="Show the spam score"
+          >
+            <VerdictBadge verdict={spam.verdict} label={spam.label} />
+          </button>
+        )}
+      </div>
     );
   }
   const spf = verdictOf(auth.spf?.result);
@@ -189,8 +202,33 @@ function Verdicts({
         label={dmarc === "pass" ? "DMARC" : dmarc === "fail" ? "DMARC failed" : "No DMARC"}
       />
       <VerdictBadge verdict={tls ? "pass" : "none"} label={tls ?? "No TLS"} />
+      {spam && <VerdictBadge verdict={spam.verdict} label={spam.label} />}
     </button>
   );
+}
+
+/** rspamd's actions, from least to most severe, in words. Never applied. */
+const SPAM_ACTIONS: Record<string, string> = {
+  "no action": "nothing",
+  greylist: "a delay (greylisting)",
+  "add header": "marking it as spam",
+  "rewrite subject": "marking it as spam in the subject",
+  "soft reject": "a temporary rejection",
+  reject: "rejecting it",
+};
+
+/** The chip for a scored email; null when it was not scored. */
+function spamChip(email: EmailCapture): { verdict: Verdict; label: string } | null {
+  const spam = email.spam;
+  if (!spam || spam.score === null || spam.action === null) return null;
+  const score = spam.score.toFixed(1);
+  if (spam.action === "no action" || spam.action === "greylist") {
+    return { verdict: "pass", label: `Not spam ${score}` };
+  }
+  if (spam.action === "reject" || spam.action === "soft reject") {
+    return { verdict: "fail", label: `Spam ${score}` };
+  }
+  return { verdict: "none", label: `Looks spammy ${score}` };
 }
 
 /** "label | value | buttons", the same idiom as the endpoint's address pills. */
@@ -415,6 +453,66 @@ function CheckRow({
   );
 }
 
+/** rspamd's verdict and the rules that weighed most. */
+function SpamSection({ spam }: { spam: NonNullable<EmailCapture["spam"]> }) {
+  const scored = spam.score !== null && spam.required !== null && spam.action !== null;
+  return (
+    <section className="ui-card ui-card-static p-4!">
+      <h3 className="text-sm font-bold caps mb-1">Spam score</h3>
+      {!scored ? (
+        <p className="text-sm text-muted-foreground py-2">
+          No score for this email{spam.error ? ` (${spam.error})` : ""}. It was captured as usual.
+        </p>
+      ) : (
+        <>
+          <p className="text-sm py-2">
+            rspamd scored this email{" "}
+            <span className="font-mono font-semibold">{spam.score!.toFixed(2)}</span>; it would
+            reject from <span className="font-mono">{spam.required!.toFixed(0)}</span>. Its
+            suggestion: {SPAM_ACTIONS[spam.action!] ?? spam.action}.{" "}
+            <span className="text-muted-foreground">
+              Nothing is applied: every email that reaches an address is captured.
+            </span>
+          </p>
+          {spam.symbols.length > 0 && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] font-bold caps text-muted-foreground">
+                  <th className="py-1.5 pr-3 font-bold">Rule</th>
+                  <th className="py-1.5 pr-3 font-bold text-right">Score</th>
+                  <th className="py-1.5 font-bold">Matched</th>
+                </tr>
+              </thead>
+              <tbody>
+                {spam.symbols.map((symbol) => (
+                  <tr key={symbol.name} className="border-t border-line/15 align-baseline">
+                    <td className="py-1.5 pr-3 font-mono text-xs [overflow-wrap:anywhere]">
+                      {symbol.name}
+                    </td>
+                    <td
+                      className={cn(
+                        "py-1.5 pr-3 font-mono text-xs text-right whitespace-nowrap",
+                        symbol.score > 0 && "text-destructive",
+                        symbol.score < 0 && "text-primary"
+                      )}
+                    >
+                      {symbol.score > 0 ? "+" : ""}
+                      {symbol.score.toFixed(2)}
+                    </td>
+                    <td className="py-1.5 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                      {symbol.options?.join(", ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) {
   const auth = email.auth;
   const smtp = email.smtp;
@@ -496,6 +594,7 @@ function AuthenticationPane({ email, ip }: { email: EmailCapture; ip: string }) 
           </>
         )}
       </section>
+      {email.spam && <SpamSection spam={email.spam} />}
       <section className="ui-card ui-card-static p-4!">
         <h3 className="text-sm font-bold caps mb-1">Delivery</h3>
         <dl className="grid grid-cols-[minmax(120px,200px)_1fr] text-sm">

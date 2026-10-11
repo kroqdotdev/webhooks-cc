@@ -86,6 +86,11 @@ struct DeliverRequest {
     tls: Option<Value>,
     #[serde(default)]
     auth: Option<Value>,
+    /// rspamd's verdict from the MX host (apps/mx-rs/src/spam_check.rs):
+    /// recorded for the user, never a reason to refuse. Absent when the MX
+    /// host does not score.
+    #[serde(default)]
+    spam: Option<Value>,
     #[serde(default)]
     received_at: Option<DateTime<Utc>>,
     /// True when the MX host answered 451 for this exact message before.
@@ -358,6 +363,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         helo,
         tls,
         auth,
+        spam,
         received_at,
         retry,
         test,
@@ -398,6 +404,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
             smtp_base["test"] = Value::Bool(true);
         }
         let auth_doc = bounded_object(auth);
+        let spam_doc = bounded_object(spam);
 
         for group in &groups {
             let outcome = capture_for_slug(
@@ -408,6 +415,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
                     headers_json: &headers_json,
                     smtp_base: &smtp_base,
                     auth_doc: &auth_doc,
+                    spam_doc: &spam_doc,
                     client_ip: &client_ip,
                     received_at,
                     retry,
@@ -468,6 +476,7 @@ struct CaptureInput<'a> {
     headers_json: &'a Value,
     smtp_base: &'a Value,
     auth_doc: &'a Value,
+    spam_doc: &'a Value,
     client_ip: &'a str,
     received_at: DateTime<Utc>,
     retry: bool,
@@ -496,6 +505,7 @@ async fn capture_for_slug(
         Value::Bool(input.prepared.stored.truncated),
     );
     email.insert("auth".into(), input.auth_doc.clone());
+    email.insert("spam".into(), input.spam_doc.clone());
     let mut smtp = input.smtp_base.clone();
     if let Value::Object(map) = &mut smtp {
         map.insert("envelope_to".into(), json!(envelope_to));

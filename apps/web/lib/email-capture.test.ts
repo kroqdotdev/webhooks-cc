@@ -58,6 +58,41 @@ const stored = {
 };
 
 describe("toEmailCapture", () => {
+  it("maps rspamd's verdict and drops malformed rules", () => {
+    const capture = toEmailCapture({
+      ...stored,
+      spam: {
+        score: 7.46,
+        required: 15,
+        action: "add header",
+        symbols: [
+          { name: "SUBJ_ALL_CAPS", score: 3, options: ["CONFIRM YOUR EMAIL"] },
+          { name: "R_DKIM_NA", score: 0.1 },
+          { name: 42 },
+          "junk",
+        ],
+      },
+    });
+    expect(capture?.spam).toEqual({
+      score: 7.46,
+      required: 15,
+      action: "add header",
+      symbols: [
+        { name: "SUBJ_ALL_CAPS", score: 3, options: ["CONFIRM YOUR EMAIL"] },
+        { name: "R_DKIM_NA", score: 0.1 },
+      ],
+      error: null,
+    });
+    expect(toEmailCapture({ ...stored, spam: { error: "timeout" } })?.spam).toEqual({
+      score: null,
+      required: null,
+      action: null,
+      symbols: [],
+      error: "timeout",
+    });
+    expect(toEmailCapture(stored)?.spam).toBeNull();
+  });
+
   it("maps the stored JSON to camelCase fields", () => {
     const capture = toEmailCapture(stored);
     expect(capture).toMatchObject({

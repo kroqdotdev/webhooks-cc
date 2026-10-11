@@ -27,6 +27,8 @@ struct FakeBackend {
     outcome: Mutex<Option<DeliverOutcome>>,
     deliveries: Mutex<Vec<Delivery>>,
     auth_requests: Mutex<Vec<SeenAuth>>,
+    /// What `score` was asked: recipients and the confirmed hostname.
+    spam_requests: Mutex<Vec<(Vec<String>, Option<String>)>>,
     checks: AtomicUsize,
     /// Set to observe the retry store from inside a delivery.
     store: Mutex<Option<Arc<RetryStore>>>,
@@ -117,6 +119,16 @@ impl Backend for FakeBackend {
         AuthOutcome {
             json: serde_json::json!({ "spf": { "result": "none" } }),
         }
+    }
+
+    async fn score(&self, request: SpamRequest) -> Option<serde_json::Value> {
+        self.spam_requests
+            .lock()
+            .unwrap()
+            .push((request.recipients, request.hostname));
+        Some(
+            serde_json::json!({ "score": 1.5, "required": 15.0, "action": "no action", "symbols": [] }),
+        )
     }
 }
 
@@ -358,6 +370,19 @@ async fn captures_a_message_end_to_end() {
     assert_eq!(d.client_ip, CLIENT_IP);
     assert_eq!(d.client_rdns.as_deref(), Some("mail.client.test"));
     assert_eq!(d.auth, serde_json::json!({ "spf": { "result": "none" } }));
+    assert_eq!(
+        d.spam,
+        Some(
+            serde_json::json!({ "score": 1.5, "required": 15.0, "action": "no action", "symbols": [] })
+        )
+    );
+    assert_eq!(
+        shared.backend.spam_requests.lock().unwrap().clone(),
+        vec![(
+            vec!["Abc123+Signup@mailhooks.cc".to_string()],
+            Some("mail.client.test".to_string())
+        )]
+    );
     assert!(!d.retry);
     assert!(d.tls.is_none());
 

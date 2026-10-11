@@ -153,6 +153,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
       }
     ],
     "auth": { "spf": "pass", "dkim": "pass", "dmarc": "pass", "tls": "TLSv1_3" },
+    "spam": { "score": 1.2, "required": 15, "action": "no action" },
     "headers": { "subject": "Confirm your email for Tidewater", "...": "..." },
     "size": 1485,
     "truncated": { "text": false, "html": false },
@@ -172,6 +173,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 | `data.codes`, `data.links`   | One-time codes and the links worth clicking, as on the email in the dashboard. Left out when the endpoint turned off "Show codes and links found in emails". |
 | `data.attachments`           | Name, type and size of each attachment. The contents are not kept, so they are not forwarded.                                                         |
 | `data.auth`                  | The SPF, DKIM and DMARC results (`pass`, `fail`, `softfail`, `none`, ...) and the TLS version; `null` when a check did not run.                     |
+| `data.spam` | rspamd's `score`, the `required` score at which it would reject, and its suggested `action` (never applied); `null` when the email was not scored. |
 | `data.headers`               | Every header, lowercase names, repeated headers joined with a newline.                                                                               |
 | `data.test`                  | `true` for the dashboard's **Send test email** sample, and for the sample **Send test delivery** posts while no email has arrived.                 |
 

@@ -66,6 +66,15 @@ export function omitHeaders(holder: JsonObject): void {
   holder.headersOmitted = `${count} headers left out to fit the output`;
 }
 
+/** Keeps rspamd's score, threshold and action (or why there is none), without the rules. */
+export function trimSpam(holder: JsonObject): void {
+  const spam = holder.spam;
+  if (spam && typeof spam === "object" && !Array.isArray(spam)) {
+    const { score, required, action, error } = spam as JsonObject;
+    holder.spam = { score, required, action, error };
+  }
+}
+
 /** Keeps the first codes and links of an email and shortens long link texts and URLs. */
 export function capExtracts(holder: JsonObject): void {
   if (Array.isArray(holder.codes) && holder.codes.length > MAX_EXTRACTS) {
@@ -164,6 +173,7 @@ const ESSENTIAL_EMAIL_FIELDS = [
   "text",
   "textTruncated",
   "htmlSize",
+  "spam",
 ];
 
 /**
@@ -171,7 +181,8 @@ const ESSENTIAL_EMAIL_FIELDS = [
  * they are. An email's `body` is the raw MIME message (up to 1 MB) and its
  * HTML part can reach 256 KB, either of which would use up the output
  * budget: both are left out and the text part is cut. An email that is still
- * too big loses its headers, then the extra entries of its sender, address
+ * too big loses its headers, then the rules of its spam verdict (keeping
+ * the score), then the extra entries of its sender, address
  * and attachment lists, then text down to TEXT_FLOOR characters, then
  * everything but its subject, first sender, tag, date and as much text as
  * then fits, and at last part of its subject, so it always fits a list on
@@ -206,6 +217,7 @@ export function compactRequest<T extends CompactableRequest>(request: T): T | Co
   const budget = MAX_OUTPUT - 128;
   shrinkToFit(root, budget, [
     () => omitHeaders(compact),
+    () => trimSpam(email),
     () => capLists(email),
     () => cutStringToFit(root, email, "text", "textTruncated", budget, TEXT_FLOOR),
     // Down to the essentials there may be room for more of the text again.
