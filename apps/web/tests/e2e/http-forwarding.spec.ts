@@ -142,6 +142,9 @@ test("set up forwarding to a server: format from the URL, a masked header, a tes
   await expect(toggle).toBeDisabled();
   await section.getByLabel("Send to").fill(hookUrl);
   await expect(section.getByText("URL changed.")).toBeVisible();
+  // Both kinds are proposed until a URL is saved.
+  await expect(section.getByLabel("HTTP requests")).toBeChecked();
+  await expect(section.getByLabel("Emails")).toBeChecked();
   await section.getByLabel("HTTP requests").check();
   await section.getByLabel("Emails").uncheck();
   await expect(section.getByText("URL and what to forward changed.")).toBeVisible();

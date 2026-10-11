@@ -285,7 +285,9 @@ export function ForwardingSection({
     () => ({
       enabled: endpoint.forwardEnabled === true,
       url: endpoint.forwardUrl ?? "",
-      http: endpoint.forwardHttp === true,
+      // Until a URL is saved, both kinds are proposed (what is stored is
+      // sent on the first save; the column defaults to emails only).
+      http: endpoint.forwardUrl ? endpoint.forwardHttp === true : true,
       email: endpoint.forwardEmail !== false,
       format: (endpoint.forwardFormat ?? "auto") as ForwardFormatSetting,
       appendPath: endpoint.forwardAppendPath !== false,
@@ -445,7 +447,7 @@ export function ForwardingSection({
       {
         ...(changes.enabled ? { forwardEnabled: enabled } : {}),
         ...(changes.url ? { forwardUrl: trimmedUrl || null } : {}),
-        ...(http !== initial.http ? { forwardHttp: http } : {}),
+        ...(http !== (endpoint.forwardHttp === true) ? { forwardHttp: http } : {}),
         ...(email !== initial.email ? { forwardEmail: email } : {}),
         ...(changes.format ? { forwardFormat: format } : {}),
         ...(changes.headers
@@ -556,7 +558,7 @@ export function ForwardingSection({
   // Copy that depends on the state.
   const kindsWord = http && email ? "HTTP request and email" : http ? "HTTP request" : "email";
   const switchHelp = !initial.url
-    ? "Add the URL below and save. Forwarding can be turned on once a test delivery has gone through."
+    ? "Add the URL below and save. Then send a test delivery and turn forwarding on."
     : enabled
       ? !http && !email
         ? "On, but nothing is forwarded until at least one kind is picked below."

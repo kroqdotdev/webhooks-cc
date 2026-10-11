@@ -122,6 +122,9 @@ test("set up forwarding: URL, secret, a test delivery, then on", async ({ page }
   const section = await openSettings(page);
 
   await section.getByLabel("Send to").fill(hookUrl);
+  // A first setup proposes both kinds; this endpoint forwards emails only.
+  await expect(section.getByLabel("HTTP requests")).toBeChecked();
+  await section.getByLabel("HTTP requests").uncheck();
   // A server URL with only emails forwarded picks signed JSON.
   await expect(
     section.getByRole("radiogroup", { name: "Format" }).getByRole("radio", { name: "Signed JSON" })
