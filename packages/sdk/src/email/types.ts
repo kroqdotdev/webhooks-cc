@@ -44,6 +44,35 @@ export interface EmailAuth {
   error: string | null;
 }
 
+/** One rspamd rule that fired, with its weight. */
+export interface EmailSpamSymbol {
+  name: string;
+  score: number;
+  /** What the rule matched, when rspamd says (at most 3). */
+  options?: string[];
+}
+
+/**
+ * rspamd's verdict on an email, recorded for you to inspect. It never
+ * decides whether mail is accepted: every email that reaches an address is
+ * captured.
+ */
+export interface EmailSpam {
+  /** The score; higher looks more like spam. */
+  score: number | null;
+  /** The score at which rspamd would reject the message. */
+  required: number | null;
+  /**
+   * What rspamd suggests: "no action", "greylist", "add header",
+   * "rewrite subject", "soft reject" or "reject". Never applied.
+   */
+  action: string | null;
+  /** The rules that weigh most, heaviest first (at most 20). */
+  symbols: EmailSpamSymbol[];
+  /** Set when there is no score: "timeout", "unavailable", "busy", "invalid" or "skipped". */
+  error: string | null;
+}
+
 export interface EmailSmtp {
   clientIp: string | null;
   clientRdns: string | null;
@@ -76,6 +105,8 @@ export interface EmailCapture {
   textFromHtml: boolean;
   attachments: EmailAttachment[];
   auth: EmailAuth | null;
+  /** rspamd's verdict; null for mail captured before spam scoring or while it was off. */
+  spam?: EmailSpam | null;
   smtp: EmailSmtp | null;
   parseError: boolean;
   truncated: {
@@ -144,6 +175,8 @@ export interface EmailReceivedData {
   }[];
   /** Sender check verdicts ("pass", "fail", ...), null when a check did not run. */
   auth: { spf: string | null; dkim: string | null; dmarc: string | null; tls: string | null };
+  /** rspamd's score, threshold and suggested action (never applied); null when it was not scored. */
+  spam?: { score: number; required: number; action: string } | null;
   headers: Record<string, string>;
   /** Size of the whole message as received, in bytes. */
   size: number;

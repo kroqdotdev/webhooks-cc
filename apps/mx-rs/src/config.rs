@@ -54,6 +54,9 @@ pub struct Config {
     /// roughly 560 MiB.
     pub data_slots: usize,
     pub trusted_rdns: Vec<String>,
+    /// rspamd's normal worker, e.g. "http://127.0.0.1:11333"; unset turns
+    /// spam scoring off (see `spam_check`).
+    pub rspamd_url: Option<String>,
     pub limits: Limits,
     pub timeouts: Timeouts,
 }
@@ -87,6 +90,8 @@ pub struct Timeouts {
     pub data_slot_wait: Duration,
     pub reverse_dns: Duration,
     pub auth_checks: Duration,
+    /// One rspamd check, answer included.
+    pub spam_check: Duration,
     pub check_call: Duration,
     pub deliver_call: Duration,
 }
@@ -117,6 +122,7 @@ impl Default for Timeouts {
             data_slot_wait: Duration::from_secs(30),
             reverse_dns: Duration::from_secs(3),
             auth_checks: Duration::from_secs(8),
+            spam_check: Duration::from_secs(3),
             check_call: Duration::from_secs(10),
             deliver_call: Duration::from_secs(120),
         }
@@ -137,6 +143,7 @@ impl std::fmt::Debug for Config {
             .field("max_sessions", &self.max_sessions)
             .field("data_slots", &self.data_slots)
             .field("trusted_rdns", &self.trusted_rdns)
+            .field("rspamd_url", &self.rspamd_url)
             .field("limits", &self.limits)
             .field("timeouts", &self.timeouts)
             .finish()
@@ -205,6 +212,7 @@ impl Config {
             max_sessions: parse_env_or("MX_MAX_SESSIONS", 500).max(1),
             data_slots: parse_env_or("MX_DATA_SLOTS", 16).max(1),
             trusted_rdns,
+            rspamd_url: non_empty("MX_RSPAMD_URL"),
             limits: Limits::default(),
             timeouts: Timeouts::default(),
         }

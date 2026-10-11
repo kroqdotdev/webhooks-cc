@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.38.2";
+export const APP_VERSION = "0.39.0";
 export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.14.0";
-export const MCP_VERSION = "1.12.0";
+export const SDK_VERSION = "1.15.0";
+export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.39.0",
+    date: "2026-10-11",
+    title: "Spam Scores for Captured Email",
+    track: "web",
+    items: [
+      "Every email is scored by rspamd when it arrives: the header shows Not spam, Looks spammy or Spam with the score, and the Authentication tab shows the threshold, what rspamd would suggest, and the rules that weighed most",
+      "The score is only information: every email that reaches an address is still captured, so you can see why your own mail looks like spam before you ship it",
+      "Forwarded email JSON carries `data.spam` with the score, threshold and suggested action",
+    ],
+  },
   {
     version: "0.38.2",
     date: "2026-10-11",
@@ -1395,6 +1406,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.15.0",
+    date: "2026-10-11",
+    title: "Spam Scores on Emails",
+    track: "sdk",
+    items: [
+      "`EmailCapture.spam` carries rspamd's verdict: `score`, `required`, `action`, the rules that weighed most (`symbols`) and `error` when there is no score",
+      "`buildEmailJson()` and `emails.toJson()` add `data.spam` with the score, threshold and suggested action, as forwarding posts it",
+    ],
+  },
+  {
     version: "1.14.0",
     date: "2026-10-11",
     title: "Forwarding for HTTP Requests",
@@ -1671,6 +1692,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.12.1",
+    date: "2026-10-11",
+    title: "Spam Scores on Emails",
+    track: "mcp",
+    items: [
+      "`get_email` and the request tools include an email's spam score; when an email has to shrink to fit, the rules go first and the score stays",
+    ],
+  },
   {
     version: "1.12.0",
     date: "2026-10-11",

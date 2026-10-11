@@ -56,6 +56,8 @@ pub struct Delivery {
     pub helo: Option<String>,
     pub tls: Option<serde_json::Value>,
     pub auth: serde_json::Value,
+    /// rspamd's verdict (`spam_check`), or None when spam scoring is off.
+    pub spam: Option<serde_json::Value>,
     pub received_at: chrono::DateTime<chrono::Utc>,
     /// The same bytes were handed over before without a definitive answer
     /// reaching the sender, so the receiver may already hold them.
@@ -73,6 +75,8 @@ struct DeliverBody<'a> {
     helo: Option<&'a str>,
     tls: Option<&'a serde_json::Value>,
     auth: &'a serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spam: Option<&'a serde_json::Value>,
     received_at: String,
     retry: bool,
     raw: String,
@@ -225,6 +229,7 @@ impl Ingest {
                 helo: delivery.helo.as_deref(),
                 tls: delivery.tls.as_ref(),
                 auth: &delivery.auth,
+                spam: delivery.spam.as_ref(),
                 received_at: delivery.received_at.to_rfc3339(),
                 retry: delivery.retry,
                 raw: base64::engine::general_purpose::STANDARD.encode(delivery.raw.as_slice()),
@@ -490,10 +495,28 @@ mod tests {
             helo: Some("mail.example.com".into()),
             tls: None,
             auth: serde_json::json!({"spf": "pass"}),
+            spam: Some(serde_json::json!({"score": 2.5})),
             received_at: chrono::Utc::now(),
             retry: true,
             raw: Arc::new(b"Subject: x\r\n\r\nbody\r\n".to_vec()),
         }
+    }
+
+    #[tokio::test]
+    async fn deliver_leaves_spam_out_when_scoring_is_off() {
+        let (url, seen, _) = stub(
+            200,
+            r#"{"results":[{"recipient":"a@mailhooks.cc","status":"captured","request_id":"r1"}]}"#,
+        )
+        .await;
+        let delivery = Delivery {
+            spam: None,
+            ..delivery()
+        };
+        ingest(&url).deliver(delivery).await;
+        let seen = seen.lock().unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&seen[0].body).unwrap();
+        assert!(body.get("spam").is_none());
     }
 
     #[tokio::test]
@@ -511,6 +534,7 @@ mod tests {
         assert_eq!(seen[0].path, DELIVER_PATH);
         assert_eq!(body["retry"], true);
         assert_eq!(body["recipients"], serde_json::json!(["a@mailhooks.cc"]));
+        assert_eq!(body["spam"], serde_json::json!({"score": 2.5}));
         let raw = base64::engine::general_purpose::STANDARD
             .decode(body["raw"].as_str().unwrap())
             .unwrap();

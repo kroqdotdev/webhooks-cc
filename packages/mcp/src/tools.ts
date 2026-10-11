@@ -615,6 +615,7 @@ const ESSENTIAL_DETAIL_FIELDS = [
   "from",
   "size",
   "test",
+  "spam",
   "text",
   "textTruncated",
   "htmlSize",

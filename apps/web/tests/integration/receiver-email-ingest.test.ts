@@ -57,7 +57,19 @@ async function check(address: string): Promise<CheckResult> {
   return (await res.json()) as CheckResult;
 }
 
-async function deliver(recipients: string[], raw: string, retry = false): Promise<DeliverResult> {
+const SPAM = {
+  score: 3.1,
+  required: 15,
+  action: "no action",
+  symbols: [{ name: "MISSING_DATE", score: 1 }],
+};
+
+async function deliver(
+  recipients: string[],
+  raw: string,
+  retry = false,
+  extra: Record<string, unknown> = { spam: SPAM }
+): Promise<DeliverResult> {
   const res = await signedPost("/internal/mail/deliver", {
     recipients,
     envelope_from: "bounce@sender.example",
@@ -69,6 +81,7 @@ async function deliver(recipients: string[], raw: string, retry = false): Promis
     received_at: new Date().toISOString(),
     retry,
     raw: Buffer.from(raw, "utf8").toString("base64"),
+    ...extra,
   });
   expect(res.status).toBe(200);
   return (await res.json()) as DeliverResult;
@@ -135,6 +148,7 @@ type StoredEmail = {
   text_truncated: boolean;
   raw_truncated: boolean;
   auth: unknown;
+  spam: unknown;
   smtp: {
     client_ip: string;
     helo: string | null;
@@ -295,6 +309,19 @@ describe("POST /internal/mail/deliver", () => {
       envelope_to: [`${endpoint.slug}+signup@mailhooks.cc`],
     });
     expect(row.email.auth).toEqual({ spf: "pass", dkim: [], dmarc: "none" });
+    expect(row.email.spam).toEqual(SPAM);
+  });
+
+  it("stores no spam verdict when the MX host sends none, or one that is not an object", async () => {
+    const { endpoint } = await createOwnedEndpoint();
+    await deliver([`${endpoint.slug}@mailhooks.cc`], message("No score"), false, {});
+    await deliver([`${endpoint.slug}@mailhooks.cc`], message("Bad score"), false, { spam: "high" });
+    const { data, error } = await admin
+      .from("requests")
+      .select("email")
+      .eq("endpoint_id", endpoint.id);
+    expect(error).toBeNull();
+    expect(data!.map((row) => (row.email as StoredEmail).spam)).toEqual([null, null]);
   });
 
   it("never counts a sender retry twice", async () => {

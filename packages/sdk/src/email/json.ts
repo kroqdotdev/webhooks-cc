@@ -4,6 +4,7 @@ import {
   type EmailCapture,
   type EmailJsonSource,
   type EmailReceivedEvent,
+  type EmailReceivedData,
 } from "./types";
 
 /**
@@ -15,6 +16,15 @@ import {
  */
 
 /** The DKIM verdict across signatures: a pass wins, otherwise the first result. */
+/** The score, threshold and action, when rspamd scored the email. */
+function spamVerdict(email: EmailCapture): EmailReceivedData["spam"] {
+  const spam = email.spam;
+  if (!spam || spam.score === null || spam.required === null || spam.action === null) {
+    return null;
+  }
+  return { score: spam.score, required: spam.required, action: spam.action };
+}
+
 function dkimVerdict(email: EmailCapture): string | null {
   const results = email.auth?.dkim ?? [];
   if (results.some((check) => check.result === "pass")) return "pass";
@@ -78,6 +88,7 @@ export function buildEmailJson(
         dmarc: email.auth?.dmarc?.result ?? null,
         tls: email.smtp?.tls?.version ?? null,
       },
+      spam: spamVerdict(email),
       headers: request.headers,
       size: email.smtp?.size ?? request.size,
       truncated: { text: email.truncated.text, html: email.truncated.html },

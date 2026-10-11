@@ -5,6 +5,7 @@ import type {
   EmailCapture,
   EmailCheck,
   EmailSmtp,
+  EmailSpam,
 } from "@webhooks-cc/sdk/email";
 import type { Json } from "@/lib/supabase/database";
 
@@ -14,7 +15,8 @@ import type { Json } from "@/lib/supabase/database";
  * The receiver stores each email as a request with `kind = 'email'` and the
  * parsed message in `requests.email` (snake_case JSON, see
  * apps/receiver-rs/src/mail/parse.rs and handlers.rs; the authentication
- * results come from the MX host, apps/mx-rs/src/auth_check.rs). This module
+ * results and the spam verdict come from the MX host, apps/mx-rs/src/auth_check.rs
+ * and spam_check.rs). This module
  * turns that JSON into the SDK's camelCase types (@webhooks-cc/sdk/email, the
  * public shape of an email in the API) and never trusts its shape: anything
  * missing or malformed becomes null or an empty list.
@@ -26,6 +28,7 @@ export type {
   EmailCheck,
   EmailAuth,
   EmailSmtp,
+  EmailSpam,
   EmailCapture,
 } from "@webhooks-cc/sdk/email";
 
@@ -121,6 +124,26 @@ function asAuth(value: Json | undefined): EmailAuth | null {
   };
 }
 
+function asSpam(value: Json | undefined): EmailSpam | null {
+  const spam = asObject(value);
+  if (!spam) return null;
+  const symbols = Array.isArray(spam.symbols) ? spam.symbols : [];
+  return {
+    score: asNumber(spam.score),
+    required: asNumber(spam.required),
+    action: asString(spam.action),
+    symbols: symbols.flatMap((item) => {
+      const symbol = asObject(item);
+      const name = symbol ? asString(symbol.name) : null;
+      const score = symbol ? asNumber(symbol.score) : null;
+      if (!symbol || name === null || score === null) return [];
+      const options = asStrings(symbol.options);
+      return [options.length > 0 ? { name, score, options } : { name, score }];
+    }),
+    error: asString(spam.error),
+  };
+}
+
 function asSmtp(value: Json | undefined): EmailSmtp | null {
   const smtp = asObject(value);
   if (!smtp) return null;
@@ -157,6 +180,7 @@ export function toEmailCapture(value: Json | null | undefined): EmailCapture | n
     textFromHtml: doc.text_from_html === true,
     attachments: asAttachments(doc.attachments),
     auth: asAuth(doc.auth),
+    spam: asSpam(doc.spam),
     smtp: asSmtp(doc.smtp),
     parseError: doc.parse_error === true,
     truncated: {

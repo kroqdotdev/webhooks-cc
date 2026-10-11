@@ -13,6 +13,7 @@ mod limits;
 mod reply;
 mod retry_store;
 mod session;
+mod spam_check;
 mod tls;
 
 use std::net::IpAddr;
@@ -31,6 +32,7 @@ use limits::{Client, ClientKey, Limiter, is_trusted_name};
 use reply::{CheckStatus, DeliverOutcome, Reply};
 use retry_store::RetryStore;
 use session::{Backend, Peer, Session, Shared};
+use spam_check::{SpamChecker, SpamRequest};
 use tls::TlsProvider;
 
 /// How long running sessions get to finish after SIGTERM.
@@ -45,6 +47,7 @@ const CACHE_CAP: usize = 50_000;
 struct LiveBackend {
     ingest: Ingest,
     auth: AuthChecker,
+    spam: Option<SpamChecker>,
 }
 
 impl Backend for LiveBackend {
@@ -58,6 +61,13 @@ impl Backend for LiveBackend {
 
     async fn authenticate(&self, request: AuthRequest) -> AuthOutcome {
         self.auth.check(request).await
+    }
+
+    async fn score(&self, request: SpamRequest) -> Option<serde_json::Value> {
+        match &self.spam {
+            Some(checker) => Some(checker.check(request).await),
+            None => None,
+        }
     }
 }
 
@@ -128,6 +138,11 @@ async fn main() {
                     config.timeouts.deliver_call,
                 ),
                 auth: auth.clone(),
+                // One rspamd check per buffered message, like the auth checks.
+                spam: config.rspamd_url.as_deref().map(|url| {
+                    tracing::info!(url, "spam scoring on");
+                    SpamChecker::new(url, config.timeouts.spam_check, config.data_slots)
+                }),
             },
             hostname: config.hostname.clone(),
             tls,

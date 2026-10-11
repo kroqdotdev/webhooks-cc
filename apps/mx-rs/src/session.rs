@@ -24,6 +24,7 @@ use crate::ingest::Delivery;
 use crate::limits::{Client, Limiter, SlotGuard, address_key};
 use crate::reply::{self, CheckStatus, DeliverOutcome, Reply};
 use crate::retry_store::{self, Attempt, RetryStore};
+use crate::spam_check::SpamRequest;
 use crate::tls::TlsProvider;
 
 /// Errors tolerated before the connection is closed.
@@ -46,6 +47,9 @@ pub trait Backend: Send + Sync + 'static {
     fn check_recipient(&self, address: &str) -> impl Future<Output = CheckStatus> + Send;
     fn deliver(&self, delivery: Delivery) -> impl Future<Output = DeliverOutcome> + Send;
     fn authenticate(&self, request: AuthRequest) -> impl Future<Output = AuthOutcome> + Send;
+    /// rspamd's verdict, or None when spam scoring is off.
+    fn score(&self, request: SpamRequest)
+    -> impl Future<Output = Option<serde_json::Value>> + Send;
 }
 
 /// State shared by all sessions.
@@ -682,17 +686,39 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         let raw = Arc::new(raw);
         let helo = self.helo.clone().unwrap_or_default();
         let mail_from = self.tx.mail_from.clone().unwrap_or_default();
-        let auth = self
-            .shared
-            .backend
-            .authenticate(AuthRequest {
+        // Both only record what they find; they run side by side.
+        let tls = self.tls_info.as_ref().and_then(|info| {
+            Some((
+                info.get("version")?.as_str()?.to_string(),
+                info.get("cipher")?.as_str()?.to_string(),
+            ))
+        });
+        let spam_request = SpamRequest {
+            ip: self.peer.ip,
+            helo: helo.clone(),
+            mail_from: mail_from.clone(),
+            recipients: self.tx.recipients.clone(),
+            hostname: self
+                .peer
+                .reverse_dns
+                .confirmed
+                .then(|| self.peer.reverse_dns.name.clone())
+                .flatten(),
+            queue_id: format!("{:x}", chrono::Utc::now().timestamp_micros()),
+            tls,
+            raw: raw.clone(),
+        };
+        let backend = &self.shared.backend;
+        let (auth, spam) = tokio::join!(
+            backend.authenticate(AuthRequest {
                 ip: self.peer.ip,
                 helo,
                 mail_from: mail_from.clone(),
                 raw: raw.clone(),
                 reverse_dns: self.peer.reverse_dns.clone(),
-            })
-            .await;
+            }),
+            backend.score(spam_request),
+        );
         let (hashed, recipients) = (raw.clone(), self.tx.recipients.clone());
         let keys = tokio::task::spawn_blocking(move || retry_store::keys(&hashed, &recipients))
             .await
@@ -730,11 +756,11 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
             helo: self.helo.clone(),
             tls: self.tls_info.clone(),
             auth: auth.json,
+            spam,
             received_at: now,
             retry: !retried.is_empty(),
             raw,
         };
-        let backend = &self.shared.backend;
         let recipients = self.tx.recipients.len();
         let outcome = if retried.is_empty() || fresh.is_empty() {
             let all: Vec<usize> = (0..recipients).collect();

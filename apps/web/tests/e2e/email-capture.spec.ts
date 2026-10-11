@@ -85,6 +85,15 @@ async function insertEmail(slug: string) {
         },
         iprev: { result: "pass", ptr: "mail.tidewater.app" },
       },
+      spam: {
+        score: 7.46,
+        required: 15,
+        action: "add header",
+        symbols: [
+          { name: "SUBJ_ALL_CAPS", score: 3, options: ["CONFIRM YOUR EMAIL"] },
+          { name: "DMARC_POLICY_ALLOW", score: -0.5 },
+        ],
+      },
       smtp: {
         helo: "mail.tidewater.app",
         client_ip: "127.0.0.1",
@@ -218,8 +227,13 @@ for (const style of ["classic", "clean"] as const) {
       await shown(page.getByRole("button", { name: "Load images" })).click();
       await expect(shown(page.getByText("2 remote images are blocked"))).toHaveCount(0);
 
+      // The spam verdict: a chip in the header, the score and rules in the tab
+      await expect(shown(page.getByText("Looks spammy 7.5"))).toBeVisible();
       await shown(page.getByRole("button", { name: /^Authentication$/i })).click();
       await expect(shown(page.getByText("SPF", { exact: true })).first()).toBeVisible();
+      await expect(shown(page.getByText("Spam score", { exact: true }))).toBeVisible();
+      await expect(shown(page.getByText("SUBJ_ALL_CAPS"))).toBeVisible();
+      await expect(shown(page.getByText("+3.00"))).toBeVisible();
 
       await shown(page.getByRole("button", { name: /^Raw$/i })).click();
       await expect(shown(page.getByText(`Subject: ${SUBJECT}`))).toBeVisible();

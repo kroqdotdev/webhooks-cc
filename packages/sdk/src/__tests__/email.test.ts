@@ -326,6 +326,28 @@ describe("client.emails", () => {
     expect(json.data.endpoint.slug).toBe("acme");
     expect(json.data.tag).toBe("run-1");
     expect(json.data.codes).toEqual(["482913"]);
+    expect(json.data.spam).toBeNull();
+  });
+
+  it("carries rspamd's score, threshold and action into the JSON", () => {
+    const scored = emailRequest("e2", {
+      spam: {
+        score: 7.46,
+        required: 15,
+        action: "add header",
+        symbols: [{ name: "SUBJ_ALL_CAPS", score: 3 }],
+        error: null,
+      },
+    });
+    expect(createClient().emails.toJson(scored as never).data.spam).toEqual({
+      score: 7.46,
+      required: 15,
+      action: "add header",
+    });
+    const unscored = emailRequest("e3", {
+      spam: { score: null, required: null, action: null, symbols: [], error: "timeout" },
+    });
+    expect(createClient().emails.toJson(unscored as never).data.spam).toBeNull();
   });
 
   it("refuses to replay an email as an HTTP request", async () => {

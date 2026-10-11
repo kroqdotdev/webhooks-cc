@@ -58,7 +58,7 @@ Emails show up in the request list with an **EMAIL** badge, their subject, the s
 Selecting an email opens its own view:
 
 - **Envelope**: subject, sender, recipients (with the tag highlighted), when it arrived and its size.
-- **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS.
+- **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS, and the spam score.
 - **Found in this email**: the one-time code and the main link, each with a copy button (see below).
 - **Tabs**: JSON (the parsed email, shown first), Preview (when the email has HTML), Text, Headers, Attachments (when there are any), Authentication, Raw, and Deliveries when [forwarding](/docs/forwarding) is on.
 - **Download .eml**: saves the original message, when it was stored in full.
@@ -96,6 +96,12 @@ The **Authentication** tab explains each check our mail server ran when the mess
 | TLS     | Whether the message arrived over an encrypted connection, and with which cipher. |
 
 Failing a check does not stop a message from being captured. The results are there so you can see what a real inbox provider would think of your mail before you ship it.
+
+### Spam score
+
+Every email is also scored by [rspamd](https://rspamd.com), the spam filter many mail servers run. The **Authentication** tab shows the score, the score at which rspamd would reject the message, what it would suggest doing (nothing, marking it as spam, or rejecting it), and the rules that weighed most, such as `SUBJ_ALL_CAPS` or `MISSING_DATE`. The badge in the email header reads **Not spam**, **Looks spammy** or **Spam** with the score.
+
+The score is only information. Every email that reaches an address is captured, however it scores, because test mail often looks like spam, and seeing why is the point. Scores come from the message's content, headers, links and authentication; no third-party blocklists are queried. Emails captured before spam scoring was added, and the dashboard's **Send test email**, have no score.
 
 ## What is stored
 

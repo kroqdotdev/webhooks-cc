@@ -1256,6 +1256,46 @@ describe("email and forwarding tools", () => {
     expect(detail.textTruncated).toBe(true);
   });
 
+  it("keeps the spam score when an email has to shrink, and the rules when it fits", async () => {
+    const spam = {
+      score: 16.2,
+      required: 15,
+      action: "reject",
+      symbols: Array.from({ length: 20 }, (_, i) => ({
+        name: `RULE_${i}_${"N".repeat(90)}`,
+        score: 20 - i,
+        options: ["o".repeat(200), "p".repeat(200), "q".repeat(200)],
+      })),
+      error: null,
+    };
+    const small = makeEmail("e1", { spam });
+    const big = {
+      ...makeEmail("e2", { spam, text: "t".repeat(20_000) }),
+      headers: Object.fromEntries(
+        Array.from({ length: 60 }, (_, i) => [`x-header-${i}`, "h".repeat(250)])
+      ),
+    };
+    const get = vi.fn(async (id: string) => (id === "e1" ? small : big));
+    const tools = getRegisteredTools(
+      emailClient({
+        emails: { get } as never,
+        requests: { get } as unknown as WebhooksCC["requests"],
+      })
+    );
+
+    const fits = JSON.parse((await tools.get_request.handler({ requestId: "e1" })).content[0].text);
+    expect(fits.email.spam.symbols).toHaveLength(20);
+
+    const text = (await tools.get_request.handler({ requestId: "e2" })).content[0].text;
+    expect(text.length).toBeLessThanOrEqual(32_768);
+    expect(JSON.parse(text).email.spam).toMatchObject({ score: 16.2, action: "reject" });
+
+    const detail = JSON.parse(
+      (await tools.get_email.handler({ requestId: "e2", includeHtml: false })).content[0].text
+    );
+    expect(detail.spam).toEqual({ score: 16.2, required: 15, action: "reject" });
+  });
+
   it("stays valid JSON when the headers and links alone are too big", async () => {
     const headers = Object.fromEntries(
       Array.from({ length: 60 }, (_, i) => [`x-ms-exchange-header-${i}`, "h".repeat(250)])
