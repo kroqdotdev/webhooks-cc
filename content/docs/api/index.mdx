@@ -314,7 +314,7 @@ curl "https://webhooks.cc/api/endpoints/abc123/deliveries?limit=50&status=failed
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns the endpoint's deliveries, newest first. `limit` is 1 to 100 (default 5); `status` is `all` (default), `pending` (queued or retrying) or `failed`; `before` takes the `cursor` of the last row you have, for older rows (URL-encode it). Each has `id`, `requestId`, `kind`, `status` (`pending`, `succeeded` or `failed`), `attempts`, `createdAt`, `finishedAt`, `nextAttemptAt`, `lastStatus`, `lastError`, `lastDurationMs` (your server's time on the latest try), `format`, `senderAt` and `senderSource` (the sender's timestamp and where it was read), `cursor`, and the request's `method`, `path`, `receivedAt` and, for an email, `subject`.
+Returns the endpoint's deliveries, newest first. `limit` is 1 to 100 (default 5); `status` is `all` (default), `pending` (queued or retrying) or `failed`; `before` takes the `cursor` of the last row you have, for older rows (URL-encode it; it is opaque). Each has `id`, `requestId`, `kind`, `status` (`pending`, `succeeded` or `failed`), `attempts`, `createdAt`, `finishedAt`, `nextAttemptAt`, `lastStatus`, `lastError`, `lastDurationMs` (your server's time on the latest try), `format`, `senderAt` and `senderSource` (the sender's timestamp and where it was read), `cursor`, and the request's `method`, `path`, `receivedAt` and, for an email, `subject`.
 
 ### Delivery counts
 
@@ -323,7 +323,7 @@ curl https://webhooks.cc/api/endpoints/abc123/deliveries/summary \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns `{ "last24h": { "delivered": 1284, "failed": 0 }, "pending": 3, "failed": 1, "total": 1312 }`: what was delivered and failed among deliveries of the last 24 hours, what is waiting now, and the failed and total counts among the deliveries kept.
+Returns `{ "last24h": { "delivered": 1284, "failed": 0 }, "pending": 3, "failed": 1, "total": 1312 }`: what was delivered and failed among deliveries of the last 24 hours, what is waiting now, and the failed and total counts among the deliveries kept. Each count stops at 100,000.
 
 ### Redeliver all failed
 

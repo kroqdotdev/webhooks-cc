@@ -1,6 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { RequestRecord } from "@/lib/supabase/requests";
-import { deliveryTarget, nextRetry, outgoingFor, paceChat, type OutgoingSettings } from "./worker";
+import {
+  deliveryTarget,
+  holdChat,
+  nextRetry,
+  outgoingFor,
+  reserveChatSlot,
+  type OutgoingSettings,
+} from "./worker";
 
 const SECRET = `whsec_${Buffer.alloc(24, 7).toString("base64")}`;
 
@@ -110,32 +117,34 @@ describe("nextRetry", () => {
     expect(nextRetry(5, queuedAt, 3600, 2_550_000)).toBeNull();
   });
 
-  it("waits as long as a throttled destination asks", () => {
-    expect(nextRetry(1, queuedAt, 86_400, 0, 2)).toBe(2);
-    expect(nextRetry(1, queuedAt, 86_400, 0, 0)).toBe(1);
-    expect(nextRetry(1, queuedAt, 86_400, 0, 99_999)).toBe(30);
+  it("waits as long as a throttled destination asks, never less than the schedule", () => {
+    expect(nextRetry(1, queuedAt, 86_400, 0, 120)).toBe(120);
+    expect(nextRetry(1, queuedAt, 86_400, 0, 1)).toBe(30);
+    expect(nextRetry(1, queuedAt, 86_400, 0, 99_999)).toBe(3600);
+    expect(nextRetry(8, queuedAt, 86_400, 0, 1)).toBe(43_200);
+    expect(nextRetry(9, queuedAt, 86_400, 0, 1)).toBeNull();
     expect(nextRetry(1, queuedAt, 0, 0, 2)).toBeNull();
   });
 });
 
-describe("paceChat", () => {
-  afterEach(() => vi.useRealTimers());
-
-  it("spaces messages to one Slack webhook a second apart", async () => {
-    vi.useFakeTimers();
+describe("chat pacing", () => {
+  it("spaces messages to one Slack webhook a second apart", () => {
     const url = `https://hooks.slack.com/services/T/B/${Math.random()}`;
-    const order: number[] = [];
-    const first = paceChat(url).then(() => order.push(Date.now()));
-    const second = paceChat(url).then(() => order.push(Date.now()));
-    await vi.advanceTimersByTimeAsync(1000);
-    await Promise.all([first, second]);
-    expect(order[1] - order[0]).toBeGreaterThanOrEqual(1000);
+    expect(reserveChatSlot(url, 0)).toEqual({ wait: 0 });
+    expect(reserveChatSlot(url, 100)).toEqual({ wait: 900 });
+    expect(reserveChatSlot(url, 1500)).toEqual({ wait: 500 });
   });
 
-  it("never holds other destinations", async () => {
-    const started = Date.now();
-    await paceChat("https://dest.example/x");
-    await paceChat("https://dest.example/x");
-    expect(Date.now() - started).toBeLessThan(50);
+  it("sends a delivery back to the queue when the wait is long", () => {
+    const url = `https://discord.com/api/webhooks/1/${Math.random()}`;
+    holdChat(url, 30, 0);
+    expect(reserveChatSlot(url, 1000)).toEqual({ retryInMs: 29_000 });
+  });
+
+  it("never holds other destinations", () => {
+    const url = "https://dest.example/x";
+    holdChat(url, 30, 0);
+    expect(reserveChatSlot(url, 0)).toEqual({ wait: 0 });
+    expect(reserveChatSlot(url, 0)).toEqual({ wait: 0 });
   });
 });

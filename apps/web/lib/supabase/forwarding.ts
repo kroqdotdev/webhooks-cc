@@ -69,13 +69,16 @@ export interface RecentDelivery {
   format: DeliveryFormat | null;
   senderAt: number | null;
   senderSource: string | null;
-  /** created_at at full precision: pass as `before` to load older rows. */
+  /** Where this row sits in the log: pass as `before` to load the rows after it. */
   cursor: string;
 }
 
-/** A cursor as listRecentDeliveries hands it out (a Postgres timestamp). */
+const CURSOR =
+  /^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?))\|([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
+/** A cursor as listRecentDeliveries hands it out: created_at at full precision and the id. */
 export function isDeliveryCursor(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)$/.test(value);
+  return CURSOR.test(value);
 }
 
 export interface DeliverySummary {
@@ -233,12 +236,16 @@ export async function listRecentDeliveries(
     )
     .eq("endpoint_id", endpointId);
   if (options.status && options.status !== "all") query = query.eq("status", options.status);
-  if (options.before && isDeliveryCursor(options.before)) {
-    query = query.lt("created_at", options.before);
+  const cursor = options.before ? CURSOR.exec(options.before) : null;
+  if (cursor) {
+    // Rows queued in the same microsecond are told apart by id.
+    const [, at, id] = cursor;
+    query = query.or(`created_at.lt."${at}",and(created_at.eq."${at}",id.lt.${id})`);
   }
   const { data, error } = await query
     .order("created_at", { ascending: false })
-    .limit(Math.min(Math.max(options.limit ?? 5, 1), 100));
+    .order("id", { ascending: false })
+    .limit(Math.min(Math.max(Math.trunc(options.limit ?? 5), 1), 100));
   if (error) throw error;
   const rows = data ?? [];
   if (rows.length === 0) return [];
@@ -286,7 +293,7 @@ export async function listRecentDeliveries(
       format: (row.format as DeliveryFormat | null) ?? null,
       senderAt: millis(row.sender_at),
       senderSource: row.sender_source,
-      cursor: row.created_at,
+      cursor: `${row.created_at}|${row.id}`,
     };
   });
 }

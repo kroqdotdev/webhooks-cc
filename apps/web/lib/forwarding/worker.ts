@@ -55,7 +55,16 @@ const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
  */
 const SLACK_SPACING_MS = 1000;
 const DISCORD_SPACING_MS = 2000;
-/** The longest Retry-After honoured; anything longer falls back to the schedule. */
+/**
+ * Deliveries waiting for one chat webhook's next slot in this process, and
+ * the longest wait; past either, a delivery goes back to the queue instead
+ * of holding a worker slot (one endpoint never has more in flight than
+ * PER_ENDPOINT, so this only bites when several endpoints share a URL or
+ * the URL asked us to back off).
+ */
+const MAX_CHAT_WAITERS = PER_ENDPOINT;
+const MAX_CHAT_WAIT_MS = 10_000;
+/** The longest Retry-After honoured. */
 const MAX_RETRY_AFTER_SECONDS = 3600;
 
 type Claim = Database["public"]["Functions"]["claim_email_deliveries"]["Returns"][number];
@@ -100,12 +109,13 @@ export function nextRetry(
   now: number = Date.now(),
   retryAfterSeconds: number | null = null
 ): number | null {
-  // A throttled destination says when to come back; the schedule is for failures.
+  const scheduled = retryDelaySeconds(attempt);
+  if (scheduled === null || windowSeconds <= 0) return null;
+  // A throttled destination may ask for longer than the schedule (up to an hour), never shorter.
   const delay =
-    retryAfterSeconds !== null && retryAfterSeconds <= MAX_RETRY_AFTER_SECONDS
-      ? Math.max(retryAfterSeconds, 1)
-      : retryDelaySeconds(attempt);
-  if (delay === null || windowSeconds <= 0) return null;
+    retryAfterSeconds === null
+      ? scheduled
+      : Math.max(scheduled, Math.min(retryAfterSeconds, MAX_RETRY_AFTER_SECONDS));
   const queued = Date.parse(queuedAt);
   if (!Number.isFinite(queued)) return delay;
   return now + delay * 1000 <= queued + windowSeconds * 1000 ? delay : null;
@@ -305,23 +315,67 @@ function prepare(claim: Claim, request: RequestRecord, secret: string) {
   });
 }
 
-/** When this process last sent to each chat webhook, to space messages out. */
+/** When this process may next send to each chat webhook, and how many deliveries wait for it. */
 const chatNextSendAt = new Map<string, number>();
+const chatWaiters = new Map<string, number>();
+
+function chatSpacing(url: string): number {
+  return isSlackUrl(url) ? SLACK_SPACING_MS : isDiscordUrl(url) ? DISCORD_SPACING_MS : 0;
+}
 
 /**
- * Waits until a message to this chat webhook may leave, and reserves the
- * next slot. Other destinations never wait.
+ * Reserves the next slot for a message to a chat webhook: `wait` is how long
+ * to wait before sending (0 for other destinations), or `retryInMs` when
+ * enough deliveries already wait for this URL, or the wait is long (after a
+ * 429), so the delivery should go back to the queue for that long instead.
  */
-export async function paceChat(url: string, now: () => number = Date.now): Promise<void> {
-  const spacing = isSlackUrl(url) ? SLACK_SPACING_MS : isDiscordUrl(url) ? DISCORD_SPACING_MS : 0;
-  if (spacing === 0) return;
-  const at = Math.max(now(), chatNextSendAt.get(url) ?? 0);
-  chatNextSendAt.set(url, at + spacing);
-  if (chatNextSendAt.size > 1000) {
-    for (const [key, value] of chatNextSendAt) if (value < now()) chatNextSendAt.delete(key);
+export function reserveChatSlot(
+  url: string,
+  now: number = Date.now()
+): { wait: number } | { retryInMs: number } {
+  const spacing = chatSpacing(url);
+  if (spacing === 0) return { wait: 0 };
+  const next = chatNextSendAt.get(url) ?? 0;
+  const wait = Math.max(next - now, 0);
+  if (wait > 0 && ((chatWaiters.get(url) ?? 0) >= MAX_CHAT_WAITERS || wait > MAX_CHAT_WAIT_MS)) {
+    return { retryInMs: wait };
   }
-  const wait = at - now();
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  chatNextSendAt.set(url, Math.max(now, next) + spacing);
+  if (chatNextSendAt.size > 1000) {
+    for (const [key, value] of chatNextSendAt) {
+      if (value < now && !chatWaiters.has(key)) chatNextSendAt.delete(key);
+    }
+  }
+  return { wait };
+}
+
+/** After a 429, nothing goes to that chat webhook from this process until it said. */
+export function holdChat(url: string, seconds: number, now: number = Date.now()): void {
+  if (chatSpacing(url) === 0) return;
+  const until = now + Math.min(seconds, MAX_RETRY_AFTER_SECONDS) * 1000;
+  chatNextSendAt.set(url, Math.max(chatNextSendAt.get(url) ?? 0, until));
+}
+
+async function waitForChatSlot(url: string, wait: number): Promise<void> {
+  if (wait <= 0) return;
+  chatWaiters.set(url, (chatWaiters.get(url) ?? 0) + 1);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  } finally {
+    const left = (chatWaiters.get(url) ?? 1) - 1;
+    if (left > 0) chatWaiters.set(url, left);
+    else chatWaiters.delete(url);
+  }
+}
+
+/** Puts a claimed delivery back without counting a try, due again in `delayMs`. */
+async function release(claim: Claim, delayMs: number): Promise<void> {
+  const { error } = await createAdminClient().rpc("release_email_delivery", {
+    p_delivery_id: claim.delivery_id,
+    p_attempt: claim.attempt,
+    p_delay_ms: Math.ceil(delayMs),
+  });
+  if (error) throw error;
 }
 
 /** Sends one claimed delivery and records the outcome. */
@@ -365,8 +419,16 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
       facts
     );
   }
-  if (facts.format === "chat") await paceChat(prepared.outgoing.url);
+  const url = prepared.outgoing.url;
+  if (facts.format === "chat") {
+    const slot = reserveChatSlot(url);
+    if ("retryInMs" in slot) return release(claim, slot.retryInMs);
+    await waitForChatSlot(url, slot.wait);
+  }
   const result = await sendForward(prepared.outgoing, sendOptions());
+  if (facts.format === "chat" && result.status === 429) {
+    holdChat(url, result.retryAfterSeconds ?? 1);
+  }
   await record(claim, result, true, facts);
 }
 

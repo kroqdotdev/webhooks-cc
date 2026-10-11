@@ -34,7 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   try {
     return Response.json(
       await listRecentDeliveries(access.endpointId, {
-        limit: Number.isFinite(limit) ? limit : 5,
+        limit: Number.isFinite(limit) ? Math.trunc(limit) : 5,
         status,
         before,
       })

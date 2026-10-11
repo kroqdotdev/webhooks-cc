@@ -904,6 +904,10 @@ export interface Database {
         };
         Returns: undefined;
       };
+      release_email_delivery: {
+        Args: { p_delivery_id: string; p_attempt: number; p_delay_ms: number };
+        Returns: undefined;
+      };
       queue_failed_redeliveries: {
         Args: { p_endpoint_id: string; p_max_pending?: number };
         Returns: number;

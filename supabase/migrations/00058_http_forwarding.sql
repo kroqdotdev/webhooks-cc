@@ -31,7 +31,9 @@
 --    queue_failed_redeliveries(): every failed request of an endpoint again.
 -- 8. capture_webhook(): p_query_raw, and step 5b for both kinds.
 -- 9. record_email_delivery_attempt() also records format, target and the
---    sender's timestamp; delivery_summary() counts for the dashboard.
+--    sender's timestamp; release_email_delivery() hands a claimed delivery
+--    back without counting a try (a chat webhook's rate limit);
+--    delivery_summary() counts for the dashboard.
 --
 -- Service role only. Apply in autocommit mode (see AGENTS.md): the index is
 -- built concurrently, outside any transaction block.
@@ -703,9 +705,12 @@ begin;
 -- 7b. Queues every failed request of an endpoint again, for the log's
 -- "Redeliver all failed": each request whose latest delivery failed and whose
 -- kind is still forwarded, oldest capture first, up to the room left under
--- the pending cap. Under the endpoint row lock, like queue_email_redelivery().
--- Rows queued together get created_at a microsecond apart in capture order,
--- so keep-order sends them in that order.
+-- the pending cap. The candidates are picked before the endpoint row is
+-- locked (a long-dead URL can leave a failed row per capture, and captures
+-- wait on that lock); under the lock, like queue_email_redelivery(), the
+-- switches, the room and each candidate are checked again. Rows queued
+-- together get created_at a microsecond apart in capture order, so
+-- keep-order sends them in that order.
 create or replace function public.queue_failed_redeliveries(
   p_endpoint_id uuid,
   p_max_pending integer default 1000
@@ -715,10 +720,42 @@ language plpgsql
 security definer set search_path = ''
 as $$
 declare
+  v_cap      integer := greatest(p_max_pending, 1);
+  v_ids      uuid[];
+  v_kinds    text[];
   v_endpoint record;
   v_room     integer;
   v_count    integer;
 begin
+  -- 1. Candidates, without the lock: failed deliveries that are still their
+  -- request's latest, oldest first.
+  select coalesce(array_agg(c.request_id order by c.received_at, c.request_id), '{}'),
+         coalesce(array_agg(c.kind order by c.received_at, c.request_id), '{}')
+    into v_ids, v_kinds
+    from (
+      select d.request_id, d.kind, r.received_at
+        from (
+          select f.request_id, f.kind
+            from public.email_deliveries f
+           where f.endpoint_id = p_endpoint_id
+             and f.status = 'failed'
+             and not exists (
+               select 1
+                 from public.email_deliveries later
+                where later.request_id = f.request_id
+                  and (later.created_at, later.id) > (f.created_at, f.id)
+             )
+           order by f.created_at
+           limit v_cap
+        ) d
+        join public.requests r on r.id = d.request_id
+    ) c;
+  if cardinality(v_ids) = 0 then
+    return 0;
+  end if;
+
+  -- 2. Under the lock: forwarding still on, the room left, and each
+  -- candidate still stored, still failed last, and of a kind still forwarded.
   select forward_enabled, forward_http, forward_email
     into v_endpoint
     from public.endpoints
@@ -728,50 +765,34 @@ begin
     return 0;
   end if;
 
-  select greatest(p_max_pending, 1) - count(*)
+  select v_cap - count(*)
     into v_room
     from (
       select 1
         from public.email_deliveries
        where endpoint_id = p_endpoint_id
          and status = 'pending'
-       limit greatest(p_max_pending, 1)
+       limit v_cap
     ) waiting;
   if v_room <= 0 then
     return 0;
   end if;
 
-  with failed as (
-    select distinct d.request_id
-      from public.email_deliveries d
-     where d.endpoint_id = p_endpoint_id
-       and d.status = 'failed'
-  ),
-  latest as (
-    select f.request_id, last.kind, last.status, r.received_at
-      from failed f
-      join public.requests r on r.id = f.request_id
-      cross join lateral (
-        select d.kind, d.status
-          from public.email_deliveries d
-         where d.request_id = f.request_id
-         order by d.created_at desc, d.id desc
-         limit 1
-      ) last
-  ),
-  picked as (
-    select l.request_id, l.kind,
-           row_number() over (order by l.received_at, l.request_id) as rn
-      from latest l
-     where l.status = 'failed'
-       and ((l.kind = 'http' and v_endpoint.forward_http)
-            or (l.kind = 'email' and v_endpoint.forward_email))
-     order by l.received_at, l.request_id
-     limit v_room
-  )
   insert into public.email_deliveries (request_id, endpoint_id, kind, created_at)
-  select p.request_id, p_endpoint_id, p.kind, now() + make_interval(secs => p.rn / 1000000.0)
-    from picked p;
+  select c.request_id, p_endpoint_id, c.kind, now() + make_interval(secs => c.ord / 1000000.0)
+    from unnest(v_ids, v_kinds) with ordinality as c(request_id, kind, ord)
+   where ((c.kind = 'http' and v_endpoint.forward_http)
+          or (c.kind = 'email' and v_endpoint.forward_email))
+     and exists (select 1 from public.requests r where r.id = c.request_id)
+     and (
+       select d.status
+         from public.email_deliveries d
+        where d.request_id = c.request_id
+        order by d.created_at desc, d.id desc
+        limit 1
+     ) = 'failed'
+   order by c.ord
+   limit v_room;
   get diagnostics v_count = row_count;
   return v_count;
 end;
@@ -862,9 +883,35 @@ grant execute on function public.record_email_delivery_attempt(
   uuid, integer, boolean, integer, integer, text, text, integer, text, text, timestamptz, text
 ) to service_role;
 
+-- 9a. Hands a claimed delivery back to the queue without counting a try, due
+-- again after p_delay_ms: the worker does this when a chat webhook's rate
+-- limit means the message cannot leave yet. Only the current claim may.
+create or replace function public.release_email_delivery(
+  p_delivery_id uuid,
+  p_attempt     integer,
+  p_delay_ms    integer
+)
+returns void
+language sql
+security definer set search_path = ''
+as $$
+  update public.email_deliveries
+     set locked_until = null,
+         attempts = greatest(attempts - 1, 0),
+         next_attempt_at = now() + make_interval(secs => least(greatest(p_delay_ms, 0), 3600000) / 1000.0)
+   where id = p_delivery_id
+     and status = 'pending'
+     and attempts = p_attempt;
+$$;
+
+revoke all on function public.release_email_delivery(uuid, integer, integer)
+  from public, anon, authenticated;
+grant execute on function public.release_email_delivery(uuid, integer, integer) to service_role;
+
 -- 9b. The counts the dashboard shows for one endpoint: what was delivered and
 -- what failed among deliveries queued since p_since, what is waiting, and
--- the totals the log's filters show. Each count reads one index.
+-- the totals the log's filters show. Each count reads one index and stops
+-- at 100,000, so a busy endpoint's dashboard stays cheap to refresh.
 create or replace function public.delivery_summary(
   p_endpoint_id uuid,
   p_since       timestamptz
@@ -881,16 +928,26 @@ stable
 security definer set search_path = ''
 as $$
   select
-    (select count(*)::integer from public.email_deliveries
-      where endpoint_id = p_endpoint_id and created_at >= p_since and status = 'succeeded'),
-    (select count(*)::integer from public.email_deliveries
-      where endpoint_id = p_endpoint_id and created_at >= p_since and status = 'failed'),
-    (select count(*)::integer from public.email_deliveries
-      where endpoint_id = p_endpoint_id and status = 'pending'),
-    (select count(*)::integer from public.email_deliveries
-      where endpoint_id = p_endpoint_id and status = 'failed'),
-    (select count(*)::integer from public.email_deliveries
-      where endpoint_id = p_endpoint_id);
+    (select count(*)::integer from (
+      select 1 from public.email_deliveries
+       where endpoint_id = p_endpoint_id and created_at >= p_since and status = 'succeeded'
+       limit 100000) x),
+    (select count(*)::integer from (
+      select 1 from public.email_deliveries
+       where endpoint_id = p_endpoint_id and created_at >= p_since and status = 'failed'
+       limit 100000) x),
+    (select count(*)::integer from (
+      select 1 from public.email_deliveries
+       where endpoint_id = p_endpoint_id and status = 'pending'
+       limit 100000) x),
+    (select count(*)::integer from (
+      select 1 from public.email_deliveries
+       where endpoint_id = p_endpoint_id and status = 'failed'
+       limit 100000) x),
+    (select count(*)::integer from (
+      select 1 from public.email_deliveries
+       where endpoint_id = p_endpoint_id
+       limit 100000) x);
 $$;
 
 revoke all on function public.delivery_summary(uuid, timestamptz)

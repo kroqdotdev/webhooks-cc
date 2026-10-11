@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { isDelivered, jsonForward, sendForward } from "./send";
+import { isDelivered, jsonForward, parseRetryAfter, sendForward } from "./send";
 
 let server: Server;
 let base: string;
@@ -141,10 +141,27 @@ describe("sendForward, through the proxy", () => {
       { ...local, proxy: { url: `${base}/proxy`, secret: "s" } }
     );
     expect(lastRequest?.headers["x-proxy-mode"]).toBe("relay");
+    // An older Worker without relay mode then refuses it instead of posting it on.
+    expect(lastRequest?.headers["x-target-url"]).toBeUndefined();
     expect(JSON.parse(lastRequest!.body)).toEqual({
+      url: "https://api.example.com/hook",
       method: "PATCH",
       headers: [["x-api-key", "k"]],
       body: bytes.toString("base64"),
     });
+  });
+});
+
+describe("parseRetryAfter", () => {
+  it("reads seconds, rounding fractions up, and HTTP dates", () => {
+    const now = Date.parse("2026-10-11T10:00:00Z");
+    expect(parseRetryAfter("2", now)).toBe(2);
+    expect(parseRetryAfter("1.5", now)).toBe(2);
+    expect(parseRetryAfter("Sun, 11 Oct 2026 10:00:30 GMT", now)).toBe(30);
+    expect(parseRetryAfter("Sun, 11 Oct 2026 09:00:00 GMT", now)).toBe(0);
+    expect(parseRetryAfter("2001", now)).toBe(2001);
+    expect(parseRetryAfter("-1", now)).toBeNull();
+    expect(parseRetryAfter("soon", now)).toBeNull();
+    expect(parseRetryAfter(null, now)).toBeNull();
   });
 });

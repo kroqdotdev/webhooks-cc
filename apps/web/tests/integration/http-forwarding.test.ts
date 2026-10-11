@@ -371,4 +371,47 @@ describe("forwarding HTTP requests", () => {
     await updateEndpointBySlugForUser({ userId, slug: endpoint.slug, forwardEnabled: false });
     expect(await queueFailedRedeliveries(endpoint.id)).toBe(0);
   });
+
+  it("hands a claimed delivery back without counting the try", async () => {
+    const endpoint = await forwardingEndpoint("/in", { forwardHttp: false });
+    const requestId = await capture(endpoint.slug);
+    const { data: row, error } = await admin
+      .from("email_deliveries")
+      .insert({
+        request_id: requestId,
+        endpoint_id: endpoint.id,
+        kind: "http",
+        attempts: 2,
+        locked_until: new Date(Date.now() + 60_000).toISOString(),
+      })
+      .select("id")
+      .single();
+    expect(error).toBeNull();
+
+    // A stale claim (another try number) changes nothing.
+    await admin.rpc("release_email_delivery", {
+      p_delivery_id: row!.id,
+      p_attempt: 1,
+      p_delay_ms: 5000,
+    });
+    let { data: after } = await admin
+      .from("email_deliveries")
+      .select("attempts, locked_until, next_attempt_at")
+      .eq("id", row!.id)
+      .single();
+    expect(after).toMatchObject({ attempts: 2 });
+
+    await admin.rpc("release_email_delivery", {
+      p_delivery_id: row!.id,
+      p_attempt: 2,
+      p_delay_ms: 5000,
+    });
+    ({ data: after } = await admin
+      .from("email_deliveries")
+      .select("attempts, locked_until, next_attempt_at")
+      .eq("id", row!.id)
+      .single());
+    expect(after).toMatchObject({ attempts: 1, locked_until: null });
+    expect(Date.parse(after!.next_attempt_at)).toBeGreaterThan(Date.now() + 3000);
+  });
 });

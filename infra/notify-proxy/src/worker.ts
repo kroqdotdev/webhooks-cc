@@ -15,8 +15,9 @@
  *   destination's status, the start of its body, its own time and its
  *   Retry-After header, or `{ error }` when it could not be reached.
  * - Relay (`X-Proxy-Mode: relay`, forwarding a captured HTTP request as
- *   received): the body is JSON `{ method, headers, body }` with the body in
- *   base64, and the request goes out with that method, those headers (minus
+ *   received, or JSON with the owner's headers): the body is JSON
+ *   `{ url, method, headers, body }` with the body in base64 and the target
+ *   inside (no X-Target-URL), and the request goes out with that method, those headers (minus
  *   hop-by-hop ones) and those exact bytes. Answers like forward mode.
  */
 
@@ -171,6 +172,7 @@ async function forward(request: Request, targetUrl: string): Promise<Response> {
 }
 
 interface RelayEnvelope {
+  url: string;
   method: string;
   headers: [string, string][];
   body: string | null;
@@ -184,7 +186,8 @@ function parseRelayEnvelope(raw: string): RelayEnvelope | null {
     return null;
   }
   if (typeof data !== "object" || data === null) return null;
-  const { method, headers, body } = data as Record<string, unknown>;
+  const { url, method, headers, body } = data as Record<string, unknown>;
+  if (typeof url !== "string" || url.length === 0 || url.length > 4096) return null;
   if (typeof method !== "string" || !RELAY_METHODS.has(method)) return null;
   if (!Array.isArray(headers)) return null;
   const pairs: [string, string][] = [];
@@ -200,7 +203,7 @@ function parseRelayEnvelope(raw: string): RelayEnvelope | null {
     pairs.push([pair[0], pair[1]]);
   }
   if (body !== null && typeof body !== "string") return null;
-  return { method, headers: pairs, body: body ?? null };
+  return { url, method, headers: pairs, body: body ?? null };
 }
 
 function fromBase64(value: string): Uint8Array<ArrayBuffer> | null {
@@ -214,14 +217,21 @@ function fromBase64(value: string): Uint8Array<ArrayBuffer> | null {
   }
 }
 
-async function relay(request: Request, targetUrl: string): Promise<Response> {
-  if (isBlockedUrl(targetUrl)) return json({ error: "The URL is not allowed." });
+/**
+ * The target travels inside the envelope, not in X-Target-URL: a Worker
+ * from before relay mode reads a request without X-Target-URL as malformed
+ * (400) and sends nothing, instead of posting the envelope to the target as
+ * a notification.
+ */
+async function relay(request: Request): Promise<Response> {
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (declared > MAX_RELAY_ENVELOPE) return json({ error: "The body is larger than 10 MB." });
   const raw = await request.text();
   if (raw.length > MAX_RELAY_ENVELOPE) return json({ error: "The body is larger than 10 MB." });
   const envelope = parseRelayEnvelope(raw);
   if (!envelope) return json({ error: "The relay request is malformed." });
+  const targetUrl = envelope.url;
+  if (isBlockedUrl(targetUrl)) return json({ error: "The URL is not allowed." });
 
   const body = envelope.body === null ? null : fromBase64(envelope.body);
   if (envelope.body !== null && !body) return json({ error: "The relay request is malformed." });
@@ -310,6 +320,10 @@ export default {
       return new Response("Unauthorized", { status: 401 });
     }
 
+    if (request.headers.get("X-Proxy-Mode") === "relay") {
+      return relay(request);
+    }
+
     // Read target URL from header
     const targetUrl = request.headers.get("X-Target-URL");
     if (!targetUrl) {
@@ -318,9 +332,6 @@ export default {
 
     if (request.headers.get("X-Proxy-Mode") === "forward") {
       return forward(request, targetUrl);
-    }
-    if (request.headers.get("X-Proxy-Mode") === "relay") {
-      return relay(request, targetUrl);
     }
 
     if (isBlockedUrl(targetUrl)) {

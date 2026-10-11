@@ -47,11 +47,13 @@ function excerptOf(bytes: Buffer): string | null {
   return bytes.subarray(0, EXCERPT_BYTES).toString("utf8").replaceAll("\u0000", "");
 }
 
-/** Retry-After as seconds: a number of seconds or an HTTP date. */
+/** Retry-After as whole seconds: a number of seconds (rounded up) or an HTTP date. */
 export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | null {
   if (!value) return null;
   const text = value.trim();
-  if (/^\d+$/.test(text)) return Number(text);
+  if (/^\d+(\.\d+)?$/.test(text)) return Math.ceil(Number(text));
+  // An HTTP date names a weekday and a month; never read a bare number as one.
+  if (!/[A-Za-z]/.test(text)) return null;
   const at = Date.parse(text);
   return Number.isFinite(at) ? Math.max(Math.ceil((at - now) / 1000), 0) : null;
 }
@@ -95,8 +97,11 @@ async function viaProxy(
   let body: string | null;
   if (outgoing.mode === "relay") {
     // The Worker sends this method, these headers and these bytes as they are.
+    // The target goes inside the envelope, not in X-Target-URL, so a Worker
+    // from before relay mode refuses the request instead of posting it on.
     proxyHeaders["content-type"] = "application/json";
     body = JSON.stringify({
+      url: outgoing.url,
       method: outgoing.method,
       headers: outgoing.headers,
       body: outgoing.body ? outgoing.body.toString("base64") : null,
@@ -111,7 +116,7 @@ async function viaProxy(
     body = outgoing.body ? outgoing.body.toString("utf8") : null;
   }
   // Set last, so they always win.
-  proxyHeaders["x-target-url"] = outgoing.url;
+  if (outgoing.mode !== "relay") proxyHeaders["x-target-url"] = outgoing.url;
   proxyHeaders["x-auth"] = options.proxy.secret;
   proxyHeaders["x-proxy-mode"] = outgoing.mode;
   const response = await fetch(options.proxy.url, {
@@ -126,7 +131,10 @@ async function viaProxy(
     return {
       status: null,
       excerpt: null,
-      error: `The forwarding proxy answered ${response.status}.`,
+      error:
+        outgoing.mode === "relay" && response.status === 400
+          ? "The forwarding proxy does not support this delivery yet."
+          : `The forwarding proxy answered ${response.status}.`,
     };
   }
   let result: {

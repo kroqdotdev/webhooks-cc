@@ -288,7 +288,7 @@ Received 2026-10-11T09:30:01.882Z (UTC), 197 ms after publishedAt
 
 The body follows in a code block, up to 3,000 characters in Slack and as much as fits in Discord's 2,000. An email reads "New email to ..." with its subject and text. The message is the one [notifications](/docs/notification-webhooks) send; the difference is that forwarding posts every request and retries, where a notification is a quick heads-up at most once a second.
 
-Slack takes about one message a second per webhook and Discord a few every two seconds, so messages to one of them are spaced out, and when either answers `429` the delivery waits as long as it says and tries again. Messages arrive in capture order only with **Keep order** on (see [Delivery and retries](#delivery-and-retries)).
+Slack takes about one message a second per webhook and Discord a few every two seconds, so messages to one of them are spaced out to stay under that, and when either answers `429` nothing more goes to it until the time it asked for. Messages arrive in capture order only with **Keep order** on (see [Delivery and retries](#delivery-and-retries)).
 
 ## Your own headers
 
@@ -312,14 +312,14 @@ The time between the sender's clock and ours includes the network and any queue 
 
 - Answer with any `2xx` status to accept a delivery. Redirects are not followed and count as failures.
 - Your server has 15 seconds to answer.
-- A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours, about a day in all, and then marked failed. Under **Advanced**, **Retry failed deliveries** can stop after an hour (the first four retries) or send each request only once. A `429` with `Retry-After` is tried again after the time it asks for, within the same window.
+- A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours, about a day in all, and then marked failed. Under **Advanced**, **Retry failed deliveries** can stop after an hour (the first four retries) or send each request only once. A `429` waits at least as long as its `Retry-After` asks, up to an hour, and counts as a try like any other failure.
 - Deliveries are at least once. Without **Keep order**, up to two requests of an endpoint are delivered at a time, so a slow answer does not hold the rest back, but two may overtake each other; `webhooks-cc-received-at` gives the capture order. With **Keep order** on, one request is delivered at a time, in the order captured, and a request waiting for its retry holds back the ones after it.
 - A retry goes to the URL and uses the settings saved at that moment, so fixing a wrong URL or header also fixes the deliveries still waiting. Turning forwarding, or one kind of it, off marks its waiting deliveries as failed.
 - At most 1,000 deliveries of an endpoint wait at a time. A request captured while 1,000 are waiting (a destination down for long under heavy traffic) is not forwarded, and the log says so; redeliver it once the queue has drained.
 
 ## The delivery log
 
-**Settings**, **Deliveries** lists every delivery of the endpoint, newest first, with its status, your server's answer, how long after capture it was delivered, how long your server took, and the sender-to-receipt time when the request has one. Filter it to the deliveries still retrying or the ones that failed; **Redeliver all failed** sends every failed request again, oldest first, with the current settings. The Forwarding section shows the last 24 hours at a glance.
+**Settings**, **Deliveries** lists every delivery of the endpoint, newest first, with its status, your server's answer, how long after capture it was delivered, how long your server took, and the sender-to-receipt time when the request has one. Filter it to the deliveries still retrying or the ones that failed; **Redeliver all failed** sends every failed request again, oldest first, with the current settings, up to 1,000 at a time. The Forwarding section shows the last 24 hours at a glance.
 
 Open a delivery for its request's **Deliveries** tab: every try with the status, the duration, the error or the start of the response, and **Redeliver**, which sends the request again with the current URL, format and headers. Team members can see a request's deliveries; only the owner can redeliver and change forwarding. Deliveries are kept as long as the request itself (your plan's [retention](/docs/plans-limits#data-retention)).
 
