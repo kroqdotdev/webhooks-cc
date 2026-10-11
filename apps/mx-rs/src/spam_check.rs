@@ -27,6 +27,10 @@ const MAX_OPTIONS: usize = 3;
 const MAX_OPTION_CHARS: usize = 200;
 /// Longest rule name or action kept.
 const MAX_NAME_CHARS: usize = 100;
+/// The summary as JSON stays under this, well inside the receiver's 16 KiB
+/// for metadata (which stores nothing at all past it): the rules' options go
+/// first, then the lightest rules, never the verdict.
+const MAX_SUMMARY_BYTES: usize = 12 * 1024;
 
 /// What rspamd is told about a message besides its bytes.
 pub struct SpamRequest {
@@ -200,12 +204,42 @@ pub fn summarize(answer: &Value) -> Value {
         ));
     }
 
-    json!({
+    let mut summary = json!({
         "score": rounded(score),
         "required": rounded(required),
         "action": cut(action, MAX_NAME_CHARS),
         "symbols": symbols.into_iter().map(|(_, entry)| entry).collect::<Vec<_>>(),
-    })
+    });
+    fit(&mut summary);
+    summary
+}
+
+fn size(value: &Value) -> usize {
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
+}
+
+/// Shrinks a summary to MAX_SUMMARY_BYTES: options first, then the lightest rules.
+fn fit(summary: &mut Value) {
+    if size(summary) <= MAX_SUMMARY_BYTES {
+        return;
+    }
+    if let Some(symbols) = summary["symbols"].as_array_mut() {
+        for symbol in symbols.iter_mut() {
+            if let Some(entry) = symbol.as_object_mut() {
+                entry.remove("options");
+            }
+        }
+    }
+    while size(summary) > MAX_SUMMARY_BYTES {
+        match summary["symbols"].as_array_mut() {
+            Some(symbols) if !symbols.is_empty() => {
+                symbols.pop();
+            }
+            _ => break,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -393,5 +427,24 @@ mod tests {
         assert_eq!(symbols.len(), MAX_SYMBOLS);
         assert_eq!(symbols[0]["score"], json!(49.0));
         assert_eq!(symbols[0]["name"].as_str().unwrap().len(), MAX_NAME_CHARS);
+
+        // Twenty rules with three long multibyte options each: the options go,
+        // the verdict and the rules stay, and the receiver's limit holds.
+        let heavy: Map<String, Value> = (0..20)
+            .map(|i| {
+                (
+                    format!("R{i}"),
+                    json!({ "name": format!("R{i}_{}", "Ä".repeat(90)), "score": i,
+                            "options": ["\"😀\"".repeat(80), "é".repeat(200), "\\".repeat(200)] }),
+                )
+            })
+            .collect();
+        let verdict = summarize(&json!({
+            "score": 20, "required_score": 15, "action": "reject", "symbols": heavy
+        }));
+        assert!(size(&verdict) <= MAX_SUMMARY_BYTES);
+        assert_eq!(verdict["action"], json!("reject"));
+        assert_eq!(verdict["symbols"][0]["score"], json!(19.0));
+        assert!(verdict["symbols"][0].get("options").is_none());
     }
 }

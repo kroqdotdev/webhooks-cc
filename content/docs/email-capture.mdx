@@ -99,9 +99,9 @@ Failing a check does not stop a message from being captured. The results are the
 
 ### Spam score
 
-Every email is also scored by [rspamd](https://rspamd.com), the spam filter many mail servers run. The **Authentication** tab shows the score, the score at which rspamd would reject the message, what it would suggest doing (nothing, marking it as spam, or rejecting it), and the rules that weighed most, such as `SUBJ_ALL_CAPS` or `MISSING_DATE`. The badge in the email header reads **Not spam**, **Looks spammy** or **Spam** with the score.
+Emails are also scored by [rspamd](https://rspamd.com), the spam filter many mail servers run, as they arrive. The **Authentication** tab shows the score, the score at which rspamd would reject the message, what it would suggest doing (nothing, marking it as spam, or rejecting it), and the rules that weighed most, such as `SUBJ_ALL_CAPS` or `MISSING_DATE`. The badge in the email header reads **Not spam**, **Looks spammy** or **Spam** with the score.
 
-The score is only information. Every email that reaches an address is captured, however it scores, because test mail often looks like spam, and seeing why is the point. Scores come from the message's content, headers, links and authentication; no third-party blocklists are queried. Emails captured before spam scoring was added, and the dashboard's **Send test email**, have no score.
+The score is only information. Every email that reaches an address is captured, however it scores, because test mail often looks like spam, and seeing why is the point. Scores come from the message's content, headers, links and authentication; no third-party blocklists are queried. An email has no score when rspamd could not be reached or took too long as it arrived (the tab says why), when it was captured before spam scoring was added, or when it is the dashboard's **Send test email**.
 
 ## What is stored
 

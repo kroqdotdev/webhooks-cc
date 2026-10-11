@@ -28,7 +28,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Spam Scores for Captured Email",
     track: "web",
     items: [
-      "Every email is scored by rspamd when it arrives: the header shows Not spam, Looks spammy or Spam with the score, and the Authentication tab shows the threshold, what rspamd would suggest, and the rules that weighed most",
+      "Emails are scored by rspamd as they arrive: the header shows Not spam, Looks spammy or Spam with the score, and the Authentication tab shows the threshold, what rspamd would suggest, and the rules that weighed most",
       "The score is only information: every email that reaches an address is still captured, so you can see why your own mail looks like spam before you ship it",
       "Forwarded email JSON carries `data.spam` with the score, threshold and suggested action",
     ],

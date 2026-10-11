@@ -160,16 +160,28 @@ function Verdicts({
     );
   }
   const auth = email.auth;
+  const spam = spamChip(email);
   if (!auth || auth.error) {
     return (
-      <p className="text-xs text-muted-foreground">Sender checks could not run for this email.</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <p className="text-xs text-muted-foreground">Sender checks could not run for this email.</p>
+        {spam && (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="cursor-pointer"
+            title="Show the spam score"
+          >
+            <VerdictBadge verdict={spam.verdict} label={spam.label} />
+          </button>
+        )}
+      </div>
     );
   }
   const spf = verdictOf(auth.spf?.result);
   const dkim = dkimVerdict(auth);
   const dmarc = verdictOf(auth.dmarc?.result);
   const tls = tlsLabel(email.smtp);
-  const spam = spamChip(email);
   return (
     <button
       type="button"

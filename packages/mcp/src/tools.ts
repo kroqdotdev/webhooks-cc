@@ -39,6 +39,7 @@ import {
   MAX_OUTPUT,
   omitHeaders,
   shrinkToFit,
+  trimSpam,
   sliceText,
   TEXT_FLOOR,
 } from "./compact";
@@ -661,6 +662,7 @@ function emailDetail(
   };
   shrinkToFit(detail, MAX_BODY_SIZE, [
     () => omitHeaders(detail),
+    () => trimSpam(detail),
     () => capExtracts(detail),
     () => capLists(detail),
     () => cutStringToFit(detail, detail, "html", "htmlTruncated", MAX_BODY_SIZE),
