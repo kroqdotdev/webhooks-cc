@@ -11,13 +11,13 @@
  * - Forwarding (`X-Proxy-Mode: forward`, the web app's email forwarding,
  *   apps/web/lib/forwarding): the content type and the Standard Webhooks
  *   headers pass through, redirects are not followed, and the answer is
- *   always JSON: `{ status, body }` with the destination's status and the
- *   start of its body, or `{ error }` when it could not be reached.
+ *   always JSON: `{ status, body, durationMs, retryAfter }` with the
+ *   destination's status, the start of its body, its own time and its
+ *   Retry-After header, or `{ error }` when it could not be reached.
  * - Relay (`X-Proxy-Mode: relay`, forwarding a captured HTTP request as
  *   received): the body is JSON `{ method, headers, body }` with the body in
  *   base64, and the request goes out with that method, those headers (minus
- *   hop-by-hop ones) and those exact bytes. Answers like forward mode, plus
- *   `durationMs`, the destination's own time.
+ *   hop-by-hop ones) and those exact bytes. Answers like forward mode.
  */
 
 interface Env {
@@ -100,6 +100,11 @@ function json(value: unknown): Response {
   });
 }
 
+/** A throttled destination's Retry-After, passed on so the web app waits that long. */
+function retryAfter(response: Response): string | null {
+  return response.headers.get("retry-after")?.slice(0, 64) ?? null;
+}
+
 /** The first EXCERPT_BYTES of a response body, as text. */
 async function excerpt(response: Response): Promise<string | null> {
   if (!response.body) return null;
@@ -139,6 +144,7 @@ async function forward(request: Request, targetUrl: string): Promise<Response> {
     if (value) headers.set(name, value);
   }
 
+  const started = Date.now();
   try {
     const response = await fetch(targetUrl, {
       method: "POST",
@@ -147,7 +153,13 @@ async function forward(request: Request, targetUrl: string): Promise<Response> {
       redirect: "manual",
       signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
     });
-    return json({ status: response.status, body: await excerpt(response) });
+    const durationMs = Date.now() - started;
+    return json({
+      status: response.status,
+      body: await excerpt(response),
+      durationMs,
+      retryAfter: retryAfter(response),
+    });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return json({
@@ -240,7 +252,12 @@ async function relay(request: Request, targetUrl: string): Promise<Response> {
       signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
     });
     const durationMs = Date.now() - started;
-    return json({ status: response.status, body: await excerpt(response), durationMs });
+    return json({
+      status: response.status,
+      body: await excerpt(response),
+      durationMs,
+      retryAfter: retryAfter(response),
+    });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return json({

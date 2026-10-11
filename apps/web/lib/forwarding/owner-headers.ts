@@ -91,10 +91,17 @@ export function decryptOwnerHeaders(encrypted: Buffer | null | undefined): Owner
   );
 }
 
-/** What the dashboard shows: the name, and the value's last four characters at most. */
+function maskValue(value: string): string {
+  return value.length <= 8 ? "••••" : `••••${value.slice(-4)}`;
+}
+
+/**
+ * What the dashboard shows: the name, a scheme word such as "Bearer" when
+ * the value starts with one, and the last four characters of a long value.
+ */
 export function maskOwnerHeaders(headers: OwnerHeader[]): { name: string; value: string }[] {
-  return headers.map(([name, value]) => ({
-    name,
-    value: value.length <= 8 ? "••••" : `••••${value.slice(-4)}`,
-  }));
+  return headers.map(([name, value]) => {
+    const scheme = /^([A-Za-z][A-Za-z0-9-]{0,19}) (\S.*)$/.exec(value);
+    return { name, value: scheme ? `${scheme[1]} ${maskValue(scheme[2])}` : maskValue(value) };
+  });
 }

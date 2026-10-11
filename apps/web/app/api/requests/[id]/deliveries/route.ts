@@ -6,7 +6,11 @@ import { listDeliveriesForRequest, queueRedelivery } from "@/lib/supabase/forwar
 import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 
-/** Every forwarded copy of one captured request, with its attempts. Anyone who can read it. */
+/**
+ * Every forwarded copy of one captured request, with its attempts. Anyone who
+ * can read it; only the owner sees the destination's path, which may hold a
+ * token (team members get the host).
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -15,7 +19,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const captured = await getRequestByIdForUser(auth.userId, id);
     if (!captured) return Response.json({ error: "Request not found" }, { status: 404 });
-    return Response.json(await listDeliveriesForRequest(captured.id));
+    const deliveries = await listDeliveriesForRequest(captured.id);
+    const { data: endpoint, error } = await createAdminClient()
+      .from("endpoints")
+      .select("user_id")
+      .eq("id", captured.endpointId)
+      .maybeSingle();
+    if (error) throw error;
+    if (endpoint?.user_id === auth.userId) return Response.json(deliveries);
+    return Response.json(
+      deliveries.map((delivery) => ({
+        ...delivery,
+        target: delivery.target ? delivery.target.split("/")[0] : null,
+      }))
+    );
   } catch (error) {
     console.error("Failed to list deliveries:", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });

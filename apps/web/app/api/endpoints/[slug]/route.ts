@@ -8,13 +8,16 @@ import {
 } from "@/lib/request-validation";
 import {
   deleteEndpointBySlugForUser,
+  FORWARD_FORMAT_SETTINGS,
   FORWARD_RETRY_CHOICES,
+  ForwardHeaderValueMissingError,
   getEndpointBySlugForUser,
   updateEndpointBySlugForUser,
   type ForwardFormatSetting,
   type ForwardHeaderInput,
 } from "@/lib/supabase/endpoints";
 import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
+import { checkSentField } from "@/lib/forwarding/timing";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
@@ -70,6 +73,7 @@ const AUDITED_ENDPOINT_FIELDS = [
   "forwardRetrySeconds",
   "forwardKeepOrder",
   "forwardHeaders",
+  "forwardSentField",
 ] as const;
 
 const FORWARD_BOOLEANS = [
@@ -124,7 +128,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   }
   if (
     body.forwardFormat !== undefined &&
-    !["auto", "as_received", "chat"].includes(body.forwardFormat as string)
+    !(FORWARD_FORMAT_SETTINGS as readonly unknown[]).includes(body.forwardFormat)
   ) {
     return Response.json({ error: "Invalid forwardFormat" }, { status: 400 });
   }
@@ -133,6 +137,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     !(FORWARD_RETRY_CHOICES as readonly unknown[]).includes(body.forwardRetrySeconds)
   ) {
     return Response.json({ error: "Invalid forwardRetrySeconds" }, { status: 400 });
+  }
+  let forwardSentField: string | null | undefined;
+  if (body.forwardSentField !== undefined) {
+    if (body.forwardSentField === null || body.forwardSentField === "") {
+      forwardSentField = null;
+    } else if (typeof body.forwardSentField !== "string") {
+      return Response.json({ error: "Invalid forwardSentField" }, { status: 400 });
+    } else {
+      const field = body.forwardSentField.trim();
+      const problem = checkSentField(field);
+      if (problem) return Response.json({ error: problem }, { status: 400 });
+      forwardSentField = field;
+    }
   }
   let forwardHeaders: ForwardHeaderInput[] | undefined;
   if (body.forwardHeaders !== undefined) {
@@ -344,6 +361,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       forwardRetrySeconds: body.forwardRetrySeconds as number | undefined,
       forwardKeepOrder: body.forwardKeepOrder as boolean | undefined,
       forwardHeaders,
+      forwardSentField,
     });
 
     await auditUserAction(request, auth.userId, {
@@ -360,6 +378,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
     return Response.json(endpoint);
   } catch (error) {
+    if (error instanceof ForwardHeaderValueMissingError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
     console.error("Failed to update endpoint:", error);
     await auditUserAction(request, auth.userId, {
       action: "endpoint.updated",

@@ -185,10 +185,12 @@ describe("owner headers", () => {
       maskOwnerHeaders([
         ["Authorization", "Bearer abcdefgh1234"],
         ["X-Short", "abc"],
+        ["X-Api-Key", "sk_live_abcdefgh5678"],
       ])
     ).toEqual([
-      { name: "Authorization", value: "••••1234" },
+      { name: "Authorization", value: "Bearer ••••1234" },
       { name: "X-Short", value: "••••" },
+      { name: "X-Api-Key", value: "••••5678" },
     ]);
   });
 });
@@ -203,6 +205,8 @@ describe("resolveFormat", () => {
     expect(resolveFormat("http", "as_received", slack)).toBe("as_received");
     expect(resolveFormat("email", "as_received", slack)).toBe("json");
     expect(resolveFormat("http", "chat", "https://dest.example")).toBe("chat");
+    expect(resolveFormat("http", "json", "https://dest.example")).toBe("json");
+    expect(resolveFormat("email", "json", slack)).toBe("json");
   });
 });
 

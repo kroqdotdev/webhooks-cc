@@ -1,3 +1,5 @@
+import { describeSenderLag, type SenderTime } from "./timing";
+
 /**
  * The chat message a forwarded request becomes when the destination is a
  * Slack or Discord incoming webhook: the same JSON the receiver's
@@ -5,6 +7,10 @@
  * so a forward to Slack reads like a notification but is retried and logged.
  * Both implementations are checked against one set of vectors
  * (notification_vectors.json next to the Rust file); change them together.
+ *
+ * A forwarded message may also say how long after the sender's own
+ * timestamp the request arrived (`sent`, timing.ts); notifications never
+ * carry one, so the shared vectors leave it out.
  *
  * Slack needs a top-level `text` and reads `&`, `<` and `>` as control
  * characters, so `text` escapes them; Discord reads `content`, unescaped and
@@ -37,6 +43,10 @@ export interface ChatFields {
   body: string;
   /** The destination, to recognise Discord. */
   targetUrl: string;
+  /** The sender's own timestamp, when the request carries one (forwarding only). */
+  sent?: SenderTime | null;
+  /** receivedAt in milliseconds, to measure the lag from `sent`. */
+  receivedAtMs?: number;
 }
 
 type Escape = (s: string) => string;
@@ -84,7 +94,12 @@ function headline(fields: ChatFields, escape: Escape): string {
     fields.method === "EMAIL"
       ? `New email to *${slug}* (\`${path}\`)`
       : `New webhook on *${slug}* (\`${escape(noBackticks(shorten(fields.method, METHOD_SHOWN_CHARS)))} ${path}\`)`;
-  return `${what}\nReceived ${fields.receivedAt} (UTC)`;
+  let received = `Received ${fields.receivedAt} (UTC)`;
+  if (fields.sent && fields.receivedAtMs !== undefined) {
+    const sent = { ...fields.sent, source: noBackticks(shorten(fields.sent.source, 64)) };
+    received += `, ${escape(describeSenderLag(sent, fields.receivedAtMs))}`;
+  }
+  return `${what}\n${received}`;
 }
 
 function message(fields: ChatFields, escape: Escape, bodyMax: number): string {

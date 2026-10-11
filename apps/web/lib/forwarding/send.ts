@@ -24,6 +24,8 @@ export interface SendResult {
   /** The start of the response body, for the dashboard. */
   excerpt: string | null;
   error: string | null;
+  /** Seconds the destination asked us to wait (a 429's Retry-After), when it said. */
+  retryAfterSeconds?: number | null;
 }
 
 export interface SendOptions {
@@ -43,6 +45,15 @@ export function isDelivered(result: SendResult): boolean {
 function excerptOf(bytes: Buffer): string | null {
   if (bytes.length === 0) return null;
   return bytes.subarray(0, EXCERPT_BYTES).toString("utf8").replaceAll("\u0000", "");
+}
+
+/** Retry-After as seconds: a number of seconds or an HTTP date. */
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (/^\d+$/.test(text)) return Number(text);
+  const at = Date.parse(text);
+  return Number.isFinite(at) ? Math.max(Math.ceil((at - now) / 1000), 0) : null;
 }
 
 function describeError(error: unknown, timeoutMs: number): string {
@@ -72,7 +83,7 @@ function describeError(error: unknown, timeoutMs: number): string {
 async function viaProxy(
   outgoing: Outgoing,
   options: SendOptions & { proxy: { url: string; secret: string } }
-): Promise<Omit<SendResult, "durationMs">> {
+): Promise<Omit<SendResult, "durationMs"> & { durationMs?: number }> {
   if (!options.proxy.secret) {
     return {
       status: null,
@@ -118,7 +129,13 @@ async function viaProxy(
       error: `The forwarding proxy answered ${response.status}.`,
     };
   }
-  let result: { status?: number; body?: string | null; error?: string };
+  let result: {
+    status?: number;
+    body?: string | null;
+    error?: string;
+    durationMs?: number;
+    retryAfter?: string | null;
+  };
   try {
     result = JSON.parse(text);
   } catch {
@@ -133,7 +150,16 @@ async function viaProxy(
     };
   }
   if (result.error) return { status: null, excerpt: null, error: result.error.slice(0, 300) };
-  return { status: result.status ?? null, excerpt: result.body || null, error: null };
+  return {
+    status: result.status ?? null,
+    excerpt: result.body || null,
+    error: null,
+    retryAfterSeconds: parseRetryAfter(result.retryAfter),
+    // The destination's own time, measured by the Worker, when it says.
+    ...(typeof result.durationMs === "number" && result.durationMs >= 0
+      ? { durationMs: Math.round(result.durationMs) }
+      : {}),
+  };
 }
 
 async function direct(
@@ -180,10 +206,14 @@ async function direct(
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          const retryAfter = response.headers["retry-after"];
           resolve({
             status: response.statusCode ?? null,
             excerpt: excerptOf(Buffer.concat(chunks)),
             error: null,
+            retryAfterSeconds: parseRetryAfter(
+              Array.isArray(retryAfter) ? retryAfter[0] : retryAfter
+            ),
           });
         };
         response.on("data", (chunk: Buffer) => {
@@ -208,14 +238,24 @@ async function direct(
   });
 }
 
-/** A signed JSON or chat delivery: a POST with these headers and this body. */
-export function jsonForward(url: string, headers: Record<string, string>, body: string): Outgoing {
+/**
+ * A signed JSON or chat delivery: a POST with these headers and this body.
+ * The proxy's forward mode passes only the content type and the Standard
+ * Webhooks headers, so a delivery with the owner's own headers goes through
+ * its relay mode, which sends every header.
+ */
+export function jsonForward(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+  options: { ownerHeaders?: boolean } = {}
+): Outgoing {
   return {
     method: "POST",
     url,
     headers: Object.entries(headers),
     body: Buffer.from(body, "utf8"),
-    mode: "forward",
+    mode: options.ownerHeaders ? "relay" : "forward",
   };
 }
 
@@ -226,7 +266,9 @@ export async function sendForward(outgoing: Outgoing, options: SendOptions): Pro
     const result = options.proxy
       ? await viaProxy(outgoing, { ...options, proxy: options.proxy })
       : await direct(outgoing, options);
-    return { ...result, durationMs: elapsed() };
+    // The Worker's own measure leaves out the hop to it.
+    const { durationMs, ...rest } = result as typeof result & { durationMs?: number };
+    return { ...rest, durationMs: durationMs ?? elapsed() };
   } catch (error) {
     return {
       status: null,

@@ -12,10 +12,14 @@
 --    for rows that forwarded before), forward_format (null = pick from the
 --    URL), forward_headers_encrypted (the owner's headers, AES-GCM like
 --    signing secrets), forward_append_path, forward_retry_seconds (0, one
---    hour or one day) and forward_keep_order.
+--    hour or one day), forward_keep_order and forward_sent_field (a JSON
+--    field in the body holding when the sender sent it, for the timing).
 -- 2. requests.query_raw: the query string as sent, so a relay keeps the
 --    order and repeats that query_params cannot.
--- 3. email_deliveries.kind, and a partial index for the pending cap.
+-- 3. email_deliveries.kind; format, target, sender_at and sender_source,
+--    which the worker records with each try (how and where it went, and the
+--    sender's own timestamp); partial indexes for the pending cap and the
+--    log's filters.
 -- 4. queue_capture_delivery(): queues one delivery if the request's kind is
 --    switched on, or records it as not sent when too many are waiting for
 --    the endpoint already (a dead URL must not grow the queue forever).
@@ -23,8 +27,11 @@
 --    retry settings; with forward_keep_order only an endpoint's oldest
 --    pending delivery may go, and only when nothing of it is in flight.
 -- 6. Turning a kind off settles that kind's pending deliveries.
--- 7. queue_email_redelivery(): redelivers either kind.
+-- 7. queue_email_redelivery(): redelivers either kind;
+--    queue_failed_redeliveries(): every failed request of an endpoint again.
 -- 8. capture_webhook(): p_query_raw, and step 5b for both kinds.
+-- 9. record_email_delivery_attempt() also records format, target and the
+--    sender's timestamp; delivery_summary() counts for the dashboard.
 --
 -- Service role only. Apply in autocommit mode (see AGENTS.md): the index is
 -- built concurrently, outside any transaction block.
@@ -41,7 +48,8 @@ alter table public.endpoints
   add column if not exists forward_headers_encrypted bytea,
   add column if not exists forward_append_path boolean not null default true,
   add column if not exists forward_retry_seconds integer not null default 86400,
-  add column if not exists forward_keep_order boolean not null default false;
+  add column if not exists forward_keep_order boolean not null default false,
+  add column if not exists forward_sent_field text;
 
 do $$
 begin
@@ -61,13 +69,28 @@ begin
       check (forward_retry_seconds in (0, 3600, 86400))
       not valid;
   end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'endpoints_forward_sent_field_check'
+  ) then
+    alter table public.endpoints
+      add constraint endpoints_forward_sent_field_check
+      check (forward_sent_field is null or char_length(forward_sent_field) between 1 and 128)
+      not valid;
+  end if;
 end;
 $$;
 
 alter table public.requests add column if not exists query_raw text;
 
 alter table public.email_deliveries
-  add column if not exists kind text not null default 'email';
+  add column if not exists kind text not null default 'email',
+  -- Recorded by the worker with each try: as_received, json or chat; the
+  -- host and path it went to (never the query, which may hold a token); the
+  -- sender's own timestamp and where it was read.
+  add column if not exists format text,
+  add column if not exists target text,
+  add column if not exists sender_at timestamptz,
+  add column if not exists sender_source text;
 
 do $$
 begin
@@ -86,10 +109,14 @@ commit;
 
 alter table public.endpoints validate constraint endpoints_forward_format_check;
 alter table public.endpoints validate constraint endpoints_forward_retry_seconds_check;
+alter table public.endpoints validate constraint endpoints_forward_sent_field_check;
 alter table public.email_deliveries validate constraint email_deliveries_kind_check;
 
 create index concurrently if not exists email_deliveries_pending_endpoint
   on public.email_deliveries (endpoint_id) where status = 'pending';
+-- The log's Failed filter and count, and Redeliver all failed.
+create index concurrently if not exists email_deliveries_failed_endpoint
+  on public.email_deliveries (endpoint_id, created_at desc) where status = 'failed';
 
 begin;
 
@@ -183,6 +210,7 @@ returns table (
   forward_headers_encrypted text,
   forward_append_path       boolean,
   forward_retry_seconds     integer,
+  forward_sent_field        text,
   show_email_extracts       boolean,
   endpoint_slug             text,
   endpoint_name             text
@@ -259,7 +287,7 @@ as $$
   returning d.id, d.request_id, d.endpoint_id, d.attempts, d.kind, d.created_at,
             e.forward_url, encode(e.forward_secret_encrypted, 'base64'), e.forward_format,
             encode(e.forward_headers_encrypted, 'base64'), e.forward_append_path,
-            e.forward_retry_seconds, e.show_email_extracts, e.slug, e.name;
+            e.forward_retry_seconds, e.forward_sent_field, e.show_email_extracts, e.slug, e.name;
 $$;
 
 revoke all on function public.claim_email_deliveries(integer, integer, integer)
@@ -668,6 +696,206 @@ grant execute on function public.capture_webhook(
   text, text, text, jsonb, text, jsonb, text, text, timestamptz, bytea, text, jsonb,
   text, boolean, integer, text
 ) to service_role;
+commit;
+
+begin;
+
+-- 7b. Queues every failed request of an endpoint again, for the log's
+-- "Redeliver all failed": each request whose latest delivery failed and whose
+-- kind is still forwarded, oldest capture first, up to the room left under
+-- the pending cap. Under the endpoint row lock, like queue_email_redelivery().
+-- Rows queued together get created_at a microsecond apart in capture order,
+-- so keep-order sends them in that order.
+create or replace function public.queue_failed_redeliveries(
+  p_endpoint_id uuid,
+  p_max_pending integer default 1000
+)
+returns integer
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_endpoint record;
+  v_room     integer;
+  v_count    integer;
+begin
+  select forward_enabled, forward_http, forward_email
+    into v_endpoint
+    from public.endpoints
+   where id = p_endpoint_id
+     for no key update;
+  if not found or not v_endpoint.forward_enabled then
+    return 0;
+  end if;
+
+  select greatest(p_max_pending, 1) - count(*)
+    into v_room
+    from (
+      select 1
+        from public.email_deliveries
+       where endpoint_id = p_endpoint_id
+         and status = 'pending'
+       limit greatest(p_max_pending, 1)
+    ) waiting;
+  if v_room <= 0 then
+    return 0;
+  end if;
+
+  with failed as (
+    select distinct d.request_id
+      from public.email_deliveries d
+     where d.endpoint_id = p_endpoint_id
+       and d.status = 'failed'
+  ),
+  latest as (
+    select f.request_id, last.kind, last.status, r.received_at
+      from failed f
+      join public.requests r on r.id = f.request_id
+      cross join lateral (
+        select d.kind, d.status
+          from public.email_deliveries d
+         where d.request_id = f.request_id
+         order by d.created_at desc, d.id desc
+         limit 1
+      ) last
+  ),
+  picked as (
+    select l.request_id, l.kind,
+           row_number() over (order by l.received_at, l.request_id) as rn
+      from latest l
+     where l.status = 'failed'
+       and ((l.kind = 'http' and v_endpoint.forward_http)
+            or (l.kind = 'email' and v_endpoint.forward_email))
+     order by l.received_at, l.request_id
+     limit v_room
+  )
+  insert into public.email_deliveries (request_id, endpoint_id, kind, created_at)
+  select p.request_id, p_endpoint_id, p.kind, now() + make_interval(secs => p.rn / 1000000.0)
+    from picked p;
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+revoke all on function public.queue_failed_redeliveries(uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.queue_failed_redeliveries(uuid, integer) to service_role;
+
+-- 9. Records one try, as 00050 does, plus how and where it went and the
+-- sender's own timestamp (null keeps what an earlier try recorded). The old
+-- signature goes in the same transaction; a web app still calling it with
+-- the first eight arguments reaches this one through the defaults.
+drop function if exists public.record_email_delivery_attempt(
+  uuid, integer, boolean, integer, integer, text, text, integer
+);
+create or replace function public.record_email_delivery_attempt(
+  p_delivery_id       uuid,
+  p_attempt           integer,
+  p_succeeded         boolean,
+  p_status            integer,
+  p_duration_ms       integer,
+  p_error             text,
+  p_response_excerpt  text,
+  p_retry_in_seconds  integer,
+  p_format            text default null,
+  p_target            text default null,
+  p_sender_at         timestamptz default null,
+  p_sender_source     text default null
+)
+returns void
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_current boolean;
+begin
+  select status = 'pending' and attempts = p_attempt
+    into v_current
+    from public.email_deliveries
+   where id = p_delivery_id
+     for update;
+  if not found then
+    return;
+  end if;
+
+  insert into public.email_delivery_attempts (
+    delivery_id, status, duration_ms, error, response_excerpt
+  ) values (
+    p_delivery_id, p_status, greatest(coalesce(p_duration_ms, 0), 0),
+    left(p_error, 500), left(p_response_excerpt, 1024)
+  );
+
+  if not v_current then
+    return;
+  end if;
+
+  update public.email_deliveries
+     set status = case
+           when p_succeeded then 'succeeded'
+           when p_retry_in_seconds is null then 'failed'
+           else 'pending'
+         end,
+         next_attempt_at = case
+           when not p_succeeded and p_retry_in_seconds is not null
+             then now() + make_interval(secs => greatest(p_retry_in_seconds, 1))
+           else next_attempt_at
+         end,
+         locked_until = null,
+         last_status = p_status,
+         last_error = case when p_succeeded then null else left(p_error, 500) end,
+         finished_at = case
+           when p_succeeded or p_retry_in_seconds is null then now()
+           else null
+         end,
+         format = coalesce(left(p_format, 16), format),
+         target = coalesce(left(p_target, 300), target),
+         sender_at = coalesce(p_sender_at, sender_at),
+         sender_source = coalesce(left(p_sender_source, 140), sender_source)
+   where id = p_delivery_id;
+end;
+$$;
+
+revoke all on function public.record_email_delivery_attempt(
+  uuid, integer, boolean, integer, integer, text, text, integer, text, text, timestamptz, text
+) from public, anon, authenticated;
+grant execute on function public.record_email_delivery_attempt(
+  uuid, integer, boolean, integer, integer, text, text, integer, text, text, timestamptz, text
+) to service_role;
+
+-- 9b. The counts the dashboard shows for one endpoint: what was delivered and
+-- what failed among deliveries queued since p_since, what is waiting, and
+-- the totals the log's filters show. Each count reads one index.
+create or replace function public.delivery_summary(
+  p_endpoint_id uuid,
+  p_since       timestamptz
+)
+returns table (
+  delivered_recent integer,
+  failed_recent    integer,
+  pending          integer,
+  failed           integer,
+  total            integer
+)
+language sql
+stable
+security definer set search_path = ''
+as $$
+  select
+    (select count(*)::integer from public.email_deliveries
+      where endpoint_id = p_endpoint_id and created_at >= p_since and status = 'succeeded'),
+    (select count(*)::integer from public.email_deliveries
+      where endpoint_id = p_endpoint_id and created_at >= p_since and status = 'failed'),
+    (select count(*)::integer from public.email_deliveries
+      where endpoint_id = p_endpoint_id and status = 'pending'),
+    (select count(*)::integer from public.email_deliveries
+      where endpoint_id = p_endpoint_id and status = 'failed'),
+    (select count(*)::integer from public.email_deliveries
+      where endpoint_id = p_endpoint_id);
+$$;
+
+revoke all on function public.delivery_summary(uuid, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.delivery_summary(uuid, timestamptz) to service_role;
 commit;
 
 notify pgrst, 'reload schema';

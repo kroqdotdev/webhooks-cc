@@ -3,14 +3,23 @@ import { buildEmailJson } from "@webhooks-cc/sdk/email";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database";
 import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
-import { chatPayload, CHAT_MESSAGE_CHARS, CHAT_PREVIEW_CHARS, truncatePreview } from "./chat";
+import {
+  chatPayload,
+  CHAT_MESSAGE_CHARS,
+  CHAT_PREVIEW_CHARS,
+  isDiscordUrl,
+  isSlackUrl,
+  truncatePreview,
+} from "./chat";
 import { retryDelaySeconds } from "./schedule";
 import { sendOptions } from "./config";
-import { resolveFormat } from "./format";
+import { resolveFormat, type ForwardFormat } from "./format";
 import { decryptOwnerHeaders } from "./owner-headers";
 import { buildRelay, isoMillis, requestBodyBytes, type Outgoing } from "./relay";
+import { buildRequestJson } from "./request-json";
 import { isDelivered, jsonForward, sendForward, type SendResult } from "./send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
+import { senderTimestamp, type SenderTime } from "./timing";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
@@ -39,6 +48,15 @@ const PER_ENDPOINT = 2;
 const LEASE_SECONDS = 60;
 /** The notify proxy's cap (infra/notify-proxy); a larger body could never be delivered. */
 const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
+/**
+ * Chat webhooks take about one message a second (Slack) or a few every two
+ * seconds per channel (Discord) and answer 429 above that, so messages to one
+ * of them leave at most this often from this process.
+ */
+const SLACK_SPACING_MS = 1000;
+const DISCORD_SPACING_MS = 2000;
+/** The longest Retry-After honoured; anything longer falls back to the schedule. */
+const MAX_RETRY_AFTER_SECONDS = 3600;
 
 type Claim = Database["public"]["Functions"]["claim_email_deliveries"]["Returns"][number];
 
@@ -56,6 +74,16 @@ export function forwardRequest(
   return { body, headers: forwardHeaders(secret, request.id, body) };
 }
 
+/** A captured HTTP request as signed JSON (request-json.ts). */
+export function forwardRequestJson(
+  request: RequestRecord,
+  endpoint: { slug: string; name: string | null },
+  secret: string
+): { body: string; headers: Record<string, string> } {
+  const body = JSON.stringify(buildRequestJson(request, endpoint));
+  return { body, headers: forwardHeaders(secret, request.id, body) };
+}
+
 /** Postgres text cannot hold NUL; a response that has one must still be recorded. */
 function storable(text: string | null): string | null {
   return text === null ? null : text.replaceAll("\u0000", "");
@@ -69,16 +97,47 @@ export function nextRetry(
   attempt: number,
   queuedAt: string,
   windowSeconds: number,
-  now: number = Date.now()
+  now: number = Date.now(),
+  retryAfterSeconds: number | null = null
 ): number | null {
-  const delay = retryDelaySeconds(attempt);
+  // A throttled destination says when to come back; the schedule is for failures.
+  const delay =
+    retryAfterSeconds !== null && retryAfterSeconds <= MAX_RETRY_AFTER_SECONDS
+      ? Math.max(retryAfterSeconds, 1)
+      : retryDelaySeconds(attempt);
   if (delay === null || windowSeconds <= 0) return null;
   const queued = Date.parse(queuedAt);
   if (!Number.isFinite(queued)) return delay;
   return now + delay * 1000 <= queued + windowSeconds * 1000 ? delay : null;
 }
 
-async function record(claim: Claim, result: SendResult, retry: boolean): Promise<void> {
+/** How and where a delivery went, and the sender's own time, recorded with each try. */
+export interface DeliveryFacts {
+  format: ForwardFormat | null;
+  /** The destination's host and path (host only for chat webhooks, whose path is the secret). */
+  target: string | null;
+  sent: SenderTime | null;
+}
+
+const NO_FACTS: DeliveryFacts = { format: null, target: null, sent: null };
+
+/** Host and path of where a delivery goes, never the query or credentials. */
+export function deliveryTarget(url: string, format: ForwardFormat): string | null {
+  try {
+    const parsed = new URL(url);
+    if (format === "chat" || isSlackUrl(url) || isDiscordUrl(url)) return parsed.host;
+    return `${parsed.host}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+async function record(
+  claim: Claim,
+  result: SendResult,
+  retry: boolean,
+  facts: DeliveryFacts = NO_FACTS
+): Promise<void> {
   const delivered = isDelivered(result);
   const error = storable(
     result.error ?? (delivered ? null : `The URL answered ${result.status ?? "nothing"}.`)
@@ -94,13 +153,28 @@ async function record(claim: Claim, result: SendResult, retry: boolean): Promise
     p_retry_in_seconds:
       delivered || !retry
         ? null
-        : nextRetry(claim.attempt, claim.queued_at, claim.forward_retry_seconds),
+        : nextRetry(
+            claim.attempt,
+            claim.queued_at,
+            claim.forward_retry_seconds,
+            Date.now(),
+            result.status === 429 ? (result.retryAfterSeconds ?? null) : null
+          ),
+    p_format: facts.format,
+    p_target: facts.target,
+    p_sender_at: facts.sent ? new Date(facts.sent.at).toISOString() : null,
+    p_sender_source: facts.sent?.source ?? null,
   });
   if (rpcError) throw rpcError;
 }
 
 /** A chat message for one captured request (format.ts picks this for Slack and Discord). */
-export function chatForward(request: RequestRecord, slug: string, url: string): Outgoing {
+export function chatForward(
+  request: RequestRecord,
+  slug: string,
+  url: string,
+  sent: SenderTime | null = null
+): Outgoing {
   const isEmail = request.kind === "email" && request.email;
   const text = isEmail
     ? [request.email?.subject, request.email?.text].filter(Boolean).join("\n")
@@ -114,6 +188,8 @@ export function chatForward(request: RequestRecord, slug: string, url: string): 
     preview: truncatePreview(text, CHAT_PREVIEW_CHARS),
     body: truncatePreview(text, CHAT_MESSAGE_CHARS),
     targetUrl: url,
+    sent,
+    receivedAtMs: request.receivedAt,
   });
   return jsonForward(
     url,
@@ -133,54 +209,86 @@ export interface OutgoingSettings {
   ownerHeaders: [string, string][];
   attempt: number;
   secret: string;
+  /** endpoints.forward_sent_field: the body field with the sender's time. */
+  sentField?: string | null;
+}
+
+/** The sender's own time for a request, as the dashboard reads it too (timing.ts). */
+export function requestSenderTime(
+  request: RequestRecord,
+  sentField: string | null | undefined
+): SenderTime | null {
+  return senderTimestamp(
+    {
+      kind: request.kind,
+      headers: request.headers,
+      body: request.bodyRaw ? null : (request.body ?? null),
+      emailDate: request.email?.date ?? null,
+    },
+    sentField
+  );
 }
 
 /**
  * The outgoing request for one captured request with an endpoint's
- * forwarding settings, or why it cannot be sent at all. Used by the worker
- * and by the test delivery, so a test sends what a real delivery would.
+ * forwarding settings, or why it cannot be sent at all, with the facts the
+ * log records. Used by the worker and by the test delivery, so a test sends
+ * what a real delivery would.
  */
 export function outgoingFor(
   request: RequestRecord,
   settings: OutgoingSettings
-): { outgoing: Outgoing } | { reason: string } {
+): ({ outgoing: Outgoing } | { reason: string }) & { facts: DeliveryFacts } {
   const format = resolveFormat(request.kind, settings.format, settings.url);
-  if (format === "chat") return { outgoing: chatForward(request, settings.slug, settings.url) };
-  if (request.kind === "email") {
-    const prepared = forwardRequest(
-      request,
-      { slug: settings.slug, name: settings.name },
-      settings.secret,
-      settings.showEmailExtracts
-    );
-    if (!prepared) return { reason: "The email could not be read." };
+  const facts: DeliveryFacts = {
+    format,
+    target: deliveryTarget(settings.url, format),
+    sent: requestSenderTime(request, settings.sentField),
+  };
+  if (format === "chat") {
+    return { outgoing: chatForward(request, settings.slug, settings.url, facts.sent), facts };
+  }
+  const hasOwnerHeaders = settings.ownerHeaders.length > 0;
+  if (format === "json") {
+    const endpoint = { slug: settings.slug, name: settings.name };
+    const prepared =
+      request.kind === "email"
+        ? forwardRequest(request, endpoint, settings.secret, settings.showEmailExtracts)
+        : forwardRequestJson(request, endpoint, settings.secret);
+    if (!prepared) return { reason: "The email could not be read.", facts };
     const headers = { ...prepared.headers };
     // After the signed headers; the owner's never touch webhook-*.
     for (const [name, value] of settings.ownerHeaders) headers[name] = value;
-    return { outgoing: jsonForward(settings.url, headers, prepared.body) };
+    return {
+      outgoing: jsonForward(settings.url, headers, prepared.body, {
+        ownerHeaders: hasOwnerHeaders,
+      }),
+      facts,
+    };
   }
   try {
+    const outgoing = buildRelay(request, {
+      forwardUrl: settings.url,
+      appendPath: settings.appendPath,
+      slug: settings.slug,
+      attempt: settings.attempt,
+      secret: settings.secret,
+      ownerHeaders: settings.ownerHeaders,
+    });
     return {
-      outgoing: buildRelay(request, {
-        forwardUrl: settings.url,
-        appendPath: settings.appendPath,
-        slug: settings.slug,
-        attempt: settings.attempt,
-        secret: settings.secret,
-        ownerHeaders: settings.ownerHeaders,
-      }),
+      outgoing,
+      facts: { ...facts, target: deliveryTarget(outgoing.url, format) },
     };
   } catch (error) {
     // A captured path that would leave the owner's path (relay.ts): never sent.
-    return { reason: error instanceof Error ? error.message : "The request cannot be forwarded." };
+    return {
+      reason: error instanceof Error ? error.message : "The request cannot be forwarded.",
+      facts,
+    };
   }
 }
 
-function prepare(
-  claim: Claim,
-  request: RequestRecord,
-  secret: string
-): { outgoing: Outgoing } | { reason: string } {
+function prepare(claim: Claim, request: RequestRecord, secret: string) {
   return outgoingFor(request, {
     url: claim.forward_url!,
     format: claim.forward_format,
@@ -193,7 +301,27 @@ function prepare(
       : [],
     attempt: claim.attempt,
     secret,
+    sentField: claim.forward_sent_field,
   });
+}
+
+/** When this process last sent to each chat webhook, to space messages out. */
+const chatNextSendAt = new Map<string, number>();
+
+/**
+ * Waits until a message to this chat webhook may leave, and reserves the
+ * next slot. Other destinations never wait.
+ */
+export async function paceChat(url: string, now: () => number = Date.now): Promise<void> {
+  const spacing = isSlackUrl(url) ? SLACK_SPACING_MS : isDiscordUrl(url) ? DISCORD_SPACING_MS : 0;
+  if (spacing === 0) return;
+  const at = Math.max(now(), chatNextSendAt.get(url) ?? 0);
+  chatNextSendAt.set(url, at + spacing);
+  if (chatNextSendAt.size > 1000) {
+    for (const [key, value] of chatNextSendAt) if (value < now()) chatNextSendAt.delete(key);
+  }
+  const wait = at - now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 }
 
 /** Sends one claimed delivery and records the outcome. */
@@ -205,7 +333,7 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   if (!claim.forward_url || !claim.forward_secret_encrypted) {
     return giveUp("Forwarding is not set up for this endpoint.");
   }
-  let prepared: ReturnType<typeof prepare>;
+  let prepared: ReturnType<typeof outgoingFor>;
   try {
     const secret = decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"));
     prepared = prepare(claim, request, secret);
@@ -221,12 +349,25 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
     };
     return record(claim, result, true);
   }
-  if ("reason" in prepared) return giveUp(prepared.reason);
+  const { facts } = prepared;
+  const noResult = (reason: string) => ({
+    status: null,
+    durationMs: 0,
+    excerpt: null,
+    error: reason,
+  });
+  if ("reason" in prepared) return record(claim, noResult(prepared.reason), false, facts);
   if ((prepared.outgoing.body?.byteLength ?? 0) > MAX_FORWARD_BYTES) {
-    return giveUp("The request is too large to forward (over 10 MB).");
+    return record(
+      claim,
+      noResult("The request is too large to forward (over 10 MB)."),
+      false,
+      facts
+    );
   }
+  if (facts.format === "chat") await paceChat(prepared.outgoing.url);
   const result = await sendForward(prepared.outgoing, sendOptions());
-  await record(claim, result, true);
+  await record(claim, result, true, facts);
 }
 
 /** Claims up to `limit` due deliveries, with the requests they forward. */

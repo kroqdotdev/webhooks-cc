@@ -345,6 +345,7 @@ export interface Database {
           forward_append_path: boolean;
           forward_retry_seconds: number;
           forward_keep_order: boolean;
+          forward_sent_field: string | null;
           // Agent sandbox endpoints (migration 00055); never set with user_id.
           agent_registration_id: string | null;
         };
@@ -374,6 +375,7 @@ export interface Database {
           forward_append_path?: boolean;
           forward_retry_seconds?: number;
           forward_keep_order?: boolean;
+          forward_sent_field?: string | null;
           agent_registration_id?: string | null;
         };
         Update: {
@@ -402,6 +404,7 @@ export interface Database {
           forward_append_path?: boolean;
           forward_retry_seconds?: number;
           forward_keep_order?: boolean;
+          forward_sent_field?: string | null;
           agent_registration_id?: string | null;
         };
         Relationships: [];
@@ -740,6 +743,10 @@ export interface Database {
           last_error: string | null;
           created_at: string;
           finished_at: string | null;
+          format: "as_received" | "json" | "chat" | null;
+          target: string | null;
+          sender_at: string | null;
+          sender_source: string | null;
         };
         Insert: {
           id?: string;
@@ -860,6 +867,7 @@ export interface Database {
           forward_headers_encrypted: string | null;
           forward_append_path: boolean;
           forward_retry_seconds: number;
+          forward_sent_field: string | null;
           show_email_extracts: boolean;
           endpoint_slug: string;
           endpoint_name: string | null;
@@ -889,8 +897,26 @@ export interface Database {
           p_error: string | null;
           p_response_excerpt: string | null;
           p_retry_in_seconds: number | null;
+          p_format?: "as_received" | "json" | "chat" | null;
+          p_target?: string | null;
+          p_sender_at?: string | null;
+          p_sender_source?: string | null;
         };
         Returns: undefined;
+      };
+      queue_failed_redeliveries: {
+        Args: { p_endpoint_id: string; p_max_pending?: number };
+        Returns: number;
+      };
+      delivery_summary: {
+        Args: { p_endpoint_id: string; p_since: string };
+        Returns: Array<{
+          delivered_recent: number;
+          failed_recent: number;
+          pending: number;
+          failed: number;
+          total: number;
+        }>;
       };
       create_team_with_owner: {
         Args: {

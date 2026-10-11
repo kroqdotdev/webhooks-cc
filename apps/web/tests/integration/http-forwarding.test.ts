@@ -4,7 +4,12 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser, updateEndpointBySlugForUser } from "@/lib/supabase/endpoints";
-import { getForwardSecret, listRecentDeliveries } from "@/lib/supabase/forwarding";
+import {
+  getDeliverySummary,
+  getForwardSecret,
+  listRecentDeliveries,
+  queueFailedRedeliveries,
+} from "@/lib/supabase/forwarding";
 import { runForwardingBatch } from "@/lib/forwarding/worker";
 
 /**
@@ -170,8 +175,13 @@ describe("forwarding HTTP requests", () => {
       .digest("base64");
     expect(got.headers["webhooks-cc-signature"]).toBe(`v1,${mac}`);
 
-    const [recent] = await listRecentDeliveries(endpoint.id, 5);
-    expect(recent).toMatchObject({ kind: "http", method: "PUT", path: "/stripe/events" });
+    const [recent] = await listRecentDeliveries(endpoint.id, { limit: 5 });
+    expect(recent).toMatchObject({
+      kind: "http",
+      method: "PUT",
+      path: "/stripe/events",
+      format: "as_received",
+    });
     expect(recent.receivedAt).not.toBeNull();
     expect(recent.finishedAt).not.toBeNull();
     expect(recent.lastDurationMs).not.toBeNull();
@@ -275,11 +285,90 @@ describe("forwarding HTTP requests", () => {
       slug: endpoint.slug,
       forwardHeaders: [{ name: "Authorization", value: null }],
     });
-    expect(updated?.forwardHeaders).toEqual([{ name: "Authorization", value: "••••et-1" }]);
+    expect(updated?.forwardHeaders).toEqual([{ name: "Authorization", value: "Bearer ••••" }]);
     const requestId = await capture(endpoint.slug);
     await drain(endpoint.id);
     const got = received.find((r) => r.headers["webhooks-cc-request-id"] === requestId)!;
     expect(got.headers.authorization).toBe("Bearer secret-1");
     expect(got.headers["x-team"]).toBeUndefined();
+  });
+
+  it("records the format, the target and the sender's own time from the named field", async () => {
+    const endpoint = await forwardingEndpoint("/hooks?token=secret", {
+      forwardSentField: "meta.PublishTimestamp",
+    });
+    const publishedAt = new Date(Date.now() - 250).toISOString();
+    await capture(endpoint.slug, {
+      path: "/kargo",
+      body: Buffer.from(JSON.stringify({ meta: { PublishTimestamp: publishedAt } })),
+    });
+    await drain(endpoint.id);
+    const { data: row } = await admin
+      .from("email_deliveries")
+      .select("format, target, sender_at, sender_source")
+      .eq("endpoint_id", endpoint.id)
+      .single();
+    expect(row).toMatchObject({
+      format: "as_received",
+      target: `${new URL(base).host}/hooks/kargo`,
+      sender_source: "meta.PublishTimestamp",
+    });
+    expect(Date.parse(row!.sender_at!)).toBe(Date.parse(publishedAt));
+
+    const [listed] = await listRecentDeliveries(endpoint.id, { limit: 1 });
+    expect(listed).toMatchObject({ senderAt: Date.parse(publishedAt), format: "as_received" });
+  });
+
+  it("redelivers every failed request in capture order, and counts and pages the log", async () => {
+    const endpoint = await forwardingEndpoint("/down", { forwardRetrySeconds: 0 });
+    const ids = [];
+    for (let i = 0; i < 3; i++) ids.push(await capture(endpoint.slug, { path: `/r${i}` }));
+    await drain(endpoint.id);
+
+    const summary = await getDeliverySummary(endpoint.id);
+    expect(summary).toMatchObject({
+      last24h: { delivered: 0, failed: 3 },
+      pending: 0,
+      failed: 3,
+      total: 3,
+    });
+    const page = await listRecentDeliveries(endpoint.id, { limit: 2, status: "failed" });
+    expect(page.map((row) => row.requestId)).toEqual([ids[2], ids[1]]);
+    const older = await listRecentDeliveries(endpoint.id, {
+      limit: 2,
+      status: "failed",
+      before: page[1].cursor,
+    });
+    expect(older.map((row) => row.requestId)).toEqual([ids[0]]);
+
+    await updateEndpointBySlugForUser({
+      userId,
+      slug: endpoint.slug,
+      forwardUrl: `${base}/again`,
+      forwardKeepOrder: true,
+    });
+    expect(await queueFailedRedeliveries(endpoint.id)).toBe(3);
+    // Nothing failed is left whose latest delivery failed, so a second press queues nothing.
+    expect(await queueFailedRedeliveries(endpoint.id)).toBe(0);
+    expect((await getDeliverySummary(endpoint.id)).pending).toBe(3);
+
+    for (let i = 0; i < 30; i++) {
+      const rows = await deliveries(endpoint.id);
+      if (rows.filter((row) => row.status === "succeeded").length === 3) break;
+      await runForwardingBatch();
+    }
+    const order = received
+      .filter((r) => r.url.startsWith("/again"))
+      .map((r) => r.headers["webhooks-cc-request-id"]);
+    expect(order).toEqual(ids);
+    expect(await listRecentDeliveries(endpoint.id, { status: "pending" })).toEqual([]);
+  });
+
+  it("queues nothing again while forwarding is off", async () => {
+    const endpoint = await forwardingEndpoint("/down", { forwardRetrySeconds: 0 });
+    await capture(endpoint.slug);
+    await drain(endpoint.id);
+    await updateEndpointBySlugForUser({ userId, slug: endpoint.slug, forwardEnabled: false });
+    expect(await queueFailedRedeliveries(endpoint.id)).toBe(0);
   });
 });

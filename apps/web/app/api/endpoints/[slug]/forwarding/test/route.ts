@@ -1,7 +1,6 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { serverEnv } from "@/lib/env";
 import { sendOptions } from "@/lib/forwarding/config";
-import { resolveFormat } from "@/lib/forwarding/format";
 import { sampleEmailSource, sampleHttpRequest } from "@/lib/forwarding/sample";
 import { isDelivered, sendForward } from "@/lib/forwarding/send";
 import { outgoingFor } from "@/lib/forwarding/worker";
@@ -91,20 +90,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       ownerHeaders: await getForwardOwnerHeaders(auth.userId, slug),
       attempt: 1,
       secret,
+      sentField: endpoint.forwardSentField,
     });
     if ("reason" in prepared) return reply({ error: prepared.reason }, 400);
     const result = await sendForward(prepared.outgoing, sendOptions());
+    const { facts } = prepared;
     return reply({
       ...result,
       delivered: isDelivered(result),
       sample: !newest,
       kind,
-      format: resolveFormat(
-        kind,
-        endpoint.forwardFormat === "auto" ? null : endpoint.forwardFormat,
-        endpoint.forwardUrl
-      ),
+      format: facts.format,
       url: prepared.outgoing.url,
+      target: facts.target,
+      // What was sent, for the result sentence.
+      request: {
+        method: source.method,
+        path: source.path,
+        subject: source.email?.subject ?? null,
+        receivedAt: source.receivedAt,
+      },
+      sender: facts.sent,
     });
   } catch (error) {
     console.error("Test delivery failed:", error);
