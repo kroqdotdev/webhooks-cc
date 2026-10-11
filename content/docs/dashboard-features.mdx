@@ -3,7 +3,7 @@ title: "Dashboard Features"
 description: "Complete guide to every feature in the webhooks.cc dashboard — keyboard shortcuts, pinning, notes, request comparison, timeline view, and more."
 section: dashboard
 order: 5
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-11
 schema: none
 keywords:
   [
@@ -178,7 +178,7 @@ Open the **Settings** tab under the endpoint name. Each section has its own **Sa
 
 - **Receiving**: rename the endpoint, copy its HTTP URL and email address, and choose whether codes and links found in emails are shown
 - **HTTP responses**: the status code, body and delay returned to webhook senders, plus [response rules](/docs/mock-responses#conditional-response-rules)
-- **Forwarding**: post every email the endpoint receives to your server as signed JSON, with retries. See [Email Forwarding](/docs/forwarding)
+- **Forwarding**: send every HTTP request and email the endpoint receives to your server, Slack or Discord, retried and logged with its timing. See [Forwarding](/docs/forwarding)
 - **Notifications**: get alerted in Slack, Discord, or any URL when a request arrives. See the [notification webhooks guide](/docs/notification-webhooks) for setup and payload details
 - **Team sharing**: share the endpoint with your teams
 - **Signature verification**: verify every incoming webhook against a signing secret (below)

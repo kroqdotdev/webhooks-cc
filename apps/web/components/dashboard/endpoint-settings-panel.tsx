@@ -2,26 +2,28 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Eye, EyeOff, Globe, Mail, RefreshCw, Send, ShieldCheck } from "lucide-react";
-import Link from "next/link";
-import { copyToClipboard } from "@/lib/clipboard";
+import { Globe, Mail, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusCodePicker } from "./status-code-picker";
 import { ResponseRulesEditor } from "./response-rules-editor";
 import { AddressPill } from "./endpoint-bar";
+import { ForwardingSection } from "./forwarding-section";
+import { DeliveriesSection } from "./deliveries-section";
+import {
+  Field,
+  SaveFooter,
+  Section,
+  Switch,
+  scrollToSection,
+  useSave,
+  type SettingsSection,
+} from "./settings-primitives";
 import {
   deleteDashboardEndpoint,
   emitDashboardEndpointsChanged,
-  fetchForwardSecret,
-  fetchRecentDeliveries,
-  rotateForwardSecret,
-  sendForwardTest,
-  updateDashboardEndpoint,
   type DashboardEndpoint,
-  type ForwardTestResult,
-  type RecentDelivery,
   type ResponseRule,
 } from "@/lib/dashboard-api";
 import { parseStatusCode } from "@/lib/http";
@@ -61,14 +63,7 @@ const DEFAULT_BODIES: Record<string, string> = {
 };
 const DEFAULT_BODY_VALUES = new Set(Object.values(DEFAULT_BODIES));
 
-export type SettingsSection =
-  | "receiving"
-  | "responses"
-  | "forwarding"
-  | "notifications"
-  | "sharing"
-  | "verification"
-  | "delete";
+export type { SettingsSection } from "./settings-primitives";
 
 interface EndpointSettingsPanelProps {
   endpoint: DashboardEndpoint & {
@@ -78,194 +73,8 @@ interface EndpointSettingsPanelProps {
   requestCount?: number;
   /** Scroll to this section when the panel opens. */
   focusSection?: SettingsSection | null;
-}
-
-// ---------------------------------------------------------------------------
-// Building blocks
-// ---------------------------------------------------------------------------
-
-function Section({
-  id,
-  title,
-  description,
-  children,
-  footer,
-  danger,
-}: {
-  id: SettingsSection;
-  title: string;
-  description: string;
-  children?: React.ReactNode;
-  footer?: React.ReactNode;
-  danger?: boolean;
-}) {
-  return (
-    <section
-      id={`settings-${id}`}
-      aria-labelledby={`settings-${id}-title`}
-      data-settings-section={id}
-      className={cn(
-        "ui-card ui-card-static p-0! scroll-mt-4 overflow-hidden",
-        danger && "border-destructive"
-      )}
-    >
-      <div className="p-5 space-y-4">
-        <div>
-          <h2 id={`settings-${id}-title`} className="text-base font-bold clean:font-semibold">
-            {title}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-[62ch]">{description}</p>
-        </div>
-        {children}
-      </div>
-      {footer && (
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t-strong border-line bg-muted/40">
-          {footer}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function Field({
-  id,
-  label,
-  help,
-  children,
-}: {
-  id?: string;
-  label: string;
-  help?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-xs font-bold caps">
-        {label}
-      </label>
-      {children}
-      {help && <p className="text-xs text-muted-foreground">{help}</p>}
-    </div>
-  );
-}
-
-/** One save per section: disabled until something in it changes. */
-function SaveFooter({
-  dirty,
-  saving,
-  error,
-  saved,
-  hint,
-  onSave,
-  onReset,
-}: {
-  dirty: boolean;
-  saving: boolean;
-  error: string | null;
-  saved: boolean;
-  hint: string;
-  onSave: () => void;
-  onReset: () => void;
-}) {
-  return (
-    <>
-      <p
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "text-xs flex-1 min-w-[180px]",
-          error ? "text-destructive" : "text-muted-foreground"
-        )}
-      >
-        {error ?? (dirty ? hint : saved ? "Saved." : "")}
-      </p>
-      {dirty && (
-        <button type="button" onClick={onReset} className="ui-btn-outline py-1.5! px-3! text-xs">
-          Cancel
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={!dirty || saving}
-        className={cn(
-          "ui-btn-primary py-1.5! px-3! text-xs",
-          (!dirty || saving) && "opacity-50 cursor-not-allowed"
-        )}
-      >
-        {saving ? "Saving..." : "Save changes"}
-      </button>
-    </>
-  );
-}
-
-function Switch({
-  id,
-  checked,
-  onChange,
-  label,
-  disabled = false,
-}: {
-  id: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-  label: string;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      id={id}
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center border-strong border-line rounded-lg cursor-pointer transition-colors",
-        "disabled:cursor-not-allowed disabled:opacity-60",
-        "clean:rounded-full",
-        checked ? "bg-primary" : "bg-muted"
-      )}
-    >
-      <span
-        className={cn(
-          "inline-block h-4 w-4 bg-card border-strong border-line rounded-sm clean:rounded-full transition-transform",
-          checked ? "translate-x-5.5" : "translate-x-0.5"
-        )}
-      />
-    </button>
-  );
-}
-
-function useSave(slug: string) {
-  const { session } = useAuth();
-  const accessToken = session?.access_token;
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const save = useCallback(
-    async (updates: Record<string, unknown>, validate?: () => void) => {
-      setError(null);
-      setSaved(false);
-      try {
-        validate?.();
-        if (!accessToken) throw new Error("Sign in again to save changes.");
-        setSaving(true);
-        await updateDashboardEndpoint(accessToken, slug, updates);
-        emitDashboardEndpointsChanged();
-        setSaved(true);
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "The changes were not saved.");
-        return false;
-      } finally {
-        setSaving(false);
-      }
-    },
-    [accessToken, slug]
-  );
-  return { save, saving, error, saved, setError, setSaved };
+  /** Opens a request from the delivery log, with its Deliveries tab active. */
+  onOpenRequestDeliveries?: (requestId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -529,315 +338,17 @@ function ResponsesSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["
   );
 }
 
-const DELIVERY_LABEL: Record<RecentDelivery["status"], string> = {
-  succeeded: "Delivered",
-  pending: "Retrying",
-  failed: "Failed",
-};
-
-function ForwardingSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
-  const { session } = useAuth();
-  const accessToken = session?.access_token;
-  const initialEnabled = endpoint.forwardEnabled === true;
-  const initialUrl = endpoint.forwardUrl ?? "";
-  const [enabled, setEnabled] = useState(initialEnabled);
-  const [url, setUrl] = useState(initialUrl);
-  const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
-  useEffect(() => {
-    setEnabled(initialEnabled);
-    setUrl(initialUrl);
-  }, [initialEnabled, initialUrl]);
-  const dirty = enabled !== initialEnabled || url !== initialUrl;
-
-  // The secret: hidden until asked for, and never kept after the section unmounts.
-  const [secret, setSecret] = useState<string | null>(null);
-  const [secretError, setSecretError] = useState<string | null>(null);
-  const [confirmRotate, setConfirmRotate] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const reveal = async () => {
-    if (!accessToken) return;
-    try {
-      setSecret(await fetchForwardSecret(accessToken, endpoint.slug));
-      setSecretError(null);
-    } catch (err) {
-      setSecretError(err instanceof Error ? err.message : "The secret could not be loaded.");
-    }
-  };
-  const rotate = async () => {
-    if (!accessToken) return;
-    try {
-      setSecret(await rotateForwardSecret(accessToken, endpoint.slug));
-      setSecretError(null);
-      setConfirmRotate(false);
-    } catch (err) {
-      setSecretError(err instanceof Error ? err.message : "The secret could not be replaced.");
-    }
-  };
-  const copySecret = async () => {
-    try {
-      await copySecretOrThrow();
-    } catch (err) {
-      setSecretError(err instanceof Error ? err.message : "The secret could not be copied.");
-    }
-  };
-  const copySecretOrThrow = async () => {
-    const value =
-      secret ?? (accessToken ? await fetchForwardSecret(accessToken, endpoint.slug) : null);
-    if (value && (await copyToClipboard(value))) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const [testing, setTesting] = useState(false);
-  const [test, setTest] = useState<ForwardTestResult | { error: string } | null>(null);
-  const sendTest = async () => {
-    if (!accessToken || testing) return;
-    setTesting(true);
-    try {
-      setTest(await sendForwardTest(accessToken, endpoint.slug));
-    } catch (err) {
-      setTest({ error: err instanceof Error ? err.message : "The test delivery failed." });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const [recent, setRecent] = useState<RecentDelivery[] | null>(null);
-  useEffect(() => {
-    if (!accessToken || !initialEnabled) return;
-    let cancelled = false;
-    fetchRecentDeliveries(accessToken, endpoint.slug)
-      .then((rows) => !cancelled && setRecent(rows))
-      .catch(() => !cancelled && setRecent([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, endpoint.slug, initialEnabled]);
-
-  return (
-    <Section
-      id="forwarding"
-      title="Forwarding"
-      description="POST every email this endpoint receives to your server, as the JSON shown on each email's JSON tab, signed so you can check it came from here."
-      footer={
-        <SaveFooter
-          dirty={dirty}
-          saving={saving}
-          error={error}
-          saved={saved}
-          hint={
-            enabled !== initialEnabled
-              ? enabled
-                ? "Forwarding turned on."
-                : "Forwarding turned off."
-              : "URL changed."
-          }
-          onReset={() => {
-            setEnabled(initialEnabled);
-            setUrl(initialUrl);
-            setError(null);
-            setSaved(false);
-          }}
-          onSave={() =>
-            void save({ forwardEnabled: enabled, forwardUrl: url.trim() || null }, () => {
-              if (enabled && !url.trim())
-                throw new Error("Add a URL before turning forwarding on.");
-            })
-          }
-        />
-      }
-    >
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <label htmlFor="settings-forward-enabled" className="text-sm font-semibold">
-            Forward emails as JSON
-          </label>
-          <p className="text-xs text-muted-foreground mt-1 max-w-[62ch]">
-            Failed deliveries are tried again for about a day. HTTP requests are not forwarded.
-          </p>
-        </div>
-        <Switch
-          id="settings-forward-enabled"
-          checked={enabled}
-          onChange={setEnabled}
-          label="Forward emails as JSON"
-        />
-      </div>
-      <Field
-        id="settings-forward-url"
-        label="URL"
-        help="Each email arrives as a POST with Content-Type: application/json. Answer with any 2xx to accept it."
-      >
-        <input
-          id="settings-forward-url"
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://api.example.com/hooks/email"
-          className="ui-input w-full text-sm font-mono py-2!"
-        />
-      </Field>
-
-      {endpoint.hasForwardSecret && (
-        <Field
-          label="Signing secret"
-          help={
-            <>
-              Check the <code className="font-mono">webhook-signature</code> header with it
-              (Standard Webhooks).{" "}
-              <Link href="/docs/forwarding#verify" className="underline underline-offset-2">
-                How to verify
-              </Link>
-            </>
-          }
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="ui-input flex-1 min-w-[220px] text-sm font-mono py-2! truncate">
-              {secret ?? "whsec_" + "•".repeat(24)}
-            </code>
-            <button
-              type="button"
-              onClick={() => (secret ? setSecret(null) : void reveal())}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
-            >
-              {secret ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-              {secret ? "Hide" : "Reveal"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void copySecret()}
-              className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
-            >
-              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              {copied ? "Copied" : "Copy"}
-            </button>
-            {confirmRotate ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void rotate()}
-                  className="ui-btn-outline py-1.5! px-3! text-xs text-destructive"
-                >
-                  Replace secret
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmRotate(false)}
-                  className="ui-btn-outline py-1.5! px-3! text-xs"
-                >
-                  Keep it
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmRotate(true)}
-                className="ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Rotate
-              </button>
-            )}
-          </div>
-          {confirmRotate && (
-            <p className="text-xs text-muted-foreground">
-              Deliveries are signed with the new secret at once, so your server needs it before it
-              can verify them again.
-            </p>
-          )}
-          {secretError && <p className="text-xs text-destructive">{secretError}</p>}
-        </Field>
-      )}
-
-      {initialUrl && (
-        <div className="space-y-2 pt-4 border-t border-line/20">
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void sendTest()}
-              disabled={testing || dirty}
-              className={cn(
-                "ui-btn-outline py-1.5! px-3! text-xs flex items-center gap-1.5",
-                (testing || dirty) && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              <Send className="h-3 w-3" />
-              {testing ? "Sending..." : "Send test delivery"}
-            </button>
-            <span className="text-xs text-muted-foreground">
-              {dirty
-                ? "Save first: the test goes to the saved URL."
-                : "Sends the newest email (or a sample) now, once."}
-            </span>
-          </div>
-          {test && "delivered" in test ? (
-            <div className="text-sm space-y-1">
-              <p className={test.delivered ? "text-foreground" : "text-destructive"}>
-                {test.delivered ? "Delivered" : "Not delivered"}
-                {test.status !== null ? `: ${test.status}` : ""} in {test.durationMs} ms
-                {test.error ? `. ${test.error}` : ""}
-                {test.sample ? " (a sample email, as none has arrived yet)" : ""}
-              </p>
-              {test.excerpt && (
-                <code className="ui-code block text-xs font-mono break-all whitespace-pre-wrap">
-                  {test.excerpt}
-                </code>
-              )}
-            </div>
-          ) : test ? (
-            <p className="text-sm text-destructive">{test.error}</p>
-          ) : null}
-        </div>
-      )}
-
-      {initialEnabled && recent && recent.length > 0 && (
-        <div className="pt-4 border-t border-line/20">
-          <p className="text-xs font-bold caps mb-2">Latest deliveries</p>
-          <ul className="divide-y divide-line/20 text-sm">
-            {recent.map((delivery) => (
-              <li key={delivery.id} className="flex items-center gap-3 py-2">
-                <span
-                  className={cn(
-                    "text-xs font-semibold w-[70px] shrink-0",
-                    delivery.status === "succeeded" && "text-primary",
-                    delivery.status === "failed" && "text-destructive",
-                    delivery.status === "pending" && "text-muted-foreground"
-                  )}
-                >
-                  {DELIVERY_LABEL[delivery.status]}
-                </span>
-                <span className="truncate flex-1 min-w-0">
-                  {delivery.subject || "(no subject)"}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground shrink-0">
-                  {delivery.lastStatus ?? (delivery.status === "pending" ? "..." : "-")}
-                </span>
-                <span className="text-xs text-muted-foreground shrink-0">
-                  {new Date(delivery.createdAt).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </Section>
-  );
-}
-
 function NotificationsSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
   const initial = endpoint.notificationUrl || "";
   const [url, setUrl] = useState(initial);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
   useEffect(() => setUrl(initial), [initial]);
+  const duplicate = !!url.trim() && url.trim() === (endpoint.forwardUrl ?? "").trim();
   return (
     <Section
       id="notifications"
       title="Notifications"
-      description="Get a message when something arrives here."
+      description="A heads-up when something arrives: at most one message per second, sent at once, not retried and not logged."
       footer={
         <SaveFooter
           dirty={url !== initial}
@@ -857,7 +368,26 @@ function NotificationsSection({ endpoint }: { endpoint: EndpointSettingsPanelPro
       <Field
         id="settings-notification-url"
         label="Notification URL"
-        help="A JSON summary of each request is posted to this URL. Works with Slack, Discord, or your own server."
+        help={
+          duplicate ? (
+            <p className="text-destructive">
+              This is also the forwarding URL, so the channel gets requests twice. Keep one of the
+              two.
+            </p>
+          ) : (
+            <p>
+              Slack and Discord show the message as it is; any other server gets the JSON summary.
+              Need every request, retried and logged? That is{" "}
+              <a
+                href="#settings-forwarding"
+                className="underline underline-offset-2 text-foreground"
+              >
+                Forwarding
+              </a>
+              , above.
+            </p>
+          )
+        }
       >
         <input
           id="settings-notification-url"
@@ -1238,11 +768,14 @@ export function EndpointSettingsPanel({
   endpoint,
   requestCount,
   focusSection,
+  onOpenRequestDeliveries,
 }: EndpointSettingsPanelProps) {
   // Owners see everything; members of a team the endpoint is shared with can
   // rename it and change its responses, but not change its email setting or
   // delete it (the API enforces the same split).
   const isOwner = endpoint.notificationUrl !== undefined;
+  // The log exists once a forwarding URL was saved (its secret stays after the URL goes).
+  const hasLog = isOwner && (!!endpoint.forwardUrl || endpoint.hasForwardSecret === true);
   const sections = useMemo(
     () =>
       [
@@ -1251,23 +784,22 @@ export function EndpointSettingsPanel({
         ...(isOwner
           ? [
               { id: "forwarding", label: "Forwarding" },
+              ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
               { id: "notifications", label: "Notifications" },
               { id: "sharing", label: "Team sharing" },
               { id: "verification", label: "Signature verification" },
               { id: "delete", label: "Delete endpoint" },
             ]
           : []),
-      ] as { id: SettingsSection; label: string }[],
-    [isOwner]
+      ] as { id: SettingsSection; label: string; nested?: boolean }[],
+    [isOwner, hasLog]
   );
   const [active, setActive] = useState<SettingsSection>(focusSection ?? "receiving");
   const scroller = useRef<HTMLDivElement>(null);
 
   const jump = useCallback((id: SettingsSection) => {
     setActive(id);
-    document
-      .getElementById(`settings-${id}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollToSection(id);
   }, []);
 
   useEffect(() => {
@@ -1309,6 +841,7 @@ export function EndpointSettingsPanel({
             className={cn(
               "text-left whitespace-nowrap px-3 py-2 text-sm rounded-md cursor-pointer transition-colors",
               section.id === "delete" && "md:mt-3",
+              section.nested && "md:pl-6",
               active === section.id
                 ? "bg-selected text-selected-foreground font-semibold"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -1322,7 +855,15 @@ export function EndpointSettingsPanel({
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
           <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
           <ResponsesSection endpoint={endpoint} />
-          {isOwner && <ForwardingSection endpoint={endpoint} />}
+          {isOwner && (
+            <ForwardingSection endpoint={endpoint} onSeeDeliveries={() => jump("deliveries")} />
+          )}
+          {hasLog && (
+            <DeliveriesSection
+              endpoint={endpoint}
+              onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
+            />
+          )}
           {isOwner && <NotificationsSection endpoint={endpoint} />}
           {isOwner && <SharingSection endpointId={endpoint.id} />}
           {isOwner && <VerificationSection endpoint={endpoint} />}

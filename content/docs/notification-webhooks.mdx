@@ -3,7 +3,7 @@ title: "Notification Webhooks"
 description: "Get notified the moment a webhook arrives. The receiver POSTs a JSON summary with a ready-made message to Slack, Discord, or any service that accepts JSON, with no polling."
 section: dashboard
 order: 7
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-11
 schema: none
 keywords:
   ["webhook notification", "slack webhook", "discord webhook", "webhook alerts", "notification URL"]
@@ -57,6 +57,10 @@ The message names the endpoint, the method and path, and when the request arrive
 In the message, paths longer than 100 characters are shortened; the `path` field keeps the whole path. When the URL is a Discord webhook, the body also sets `allowed_mentions` to `{ "parse": [] }`, so an `@everyone` in a webhook pings nobody.
 
 For [captured emails](/docs/email-capture), `method` is `EMAIL`, `path` is the recipient address, `preview` is the subject followed by the start of the text, and the message reads "New email to ...".
+
+## Notifications or forwarding?
+
+A notification is a heads-up: at most one message a second per endpoint, sent at once, never retried and not logged. When every request has to reach your channel or your server, use [forwarding](/docs/forwarding) instead: it posts the same message to Slack or Discord for every request (or relays the request to your server), retries until it is accepted, and logs each delivery with its timing. Both can be on at once; if they point at the same channel, every request that also triggers a notification arrives there twice.
 
 ## Rate limiting
 

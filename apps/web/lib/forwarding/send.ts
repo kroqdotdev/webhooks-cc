@@ -1,14 +1,20 @@
 import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
+import { PROXY_CONTROL_HEADERS } from "./proxy-headers";
+import type { Outgoing } from "./relay";
 import { checkForwardUrl, resolveForwardTarget } from "./target";
 
 /**
- * Sends one forwarded email. Through the notify proxy (a Cloudflare Worker,
+ * Sends one delivery. Through the notify proxy (a Cloudflare Worker,
  * infra/notify-proxy) when one is configured, so the box's IP stays hidden,
  * as notifications do; otherwise directly, with the connection pinned to
  * addresses checked by target.ts. Redirects are never followed: only a 2xx
  * from the URL itself counts as delivered.
+ *
+ * A JSON forward (signed JSON, chat) uses the proxy's forward mode; a relay
+ * (an HTTP request as received) its relay mode, which takes the method,
+ * headers and base64 body as JSON.
  */
 
 export interface SendResult {
@@ -18,6 +24,8 @@ export interface SendResult {
   /** The start of the response body, for the dashboard. */
   excerpt: string | null;
   error: string | null;
+  /** Seconds the destination asked us to wait (a 429's Retry-After), when it said. */
+  retryAfterSeconds?: number | null;
 }
 
 export interface SendOptions {
@@ -37,6 +45,17 @@ export function isDelivered(result: SendResult): boolean {
 function excerptOf(bytes: Buffer): string | null {
   if (bytes.length === 0) return null;
   return bytes.subarray(0, EXCERPT_BYTES).toString("utf8").replaceAll("\u0000", "");
+}
+
+/** Retry-After as whole seconds: a number of seconds (rounded up) or an HTTP date. */
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (/^\d+(\.\d+)?$/.test(text)) return Math.ceil(Number(text));
+  // An HTTP date names a weekday and a month; never read a bare number as one.
+  if (!/[A-Za-z]/.test(text)) return null;
+  const at = Date.parse(text);
+  return Number.isFinite(at) ? Math.max(Math.ceil((at - now) / 1000), 0) : null;
 }
 
 function describeError(error: unknown, timeoutMs: number): string {
@@ -64,11 +83,9 @@ function describeError(error: unknown, timeoutMs: number): string {
 }
 
 async function viaProxy(
-  target: string,
-  headers: Record<string, string>,
-  body: string,
+  outgoing: Outgoing,
   options: SendOptions & { proxy: { url: string; secret: string } }
-): Promise<Omit<SendResult, "durationMs">> {
+): Promise<Omit<SendResult, "durationMs"> & { durationMs?: number }> {
   if (!options.proxy.secret) {
     return {
       status: null,
@@ -76,16 +93,35 @@ async function viaProxy(
       error: "Forwarding is not configured on this server (NOTIFY_SECRET is missing).",
     };
   }
+  const proxyHeaders: Record<string, string> = {};
+  let body: string | null;
+  if (outgoing.mode === "relay") {
+    // The Worker sends this method, these headers and these bytes as they are.
+    // The target goes inside the envelope, not in X-Target-URL, so a Worker
+    // from before relay mode refuses the request instead of posting it on.
+    proxyHeaders["content-type"] = "application/json";
+    body = JSON.stringify({
+      url: outgoing.url,
+      method: outgoing.method,
+      headers: outgoing.headers,
+      body: outgoing.body ? outgoing.body.toString("base64") : null,
+    });
+  } else {
+    // The Worker passes the content type and webhook headers through; the
+    // proxy's own control headers can never come from here.
+    for (const [name, value] of outgoing.headers) {
+      if (!PROXY_CONTROL_HEADERS.has(name.toLowerCase())) proxyHeaders[name] = value;
+    }
+    // Forward mode carries JSON (signed JSON, chat), which is text.
+    body = outgoing.body ? outgoing.body.toString("utf8") : null;
+  }
+  // Set last, so they always win.
+  if (outgoing.mode !== "relay") proxyHeaders["x-target-url"] = outgoing.url;
+  proxyHeaders["x-auth"] = options.proxy.secret;
+  proxyHeaders["x-proxy-mode"] = outgoing.mode;
   const response = await fetch(options.proxy.url, {
     method: "POST",
-    headers: {
-      ...headers,
-      "x-target-url": target,
-      "x-auth": options.proxy.secret,
-      // The Worker passes the webhook headers through and answers with the
-      // destination's status and body start as JSON.
-      "x-proxy-mode": "forward",
-    },
+    headers: proxyHeaders,
     body,
     redirect: "manual",
     signal: AbortSignal.timeout(options.timeoutMs + 5000),
@@ -95,31 +131,50 @@ async function viaProxy(
     return {
       status: null,
       excerpt: null,
-      error: `The forwarding proxy answered ${response.status}.`,
+      error:
+        outgoing.mode === "relay" && response.status === 400
+          ? "The forwarding proxy does not support this delivery yet."
+          : `The forwarding proxy answered ${response.status}.`,
     };
   }
-  let result: { status?: number; body?: string | null; error?: string };
+  let result: {
+    status?: number;
+    body?: string | null;
+    error?: string;
+    durationMs?: number;
+    retryAfter?: string | null;
+  };
   try {
     result = JSON.parse(text);
   } catch {
-    // An older proxy without the forward mode answers plain text.
+    // An older proxy without this mode answers plain text.
     return {
       status: null,
       excerpt: null,
-      error: "The forwarding proxy does not support forwarding yet.",
+      error:
+        outgoing.mode === "relay"
+          ? "The forwarding proxy does not support forwarding requests as received yet."
+          : "The forwarding proxy does not support forwarding yet.",
     };
   }
   if (result.error) return { status: null, excerpt: null, error: result.error.slice(0, 300) };
-  return { status: result.status ?? null, excerpt: result.body || null, error: null };
+  return {
+    status: result.status ?? null,
+    excerpt: result.body || null,
+    error: null,
+    retryAfterSeconds: parseRetryAfter(result.retryAfter),
+    // The destination's own time, measured by the Worker, when it says.
+    ...(typeof result.durationMs === "number" && result.durationMs >= 0
+      ? { durationMs: Math.round(result.durationMs) }
+      : {}),
+  };
 }
 
 async function direct(
-  target: string,
-  headers: Record<string, string>,
-  body: string,
+  outgoing: Outgoing,
   options: SendOptions
 ): Promise<Omit<SendResult, "durationMs">> {
-  const check = checkForwardUrl(target, { allowPrivate: options.allowPrivate });
+  const check = checkForwardUrl(outgoing.url, { allowPrivate: options.allowPrivate });
   if (!check.ok) return { status: null, excerpt: null, error: check.reason };
   const addresses = await resolveForwardTarget(check.url, { allowPrivate: options.allowPrivate });
 
@@ -131,11 +186,24 @@ async function direct(
   const client = check.url.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
+    // An object, not raw pairs, so Node still sets Host; a repeated name
+    // becomes a list.
+    const headers: Record<string, string | string[]> = {};
+    for (const [name, value] of outgoing.headers) {
+      const existing = headers[name];
+      headers[name] =
+        existing === undefined
+          ? value
+          : Array.isArray(existing)
+            ? [...existing, value]
+            : [existing, value];
+    }
+    if (outgoing.body) headers["content-length"] = String(outgoing.body.byteLength);
     const request = client.request(
       check.url,
       {
-        method: "POST",
-        headers: { ...headers, "content-length": String(Buffer.byteLength(body)) },
+        method: outgoing.method,
+        headers,
         lookup: pinned,
       },
       (response) => {
@@ -146,10 +214,14 @@ async function direct(
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          const retryAfter = response.headers["retry-after"];
           resolve({
             status: response.statusCode ?? null,
             excerpt: excerptOf(Buffer.concat(chunks)),
             error: null,
+            retryAfterSeconds: parseRetryAfter(
+              Array.isArray(retryAfter) ? retryAfter[0] : retryAfter
+            ),
           });
         };
         response.on("data", (chunk: Buffer) => {
@@ -170,23 +242,41 @@ async function direct(
       clearTimeout(timer);
       reject(error);
     });
-    request.end(body);
+    request.end(outgoing.body ?? undefined);
   });
 }
 
-export async function sendForward(
-  target: string,
+/**
+ * A signed JSON or chat delivery: a POST with these headers and this body.
+ * The proxy's forward mode passes only the content type and the Standard
+ * Webhooks headers, so a delivery with the owner's own headers goes through
+ * its relay mode, which sends every header.
+ */
+export function jsonForward(
+  url: string,
   headers: Record<string, string>,
   body: string,
-  options: SendOptions
-): Promise<SendResult> {
+  options: { ownerHeaders?: boolean } = {}
+): Outgoing {
+  return {
+    method: "POST",
+    url,
+    headers: Object.entries(headers),
+    body: Buffer.from(body, "utf8"),
+    mode: options.ownerHeaders ? "relay" : "forward",
+  };
+}
+
+export async function sendForward(outgoing: Outgoing, options: SendOptions): Promise<SendResult> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   try {
     const result = options.proxy
-      ? await viaProxy(target, headers, body, { ...options, proxy: options.proxy })
-      : await direct(target, headers, body, options);
-    return { ...result, durationMs: elapsed() };
+      ? await viaProxy(outgoing, { ...options, proxy: options.proxy })
+      : await direct(outgoing, options);
+    // The Worker's own measure leaves out the hop to it.
+    const { durationMs, ...rest } = result as typeof result & { durationMs?: number };
+    return { ...rest, durationMs: durationMs ?? elapsed() };
   } catch (error) {
     return {
       status: null,

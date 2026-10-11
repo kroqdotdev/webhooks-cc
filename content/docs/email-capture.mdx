@@ -3,7 +3,7 @@ title: "Email Capture"
 description: "Every endpoint on an account also receives email at its own mailhooks.cc address. Preview the HTML safely, copy one-time codes and links, check SPF, DKIM and DMARC, and download the original message."
 section: dashboard
 order: 4
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-11
 schema: none
 keywords:
   [
@@ -132,7 +132,7 @@ A message the sender retries after a temporary failure is captured once, not onc
 
 ## Forward to your server
 
-[Forwarding](/docs/forwarding) posts every email an endpoint receives to your own URL as the JSON from the JSON tab, signed with Standard Webhooks headers and retried for about a day until your server answers 2xx. Use it to handle inbound email in your app without running a mail server or parsing MIME.
+[Forwarding](/docs/forwarding) posts every email an endpoint receives to your own URL, by default as the JSON from the JSON tab, signed with Standard Webhooks headers and retried for up to a day until your server answers 2xx (or as a chat message to Slack or Discord; the format and retries are settings). It forwards the endpoint's HTTP requests too, if you like. Use it to handle inbound email in your app without running a mail server or parsing MIME.
 
 ## Notifications
 

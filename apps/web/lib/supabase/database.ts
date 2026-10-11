@@ -337,6 +337,15 @@ export interface Database {
           forward_enabled: boolean;
           forward_url: string | null;
           forward_secret_encrypted: string | null;
+          // Forwarding beyond email (migration 00058).
+          forward_http: boolean;
+          forward_email: boolean;
+          forward_format: "as_received" | "json" | "chat" | null;
+          forward_headers_encrypted: string | null;
+          forward_append_path: boolean;
+          forward_retry_seconds: number;
+          forward_keep_order: boolean;
+          forward_sent_field: string | null;
           // Agent sandbox endpoints (migration 00055); never set with user_id.
           agent_registration_id: string | null;
         };
@@ -359,6 +368,14 @@ export interface Database {
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
+          forward_http?: boolean;
+          forward_email?: boolean;
+          forward_format?: "as_received" | "json" | "chat" | null;
+          forward_headers_encrypted?: string | null;
+          forward_append_path?: boolean;
+          forward_retry_seconds?: number;
+          forward_keep_order?: boolean;
+          forward_sent_field?: string | null;
           agent_registration_id?: string | null;
         };
         Update: {
@@ -380,6 +397,14 @@ export interface Database {
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
+          forward_http?: boolean;
+          forward_email?: boolean;
+          forward_format?: "as_received" | "json" | "chat" | null;
+          forward_headers_encrypted?: string | null;
+          forward_append_path?: boolean;
+          forward_retry_seconds?: number;
+          forward_keep_order?: boolean;
+          forward_sent_field?: string | null;
           agent_registration_id?: string | null;
         };
         Relationships: [];
@@ -395,6 +420,7 @@ export interface Database {
           headers: Json;
           body: string | null;
           body_raw: string | null;
+          query_raw: string | null;
           query_params: Json;
           content_type: string | null;
           ip: string;
@@ -417,6 +443,7 @@ export interface Database {
           headers?: Json;
           body?: string | null;
           body_raw?: string | null;
+          query_raw?: string | null;
           query_params?: Json;
           content_type?: string | null;
           ip: string;
@@ -439,6 +466,7 @@ export interface Database {
           headers?: Json;
           body?: string | null;
           body_raw?: string | null;
+          query_raw?: string | null;
           query_params?: Json;
           content_type?: string | null;
           ip?: string;
@@ -707,6 +735,7 @@ export interface Database {
           request_id: string;
           endpoint_id: string;
           status: "pending" | "succeeded" | "failed";
+          kind: "http" | "email";
           attempts: number;
           next_attempt_at: string;
           locked_until: string | null;
@@ -714,12 +743,17 @@ export interface Database {
           last_error: string | null;
           created_at: string;
           finished_at: string | null;
+          format: "as_received" | "json" | "chat" | null;
+          target: string | null;
+          sender_at: string | null;
+          sender_source: string | null;
         };
         Insert: {
           id?: string;
           request_id: string;
           endpoint_id: string;
           status?: "pending" | "succeeded" | "failed";
+          kind?: "http" | "email";
           attempts?: number;
           next_attempt_at?: string;
           locked_until?: string | null;
@@ -822,9 +856,18 @@ export interface Database {
           request_id: string;
           endpoint_id: string;
           attempt: number;
+          kind: "http" | "email";
+          /** When the delivery was queued; retries stop after the endpoint's window. */
+          queued_at: string;
           forward_url: string | null;
           /** base64 of the AES-GCM ciphertext (see lib/crypto.ts). */
           forward_secret_encrypted: string | null;
+          forward_format: "as_received" | "json" | "chat" | null;
+          /** base64 of the AES-GCM ciphertext of the owner's headers. */
+          forward_headers_encrypted: string | null;
+          forward_append_path: boolean;
+          forward_retry_seconds: number;
+          forward_sent_field: string | null;
           show_email_extracts: boolean;
           endpoint_slug: string;
           endpoint_name: string | null;
@@ -832,6 +875,15 @@ export interface Database {
       };
       queue_email_redelivery: {
         Args: { p_request_id: string; p_endpoint_id: string };
+        Returns: string | null;
+      };
+      queue_capture_delivery: {
+        Args: {
+          p_request_id: string;
+          p_endpoint_id: string;
+          p_kind: "http" | "email";
+          p_max_pending?: number;
+        };
         Returns: string | null;
       };
       record_email_delivery_attempt: {
@@ -845,8 +897,30 @@ export interface Database {
           p_error: string | null;
           p_response_excerpt: string | null;
           p_retry_in_seconds: number | null;
+          p_format?: "as_received" | "json" | "chat" | null;
+          p_target?: string | null;
+          p_sender_at?: string | null;
+          p_sender_source?: string | null;
         };
         Returns: undefined;
+      };
+      release_email_delivery: {
+        Args: { p_delivery_id: string; p_attempt: number; p_delay_ms: number };
+        Returns: undefined;
+      };
+      queue_failed_redeliveries: {
+        Args: { p_endpoint_id: string; p_max_pending?: number };
+        Returns: number;
+      };
+      delivery_summary: {
+        Args: { p_endpoint_id: string; p_since: string };
+        Returns: Array<{
+          delivered_recent: number;
+          failed_recent: number;
+          pending: number;
+          failed: number;
+          total: number;
+        }>;
       };
       create_team_with_owner: {
         Args: {

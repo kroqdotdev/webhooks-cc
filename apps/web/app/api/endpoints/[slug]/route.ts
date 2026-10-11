@@ -8,9 +8,16 @@ import {
 } from "@/lib/request-validation";
 import {
   deleteEndpointBySlugForUser,
+  FORWARD_FORMAT_SETTINGS,
+  FORWARD_RETRY_CHOICES,
+  ForwardHeaderValueMissingError,
   getEndpointBySlugForUser,
   updateEndpointBySlugForUser,
+  type ForwardFormatSetting,
+  type ForwardHeaderInput,
 } from "@/lib/supabase/endpoints";
+import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
+import { checkSentField } from "@/lib/forwarding/timing";
 import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
@@ -37,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     // Strip notification and forwarding URLs for non-owners: they can be bearer secrets
     if (access.ownerId !== auth.userId) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { notificationUrl, forwardUrl, ...safe } = endpoint;
+      const { notificationUrl, forwardUrl, forwardHeaders, ...safe } = endpoint;
       return Response.json(safe);
     }
 
@@ -59,7 +66,38 @@ const AUDITED_ENDPOINT_FIELDS = [
   "showEmailExtracts",
   "forwardEnabled",
   "forwardUrl",
+  "forwardHttp",
+  "forwardEmail",
+  "forwardFormat",
+  "forwardAppendPath",
+  "forwardRetrySeconds",
+  "forwardKeepOrder",
+  "forwardHeaders",
+  "forwardSentField",
 ] as const;
+
+const FORWARD_BOOLEANS = [
+  "forwardHttp",
+  "forwardEmail",
+  "forwardAppendPath",
+  "forwardKeepOrder",
+] as const;
+
+/** The owner's headers as submitted: names checked, null values kept from what is stored. */
+function checkForwardHeadersInput(input: unknown): ForwardHeaderInput[] | string {
+  if (!Array.isArray(input)) return "forwardHeaders must be a list.";
+  const named = input.map((item) => ({
+    name: typeof item?.name === "string" ? item.name.trim() : "",
+    // A placeholder stands in for values that stay as they are.
+    value: item?.value === null || item?.value === undefined ? "kept" : item.value,
+  }));
+  const check = checkOwnerHeaders(named);
+  if (!check.ok) return check.error;
+  return input.map((item, index) => ({
+    name: named[index].name,
+    value: item?.value === null || item?.value === undefined ? null : String(item.value),
+  }));
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -82,6 +120,42 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   if (body.forwardEnabled !== undefined && typeof body.forwardEnabled !== "boolean") {
     return Response.json({ error: "Invalid forwardEnabled" }, { status: 400 });
+  }
+  for (const field of FORWARD_BOOLEANS) {
+    if (body[field] !== undefined && typeof body[field] !== "boolean") {
+      return Response.json({ error: `Invalid ${field}` }, { status: 400 });
+    }
+  }
+  if (
+    body.forwardFormat !== undefined &&
+    !(FORWARD_FORMAT_SETTINGS as readonly unknown[]).includes(body.forwardFormat)
+  ) {
+    return Response.json({ error: "Invalid forwardFormat" }, { status: 400 });
+  }
+  if (
+    body.forwardRetrySeconds !== undefined &&
+    !(FORWARD_RETRY_CHOICES as readonly unknown[]).includes(body.forwardRetrySeconds)
+  ) {
+    return Response.json({ error: "Invalid forwardRetrySeconds" }, { status: 400 });
+  }
+  let forwardSentField: string | null | undefined;
+  if (body.forwardSentField !== undefined) {
+    if (body.forwardSentField === null || body.forwardSentField === "") {
+      forwardSentField = null;
+    } else if (typeof body.forwardSentField !== "string") {
+      return Response.json({ error: "Invalid forwardSentField" }, { status: 400 });
+    } else {
+      const field = body.forwardSentField.trim();
+      const problem = checkSentField(field);
+      if (problem) return Response.json({ error: problem }, { status: 400 });
+      forwardSentField = field;
+    }
+  }
+  let forwardHeaders: ForwardHeaderInput[] | undefined;
+  if (body.forwardHeaders !== undefined) {
+    const checked = checkForwardHeadersInput(body.forwardHeaders);
+    if (typeof checked === "string") return Response.json({ error: checked }, { status: 400 });
+    forwardHeaders = checked;
   }
   if (body.forwardUrl !== undefined && body.forwardUrl !== null && body.forwardUrl !== "") {
     if (typeof body.forwardUrl !== "string" || body.forwardUrl.length > 2048) {
@@ -139,7 +213,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       body.signingProvider !== undefined ||
       body.signingSecret !== undefined ||
       body.signingHeader !== undefined;
-    const forwardingTouched = body.forwardEnabled !== undefined || body.forwardUrl !== undefined;
+    const forwardingTouched = AUDITED_ENDPOINT_FIELDS.some(
+      (field) => field.startsWith("forward") && body[field] !== undefined
+    );
     // showEmailExtracts also decides whether codes and links are in the JSON
     // forwarded to the owner's server, so a team member must not change it.
     const ownerOnlyConfigTouched =
@@ -278,6 +354,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       forwardEnabled: body.forwardEnabled as boolean | undefined,
       forwardUrl:
         body.forwardUrl === undefined ? undefined : (body.forwardUrl as string | null) || null,
+      forwardHttp: body.forwardHttp as boolean | undefined,
+      forwardEmail: body.forwardEmail as boolean | undefined,
+      forwardFormat: body.forwardFormat as ForwardFormatSetting | undefined,
+      forwardAppendPath: body.forwardAppendPath as boolean | undefined,
+      forwardRetrySeconds: body.forwardRetrySeconds as number | undefined,
+      forwardKeepOrder: body.forwardKeepOrder as boolean | undefined,
+      forwardHeaders,
+      forwardSentField,
     });
 
     await auditUserAction(request, auth.userId, {
@@ -294,6 +378,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
     return Response.json(endpoint);
   } catch (error) {
+    if (error instanceof ForwardHeaderValueMissingError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
     console.error("Failed to update endpoint:", error);
     await auditUserAction(request, auth.userId, {
       action: "endpoint.updated",

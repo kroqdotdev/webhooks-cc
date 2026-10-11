@@ -42,6 +42,7 @@ import {
   claimGuestEndpointForUser,
   type DashboardEndpoint,
   sendTestEmail,
+  fetchDashboardRequestById,
 } from "@/lib/dashboard-api";
 import {
   buildRetainedCountParams,
@@ -953,6 +954,47 @@ export default function DashboardPage() {
     setSettingsFocus("forwarding");
     setEndpointTab("settings");
   }, []);
+  // From the delivery log: the request, with its Deliveries tab open. A request
+  // the list has not loaded (older than a page) is fetched on its own.
+  const handleOpenRequestDeliveries = useCallback(
+    async (requestId: string) => {
+      const loaded =
+        recentRequests.some((request) => request._id === requestId) ||
+        clickHouseDetailMap.current.has(requestId);
+      if (!loaded && accessToken && currentEndpoint) {
+        try {
+          const fetched = await fetchDashboardRequestById(accessToken, requestId);
+          if (fetched) {
+            clickHouseDetailMap.current.set(requestId, {
+              ...fetched,
+              id: fetched._id,
+              slug: currentEndpoint.slug,
+            });
+          }
+        } catch {
+          // The list may still hold it; otherwise the detail stays empty.
+        }
+      }
+      setSettingsFocus(null);
+      setEndpointTab("requests");
+      setSelectedId(requestId);
+      setMobileDetail(true);
+      setActiveTab("deliveries");
+    },
+    [recentRequests, accessToken, currentEndpoint, setActiveTab]
+  );
+  // The HTTP detail's Deliveries tab: once the endpoint has (or had) a forwarding URL.
+  const deliveriesProps = useMemo(
+    () =>
+      currentEndpoint && (currentEndpoint.forwardEnabled || currentEndpoint.hasForwardSecret)
+        ? {
+            endpoint: currentEndpoint,
+            canRedeliver: currentEndpoint.forwardUrl !== undefined,
+            onOpenForwarding: handleOpenForwarding,
+          }
+        : undefined,
+    [currentEndpoint, handleOpenForwarding]
+  );
   const handleTabChange = useCallback((tab: EndpointTab) => {
     setSettingsFocus(null);
     setEndpointTab(tab);
@@ -1096,6 +1138,7 @@ export default function DashboardPage() {
           endpoint={currentEndpoint}
           requestCount={retainedTotalCount ?? recentRequests.length}
           focusSection={settingsFocus}
+          onOpenRequestDeliveries={(requestId) => void handleOpenRequestDeliveries(requestId)}
         />
       ) : hasRequests ? (
         <>
@@ -1168,6 +1211,7 @@ export default function DashboardPage() {
                     onOpenForwarding={handleOpenForwarding}
                     note={currentNote}
                     onNoteChange={handleNoteChange}
+                    initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
                   />
                 ) : displayRequest ? (
                   <RequestDetail
@@ -1179,6 +1223,7 @@ export default function DashboardPage() {
                     onNoteChange={handleNoteChange}
                     onOpenSettings={handleOpenSettings}
                     endpointSlug={currentEndpoint.slug}
+                    deliveries={deliveriesProps}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -1209,6 +1254,7 @@ export default function DashboardPage() {
                         onOpenForwarding={handleOpenForwarding}
                         note={currentNote}
                         onNoteChange={handleNoteChange}
+                        initialTab={activeTab === "deliveries" ? "deliveries" : undefined}
                       />
                     ) : (
                       <RequestDetail
@@ -1219,6 +1265,7 @@ export default function DashboardPage() {
                         onNoteChange={handleNoteChange}
                         onOpenSettings={handleOpenSettings}
                         endpointSlug={currentEndpoint.slug}
+                        deliveries={deliveriesProps}
                       />
                     )}
                   </ErrorBoundary>

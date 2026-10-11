@@ -15,13 +15,29 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.37.4";
+export const APP_VERSION = "0.38.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.13.0";
 export const MCP_VERSION = "1.11.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.38.0",
+    date: "2026-10-11",
+    title: "Forward Webhooks, Not Only Emails",
+    track: "web",
+    items: [
+      "Forwarding sends an endpoint's HTTP requests on too, not only its emails: relayed as received (same method, headers and body bytes, so the provider's signature still verifies on your server), as signed JSON, or as a chat message when the URL is a Slack or Discord webhook",
+      "Relayed requests keep the path after the slug and the query string, and carry `webhooks-cc-received-at`, `webhooks-cc-request-id`, `webhooks-cc-endpoint`, `webhooks-cc-attempt` and `webhooks-cc-signature`",
+      "Add up to 10 headers of your own to every delivery, such as the token your server expects; values are stored encrypted",
+      "Advanced options: append the request path or not, retry for a day, an hour or not at all, and keep capture order by delivering one request at a time",
+      "Timing for every delivery: when the sender sent it (from a JSON field you name, such as publishedAt, or a timestamp header), when webhooks.cc received it, and when your server took it, to the millisecond; chat messages say how long after the sender's time each request arrived",
+      "A delivery log in Settings with Retrying and Failed filters, the last 24 hours at a glance, and Redeliver all failed",
+      "HTTP requests get a Deliveries tab like emails, with Redeliver",
+      "Messages to Slack and Discord are spaced to their rate limits, and a 429 is retried after the time it asks for",
+    ],
+  },
   {
     version: "0.37.4",
     date: "2026-10-10",

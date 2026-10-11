@@ -1,5 +1,6 @@
 import { toEmailCapture } from "@/lib/email-capture";
 import type { EmailJsonSource } from "@webhooks-cc/sdk/email";
+import type { RequestRecord } from "@/lib/supabase/requests";
 
 /**
  * A stand-in email for a test delivery from an endpoint that has not
@@ -26,5 +27,27 @@ export function sampleEmailSource(address: string, now: Date = new Date()): Emai
     size: text.length,
     headers: { subject: "Test delivery from webhooks.cc", from: "webhooks.cc <test@webhooks.cc>" },
     email,
+  };
+}
+
+/** A stand-in HTTP request for a test delivery from an endpoint that has captured none yet. */
+export function sampleHttpRequest(endpointId: string, now: Date = new Date()): RequestRecord {
+  const body = JSON.stringify({
+    type: "webhooks.cc.test",
+    message: "This is a test delivery from webhooks.cc.",
+    sentAt: now.toISOString(),
+  });
+  return {
+    id: "00000000-0000-4000-8000-000000000001",
+    endpointId,
+    method: "POST",
+    path: "/test",
+    headers: { "content-type": "application/json", "user-agent": "webhooks.cc test delivery" },
+    body,
+    queryParams: {},
+    ip: "127.0.0.1",
+    size: Buffer.byteLength(body),
+    receivedAt: now.getTime(),
+    kind: "http",
   };
 }

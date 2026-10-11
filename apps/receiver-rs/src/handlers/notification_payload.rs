@@ -313,6 +313,73 @@ mod tests {
         }
     }
 
+    /// One case of `notification_vectors.json`, which the web app's chat
+    /// format (apps/web/lib/forwarding/chat.ts) is checked against too.
+    #[derive(serde::Deserialize, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct VectorFields {
+        slug: String,
+        method: String,
+        path: String,
+        ip: String,
+        received_at: String,
+        preview: String,
+        body: String,
+        target_url: String,
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct Vector {
+        name: String,
+        fields: VectorFields,
+        payload: Value,
+    }
+
+    fn payload_for(f: &VectorFields) -> Value {
+        notification_payload(&NotificationFields {
+            slug: &f.slug,
+            method: &f.method,
+            path: &f.path,
+            ip: &f.ip,
+            received_at: &f.received_at,
+            preview: &f.preview,
+            body: &f.body,
+            target_url: &f.target_url,
+        })
+    }
+
+    #[test]
+    fn matches_the_shared_vectors() {
+        let vectors: Vec<Vector> =
+            serde_json::from_str(include_str!("notification_vectors.json")).unwrap();
+        assert!(!vectors.is_empty());
+        for vector in &vectors {
+            assert_eq!(
+                payload_for(&vector.fields),
+                vector.payload,
+                "{}",
+                vector.name
+            );
+        }
+    }
+
+    /// Fills in the expected payloads after a deliberate change:
+    /// `cargo test write_shared_vectors -- --ignored`, then review the diff.
+    #[test]
+    #[ignore]
+    fn write_shared_vectors() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/handlers/notification_vectors.json"
+        );
+        let mut vectors: Vec<Vector> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        for vector in &mut vectors {
+            vector.payload = payload_for(&vector.fields);
+        }
+        std::fs::write(path, serde_json::to_string_pretty(&vectors).unwrap() + "\n").unwrap();
+    }
+
     #[test]
     fn keeps_odd_slugs_out_of_the_formatting() {
         let mut f = fields("POST", "/", "", SLACK);

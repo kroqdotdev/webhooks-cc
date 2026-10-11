@@ -11,8 +11,14 @@
  * - Forwarding (`X-Proxy-Mode: forward`, the web app's email forwarding,
  *   apps/web/lib/forwarding): the content type and the Standard Webhooks
  *   headers pass through, redirects are not followed, and the answer is
- *   always JSON: `{ status, body }` with the destination's status and the
- *   start of its body, or `{ error }` when it could not be reached.
+ *   always JSON: `{ status, body, durationMs, retryAfter }` with the
+ *   destination's status, the start of its body, its own time and its
+ *   Retry-After header, or `{ error }` when it could not be reached.
+ * - Relay (`X-Proxy-Mode: relay`, forwarding a captured HTTP request as
+ *   received, or JSON with the owner's headers): the body is JSON
+ *   `{ url, method, headers, body }` with the body in base64 and the target
+ *   inside (no X-Target-URL), and the request goes out with that method, those headers (minus
+ *   hop-by-hop ones) and those exact bytes. Answers like forward mode.
  */
 
 interface Env {
@@ -35,6 +41,21 @@ const FORWARD_HEADERS = [
  * multiply them); the web app refuses anything larger before sending.
  */
 const MAX_FORWARD_BODY = 10 * 1024 * 1024;
+/** A relay envelope carries the body in base64 (4/3 of it) plus the headers. */
+const MAX_RELAY_ENVELOPE = 15 * 1024 * 1024;
+const RELAY_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+/** Never relayed: connection-level headers, and what fetch sets itself. */
+const RELAY_DROPPED_HEADERS = new Set([
+  "host",
+  "content-length",
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "te",
+  "trailer",
+  "upgrade",
+  "expect",
+]);
 const FORWARD_TIMEOUT_MS = 15_000;
 const EXCERPT_BYTES = 1024;
 
@@ -80,6 +101,11 @@ function json(value: unknown): Response {
   });
 }
 
+/** A throttled destination's Retry-After, passed on so the web app waits that long. */
+function retryAfter(response: Response): string | null {
+  return response.headers.get("retry-after")?.slice(0, 64) ?? null;
+}
+
 /** The first EXCERPT_BYTES of a response body, as text. */
 async function excerpt(response: Response): Promise<string | null> {
   if (!response.body) return null;
@@ -119,6 +145,7 @@ async function forward(request: Request, targetUrl: string): Promise<Response> {
     if (value) headers.set(name, value);
   }
 
+  const started = Date.now();
   try {
     const response = await fetch(targetUrl, {
       method: "POST",
@@ -127,7 +154,120 @@ async function forward(request: Request, targetUrl: string): Promise<Response> {
       redirect: "manual",
       signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
     });
-    return json({ status: response.status, body: await excerpt(response) });
+    const durationMs = Date.now() - started;
+    return json({
+      status: response.status,
+      body: await excerpt(response),
+      durationMs,
+      retryAfter: retryAfter(response),
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return json({
+      error: timedOut
+        ? `No answer within ${FORWARD_TIMEOUT_MS / 1000} s.`
+        : "The connection failed.",
+    });
+  }
+}
+
+interface RelayEnvelope {
+  url: string;
+  method: string;
+  headers: [string, string][];
+  body: string | null;
+}
+
+function parseRelayEnvelope(raw: string): RelayEnvelope | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof data !== "object" || data === null) return null;
+  const { url, method, headers, body } = data as Record<string, unknown>;
+  if (typeof url !== "string" || url.length === 0 || url.length > 4096) return null;
+  if (typeof method !== "string" || !RELAY_METHODS.has(method)) return null;
+  if (!Array.isArray(headers)) return null;
+  const pairs: [string, string][] = [];
+  for (const pair of headers) {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string"
+    ) {
+      return null;
+    }
+    pairs.push([pair[0], pair[1]]);
+  }
+  if (body !== null && typeof body !== "string") return null;
+  return { url, method, headers: pairs, body: body ?? null };
+}
+
+function fromBase64(value: string): Uint8Array<ArrayBuffer> | null {
+  try {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The target travels inside the envelope, not in X-Target-URL: a Worker
+ * from before relay mode reads a request without X-Target-URL as malformed
+ * (400) and sends nothing, instead of posting the envelope to the target as
+ * a notification.
+ */
+async function relay(request: Request): Promise<Response> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > MAX_RELAY_ENVELOPE) return json({ error: "The body is larger than 10 MB." });
+  const raw = await request.text();
+  if (raw.length > MAX_RELAY_ENVELOPE) return json({ error: "The body is larger than 10 MB." });
+  const envelope = parseRelayEnvelope(raw);
+  if (!envelope) return json({ error: "The relay request is malformed." });
+  const targetUrl = envelope.url;
+  if (isBlockedUrl(targetUrl)) return json({ error: "The URL is not allowed." });
+
+  const body = envelope.body === null ? null : fromBase64(envelope.body);
+  if (envelope.body !== null && !body) return json({ error: "The relay request is malformed." });
+  if (body && body.byteLength > MAX_FORWARD_BODY) {
+    return json({ error: "The body is larger than 10 MB." });
+  }
+
+  const headers = new Headers();
+  for (const [name, value] of envelope.headers) {
+    const lower = name.toLowerCase();
+    if (RELAY_DROPPED_HEADERS.has(lower) || lower.startsWith("proxy-") || lower.startsWith("cf-")) {
+      continue;
+    }
+    try {
+      headers.append(name, value);
+    } catch {
+      // A name or value fetch refuses: leave it out rather than fail the delivery.
+    }
+  }
+
+  const started = Date.now();
+  try {
+    const response = await fetch(targetUrl, {
+      method: envelope.method,
+      headers,
+      body: envelope.method === "GET" || envelope.method === "HEAD" ? null : body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
+    });
+    const durationMs = Date.now() - started;
+    return json({
+      status: response.status,
+      body: await excerpt(response),
+      durationMs,
+      retryAfter: retryAfter(response),
+    });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return json({
@@ -178,6 +318,10 @@ export default {
     // Authenticate with shared secret
     if (!sameSecret(request.headers.get("X-Auth"), env.NOTIFY_SECRET)) {
       return new Response("Unauthorized", { status: 401 });
+    }
+
+    if (request.headers.get("X-Proxy-Mode") === "relay") {
+      return relay(request);
     }
 
     // Read target URL from header

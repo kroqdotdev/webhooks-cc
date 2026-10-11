@@ -34,6 +34,8 @@ type SelectedRequestRow = Pick<
   signing_provider?: string | null;
 };
 type OwnedEndpointRow = Pick<Database["public"]["Tables"]["endpoints"]["Row"], "id" | "slug">;
+/** Present when the select asked for it (the forwarding worker does). */
+type SelectedRequestRowWithQuery = SelectedRequestRow & { query_raw?: string | null };
 type UserPlan = Database["public"]["Tables"]["users"]["Row"]["plan"];
 
 export interface RequestRecord {
@@ -46,6 +48,8 @@ export interface RequestRecord {
   /** Base64-encoded raw bytes, present only for non-UTF-8 payloads */
   bodyRaw?: string;
   queryParams: Record<string, string>;
+  /** The query string exactly as sent (since migration 00058; only where loaded for forwarding). */
+  queryRaw?: string;
   contentType?: string;
   ip: string;
   size: number;
@@ -115,7 +119,7 @@ function isAsciiHex(bytes: Buffer): boolean {
   );
 }
 
-function normalizeRequest(row: SelectedRequestRow): RequestRecord {
+function normalizeRequest(row: SelectedRequestRowWithQuery): RequestRecord {
   const headers = asStringRecord(row.headers);
   const body = row.body ?? undefined;
   const kind = row.kind === "email" ? "email" : "http";
@@ -138,6 +142,7 @@ function normalizeRequest(row: SelectedRequestRow): RequestRecord {
     body,
     bodyRaw: row.body_raw ? byteaToBase64(row.body_raw) : undefined,
     queryParams: asStringRecord(row.query_params),
+    ...(row.query_raw ? { queryRaw: row.query_raw } : {}),
     contentType: row.content_type ?? undefined,
     ip: row.ip,
     size: row.size,
@@ -269,10 +274,10 @@ export async function getRequestsByIds(ids: string[]): Promise<RequestRecord[]> 
   const { data, error } = await admin
     .from("requests")
     .select(
-      "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
+      "id, endpoint_id, method, path, headers, body, body_raw, query_params, query_raw, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, kind, email"
     )
     .in("id", ids)
-    .returns<SelectedRequestRow[]>();
+    .returns<SelectedRequestRowWithQuery[]>();
   if (error) throw error;
   return (data ?? []).map(normalizeRequest);
 }

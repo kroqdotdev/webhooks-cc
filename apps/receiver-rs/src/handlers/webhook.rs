@@ -942,8 +942,12 @@ async fn handle_webhook_inner(
         return retry_later_response();
     };
     let result: Result<serde_json::Value, sqlx::Error> =
-        sqlx::query_scalar("SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")
-            .bind(&slug)
+        // p_query_raw by name (migration 00058): the email parameters between
+        // keep their defaults.
+        sqlx::query_scalar(
+            "SELECT capture_webhook($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, p_query_raw => $11)",
+        )
+        .bind(&slug)
             .bind(method.as_str())
             .bind(&req_path)
             .bind(&headers_json)
@@ -953,6 +957,7 @@ async fn handle_webhook_inner(
             .bind(&ip)
             .bind(received_at)
             .bind(&body_raw)
+            .bind(raw_query.as_deref())
             .fetch_one(&state.pool)
             .await;
     drop(permit);
