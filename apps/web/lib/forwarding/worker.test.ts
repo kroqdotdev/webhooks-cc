@@ -11,7 +11,7 @@ function captured(overrides: Partial<RequestRecord> = {}): RequestRecord {
     method: "POST",
     path: "/stripe/events",
     headers: { "content-type": "application/json", "stripe-signature": "t=1760109909,v1=abc" },
-    body: '{"id":"evt","PublishTimestamp":"2026-10-10T15:25:09.115Z"}',
+    body: '{"id":"evt","publishedAt":"2026-10-10T15:25:09.115Z"}',
     queryParams: {},
     queryRaw: "a=1",
     ip: "203.0.113.9",
@@ -33,7 +33,7 @@ function settings(overrides: Partial<OutgoingSettings> = {}): OutgoingSettings {
     ownerHeaders: [],
     attempt: 1,
     secret: SECRET,
-    sentField: "PublishTimestamp",
+    sentField: "publishedAt",
     ...overrides,
   };
 }
@@ -45,7 +45,7 @@ describe("outgoingFor", () => {
     expect(prepared.facts).toMatchObject({
       format: "as_received",
       target: "dest.example/hooks/stripe/events",
-      sent: { source: "PublishTimestamp", wholeSeconds: false },
+      sent: { source: "publishedAt", wholeSeconds: false },
     });
   });
 
@@ -79,7 +79,7 @@ describe("outgoingFor", () => {
     if (!("outgoing" in prepared)) throw new Error(prepared.reason);
     expect(prepared.facts).toMatchObject({ format: "chat", target: "hooks.slack.com" });
     const payload = JSON.parse(prepared.outgoing.body!.toString("utf8"));
-    expect(payload.text).toContain("197 ms after PublishTimestamp");
+    expect(payload.text).toContain("197 ms after publishedAt");
   });
 
   it("keeps a captured path with dot segments under the URL's path", () => {

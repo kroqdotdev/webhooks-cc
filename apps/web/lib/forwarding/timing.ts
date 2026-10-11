@@ -6,7 +6,7 @@
  *
  * The sender's time comes from, in order: the JSON field the owner named
  * (`endpoints.forward_sent_field`, for a timestamp in the body such as
- * `PublishTimestamp`), a timestamp header a known scheme sends (Standard
+ * `publishedAt`), a timestamp header a known scheme sends (Standard
  * Webhooks, Svix, Stripe, Slack), or an email's Date header. Header times
  * have whole seconds only.
  */
@@ -182,8 +182,8 @@ export function formatDuration(ms: number): string {
 
 /**
  * The lag from the sender's time to our receipt, as words: "197 ms after
- * PublishTimestamp", "within 1 s of webhook-timestamp" (whole seconds),
- * "35 ms before PublishTimestamp" when the clocks disagree.
+ * publishedAt", "within 1 s of webhook-timestamp" (whole seconds),
+ * "35 ms before publishedAt" when the clocks disagree.
  */
 export function describeSenderLag(sent: SenderTime, receivedAt: number): string {
   const lag = receivedAt - sent.at;

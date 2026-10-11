@@ -57,12 +57,12 @@ describe("valueAtPath", () => {
 });
 
 describe("senderTimestamp", () => {
-  const body = JSON.stringify({ Application: "x", PublishTimestamp: "2026-10-10T15:25:09.115Z" });
+  const body = JSON.stringify({ Application: "x", publishedAt: "2026-10-10T15:25:09.115Z" });
 
   it("reads the field the owner named", () => {
-    expect(senderTimestamp({ kind: "http", body }, "PublishTimestamp")).toEqual({
+    expect(senderTimestamp({ kind: "http", body }, "publishedAt")).toEqual({
       at: AT,
-      source: "PublishTimestamp",
+      source: "publishedAt",
       wholeSeconds: false,
     });
   });
@@ -92,10 +92,10 @@ describe("senderTimestamp", () => {
 
 describe("describeSenderLag", () => {
   it("gives milliseconds for precise timestamps", () => {
-    const sent = { at: AT, source: "PublishTimestamp", wholeSeconds: false };
-    expect(describeSenderLag(sent, AT + 197)).toBe("197 ms after PublishTimestamp");
-    expect(describeSenderLag(sent, AT + 1234)).toBe("1.23 s after PublishTimestamp");
-    expect(describeSenderLag(sent, AT - 35)).toBe("35 ms before PublishTimestamp");
+    const sent = { at: AT, source: "publishedAt", wholeSeconds: false };
+    expect(describeSenderLag(sent, AT + 197)).toBe("197 ms after publishedAt");
+    expect(describeSenderLag(sent, AT + 1234)).toBe("1.23 s after publishedAt");
+    expect(describeSenderLag(sent, AT - 35)).toBe("35 ms before publishedAt");
   });
 
   it("does not invent a fraction for whole seconds", () => {
@@ -120,7 +120,7 @@ describe("formatDuration", () => {
 
 describe("checkSentField", () => {
   it("accepts dotted paths and refuses empty parts", () => {
-    expect(checkSentField("PublishTimestamp")).toBeNull();
+    expect(checkSentField("publishedAt")).toBeNull();
     expect(checkSentField("data.sent_at")).toBeNull();
     expect(checkSentField("")).not.toBeNull();
     expect(checkSentField("a..b")).not.toBeNull();

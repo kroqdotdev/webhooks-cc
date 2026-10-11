@@ -1,9 +1,9 @@
 ---
 title: "REST API"
-description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure email forwarding, and stream webhooks."
+description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure forwarding, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-11
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -61,19 +61,34 @@ curl -X POST https://webhooks.cc/api/endpoints \
   "showEmailExtracts": true,
   "forwardEnabled": false,
   "forwardUrl": null,
-  "hasForwardSecret": false
+  "hasForwardSecret": false,
+  "forwardHttp": false,
+  "forwardEmail": true,
+  "forwardFormat": "auto",
+  "forwardHeaders": [],
+  "forwardAppendPath": true,
+  "forwardRetrySeconds": 86400,
+  "forwardKeepOrder": false,
+  "forwardSentField": null
 }
 ```
 
-Email fields on every endpoint:
+Email and forwarding fields on every endpoint:
 
 | Field               | Description                                                                                                         |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `emailAddress`      | The endpoint's [email address](/docs/email-capture). `null` for guest endpoints, which receive no email.            |
 | `showEmailExtracts` | Whether codes and links found in emails are shown in the dashboard and included in forwarded JSON. Default `true`. |
-| `forwardEnabled`    | Whether captured emails are [forwarded](/docs/forwarding) to `forwardUrl`.                                          |
-| `forwardUrl`        | Where emails are forwarded. Only returned to the endpoint's owner.                                                  |
+| `forwardEnabled`    | Whether captured requests are [forwarded](/docs/forwarding) to `forwardUrl`.                                        |
+| `forwardUrl`        | Where requests are forwarded. Only returned to the endpoint's owner.                                                |
 | `hasForwardSecret`  | Whether a forwarding secret exists. The secret itself is never included.                                            |
+| `forwardHttp`, `forwardEmail` | Which kinds are forwarded: HTTP requests, emails.                                                         |
+| `forwardFormat`     | `auto` (picked from the URL), `as_received`, `json` or `chat`. See [Formats](/docs/forwarding#formats).             |
+| `forwardHeaders`    | Your own headers, `[{ "name", "value" }]` with masked values. Only returned to the endpoint's owner.               |
+| `forwardAppendPath` | Whether the path after the slug is added to the URL for relayed requests.                                           |
+| `forwardRetrySeconds` | How long failed deliveries are retried: `0`, `3600` or `86400`.                                                  |
+| `forwardKeepOrder`  | One delivery at a time, in capture order.                                                                           |
+| `forwardSentField`  | The JSON body field holding the sender's own timestamp, or `null`. See [Timing](/docs/forwarding#timing).           |
 
 ### List endpoints
 
@@ -82,7 +97,7 @@ curl https://webhooks.cc/api/endpoints \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns `{ "owned": [...], "shared": [...] }`: the endpoints you own, and the endpoints shared with you through a team. Shared endpoints leave out `notificationUrl` and `forwardUrl`.
+Returns `{ "owned": [...], "shared": [...] }`: the endpoints you own, and the endpoints shared with you through a team. Shared endpoints leave out `notificationUrl`, `forwardUrl` and `forwardHeaders`.
 
 ### Get endpoint
 
@@ -104,7 +119,7 @@ curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
 
 Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications. The `notificationUrl` must be a valid `http` or `https` URL, max 2048 characters.
 
-Set `"showEmailExtracts": false` to stop picking out codes and links in emails. `forwardEnabled` and `forwardUrl` are covered under [Forwarding](#forwarding).
+Set `"showEmailExtracts": false` to stop picking out codes and links in emails. The `forward*` fields are covered under [Forwarding](#forwarding).
 
 Team members can change `name`, `mockResponse`, and `responseRules` on shared endpoints. `showEmailExtracts` and the notification, signing, and forwarding settings are owner only and return `403` for anyone else, because `showEmailExtracts` also decides what forwarding sends.
 
@@ -218,7 +233,7 @@ curl -X POST https://webhooks.cc/api/send-test-email \
 
 ## Forwarding
 
-[Forwarding](/docs/forwarding) posts every email an endpoint captures to your URL as JSON, signed with Standard Webhooks headers and retried for about a day until your server answers `2xx`. The payload and how to verify its signature are described in [Email forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
+[Forwarding](/docs/forwarding) sends every HTTP request and email an endpoint captures to your URL: relayed as received, as signed JSON, or as a chat message for Slack and Discord, and retried until it is accepted. The formats and how to verify them are described in [Forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
 
 ### Turn forwarding on
 
@@ -226,10 +241,23 @@ curl -X POST https://webhooks.cc/api/send-test-email \
 curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
   -H "Authorization: Bearer whcc_..." \
   -H "Content-Type: application/json" \
-  -d '{"forwardUrl": "https://example.com/hooks/email", "forwardEnabled": true}'
+  -d '{"forwardUrl": "https://example.com/hooks", "forwardHttp": true, "forwardEmail": true, "forwardEnabled": true}'
 ```
 
-`"forwardEnabled": true` needs a `forwardUrl`, sent in the same request or saved before. The URL must be `https` on a public host name (no IP addresses or `localhost`), max 2048 characters. Saving the first URL creates the endpoint's signing secret, so you can set up your handler and send a test delivery before turning forwarding on. Send `"forwardEnabled": false` to stop; deliveries still waiting are marked failed. Send `"forwardUrl": null` to remove the URL once forwarding is off.
+`"forwardEnabled": true` needs a `forwardUrl`, sent in the same request or saved before. The URL must be `https` on a public host name (no IP addresses or `localhost`), max 2048 characters. Saving the first URL creates the endpoint's signing secret, so you can set up your handler and send a test delivery before turning forwarding on. Send `"forwardEnabled": false` to stop; deliveries still waiting are marked failed, and so are those of a kind you switch off. Send `"forwardUrl": null` to remove the URL once forwarding is off.
+
+The other settings, all optional:
+
+| Field                 | Values                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forwardHttp`         | `true` to forward HTTP requests. Default `false`.                                                                                           |
+| `forwardEmail`        | `true` to forward emails. Default `true`.                                                                                                   |
+| `forwardFormat`       | `auto` (default), `as_received`, `json` or `chat`.                                                                                          |
+| `forwardHeaders`      | The whole list of your headers, at most 10: `[{ "name": "Authorization", "value": "Bearer ..." }]`. A `null` value keeps the stored value of that name; `[]` removes them all. |
+| `forwardAppendPath`   | `false` to send relayed requests to the URL exactly as written. Default `true`.                                                             |
+| `forwardRetrySeconds` | `86400` (default), `3600`, or `0` for a single try.                                                                                         |
+| `forwardKeepOrder`    | `true` for one delivery at a time, in capture order. Default `false`.                                                                       |
+| `forwardSentField`    | A JSON body field with the sender's timestamp, such as `publishedAt` or `data.publishedAt`; `null` clears it.                               |
 
 ### Get the signing secret
 
@@ -251,7 +279,7 @@ Returns `{ "secret": "whsec_..." }` with the new secret. Every delivery from now
 
 ### Send a test delivery
 
-Posts the endpoint's newest email (or a sample marked `"test": true`, if none has arrived yet) to the saved URL once and reports what your server answered. It works with forwarding on or off, and nothing is retried or added to the delivery history.
+Sends the endpoint's newest captured request (or a sample marked as a test, if none has arrived yet) to the saved URL once, exactly as a delivery would go out, and reports what came back. It works with forwarding on or off, and nothing is retried or added to the delivery log. Send `{"kind": "email"}` or `{"kind": "http"}` to pick the kind; by default it is HTTP when HTTP requests are forwarded, otherwise email.
 
 ```bash
 curl -X POST https://webhooks.cc/api/endpoints/abc123/forwarding/test \
@@ -267,22 +295,46 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/forwarding/test \
   "excerpt": "ok",
   "error": null,
   "delivered": true,
-  "sample": false
+  "sample": false,
+  "kind": "http",
+  "format": "as_received",
+  "url": "https://example.com/hooks/stripe/events",
+  "target": "example.com/hooks/stripe/events",
+  "request": { "method": "POST", "path": "/stripe/events", "subject": null, "receivedAt": 1791538201882 },
+  "sender": { "at": 1791538201685, "source": "publishedAt", "wholeSeconds": false }
 }
 ```
 
-`delivered` is `true` when your server answered `2xx`. `error` says why no answer arrived (a timeout, a refused connection, a TLS problem), and `excerpt` is the start of the response body. Returns `400` when no URL is saved. Rate limited to 10 requests per minute.
+`delivered` is `true` when the URL answered `2xx`. `error` says why no answer arrived (a timeout, a refused connection, a TLS problem), and `excerpt` is the start of the response body. `sender` is the sender's own timestamp when the request has one ([Timing](/docs/forwarding#timing)). Returns `400` when no URL is saved. Rate limited to 10 requests per minute.
 
-### List recent deliveries
+### List deliveries
 
 ```bash
-curl "https://webhooks.cc/api/endpoints/abc123/deliveries?limit=5" \
+curl "https://webhooks.cc/api/endpoints/abc123/deliveries?limit=50&status=failed" \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns the endpoint's latest deliveries, newest first (`limit` from 1 to 20, default 5). Each has `id`, `requestId`, `status` (`pending`, `succeeded` or `failed`), `attempts`, `createdAt`, `lastStatus`, `lastError`, and the email's `subject`.
+Returns the endpoint's deliveries, newest first. `limit` is 1 to 100 (default 5); `status` is `all` (default), `pending` (queued or retrying) or `failed`; `before` takes the `cursor` of the last row you have, for older rows (URL-encode it). Each has `id`, `requestId`, `kind`, `status` (`pending`, `succeeded` or `failed`), `attempts`, `createdAt`, `finishedAt`, `nextAttemptAt`, `lastStatus`, `lastError`, `lastDurationMs` (your server's time on the latest try), `format`, `senderAt` and `senderSource` (the sender's timestamp and where it was read), `cursor`, and the request's `method`, `path`, `receivedAt` and, for an email, `subject`.
 
-### List deliveries of an email
+### Delivery counts
+
+```bash
+curl https://webhooks.cc/api/endpoints/abc123/deliveries/summary \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "last24h": { "delivered": 1284, "failed": 0 }, "pending": 3, "failed": 1, "total": 1312 }`: what was delivered and failed among deliveries of the last 24 hours, what is waiting now, and the failed and total counts among the deliveries kept.
+
+### Redeliver all failed
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/deliveries/redeliver-failed \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Queues every request whose latest delivery failed again, oldest first, with the current settings, and returns `{ "queued": 12 }`. At most 1,000 deliveries wait at a time, so `queued` can be lower than the failed count; call it again once those are through. Returns `409` when forwarding is off. Rate limited to 10 requests per minute.
+
+### List deliveries of a request
 
 ```bash
 curl https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
@@ -296,6 +348,7 @@ curl https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
   {
     "id": "...",
     "requestId": "REQUEST_ID",
+    "kind": "http",
     "status": "pending",
     "attempts": 2,
     "createdAt": 1791450602000,
@@ -303,6 +356,10 @@ curl https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
     "nextAttemptAt": 1791450752000,
     "lastStatus": 500,
     "lastError": "The URL answered 500.",
+    "format": "as_received",
+    "target": "example.com/hooks/stripe/events",
+    "senderAt": null,
+    "senderSource": null,
     "attemptLog": [
       {
         "attemptedAt": 1791450632000,
@@ -323,16 +380,16 @@ curl https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
 ]
 ```
 
-Lists up to 20 deliveries of the email, newest first, each with every try (newest first). `nextAttemptAt` is set while a delivery is pending. Anyone who can read the email can list its deliveries, team members included. A request that was never forwarded returns `[]`.
+Lists up to 20 deliveries of the request, newest first, each with every try (newest first). `nextAttemptAt` is set while a delivery is pending; `attemptedAt` is when a try ended. `target` is where it went (host and path; the host only for Slack and Discord, whose path is a secret, and for team members). Anyone who can read the request can list its deliveries, team members included. A request that was never forwarded returns `[]`.
 
-### Redeliver an email
+### Redeliver a request
 
 ```bash
 curl -X POST https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Queues another delivery, sent with the endpoint's current URL and secret, and returns `{ "id": "..." }`. Owner only. Returns `409` when forwarding is off. Rate limited to 30 requests per minute.
+Queues another delivery of an HTTP request or an email, sent with the endpoint's current settings, and returns `{ "id": "..." }`. It also sends a request that was never forwarded. Owner only. Returns `409` when forwarding, or forwarding of that kind, is off. Rate limited to 30 requests per minute.
 
 ## Search
 

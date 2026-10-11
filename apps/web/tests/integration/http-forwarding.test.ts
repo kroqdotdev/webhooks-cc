@@ -295,12 +295,12 @@ describe("forwarding HTTP requests", () => {
 
   it("records the format, the target and the sender's own time from the named field", async () => {
     const endpoint = await forwardingEndpoint("/hooks?token=secret", {
-      forwardSentField: "meta.PublishTimestamp",
+      forwardSentField: "meta.publishedAt",
     });
     const publishedAt = new Date(Date.now() - 250).toISOString();
     await capture(endpoint.slug, {
-      path: "/kargo",
-      body: Buffer.from(JSON.stringify({ meta: { PublishTimestamp: publishedAt } })),
+      path: "/orders",
+      body: Buffer.from(JSON.stringify({ meta: { publishedAt: publishedAt } })),
     });
     await drain(endpoint.id);
     const { data: row } = await admin
@@ -310,8 +310,8 @@ describe("forwarding HTTP requests", () => {
       .single();
     expect(row).toMatchObject({
       format: "as_received",
-      target: `${new URL(base).host}/hooks/kargo`,
-      sender_source: "meta.PublishTimestamp",
+      target: `${new URL(base).host}/hooks/orders`,
+      sender_source: "meta.publishedAt",
     });
     expect(Date.parse(row!.sender_at!)).toBe(Date.parse(publishedAt));
 

@@ -3,7 +3,7 @@ title: "Plans & Limits"
 description: "Request quotas, data retention windows, rate limits, and endpoint limits for webhooks.cc. Compare the free, pro, and teams plans side by side with exact numbers, billing periods, and upgrade paths."
 section: getting-started
 order: 4
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-11
 schema: faq
 keywords:
   [
@@ -98,7 +98,8 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Send test webhook                 | 30    | 1 minute   |
 | Send test email                   | 10    | 1 minute   |
 | Send test delivery (forwarding)   | 10    | 1 minute   |
-| Redeliver a forwarded email       | 30    | 1 minute   |
+| Redeliver a forwarded request     | 30    | 1 minute   |
+| Redeliver all failed (forwarding) | 10    | 1 minute   |
 | Search requests                   | 60    | 10 minutes |
 | Search count                      | 120   | 10 minutes |
 | Device auth flows                 | 10    | 1 minute   |
@@ -118,7 +119,8 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Recipients per email           | 20                    |
 | Original email kept up to      | 1 MB                  |
 | Forwarding answer timeout      | 15 seconds            |
-| Forwarding retries             | 8, over about a day   |
+| Forwarding retries             | 8, over about a day (or 4 within an hour, or none) |
+| Deliveries waiting per endpoint | 1,000 |
 | Paginated request listing      | 100 per page          |
 | Ephemeral endpoints (per user) | 25 concurrent         |
 | SSE stream connection          | 30 minutes max        |

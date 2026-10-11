@@ -56,15 +56,15 @@ describe("chat message with the sender's time", () => {
       ...fields,
       sent: {
         at: Date.parse("2026-10-10T15:25:09.115Z"),
-        source: "PublishTimestamp",
+        source: "publishedAt",
         wholeSeconds: false,
       },
       receivedAtMs: Date.parse(fields.receivedAt),
     });
     expect(payload.text).toContain(
-      "Received 2026-10-10T15:25:09.312Z (UTC), 197 ms after PublishTimestamp"
+      "Received 2026-10-10T15:25:09.312Z (UTC), 197 ms after publishedAt"
     );
-    expect(payload.content).toContain("197 ms after PublishTimestamp");
+    expect(payload.content).toContain("197 ms after publishedAt");
   });
 
   it("escapes the source for Slack", () => {

@@ -1,40 +1,116 @@
 ---
-title: "Email Forwarding"
-description: "Forward every email an endpoint receives to your own server as parsed JSON: signed with Standard Webhooks headers, retried for about a day until your server answers 2xx."
+title: "Forwarding"
+description: "Forward every HTTP request and email an endpoint captures to your own server, or to Slack or Discord: relayed as received or as signed JSON, retried, logged, with the timing of each delivery."
 section: dashboard
 order: 5
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-11
 schema: none
 keywords:
   [
+    "webhook forwarding",
+    "webhook relay",
+    "forward webhooks to server",
+    "webhook to slack",
     "email to webhook",
     "inbound email webhook",
     "email to JSON",
-    "parse email webhook",
-    "inbound email parsing",
     "Standard Webhooks",
   ]
 seo:
-  ogTitle: "Email Forwarding: Inbound Email as a Signed JSON Webhook"
-  ogDescription: "Forward every email an endpoint receives to your server as parsed JSON, signed with Standard Webhooks headers and retried until your server answers 2xx."
+  ogTitle: "Forwarding: Relay Webhooks and Emails to Your Server, Slack or Discord"
+  ogDescription: "Forward every request an endpoint captures: relayed as received so provider signatures still verify, or as signed JSON, or as a chat message. Retried, logged, and timed."
 ---
 
-Forwarding turns the emails an endpoint receives into webhooks for your own server. Each email arrives at your URL as a `POST` of the parsed email as JSON: sender, recipients, subject, text, HTML, the one-time codes and links found in it, attachment details and the sender checks. Nothing to parse on your side.
+Forwarding sends every request an endpoint captures on to a URL of yours: your server, or a Slack or Discord channel. Each one is queued the moment it is captured, delivered within a second or two, retried when your server does not accept it, and logged with its timing, so you can see when the sender sent it, when webhooks.cc received it, and when your server took it.
 
-The JSON is exactly what each email's **JSON** tab shows in the dashboard, so you can copy it from there as a test fixture.
+Pick what to forward: HTTP requests, [emails](/docs/email-capture), or both. Only the endpoint's owner can change forwarding, and it is available on every plan.
 
 ## Set it up
 
 1. Open the endpoint's **Settings** tab and find **Forwarding**.
-2. Enter your URL and save. A signing secret is created for the endpoint; copy it into your handler.
-3. Click **Send test delivery** to post the newest email (or a sample, if none has arrived yet) once and see what your server answered.
-4. Turn on **Forward emails as JSON** and save.
+2. Enter the URL under **Send to**, pick what to forward, and save. For a server URL, a signing secret is created; copy it into your handler.
+3. Click **Send test delivery** to send the newest captured request (or a sample, if none has arrived yet) once and see what came back.
+4. Turn on **Forward captured requests** and save.
 
-From then on every email the endpoint captures is forwarded, usually within a second or two. HTTP requests are not forwarded.
+From then on every request of the kinds you picked is forwarded. Requests captured while forwarding was off are not sent later; use **Redeliver** on one of them to send it.
 
-Only the endpoint's owner can change forwarding. Forwarding is available on every plan. To do the same from code, see [Manage forwarding from code](#manage-forwarding-from-code).
+## Formats
 
-## The request
+The format is picked from the URL, and you can change it:
+
+| Format           | Used for                                         | What is sent                                                                                                                         |
+| ---------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **As received**  | HTTP requests to a server URL (the default)      | The request as it arrived: same method, headers and body bytes. Emails have no request to relay, so they go as signed JSON.           |
+| **Signed JSON**  | Emails to a server URL (the default), or both    | A JSON envelope with the request or email inside, signed with [Standard Webhooks](https://www.standardwebhooks.com) headers.         |
+| **Chat message** | Slack and Discord incoming webhooks (the default) | A readable message: the endpoint, method and path, when it arrived, and up to 3,000 characters of the body.                          |
+
+Slack and Discord reject anything but their own JSON, so a URL on `hooks.slack.com` or `discord.com` gets a chat message unless you pick otherwise.
+
+## As received
+
+An HTTP request is relayed with its method, its headers and its exact body bytes, so a provider's own signature (`Stripe-Signature`, `X-Hub-Signature-256`, `webhook-signature` and the like) still verifies on your server with the provider's secret. Your handler can treat a relayed request as if the provider had sent it to you.
+
+- **The path.** The part of the path after the slug is added to your URL: a request to `go.webhooks.cc/w/order-events/stripe/events`, forwarded to `https://api.example.com/hooks`, goes to `https://api.example.com/hooks/stripe/events`. Turn off **Append the request path** under **Advanced** to send every request to the URL exactly as written. A path never leaves your URL's path: `.` and `..` segments are dropped.
+- **The query string** is added as it was sent, after any query your URL has itself.
+- **Headers.** Every header the sender sent, except the ones that describe a connection rather than the request (`Host`, `Content-Length`, `Connection`, `Transfer-Encoding` and similar), which are set again for the new connection. Header names arrive in lowercase, and a header sent several times arrives once with its values joined by commas.
+- **Redirects** are not followed. Answer at the URL itself.
+
+Five headers are added to every relayed request:
+
+| Header                    | What it holds                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `webhooks-cc-received-at` | When webhooks.cc received the request, RFC 3339 in UTC with milliseconds (`2026-10-11T09:30:01.882Z`). |
+| `webhooks-cc-request-id`  | The request's id in webhooks.cc. The same on every try and every redelivery of one request.           |
+| `webhooks-cc-endpoint`    | The endpoint's slug.                                                                                   |
+| `webhooks-cc-attempt`     | Which try this is, from 1.                                                                             |
+| `webhooks-cc-signature`   | `v1,` and a signature over the request id, the received-at time and the body, with your secret.        |
+
+Nothing named `webhook-*` is added, because Standard Webhooks senders such as Svix, Resend and Clerk use those names themselves, and their signature has to arrive intact.
+
+### Check that a relayed request came from webhooks.cc
+
+The provider's signature proves the provider sent it. To also check that it came through your endpoint, verify `webhooks-cc-signature`: the base64 HMAC-SHA256, with your secret, of the request id, a dot, the received-at time, a dot, and the raw body bytes, after `v1,`. The secret starts with `whsec_`; the key is the base64 after that prefix.
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function fromWebhooksCc(rawBody: Buffer, headers: Record<string, string>, secret: string) {
+  const id = headers["webhooks-cc-request-id"];
+  const receivedAt = headers["webhooks-cc-received-at"];
+  const given = (headers["webhooks-cc-signature"] ?? "").replace(/^v1,/, "");
+  if (!id || !receivedAt || !given) return false;
+  const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
+  const expected = createHmac("sha256", key)
+    .update(`${id}.${receivedAt}.`)
+    .update(rawBody)
+    .digest();
+  const actual = Buffer.from(given, "base64");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+```
+
+```python
+import base64, hashlib, hmac
+
+def from_webhooks_cc(raw_body: bytes, headers: dict, secret: str) -> bool:
+    request_id = headers.get("webhooks-cc-request-id")
+    received_at = headers.get("webhooks-cc-received-at")
+    given = headers.get("webhooks-cc-signature", "").removeprefix("v1,")
+    if not request_id or not received_at or not given:
+        return False
+    key = base64.b64decode(secret.removeprefix("whsec_"))
+    signed = f"{request_id}.{received_at}.".encode() + raw_body
+    expected = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode()
+    return hmac.compare_digest(given, expected)
+```
+
+`webhooks-cc-received-at` is when the request was captured, so a retry a day later still carries the original time; there is no freshness window to check. To ignore a repeat, remember the `webhooks-cc-request-id` values you have handled.
+
+## Signed JSON
+
+Emails are always sent this way to a server URL, and HTTP requests are when you pick **Signed JSON**, so one handler can take both. The body is a JSON envelope, and the request carries [Standard Webhooks](https://www.standardwebhooks.com) headers.
+
+### An email
 
 ```http
 POST /hooks/email HTTP/1.1
@@ -99,13 +175,40 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 | `data.headers`               | Every header, lowercase names, repeated headers joined with a newline.                                                                               |
 | `data.test`                  | `true` for the dashboard's **Send test email** sample, and for the sample **Send test delivery** posts while no email has arrived.                 |
 
-## Verify the signature
+The JSON is exactly what each email's **JSON** tab shows in the dashboard, so you can copy it from there as a test fixture.
+
+### An HTTP request
+
+```json
+{
+  "type": "request.received",
+  "timestamp": "2026-10-11T09:30:01.882Z",
+  "data": {
+    "id": "4c1f8a2e-9b3d-4e6f-8a7b-1c2d3e4f5a6b",
+    "endpoint": { "slug": "order-events", "name": "Order events" },
+    "receivedAt": "2026-10-11T09:30:01.882Z",
+    "method": "POST",
+    "path": "/stripe/events",
+    "query": "attempt=1",
+    "headers": { "content-type": "application/json", "stripe-signature": "t=1791538201,v1=..." },
+    "contentType": "application/json",
+    "ip": "203.0.113.42",
+    "size": 1342,
+    "body": "{\"id\":\"evt_1Q...\",\"type\":\"payment_intent.succeeded\"}",
+    "bodyBase64": null
+  }
+}
+```
+
+`body` is the body as text. When it is not valid UTF-8, `body` is `null` and `bodyBase64` holds the exact bytes. `query` is the query string as sent, without the `?`.
+
+### Verify the signature
 
 Every request carries [Standard Webhooks](https://www.standardwebhooks.com) headers. The signature is the base64 HMAC-SHA256, with your secret, of `webhook-id`, `webhook-timestamp` and the raw body joined by dots, after `v1,`. The secret starts with `whsec_`; the key is the base64 after that prefix.
 
 Check it against the raw request body (before any JSON parsing), compare in constant time, and reject timestamps more than five minutes away from your clock.
 
-With the SDK, `verifyForwardedEmail` does all of that and returns the parsed email, typed:
+For emails, the SDK's `verifyForwardedEmail` does all of that and returns the parsed email, typed:
 
 ```ts
 import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
@@ -131,7 +234,7 @@ export async function POST(request: Request) {
 
 It takes the headers as a Fetch `Headers`, a plain object such as Node's or Express's `req.headers`, or name and value pairs, and the body as a string, `Uint8Array` (a Node `Buffer` works) or `ArrayBuffer`. It throws `WebhookVerificationError` with a `code`: `missing_headers`, `timestamp_out_of_range` (more than 300 seconds off; change it with `toleranceSeconds`), `invalid_signature`, or `invalid_payload` when the body is not an `email.received` event. See [Forwarded emails](/docs/sdk/signatures#forwarded-emails) for an Express handler.
 
-In Node without dependencies:
+For either kind, in Node without dependencies:
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -169,9 +272,58 @@ def verify(raw_body: bytes, headers: dict, secret: str) -> bool:
 
 The [official Standard Webhooks libraries](https://github.com/standard-webhooks/standard-webhooks) (Go, Python, Ruby, Java, PHP, Rust, C# and more) verify these headers too.
 
-**Rotate** the secret in Settings if it leaks. Deliveries are signed with the new secret at once, so update your handler right away.
+Every copy of one request has the same `webhook-id`, so a handler that saw it before can skip it.
 
-## Test your handler locally
+**Rotate** the secret in Settings if it leaks. Deliveries are signed with the new secret at once, both formats, so update your handler right away.
+
+## Chat messages
+
+For a Slack or Discord incoming webhook, each request becomes a message like this:
+
+```text
+New webhook on *order-events* (`POST /stripe/events`)
+Received 2026-10-11T09:30:01.882Z (UTC), 197 ms after publishedAt
+{"id":"evt_1Q...","type":"payment_intent.succeeded", ...}
+```
+
+The body follows in a code block, up to 3,000 characters in Slack and as much as fits in Discord's 2,000. An email reads "New email to ..." with its subject and text. The message is the one [notifications](/docs/notification-webhooks) send; the difference is that forwarding posts every request and retries, where a notification is a quick heads-up at most once a second.
+
+Slack takes about one message a second per webhook and Discord a few every two seconds, so messages to one of them are spaced out, and when either answers `429` the delivery waits as long as it says and tries again. Messages arrive in capture order only with **Keep order** on (see [Delivery and retries](#delivery-and-retries)).
+
+## Your own headers
+
+Add up to 10 headers to every delivery, for example the `Authorization` your server expects. They are added to relayed requests and signed JSON, not to chat messages, and replace a header of the same name the sender sent. Values are stored encrypted and shown masked after saving; to change one, replace it.
+
+Names up to 64 characters, values up to 1,024 characters on one line. These names cannot be added, because the delivery or webhooks.cc sets them: `Host`, `Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`, `Trailer`, `Keep-Alive`, `Expect`, `Proxy-*`, `webhook-*`, `webhooks-cc-*`, `X-Target-URL`, `X-Auth`, `X-Proxy-Mode` and `X-Sender-IP`.
+
+## Timing
+
+Each delivery records three moments: when the sender says it sent the request, when webhooks.cc received it, and when your server accepted it. The **Deliveries** tab of a request shows them on one line, with the time between each to the millisecond, and the delivery log lists the sender-to-receipt time of every request.
+
+webhooks.cc measures the receipt itself: the time the receiver handled the request, after our CDN edge. The sender's time is read from the request:
+
+- **A field in the body.** Under **Advanced**, set **Sent time field** to the name of a field in the JSON body that holds when the sender sent it, such as `publishedAt`, or `data.publishedAt` for a nested one. ISO 8601 times (`2026-10-11T09:30:01.685Z`) and numbers of seconds or milliseconds since 1970 both work. This is the precise source, to the millisecond if the sender writes milliseconds.
+- **A timestamp header**, when there is no field or the body does not have it: Standard Webhooks' `webhook-timestamp`, Svix's `svix-timestamp`, the `t=` in Stripe's `Stripe-Signature`, and Slack's `X-Slack-Request-Timestamp`. These have whole seconds only, so a lag under a second shows as "within 1 s".
+- **An email's `Date` header**, for emails.
+
+The time between the sender's clock and ours includes the network and any queue on the sender's side, and it is only as exact as the two clocks agree: a negative value means the sender's clock is ahead. Chat messages add the same figure after the received time ("197 ms after publishedAt").
+
+## Delivery and retries
+
+- Answer with any `2xx` status to accept a delivery. Redirects are not followed and count as failures.
+- Your server has 15 seconds to answer.
+- A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours, about a day in all, and then marked failed. Under **Advanced**, **Retry failed deliveries** can stop after an hour (the first four retries) or send each request only once. A `429` with `Retry-After` is tried again after the time it asks for, within the same window.
+- Deliveries are at least once. Without **Keep order**, up to two requests of an endpoint are delivered at a time, so a slow answer does not hold the rest back, but two may overtake each other; `webhooks-cc-received-at` gives the capture order. With **Keep order** on, one request is delivered at a time, in the order captured, and a request waiting for its retry holds back the ones after it.
+- A retry goes to the URL and uses the settings saved at that moment, so fixing a wrong URL or header also fixes the deliveries still waiting. Turning forwarding, or one kind of it, off marks its waiting deliveries as failed.
+- At most 1,000 deliveries of an endpoint wait at a time. A request captured while 1,000 are waiting (a destination down for long under heavy traffic) is not forwarded, and the log says so; redeliver it once the queue has drained.
+
+## The delivery log
+
+**Settings**, **Deliveries** lists every delivery of the endpoint, newest first, with its status, your server's answer, how long after capture it was delivered, how long your server took, and the sender-to-receipt time when the request has one. Filter it to the deliveries still retrying or the ones that failed; **Redeliver all failed** sends every failed request again, oldest first, with the current settings. The Forwarding section shows the last 24 hours at a glance.
+
+Open a delivery for its request's **Deliveries** tab: every try with the status, the duration, the error or the start of the response, and **Redeliver**, which sends the request again with the current URL, format and headers. Team members can see a request's deliveries; only the owner can redeliver and change forwarding. Deliveries are kept as long as the request itself (your plan's [retention](/docs/plans-limits#data-retention)).
+
+## Test an email handler locally
 
 Forwarding needs a public `https` URL, but your handler can be tested on your own machine first. `client.emails.toJson()` builds the JSON forwarding would post for a captured email, and `client.sendTo()` posts it signed with Standard Webhooks headers and your secret, straight from your machine:
 
@@ -196,19 +348,9 @@ console.log(res.status); // 204
 
 To test the deployed handler through webhooks.cc instead, use **Send test delivery**, or `client.forwarding.test()`.
 
-## Delivery and retries
-
-- Answer with any `2xx` status to accept a delivery. Redirects are not followed and count as failures.
-- Your server has 15 seconds to answer.
-- A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours, about a day in all, and then marked failed.
-- Every copy of one email has the same `webhook-id`, so a handler that saw it before can skip it. Deliveries are at least once and in no guaranteed order.
-- A retry goes to the URL saved at that moment, so fixing a wrong URL also fixes the deliveries still waiting. Turning forwarding off marks waiting deliveries as failed.
-
-The **Deliveries** tab on each email lists every try, with the status your server answered, how long it took and the start of the response. **Redeliver** sends the email again with the current URL and secret. The Forwarding section of Settings shows the endpoint's latest deliveries.
-
 ## Manage forwarding from code
 
-The SDK's `client.forwarding` methods do what the **Forwarding** section of Settings does. Like the dashboard, they are for the endpoint's owner only: for anyone else they throw `NotFoundError`, and a team member's `configure()` fails with a 403.
+The SDK's `client.forwarding` methods turn forwarding on and off, set the URL, send test deliveries, and list and redeliver deliveries. What to forward, the format, your headers and the **Advanced** options are set in the dashboard or with the [REST API](/docs/api#forwarding) for now. Like the dashboard, they are for the endpoint's owner only: for anyone else they throw `NotFoundError`, and a team member's `configure()` fails with a 403.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";
@@ -240,7 +382,10 @@ const newSecret = await client.forwarding.rotateSecret(slug);
 
 ## Limits
 
-- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. On webhooks.cc, requests come from Cloudflare's network, not from a fixed address (a self-hosted copy without the notify proxy sends from its own server), so do not allowlist IPs; check the signature instead.
-- Forwarding does not use your request quota: each email already counted once when it arrived.
-- An email whose JSON would be larger than 10 MB is not forwarded. Real mail stays far below that: text and HTML are kept up to 256 KB each.
-- Deliveries are kept as long as the email itself (your plan's [retention](/docs/plans-limits#data-retention)).
+- The URL must be `https` on a public host name: no IP addresses, `localhost` or private networks, and not a mail, database or other internal port. On webhooks.cc, deliveries come from Cloudflare's network, not from a fixed address (a self-hosted copy without the notify proxy sends from its own server), so do not allowlist IPs; check the signature instead.
+- Forwarding does not use your request quota: each request already counted once when it arrived.
+- A request or email whose delivery would be larger than 10 MB is not forwarded. Email text and HTML are kept up to 256 KB each, so real mail stays far below that.
+
+## Forwarding or notifications?
+
+[Notifications](/docs/notification-webhooks) are a heads-up: at most one message a second per endpoint, sent at once, never retried or logged. Forwarding is every request, queued, retried and logged. Use notifications to glance at activity in a channel, and forwarding when every request has to arrive, in your channel or on your server. Both can be on at once; when they point at the same channel it gets each request twice.
