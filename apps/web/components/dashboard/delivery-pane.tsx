@@ -567,8 +567,11 @@ export function DeliveriesPane({
       "Settings"
     );
 
-  let lead: React.ReactNode;
-  if (deliveries && deliveries.length > 0) {
+  // No verdict until the deliveries are in: "Not forwarded" must not flash first.
+  let lead: React.ReactNode = null;
+  if (deliveries === null) {
+    lead = null;
+  } else if (deliveries.length > 0) {
     lead = (
       <>
         {leadVerb(format)}{" "}

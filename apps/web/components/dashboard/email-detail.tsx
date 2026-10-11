@@ -862,6 +862,7 @@ export function EmailDetail({
 
         {activeTab === "deliveries" && (
           <DeliveriesPane
+            key={requestId}
             request={request}
             endpoint={endpoint}
             canRedeliver={canManageForwarding}
