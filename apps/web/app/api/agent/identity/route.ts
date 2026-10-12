@@ -1,4 +1,3 @@
-import { sendError } from "@appsignal/nodejs";
 import { serverEnv } from "@/lib/env";
 import {
   applyRateLimitHeaders,
@@ -46,6 +45,7 @@ import {
   powChallengeUsed,
   sandboxEndpointsUrl,
 } from "@/lib/agent/registrations";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/agent/identity: agent registration (auth.md v0.6, Step 3).
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     if (error instanceof AgentError) return agentErrorResponse(error);
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/identity failed", error);
     return agentError(500, "server_error", "Registration failed. Retry later.");
   }
 }

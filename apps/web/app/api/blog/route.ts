@@ -7,6 +7,7 @@ import {
   listAllBlogPosts,
   listPublishedBlogPosts,
 } from "@/lib/supabase/blog-posts";
+import { reportError } from "@/lib/observability";
 
 function isSlugExistsError(error: unknown): boolean {
   if (error instanceof Error && error.message === "slug_exists") {
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "slug_exists" }, { status: 409 });
     }
 
-    console.error("[blog-api] POST /api/blog failed:", error);
+    reportError("[blog-api] POST /api/blog failed", error);
     return Response.json({ error: "Failed to create blog post" }, { status: 500 });
   }
 }
@@ -66,7 +67,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    console.error("[blog-api] GET /api/blog failed:", error);
+    reportError("[blog-api] GET /api/blog failed", error);
     return Response.json({ error: "Failed to list blog posts" }, { status: 500 });
   }
 }

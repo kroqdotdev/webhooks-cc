@@ -1,4 +1,3 @@
-import { sendError } from "@appsignal/nodejs";
 import { checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent } from "@/lib/audit";
 import { assertionSigningConfigured } from "@/lib/agent/assertion";
@@ -7,6 +6,7 @@ import { CLAIM_GRANT, CLAIM_POLL_INTERVAL_SECONDS, JWT_BEARER_GRANT } from "@/li
 import { oauthError, oauthJson } from "@/lib/agent/errors";
 import { issuer, readAgentBody } from "@/lib/agent/http";
 import { exchangeAssertion, hashClaimToken, InvalidGrantError } from "@/lib/agent/registrations";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/oauth2/token. Two grants:
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     if (error instanceof InvalidGrantError) {
       return oauthError(400, "invalid_grant", error.description);
     }
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/oauth2/token failed", error);
     return oauthError(500, "server_error", "Token issuance failed. Retry later.");
   }
 }
@@ -131,7 +131,7 @@ async function claimGrant(request: Request, body: Record<string, unknown>): Prom
         });
     }
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/oauth2/token claim grant failed", error);
     return oauthError(500, "server_error", "Token issuance failed. Retry later.");
   }
 }

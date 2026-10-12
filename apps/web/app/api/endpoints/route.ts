@@ -14,6 +14,7 @@ import {
   hasActiveTeamMembership,
 } from "@/lib/supabase/teams";
 import { serverEnv } from "@/lib/env";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
     return Response.json({ owned, shared });
   } catch (error) {
-    console.error("Failed to list endpoints:", error);
+    reportError("Failed to list endpoints", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -140,7 +141,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Failed to create endpoint:", error);
+    reportError("Failed to create endpoint", error);
     await auditUserAction(request, auth.userId, { action: "endpoint.created", status: 500 });
     return applyRateLimitHeaders(
       Response.json({ error: "Internal server error" }, { status: 500 }),

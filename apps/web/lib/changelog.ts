@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.39.0";
+export const APP_VERSION = "0.39.1";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.39.1",
+    date: "2026-10-12",
+    title: "Error Monitoring on StatOSS",
+    track: "web",
+    items: [
+      "Server errors and logs from the web app, the webhook receiver and the mail server go to StatOSS, our own monitoring service, instead of AppSignal",
+      "A failure that repeats for every request is reported once a minute, so an outage reaches us as one alert with a count",
+      "The privacy policy and the list of subprocessors say where error reports and logs are kept",
+    ],
+  },
   {
     version: "0.39.0",
     date: "2026-10-11",

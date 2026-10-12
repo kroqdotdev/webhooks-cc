@@ -38,8 +38,9 @@ const serverEnvSchema = z
   .object({
     CAPTURE_SHARED_SECRET: z.string().min(1),
     BLOG_API_SECRET: z.string().min(1).optional(),
-    APPSIGNAL_PUSH_API_KEY: z.string().optional(),
-    APPSIGNAL_APP_NAME: z.string().default("webhooks-cc-web"),
+    // Errors and log lines to StatOSS (lib/observability-start.ts); unset, nothing is sent.
+    STATOSS_DSN: z.string().url().optional(),
+    STATOSS_ENVIRONMENT: z.string().optional(),
     SUPABASE_URL: z.string().url(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
     RECEIVER_INTERNAL_URL: z.string().url(),
@@ -192,8 +193,8 @@ export function serverEnv() {
     _serverEnv = serverEnvSchema.parse({
       CAPTURE_SHARED_SECRET: process.env.CAPTURE_SHARED_SECRET,
       BLOG_API_SECRET: process.env.BLOG_API_SECRET,
-      APPSIGNAL_PUSH_API_KEY: process.env.APPSIGNAL_PUSH_API_KEY,
-      APPSIGNAL_APP_NAME: process.env.APPSIGNAL_APP_NAME,
+      STATOSS_DSN: process.env.STATOSS_DSN || undefined,
+      STATOSS_ENVIRONMENT: process.env.STATOSS_ENVIRONMENT || undefined,
       SUPABASE_URL: process.env.SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       RECEIVER_INTERNAL_URL: process.env.RECEIVER_INTERNAL_URL,

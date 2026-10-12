@@ -20,6 +20,7 @@ import { buildRequestJson } from "./request-json";
 import { isDelivered, jsonForward, sendForward, type SendResult } from "./send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
 import { senderTimestamp, type SenderTime } from "./timing";
+import { reportError } from "@/lib/observability";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
@@ -43,6 +44,12 @@ const BUSY_POLL_MS = 200;
 const BUSY_FOR_MS = 5000;
 /** Deliveries in flight at once, per process. */
 const CONCURRENCY = 8;
+/**
+ * How often the loop says it is alive, with what it claimed since. A log
+ * alert on this line going missing tells us the process stopped; a loop
+ * whose claims stopped completing (a query that never returns) is an error.
+ */
+const HEARTBEAT_MS = 5 * 60_000;
 const PER_ENDPOINT = 2;
 /** Longer than a send can take (FORWARD_TIMEOUT_MS plus the proxy's margin). */
 const LEASE_SECONDS = 60;
@@ -394,7 +401,7 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
   } catch (error) {
     // A server problem (SIGNING_SECRET_KEY missing or changed): retried on the
     // usual schedule, so deliveries resume once it is fixed.
-    console.error("[forwarding] could not prepare delivery", claim.delivery_id, error);
+    reportError("[forwarding] could not prepare delivery", error, { delivery: claim.delivery_id });
     const result = {
       status: null,
       durationMs: 0,
@@ -450,7 +457,7 @@ async function claimDeliveries(
 function deliverLogged(claim: Claim, request: RequestRecord | undefined): Promise<void> {
   return deliver(claim, request).catch((err) => {
     // The lease runs out and the delivery is claimed again.
-    console.error("[forwarding] delivery", claim.delivery_id, "failed to record:", err);
+    reportError("[forwarding] delivery failed to record", err, { delivery: claim.delivery_id });
   });
 }
 
@@ -473,6 +480,8 @@ export function startForwardingWorker(): void {
   let claiming = false;
   let lastClaimAt = 0;
   let lastTickAt = 0;
+  let claimedSinceHeartbeat = 0;
+  let lastClaimDoneAt = Date.now();
 
   const tick = async () => {
     // Every BUSY_POLL_MS while deliveries were claimed lately, else every IDLE_POLL_MS.
@@ -484,13 +493,15 @@ export function startForwardingWorker(): void {
     claiming = true;
     try {
       const { claims, requests } = await claimDeliveries(CONCURRENCY - inFlight);
-      if (claims.length > 0) lastClaimAt = Date.now();
+      lastClaimDoneAt = Date.now();
+      if (claims.length > 0) lastClaimAt = lastClaimDoneAt;
+      claimedSinceHeartbeat += claims.length;
       for (const claim of claims) {
         inFlight++;
         void deliverLogged(claim, requests.get(claim.request_id)).finally(() => inFlight--);
       }
     } catch (error) {
-      console.error("[forwarding] claim failed:", error);
+      reportError("[forwarding] claim failed", error);
     } finally {
       claiming = false;
     }
@@ -498,5 +509,16 @@ export function startForwardingWorker(): void {
 
   globalForWorker.__emailForwardingWorker = setInterval(() => void tick(), BUSY_POLL_MS);
   globalForWorker.__emailForwardingWorker.unref();
+  setInterval(() => {
+    if (Date.now() - lastClaimDoneAt > HEARTBEAT_MS) {
+      reportError("[forwarding] no claim has completed in 5 minutes", undefined, {
+        inFlight,
+        claiming,
+      });
+    } else {
+      console.info(`[forwarding] alive claimed=${claimedSinceHeartbeat} in_flight=${inFlight}`);
+    }
+    claimedSinceHeartbeat = 0;
+  }, HEARTBEAT_MS).unref();
   void tick();
 }

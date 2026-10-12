@@ -4,6 +4,7 @@ import {
   listRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
 import { isRequestKind } from "@/lib/supabase/search";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -43,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
     return Response.json(data);
   } catch (error) {
-    console.error("Failed to list requests:", error);
+    reportError("Failed to list requests", error);
     return Response.json({ error: "Failed to list requests" }, { status: 500 });
   }
 }
@@ -77,7 +78,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("Failed to clear requests:", error);
+    reportError("Failed to clear requests", error);
     return Response.json({ error: "Failed to clear requests" }, { status: 500 });
   }
 }

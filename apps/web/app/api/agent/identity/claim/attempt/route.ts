@@ -1,8 +1,8 @@
-import { sendError } from "@appsignal/nodejs";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { accountEmail, readClaimAttempt } from "@/lib/agent/claims";
 import { agentError, rateLimitedResponse } from "@/lib/agent/errors";
+import { reportError } from "@/lib/observability";
 
 /**
  * GET /api/agent/identity/claim/attempt?attempt=<cat_...>: what the claim
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     }
     return Response.json(view, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("GET /api/agent/identity/claim/attempt failed", error);
     return agentError(500, "server_error", "Could not read the request.");
   }
 }

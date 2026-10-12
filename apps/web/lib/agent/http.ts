@@ -3,6 +3,7 @@ import { sandboxPoolUsage } from "./registrations";
 import { assertionSigningConfigured } from "./assertion";
 import { adaptiveDifficulty, issueChallenge, type PowChallenge } from "./pow";
 import { AgentError } from "./errors";
+import { reportError } from "@/lib/observability";
 
 /** Agent request bodies are small: an assertion, a few fields, 32 nonces. */
 export const MAX_AGENT_BODY_BYTES = 16 * 1024;
@@ -97,7 +98,7 @@ export async function anonymousRegistrationUnavailable(): Promise<AgentError | n
   if (!env.AGENT_POW_SECRET || !(await assertionSigningConfigured())) {
     if (!warnedUnconfigured) {
       warnedUnconfigured = true;
-      console.error(
+      reportError(
         "[agent] anonymous registration needs AGENT_ASSERTION_SIGNING_KEY and AGENT_POW_SECRET"
       );
     }

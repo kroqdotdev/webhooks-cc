@@ -2,6 +2,7 @@ import { createAdminClient } from "./admin";
 import { revokeTeamSeat } from "./team-billing";
 import { removeMemberShares } from "./teams-endpoints";
 import type { TeamMember, TeamMemberRow } from "./teams-types";
+import { reportError } from "@/lib/observability";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,10 +36,9 @@ async function releaseMemberSeat(
   // email is only the fallback lookup key inside revokeTeamSeat anyway; with a
   // known seat id the release works without it.
   if (error) {
-    console.error("[teams-members] failed to read member email for seat release", {
+    reportError("[teams-members] failed to read member email for seat release", error, {
       teamId,
       userId,
-      error,
     });
   }
 

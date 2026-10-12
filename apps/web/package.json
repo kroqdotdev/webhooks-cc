@@ -1,6 +1,6 @@
 {
   "name": "web",
-  "version": "0.39.0",
+  "version": "0.39.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,7 +16,6 @@
     "indexnow": "node scripts/indexnow.mjs"
   },
   "dependencies": {
-    "@appsignal/nodejs": "^3.9.1",
     "@polar-sh/sdk": "^1.0.2",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-dialog": "^1.1.23",
@@ -26,6 +25,7 @@
     "@radix-ui/react-slot": "^1.3.3",
     "@radix-ui/react-tabs": "^1.1.21",
     "@scalar/api-reference-react": "^0.9.77",
+    "@statoss/sdk": "^0.4.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "@webhooks-cc/sdk": "workspace:*",

@@ -8,6 +8,7 @@
 
 import { isIPv4, isIPv6 } from "node:net";
 import { getRedisClient, isRedisAvailable } from "./redis";
+import { reportError } from "@/lib/observability";
 
 /** In-memory fallback: request times per bucket, with the window each bucket was checked with. */
 const store = new Map<string, { windowMs: number; timestamps: number[] }>();
@@ -198,15 +199,7 @@ async function tryRedisRateLimit(
       reset,
     };
   } catch (err) {
-    const error = err instanceof Error ? err : new Error(`[rate-limit] Redis eval failed: ${err}`);
-    console.error("[rate-limit] Redis eval failed:", error.message);
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { sendError } = require("@appsignal/nodejs");
-      sendError(error);
-    } catch {
-      // AppSignal not available
-    }
+    reportError("[rate-limit] Redis eval failed", err);
     return null;
   }
 }

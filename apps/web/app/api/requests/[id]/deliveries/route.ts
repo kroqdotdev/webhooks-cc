@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { listDeliveriesForRequest, queueRedelivery } from "@/lib/supabase/forwarding";
 import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+import { reportError } from "@/lib/observability";
 
 /**
  * Every forwarded copy of one captured request, with its attempts. Anyone who
@@ -34,7 +35,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }))
     );
   } catch (error) {
-    console.error("Failed to list deliveries:", error);
+    reportError("Failed to list deliveries", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -78,7 +79,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     return reply({ id: deliveryId });
   } catch (error) {
-    console.error("Failed to queue a redelivery:", error);
+    reportError("Failed to queue a redelivery", error);
     return reply({ error: "Internal server error" }, 500);
   }
 }

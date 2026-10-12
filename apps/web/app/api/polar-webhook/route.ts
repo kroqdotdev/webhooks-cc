@@ -3,6 +3,7 @@ import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/l
 import { applyPolarWebhookEvent } from "@/lib/supabase/billing";
 import { applyTeamPolarWebhookEvent, extractTeamIdFromWebhook } from "@/lib/supabase/team-billing";
 import { webhooks } from "@polar-sh/sdk/2026-10";
+import { reportError } from "@/lib/observability";
 
 function toHeaderRecord(request: Request): Record<string, string> {
   return Object.fromEntries(
@@ -64,11 +65,11 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof PolarConfigError) {
-      console.error("Polar webhook misconfigured:", error);
+      reportError("Polar webhook misconfigured", error);
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Polar webhook processing failed:", loggablePolarError(error));
+    reportError("Polar webhook processing failed", loggablePolarError(error));
     return Response.json({ error: "internal_error" }, { status: 500 });
   }
 }

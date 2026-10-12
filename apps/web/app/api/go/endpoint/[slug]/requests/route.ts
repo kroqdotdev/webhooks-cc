@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGuestEndpointBySlug } from "@/lib/supabase/endpoints";
+import { reportError } from "@/lib/observability";
 
 const MAX_LIMIT = 100;
 
@@ -15,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   try {
     endpoint = await getGuestEndpointBySlug(slug);
   } catch (error) {
-    console.error("Failed to verify guest endpoint:", error);
+    reportError("Failed to verify guest endpoint", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 
@@ -34,7 +35,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     .limit(limit);
 
   if (error) {
-    console.error("Failed to fetch guest requests:", error);
+    reportError("Failed to fetch guest requests", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 

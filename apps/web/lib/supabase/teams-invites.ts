@@ -6,6 +6,7 @@ import { createAdminClient } from "./admin";
 import { assignTeamSeat, revokeTeamSeat } from "./team-billing";
 import { requireActiveTeam, TEAM_INACTIVE_MESSAGE } from "./teams-gating";
 import type { TeamInvite, TeamInviteRow } from "./teams-types";
+import { reportError } from "@/lib/observability";
 
 /** Every purchased seat is occupied — membership is capped by seats, not plan. */
 const NO_SEATS_MESSAGE = "Team has no available seats — ask the owner to add seats";
@@ -201,7 +202,7 @@ export async function createInvite(
         if (linkError) throw linkError;
       }
     } catch (error) {
-      console.error("[teams-invites] failed to link invite after signup race", { teamId, error });
+      reportError("[teams-invites] failed to link invite after signup race", error, { teamId });
     }
   }
 
@@ -218,7 +219,7 @@ export async function createInvite(
       })
     );
   } catch (error) {
-    console.error("[teams-invites] invite email send failed", { teamId, error });
+    reportError("[teams-invites] invite email send failed", error, { teamId });
     warning = "Invite created, but the notification email could not be sent";
   }
 
@@ -290,10 +291,7 @@ export async function listPendingInvitesForUser(userId: string): Promise<TeamInv
         .is("invited_user_id", null);
 
       if (linkError) {
-        console.error("[teams-invites] failed to self-heal unlinked invites", {
-          userId,
-          error: linkError,
-        });
+        reportError("[teams-invites] failed to self-heal unlinked invites", linkError, { userId });
       }
     }
   }

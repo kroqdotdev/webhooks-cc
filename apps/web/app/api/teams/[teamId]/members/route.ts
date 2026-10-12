@@ -1,5 +1,6 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { listTeamMembers, listPendingInvitesForTeam } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -19,7 +20,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
 
     return Response.json({ members, pendingInvites: invites ?? [] });
   } catch (error) {
-    console.error("Failed to list team members:", error);
+    reportError("Failed to list team members", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

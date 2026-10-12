@@ -1,15 +1,13 @@
+import type { Instrumentation } from "next";
+
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     require("source-map-support/register");
 
-    const { Appsignal } = await import("@appsignal/nodejs");
-
-    new Appsignal({
-      active: process.env.NODE_ENV === "production" && !!process.env.APPSIGNAL_PUSH_API_KEY,
-      name: process.env.APPSIGNAL_APP_NAME || "webhooks-cc-web",
-      pushApiKey: process.env.APPSIGNAL_PUSH_API_KEY || "",
-    });
+    // Errors and log lines to StatOSS when STATOSS_DSN is set.
+    const { startObservability } = await import("./lib/observability-start");
+    startObservability();
 
     // Pre-connect Redis so the first rate-limited request doesn't fall back to in-memory
     const { waitForRedis } = await import("./lib/redis");
@@ -30,10 +28,9 @@ export async function register() {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function onRequestError(error: Error, request: Request, context: unknown) {
+export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { sendError } = await import("@appsignal/nodejs");
-    sendError(error);
+    const { reportRequestError } = await import("./lib/observability");
+    reportRequestError(error, request, context);
   }
-}
+};

@@ -38,8 +38,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
-      "sharp",
-      "@appsignal/nodejs"
+      "sharp"
     ],
     "overrides": {
       "ajv@^6.12.4": "6.14.0",

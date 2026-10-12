@@ -2,6 +2,7 @@ import { publicEnv } from "@/lib/env";
 import { buildQuotaExhaustedEmail } from "@/lib/email/quota-exhausted-email";
 import { sendEmail } from "@/lib/email/mailer";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { reportError } from "@/lib/observability";
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const BATCH_SIZE = 50;
@@ -39,15 +40,15 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
       const { error: markError } = await admin.rpc("mark_quota_email_sent", {
         p_user_id: user.id,
       });
-      if (markError) console.error("[quota-emails] mark sent failed:", markError.message);
+      if (markError) reportError("[quota-emails] mark sent failed", markError.message);
     } catch (sendError) {
       failed++;
-      console.error("[quota-emails] send failed:", sendError);
+      reportError("[quota-emails] send failed", sendError);
       const { error: releaseError } = await admin
         .from("users")
         .update({ quota_email_claimed_at: null })
         .eq("id", user.id);
-      if (releaseError) console.error("[quota-emails] lease release failed:", releaseError.message);
+      if (releaseError) reportError("[quota-emails] lease release failed", releaseError.message);
     }
   }
 
@@ -65,7 +66,7 @@ export function startQuotaEmailPoller(): void {
       const { sent, failed } = await sendQuotaExhaustedEmails();
       if (sent || failed) console.info(`[quota-emails] sent=${sent} failed=${failed}`);
     } catch (error) {
-      console.error("[quota-emails] poll failed:", error);
+      reportError("[quota-emails] poll failed", error);
     }
   };
 

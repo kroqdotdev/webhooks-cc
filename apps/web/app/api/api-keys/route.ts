@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest, type SessionAuthResult } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey, hashApiKey, MAX_KEYS_PER_USER } from "@/lib/supabase/api-keys";
+import { reportError } from "@/lib/observability";
 
 const DEFAULT_TTL_DAYS = 365;
 
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("Failed to list API keys:", error);
+    reportError("Failed to list API keys", error);
     return Response.json({ error: "Failed to list API keys" }, { status: 500 });
   }
 
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
     .is("agent_registration_id", null);
 
   if (countError) {
-    console.error("Failed to count API keys:", countError);
+    reportError("Failed to count API keys", countError);
     return Response.json({ error: "Failed to create API key" }, { status: 500 });
   }
 
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
   });
 
   if (insertError) {
-    console.error("Failed to insert API key:", insertError);
+    reportError("Failed to insert API key", insertError);
     await auditUserAction(request, auth.userId, { action: "api_key.created", status: 500 });
     return Response.json({ error: "Failed to create API key" }, { status: 500 });
   }
@@ -111,7 +112,7 @@ export async function DELETE(request: Request) {
     .select("key_prefix");
 
   if (error) {
-    console.error("Failed to delete API key:", error);
+    reportError("Failed to delete API key", error);
     await auditUserAction(request, auth.userId, {
       action: "api_key.deleted",
       status: 500,

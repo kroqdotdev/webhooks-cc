@@ -1,4 +1,3 @@
-import { sendError } from "@appsignal/nodejs";
 import { checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ASSERTION_REVOKED_EVENT } from "@/lib/agent/constants";
@@ -9,6 +8,7 @@ import {
   verifySecurityEvent,
   type IdJagError,
 } from "@/lib/agent/id-jag";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/agent/event/notify: the Security Event Token receiver (RFC 8935
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     await recordJti(verified.jti, verified.iss, "set", verified.retainUntil);
     return new Response(null, { status: 202 });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/event/notify failed", error);
     return setError(500, "temporarily_unavailable", "The SET could not be processed. Retry later.");
   }
 }

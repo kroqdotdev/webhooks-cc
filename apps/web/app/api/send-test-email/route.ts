@@ -4,6 +4,7 @@ import { publicEnv, serverEnv } from "@/lib/env";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { buildTestEmail, DELIVER_PATH, signMailRequest, testDeliveryBody } from "@/lib/test-email";
+import { reportError } from "@/lib/observability";
 
 const SLUG_REGEX = /^[a-zA-Z0-9_-]{1,50}$/;
 const DELIVER_TIMEOUT_MS = 10_000;
@@ -81,10 +82,10 @@ export async function POST(request: Request) {
       status = data.results?.[0]?.status;
       requestId = data.results?.[0]?.request_id;
     } else {
-      console.error("[send-test-email] receiver answered", upstream.status);
+      reportError("[send-test-email] receiver answered", upstream.status);
     }
   } catch (error) {
-    console.error("[send-test-email] delivery failed:", error);
+    reportError("[send-test-email] delivery failed", error);
   }
 
   const reply = (payload: Record<string, unknown>, init?: ResponseInit) =>

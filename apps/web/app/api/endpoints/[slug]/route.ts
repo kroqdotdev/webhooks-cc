@@ -23,6 +23,7 @@ import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { checkForwardUrl } from "@/lib/forwarding/target";
 import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -50,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
     return Response.json(endpoint);
   } catch (error) {
-    console.error("Failed to fetch endpoint:", error);
+    reportError("Failed to fetch endpoint", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -381,7 +382,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     if (error instanceof ForwardHeaderValueMissingError) {
       return Response.json({ error: error.message }, { status: 400 });
     }
-    console.error("Failed to update endpoint:", error);
+    reportError("Failed to update endpoint", error);
     await auditUserAction(request, auth.userId, {
       action: "endpoint.updated",
       status: 500,
@@ -411,7 +412,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("Failed to delete endpoint:", error);
+    reportError("Failed to delete endpoint", error);
     await auditUserAction(request, auth.userId, {
       action: "endpoint.deleted",
       status: 500,

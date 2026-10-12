@@ -7,6 +7,7 @@ import {
   updateTeamSeats,
 } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
+import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateSessionRequest(request);
@@ -54,11 +55,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
     });
 
     if (error instanceof PolarConfigError) {
-      console.error("Team seat update misconfigured:", error);
+      reportError("Team seat update misconfigured", error);
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Team seat update failed:", loggablePolarError(error));
+    reportError("Team seat update failed", loggablePolarError(error));
     return Response.json({ error: "Failed to update seats" }, { status: 500 });
   }
 }
@@ -83,11 +84,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
     }
 
     if (error instanceof PolarConfigError) {
-      console.error("Team seat quote misconfigured:", error);
+      reportError("Team seat quote misconfigured", error);
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Team seat quote failed:", loggablePolarError(error));
+    reportError("Team seat quote failed", loggablePolarError(error));
     return Response.json({ error: "Could not price the seat change" }, { status: 500 });
   }
 }

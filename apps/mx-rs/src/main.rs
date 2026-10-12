@@ -10,6 +10,7 @@ mod config;
 mod expiring;
 mod ingest;
 mod limits;
+mod observability;
 mod reply;
 mod retry_store;
 mod session;
@@ -83,15 +84,33 @@ struct Server {
     reverse_dns: Mutex<Expiring<IpAddr, (ReverseDns, Instant)>>,
 }
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
+fn main() {
+    // StatOSS first, before the runtime starts its threads, so they and the
+    // panic hook see the client. Dropping the guard at the end sends what is
+    // queued.
+    let _statoss = observability::init();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to start the Tokio runtime")
+        .block_on(run(_statoss.is_enabled()));
+}
+
+async fn run(statoss: bool) {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    tracing_subscriber::registry()
+        .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "webhooks_mx=info".into()),
         )
-        .with_target(false)
+        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(statoss.then(observability::layer))
         .init();
+    if statoss {
+        observability::spawn_held_back_reporter();
+    }
 
     let config = Config::from_env();
     tracing::info!(?config, "starting");

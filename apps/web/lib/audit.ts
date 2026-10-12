@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import { isAgentTokenRequest } from "@/lib/agent/token-requests";
+import { reportError } from "@/lib/observability";
 
 /**
  * Audit trail for state-changing account, team, billing, and endpoint actions
@@ -264,13 +265,8 @@ async function recordAuditEvent(row: AuditRow): Promise<void> {
     const { error } = await createAdminClient()
       .from("audit_events")
       .insert({ ...row, metadata: row.metadata as Json });
-    if (error) {
-      console.error(`[audit] insert failed for ${row.action}: ${error.message}`);
-    }
+    if (error) reportError("[audit] insert failed", error.message, { action: row.action });
   } catch (error) {
-    console.error(
-      `[audit] insert failed for ${row.action}:`,
-      error instanceof Error ? error.message : String(error)
-    );
+    reportError("[audit] insert failed", error, { action: row.action });
   }
 }

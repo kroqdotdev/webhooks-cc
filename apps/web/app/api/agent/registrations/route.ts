@@ -1,6 +1,6 @@
-import { sendError } from "@appsignal/nodejs";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { listConnectedAgents } from "@/lib/agent/claims";
+import { reportError } from "@/lib/observability";
 
 /** GET /api/agent/registrations: the account's connected agents. Session only. */
 export async function GET(request: Request) {
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   try {
     return Response.json(await listConnectedAgents(auth.userId));
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("GET /api/agent/registrations failed", error);
     return Response.json({ error: "Failed to list connected agents" }, { status: 500 });
   }
 }

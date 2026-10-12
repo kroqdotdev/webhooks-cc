@@ -15,6 +15,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11"
 smtp-proto = "0.2.5"
+# Errors and log lines to StatOSS. ureq sends from a thread of its own, and
+# keeps a second reqwest major out of the build.
+statoss = { version = "0.1", default-features = false, features = ["ureq", "tracing"] }
 tokio = { version = "1.53.2", features = ["full"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["logging", "tls12", "ring"] }
 tracing = "0.1.44"

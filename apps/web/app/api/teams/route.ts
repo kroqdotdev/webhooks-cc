@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createTeam, listTeamsForUser } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 const TEAM_CREATE_RATE_LIMIT_MAX = 10;
 const TEAM_CREATE_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     const teams = await listTeamsForUser(auth.userId);
     return Response.json(teams);
   } catch (error) {
-    console.error("Failed to list teams:", error);
+    reportError("Failed to list teams", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     });
     return applyRateLimitHeaders(Response.json(result), rateLimit);
   } catch (error) {
-    console.error("Failed to create team:", error);
+    reportError("Failed to create team", error);
     await auditUserAction(request, auth.userId, {
       action: "team.created",
       status: 500,

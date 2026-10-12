@@ -1,6 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { acceptInvite } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function POST(
   request: Request,
@@ -29,7 +30,7 @@ export async function POST(
     }
     return Response.json({ success: true });
   } catch (error) {
-    console.error("Failed to accept invite:", error);
+    reportError("Failed to accept invite", error);
     await auditUserAction(request, auth.userId, {
       action: "team.invite_accepted",
       status: 500,

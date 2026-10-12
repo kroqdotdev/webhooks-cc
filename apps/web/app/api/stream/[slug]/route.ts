@@ -7,8 +7,8 @@ import {
   type RequestCursor,
   type RequestRecord,
 } from "@/lib/supabase/requests";
-import { sendError } from "@appsignal/nodejs";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { reportError } from "@/lib/observability";
 
 export const dynamic = "force-dynamic";
 
@@ -195,8 +195,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             }
           } while (drainAgain && !closed);
         } catch (error) {
-          sendError(error instanceof Error ? error : new Error(String(error)));
-          console.error("Failed to read SSE stream backlog:", error);
+          reportError("Failed to read SSE stream backlog", error);
         } finally {
           draining = false;
         }
@@ -249,8 +248,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         await waitForSubscribed(channel);
         await drain();
       } catch (error) {
-        sendError(error instanceof Error ? error : new Error(String(error)));
-        console.error("Failed to initialize SSE stream:", error);
+        reportError("Failed to initialize SSE stream", error);
         closeStream();
       }
     },

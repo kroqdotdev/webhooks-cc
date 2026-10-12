@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { BillingActionError, createCheckoutForUser } from "@/lib/supabase/billing";
+import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request) {
   const auth = await authenticateSessionRequest(request);
@@ -30,11 +31,11 @@ export async function POST(request: Request) {
     });
 
     if (error instanceof PolarConfigError) {
-      console.error("Billing checkout misconfigured:", error);
+      reportError("Billing checkout misconfigured", error);
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Billing checkout failed:", loggablePolarError(error));
+    reportError("Billing checkout failed", loggablePolarError(error));
     return Response.json({ error: "Failed to start checkout" }, { status: 500 });
   }
 }

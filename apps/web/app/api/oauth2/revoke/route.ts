@@ -1,9 +1,9 @@
-import { sendError } from "@appsignal/nodejs";
 import { checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent } from "@/lib/audit";
 import { NO_STORE_HEADERS, oauthError } from "@/lib/agent/errors";
 import { readAgentBody } from "@/lib/agent/http";
 import { revokeAgentToken } from "@/lib/agent/registrations";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/oauth2/revoke (RFC 7009): an agent drops one of its access
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     }
     return new Response(null, { status: 200, headers: NO_STORE_HEADERS });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/oauth2/revoke failed", error);
     return oauthError(500, "server_error", "Revocation failed. Retry later.");
   }
 }

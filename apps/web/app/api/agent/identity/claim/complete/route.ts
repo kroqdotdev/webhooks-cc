@@ -1,4 +1,3 @@
-import { sendError } from "@appsignal/nodejs";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent } from "@/lib/audit";
@@ -7,6 +6,7 @@ import { MAX_CONNECTED_AGENTS } from "@/lib/agent/constants";
 import { agentError, rateLimitedResponse } from "@/lib/agent/errors";
 import { readAgentBody } from "@/lib/agent/http";
 import { notifyAgentConnected } from "@/lib/agent/notify";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/agent/identity/claim/complete `{ claim_attempt_token, user_code }`:
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
       result.status === "wrong_code" ? { remaining: result.remaining } : {}
     );
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/identity/claim/complete failed", error);
     return agentError(500, "server_error", "Could not connect the agent. Retry.");
   }
 }

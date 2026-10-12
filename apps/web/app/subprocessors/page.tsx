@@ -25,7 +25,8 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
   {
     name: "Hetzner",
     entity: "Hetzner Online GmbH, Germany",
-    purpose: "Hosts the server that runs webhooks.cc, its database, and its backups.",
+    purpose:
+      "Hosts the server that runs webhooks.cc, its database, and its backups, and the standby server of StatOSS, our error and log monitoring.",
     data: "All data described in our privacy policy, including captured webhooks.",
     location: "Falkenstein, Germany. Backups stay in Falkenstein, in a separate data center.",
   },
@@ -33,8 +34,8 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     name: "Cloudflare",
     entity: "Cloudflare, Inc., United States",
     purpose:
-      "DNS, attack protection, and secure delivery for every webhooks.cc address, and the relay that sends endpoint notifications.",
-    data: "All traffic in transit, including the webhooks sent to your endpoints and the notifications sent from them, and visitor IP addresses.",
+      "DNS, attack protection, and secure delivery for every webhooks.cc address, the relay that sends endpoint notifications, and the network and backups of StatOSS.",
+    data: "All traffic in transit, including the webhooks sent to your endpoints and the notifications sent from them, and visitor IP addresses. StatOSS's backups of error reports and logs, kept in Western Europe.",
     location:
       "Cloudflare's global network: requests are handled at the data center nearest the sender, and logs and metadata are kept in the United States and Europe",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",
@@ -42,8 +43,9 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
   {
     name: "Webdock",
     entity: "Webdock.io ApS, Denmark",
-    purpose: "Hosts the mail server that sends our emails.",
-    data: "Recipient email addresses and the contents of the emails we send.",
+    purpose:
+      "Hosts the mail server that sends our emails, and StatOSS, our own error and log monitoring service.",
+    data: "Recipient email addresses and the contents of the emails we send. Error reports and server logs, which can include IP addresses and account IDs, never the contents of captured webhooks.",
     location: "Copenhagen, Denmark",
   },
   {
@@ -60,13 +62,6 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     data: "Page views, clicks, page load performance, an anonymous browser identifier, IP addresses, and the account ID, email address, and plan of signed-in users.",
     location: "Stored in PostHog's EU region in Frankfurt, Germany",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",
-  },
-  {
-    name: "AppSignal",
-    entity: "AppSignal B.V., Netherlands",
-    purpose: "Error and performance monitoring.",
-    data: "Error reports, request paths and timings, and server metrics. Never the contents of captured webhooks.",
-    location: "European Union (the Netherlands, Ireland, and Germany)",
   },
 ];
 
@@ -100,7 +95,7 @@ export default function SubprocessorsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Subprocessors</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 5, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 12, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>

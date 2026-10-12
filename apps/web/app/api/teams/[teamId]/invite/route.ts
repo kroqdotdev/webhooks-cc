@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createInvite } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 const INVITE_RATE_LIMIT_MAX = 20;
 const INVITE_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
@@ -52,7 +53,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
       rateLimit
     );
   } catch (error) {
-    console.error("Failed to create invite:", error);
+    reportError("Failed to create invite", error);
     await auditUserAction(request, auth.userId, {
       action: "team.invite_sent",
       status: 500,

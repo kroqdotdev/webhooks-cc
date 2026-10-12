@@ -1,4 +1,3 @@
-import { sendError } from "@appsignal/nodejs";
 import { serverEnv } from "@/lib/env";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent } from "@/lib/audit";
@@ -7,6 +6,7 @@ import { agentError, rateLimitedResponse } from "@/lib/agent/errors";
 import { invalidatePoolUsage } from "@/lib/agent/registrations";
 import { authenticateSandbox, sandboxEndpointJson, sandboxLimits } from "@/lib/agent/sandbox";
 import { createSandboxEndpoint, listSandboxEndpoints } from "@/lib/supabase/endpoints";
+import { reportError } from "@/lib/observability";
 
 /**
  * The agent sandbox (auth.md v0.6), for the access token of an anonymous
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       sandbox: sandboxLimits(authed.registration),
     });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("GET /api/agent/sandbox/endpoints failed", error);
     return agentError(500, "server_error", "Could not list sandbox endpoints.");
   }
 }
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       rateLimit
     );
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/sandbox/endpoints failed", error);
     return applyRateLimitHeaders(
       agentError(500, "server_error", "Could not create a sandbox endpoint."),
       rateLimit

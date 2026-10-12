@@ -15,6 +15,7 @@ import {
 } from "./billing-shared";
 import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
+import { reportError } from "@/lib/observability";
 
 /** Pooled request allowance granted per seat, per 30-day period. */
 export const TEAM_SEAT_REQUEST_LIMIT = 100_000;
@@ -369,7 +370,7 @@ export async function createTeamCheckout(
         expires_at: parseEventTimestamp(checkout.expires_at),
       });
     } catch (cacheError) {
-      console.error("[team-billing] failed to cache pending checkout", { teamId, cacheError });
+      reportError("[team-billing] failed to cache pending checkout", cacheError, { teamId });
     }
 
     return checkout.url;
@@ -380,7 +381,7 @@ export async function createTeamCheckout(
     try {
       await releasePendingCheckoutLease(team.id, leaseToken);
     } catch (releaseError) {
-      console.error("[team-billing] failed to release checkout lease", { teamId, releaseError });
+      reportError("[team-billing] failed to release checkout lease", releaseError, { teamId });
     }
     throw error;
   }
@@ -477,10 +478,9 @@ export async function updateTeamSeats(
       // Polar already accepted the increase, so the paid capacity exists but
       // the pool still shows the old limit. The subscription.updated webhook
       // reconciles seats and request_limit; surface the failure to the owner.
-      console.error("[team-billing] Polar accepted seat increase but DB write failed", {
+      reportError("[team-billing] Polar accepted seat increase but DB write failed", error, {
         teamId,
         seats,
-        error,
         status,
       });
       if (error) {
@@ -495,9 +495,8 @@ export async function updateTeamSeats(
     try {
       await syncPendingSeats(teamId, team.polar_subscription_id, increased, increasedAt);
     } catch (syncError) {
-      console.error("[team-billing] failed to record the seat schedule from Polar", {
+      reportError("[team-billing] failed to record the seat schedule from Polar", syncError, {
         teamId,
-        syncError,
       });
     }
 
@@ -563,11 +562,11 @@ export async function updateTeamSeats(
         : restore.eq("pending_seats", recordedPending);
     const { error: restoreError } = await restore;
     if (restoreError) {
-      console.error("[team-billing] failed to restore the seat schedule after a Polar error", {
-        teamId,
-        previousPending,
+      reportError(
+        "[team-billing] failed to restore the seat schedule after a Polar error",
         restoreError,
-      });
+        { teamId, previousPending }
+      );
     }
 
     throw polarError;
@@ -578,9 +577,8 @@ export async function updateTeamSeats(
   try {
     await syncPendingSeats(teamId, team.polar_subscription_id, updated, updatedAt);
   } catch (syncError) {
-    console.error("[team-billing] failed to record the seat schedule from Polar", {
+    reportError("[team-billing] failed to record the seat schedule from Polar", syncError, {
       teamId,
-      syncError,
     });
   }
 }
@@ -709,10 +707,9 @@ export async function revokeTeamSeat(
 
     await polar.customerSeats.revokeSeat(targetSeatId);
   } catch (error) {
-    console.error("[team-billing] failed to revoke Polar seat", {
+    reportError("[team-billing] failed to revoke Polar seat", loggablePolarError(error), {
       teamId,
       seatId,
-      error: loggablePolarError(error),
     });
   }
 }
@@ -805,10 +802,11 @@ export async function ensureOwnerSeat(teamId: string): Promise<void> {
       .is("polar_seat_id", null);
     if (updateError) throw updateError;
   } catch (error) {
-    console.error("[team-billing] failed to give the team owner a Polar seat", {
-      teamId,
-      error: loggablePolarError(error),
-    });
+    reportError(
+      "[team-billing] failed to give the team owner a Polar seat",
+      loggablePolarError(error),
+      { teamId }
+    );
   }
 }
 

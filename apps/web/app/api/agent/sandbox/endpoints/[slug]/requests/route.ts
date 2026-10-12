@@ -1,9 +1,9 @@
-import { sendError } from "@appsignal/nodejs";
 import { SANDBOX_MAX_LIST } from "@/lib/agent/constants";
 import { agentError } from "@/lib/agent/errors";
 import { authenticateSandbox, sandboxNotFound } from "@/lib/agent/sandbox";
 import { getSandboxEndpointBySlug } from "@/lib/supabase/endpoints";
 import { listRequestsForSandboxEndpoint } from "@/lib/supabase/requests";
+import { reportError } from "@/lib/observability";
 
 const MAX_DATE_MS = 8.64e15;
 
@@ -43,7 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     });
     return Response.json(requests);
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("GET /api/agent/sandbox/endpoints/[slug]/requests failed", error);
     return agentError(500, "server_error", "Could not list the sandbox requests.");
   }
 }

@@ -1,9 +1,9 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 import { verifyVerifiedEmailOtp } from "@/lib/agent/agent-auth";
-import { sendError } from "@appsignal/nodejs";
 import { auditAgentEvent } from "@/lib/audit";
 import { deprecated } from "@/lib/agent/legacy";
+import { reportError } from "@/lib/observability";
 
 /**
  * verified_email OTP completion (auth.md). Unauthenticated: the agent submits
@@ -81,7 +81,7 @@ async function verifyOtp(request: Request): Promise<Response> {
         return Response.json({ error: "internal_error" }, { status: 500 });
     }
   } catch (err) {
-    sendError(err instanceof Error ? err : new Error(String(err)));
+    reportError("POST /api/agent/auth/claim/verify-otp failed", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

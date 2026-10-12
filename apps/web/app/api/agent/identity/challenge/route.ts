@@ -1,7 +1,7 @@
-import { sendError } from "@appsignal/nodejs";
 import { checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { agentError, agentErrorResponse, rateLimitedResponse } from "@/lib/agent/errors";
 import { anonymousRegistrationUnavailable, newRegistrationChallenge } from "@/lib/agent/http";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/agent/identity/challenge: a proof-of-work challenge for anonymous
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/identity/challenge failed", error);
     return agentError(500, "server_error", "Could not issue a challenge. Retry later.");
   }
 }
