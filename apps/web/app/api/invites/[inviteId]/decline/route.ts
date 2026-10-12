@@ -1,6 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { declineInvite } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function POST(
   request: Request,
@@ -24,7 +25,7 @@ export async function POST(
     }
     return Response.json({ success: true });
   } catch (error) {
-    console.error("Failed to decline invite:", error);
+    reportError("Failed to decline invite", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

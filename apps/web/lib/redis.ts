@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { reportError } from "@/lib/observability";
 
 // Use globalThis to persist the Redis client across Next.js dev hot reloads.
 // In production, module-level singletons work fine. In dev, Turbopack
@@ -22,14 +23,8 @@ function createClient(): Redis | null {
   });
 
   redis.on("error", (err) => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { sendError } = require("@appsignal/nodejs");
-      sendError(err instanceof Error ? err : new Error(`[redis] ${err}`));
-    } catch {
-      // AppSignal not available (dev mode) — fall back to console
-    }
-    console.error("[redis] connection error:", err.message);
+    // Fires on every reconnect attempt; reportError sends one event a minute.
+    reportError("[redis] connection error", err);
   });
 
   // Store a promise that resolves when the connection is ready (or fails)

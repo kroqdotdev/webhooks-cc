@@ -3,6 +3,7 @@ import { authenticateSessionRequest } from "@/lib/api-auth";
 import { describePolarError, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { createTeamCheckout, TeamBillingError } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
+import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateSessionRequest(request);
@@ -50,11 +51,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
     });
 
     if (error instanceof PolarConfigError) {
-      console.error("Team checkout misconfigured:", error);
+      reportError("Team checkout misconfigured", error);
       return Response.json({ error: "Billing is not configured" }, { status: 500 });
     }
 
-    console.error("Team checkout failed:", loggablePolarError(error));
+    reportError("Team checkout failed", loggablePolarError(error));
     // Surface Polar validation detail (e.g. an unroutable billing email) so
     // the owner sees why instead of a bare "failed".
     const detail = describePolarError(error);

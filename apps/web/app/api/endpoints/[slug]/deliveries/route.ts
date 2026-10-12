@@ -5,6 +5,7 @@ import {
   type DeliveryStatusFilter,
 } from "@/lib/supabase/forwarding";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+import { reportError } from "@/lib/observability";
 
 const STATUS_FILTERS: readonly DeliveryStatusFilter[] = ["all", "pending", "failed"];
 
@@ -40,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       })
     );
   } catch (error) {
-    console.error("Failed to list deliveries:", error);
+    reportError("Failed to list deliveries", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

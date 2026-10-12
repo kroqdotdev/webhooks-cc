@@ -1,4 +1,5 @@
 import { getGuestEndpointBySlug } from "@/lib/supabase/endpoints";
+import { reportError } from "@/lib/observability";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -7,7 +8,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
   try {
     data = await getGuestEndpointBySlug(slug);
   } catch (error) {
-    console.error("Failed to fetch guest endpoint:", error);
+    reportError("Failed to fetch guest endpoint", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 

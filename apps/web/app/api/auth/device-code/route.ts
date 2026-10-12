@@ -1,6 +1,6 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createDeviceCodeRecord } from "@/lib/supabase/device-auth";
-import { sendError } from "@appsignal/nodejs";
+import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, "device-code", 10);
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     if (err instanceof Error && err.message.includes("Too many pending device codes")) {
       return Response.json({ error: err.message }, { status: 429 });
     }
-    sendError(err instanceof Error ? err : new Error(String(err)));
+    reportError("POST /api/auth/device-code failed", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

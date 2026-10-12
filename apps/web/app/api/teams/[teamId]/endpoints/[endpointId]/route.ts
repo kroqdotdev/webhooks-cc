@@ -1,6 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { unshareEndpointFromTeam } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function DELETE(
   request: Request,
@@ -24,7 +25,7 @@ export async function DELETE(
     }
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("Failed to unshare endpoint:", error);
+    reportError("Failed to unshare endpoint", error);
     await auditUserAction(request, auth.userId, {
       action: "team.endpoint_unshared",
       status: 500,

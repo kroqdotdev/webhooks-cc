@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { customAlphabet } from "nanoid";
 import { createAdminClient } from "./admin";
+import { reportError } from "@/lib/observability";
 
 export type UserPlan = "free" | "pro";
 export const MAX_KEYS_PER_USER = 10;
@@ -86,7 +87,7 @@ export async function validateApiKeyWithMetadata(
       .eq("id", keyRow.id);
 
     if (updateError) {
-      console.error("Failed to update api_keys.last_used_at:", updateError);
+      reportError("Failed to update api_keys.last_used_at", updateError);
     }
 
     return {
@@ -119,7 +120,7 @@ export async function validateApiKeyWithMetadata(
     .eq("id", keyRow.id);
 
   if (updateError) {
-    console.error("Failed to update api_keys.last_used_at:", updateError);
+    reportError("Failed to update api_keys.last_used_at", updateError);
   }
 
   return {

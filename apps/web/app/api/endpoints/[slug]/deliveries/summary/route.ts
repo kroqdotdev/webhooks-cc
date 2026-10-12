@@ -1,6 +1,7 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { getDeliverySummary } from "@/lib/supabase/forwarding";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+import { reportError } from "@/lib/observability";
 
 /**
  * Delivery counts for the endpoint's owner: delivered and failed in the last
@@ -17,7 +18,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   try {
     return Response.json(await getDeliverySummary(access.endpointId));
   } catch (error) {
-    console.error("Failed to count deliveries:", error);
+    reportError("Failed to count deliveries", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

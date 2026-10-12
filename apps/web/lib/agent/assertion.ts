@@ -1,6 +1,7 @@
 import { createPrivateKey, createPublicKey, randomUUID, type KeyObject } from "node:crypto";
 import * as jose from "jose";
 import { publicEnv, serverEnv } from "@/lib/env";
+import { reportError } from "@/lib/observability";
 
 /**
  * Service-signed identity assertions (auth.md v0.2 and later). Registration
@@ -75,7 +76,7 @@ function keys(): Promise<SigningKeys | null> {
   if (!cached) {
     cached = loadKeys().catch((error) => {
       // A broken key must not be retried on every request, nor hidden.
-      console.error("[agent] assertion signing key is unusable:", (error as Error).message);
+      reportError("[agent] assertion signing key is unusable", (error as Error).message);
       return null;
     });
   }

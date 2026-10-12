@@ -1,6 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { updateTeam, deleteTeam } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -33,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
     }
     return Response.json({ success: true });
   } catch (error) {
-    console.error("Failed to update team:", error);
+    reportError("Failed to update team", error);
     await auditUserAction(request, auth.userId, { action: "team.renamed", status: 500, teamId });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -60,7 +61,7 @@ export async function DELETE(
     }
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("Failed to delete team:", error);
+    reportError("Failed to delete team", error);
     await auditUserAction(request, auth.userId, { action: "team.deleted", status: 500, teamId });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }

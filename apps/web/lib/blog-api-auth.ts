@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { reportError } from "@/lib/observability";
 
 function jsonError(error: string, status: number): Response {
   return Response.json({ error }, { status });
@@ -9,7 +10,7 @@ export function verifyBlogSecret(request: Request): Response | null {
   const expectedSecret = process.env.BLOG_API_SECRET;
 
   if (!expectedSecret) {
-    console.error("[blog-api] BLOG_API_SECRET is not configured");
+    reportError("[blog-api] BLOG_API_SECRET is not configured");
     return jsonError("internal_error", 500);
   }
 

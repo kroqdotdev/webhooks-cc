@@ -13,10 +13,9 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tower-http = { version = "0.7", features = ["cors", "limit", "trace"] }
 tower = "0.5"
-opentelemetry = "0.33"
-opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.33", features = ["http-proto", "reqwest-rustls", "metrics"] }
-tracing-opentelemetry = "0.34"
+# Errors and log lines to StatOSS. ureq sends from a thread of its own, and
+# keeps a second reqwest major out of the build.
+statoss = { version = "0.1", default-features = false, features = ["ureq", "tracing"] }
 bytes = "1"
 http = "1"
 http-body-util = "0.1"
@@ -26,7 +25,6 @@ redis = { version = "1.2", features = ["tokio-comp", "aio"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 url = "2"
 regex-lite = "0.1"
-gethostname = "1.1.0"
 # Signature verification
 aes-gcm = "0.11"
 hmac = "0.13"

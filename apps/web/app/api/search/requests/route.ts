@@ -6,7 +6,7 @@ import {
   type RateLimitInfo,
 } from "@/lib/rate-limit";
 import { isRequestKind, searchRequestsForUser } from "@/lib/supabase/search";
-import { sendError } from "@appsignal/nodejs";
+import { reportError } from "@/lib/observability";
 
 function parseOptionalInteger(
   searchParams: URLSearchParams,
@@ -100,8 +100,7 @@ export async function GET(request: Request) {
 
     return applyRateLimitHeaders(Response.json(data), rateLimit);
   } catch (err) {
-    sendError(err instanceof Error ? err : new Error(String(err)));
-    console.error("Search API route error:", err);
+    reportError("Search API route error", err);
     const response = Response.json({ error: "Internal server error" }, { status: 500 });
     return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
   }

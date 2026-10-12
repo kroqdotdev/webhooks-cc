@@ -7,6 +7,7 @@ import {
   getAnyBlogPostBySlug,
   updateBlogPostBySlug,
 } from "@/lib/supabase/blog-posts";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -28,7 +29,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
     return Response.json(post);
   } catch (error) {
-    console.error("[blog-api] GET /api/blog/[slug] failed:", error);
+    reportError("[blog-api] GET /api/blog/[slug] failed", error);
     return Response.json({ error: "Failed to get blog post" }, { status: 500 });
   }
 }
@@ -66,7 +67,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    console.error("[blog-api] PATCH /api/blog/[slug] failed:", error);
+    reportError("[blog-api] PATCH /api/blog/[slug] failed", error);
     return Response.json({ error: "Failed to update blog post" }, { status: 500 });
   }
 }
@@ -92,7 +93,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    console.error("[blog-api] DELETE /api/blog/[slug] failed:", error);
+    reportError("[blog-api] DELETE /api/blog/[slug] failed", error);
     return Response.json({ error: "Failed to delete blog post" }, { status: 500 });
   }
 }

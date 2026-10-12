@@ -1,5 +1,6 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { getUsageForUser } from "@/lib/supabase/usage";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
 
     return Response.json(usage);
   } catch (error) {
-    console.error("Failed to fetch usage:", error);
+    reportError("Failed to fetch usage", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

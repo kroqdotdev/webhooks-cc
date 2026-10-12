@@ -1,104 +1,88 @@
-//! Capture-path metrics.
+//! Capture-path counts.
 //!
-//! Instruments are created lazily from the global meter provider on first use
-//! and cached in a `OnceLock`. When no provider has been installed (no
-//! `APPSIGNAL_COLLECTOR_URL`), the global provider is the OpenTelemetry no-op
-//! provider and every call here is a cheap no-op.
+//! Each call adds one to a counter named by a fixed label. Once a minute,
+//! when anything was counted, `spawn_reporter` writes one `counts` log line
+//! with the totals since the last one and resets them, so StatOSS (and the
+//! log file) can show how captures went without a line per request.
 //!
-//! Ordering matters: `main.rs` installs the provider via
-//! `opentelemetry::global::set_meter_provider` before the server starts
-//! serving, so the first call from a handler always binds to the real provider.
+//! Every label is a `&'static str` from a small fixed set, never a value read
+//! from the database or the request, so the line stays short.
 
-use std::sync::OnceLock;
+use std::collections::BTreeMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
-use opentelemetry::KeyValue;
-use opentelemetry::global;
-use opentelemetry::metrics::Counter;
+static COUNTS: LazyLock<Counts> = LazyLock::new(Counts::default);
 
-/// Instrumentation scope name for all receiver metrics.
-const METER_NAME: &str = "webhooks-receiver";
+/// Counts since the last report, keyed by (group, label).
+#[derive(Default)]
+struct Counts(Mutex<BTreeMap<(&'static str, &'static str), u64>>);
 
-/// `webhooks_capture_total{status}`: one increment per capture_webhook call
-/// that returned a result (ok, not_found, expired, quota_exceeded, unknown).
-const CAPTURE_TOTAL: &str = "webhooks_capture_total";
+impl Counts {
+    fn add(&self, group: &'static str, label: &'static str) {
+        let mut counts = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        *counts.entry((group, label)).or_insert(0) += 1;
+    }
 
-/// `webhooks_capture_failed_total{kind}`: one increment per capture that
-/// could not be completed (transient, permanent, parse, unknown_status).
-const CAPTURE_FAILED_TOTAL: &str = "webhooks_capture_failed_total";
-
-/// `webhooks_mail_ingest_total{outcome}`: one increment per mail recipient
-/// check or capture handled by the internal mail API (see `mail::handlers`).
-const MAIL_INGEST_TOTAL: &str = "webhooks_mail_ingest_total";
-
-/// `webhooks_notification_failed_total{reason}`: one increment per
-/// notification that did not reach its URL (see `spawn_notification`).
-const NOTIFICATION_FAILED_TOTAL: &str = "webhooks_notification_failed_total";
-
-struct CaptureInstruments {
-    total: Counter<u64>,
-    failed: Counter<u64>,
-    mail: Counter<u64>,
-    notification_failed: Counter<u64>,
-}
-
-fn instruments() -> &'static CaptureInstruments {
-    static INSTRUMENTS: OnceLock<CaptureInstruments> = OnceLock::new();
-    INSTRUMENTS.get_or_init(|| {
-        let meter = global::meter(METER_NAME);
-        CaptureInstruments {
-            total: meter
-                .u64_counter(CAPTURE_TOTAL)
-                .with_description("Number of capture_webhook calls by result status")
-                .build(),
-            failed: meter
-                .u64_counter(CAPTURE_FAILED_TOTAL)
-                .with_description("Number of capture_webhook calls that failed, by failure kind")
-                .build(),
-            mail: meter
-                .u64_counter(MAIL_INGEST_TOTAL)
-                .with_description("Mail recipient checks and captures by outcome")
-                .build(),
-            notification_failed: meter
-                .u64_counter(NOTIFICATION_FAILED_TOTAL)
-                .with_description("Notifications that did not reach their URL, by reason")
-                .build(),
+    /// The counts as `group.label=n` pairs, and resets them. Log lines the
+    /// StatOSS throttle held back are added as `statoss.held_back`. Empty
+    /// when nothing happened.
+    fn take_line(&self, held_back: u64) -> String {
+        let counts = std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()));
+        let mut parts: Vec<String> = counts
+            .into_iter()
+            .map(|((group, label), n)| format!("{group}.{label}={n}"))
+            .collect();
+        if held_back > 0 {
+            parts.push(format!("statoss.held_back={held_back}"));
         }
-    })
+        parts.join(" ")
+    }
 }
 
-/// Record the status returned by `capture_webhook()`.
-///
-/// Takes a `&'static str` on purpose: the label must be one of a small fixed
-/// set (never a value read from the database or the request) to keep metric
-/// cardinality bounded.
+fn add(group: &'static str, label: &'static str) {
+    COUNTS.add(group, label);
+}
+
+/// Record the status returned by `capture_webhook()`: ok, not_found,
+/// expired, quota_exceeded or unknown.
 pub fn capture_result(status: &'static str) {
-    instruments()
-        .total
-        .add(1, &[KeyValue::new("status", status)]);
+    add("capture", status);
 }
 
 /// Record a capture that did not complete. `kind` is one of
-/// `transient`, `permanent`, `parse`, `unknown_status`.
+/// `transient`, `permanent`, `account_busy`, `parse`, `unknown_status`.
 pub fn capture_failed(kind: &'static str) {
-    instruments().failed.add(1, &[KeyValue::new("kind", kind)]);
+    add("capture_failed", kind);
 }
 
 /// Record one mail ingest outcome, such as `check_ok`, `check_unknown`,
-/// `captured`, `duplicate`, `over_quota` or `transient`. Like the other
-/// labels, `outcome` is always a fixed string, never request data.
+/// `captured`, `duplicate`, `over_quota` or `transient`.
 pub fn mail_ingest(outcome: &'static str) {
-    instruments()
-        .mail
-        .add(1, &[KeyValue::new("outcome", outcome)]);
+    add("mail", outcome);
 }
 
 /// Record a notification that failed: `status` (the URL answered non-2xx),
 /// `send` (no answer), `target` (the URL was refused before sending),
 /// `client` or `timeout`.
 pub fn notification_failed(reason: &'static str) {
-    instruments()
-        .notification_failed
-        .add(1, &[KeyValue::new("reason", reason)]);
+    add("notification_failed", reason);
+}
+
+/// Writes the counts line every `period` while anything was counted.
+pub fn spawn_reporter(period: Duration) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(period);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let line = COUNTS.take_line(crate::observability::take_held_back());
+            if !line.is_empty() {
+                tracing::info!(counts = %line, "counts");
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -106,15 +90,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recording_without_a_provider_is_a_noop() {
-        // No global meter provider is installed in unit tests; the calls must
-        // not panic and must be safe to repeat.
+    fn the_line_sums_by_label_and_resets() {
+        let counts = Counts::default();
+        counts.add("capture", "ok");
+        counts.add("capture", "ok");
+        counts.add("capture_failed", "transient");
+        counts.add("mail", "captured");
+        counts.add("notification_failed", "status");
+        assert_eq!(
+            counts.take_line(3),
+            "capture.ok=2 capture_failed.transient=1 mail.captured=1 \
+             notification_failed.status=1 statoss.held_back=3"
+        );
+        assert_eq!(counts.take_line(0), "");
+        assert_eq!(counts.take_line(2), "statoss.held_back=2");
+    }
+
+    #[test]
+    fn recording_is_safe_from_any_thread() {
         capture_result("ok");
-        capture_result("not_found");
-        capture_failed("transient");
         capture_failed("permanent");
-        mail_ingest("captured");
         mail_ingest("transient");
-        notification_failed("status");
+        notification_failed("timeout");
     }
 }

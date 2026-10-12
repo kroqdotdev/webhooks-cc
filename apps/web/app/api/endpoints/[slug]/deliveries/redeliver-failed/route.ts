@@ -4,6 +4,7 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 import { createAdminClient } from "@/lib/supabase/admin";
 import { queueFailedRedeliveries } from "@/lib/supabase/forwarding";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+import { reportError } from "@/lib/observability";
 
 /**
  * Queues every request whose latest delivery failed again, oldest first,
@@ -41,7 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     });
     return reply({ queued });
   } catch (error) {
-    console.error("Failed to queue failed deliveries again:", error);
+    reportError("Failed to queue failed deliveries again", error);
     return reply({ error: "Internal server error" }, 500);
   }
 }

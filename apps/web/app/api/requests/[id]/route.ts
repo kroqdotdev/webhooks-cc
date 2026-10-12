@@ -1,5 +1,6 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { getRequestByIdForUser } from "@/lib/supabase/requests";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -15,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     return Response.json(data);
   } catch (error) {
-    console.error("Failed to get request:", error);
+    reportError("Failed to get request", error);
     return Response.json({ error: "Failed to get request" }, { status: 500 });
   }
 }

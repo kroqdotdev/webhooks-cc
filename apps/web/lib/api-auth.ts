@@ -7,6 +7,7 @@ import { publicEnv } from "./env";
 import { createAdminClient } from "./supabase/admin";
 import { validateApiKeyWithMetadata } from "./supabase/api-keys";
 import { markAgentTokenRequest } from "./agent/token-requests";
+import { reportError } from "@/lib/observability";
 
 export type UserPlan = "free" | "pro";
 
@@ -97,7 +98,7 @@ export async function validateBearerTokenWithPlan(token: string): Promise<ApiKey
 
     return await validateSupabaseSessionWithPlan(token);
   } catch {
-    console.error("Failed to validate bearer token against Supabase");
+    reportError("Failed to validate bearer token against Supabase");
     return null;
   }
 }

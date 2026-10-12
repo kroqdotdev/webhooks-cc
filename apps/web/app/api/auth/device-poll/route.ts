@@ -1,6 +1,6 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { pollDeviceCodeStatus } from "@/lib/supabase/device-auth";
-import { sendError } from "@appsignal/nodejs";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request) {
   const rateLimited = await checkRateLimit(request, "device-poll", 30);
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     // Only return the status field to unauthenticated callers
     return Response.json({ status: result.status });
   } catch (err) {
-    sendError(err instanceof Error ? err : new Error(String(err)));
+    reportError("GET /api/auth/device-poll failed", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

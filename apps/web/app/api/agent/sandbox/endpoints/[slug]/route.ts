@@ -1,9 +1,9 @@
-import { sendError } from "@appsignal/nodejs";
 import { auditAgentEvent } from "@/lib/audit";
 import { agentError } from "@/lib/agent/errors";
 import { invalidatePoolUsage } from "@/lib/agent/registrations";
 import { authenticateSandbox, sandboxEndpointJson, sandboxNotFound } from "@/lib/agent/sandbox";
 import { deleteSandboxEndpointBySlug, getSandboxEndpointBySlug } from "@/lib/supabase/endpoints";
+import { reportError } from "@/lib/observability";
 
 /**
  * One sandbox endpoint of the bearer's registration. A slug of another
@@ -19,7 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     if (!endpoint) return sandboxNotFound();
     return Response.json(sandboxEndpointJson(endpoint, authed.registration));
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("GET /api/agent/sandbox/endpoints/[slug] failed", error);
     return agentError(500, "server_error", "Could not read the sandbox endpoint.");
   }
 }
@@ -45,7 +45,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
     });
     return new Response(null, { status: 204 });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("DELETE /api/agent/sandbox/endpoints/[slug] failed", error);
     return agentError(500, "server_error", "Could not delete the sandbox endpoint.");
   }
 }

@@ -1,9 +1,9 @@
-import { sendError } from "@appsignal/nodejs";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { auditAgentEvent } from "@/lib/audit";
 import { accountEmail, denyClaim } from "@/lib/agent/claims";
 import { agentError } from "@/lib/agent/errors";
 import { readAgentBody } from "@/lib/agent/http";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/agent/identity/claim/deny `{ claim_attempt_token }`: the human
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       ? agentError(403, "wrong_account", "This agent asked for a different account.")
       : agentError(404, "not_found", "This link is unknown, used, or replaced by a newer one.");
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/identity/claim/deny failed", error);
     return agentError(500, "server_error", "Could not decline the request.");
   }
 }

@@ -1,7 +1,7 @@
-import { sendError } from "@appsignal/nodejs";
 import { agentError } from "@/lib/agent/errors";
 import { authenticateSandbox } from "@/lib/agent/sandbox";
 import { getSandboxRequest } from "@/lib/supabase/requests";
+import { reportError } from "@/lib/observability";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -19,7 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const captured = await getSandboxRequest(authed.registration.id, id);
     return captured ? Response.json(captured) : notFound();
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("GET /api/agent/sandbox/requests/[id] failed", error);
     return agentError(500, "server_error", "Could not read the request.");
   }
 }

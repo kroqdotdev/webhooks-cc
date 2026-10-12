@@ -13,6 +13,7 @@ import {
 } from "@/lib/supabase/forwarding";
 import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
+import { reportError } from "@/lib/observability";
 
 /**
  * Sends one delivery to the saved forwarding URL now, exactly as a real one
@@ -113,7 +114,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       sender: facts.sent,
     });
   } catch (error) {
-    console.error("Test delivery failed:", error);
+    reportError("Test delivery failed", error);
     return reply({ error: "Internal server error" }, 500);
   }
 }

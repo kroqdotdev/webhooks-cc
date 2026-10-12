@@ -1,4 +1,3 @@
-import { sendError } from "@appsignal/nodejs";
 import { checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import {
@@ -14,6 +13,7 @@ import {
   rateLimitedResponse,
 } from "@/lib/agent/errors";
 import { readAgentBody } from "@/lib/agent/http";
+import { reportError } from "@/lib/observability";
 
 /**
  * POST /api/agent/identity/claim (auth.md Step 4a): `{ claim_token, email }`
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof AgentError) return agentErrorResponse(error);
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/agent/identity/claim failed", error);
     return agentError(500, "server_error", "Could not start the claim. Retry later.");
   }
 }

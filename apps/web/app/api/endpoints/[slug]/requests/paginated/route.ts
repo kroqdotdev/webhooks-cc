@@ -1,6 +1,7 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { listPaginatedRequestsForEndpointByUser } from "@/lib/supabase/requests";
 import { isRequestKind } from "@/lib/supabase/search";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -40,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "invalid_cursor" }, { status: 400 });
     }
 
-    console.error("Failed to list paginated requests:", error);
+    reportError("Failed to list paginated requests", error);
     return Response.json({ error: "Failed to list paginated requests" }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { loggablePolarError } from "@/lib/polar";
 import { AccountDeletionBillingError, deleteAccountForUser } from "@/lib/supabase/account";
+import { reportError } from "@/lib/observability";
 
 export async function DELETE(request: Request) {
   const auth = await authenticateSessionRequest(request);
@@ -13,7 +14,7 @@ export async function DELETE(request: Request) {
     return Response.json({ success: true });
   } catch (error) {
     if (error instanceof AccountDeletionBillingError) {
-      console.error("Account deletion blocked by billing:", loggablePolarError(error.cause));
+      reportError("Account deletion blocked by billing", loggablePolarError(error.cause));
       await auditUserAction(request, auth.userId, {
         action: "account.deleted",
         status: 409,
@@ -28,7 +29,7 @@ export async function DELETE(request: Request) {
         { status: 409 }
       );
     }
-    console.error("Account deletion failed:", error);
+    reportError("Account deletion failed", error);
     await auditUserAction(request, auth.userId, { action: "account.deleted", status: 500 });
     return Response.json({ error: "Failed to delete account" }, { status: 500 });
   }

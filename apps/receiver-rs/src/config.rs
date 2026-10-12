@@ -16,8 +16,6 @@ pub struct Config {
     /// serialize on the account's quota row, so more only hold connections
     /// other accounts need.
     pub capture_max_inflight_per_account: usize,
-    pub otel_collector_url: Option<String>,
-    pub appsignal_push_api_key: Option<String>,
     pub notify_proxy_url: Option<String>,
     pub notify_secret: Option<String>,
     pub redis_url: Option<String>,
@@ -58,14 +56,6 @@ impl std::fmt::Debug for Config {
             .field(
                 "capture_max_inflight_per_account",
                 &self.capture_max_inflight_per_account,
-            )
-            .field(
-                "otel_collector_url",
-                &self.otel_collector_url.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "appsignal_push_api_key",
-                &self.appsignal_push_api_key.as_ref().map(|_| "[REDACTED]"),
             )
             .field("notify_proxy_url", &self.notify_proxy_url)
             .field(
@@ -126,12 +116,6 @@ impl Config {
             }
             v => v,
         };
-        let otel_collector_url = env::var("APPSIGNAL_COLLECTOR_URL")
-            .ok()
-            .filter(|v| !v.is_empty());
-        let appsignal_push_api_key = env::var("APPSIGNAL_PUSH_API_KEY")
-            .ok()
-            .filter(|v| !v.is_empty());
         let notify_proxy_url = env::var("NOTIFY_PROXY_URL").ok().filter(|v| !v.is_empty());
         let notify_secret = env::var("NOTIFY_SECRET").ok().filter(|v| !v.is_empty());
         let redis_url = env::var("REDIS_URL").ok().filter(|v| !v.is_empty());
@@ -181,8 +165,6 @@ impl Config {
             pool_max,
             pg_acquire_timeout_secs,
             capture_max_inflight_per_account,
-            otel_collector_url,
-            appsignal_push_api_key,
             notify_proxy_url,
             notify_secret,
             redis_url,
@@ -213,8 +195,6 @@ impl Config {
             pool_max: 1,
             pg_acquire_timeout_secs: 1,
             capture_max_inflight_per_account: 4,
-            otel_collector_url: None,
-            appsignal_push_api_key: None,
             notify_proxy_url: None,
             notify_secret: None,
             redis_url: None,

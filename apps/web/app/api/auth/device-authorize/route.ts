@@ -2,7 +2,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 import { createClient } from "@/lib/supabase/server";
 import { authorizeDeviceCodeForUser } from "@/lib/supabase/device-auth";
-import { sendError } from "@appsignal/nodejs";
+import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, "device-authorize", 10);
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       return Response.json({ error: error.message }, { status: 400 });
     }
 
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("POST /api/auth/device-authorize failed", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -50,7 +50,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 5, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 12, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -172,8 +172,9 @@ export default function PrivacyPage() {
             <p>
               <span className="font-bold text-foreground">Server logs.</span> Our servers write
               technical logs, which can include IP addresses, so we can diagnose problems and stop
-              abuse. Error reports and performance measurements go to AppSignal; they never include
-              the contents of captured webhooks.
+              abuse. Error reports and these logs go to StatOSS, our own monitoring service, which
+              keeps them on servers in Denmark and Germany for up to 90 days; they never include the
+              contents of captured webhooks.
             </p>
             <p>
               <span className="font-bold text-foreground">Analytics.</span> See{" "}
@@ -239,10 +240,9 @@ export default function PrivacyPage() {
             <ul className="list-disc pl-5 space-y-1">
               <li>Hetzner hosts our servers and backups in Germany</li>
               <li>Cloudflare protects and delivers all traffic to webhooks.cc</li>
-              <li>Webdock hosts our mail server in Denmark</li>
+              <li>Webdock hosts our mail server and our error and log monitoring in Denmark</li>
               <li>Amazon SES delivers our emails from Germany</li>
               <li>PostHog provides product analytics from its EU region</li>
-              <li>AppSignal provides error and performance monitoring</li>
               <li>Polar sells our paid plans as merchant of record and processes payments</li>
             </ul>
             <p>

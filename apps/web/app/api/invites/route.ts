@@ -1,5 +1,6 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { listPendingInvitesForUser } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
@@ -9,7 +10,7 @@ export async function GET(request: Request) {
     const invites = await listPendingInvitesForUser(auth.userId);
     return Response.json(invites);
   } catch (error) {
-    console.error("Failed to list invites:", error);
+    reportError("Failed to list invites", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

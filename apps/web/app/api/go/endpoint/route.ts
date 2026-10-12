@@ -1,6 +1,7 @@
 import { isbot } from "isbot";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createGuestEndpoint } from "@/lib/supabase/endpoints";
+import { reportError } from "@/lib/observability";
 
 const ANON_ENDPOINT_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 const ANON_ENDPOINT_RATE_LIMIT_MAX = 20;
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
       return Response.json({ error: error.message }, { status: 429 });
     }
 
-    console.error("Failed to create guest endpoint:", error);
+    reportError("Failed to create guest endpoint", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

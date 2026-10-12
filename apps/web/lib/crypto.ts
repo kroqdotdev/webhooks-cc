@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { reportError } from "@/lib/observability";
 
 const ALGORITHM = "aes-256-gcm";
 const NONCE_SIZE = 12;
@@ -13,9 +14,7 @@ function getKey(): Buffer | null {
   if (!b64) return null;
   const buf = Buffer.from(b64, "base64");
   if (buf.length !== 32) {
-    console.error(
-      "SIGNING_SECRET_KEY is not 32 bytes after base64 decode — signing features disabled"
-    );
+    reportError("SIGNING_SECRET_KEY is not 32 bytes after base64 decode; signing features are off");
     return null;
   }
   return buf;

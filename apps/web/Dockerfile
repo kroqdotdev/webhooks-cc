@@ -14,9 +14,6 @@ ENV PNPM_HOME=/pnpm \
 RUN corepack enable
 
 FROM base AS builder
-# @appsignal/nodejs compiles its native extension with node-gyp on install.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # Fetch dependencies from the lockfile alone, so this layer survives source

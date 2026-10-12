@@ -1,7 +1,7 @@
-import { sendError } from "@appsignal/nodejs";
 import { authenticateSessionRequest } from "@/lib/api-auth";
 import { auditAgentEvent } from "@/lib/audit";
 import { revokeConnectedAgent } from "@/lib/agent/claims";
+import { reportError } from "@/lib/observability";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -28,7 +28,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       ? new Response(null, { status: 204 })
       : Response.json({ error: "not_found" }, { status: 404 });
   } catch (error) {
-    sendError(error instanceof Error ? error : new Error(String(error)));
+    reportError("DELETE /api/agent/registrations/[id] failed", error);
     return Response.json({ error: "Failed to disconnect the agent" }, { status: 500 });
   }
 }

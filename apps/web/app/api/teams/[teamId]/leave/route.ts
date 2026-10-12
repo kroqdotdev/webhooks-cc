@@ -1,6 +1,7 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { leaveTeam } from "@/lib/supabase/teams";
+import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -24,7 +25,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
     }
     return Response.json({ success: true });
   } catch (error) {
-    console.error("Failed to leave team:", error);
+    reportError("Failed to leave team", error);
     await auditUserAction(request, auth.userId, {
       action: "team.member_left",
       status: 500,

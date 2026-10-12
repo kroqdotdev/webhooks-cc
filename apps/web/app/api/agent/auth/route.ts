@@ -6,7 +6,7 @@ import { deprecated, endpointMoved } from "@/lib/agent/legacy";
 import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
 import { isPlainEmailAddress } from "@/lib/request-validation";
-import { sendError } from "@appsignal/nodejs";
+import { reportError } from "@/lib/observability";
 
 /**
  * The auth.md v0.1 registration endpoint. Only `verified_email` still works
@@ -146,7 +146,7 @@ async function verifiedEmail(
         rateLimit
       );
     }
-    sendError(err instanceof Error ? err : new Error(String(err)));
+    reportError("POST /api/agent/auth failed", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
