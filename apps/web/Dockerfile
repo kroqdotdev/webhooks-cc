@@ -35,14 +35,35 @@ ARG NEXT_PUBLIC_MAINTENANCE_BANNER_ENABLED=
 ARG NEXT_PUBLIC_MAINTENANCE_BANNER_TEXT=
 ARG NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=
 ARG NEXT_PUBLIC_BING_SITE_VERIFICATION=
+# Browser errors to StatOSS (lib/observability-browser.ts); empty sends none.
+ARG NEXT_PUBLIC_STATOSS_DSN=
+ARG NEXT_PUBLIC_STATOSS_ENVIRONMENT=
+# Names the StatOSS release (next.config.ts).
+ARG GIT_SHA=
 
 # ARGs reach RUN as environment variables. An empty one is unset rather than
 # passed as "", which lib/env.ts would reject as an invalid URL.
 # "web..." builds the workspace packages web depends on (the SDK) first. The
 # web build script also copies public/ and .next/static into the standalone
 # output.
-RUN for v in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Z_]*\)=$/\1/p'); do unset "$v"; done; \
-    pnpm --filter "web..." build
+# With the statoss_api_key build secret, browser source maps are built; the
+# StatOSS CLI writes a debug ID into each shipped file and uploads the maps,
+# and the maps are deleted before anything is copied out of this stage. The
+# CLI exits 1 for files without a map (Next's build manifests), so its exit
+# status only prints a note and never stops the build. Without the secret no
+# maps are built.
+RUN --mount=type=secret,id=statoss_api_key \
+    for v in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Z_]*\)=$/\1/p'); do unset "$v"; done; \
+    if [ -s /run/secrets/statoss_api_key ]; then export STATOSS_SOURCEMAPS=1; fi; \
+    pnpm --filter "web..." build \
+    && if [ "${STATOSS_SOURCEMAPS:-}" = 1 ]; then \
+         (cd apps/web && STATOSS_API_KEY="$(cat /run/secrets/statoss_api_key)" \
+           pnpm exec statoss sourcemaps upload .next/standalone/apps/web/.next/static \
+             --app webhooks-cc-browser) \
+           || echo "StatOSS source map upload left files out or failed (see above); the build goes on"; \
+         find apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static \
+           -name '*.map' -delete; \
+       fi
 
 FROM node:24-slim AS runner
 WORKDIR /app

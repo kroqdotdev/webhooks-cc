@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.39.1";
+export const APP_VERSION = "0.39.2";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.39.2",
+    date: "2026-10-12",
+    title: "Browser Error Reports",
+    track: "web",
+    items: [
+      "When a page fails in the browser, the error goes to StatOSS with the page address (without its query) and the browser, so we see crashes you would otherwise have to tell us about",
+      "Reports leave out email addresses, query strings, and errors that are not ours: browser extensions, dropped connections, and tabs left open across a release",
+    ],
+  },
   {
     version: "0.39.1",
     date: "2026-10-12",

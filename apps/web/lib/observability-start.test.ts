@@ -7,7 +7,8 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@statoss/sdk", () => sdk);
 
 import { APP_VERSION } from "./changelog";
-import { redactEmails, redactEvent, startObservability } from "./observability-start";
+import { redactEmails, redactEvent } from "./observability-redact";
+import { startObservability } from "./observability-start";
 
 const originals = {
   error: console.error,

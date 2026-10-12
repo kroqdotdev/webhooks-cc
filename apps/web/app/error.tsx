@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { reportBoundaryError } from "@/lib/observability-browser";
 
 export default function Error({
   error,
@@ -11,6 +12,7 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error(error);
+    reportBoundaryError(error, "app");
   }, [error]);
 
   return (

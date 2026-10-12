@@ -1,6 +1,7 @@
 import { format } from "node:util";
 import * as StatOSS from "@statoss/sdk";
 import { APP_VERSION } from "./changelog";
+import { redactEmails, redactEvent } from "./observability-redact";
 
 /**
  * Starts the StatOSS client for the Node server (`instrumentation.ts`), when
@@ -13,26 +14,12 @@ import { APP_VERSION } from "./changelog";
  * At most LINES_PER_MINUTE lines a minute go out; the console itself always
  * gets every line.
  *
- * Email addresses are replaced with `[email]` in every line and event sent:
- * a query error or a breadcrumb can quote one.
+ * Email addresses are replaced with `[email]` in every line and event sent
+ * (`observability-redact.ts`).
  */
 
 const LINES_PER_MINUTE = 600;
 const LEVELS = ["error", "warn", "info"] as const;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
-
-export function redactEmails(text: string): string {
-  return text.replace(EMAIL, "[email]");
-}
-
-/** The event with every email address in it replaced. */
-export function redactEvent<T>(event: T): T {
-  try {
-    return JSON.parse(redactEmails(JSON.stringify(event))) as T;
-  } catch {
-    return event;
-  }
-}
 
 export function startObservability(): boolean {
   const dsn = process.env.STATOSS_DSN?.trim();

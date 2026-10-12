@@ -174,7 +174,9 @@ export default function PrivacyPage() {
               technical logs, which can include IP addresses, so we can diagnose problems and stop
               abuse. Error reports and these logs go to StatOSS, our own monitoring service, which
               keeps them on servers in Denmark and Germany for up to 90 days; they never include the
-              contents of captured webhooks.
+              contents of captured webhooks. When a page of webhooks.cc fails in your browser, the
+              browser sends StatOSS a report too: the error, the page address without its query, and
+              your browser and operating system, but not your IP address or email address.
             </p>
             <p>
               <span className="font-bold text-foreground">Analytics.</span> See{" "}

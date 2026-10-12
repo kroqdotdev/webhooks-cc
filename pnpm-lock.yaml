@@ -221,6 +221,9 @@ importers:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
+      '@statoss/cli':
+        specifier: ^0.2.0
+        version: 0.2.0
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
@@ -1916,6 +1919,11 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@statoss/cli@0.2.0':
+    resolution: {integrity: sha512-/pPBbyMWuweMmNgSo0BaVf2cABFA3ptQJPDRQ8Oyx0yzmFwv3Oitj+wymemvx35GEhYJ7Pk+g/EgAjJJtFPYbA==}
+    engines: {node: ^22.18.0 || >=23.6.0}
+    hasBin: true
 
   '@statoss/sdk@0.4.0':
     resolution: {integrity: sha512-H0vNvLOsUZXmxc1u0joORYiz6r4W7RZZcpRP+mMLJurAU7A05vhQ3pRu/6u3aaLYJiKDAsYEdB3hKyGfM640yQ==}
@@ -6696,6 +6704,8 @@ snapshots:
   '@stablelib/base64@1.0.1': {}
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@statoss/cli@0.2.0': {}
 
   '@statoss/sdk@0.4.0': {}
 
