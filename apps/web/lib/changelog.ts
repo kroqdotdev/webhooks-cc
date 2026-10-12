@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.39.2";
+export const APP_VERSION = "0.39.3";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.39.3",
+    date: "2026-10-12",
+    title: "Source Map Upload Check",
+    track: "web",
+    items: [
+      "The release build uses StatOSS CLI 0.2.1 and trusts its exit status again, so the deploy log warns only when browser source maps really failed to upload",
+    ],
+  },
   {
     version: "0.39.2",
     date: "2026-10-12",

@@ -1,6 +1,6 @@
 {
   "name": "web",
-  "version": "0.39.2",
+  "version": "0.39.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -58,7 +58,7 @@
   "devDependencies": {
     "@apidevtools/swagger-parser": "^13.1.0",
     "@playwright/test": "^1.63.0",
-    "@statoss/cli": "^0.2.0",
+    "@statoss/cli": "^0.2.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
     "@types/hast": "^3.0.5",
