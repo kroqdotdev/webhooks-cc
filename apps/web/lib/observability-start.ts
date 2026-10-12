@@ -7,14 +7,32 @@ import { APP_VERSION } from "./changelog";
  * STATOSS_DSN is set. Errors are reported through `lib/observability.ts`.
  *
  * Log lines: `console.error`, `warn` and `info` also go to StatOSS's logs
- * (the `[audit]` lines, worker summaries, Next's own error output). Not
- * `console.log`, which only the dev email transport and Next's banner use.
+ * (worker summaries, Next's own error output). Not `console.log`, which only
+ * the dev email transport and Next's banner use, and not the `[audit]` lines,
+ * which `audit_events` keeps and whose metadata can hold an invited address.
  * At most LINES_PER_MINUTE lines a minute go out; the console itself always
  * gets every line.
+ *
+ * Email addresses are replaced with `[email]` in every line and event sent:
+ * a query error or a breadcrumb can quote one.
  */
 
 const LINES_PER_MINUTE = 600;
 const LEVELS = ["error", "warn", "info"] as const;
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+
+export function redactEmails(text: string): string {
+  return text.replace(EMAIL, "[email]");
+}
+
+/** The event with every email address in it replaced. */
+export function redactEvent<T>(event: T): T {
+  try {
+    return JSON.parse(redactEmails(JSON.stringify(event))) as T;
+  } catch {
+    return event;
+  }
+}
 
 export function startObservability(): boolean {
   const dsn = process.env.STATOSS_DSN?.trim();
@@ -25,6 +43,7 @@ export function startObservability(): boolean {
     environment: process.env.STATOSS_ENVIRONMENT?.trim() || process.env.NODE_ENV,
     release: `webhooks-web@${APP_VERSION}${sha ? `+${sha.slice(0, 12)}` : ""}`,
     logs: true,
+    beforeSend: (event) => redactEvent(event),
     // Fetch breadcrumbs would carry forwarding destinations, and a chat
     // webhook URL holds its secret in the path.
     integrations: { fetch: false },
@@ -52,9 +71,12 @@ function bridgeConsole(): void {
           sent = 0;
           held = 0;
         }
-        if (sent < LINES_PER_MINUTE) {
+        const line = format(...args);
+        if (level === "info" && line.startsWith("[audit] ")) {
+          // Kept in audit_events; see above.
+        } else if (sent < LINES_PER_MINUTE) {
           sent++;
-          StatOSS.logger[level](format(...args));
+          StatOSS.logger[level](redactEmails(line));
         } else {
           held++;
         }

@@ -88,15 +88,17 @@ export function reportError(where: string, error?: unknown, extra?: Record<strin
 /**
  * An error a route or page threw, from `onRequestError`. Next has logged it
  * already. Tagged with the route's pattern (`/api/stream/[slug]`), not the
- * path, so slugs and query strings stay out.
+ * path, so slugs and query strings stay out. Throttled by route and error
+ * type, not message, since a message can carry a value from the request;
+ * StatOSS groups the issue by type and stack frames.
  */
 export function reportRequestError(
   error: unknown,
   request: { method: string },
   context: { routePath: string; routeType: string }
 ): void {
-  const message = error instanceof Error ? error.message : describe(error);
-  const { send, suppressed } = admit(`${context.routePath} ${message}`.slice(0, 300), Date.now());
+  const type = error instanceof Error ? error.name : typeof error;
+  const { send, suppressed } = admit(`${context.routePath} ${type}`, Date.now());
   if (!send) return;
   const digest =
     error instanceof Error && "digest" in error && typeof error.digest === "string"

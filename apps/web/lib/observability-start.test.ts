@@ -7,7 +7,7 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@statoss/sdk", () => sdk);
 
 import { APP_VERSION } from "./changelog";
-import { startObservability } from "./observability-start";
+import { redactEmails, redactEvent, startObservability } from "./observability-start";
 
 const originals = {
   error: console.error,
@@ -44,6 +44,7 @@ describe("startObservability", () => {
       environment: "staging",
       release: `webhooks-web@${APP_VERSION}+0123456789ab`,
       logs: true,
+      beforeSend: expect.any(Function),
       integrations: { fetch: false },
     });
   });
@@ -53,11 +54,11 @@ describe("startObservability", () => {
     const shown = { error: console.error, info: console.info, log: console.log };
     startObservability();
     console.error("Failed to list endpoints:", { code: "57014" });
-    console.info("[audit] %s", "endpoint.create");
+    console.info("[forwarding] alive claimed=%d", 3);
     console.log("[dev-email] to=someone");
     expect(shown.error).toHaveBeenCalledWith("Failed to list endpoints:", { code: "57014" });
     expect(sdk.logger.error).toHaveBeenCalledWith("Failed to list endpoints: { code: '57014' }");
-    expect(sdk.logger.info).toHaveBeenCalledWith("[audit] endpoint.create");
+    expect(sdk.logger.info).toHaveBeenCalledWith("[forwarding] alive claimed=3");
     expect(shown.log).toHaveBeenCalledWith("[dev-email] to=someone");
     expect(sdk.logger.info).toHaveBeenCalledTimes(1);
   });
@@ -73,5 +74,35 @@ describe("startObservability", () => {
     console.warn("slow");
     expect(sdk.logger.warn).toHaveBeenCalledWith("5 log lines were kept from StatOSS last minute");
     expect(sdk.logger.warn).toHaveBeenLastCalledWith("slow");
+  });
+
+  it("keeps audit rows out and replaces email addresses", () => {
+    vi.stubEnv("STATOSS_DSN", "https://key@ingest.example/2");
+    startObservability();
+    console.info('[audit] {"action":"team.invite","metadata":{"invited_email":"a@b.example"}}');
+    console.error("[audit] insert failed:", "timeout");
+    console.error("duplicate key: Key (email)=(Someone.Else+x@mail.example.co.uk) exists");
+    expect(sdk.logger.info).not.toHaveBeenCalled();
+    expect(sdk.logger.error).toHaveBeenCalledWith("[audit] insert failed: timeout");
+    expect(sdk.logger.error).toHaveBeenCalledWith("duplicate key: Key (email)=([email]) exists");
+  });
+});
+
+describe("redaction", () => {
+  it("replaces addresses in text and anywhere in an event", () => {
+    expect(redactEmails("to a.b@c.example and x@y.io")).toBe("to [email] and [email]");
+    expect(redactEmails("no address @ here, user@localhost")).toBe(
+      "no address @ here, user@localhost"
+    );
+    const event = {
+      message: "Failed: user@example.com",
+      extra: { detail: { details: "Key (email)=(user@example.com)" } },
+      breadcrumbs: [{ message: "sent to team@example.org" }],
+    };
+    expect(redactEvent(event)).toEqual({
+      message: "Failed: [email]",
+      extra: { detail: { details: "Key (email)=([email])" } },
+      breadcrumbs: [{ message: "sent to [email]" }],
+    });
   });
 });

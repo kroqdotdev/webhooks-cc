@@ -109,4 +109,12 @@ group("reportRequestError", () => {
       extra: {},
     });
   });
+
+  it("throttles by route and error type, whatever the message says", () => {
+    const context = { routePath: "/api/endpoints/[slug]", routeType: "route" };
+    reportRequestError(new Error("no row for abc"), { method: "GET" }, context);
+    reportRequestError(new Error("no row for xyz"), { method: "GET" }, context);
+    reportRequestError(new RangeError("too big"), { method: "GET" }, context);
+    expect(sdk.captureException).toHaveBeenCalledTimes(2);
+  });
 });
