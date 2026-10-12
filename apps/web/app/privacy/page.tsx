@@ -176,7 +176,8 @@ export default function PrivacyPage() {
               keeps them on servers in Denmark and Germany for up to 90 days; they never include the
               contents of captured webhooks. When a page of webhooks.cc fails in your browser, the
               browser sends StatOSS a report too: the error, the page address without its query, and
-              your browser and operating system, but not your IP address or email address.
+              your browser and operating system. The report leaves out your email address and your
+              IP address, and StatOSS does not keep the IP address the report arrives from.
             </p>
             <p>
               <span className="font-bold text-foreground">Analytics.</span> See{" "}

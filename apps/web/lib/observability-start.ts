@@ -1,7 +1,7 @@
 import { format } from "node:util";
 import * as StatOSS from "@statoss/sdk";
 import { APP_VERSION } from "./changelog";
-import { redactEmails, redactEvent } from "./observability-redact";
+import { redactEvent, redactText } from "./observability-redact";
 
 /**
  * Starts the StatOSS client for the Node server (`instrumentation.ts`), when
@@ -14,7 +14,7 @@ import { redactEmails, redactEvent } from "./observability-redact";
  * At most LINES_PER_MINUTE lines a minute go out; the console itself always
  * gets every line.
  *
- * Email addresses are replaced with `[email]` in every line and event sent
+ * Email addresses and URL queries are removed from every line and event sent
  * (`observability-redact.ts`).
  */
 
@@ -63,7 +63,7 @@ function bridgeConsole(): void {
           // Kept in audit_events; see above.
         } else if (sent < LINES_PER_MINUTE) {
           sent++;
-          StatOSS.logger[level](redactEmails(line));
+          StatOSS.logger[level](redactText(line));
         } else {
           held++;
         }

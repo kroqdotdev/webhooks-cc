@@ -49,9 +49,10 @@ ARG GIT_SHA=
 # With the statoss_api_key build secret, browser source maps are built; the
 # StatOSS CLI writes a debug ID into each shipped file and uploads the maps,
 # and the maps are deleted before anything is copied out of this stage. The
-# CLI exits 1 for files without a map (Next's build manifests), so its exit
-# status only prints a note and never stops the build. Without the secret no
-# maps are built.
+# CLI exits 1 for files without a map (Next's build manifests), so success is
+# read from its "Stored N source maps" line. A failed upload is a warning, not
+# a failed build: monitoring must never block a deploy, and keeping the maps
+# would serve them. Without the secret no maps are built.
 RUN --mount=type=secret,id=statoss_api_key \
     for v in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Z_]*\)=$/\1/p'); do unset "$v"; done; \
     if [ -s /run/secrets/statoss_api_key ]; then export STATOSS_SOURCEMAPS=1; fi; \
@@ -59,8 +60,13 @@ RUN --mount=type=secret,id=statoss_api_key \
     && if [ "${STATOSS_SOURCEMAPS:-}" = 1 ]; then \
          (cd apps/web && STATOSS_API_KEY="$(cat /run/secrets/statoss_api_key)" \
            pnpm exec statoss sourcemaps upload .next/standalone/apps/web/.next/static \
-             --app webhooks-cc-browser) \
-           || echo "StatOSS source map upload left files out or failed (see above); the build goes on"; \
+             --app webhooks-cc-browser) > /tmp/statoss-upload.log 2>&1 || true; \
+         cat /tmp/statoss-upload.log; \
+         if grep -q '^Stored [0-9]* source maps' /tmp/statoss-upload.log; then \
+           echo "StatOSS source maps uploaded"; \
+         else \
+           echo "WARNING: StatOSS source map upload failed; this release's browser errors will show minified stacks"; \
+         fi; \
          find apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static \
            -name '*.map' -delete; \
        fi
