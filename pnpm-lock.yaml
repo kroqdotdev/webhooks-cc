@@ -222,8 +222,8 @@ importers:
         specifier: ^1.63.0
         version: 1.63.0
       '@statoss/cli':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.2.1
+        version: 0.2.1
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
@@ -1920,8 +1920,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@statoss/cli@0.2.0':
-    resolution: {integrity: sha512-/pPBbyMWuweMmNgSo0BaVf2cABFA3ptQJPDRQ8Oyx0yzmFwv3Oitj+wymemvx35GEhYJ7Pk+g/EgAjJJtFPYbA==}
+  '@statoss/cli@0.2.1':
+    resolution: {integrity: sha512-rE3ijGCY7BYy651HwKDdPrTje4WW9hISDbQXXCmlgOVt4SPjOPWJ+gEIboI5dUuS6pHlshGv2Ftgz/kvGYN2FA==}
     engines: {node: ^22.18.0 || >=23.6.0}
     hasBin: true
 
@@ -6705,7 +6705,7 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@statoss/cli@0.2.0': {}
+  '@statoss/cli@0.2.1': {}
 
   '@statoss/sdk@0.4.0': {}
 
