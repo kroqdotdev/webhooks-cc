@@ -45,7 +45,7 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     entity: "Webdock.io ApS, Denmark",
     purpose:
       "Hosts the mail server that sends our emails, and StatOSS, our own error and log monitoring service.",
-    data: "Recipient email addresses and the contents of the emails we send. Error reports and server logs, which can include IP addresses and account IDs, never the contents of captured webhooks.",
+    data: "Recipient email addresses and the contents of the emails we send. Error reports from our servers and from visitors' browsers, and server logs, which can include IP addresses and account IDs, never the contents of captured webhooks.",
     location: "Copenhagen, Denmark",
   },
   {

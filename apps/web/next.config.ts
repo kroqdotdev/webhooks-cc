@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { NextConfig } from "next";
 
@@ -6,8 +7,18 @@ import type { NextConfig } from "next";
 // publicEnv() loader. Same default as lib/env.ts (NEXT_PUBLIC_APP_URL).
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://webhooks.cc";
 
+// The browser's StatOSS release, like the server's (lib/observability-start.ts).
+const webVersion = JSON.parse(readFileSync(path.join(__dirname, "package.json"), "utf8")).version;
+const gitSha = process.env.GIT_SHA?.trim().slice(0, 12);
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: {
+    NEXT_PUBLIC_STATOSS_RELEASE: `webhooks-web@${webVersion}${gitSha ? `+${gitSha}` : ""}`,
+  },
+  // Browser source maps only for a build that uploads them to StatOSS and
+  // then deletes them (apps/web/Dockerfile); they are never served.
+  productionBrowserSourceMaps: process.env.STATOSS_SOURCEMAPS === "1",
   // Pin the tracing root to the monorepo root. Without this, Next walks up
   // past the repo looking for a lockfile and a stray ~/package.json makes the
   // standalone output land under .next/standalone/<home-relative-path>/,

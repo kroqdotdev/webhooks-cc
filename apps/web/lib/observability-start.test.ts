@@ -7,7 +7,8 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@statoss/sdk", () => sdk);
 
 import { APP_VERSION } from "./changelog";
-import { redactEmails, redactEvent, startObservability } from "./observability-start";
+import { redactEmails, redactEvent, redactText } from "./observability-redact";
+import { startObservability } from "./observability-start";
 
 const originals = {
   error: console.error,
@@ -103,6 +104,23 @@ describe("redaction", () => {
       message: "Failed: [email]",
       extra: { detail: { details: "Key (email)=([email])" } },
       breadcrumbs: [{ message: "sent to [email]" }],
+    });
+  });
+
+  it("drops URL queries and fragments from any text, and keeps the rest", () => {
+    expect(redactText("Request to /go?token=secret failed")).toBe("Request to /go failed");
+    expect(redactText("GET https://api.example.com/rest/v1/x?slug=eq.abc&select=* 500")).toBe(
+      "GET https://api.example.com/rest/v1/x 500"
+    );
+    expect(redactText("at f (https://webhooks.cc/_next/a.js?dpl=1:3:4)")).toBe(
+      "at f (https://webhooks.cc/_next/a.js)"
+    );
+    expect(redactText("plain text, no URL, 3 > 2")).toBe("plain text, no URL, 3 > 2");
+    expect(
+      redactEvent({ request: { headers: { Referer: "https://webhooks.cc/go?slug=abc" } } })
+    ).toEqual({ request: { headers: { Referer: "https://webhooks.cc/go" } } });
+    expect(redactEvent({ value: 'line one\nfrom /a?x=1 "quoted"' })).toEqual({
+      value: 'line one\nfrom /a "quoted"',
     });
   });
 });

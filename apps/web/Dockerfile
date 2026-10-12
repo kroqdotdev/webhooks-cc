@@ -35,14 +35,41 @@ ARG NEXT_PUBLIC_MAINTENANCE_BANNER_ENABLED=
 ARG NEXT_PUBLIC_MAINTENANCE_BANNER_TEXT=
 ARG NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=
 ARG NEXT_PUBLIC_BING_SITE_VERIFICATION=
+# Browser errors to StatOSS (lib/observability-browser.ts); empty sends none.
+ARG NEXT_PUBLIC_STATOSS_DSN=
+ARG NEXT_PUBLIC_STATOSS_ENVIRONMENT=
+# Names the StatOSS release (next.config.ts).
+ARG GIT_SHA=
 
 # ARGs reach RUN as environment variables. An empty one is unset rather than
 # passed as "", which lib/env.ts would reject as an invalid URL.
 # "web..." builds the workspace packages web depends on (the SDK) first. The
 # web build script also copies public/ and .next/static into the standalone
 # output.
-RUN for v in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Z_]*\)=$/\1/p'); do unset "$v"; done; \
-    pnpm --filter "web..." build
+# With the statoss_api_key build secret, browser source maps are built; the
+# StatOSS CLI writes a debug ID into each shipped file and uploads the maps,
+# and the maps are deleted before anything is copied out of this stage. The
+# CLI exits 1 for files without a map (Next's build manifests), so success is
+# read from its "Stored N source maps" line. A failed upload is a warning, not
+# a failed build: monitoring must never block a deploy, and keeping the maps
+# would serve them. Without the secret no maps are built.
+RUN --mount=type=secret,id=statoss_api_key \
+    for v in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Z_]*\)=$/\1/p'); do unset "$v"; done; \
+    if [ -s /run/secrets/statoss_api_key ]; then export STATOSS_SOURCEMAPS=1; fi; \
+    pnpm --filter "web..." build \
+    && if [ "${STATOSS_SOURCEMAPS:-}" = 1 ]; then \
+         (cd apps/web && STATOSS_API_KEY="$(cat /run/secrets/statoss_api_key)" \
+           pnpm exec statoss sourcemaps upload .next/standalone/apps/web/.next/static \
+             --app webhooks-cc-browser) > /tmp/statoss-upload.log 2>&1 || true; \
+         cat /tmp/statoss-upload.log; \
+         if grep -q '^Stored [0-9]* source maps' /tmp/statoss-upload.log; then \
+           echo "StatOSS source maps uploaded"; \
+         else \
+           echo "WARNING: StatOSS source map upload failed; this release's browser errors will show minified stacks"; \
+         fi; \
+         find apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static \
+           -name '*.map' -delete; \
+       fi
 
 FROM node:24-slim AS runner
 WORKDIR /app
