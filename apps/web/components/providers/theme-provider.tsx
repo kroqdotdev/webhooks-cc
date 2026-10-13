@@ -93,10 +93,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Next renders `app/not-found.tsx` without the root layout, and so without
+// ThemeProvider, when it answers some requests itself (a POST with a
+// `Next-Action` header and a form body gets a 404 page that way). The header
+// on that page must not take the response down with it, so outside a provider
+// the toggle shows the defaults and does nothing.
+const FALLBACK_THEME: ThemeContextType = {
+  theme: "system",
+  setTheme: () => {},
+  resolvedTheme: "dark",
+  uiStyle: "classic",
+  setUiStyle: () => {},
+};
+
 export function useTheme() {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error("useTheme must be used within a ThemeProvider");
-  }
-  return context;
+  return useContext(ThemeContext) ?? FALLBACK_THEME;
 }
