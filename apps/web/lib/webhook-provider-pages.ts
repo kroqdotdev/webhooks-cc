@@ -75,7 +75,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Clerk sends webhooks for user, session, and organization lifecycle events, signed with Svix-style headers.",
     configHint: "Clerk Dashboard → Webhooks → Add endpoint",
     category: "Identity & data",
-    updated: "2026-08-21",
+    updated: "2026-10-13",
   },
   discord: {
     blurb:
@@ -83,7 +83,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
     configHint:
       "Discord Developer Portal → your app → General Information → Interactions Endpoint URL",
     category: "Communication",
-    updated: "2026-08-21",
+    updated: "2026-10-13",
   },
   vercel: {
     blurb:
@@ -124,7 +124,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Lemon Squeezy sends webhooks for orders, subscriptions, and license key events in your store.",
     configHint: "Lemon Squeezy → Settings → Webhooks",
     category: "Payments & billing",
-    updated: "2026-08-21",
+    updated: "2026-10-13",
   },
   "coinbase-commerce": {
     blurb:
@@ -191,7 +191,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Mux sends webhooks for video asset lifecycle events — uploads, processing, ready states, and live streams.",
     configHint: "Mux Dashboard → Settings → Webhooks",
     category: "Dev & deploy",
-    updated: "2026-08-21",
+    updated: "2026-10-13",
   },
   sentry: {
     blurb:
@@ -702,6 +702,152 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
   },
 };
 
+/**
+ * Copy for pages whose searches ask for more than the generic page answers,
+ * read off Search Console: "lemonsqueezy test cards" brought the Lemon Squeezy
+ * page hundreds of impressions and no clicks, because the title promised only
+ * a webhook tester. Facts come from the provider's own docs, linked in
+ * `reference.source`.
+ */
+export interface ProviderSeo {
+  /** Replaces the generated title. */
+  title?: string;
+  /** Replaces the generated meta description. */
+  description?: string;
+  /** A table shown above the FAQ, for facts searchers look up (test cards, event names). */
+  reference?: {
+    heading: string;
+    intro: string;
+    columns: readonly [string, string];
+    /** The column holding literal values (card numbers, event names), set in monospace. */
+    codeColumn: 0 | 1;
+    rows: readonly (readonly [string, string])[];
+    source: { label: string; href: string };
+  };
+  /** Questions added to the page FAQ and its FAQPage schema. */
+  faq?: readonly { question: string; answer: string }[];
+}
+
+const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
+  lemonsqueezy: {
+    title: "Lemon Squeezy Test Cards & Webhook Tester (Free)",
+    description:
+      "Lemon Squeezy test card numbers for successful, declined, expired and 3D Secure payments, plus a free endpoint that captures the webhooks every test purchase fires.",
+    reference: {
+      heading: "Lemon Squeezy test cards",
+      intro:
+        "Use these in test mode with any future expiry date (such as 12/35), any three-digit CVC and any value in the other fields. Each test purchase fires the same webhooks a live one does.",
+      columns: ["Card", "Number"],
+      codeColumn: 1,
+      rows: [
+        ["Visa (succeeds)", "4242 4242 4242 4242"],
+        ["Mastercard (succeeds)", "5555 5555 5555 4444"],
+        ["American Express (succeeds)", "3782 822463 10005"],
+        ["Insufficient funds (declined)", "4000 0000 0000 9995"],
+        ["Expired card (declined)", "4000 0000 0000 0069"],
+        ["3D Secure authentication", "4000 0027 6000 3184"],
+      ],
+      source: {
+        label: "Lemon Squeezy test mode docs",
+        href: "https://docs.lemonsqueezy.com/help/getting-started/test-mode",
+      },
+    },
+    faq: [
+      {
+        question: "What card numbers work in Lemon Squeezy test mode?",
+        answer:
+          "4242 4242 4242 4242 (Visa), 5555 5555 5555 4444 (Mastercard) and 3782 822463 10005 (American Express) succeed. 4000 0000 0000 9995 is declined for insufficient funds, 4000 0000 0000 0069 as expired, and 4000 0027 6000 3184 asks for 3D Secure. Use any future expiry date and any three-digit CVC.",
+      },
+      {
+        question: "Do Lemon Squeezy test purchases send webhooks?",
+        answer:
+          "Yes. In test mode webhooks fire for every event, as in live mode, and you can also simulate subscription webhooks from the Lemon Squeezy dashboard. Test and live webhooks are configured separately, so point the test-mode webhook at a webhooks.cc endpoint to see each payload, then add a live webhook for production.",
+      },
+    ],
+  },
+  clerk: {
+    title: "Clerk Webhooks: Free Tester, Svix Signatures & Events",
+    description:
+      "Capture Clerk webhooks such as user.created on a free endpoint, check the svix-signature header, send signed sample events, and forward deliveries to localhost.",
+    faq: [
+      {
+        question: "How do I verify a Clerk webhook?",
+        answer:
+          "Clerk delivers webhooks through Svix, so every request carries svix-id, svix-timestamp and svix-signature headers. In your handler, call verifyWebhook() from @clerk/backend/webhooks; it reads the signing secret from CLERK_WEBHOOK_SIGNING_SECRET, which you copy from the endpoint on the Webhooks page of the Clerk Dashboard. On webhooks.cc, add the same secret to the endpoint and every captured delivery is marked valid or invalid.",
+      },
+      {
+        question: "Why do I get the same Clerk webhook twice?",
+        answer:
+          "Clerk retries each event until your endpoint returns a 2xx response or the retries run out, and every attempt for one event carries the same svix-id. Store the svix-id you have processed and skip repeats.",
+      },
+      {
+        question: "Can I test Clerk webhooks without a public server?",
+        answer:
+          "Yes. Point the Clerk endpoint at a webhooks.cc URL to see each user.created or session.created payload as it arrives, and run whk tunnel <port> to forward the deliveries to your app on localhost.",
+      },
+    ],
+  },
+  discord: {
+    title: "Discord Webhook Tester: Check URLs & Inspect Payloads",
+    description:
+      "Test Discord webhooks free: see the exact JSON your app sends before it reaches a channel, check whether a Discord webhook URL still works, and capture interaction webhooks.",
+    faq: [
+      {
+        question: "How do I test what my app sends to a Discord webhook?",
+        answer:
+          "Swap the Discord webhook URL in your app for a webhooks.cc endpoint URL. Each message your app would have posted is captured with its full JSON body (content, embeds, username), so you can check the payload before it reaches a real channel. When it looks right, turn on forwarding to a Discord webhook URL to pass captured requests on to the channel.",
+      },
+      {
+        question: "How do I check if a Discord webhook URL is valid?",
+        answer:
+          "Send a GET request to the webhook URL itself (https://discord.com/api/webhooks/{id}/{token}). Discord answers without any other authentication and returns the webhook object, with its name, channel and server ids, when the URL works. An error response means the webhook was deleted or the token is wrong.",
+      },
+      {
+        question: "What is the difference between a Discord webhook and an interactions endpoint?",
+        answer:
+          "A channel webhook is a URL you post messages to. An interactions endpoint is a URL on your server that Discord calls for slash commands and buttons, signed with Ed25519 in the x-signature-ed25519 header. webhooks.cc can capture both: the messages your app posts, and the interactions Discord sends.",
+      },
+    ],
+  },
+  mux: {
+    title: "Mux Webhooks: Events, mux-signature & Free Tester",
+    description:
+      "Capture Mux webhooks such as video.asset.ready on a free endpoint, check the mux-signature header, send sample events, and forward deliveries to localhost.",
+    reference: {
+      heading: "Common Mux webhook events",
+      intro:
+        "Mux names events after the object they describe. These are the ones most integrations handle first.",
+      columns: ["Event", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["video.asset.ready", "An asset finished processing and can be played"],
+        ["video.asset.errored", "An asset failed to process"],
+        ["video.asset.deleted", "An asset was deleted"],
+        ["video.upload.asset_created", "A direct upload created its asset"],
+        ["video.upload.errored", "A direct upload failed"],
+        ["video.live_stream.active", "A live stream started receiving video"],
+        ["video.live_stream.idle", "A live stream ended"],
+      ],
+      source: {
+        label: "Mux webhook docs",
+        href: "https://www.mux.com/docs/core/listen-for-webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify Mux webhooks?",
+        answer:
+          "Mux signs every delivery with the mux-signature header. Set MUX_WEBHOOK_SECRET to the signing secret of your environment and call mux.webhooks.unwrap(body, headers, secret) from the Mux SDK, which verifies the signature and parses the event.",
+      },
+      {
+        question: "Does Mux retry failed webhooks?",
+        answer:
+          "Yes. Without a 2xx response Mux retries for 24 hours with growing delays, and an attempt that takes longer than 5 seconds counts as failed. Deliveries can repeat even after a 2xx, so make your handler idempotent.",
+      },
+    ],
+  },
+};
+
 export interface WebhookProviderPage {
   slug: string;
   label: string;
@@ -727,6 +873,7 @@ export interface WebhookProviderPage {
   signatureOptional: boolean;
   /** When the page's content last changed; the sitemap lastmod. */
   lastModified: Date;
+  seo: ProviderSeo | null;
 }
 
 export const WEBHOOK_PROVIDER_SLUGS: readonly string[] = [
@@ -796,6 +943,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     inSdk: true,
     signatureOptional: false,
     lastModified: new Date(`${editorial.updated}T00:00:00.000Z`),
+    seo: PROVIDER_SEO[provider] ?? null,
   };
 }
 
@@ -820,6 +968,7 @@ function buildCaptureOnlyPage(slug: string, provider: CaptureOnlyProvider): Webh
     inSdk: false,
     signatureOptional: provider.signatureOptional ?? false,
     lastModified: new Date(`${provider.updated}T00:00:00.000Z`),
+    seo: PROVIDER_SEO[slug] ?? null,
   };
 }
 

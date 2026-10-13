@@ -29,6 +29,21 @@ const FAQ_ITEMS = [
     answer:
       "No. webhooks.cc is a testing tool — it captures and stores incoming webhooks for inspection, replay, and automated assertions. It does not sit in your production webhook delivery path. For production reliability (retries, rate limiting, dead-letter queues), Hookdeck or a similar infrastructure tool is the right choice.",
   },
+  {
+    question: "Is Hookdeck good for testing webhooks in development?",
+    answer:
+      "It works: hookdeck listen forwards webhooks to localhost and the Hookdeck dashboard keeps an event log. Hookdeck is built first as production infrastructure (retries, routing, rate limits), so testing is one part of a larger product. If development is all you need (an instant URL, replay, mock responses, and assertions in CI), webhooks.cc is built for exactly that, and the two can be used together.",
+  },
+  {
+    question: "Hookdeck vs ngrok: which should I use for webhook forwarding?",
+    answer:
+      "ngrok is a general-purpose tunnel: it exposes any local port and shows traffic in a local inspector while the agent runs. Hookdeck receives webhooks on its own URL, logs them as events, and forwards them to localhost with hookdeck listen or to production with retries. For webhooks in development both work; webhooks.cc does the same with whk tunnel and adds stored history, replay to any URL, and SDK assertions.",
+  },
+  {
+    question: "Hookdeck vs Webhook.site for testing webhooks?",
+    answer:
+      "Webhook.site gives you a URL and a page that shows every request, which suits quick inspection. Hookdeck is delivery infrastructure with a CLI for local forwarding. webhooks.cc sits between them for testing: an instant URL and live inspector like Webhook.site, plus a CLI tunnel, a TypeScript SDK for CI and an MCP server.",
+  },
 ];
 
 const ROWS = [
@@ -43,14 +58,14 @@ const ROWS = [
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (hookdeck listen)"],
   ["TypeScript SDK", "Yes — test assertions", "Yes — infrastructure API"],
   ["CI test assertions (waitFor)", "Yes", "No"],
-  ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
+  ["MCP server for AI agents", "Yes, @webhooks-cc/mcp", "Yes, for Event Gateway operations"],
   ["Open source", "Yes (AGPL + MIT)", "Partially"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "Team+ ($39/mo), unlimited seats"],
   ["Free tier features", "Every individual feature", "Limited events/month"],
 ] as const;
 
 export const metadata = createPageMetadata({
-  title: "Hookdeck Alternative for Dev & Testing (2026)",
+  title: "Hookdeck Alternative: vs ngrok & Webhook.site (2026)",
   description:
     "Hookdeck alternative for webhook development and testing. Inspect, replay, and assert on payloads with SDK, CLI tunnel, and MCP server.",
   path: "/compare/hookdeck",
@@ -80,7 +95,7 @@ export default function CompareHookdeckPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Hookdeck</h1>
         <p className="text-lg text-muted-foreground mb-10">

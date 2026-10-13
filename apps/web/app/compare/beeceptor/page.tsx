@@ -29,6 +29,11 @@ const FAQ_ITEMS = [
     answer:
       "webhooks.cc. Its TypeScript SDK provides waitFor() with request matchers for method, headers, and JSON body paths. You can create a test endpoint, trigger your webhook sender, and assert on the captured payload inside Vitest or Jest — no mocking server required.",
   },
+  {
+    question: "Does Beeceptor capture webhooks?",
+    answer:
+      "Yes. A Beeceptor endpoint logs incoming requests, so you can point a webhook at it and read the payload, and its rules can return mock responses. It is built mainly for API mocking. webhooks.cc is built around webhooks: stored history, replay, built-in signature verification for Stripe, GitHub, Shopify, Clerk and many more, a CLI tunnel to localhost and SDK assertions in CI.",
+  },
 ];
 
 const ROWS = [
@@ -79,7 +84,7 @@ export default function CompareBeeceptorPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Beeceptor</h1>
         <p className="text-lg text-muted-foreground mb-10">

@@ -14,6 +14,12 @@ export interface DocFrontmatter {
   lastUpdated: string | Date;
   schema: "howto" | "faq" | "tech-article" | "none";
   keywords?: string[];
+  /**
+   * Path of the page search engines should treat as the original, when this
+   * doc covers the same ground as a marketing page. Such docs stay out of
+   * the sitemap.
+   */
+  canonical?: string;
   seo?: {
     ogTitle?: string;
     ogDescription?: string;

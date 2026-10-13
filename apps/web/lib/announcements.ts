@@ -18,7 +18,7 @@ export const ANNOUNCEMENTS: Announcement[] = [
   {
     id: "teams-launch",
     text: "Team collaboration — invite members, share endpoints.",
-    cta: { label: "Try Teams", href: "/teams" },
+    cta: { label: "Try Teams", href: "/for-teams" },
     dashboard: true,
   },
 ];

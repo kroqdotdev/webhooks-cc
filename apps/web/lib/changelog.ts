@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.39.3";
+export const APP_VERSION = "0.39.4";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.39.4",
+    date: "2026-10-13",
+    title: "Teams Page and Clearer Comparisons",
+    track: "web",
+    items: [
+      "A public Teams page at /for-teams: what teams use shared endpoints for, the feature checklist, who can do what, and pricing examples; the site banner, the landing page and the Teams docs link to it",
+      "The comparison hub puts all eight tools in one feature checklist and answers the questions people ask when choosing one",
+      "The ngrok and Hookdeck comparisons are up to date: ngrok's local inspector replays requests, and Hookdeck now has an MCP server",
+      "The Lemon Squeezy page lists the test-mode card numbers, the Mux page the common events, and the Clerk and Discord pages answer how to verify, retry and check webhooks",
+    ],
+  },
   {
     version: "0.39.3",
     date: "2026-10-12",

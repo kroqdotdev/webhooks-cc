@@ -29,6 +29,11 @@ const FAQ_ITEMS = [
     answer:
       "Yes. The webhooks.cc CLI tunnel (whk tunnel) forwards webhooks to your local port, and the free tier includes this feature with no time limits. Unlike LocalTunnel, you also get persistent request history, inspection, replay, and test assertions included.",
   },
+  {
+    question: "LocalTunnel vs ngrok: which is better for webhooks?",
+    answer:
+      "ngrok is more reliable and adds a local request inspector, stable domains on paid plans and TCP tunnels. LocalTunnel is free and open source but gives a new random URL each session, so you reconfigure the webhook sender every time. For webhooks specifically, webhooks.cc gives a stable URL that keeps history, and whk tunnel forwards each request to localhost.",
+  },
 ];
 
 const ROWS = [
@@ -82,7 +87,7 @@ export default function CompareLocalTunnelPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs LocalTunnel</h1>
         <p className="text-lg text-muted-foreground mb-10">

@@ -84,4 +84,28 @@ describe("webhook provider pages", () => {
     const newest = Math.max(...pages.map((page) => page.lastModified.getTime()));
     expect(getWebhookProvidersLastModified().getTime()).toBe(newest);
   });
+
+  it("keeps search-driven copy short, dash-free and tied to real pages", () => {
+    const withSeo = pages.filter((page) => page.seo);
+    expect(withSeo.map((page) => page.slug).sort()).toEqual([
+      "clerk",
+      "discord",
+      "lemonsqueezy",
+      "mux",
+    ]);
+    for (const page of withSeo) {
+      const seo = page.seo!;
+      // Google cuts titles near 60 characters.
+      if (seo.title) expect(seo.title.length, page.slug).toBeLessThanOrEqual(60);
+      const copy = [
+        seo.title ?? "",
+        seo.description ?? "",
+        ...(seo.faq ?? []).flatMap((item) => [item.question, item.answer]),
+        ...(seo.reference ? [seo.reference.heading, seo.reference.intro] : []),
+        ...(seo.reference?.rows.flat() ?? []),
+      ].join(" ");
+      expect(copy, page.slug).not.toContain(String.fromCharCode(0x2014));
+      expect(page.lastModified.toISOString(), page.slug).toBe("2026-10-13T00:00:00.000Z");
+    }
+  });
 });

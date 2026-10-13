@@ -17,7 +17,7 @@ const FAQ_ITEMS = [
   {
     question: "How does the webhooks.cc CLI tunnel compare to ngrok's tunnel?",
     answer:
-      "Both forward traffic to a local port. The difference is scope: ngrok exposes any local service over a public URL. The webhooks.cc CLI (whk tunnel) captures every incoming request in the dashboard with full headers, body, and metadata — then forwards it to localhost. You get inspection + tunnel in one step. ngrok requires a separate tool or custom code to log and inspect payloads.",
+      "Both forward traffic to a local port. The difference is scope: ngrok exposes any local service over a public URL. The webhooks.cc CLI (whk tunnel) captures every incoming request in the dashboard with full headers, body, and metadata, then forwards it to localhost. You get inspection + tunnel in one step. ngrok's local inspector shows requests while the agent runs, but keeps no searchable history you can query from tests or replay to another URL.",
   },
   {
     question: "Is webhooks.cc free?",
@@ -29,15 +29,33 @@ const FAQ_ITEMS = [
     answer:
       "ngrok provides client libraries for embedding tunnels into applications, but no SDK designed for webhook test assertions. webhooks.cc's TypeScript SDK includes waitFor() with request matchers (method, headers, body path) for use in Vitest or Jest integration tests.",
   },
+  {
+    question: "ngrok vs Webhook.site for receiving webhooks on localhost?",
+    answer:
+      "ngrok forwards traffic to your local port and shows it in a local inspector at localhost:4040 while the agent runs. Webhook.site captures requests on a hosted URL and shows them in the browser; forwarding to localhost needs its CLI. webhooks.cc does both in one step: whk tunnel captures every webhook in a stored, searchable history and forwards it to localhost.",
+  },
+  {
+    question: "ngrok vs LocalTunnel: what is the difference?",
+    answer:
+      "Both expose a local port on a public URL. ngrok is a commercial service with a free tier, stable domains on paid plans, TCP tunnels and a local request inspector. LocalTunnel is free and open source, with a random URL per session and no inspector. For webhooks, webhooks.cc adds a stored, searchable history, replay to any URL and SDK assertions, and forwards to localhost too.",
+  },
 ];
 
 const ROWS = [
   ["Primary purpose", "Webhook testing platform", "General-purpose tunneling"],
-  ["Webhook capture & history", "Yes — stored with full detail", "No built-in history"],
-  ["Request inspection", "Dashboard + CLI + SDK + MCP", "ngrok dashboard (paid)"],
+  [
+    "Webhook capture & history",
+    "Yes, stored with full detail",
+    "Local inspector while the agent runs",
+  ],
+  [
+    "Request inspection",
+    "Dashboard + CLI + SDK + MCP",
+    "Local inspector (localhost:4040), dashboard Traffic Inspector",
+  ],
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (ngrok http)"],
   ["Mock responses", "Yes — configurable per endpoint", "No"],
-  ["Request replay", "Yes", "No"],
+  ["Request replay", "Yes, to any URL", "Yes, to the local upstream"],
   ["TypeScript SDK", "Yes — @webhooks-cc/sdk", "No webhook-testing SDK"],
   ["CI test assertions", "Yes (waitFor + matchers)", "No"],
   ["MCP server for AI agents", "Yes — @webhooks-cc/mcp", "No"],
@@ -81,7 +99,7 @@ export default function CompareNgrokPage() {
 
       <article className="max-w-4xl mx-auto">
         <p className="text-xs font-bold caps text-muted-foreground mb-3">
-          Comparison · Updated March 2026
+          Comparison · Updated October 2026
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs ngrok</h1>
         <p className="text-lg text-muted-foreground mb-10">
@@ -128,9 +146,9 @@ export default function CompareNgrokPage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">Webhook history and inspection</h3>
             <p className="text-muted-foreground">
-              ngrok tunnels traffic to your local server, but does not store or index incoming
-              requests. To inspect a webhook payload, you need to add logging to your own code or
-              use ngrok&apos;s paid inspection dashboard. webhooks.cc captures every request
+              ngrok tunnels traffic to your local server and shows it in a local inspector at
+              localhost:4040 while the agent runs, with replay to the same upstream; its dashboard
+              Traffic Inspector keeps traffic for longer. webhooks.cc captures every request
               automatically — headers, body, query params, IP, timing — and makes it searchable,
               exportable, and replayable from the dashboard, CLI, or SDK.
             </p>
