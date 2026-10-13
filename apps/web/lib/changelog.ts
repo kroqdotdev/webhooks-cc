@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.39.4";
+export const APP_VERSION = "0.39.5";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.39.5",
+    date: "2026-10-13",
+    title: "Sturdier Not-Found Page",
+    track: "web",
+    items: [
+      "A stray form POST that Next answers with its own 404 page no longer fails with a server error",
+    ],
+  },
   {
     version: "0.39.4",
     date: "2026-10-13",
