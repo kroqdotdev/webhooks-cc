@@ -17,7 +17,7 @@ function capture(event: string, properties?: Record<string, unknown>) {
 }
 
 // ── Landing page ────────────────────────────────────────────────
-export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq") {
+export function trackCTAClick(cta: "register" | "try_live" | "docs" | "faq" | "create_team") {
   capture("landing_cta_clicked", { cta });
 }
 

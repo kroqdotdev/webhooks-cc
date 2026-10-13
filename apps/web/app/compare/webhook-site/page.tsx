@@ -34,6 +34,11 @@ const FAQ_ITEMS = [
     answer:
       "Webhook.site offers an API but no first-party TypeScript SDK with test assertion helpers. It also does not provide an MCP server for AI coding agent integration.",
   },
+  {
+    question: "Which Webhook.site alternatives work for teams?",
+    answer:
+      "webhooks.cc Teams shares endpoints with signed-in team members, keeps team-billed requests for 31 days, and costs $12 per seat per month with 100,000 requests per seat pooled across the team. Webhook.site lists team features on its Enterprise plan.",
+  },
 ];
 
 const ROWS = [
@@ -60,7 +65,7 @@ const ROWS = [
 ] as const;
 
 export const metadata = createPageMetadata({
-  title: "Webhook.site Alternative — Full Comparison (2026)",
+  title: "Webhook.site Alternative: Full Comparison (2026)",
   description:
     "Webhook.site alternative with a TypeScript SDK for CI testing, CLI tunnel to localhost, and MCP server for AI agents. Free tier includes every individual feature; Teams is billed separately.",
   path: "/compare/webhook-site",

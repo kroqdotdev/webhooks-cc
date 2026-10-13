@@ -38,13 +38,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const page = getWebhookProviderPage(provider);
   if (!page) return {};
 
+  // Searches are "<provider> webhooks" far more often than "test <provider>
+  // webhooks", so the title leads with the provider.
   return createPageMetadata({
-    title: page.inSdk
-      ? `Test ${page.label} Webhooks: Free Endpoint & Signed Samples`
-      : `Test ${page.label} Webhooks: Free Endpoint & Live Inspector`,
-    description: page.inSdk
-      ? `Capture and inspect ${page.label} webhooks on a free endpoint, send signed sample payloads, and verify ${page.signatureHeader ?? "signature"} headers. No account required to start.`
-      : `Capture and inspect ${page.label} webhooks on a free endpoint, see every header and payload live, replay deliveries, and forward them to localhost. No account required to start.`,
+    title:
+      page.seo?.title ??
+      (page.inSdk
+        ? `${page.label} Webhooks: Free Tester, Signatures & Samples`
+        : `${page.label} Webhooks: Free Tester & Live Inspector`),
+    description:
+      page.seo?.description ??
+      (page.inSdk
+        ? `Capture and inspect ${page.label} webhooks on a free endpoint, send signed sample payloads, and verify ${page.signatureHeader ?? "signature"} headers. No account required to start.`
+        : `Capture and inspect ${page.label} webhooks on a free endpoint, see every header and payload live, replay deliveries, and forward them to localhost. No account required to start.`),
     path: `/webhooks/${page.slug}`,
     keywords: [
       `test ${page.label.toLowerCase()} webhooks`,
@@ -59,6 +65,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 function buildFaq(page: WebhookProviderPage): FAQItem[] {
   const items: FAQItem[] = [
+    ...(page.seo?.faq ?? []),
     {
       question: `How do I test ${page.label} webhooks without deploying anything?`,
       answer: `Create a free endpoint on webhooks.cc — sign in with GitHub, Google, or email, or use a guest endpoint without an account — then configure it as your webhook URL: ${page.configHint}. Every delivery shows up live in the dashboard with full headers, body, and query parameters. To hit a local server, run whk tunnel <port> and the CLI forwards each webhook to localhost.`,
@@ -109,6 +116,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const icon = getWebProviderInfo(page.slug)?.icon;
   const guide = GUIDE_BY_PROVIDER[page.slug];
   const faqItems = buildFaq(page);
+  const reference = page.seo?.reference;
   const related = getAllWebhookProviderPages()
     .filter((p) => p.category === page.category && p.slug !== page.slug)
     .slice(0, 3);
@@ -196,6 +204,51 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
             .
           </p>
         </div>
+
+        {reference && (
+          <section className="mb-12">
+            <h2 className="text-2xl md:text-3xl font-bold mb-4">{reference.heading}</h2>
+            <p className="text-muted-foreground mb-6">{reference.intro}</p>
+            <div className="ui-card ui-card-static overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b-strong border-line">
+                    {reference.columns.map((column) => (
+                      <th key={column} scope="col" className="text-left py-2 pr-6 font-bold">
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reference.rows.map((row) => (
+                    <tr key={row[0]} className="border-b border-foreground/10 last:border-0">
+                      {row.map((cell, i) => (
+                        <td
+                          key={i}
+                          className={`py-2 pr-6 ${i === reference.codeColumn ? "font-mono" : ""}`}
+                        >
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-sm text-muted-foreground mt-3">
+              Source:{" "}
+              <a
+                href={reference.source.href}
+                className="text-primary font-bold hover:underline"
+                rel="noopener"
+              >
+                {reference.source.label}
+              </a>
+              .
+            </p>
+          </section>
+        )}
 
         {/* How it works */}
         <section className="mb-12">

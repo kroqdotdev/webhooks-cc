@@ -39,6 +39,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     description: fm.seo?.ogDescription ?? fm.description,
     path: slugPath ? `/docs/${slugPath}` : "/docs",
     keywords: fm.keywords,
+    canonical: fm.canonical,
   });
 }
 

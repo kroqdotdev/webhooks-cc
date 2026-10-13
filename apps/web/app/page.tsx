@@ -34,11 +34,13 @@ import { createClient } from "@supabase/supabase-js";
 export const revalidate = 600; // re-render landing page every 10 min to pick up fresh site_stats
 
 export const metadata = createPageMetadata({
-  title: "Webhook Testing Platform — Instant URL, CLI, SDK & MCP",
+  title: "Webhook Tester: Free Online Webhook URL, CLI, SDK & MCP",
   description:
     "Get a live webhook URL the moment you land — no signup. Inspect requests in real time, then sign up free with GitHub, Google, or email to unlock 50 requests/day, CLI, SDK & MCP.",
   path: "/",
   keywords: [
+    "webhook tester",
+    "free webhook url",
     "webhook testing",
     "test webhooks online",
     "instant webhook url",
@@ -638,8 +640,8 @@ export default async function Home() {
                 Create a team, invite your colleagues, and share endpoints. Everyone sees the same
                 incoming webhooks in real time — no more pasting URLs in Slack.
               </p>
-              <Link href="/teams" className="ui-btn-primary inline-block">
-                Try Teams
+              <Link href="/for-teams" className="ui-btn-primary inline-block">
+                How Teams works
               </Link>
               <p className="text-sm text-muted-foreground mt-3">
                 $12/seat/mo — every seat adds 100,000 requests per 30 days to the team&apos;s shared
@@ -887,6 +889,11 @@ export default async function Home() {
                     className="text-muted-foreground hover:text-foreground"
                   >
                     Email to webhook
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/for-teams" className="text-muted-foreground hover:text-foreground">
+                    Teams
                   </Link>
                 </li>
                 <li>

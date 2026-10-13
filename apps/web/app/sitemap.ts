@@ -39,9 +39,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   const docSlugs = await getAllDocSlugs();
-  const docs: MetadataRoute.Sitemap = await Promise.all(
+  const docEntries = await Promise.all(
     docSlugs.map(async (slug) => {
       const fm = await getDocFrontmatter(slug);
+      // A doc canonicalised to another page is not one Google should index.
+      if (fm?.canonical) return null;
       const path = slug ? `/docs/${slug}` : "/docs";
       return {
         url: `${SITE_URL}${path}`,
@@ -55,6 +57,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       };
     })
   );
+  const docs: MetadataRoute.Sitemap = docEntries.filter((entry) => entry !== null);
 
   let posts: Awaited<ReturnType<typeof listPublishedBlogPosts>> = [];
   try {

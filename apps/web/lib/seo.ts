@@ -13,9 +13,13 @@ export const LAST_CONTENT_UPDATE = new Date("2026-07-05T00:00:00.000Z");
 // Privacy policy, terms, and the subprocessor list change together.
 const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
 
-// Email capture and forwarding: the two email pages, plus the landing and
-// Webhook.site pages that gained email sections.
+// Email capture and forwarding: the two email pages.
 const EMAIL_PAGES_UPDATED = new Date("2026-10-08T00:00:00.000Z");
+
+// The Search Console pass: the public Teams page, the landing page that links
+// it, and comparison pages with fresh tables and the questions people (and AI
+// search) ask about them.
+const SEO_PASS_UPDATED = new Date("2026-10-13T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;
@@ -25,7 +29,7 @@ export interface SitemapPageDefinition {
 }
 
 export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
-  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: EMAIL_PAGES_UPDATED },
+  { path: "/", changeFrequency: "weekly", priority: 1, lastModified: SEO_PASS_UPDATED },
   // /go permanently redirects to / (the landing page is the guest dashboard now)
   // Individual /webhooks/[provider] pages are appended in app/sitemap.ts
   { path: "/webhooks", changeFrequency: "monthly", priority: 0.8 },
@@ -41,20 +45,46 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     priority: 0.8,
     lastModified: EMAIL_PAGES_UPDATED,
   },
+  { path: "/for-teams", changeFrequency: "monthly", priority: 0.8, lastModified: SEO_PASS_UPDATED },
   // Docs pages are auto-generated from content/docs/ in app/sitemap.ts
-  { path: "/compare", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/compare", changeFrequency: "monthly", priority: 0.7, lastModified: SEO_PASS_UPDATED },
   {
     path: "/compare/webhook-site",
     changeFrequency: "monthly",
     priority: 0.6,
-    lastModified: EMAIL_PAGES_UPDATED,
+    lastModified: SEO_PASS_UPDATED,
   },
-  { path: "/compare/ngrok", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/compare/beeceptor", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/compare/requestbin", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/compare/hookdeck", changeFrequency: "monthly", priority: 0.6 },
+  {
+    path: "/compare/ngrok",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
+  {
+    path: "/compare/beeceptor",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
+  {
+    path: "/compare/requestbin",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
+  {
+    path: "/compare/hookdeck",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
   { path: "/compare/smee", changeFrequency: "monthly", priority: 0.6 },
-  { path: "/compare/localtunnel", changeFrequency: "monthly", priority: 0.6 },
+  {
+    path: "/compare/localtunnel",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
   // Blog pages are dynamically generated from Supabase in app/sitemap.ts
   // /api-explorer is noindexed — client-only Scalar viewer, /docs/api owns this query
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
@@ -77,6 +107,8 @@ interface PageMetadataInput {
   path: string;
   noIndex?: boolean;
   keywords?: readonly string[];
+  /** Canonical path when it differs from `path`. */
+  canonical?: string;
 }
 
 function toAbsoluteUrl(path: string): string {
@@ -93,6 +125,7 @@ export function createPageMetadata({
   path,
   noIndex = false,
   keywords,
+  canonical = path,
 }: PageMetadataInput): Metadata {
   const absoluteUrl = toAbsoluteUrl(path);
 
@@ -100,7 +133,7 @@ export function createPageMetadata({
     title,
     description,
     alternates: {
-      canonical: path,
+      canonical,
     },
     openGraph: {
       type: "website",
