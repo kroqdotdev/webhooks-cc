@@ -155,10 +155,12 @@ export default function CompareHookdeckPage() {
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">AI agent integration</h3>
             <p className="text-muted-foreground">
-              webhooks.cc provides an MCP server with 11 tools for AI coding agents — create
-              endpoints, send test payloads, inspect responses, replay requests. This lets agents
-              like Cursor, Claude Code, and Windsurf handle webhook testing without manual dashboard
-              interaction. Hookdeck does not offer MCP integration.
+              Both ship an MCP server, for different jobs. The webhooks.cc MCP server is for
+              testing: AI coding agents like Cursor, Claude Code, and Windsurf create endpoints,
+              send signed test payloads, inspect what arrived, and replay requests without opening
+              the dashboard. Hookdeck&apos;s MCP server (hookdeck gateway mcp, part of its CLI) is
+              for operating its Event Gateway: agents read connections, events, delivery attempts,
+              issues, and metrics to diagnose production traffic.
             </p>
           </div>
 
