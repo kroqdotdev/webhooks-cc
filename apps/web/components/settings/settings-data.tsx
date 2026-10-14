@@ -78,8 +78,11 @@ export function SettingsDataProvider({ children }: { children: React.ReactNode }
         } catch {
           if (id === latest.current) setLoadError(true);
         } finally {
-          setLoading(false);
-          if (id === latest.current) inFlight.current = null;
+          // A superseded read must not end loading before the newer one has data.
+          if (id === latest.current) {
+            setLoading(false);
+            inFlight.current = null;
+          }
         }
       })();
       inFlight.current = run;
