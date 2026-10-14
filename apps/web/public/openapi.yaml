@@ -6,7 +6,7 @@ info:
     REST API for webhooks.cc: capture, inspect, and test webhooks and email.
 
     **Authentication:** Most endpoints require a Bearer token in the `Authorization` header.
-    Use your API key (prefix `whcc_`) generated from the [account page](https://webhooks.cc/account).
+    Use your API key (prefix `whcc_`) generated on the [API keys page](https://webhooks.cc/account/api-keys).
     Public endpoints (`/api/stats`, `/api/health`) do not require authentication.
 
     **Webhook receiver:** Send webhooks to `https://go.webhooks.cc/w/{slug}`. They are captured
@@ -1249,6 +1249,32 @@ paths:
     parameters:
       - $ref: "#/components/parameters/teamId"
 
+    get:
+      operationId: listTeamEndpoints
+      tags: [Teams]
+      summary: List endpoints shared with a team
+      description: |
+        Every endpoint shared with the team, oldest share first. Any member may
+        call it, also while the team has no subscription.
+      responses:
+        "200":
+          description: Shared endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TeamSharedEndpoint"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
     post:
       operationId: shareEndpointWithTeam
       tags: [Teams]
@@ -1355,6 +1381,51 @@ paths:
           $ref: "#/components/responses/BadRequestRateLimited"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalErrorRateLimited"
+
+  /api/teams/{teamId}/invites/{inviteId}:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+      - name: inviteId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ID of the pending invite to revoke
+
+    delete:
+      operationId: revokeTeamInvite
+      tags: [Teams]
+      summary: Revoke a pending invite
+      description: |
+        Withdraw a pending invite. Only the team owner can revoke; accepted and
+        declined invites cannot be revoked. Shares the invite rate limit of 20
+        requests per 10 minutes.
+      responses:
+        "200":
+          description: Invite revoked
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+                    const: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -2373,8 +2444,15 @@ components:
       properties:
         id:
           type: string
+          description: Membership ID
+        userId:
+          type: string
         email:
           type: string
+        name:
+          type: [string, "null"]
+        image:
+          type: [string, "null"]
         role:
           type: string
           enum: [owner, member]
@@ -2403,6 +2481,30 @@ components:
           type: string
           enum: [pending, accepted, declined]
         createdAt:
+          type: integer
+
+    TeamSharedEndpoint:
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: [string, "null"]
+        ownerId:
+          type: string
+        ownerName:
+          type: [string, "null"]
+        ownerEmail:
+          type: string
+        sharedBy:
+          type: string
+          description: User ID of the member who shared the endpoint
+        sharedAt:
+          type: integer
+          description: Share time in milliseconds since the epoch
+        requestCount:
           type: integer
 
   responses:

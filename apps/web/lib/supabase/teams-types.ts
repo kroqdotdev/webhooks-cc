@@ -84,3 +84,18 @@ export interface SharedEndpoint {
   forwardEnabled: boolean;
   hasForwardSecret: boolean;
 }
+
+/** One endpoint shared with a team, as the team page lists it. */
+export interface TeamSharedEndpoint {
+  id: string;
+  slug: string;
+  name: string | null;
+  ownerId: string;
+  ownerName: string | null;
+  ownerEmail: string;
+  /** User id of the member who shared it. */
+  sharedBy: string;
+  /** Share time in millis. */
+  sharedAt: number;
+  requestCount: number;
+}

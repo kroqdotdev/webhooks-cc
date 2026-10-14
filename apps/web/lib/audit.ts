@@ -16,6 +16,7 @@ import { reportError } from "@/lib/observability";
 
 export type AuditAction =
   | "account.deleted"
+  | "account.name_updated"
   | "api_key.created"
   | "api_key.deleted"
   | "billing.checkout_started"
@@ -37,6 +38,7 @@ export type AuditAction =
   | "team.invite_sent"
   | "team.invite_accepted"
   | "team.invite_declined"
+  | "team.invite_revoked"
   | "team.member_removed"
   | "team.member_left"
   | "team.checkout_started"

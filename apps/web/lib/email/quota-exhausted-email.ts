@@ -15,7 +15,7 @@ export function buildQuotaExhaustedEmail(params: {
   appUrl: string;
 }): EmailMessage {
   const { to, requestLimit, periodEnd, teamBilledEndpoints, appUrl } = params;
-  const accountLink = `${appUrl}/account`;
+  const accountLink = `${appUrl}/account/plan`;
   const teamsLink = `${appUrl}/teams`;
   const limit = requestLimit.toLocaleString("en-US");
   const resetsAt = `${periodEnd.toISOString().slice(0, 16).replace("T", " ")} UTC`;

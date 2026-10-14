@@ -31,9 +31,9 @@ describe("buildQuotaExhaustedEmail", () => {
   });
 
   it("links to the upgrade and team pages", () => {
-    expect(message.text).toContain("https://webhooks.cc/account");
+    expect(message.text).toContain("https://webhooks.cc/account/plan");
     expect(message.text).toContain("https://webhooks.cc/teams");
-    expect(message.html).toContain('href="https://webhooks.cc/account"');
+    expect(message.html).toContain('href="https://webhooks.cc/account/plan"');
     expect(message.html).toContain('href="https://webhooks.cc/teams"');
   });
 });

@@ -14,6 +14,8 @@ import {
   listPendingInvitesForTeam,
   acceptInvite,
   declineInvite,
+  revokeInvite,
+  listTeamEndpoints,
   shareEndpointWithTeam,
   unshareEndpointFromTeam,
   getTeamSharesForEndpoint,
@@ -385,6 +387,53 @@ describe("Teams Integration", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Revoke invite (owner withdraws a pending invite)
+  // ---------------------------------------------------------------------------
+
+  describe("Revoke invite", () => {
+    let revokeInviteId: string;
+
+    it("only the owner can revoke, and only within the invite's team", async () => {
+      const result = await createInvite(ownerId, teamId, THIRD_EMAIL);
+      expect(result.invite).toBeDefined();
+      revokeInviteId = result.invite!.id;
+
+      // The invitee and a non-member are not the owner.
+      await expect(revokeInvite(thirdId, teamId, revokeInviteId)).resolves.toBe(false);
+      // Right owner, wrong team.
+      await expect(revokeInvite(ownerId, crypto.randomUUID(), revokeInviteId)).resolves.toBe(false);
+
+      const invites = await listPendingInvitesForTeam(ownerId, teamId);
+      expect(invites!.some((i) => i.id === revokeInviteId)).toBe(true);
+    });
+
+    it("the owner revokes the pending invite", async () => {
+      await expect(revokeInvite(ownerId, teamId, revokeInviteId)).resolves.toBe(true);
+
+      const teamInvites = await listPendingInvitesForTeam(ownerId, teamId);
+      expect(teamInvites!.some((i) => i.id === revokeInviteId)).toBe(false);
+      const userInvites = await listPendingInvitesForUser(thirdId);
+      expect(userInvites.some((i) => i.id === revokeInviteId)).toBe(false);
+
+      await expect(revokeInvite(ownerId, teamId, revokeInviteId)).resolves.toBe(false);
+    });
+
+    it("the address can be invited again after a revoke", async () => {
+      const again = await createInvite(ownerId, teamId, THIRD_EMAIL);
+      expect(again.error).toBeUndefined();
+      expect(again.invite).toBeDefined();
+      await expect(revokeInvite(ownerId, teamId, again.invite!.id)).resolves.toBe(true);
+    });
+
+    it("a declined invite cannot be revoked", async () => {
+      const result = await createInvite(ownerId, teamId, THIRD_EMAIL);
+      const id = result.invite!.id;
+      await expect(declineInvite(thirdId, id)).resolves.toBe(true);
+      await expect(revokeInvite(ownerId, teamId, id)).resolves.toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Unknown-email invites: created unlinked, emailed, linked at signup
   // ---------------------------------------------------------------------------
 
@@ -703,6 +752,49 @@ describe("Teams Integration", () => {
       const shared = await getSharedEndpointsForUser(thirdId);
       const ep = shared.find((e) => e.id === endpointId);
       expect(ep).toBeUndefined();
+    });
+
+    it("listTeamEndpoints lists the share for owner and member", async () => {
+      for (const caller of [ownerId, memberId]) {
+        const endpoints = await listTeamEndpoints(caller, teamId);
+        expect(endpoints).toEqual([
+          {
+            id: endpointId,
+            slug: endpointSlug,
+            name: "Team Test Endpoint",
+            ownerId,
+            ownerName: "Team Owner",
+            ownerEmail: OWNER_EMAIL,
+            sharedBy: ownerId,
+            sharedAt: expect.any(Number),
+            requestCount: expect.any(Number),
+          },
+        ]);
+      }
+    });
+
+    it("listTeamEndpoints returns null for a non-member", async () => {
+      await expect(listTeamEndpoints(thirdId, teamId)).resolves.toBeNull();
+    });
+
+    it("listTeamEndpoints still lists shares while the team is suspended", async () => {
+      const { data: before, error: readError } = await admin
+        .from("teams")
+        .select("subscription_status")
+        .eq("id", teamId)
+        .single();
+      if (readError) throw readError;
+
+      await admin.from("teams").update({ subscription_status: null }).eq("id", teamId);
+      try {
+        const endpoints = await listTeamEndpoints(memberId, teamId);
+        expect(endpoints!.map((e) => e.id)).toEqual([endpointId]);
+      } finally {
+        await admin
+          .from("teams")
+          .update({ subscription_status: before.subscription_status })
+          .eq("id", teamId);
+      }
     });
   });
 

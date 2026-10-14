@@ -8,6 +8,7 @@ export type {
   TeamInvite,
   TeamEndpointShare,
   SharedEndpoint,
+  TeamSharedEndpoint,
 } from "./teams-types";
 
 // Team CRUD
@@ -31,6 +32,7 @@ export {
   listPendingInvitesForTeam,
   acceptInvite,
   declineInvite,
+  revokeInvite,
 } from "./teams-invites";
 
 // Endpoint sharing
@@ -41,4 +43,5 @@ export {
   getSharedEndpointsForUser,
   resolveEndpointAccess,
   getShareMetadataForOwnedEndpoints,
+  listTeamEndpoints,
 } from "./teams-endpoints";

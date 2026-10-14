@@ -218,7 +218,7 @@ export function runSetup(args: string[]): void {
   const apiKey = resolveApiKey(flags);
   if (!apiKey) {
     console.error("Error: API key required. Pass --api-key or set WHK_API_KEY env var.");
-    console.error("Get your API key at https://webhooks.cc/account\n");
+    console.error("Get your API key at https://webhooks.cc/account/api-keys\n");
     process.exit(1);
   }
 

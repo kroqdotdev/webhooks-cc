@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,8 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { UsageDisplay } from "@/components/billing/usage-display";
-import type { AccountProfile } from "@/lib/account-profile";
+import { InlineMessage, Notice, Panel, PanelRow, StatusTag } from "@/components/settings/panel";
 import type { Team } from "@/lib/supabase/teams-types";
 import { trackTeamSubscribeClicked } from "@/lib/analytics";
 import {
@@ -34,16 +33,12 @@ import {
   formatSeatPricing,
   type SeatChangeQuote,
 } from "@/lib/team-pricing";
+import { longDate } from "@/components/settings/format";
 
 const SESSION_EXPIRED = "Your session expired. Please sign in again.";
 
 function formatDate(millis: number | null): string {
-  if (!millis) return "unknown";
-  return new Date(millis).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return millis ? longDate(millis) : "unknown";
 }
 
 function SeatStepper({
@@ -51,7 +46,9 @@ function SeatStepper({
   onChange,
   disabled,
   label,
+  id,
 }: {
+  id?: string;
   seats: number;
   onChange: (seats: number) => void;
   disabled: boolean;
@@ -68,9 +65,10 @@ function SeatStepper({
           disabled={disabled || seats <= MIN_TEAM_SEATS}
           aria-label="Decrease seats"
         >
-          −
+          <Minus className="h-4 w-4" aria-hidden="true" />
         </Button>
         <Input
+          id={id}
           type="number"
           className="w-20 text-center"
           value={seats}
@@ -88,7 +86,7 @@ function SeatStepper({
           disabled={disabled || seats >= MAX_TEAM_SEATS}
           aria-label="Increase seats"
         >
-          +
+          <Plus className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">{formatSeatPricing(seats)}</p>
@@ -96,7 +94,7 @@ function SeatStepper({
   );
 }
 
-export function TeamSubscriptionCard({
+export function TeamBillingPanel({
   team,
   isOwner,
   accessToken,
@@ -268,7 +266,7 @@ export function TeamSubscriptionCard({
     setNotice(null);
     try {
       await resubscribeTeamSubscription(accessToken, team.id);
-      setNotice("Subscription reactivated — it renews at the end of the period.");
+      setNotice("Subscription kept. It renews at the end of the period.");
       await onChanged?.();
     } catch (err) {
       console.error("Team resubscribe error:", err);
@@ -280,80 +278,67 @@ export function TeamSubscriptionCard({
     }
   };
 
-  const errorLine = error ? (
-    <p className="text-sm text-destructive" role="alert" aria-live="polite">
-      {error}
-    </p>
-  ) : null;
-
   // ── Unsubscribed ───────────────────────────────────────────────
   if (!team.subscriptionStatus) {
+    if (!isOwner) {
+      return (
+        <Notice tone="warning" title="This team is inactive">
+          This team needs an active Teams subscription. Ask the owner to subscribe.
+        </Notice>
+      );
+    }
+
+    if (activating) {
+      return (
+        <Notice tone="info" title="Activating your subscription...">
+          Payment received. Polar is confirming the subscription and this page updates by itself, so
+          there is no need to pay again.
+        </Notice>
+      );
+    }
+
     return (
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Subscription</h2>
-        <div className="border rounded-lg p-6 bg-card space-y-4">
-          {isOwner && activating ? (
-            <>
-              <div className="space-y-1">
-                <p className="font-medium">Activating your subscription...</p>
-                <p className="text-sm text-muted-foreground">
-                  Payment received. Waiting for Polar to confirm the subscription — this page
-                  updates itself, so there is no need to pay again.
-                </p>
-              </div>
-              <p className="text-sm text-muted-foreground animate-pulse">Checking...</p>
-            </>
-          ) : isOwner ? (
-            <>
-              {activationTimedOut && (
-                <p className="text-sm text-yellow-700 dark:text-yellow-400">
-                  Confirmation is taking longer than expected. Refresh the page in a minute — only
-                  subscribe again if your Polar receipt shows no charge.
-                </p>
-              )}
-              <div className="space-y-1">
-                <p className="font-medium">No active subscription</p>
-                <p className="text-sm text-muted-foreground">
-                  Subscribe to activate this team. Every seat adds 100,000 requests to the shared
-                  monthly pool, and members need a seat to access shared endpoints.
-                </p>
-              </div>
-              <SeatStepper
-                seats={checkoutSeats}
-                onChange={setCheckoutSeats}
-                disabled={subscribing}
-                label="Seats to purchase"
-              />
-              <Button onClick={() => void handleSubscribe()} disabled={subscribing || !accessToken}>
-                {subscribing ? "Redirecting..." : "Subscribe"}
-              </Button>
-              {errorLine}
-            </>
-          ) : (
-            <div className="space-y-1">
-              <p className="font-medium">This team is inactive</p>
-              <p className="text-sm text-muted-foreground">
-                This team needs an active Teams subscription — ask the owner to subscribe.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
+      <Panel
+        id="subscribe"
+        title="No active subscription"
+        description="Subscribe to activate this team. Every seat adds 100,000 requests to the shared monthly pool, and members need a seat to reach shared endpoints."
+        footer={
+          <>
+            <Button onClick={() => void handleSubscribe()} disabled={subscribing || !accessToken}>
+              {subscribing ? "Redirecting..." : "Subscribe"}
+            </Button>
+            {error && <InlineMessage tone="error">{error}</InlineMessage>}
+          </>
+        }
+      >
+        {activationTimedOut && (
+          <div className="mb-4">
+            <Notice tone="warning" title="Confirmation is taking longer than expected">
+              Refresh the page in a minute. Only subscribe again if your Polar receipt shows no
+              charge.
+            </Notice>
+          </div>
+        )}
+        <PanelRow label="Seats" htmlFor="checkout-seats">
+          <SeatStepper
+            seats={checkoutSeats}
+            onChange={setCheckoutSeats}
+            disabled={subscribing}
+            label="Seats to purchase"
+            id="checkout-seats"
+          />
+        </PanelRow>
+      </Panel>
     );
   }
 
   // ── Subscribed ─────────────────────────────────────────────────
   const isPastDue = team.subscriptionStatus === "past_due";
   // `subscription.canceled` writes cancel_at_period_end and the status together,
-  // but resubscribing only clears the flag — the status stays "canceled" until
+  // but resubscribing only clears the flag; the status stays "canceled" until
   // the `subscription.uncanceled` webhook lands. Keying on the flag alone keeps
   // a successful reactivation from still reading as "Cancels at period end".
   const isCanceling = team.cancelAtPeriodEnd;
-  const statusLabel = isPastDue
-    ? "Payment past due"
-    : isCanceling
-      ? "Cancels at period end"
-      : "Active";
   const periodEndLabel = formatDate(team.periodEnd);
   const seatDelta = seatDraft - team.seats;
   const addingSeats = seatDelta > 0;
@@ -386,121 +371,118 @@ export function TeamSubscriptionCard({
     }
   }
 
-  // UsageDisplay renders an AccountProfile; the team's pooled quota is fed
-  // through the same shape so both bars look and behave identically.
-  const pooledUsage: AccountProfile = {
-    id: team.id,
-    email: "",
-    name: team.name,
-    image: null,
-    plan: "pro",
-    requests_used: team.requestsUsed,
-    request_limit: team.requestLimit,
-    period_end: team.periodEnd ? new Date(team.periodEnd).toISOString() : null,
-    cancel_at_period_end: team.cancelAtPeriodEnd,
-    subscription_status: team.subscriptionStatus,
-  };
+  const status = isPastDue ? (
+    <StatusTag tone="danger">Payment past due</StatusTag>
+  ) : isCanceling ? (
+    <StatusTag tone="warning">Cancels at period end</StatusTag>
+  ) : (
+    <StatusTag tone="success">Active</StatusTag>
+  );
 
   return (
-    <section className="space-y-4">
-      <h2 className="text-lg font-semibold">Subscription</h2>
-      <div className="border rounded-lg p-6 bg-card space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <p className="font-medium">Teams</p>
-            <Badge
-              variant="outline"
-              className={
-                isPastDue
-                  ? "text-destructive border-destructive/50"
-                  : isCanceling
-                    ? "text-yellow-600 border-yellow-500/50"
-                    : ""
-              }
-            >
-              {statusLabel}
-            </Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {team.memberCount} / {team.seats} {team.seats === 1 ? "seat" : "seats"}
-          </p>
-        </div>
-
-        {isPastDue && (
-          <p className="text-sm text-muted-foreground">
-            The last payment failed. Update your payment method in the Polar receipt email to keep
-            this team active.
-          </p>
-        )}
-        {isCanceling && !isPastDue && (
-          <p className="text-sm text-muted-foreground">
-            This subscription ends on {periodEndLabel}. Members lose access to shared endpoints
-            after that date.
-          </p>
-        )}
-
-        {scheduledReduction !== null && (
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <p className="text-muted-foreground">
-              Seats drop from {team.seats} to {scheduledReduction} on {periodEndLabel}. You keep{" "}
-              {team.seats} seats until then.
-            </p>
-            {isOwner && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void handleKeepSeats()}
-                disabled={savingSeats || !accessToken}
-              >
-                Keep {team.seats} seats
-              </Button>
+    <>
+      <Panel
+        id="billing"
+        title="Billing"
+        footer={
+          isOwner ? (
+            <>
+              {isCanceling ? (
+                <Button
+                  onClick={() => void handleResubscribe()}
+                  disabled={resubscribing || !accessToken}
+                >
+                  {resubscribing ? "Keeping..." : "Keep subscription"}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setConfirmCancelOpen(true)}
+                  disabled={canceling || !accessToken}
+                >
+                  {canceling ? "Cancelling..." : "Cancel subscription"}
+                </Button>
+              )}
+              {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
+              {error && <InlineMessage tone="error">{error}</InlineMessage>}
+            </>
+          ) : undefined
+        }
+      >
+        <PanelRow label="Status">
+          <div className="space-y-2 py-1">
+            {status}
+            {isPastDue && (
+              <p className="text-muted-foreground">
+                The last payment failed. Update the payment method from the Polar receipt email to
+                keep this team active.
+              </p>
+            )}
+            {isCanceling && !isPastDue && (
+              <p className="text-muted-foreground">
+                Ends on {periodEndLabel}. Members lose access to shared endpoints after that.
+              </p>
+            )}
+            {!isCanceling && !isPastDue && team.periodEnd && (
+              <p className="text-muted-foreground">
+                Renews on {periodEndLabel} at {formatSeatPricing(scheduledReduction ?? team.seats)}.
+              </p>
             )}
           </div>
-        )}
+        </PanelRow>
 
-        <UsageDisplay profile={pooledUsage} />
-
-        {isOwner && (
-          <div className="pt-4 border-t space-y-4">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Seats</p>
-              <SeatStepper
-                seats={seatDraft}
-                onChange={setSeatDraft}
-                disabled={savingSeats}
-                label="Seat count"
-              />
-              <Button
-                variant="outline"
-                onClick={() => void openSeatConfirmation()}
-                disabled={savingSeats || seatDraft === team.seats || !accessToken}
-              >
-                {savingSeats ? "Updating..." : "Update seats"}
-              </Button>
+        <PanelRow
+          label="Seats"
+          htmlFor={isOwner ? "seat-count" : undefined}
+          hint={`${team.memberCount} of ${team.seats} in use`}
+        >
+          {isOwner ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-start gap-3">
+                <SeatStepper
+                  seats={seatDraft}
+                  onChange={setSeatDraft}
+                  disabled={savingSeats}
+                  label="Seat count"
+                  id="seat-count"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => void openSeatConfirmation()}
+                  disabled={savingSeats || seatDraft === team.seats || !accessToken}
+                >
+                  {savingSeats ? "Updating..." : "Update seats"}
+                </Button>
+              </div>
+              {scheduledReduction !== null && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-muted-foreground">
+                    Drops from {team.seats} to {scheduledReduction} seats on {periodEndLabel}.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleKeepSeats()}
+                    disabled={savingSeats || !accessToken}
+                  >
+                    Keep {team.seats} seats
+                  </Button>
+                </div>
+              )}
             </div>
-
-            {notice && <p className="text-sm text-green-600">{notice}</p>}
-            {errorLine}
-
-            {isCanceling ? (
-              <Button
-                onClick={() => void handleResubscribe()}
-                disabled={resubscribing || !accessToken}
-              >
-                {resubscribing ? "Reactivating..." : "Keep subscription"}
-              </Button>
-            ) : (
-              <Button
-                variant="destructive"
-                onClick={() => setConfirmCancelOpen(true)}
-                disabled={canceling || !accessToken}
-              >
-                {canceling ? "Canceling..." : "Cancel subscription"}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+          ) : (
+            <p className="py-1">
+              {team.seats} {team.seats === 1 ? "seat" : "seats"}
+              {scheduledReduction !== null && (
+                <span className="text-muted-foreground">
+                  , dropping to {scheduledReduction} on {periodEndLabel}
+                </span>
+              )}
+            </p>
+          )}
+        </PanelRow>
+      </Panel>
 
       <AlertDialog
         open={confirmSeatsOpen}
@@ -565,11 +547,11 @@ export function TeamSubscriptionCard({
               onClick={() => void handleConfirmCancel()}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Yes, cancel
+              Cancel subscription
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </>
   );
 }

@@ -229,7 +229,7 @@ test("lists connected agents in Account and disconnects one", async ({ page }) =
   if (error) throw new Error(error.message);
   registrationIds.push(data.id);
 
-  await openAs(page, stranger, "/account");
+  await openAs(page, stranger, "/account/agents");
   const list = page.getByTestId("connected-agents");
   await expect(list.getByText("Account list agent")).toBeVisible({ timeout: 15000 });
   await list.getByRole("button", { name: "Disconnect agent" }).click();

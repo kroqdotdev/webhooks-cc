@@ -29,7 +29,7 @@ Setup:
   npx @webhooks-cc/mcp setup windsurf --api-key whcc_...
   npx @webhooks-cc/mcp setup claude-desktop --api-key whcc_...
 
-Get your API key at https://webhooks.cc/account
+Get your API key at https://webhooks.cc/account/api-keys
 `);
 } else if (command && command !== "--") {
   console.error(`Unknown command: "${command}". Run with --help for usage.`);

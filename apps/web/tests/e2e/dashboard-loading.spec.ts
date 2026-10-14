@@ -51,7 +51,7 @@ test("coming back to the dashboard waits for the requests instead of showing the
   await expect(page.getByText("/orders").first()).toBeVisible({ timeout: 15000 });
 
   await page.goto("/account");
-  await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
 
   // Hold the request list back, so the moment before it arrives can be seen.
   let release: () => void = () => {};

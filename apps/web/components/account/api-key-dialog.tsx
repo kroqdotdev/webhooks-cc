@@ -32,12 +32,12 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      setError("Please enter a name for this API key");
+      setError("Give the key a name.");
       return;
     }
 
     if (!accessToken) {
-      setError("Not authenticated");
+      setError("Your session expired. Sign in again.");
       return;
     }
 
@@ -92,15 +92,15 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => (isOpen ? setOpen(true) : handleClose())}>
       <DialogTrigger asChild>
-        <Button>Create API Key</Button>
+        <Button>Create key</Button>
       </DialogTrigger>
       <DialogContent>
         {!createdKey ? (
           <>
             <DialogHeader>
-              <DialogTitle>Create API Key</DialogTitle>
+              <DialogTitle>Create an API key</DialogTitle>
               <DialogDescription>
-                Create a new API key to access the webhooks.cc API programmatically.
+                The key acts as you in the CLI, SDK, MCP server and API.
               </DialogDescription>
             </DialogHeader>
 
@@ -111,15 +111,18 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
                   id="keyName"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="My API Key"
+                  placeholder="Laptop CLI"
                 />
                 <p className="text-sm text-muted-foreground">
-                  A descriptive name to identify this key
+                  Name it after where you will use it, so you know which to delete later.
                 </p>
               </div>
 
               {error && (
-                <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded">
+                <div
+                  role="alert"
+                  className="text-sm text-destructive bg-destructive/10 p-3 rounded-md"
+                >
                   {error}
                 </div>
               )}
@@ -130,23 +133,21 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
                 Cancel
               </Button>
               <Button onClick={handleCreate} disabled={isCreating}>
-                {isCreating ? "Creating..." : "Create"}
+                {isCreating ? "Creating..." : "Create key"}
               </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>API Key Created</DialogTitle>
-              <DialogDescription>
-                Copy your API key now. You won&apos;t be able to see it again.
-              </DialogDescription>
+              <DialogTitle>Key created</DialogTitle>
+              <DialogDescription>Copy it now. It is not shown again.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-2 p-3 bg-muted rounded-lg border">
                 <code className="flex-1 text-sm font-mono break-all">{createdKey}</code>
-                <Button variant="ghost" size="icon" onClick={copyKey}>
+                <Button variant="ghost" size="icon" onClick={copyKey} aria-label="Copy key">
                   {copied ? (
                     <Check className="h-4 w-4 text-green-500" />
                   ) : (
@@ -155,10 +156,11 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
                 </Button>
               </div>
 
-              <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  Store this key securely. It will only be shown once and cannot be retrieved later.
+              <div className="flex items-start gap-2 p-3 bg-amber-500/10 rounded-md border border-amber-500/40">
+                <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  Store it somewhere safe, such as a password manager. If you lose it, delete it and
+                  create a new one.
                 </p>
               </div>
             </div>

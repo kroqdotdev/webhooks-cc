@@ -1,8 +1,30 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
-import { shareEndpointWithTeam } from "@/lib/supabase/teams";
+import { listTeamEndpoints, shareEndpointWithTeam } from "@/lib/supabase/teams";
 import { reportError } from "@/lib/observability";
+
+/**
+ * Lists every endpoint shared with the team. Any member may read it, also
+ * while the team is suspended, so endpoint owners can still unshare.
+ */
+export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const auth = await authenticateRequestRequireUser(request);
+  if (!auth.success) return auth.response;
+
+  const { teamId } = await params;
+
+  try {
+    const endpoints = await listTeamEndpoints(auth.userId, teamId);
+    if (endpoints === null) {
+      return Response.json({ error: "Team not found" }, { status: 404 });
+    }
+    return Response.json({ endpoints });
+  } catch (error) {
+    reportError("Failed to list team endpoints", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequestRequireUser(request);

@@ -159,7 +159,7 @@ describe("Supabase Billing Integration", () => {
     });
     expect(checkoutCreate).toHaveBeenCalledWith({
       products: ["prod_test_123"],
-      success_url: "https://webhooks.cc/account?upgraded=true",
+      success_url: "https://webhooks.cc/account/plan?upgraded=true",
       customer_id: "polar_cust_123",
     });
 

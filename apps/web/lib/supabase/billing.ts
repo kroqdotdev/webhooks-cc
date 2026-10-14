@@ -158,7 +158,7 @@ export async function createCheckoutForUser(userId: string): Promise<string> {
 
   const checkout = await polar.checkouts.create({
     products: [proProductId],
-    success_url: `${appUrl}/account?upgraded=true`,
+    success_url: `${appUrl}/account/plan?upgraded=true`,
     customer_id: customerId,
   });
 

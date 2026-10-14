@@ -61,8 +61,8 @@ export function McpInstallGuide() {
         />
         <p className="text-sm text-muted-foreground mt-2">
           Get your key from your{" "}
-          <Link href="/account" className="text-primary hover:underline font-bold">
-            account page
+          <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+            API keys page
           </Link>
           .
         </p>
