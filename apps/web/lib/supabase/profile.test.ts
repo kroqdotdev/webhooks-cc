@@ -110,6 +110,12 @@ describe("effectiveDisplayName", () => {
   test("cleans a provider name the same way the trigger does", () => {
     expect(effectiveDisplayName({}, { full_name: "Eve\u202Elivé" })).toBe("Evelivé");
   });
+
+  test("skips a blank provider name and trims only plain spaces, as btrim() does", () => {
+    expect(effectiveDisplayName({}, { full_name: " ", name: "Short" })).toBe("Short");
+    expect(effectiveDisplayName({}, { full_name: "", name: "Short" })).toBe("Short");
+    expect(effectiveDisplayName({}, { full_name: " Ada\u00A0" })).toBe("Ada\u00A0");
+  });
 });
 
 describe("updateDisplayName", () => {

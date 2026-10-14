@@ -141,15 +141,21 @@ function TeamDetailContent() {
         const data = (await ownedRes.json()) as { owned: OwnedEndpoint[] };
         setOwnedEndpoints(data.owned ?? []);
       }
-      setDetailError(false);
+      // A failed endpoints read must not pass for "nothing shared yet".
+      setDetailError(!teamEndpointsRes.ok || !ownedRes.ok);
     } catch (error) {
       console.error("Failed to load team page data:", error);
       setDetailError(true);
     }
   }, [accessToken, teamId, authHeader]);
 
+  // Clear the table only for another team: loadDetails also changes when the
+  // session token refreshes, and that re-read should not flash a loading state.
   useEffect(() => {
     setMembers(null);
+  }, [teamId]);
+
+  useEffect(() => {
     void loadDetails();
   }, [loadDetails]);
 
@@ -192,7 +198,8 @@ function TeamDetailContent() {
         setActivationTimedOut(true);
         return;
       }
-      void refreshRef.current();
+      // Shares a read still in flight, so a slow read is not replaced before it lands.
+      void refreshRef.current({ reuse: true });
     }, ACTIVATION_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [activating]);
@@ -445,7 +452,8 @@ function TeamDetailContent() {
   const subscribed = team.subscriptionStatus !== null;
   const membersById = new Map((members ?? []).map((m) => [m.userId, m]));
   const sharedIds = new Set(endpoints.map((e) => e.id));
-  const shareable = ownedEndpoints.filter((ep) => !sharedIds.has(ep.id));
+  // Until both endpoint lists have loaded, the picker could offer one already shared.
+  const shareable = detailError ? [] : ownedEndpoints.filter((ep) => !sharedIds.has(ep.id));
   const seats = seatSlotsFor(team.seats, members ?? [], invites, currentUserId);
   const seatsEndingFrom =
     team.pendingSeats !== null && team.pendingSeats < team.seats ? team.pendingSeats : null;
@@ -731,7 +739,11 @@ function TeamDetailContent() {
             ) : undefined
           }
         >
-          {endpoints.length === 0 ? (
+          {endpoints.length === 0 && detailError ? (
+            <p className="p-5 text-sm text-muted-foreground">
+              The shared endpoints could not be loaded. Try again above.
+            </p>
+          ) : endpoints.length === 0 ? (
             <div className="space-y-1 p-5">
               <p className="text-sm font-medium">Nothing shared yet</p>
               <p className="text-sm text-muted-foreground">

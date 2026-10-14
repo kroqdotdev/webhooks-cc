@@ -12,6 +12,9 @@ export type SeatSlot =
 /** Above this many seats the rail drops its per-seat labels and summarises instead. */
 const LABELLED_SEAT_LIMIT = 10;
 
+/** Above this many seats per-seat blocks no longer fit the column, so the rail is one bar. */
+const SEAT_BLOCK_LIMIT = 40;
+
 /** How much of [start, end) the range [from, to) covers, as a fraction of the block. */
 function overlap(start: number, end: number, from: number, to: number): number {
   const size = end - start;
@@ -60,7 +63,8 @@ export function QuotaMeter({
   const percent = safeLimit > 0 ? Math.min((used / safeLimit) * 100, 100) : 0;
   const nearLimit = percent >= 80;
 
-  const blocks = seats && seats.length > 0 ? seats : [null];
+  const perSeat = seats !== undefined && seats.length > 0 && seats.length <= SEAT_BLOCK_LIMIT;
+  const blocks = perSeat ? seats : [null];
   const perBlock = safeLimit / blocks.length;
   const labelled = !compact && seats !== undefined && seats.length <= LABELLED_SEAT_LIMIT;
   const what = label ?? "requests";
@@ -112,14 +116,17 @@ export function QuotaMeter({
           const httpShare = overlap(start, end, 0, httpEnd);
           const emailShare = overlap(start, end, httpEnd, shownUsed);
           const ending =
-            seatsEndingFrom !== null && seatsEndingFrom !== undefined && index >= seatsEndingFrom;
+            perSeat &&
+            seatsEndingFrom !== null &&
+            seatsEndingFrom !== undefined &&
+            index >= seatsEndingFrom;
           return (
             <div
               key={index}
               aria-hidden="true"
               className={cn(
                 "relative flex-1 min-w-0 overflow-hidden rounded-sm bg-muted/60",
-                compact ? "h-2" : seats ? "h-9 border-strong border-line" : "h-3",
+                compact ? "h-2" : perSeat ? "h-9 border-strong border-line" : "h-3",
                 ending && "opacity-50 border-dashed"
               )}
             >

@@ -110,15 +110,30 @@ export default function ProfilePage() {
     }
   };
 
+  // Old links forward without waiting for the profile, so a failed read cannot strand them.
+  const legacyRedirect = (
+    <Suspense fallback={null}>
+      <LegacyLinkRedirect />
+    </Suspense>
+  );
+
   if (loading) {
-    return <SettingsPageSkeleton label="Loading your profile" />;
+    return (
+      <>
+        {legacyRedirect}
+        <SettingsPageSkeleton label="Loading your profile" />
+      </>
+    );
   }
 
   if (!profile) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Your profile could not be loaded. Refresh the page to try again.
-      </p>
+      <>
+        {legacyRedirect}
+        <p className="text-sm text-muted-foreground">
+          Your profile could not be loaded. Refresh the page to try again.
+        </p>
+      </>
     );
   }
 
@@ -131,9 +146,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <Suspense fallback={null}>
-        <LegacyLinkRedirect />
-      </Suspense>
+      {legacyRedirect}
 
       <SettingsPageHeader
         title="Profile"

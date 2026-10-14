@@ -426,7 +426,7 @@ export function TeamBillingPanel({
             )}
             {!isCanceling && !isPastDue && team.periodEnd && (
               <p className="text-muted-foreground">
-                Renews on {periodEndLabel} at {formatSeatPricing(team.seats)}.
+                Renews on {periodEndLabel} at {formatSeatPricing(scheduledReduction ?? team.seats)}.
               </p>
             )}
           </div>

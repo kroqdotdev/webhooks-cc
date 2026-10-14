@@ -10,9 +10,9 @@
 -- handle_new_user() runs on insert and on every `update of email,
 -- raw_user_meta_data` of auth.users (an OAuth re-login refreshes the
 -- provider's keys), and until now copied the provider's full_name/name. It now
--- prefers the override, and cleans whichever name it picks the same way the
--- route does: control, line-separator and bidi characters removed, trimmed,
--- at most 80 characters. user_metadata is user-writable, so the provider names
+-- prefers the override, skips blank names, and cleans whichever name it picks
+-- the same way the route does: control, line-separator and bidi characters
+-- removed, spaces trimmed, at most 80 characters. user_metadata is user-writable, so the provider names
 -- need the cleaning too. lib/supabase/profile.ts mirrors this; change them
 -- together.
 --
@@ -38,8 +38,8 @@ begin
         regexp_replace(
           coalesce(
             nullif(btrim(new.raw_app_meta_data ->> 'display_name'), ''),
-            new.raw_user_meta_data ->> 'full_name',
-            new.raw_user_meta_data ->> 'name'
+            nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''),
+            nullif(btrim(new.raw_user_meta_data ->> 'name'), '')
           ),
           '[\u0001-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]',
           '',

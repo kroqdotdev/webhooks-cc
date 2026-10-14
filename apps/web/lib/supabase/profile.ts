@@ -49,27 +49,34 @@ const STRIPPED_NAME_CHARS = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]/gu;
  */
 export function cleanStoredName(value: string | null): string | null {
   if (value === null) return null;
-  const capped = [...value.replace(STRIPPED_NAME_CHARS, "").trim()]
+  const capped = [...trimSpaces(value.replace(STRIPPED_NAME_CHARS, ""))]
     .slice(0, DISPLAY_NAME_MAX_LENGTH)
     .join("");
   return capped === "" ? null : capped;
 }
 
+/** Trims plain spaces only, as Postgres btrim() does. */
+function trimSpaces(value: string): string {
+  return value.replace(/^ +| +$/g, "");
+}
+
+/** A metadata string, or null when it is missing or blank (nullif(btrim(...), '')). */
 function metadataString(metadata: unknown, key: string): string | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const value = (metadata as Record<string, unknown>)[key];
-  return typeof value === "string" ? value : null;
+  return typeof value === "string" && trimSpaces(value) !== "" ? value : null;
 }
 
 /**
- * The name handle_new_user() derives for a user (migration 00059): a
- * non-blank display_name override from app_metadata, else the provider's
- * full_name, else its name, cleaned. Keep the two in step.
+ * The name handle_new_user() derives for a user (migration 00059): the first
+ * non-blank of the display_name override from app_metadata, the provider's
+ * full_name and its name, cleaned. Keep the two in step.
  */
 export function effectiveDisplayName(appMetadata: unknown, userMetadata: unknown): string | null {
-  const override = metadataString(appMetadata, "display_name")?.trim();
   return cleanStoredName(
-    override || metadataString(userMetadata, "full_name") || metadataString(userMetadata, "name")
+    metadataString(appMetadata, "display_name") ??
+      metadataString(userMetadata, "full_name") ??
+      metadataString(userMetadata, "name")
   );
 }
 
