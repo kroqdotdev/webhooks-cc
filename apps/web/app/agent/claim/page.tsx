@@ -226,7 +226,7 @@ function AgentClaimContent() {
                 <Link href="/dashboard" className="ui-btn-outline text-sm py-2 px-4">
                   Dashboard
                 </Link>
-                <Link href="/account#connected-agents" className="ui-btn-outline text-sm py-2 px-4">
+                <Link href="/account/agents" className="ui-btn-outline text-sm py-2 px-4">
                   Connected agents
                 </Link>
               </div>

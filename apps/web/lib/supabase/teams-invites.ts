@@ -1,4 +1,5 @@
 import { sendEmail } from "@/lib/email/mailer";
+import { isUuid } from "@/lib/uuid";
 import { buildTeamInviteEmail } from "@/lib/email/team-invite-email";
 import { publicEnv } from "@/lib/env";
 import { polarErrorCode } from "@/lib/polar";
@@ -12,6 +13,9 @@ import { reportError } from "@/lib/observability";
 const NO_SEATS_MESSAGE = "Team has no available seats — ask the owner to add seats";
 const SCHEDULED_REDUCTION_MESSAGE =
   "A seat reduction is scheduled for the next renewal. Keep your current seats on the team page to invite more members.";
+
+// Ids from the URL go straight into uuid columns; a malformed one is a miss,
+// not a database error.
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -560,4 +564,48 @@ export async function declineInvite(userId: string, inviteId: string): Promise<b
 
   if (error) throw error;
   return !!updated;
+}
+
+// ---------------------------------------------------------------------------
+// revokeInvite
+// ---------------------------------------------------------------------------
+
+/**
+ * Lets the team owner withdraw a pending invite. Nothing is reserved while an
+ * invite is pending (the Polar seat is assigned on accept), so deleting the
+ * row is the whole job; deleting rather than marking it declined also frees
+ * the address for a fresh invite. Returns false when the caller is not the
+ * owner or no pending invite with that id belongs to the team, without saying
+ * which.
+ */
+export async function revokeInvite(
+  userId: string,
+  teamId: string,
+  inviteId: string
+): Promise<boolean> {
+  if (!isUuid(teamId) || !isUuid(inviteId)) return false;
+  const admin = createAdminClient();
+
+  const { data: callerMembership, error: callerError } = await admin
+    .from("team_members")
+    .select("id")
+    .eq("team_id", teamId)
+    .eq("user_id", userId)
+    .eq("role", "owner")
+    .maybeSingle();
+
+  if (callerError) throw callerError;
+  if (!callerMembership) return false;
+
+  const { data: deleted, error } = await admin
+    .from("team_invites")
+    .delete()
+    .eq("id", inviteId)
+    .eq("team_id", teamId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  return !!deleted;
 }

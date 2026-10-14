@@ -54,7 +54,7 @@ npx @webhooks-cc/mcp setup claude-desktop --api-key whcc_...
 }
 ```
 
-Get your API key at [webhooks.cc/account](https://webhooks.cc/account).
+Get your API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/api-keys).
 
 ## What it exposes
 

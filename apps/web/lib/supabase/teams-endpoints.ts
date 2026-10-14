@@ -1,12 +1,21 @@
 import { createAdminClient } from "./admin";
+import { isUuid } from "@/lib/uuid";
 import type { Json } from "./database";
 import { emailAddress } from "./endpoints";
 import { requireActiveTeam } from "./teams-gating";
-import type { TeamEndpointShare, TeamEndpointRow, SharedEndpoint } from "./teams-types";
+import type {
+  TeamEndpointShare,
+  TeamEndpointRow,
+  SharedEndpoint,
+  TeamSharedEndpoint,
+} from "./teams-types";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Ids from the URL go straight into uuid columns; a malformed one is a miss,
+// not a database error.
 
 function parseMillis(timestamp: string | null): number {
   if (!timestamp) return Date.now();
@@ -346,6 +355,108 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
   }
 
   return [...byEndpoint.values()];
+}
+
+// ---------------------------------------------------------------------------
+// listTeamEndpoints
+// ---------------------------------------------------------------------------
+
+/**
+ * Every endpoint shared with one team, oldest share first. Any member may
+ * read it, and it ignores the subscription: it is metadata, and members of a
+ * suspended team still need it to unshare their endpoints. Returns null when
+ * the caller is not a member.
+ */
+export async function listTeamEndpoints(
+  userId: string,
+  teamId: string
+): Promise<TeamSharedEndpoint[] | null> {
+  if (!isUuid(teamId)) return null;
+  const admin = createAdminClient();
+
+  // The share list is read alongside the membership check and dropped for a
+  // non-member, which saves a round trip on every team page load.
+  const [{ data: membership, error: memberError }, { data: sharesData, error: sharesError }] =
+    await Promise.all([
+      admin
+        .from("team_members")
+        .select("id")
+        .eq("team_id", teamId)
+        .eq("user_id", userId)
+        .maybeSingle(),
+      admin
+        .from("team_endpoints")
+        .select("endpoint_id, shared_by, shared_at")
+        .eq("team_id", teamId)
+        .order("shared_at", { ascending: true })
+        .order("endpoint_id", { ascending: true }),
+    ]);
+
+  if (memberError) throw memberError;
+  if (!membership) return null;
+  if (sharesError) throw sharesError;
+  if (!sharesData || sharesData.length === 0) return [];
+
+  const shares = sharesData as Pick<TeamEndpointRow, "endpoint_id" | "shared_by" | "shared_at">[];
+  const endpointIds = [...new Set(shares.map((s) => s.endpoint_id))];
+
+  const { data: endpointsData, error: endpointsError } = await admin
+    .from("endpoints")
+    .select("id, user_id, slug, name, request_count")
+    .in("id", endpointIds);
+
+  if (endpointsError) throw endpointsError;
+
+  type EndpointListRow = {
+    id: string;
+    user_id: string | null;
+    slug: string;
+    name: string | null;
+    request_count: number;
+  };
+
+  const endpointMap = new Map(((endpointsData ?? []) as EndpointListRow[]).map((e) => [e.id, e]));
+  const ownerIds = [
+    ...new Set(
+      [...endpointMap.values()].map((e) => e.user_id).filter((id): id is string => id !== null)
+    ),
+  ];
+
+  let ownerMap = new Map<string, { email: string; name: string | null }>();
+  if (ownerIds.length > 0) {
+    const { data: ownersData, error: ownersError } = await admin
+      .from("users")
+      .select("id, email, name")
+      .in("id", ownerIds);
+
+    if (ownersError) throw ownersError;
+    ownerMap = new Map(
+      ((ownersData ?? []) as { id: string; email: string; name: string | null }[]).map((u) => [
+        u.id,
+        { email: u.email, name: u.name },
+      ])
+    );
+  }
+
+  const result: TeamSharedEndpoint[] = [];
+  for (const share of shares) {
+    const ep = endpointMap.get(share.endpoint_id);
+    if (!ep) continue;
+    const owner = ep.user_id ? ownerMap.get(ep.user_id) : undefined;
+    result.push({
+      id: ep.id,
+      slug: ep.slug,
+      name: ep.name,
+      ownerId: ep.user_id ?? "",
+      ownerName: owner?.name ?? null,
+      ownerEmail: owner?.email ?? "",
+      sharedBy: share.shared_by,
+      sharedAt: parseMillis(share.shared_at),
+      requestCount: ep.request_count ?? 0,
+    });
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

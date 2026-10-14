@@ -472,8 +472,8 @@ const SECTIONS: Section[] = [
           <li>Browse all available endpoints, request parameters, and response schemas</li>
           <li>
             API keys can be created from{" "}
-            <Link href="/account" className="text-primary hover:underline font-bold">
-              Account Settings
+            <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+              your API keys page
             </Link>
           </li>
         </ul>

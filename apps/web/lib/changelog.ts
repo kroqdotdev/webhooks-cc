@@ -15,13 +15,26 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.39.5";
+export const APP_VERSION = "0.40.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.0",
+    date: "2026-10-14",
+    title: "Rebuilt Account and Team Settings",
+    track: "web",
+    items: [
+      "Account and team settings share one layout with a side nav: Profile, Plan and usage, API keys, Connected agents, and each of your teams",
+      "Set the display name your teammates see; signing in again with GitHub or Google no longer overwrites it",
+      "A team's page shows its seats as a rail, one block per seat, filled with the pooled usage and labelled with who holds each seat",
+      "Owners can cancel a pending invite, and every member sees all endpoints shared with the team and who shared them",
+      "API keys show when they were last used and when they expire; removing a member or leaving a team now asks first",
+    ],
+  },
   {
     version: "0.39.5",
     date: "2026-10-13",

@@ -96,9 +96,9 @@ async function unsubscribeTeam() {
 test("user with no teams sees the create form, not an upgrade wall", async ({ page }) => {
   await goToTeams(page, freeMember);
 
-  await expect(page.getByRole("button", { name: "New Team" })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("button", { name: "New team" })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("You're not in a team yet")).toBeVisible();
-  await expect(page.getByText("Teams are $12/seat/mo")).toBeVisible();
+  await expect(page.getByText("Teams are $12 a seat each month")).toBeVisible();
 
   // The Pro wall is gone — teams are gated by the team's own subscription
   await expect(page.getByText("Teams is a Pro feature")).not.toBeVisible();
@@ -113,18 +113,15 @@ test("unauthenticated user is redirected from teams to login", async ({ page }) 
 test("a free-plan user can create a team, which starts suspended", async ({ page }) => {
   await goToTeams(page, owner);
 
-  await page.getByRole("button", { name: "New Team" }).click({ timeout: 15000 });
-  await expect(page.getByText("Create a new team")).toBeVisible();
+  await page.getByRole("button", { name: "New team" }).click({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Create a team" })).toBeVisible();
 
-  await page.getByPlaceholder("e.g. Acme Corp").fill(TEAM_NAME);
+  await page.getByLabel("Team name").fill(TEAM_NAME);
   await page.getByRole("button", { name: "Create team" }).click();
 
-  await expect(page.getByText(TEAM_NAME)).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText("1 member")).toBeVisible();
-
-  // A brand-new team has no subscription yet
-  await expect(page.getByText("Suspended", { exact: true })).toBeVisible();
-  await expect(page.getByText("Some of your teams are suspended")).toBeVisible();
+  // Creating opens the new team, which has no subscription yet
+  await expect(page.getByRole("heading", { name: TEAM_NAME })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Team suspended", { exact: true })).toBeVisible();
 
   const { data, error } = await admin
     .from("teams")
@@ -135,7 +132,10 @@ test("a free-plan user can create a team, which starts suspended", async ({ page
   teamId = data.id as string;
 
   // Later tests open the team directly, so keep the index link itself covered
-  await expect(page.getByRole("link", { name: "Manage" })).toHaveAttribute(
+  await goToTeams(page, owner);
+  await expect(page.getByText("1 member").first()).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(`${TEAM_NAME} is suspended`)).toBeVisible();
+  await expect(page.getByRole("link", { name: `Manage ${TEAM_NAME}` })).toHaveAttribute(
     "href",
     `/teams/${teamId}`
   );
@@ -144,7 +144,7 @@ test("a free-plan user can create a team, which starts suspended", async ({ page
 test("unsubscribed team shows the subscribe card with seat pricing", async ({ page }) => {
   await openTeamPage(page, owner, TEAM_NAME);
 
-  await expect(page.getByText("Team suspended — no active subscription")).toBeVisible();
+  await expect(page.getByText("Team suspended", { exact: true })).toBeVisible();
   await expect(page.getByText("No active subscription", { exact: true })).toBeVisible();
   await expect(page.getByText("$12/seat/mo = $36/mo")).toBeVisible();
   await expect(page.getByRole("button", { name: "Subscribe" })).toBeVisible();
@@ -154,8 +154,8 @@ test("unsubscribed team shows the subscribe card with seat pricing", async ({ pa
 test("owner cannot invite while the team has no subscription", async ({ page }) => {
   await openTeamPage(page, owner, TEAM_NAME);
 
-  await page.getByPlaceholder("user@example.com").fill(proMember.email);
-  await page.getByRole("button", { name: "Invite" }).click();
+  await page.getByPlaceholder("name@example.com").fill(proMember.email);
+  await page.getByRole("button", { name: "Invite", exact: true }).click();
 
   await expect(page.getByText("This team needs an active Teams subscription")).toBeVisible({
     timeout: 10000,
@@ -168,36 +168,39 @@ test("owner can invite members once the team is subscribed", async ({ page }) =>
   await openTeamPage(page, owner, TEAM_NAME);
 
   // Suspension is gone now that the team carries a subscription
-  await expect(page.getByText("Team suspended — no active subscription")).not.toBeVisible();
+  await expect(page.getByText("Team suspended", { exact: true })).not.toBeVisible();
 
-  await page.getByPlaceholder("user@example.com").fill(proMember.email);
-  await page.getByRole("button", { name: "Invite" }).click();
-  await expect(page.getByText("Invite sent")).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText(proMember.email)).toBeVisible();
+  await page.getByPlaceholder("name@example.com").fill(proMember.email);
+  await page.getByRole("button", { name: "Invite", exact: true }).click();
+  await expect(page.getByText(`Invite sent to ${proMember.email}`)).toBeVisible({
+    timeout: 10000,
+  });
+  await expect(page.getByRole("cell", { name: proMember.email, exact: true })).toBeVisible();
 
-  await page.getByPlaceholder("user@example.com").fill(freeMember.email);
-  await page.getByRole("button", { name: "Invite" }).click();
-  await expect(page.getByText(freeMember.email)).toBeVisible({ timeout: 10000 });
+  await page.getByPlaceholder("name@example.com").fill(freeMember.email);
+  await page.getByRole("button", { name: "Invite", exact: true }).click();
+  await expect(page.getByRole("cell", { name: freeMember.email, exact: true })).toBeVisible({
+    timeout: 10000,
+  });
 });
 
 test("free-plan invitee sees a plain Accept button, not an upgrade link", async ({ page }) => {
   await goToTeams(page, freeMember);
 
-  await expect(page.getByText("Pending Invites")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Invites" })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(TEAM_NAME)).toBeVisible();
   await expect(page.getByRole("button", { name: "Accept" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Upgrade to accept" })).not.toBeVisible();
 
-  // No empty team sections for someone who only has an invite
-  await expect(page.getByText("My Teams")).not.toBeVisible();
-  await expect(page.getByText("Teams I'm In")).not.toBeVisible();
+  // No empty team list for someone who only has an invite
+  await expect(page.getByRole("heading", { name: "Your teams" })).not.toBeVisible();
 });
 
 test("accepting an invite to a lapsed team surfaces the inactive error", async ({ page }) => {
   await unsubscribeTeam();
 
   await goToTeams(page, freeMember);
-  await expect(page.getByText("Pending Invites")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Invites" })).toBeVisible({ timeout: 15000 });
 
   await page.getByRole("button", { name: "Accept" }).first().click();
 
@@ -213,18 +216,18 @@ test("accepting an invite to a lapsed team surfaces the inactive error", async (
 
 test("invitee can accept while a seat is free", async ({ page }) => {
   await goToTeams(page, proMember);
-  await expect(page.getByText("Pending Invites")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Invites" })).toBeVisible({ timeout: 15000 });
 
   await page.getByRole("button", { name: "Accept" }).first().click();
 
-  await expect(page.getByText("Teams I'm In")).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText("2 members")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your teams" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("2 members").first()).toBeVisible();
 });
 
 test("accepting with every seat taken surfaces the seat error", async ({ page }) => {
   // Two seats, two members (owner + proMember) — freeMember has nowhere to sit
   await goToTeams(page, freeMember);
-  await expect(page.getByText("Pending Invites")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Invites" })).toBeVisible({ timeout: 15000 });
 
   await page.getByRole("button", { name: "Accept" }).first().click();
 
@@ -237,18 +240,18 @@ test("invitee can accept after the owner adds a seat", async ({ page }) => {
   await subscribeTeam(3);
 
   await goToTeams(page, freeMember);
-  await expect(page.getByText("Pending Invites")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Invites" })).toBeVisible({ timeout: 15000 });
 
   await page.getByRole("button", { name: "Accept" }).first().click();
 
-  await expect(page.getByText("Teams I'm In")).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText("3 members")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your teams" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("3 members").first()).toBeVisible();
 });
 
 test("member can view team manage page", async ({ page }) => {
   // The member's index links to the same page, under a different label
   await goToTeams(page, proMember);
-  await expect(page.getByRole("link", { name: "View" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: `View ${TEAM_NAME}` })).toHaveAttribute(
     "href",
     `/teams/${teamId}`,
     { timeout: 15000 }
@@ -257,8 +260,9 @@ test("member can view team manage page", async ({ page }) => {
   await openTeamPage(page, proMember, TEAM_NAME);
 
   await expect(page.getByRole("heading", { name: "Members" })).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText("owner", { exact: true })).toBeVisible();
-  await expect(page.getByText("member", { exact: true }).first()).toBeVisible();
+  const table = page.getByRole("table");
+  await expect(table.getByText("Owner", { exact: true })).toBeVisible();
+  await expect(table.getByText("Member", { exact: true }).first()).toBeVisible();
 
   // Members see the team's subscription state, without owner-only controls
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
@@ -280,8 +284,10 @@ test("a lapsed subscription shows the suspended state for members", async ({ pag
 
   await goToTeams(page, proMember);
 
-  await expect(page.getByText("Suspended", { exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("This team has no active subscription")).toBeVisible();
+  await expect(page.getByText("Suspended", { exact: true }).first()).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(page.getByText("Waiting for the owner to subscribe")).toBeVisible();
 
   // Re-subscribe for subsequent tests
   await subscribeTeam(3);
@@ -290,21 +296,23 @@ test("a lapsed subscription shows the suspended state for members", async ({ pag
 test("re-subscribing removes the suspended state", async ({ page }) => {
   await goToTeams(page, proMember);
 
-  await expect(page.getByText(TEAM_NAME)).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("Suspended", { exact: true })).not.toBeVisible();
+  await expect(page.getByRole("link", { name: `View ${TEAM_NAME}` })).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(page.getByText("Suspended", { exact: true })).toHaveCount(0);
 });
 
 test("owner can rename team", async ({ page }) => {
   await openTeamPage(page, owner, TEAM_NAME);
-  await expect(page.getByText("Team Settings")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Team name" })).toBeVisible();
 
-  const nameInput = page.getByLabel("Team name");
+  const nameInput = page.getByRole("textbox", { name: "Team name" });
   await nameInput.clear();
   await nameInput.fill(RENAMED);
 
   // Save stays disabled while the field still holds the fetched name, so this
   // also proves no late response overwrote what was just typed.
-  const save = page.getByRole("button", { name: "Save" });
+  const save = page.getByRole("button", { name: "Save name" });
   await expect(save).toBeEnabled();
   await save.click();
 
@@ -313,25 +321,24 @@ test("owner can rename team", async ({ page }) => {
 
 test("member can leave team", async ({ page }) => {
   await openTeamPage(page, proMember, RENAMED);
-  await expect(page.getByRole("heading", { name: "Leave Team" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Leave team" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Leave Team" }).click();
+  await page.getByRole("button", { name: "Leave team" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Leave team" }).click();
 
   await expect(page).toHaveURL(/\/teams$/, { timeout: 10000 });
 });
 
 test("owner can delete team", async ({ page }) => {
   await openTeamPage(page, owner, RENAMED);
-  await expect(page.getByText("Danger Zone")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Delete team" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Delete Team" }).first().click();
+  await page.getByRole("button", { name: "Delete team" }).click();
 
-  // Confirmation dialog
-  await expect(page.getByText("Are you sure")).toBeVisible({ timeout: 5000 });
-
-  // The dialog has its own Delete Team button — click it within the dialog
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Delete Team" }).click();
+  // Confirmation dialog, with its own Delete team button
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.getByText(`Delete ${RENAMED}?`)).toBeVisible({ timeout: 5000 });
+  await dialog.getByRole("button", { name: "Delete team" }).click();
 
   await expect(page).toHaveURL(/\/teams$/, { timeout: 10000 });
 });

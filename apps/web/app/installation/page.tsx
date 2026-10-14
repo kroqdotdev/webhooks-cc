@@ -214,8 +214,8 @@ console.log(endpoint.url);`}
 
                 <p className="text-sm text-muted-foreground">
                   Generate an API key from your{" "}
-                  <Link href="/account" className="text-primary hover:underline font-bold">
-                    account page
+                  <Link href="/account/api-keys" className="text-primary hover:underline font-bold">
+                    API keys page
                   </Link>
                   . See the{" "}
                   <Link href="/docs/sdk" className="text-primary hover:underline font-bold">
@@ -251,8 +251,11 @@ console.log(endpoint.url);`}
                   />
                   <p className="text-sm text-muted-foreground mt-2">
                     Get your key from your{" "}
-                    <Link href="/account" className="text-primary hover:underline font-bold">
-                      account page
+                    <Link
+                      href="/account/api-keys"
+                      className="text-primary hover:underline font-bold"
+                    >
+                      API keys page
                     </Link>
                     .
                   </p>

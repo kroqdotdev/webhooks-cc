@@ -21,6 +21,8 @@
  * classic: variants. lib/ui-style-contract.test.ts rejects classic-only
  * utilities such as border-2 or border-foreground.
  */
+/* dark: follows the theme toggle (the .dark class ThemeProvider sets on <html>), not the OS */
+@custom-variant dark (&:where(.dark, .dark *));
 @custom-variant clean (&:where([data-style="clean"] *));
 @custom-variant classic (&:where(html:not([data-style="clean"]) *));
 

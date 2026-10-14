@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
+import { InlineMessage, Panel } from "@/components/settings/panel";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { shortDate } from "@/components/settings/format";
 
 interface ConnectedAgent {
   id: string;
@@ -30,8 +32,9 @@ interface ConnectedAgent {
  * with them.
  */
 export function ConnectedAgents({ accessToken }: { accessToken: string | null }) {
-  const [agents, setAgents] = useState<ConnectedAgent[]>([]);
+  const [agents, setAgents] = useState<ConnectedAgent[] | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!accessToken) return;
@@ -39,9 +42,14 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
       const response = await fetch("/api/agent/registrations", {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (response.ok) setAgents((await response.json()) as ConnectedAgent[]);
+      if (response.ok) {
+        setAgents((await response.json()) as ConnectedAgent[]);
+        setError(null);
+      } else {
+        setError("Your connected agents could not be loaded.");
+      }
     } catch {
-      // silent: non-critical
+      setError("Your connected agents could not be loaded.");
     }
   }, [accessToken]);
 
@@ -49,48 +57,73 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
     void refresh();
   }, [refresh]);
 
-  const disconnect = async (id: string) => {
+  const disconnect = async (agent: ConnectedAgent, name: string) => {
     if (!accessToken) return;
-    setRevoking(id);
+    setRevoking(agent.id);
+    setError(null);
     try {
-      const response = await fetch(`/api/agent/registrations/${id}`, {
+      const response = await fetch(`/api/agent/registrations/${agent.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (response.ok) setAgents((previous) => previous.filter((agent) => agent.id !== id));
+      if (response.ok) {
+        setAgents((previous) => previous?.filter((a) => a.id !== agent.id) ?? previous);
+      } else {
+        setError(`${name} is still connected. Try again.`);
+      }
+    } catch {
+      setError(`${name} is still connected. Check your connection.`);
     } finally {
       setRevoking(null);
     }
   };
 
   return (
-    <section className="space-y-4" id="connected-agents">
-      <h2 className="text-lg font-semibold">Connected Agents</h2>
-      <p className="text-sm text-muted-foreground">
-        AI agents you connected with a code. They use the API on your behalf, but cannot change your
-        API keys, billing or account.{" "}
-        <Link href="/docs/agents" className="text-primary hover:underline font-bold">
-          How agents connect
-        </Link>
-      </p>
-
-      <div className="border rounded-lg bg-card divide-y" data-testid="connected-agents">
-        {agents.length === 0 ? (
-          <div className="p-6">
-            <p className="text-sm text-muted-foreground">No agents connected.</p>
+    <Panel id="connected-agents" flush testId="connected-agents">
+      {agents === null ? (
+        error ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" size="sm" onClick={() => void refresh()}>
+              Try again
+            </Button>
           </div>
         ) : (
-          agents.map((agent) => {
+          <div role="status" aria-label="Loading agents" className="space-y-3 p-5">
+            <Skeleton className="h-4 w-1/2 rounded-md" />
+            <Skeleton className="h-4 w-1/3 rounded-md" />
+          </div>
+        )
+      ) : agents.length === 0 ? (
+        <div className="space-y-1 p-5">
+          <p className="text-sm font-medium">No agents connected.</p>
+          <p className="text-sm text-muted-foreground">
+            When an agent asks you for a code, it shows up here once you approve it.
+          </p>
+        </div>
+      ) : (
+        <ul>
+          {agents.map((agent) => {
             const name = agent.clientName ?? "Unnamed agent";
             return (
-              <div key={agent.id} className="p-4 flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Connected {new Date(agent.connectedAt).toLocaleDateString()}
-                    {agent.lastUsedAt &&
-                      ` · Last used ${new Date(agent.lastUsedAt).toLocaleDateString()}`}
-                  </p>
+              <li
+                key={agent.id}
+                className="flex items-center justify-between gap-4 border-b border-line/60 px-5 py-3 last:border-b-0"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate text-sm font-medium">{name}</p>
+                  <dl className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+                    <div className="flex gap-1">
+                      <dt>Connected</dt>
+                      <dd className="text-foreground">{shortDate(agent.connectedAt)}</dd>
+                    </div>
+                    <div className="flex gap-1">
+                      <dt>Last used</dt>
+                      <dd className="text-foreground">
+                        {agent.lastUsedAt ? shortDate(agent.lastUsedAt) : "Never"}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -99,22 +132,23 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
                       size="icon"
                       disabled={revoking === agent.id}
                       title="Disconnect agent"
+                      aria-label={`Disconnect agent ${name}`}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Disconnect agent?</AlertDialogTitle>
+                      <AlertDialogTitle>Disconnect {name}?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        {name} loses access to your account immediately. Endpoints it created stay
-                        in your account.
+                        It loses access to your account at once. Endpoints it created stay in your
+                        account.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogCancel>Keep connected</AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => disconnect(agent.id)}
+                        onClick={() => void disconnect(agent, name)}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
                         Disconnect
@@ -122,11 +156,16 @@ export function ConnectedAgents({ accessToken }: { accessToken: string | null })
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-              </div>
+              </li>
             );
-          })
-        )}
-      </div>
-    </section>
+          })}
+        </ul>
+      )}
+      {error && agents !== null && (
+        <div className="border-t-strong border-line px-5 py-3">
+          <InlineMessage tone="error">{error}</InlineMessage>
+        </div>
+      )}
+    </Panel>
   );
 }

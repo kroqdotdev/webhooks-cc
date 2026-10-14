@@ -31,7 +31,7 @@ vi.mock("@/lib/env", () => ({
   publicEnv: () => ({ NEXT_PUBLIC_APP_URL: "https://app.test" }),
 }));
 
-import { acceptInvite, createInvite } from "./teams-invites";
+import { acceptInvite, createInvite, revokeInvite } from "./teams-invites";
 
 // ---------------------------------------------------------------------------
 // Minimal supabase-js query-builder double (same shape as teams-crud.test.ts,
@@ -49,6 +49,7 @@ interface RecordedCall {
   table: string;
   op: string;
   payload?: unknown;
+  filters: [string, string, unknown][];
 }
 
 let recorded: RecordedCall[] = [];
@@ -59,6 +60,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
     from(table: string) {
       let op = "select";
       let payload: unknown;
+      const filters: [string, string, unknown][] = [];
 
       const take = (): QueryResult => {
         const queue = responses[`${table}:${op}`];
@@ -68,8 +70,15 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
 
-      for (const method of ["eq", "is", "not", "in", "order", "limit", "select"] as const) {
+      for (const method of ["not", "order", "limit", "select"] as const) {
         builder[method] = chain;
+      }
+
+      for (const method of ["eq", "is", "in"] as const) {
+        builder[method] = (column: string, value: unknown) => {
+          filters.push([method, column, value]);
+          return builder;
+        };
       }
 
       for (const method of ["insert", "update", "delete"] as const) {
@@ -81,7 +90,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>, rpcResult?: u
       }
 
       const settle = () => {
-        recorded.push({ table, op, payload });
+        recorded.push({ table, op, payload, filters });
         return Promise.resolve(take());
       };
 
@@ -383,11 +392,13 @@ describe("acceptInvite", () => {
       accepted: true,
       teamId: expect.any(String),
     });
-    expect(recorded).toContainEqual({
-      table: "team_invites",
-      op: "update",
-      payload: { invited_user_id: "user_1" },
-    });
+    expect(recorded).toContainEqual(
+      expect.objectContaining({
+        table: "team_invites",
+        op: "update",
+        payload: { invited_user_id: "user_1" },
+      })
+    );
   });
 
   test("refuses an unlinked invite addressed to a different email", async () => {
@@ -581,11 +592,13 @@ describe("createInvite", () => {
     expect(result.error).toBeUndefined();
     // The trigger ran before the invite existed, so the reconcile pass must
     // link the row itself.
-    expect(recorded).toContainEqual({
-      table: "team_invites",
-      op: "update",
-      payload: { invited_user_id: "user_late" },
-    });
+    expect(recorded).toContainEqual(
+      expect.objectContaining({
+        table: "team_invites",
+        op: "update",
+        payload: { invited_user_id: "user_late" },
+      })
+    );
   });
 
   test("rejects a duplicate pending invite for the same email", async () => {
@@ -634,5 +647,81 @@ describe("createInvite", () => {
     expect(result.error).toBeUndefined();
     expect(result.invite).toMatchObject({ id: "invite_1" });
     expect(result.warning).toBe("Invite created, but the notification email could not be sent");
+  });
+});
+
+describe("revokeInvite", () => {
+  const TEAM = "11111111-1111-4111-8111-111111111111";
+  const INVITE = "22222222-2222-4222-8222-222222222222";
+
+  test("the owner deletes a pending invite of the team", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { id: "member_1" } }],
+        "team_invites:delete": [{ data: { id: INVITE } }],
+      })
+    );
+
+    await expect(revokeInvite("user_1", TEAM, INVITE)).resolves.toBe(true);
+
+    const ownerCheck = recorded.find((c) => c.table === "team_members");
+    expect(ownerCheck?.filters).toEqual(
+      expect.arrayContaining([
+        ["eq", "team_id", TEAM],
+        ["eq", "user_id", "user_1"],
+        ["eq", "role", "owner"],
+      ])
+    );
+    const deletion = recorded.find((c) => c.table === "team_invites");
+    expect(deletion?.op).toBe("delete");
+    expect(deletion?.filters).toEqual(
+      expect.arrayContaining([
+        ["eq", "id", INVITE],
+        ["eq", "team_id", TEAM],
+        ["eq", "status", "pending"],
+      ])
+    );
+    // Nothing is reserved while an invite is pending, so nothing is released.
+    expect(mockFns.revokeTeamSeat).not.toHaveBeenCalled();
+  });
+
+  test("a non-owner gets false and nothing is deleted", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "team_members:select": [{ data: null }] })
+    );
+
+    await expect(revokeInvite("user_2", TEAM, INVITE)).resolves.toBe(false);
+    expect(recorded.some((c) => c.table === "team_invites")).toBe(false);
+  });
+
+  test("a missing, settled or foreign invite gets false", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { id: "member_1" } }],
+        "team_invites:delete": [{ data: null }],
+      })
+    );
+
+    await expect(revokeInvite("user_1", TEAM, INVITE)).resolves.toBe(false);
+  });
+
+  test("malformed ids are a miss without a query", async () => {
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({}));
+
+    await expect(revokeInvite("user_1", "not-a-uuid", INVITE)).resolves.toBe(false);
+    await expect(revokeInvite("user_1", TEAM, "nope")).resolves.toBe(false);
+    expect(recorded).toEqual([]);
+  });
+
+  test("a database error propagates", async () => {
+    const dbError = { code: "57014", message: "canceling statement" };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [{ data: { id: "member_1" } }],
+        "team_invites:delete": [{ error: dbError }],
+      })
+    );
+
+    await expect(revokeInvite("user_1", TEAM, INVITE)).rejects.toBe(dbError);
   });
 });

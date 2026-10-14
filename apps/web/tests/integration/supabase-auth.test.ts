@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { updateDisplayName } from "@/lib/supabase/profile";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -71,6 +72,73 @@ describe("Supabase Auth Integration", () => {
 
       expect(profile).toBeTruthy();
       expect(profile!.id).toBe(testUserId);
+    });
+  });
+
+  describe("display name override", () => {
+    async function storedName(): Promise<string | null> {
+      const { data, error } = await admin
+        .from("users")
+        .select("name")
+        .eq("id", testUserId)
+        .single();
+      if (error) throw error;
+      return data.name;
+    }
+
+    async function authUser() {
+      const { data, error } = await admin.auth.admin.getUserById(testUserId);
+      if (error) throw error;
+      return data.user;
+    }
+
+    it("sets the name in app_metadata and keeps the other metadata", async () => {
+      const before = await authUser();
+      await expect(updateDisplayName(testUserId, "Chosen Name")).resolves.toBe("Chosen Name");
+      expect(await storedName()).toBe("Chosen Name");
+      const after = await authUser();
+      expect(after.app_metadata).toMatchObject({
+        ...before.app_metadata,
+        display_name: "Chosen Name",
+      });
+      expect(after.user_metadata).toMatchObject({
+        full_name: "Test User",
+        avatar_url: "https://example.com/avatar.png",
+      });
+    });
+
+    it("ignores a display_name a user writes into their own user_metadata", async () => {
+      const { error } = await admin.auth.admin.updateUserById(testUserId, {
+        user_metadata: { display_name: "Spoofed\u202E" },
+      });
+      expect(error).toBeNull();
+      expect(await storedName()).toBe("Chosen Name");
+    });
+
+    it("cleans a provider name written through user_metadata", async () => {
+      await updateDisplayName(testUserId, null);
+      const { error } = await admin.auth.admin.updateUserById(testUserId, {
+        user_metadata: { full_name: `Eve\u202Elive${"x".repeat(100)}` },
+      });
+      expect(error).toBeNull();
+      const name = await storedName();
+      expect(name?.startsWith("Evelive")).toBe(true);
+      expect([...(name ?? "")]).toHaveLength(80);
+      await expect(updateDisplayName(testUserId, "Chosen Name")).resolves.toBe("Chosen Name");
+    });
+
+    it("survives a provider metadata refresh, as on OAuth re-login", async () => {
+      const { error } = await admin.auth.admin.updateUserById(testUserId, {
+        user_metadata: { full_name: "Provider Renamed" },
+      });
+      expect(error).toBeNull();
+      expect(await storedName()).toBe("Chosen Name");
+    });
+
+    it("clearing falls back to the provider name", async () => {
+      await expect(updateDisplayName(testUserId, null)).resolves.toBe("Provider Renamed");
+      expect(await storedName()).toBe("Provider Renamed");
+      expect((await authUser()).app_metadata).not.toHaveProperty("display_name");
     });
   });
 

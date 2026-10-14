@@ -153,7 +153,7 @@ function mapStatusToError(status: number, message: string, response: Response): 
   switch (status) {
     case 401: {
       const hint = isGeneric
-        ? `${message} — Get an API key at https://webhooks.cc/account`
+        ? `${message}. Get an API key at https://webhooks.cc/account/api-keys`
         : message;
       return new UnauthorizedError(hint);
     }
@@ -650,7 +650,9 @@ export class WebhooksCC {
   constructor(options: ClientOptions) {
     if (typeof options.getAccessToken !== "function") {
       if (!options.apiKey || typeof options.apiKey !== "string") {
-        throw new Error("Missing or invalid apiKey. Get one at https://webhooks.cc/account");
+        throw new Error(
+          "Missing or invalid apiKey. Get one at https://webhooks.cc/account/api-keys"
+        );
       }
     }
     this.apiKey = options.apiKey;

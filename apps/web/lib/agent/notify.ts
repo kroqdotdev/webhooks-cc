@@ -24,7 +24,7 @@ export async function notifyAgentConnected(input: {
   lines.push(
     "",
     "It can now use the webhooks.cc API on your behalf. If you did not do this, disconnect it under Connected agents:",
-    `${appUrl}/account#connected-agents`
+    `${appUrl}/account/agents`
   );
   try {
     await sendEmail({
