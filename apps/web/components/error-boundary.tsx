@@ -1,7 +1,11 @@
 "use client";
 
 import { Component, ReactNode } from "react";
-import { reportBoundaryError } from "@/lib/observability-browser";
+import {
+  isChunkLoadError,
+  reportBoundaryError,
+  tryReloadOnChunkError,
+} from "@/lib/observability-browser";
 
 interface Props {
   children: ReactNode;
@@ -34,9 +38,14 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("ErrorBoundary caught an error:", error, errorInfo);
     reportBoundaryError(error, "component");
+    tryReloadOnChunkError(error);
   }
 
   handleRetry = () => {
+    if (isChunkLoadError(this.state.error) && typeof window !== "undefined") {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null });
   };
 
@@ -45,6 +54,8 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) {
         return this.props.fallback;
       }
+
+      const isChunk = isChunkLoadError(this.state.error);
 
       return (
         <div className="flex items-center justify-center min-h-[200px] p-8">
@@ -58,7 +69,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={this.handleRetry}
               className="ui-btn-primary py-2! px-4! text-sm"
             >
-              Try again
+              {isChunk ? "Reload page" : "Try again"}
             </button>
           </div>
         </div>

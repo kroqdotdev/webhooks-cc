@@ -5,10 +5,12 @@ const sdk = vi.hoisted(() => ({ init: vi.fn(), captureException: vi.fn() }));
 vi.mock("@statoss/sdk", () => sdk);
 
 import {
+  isChunkLoadError,
   isNoise,
   prepareBrowserEvent,
   reportBoundaryError,
   startBrowserObservability,
+  tryReloadOnChunkError,
   withoutQuery,
 } from "./observability-browser";
 
@@ -38,6 +40,10 @@ describe("isNoise", () => {
       ["Error", "Script error."],
       ["ChunkLoadError", "Loading chunk 123 failed."],
       ["AbortError", "The user aborted a request."],
+      [
+        "Error",
+        "Module 39906 was instantiated because it was required from module 383185, but the module factory is not available.",
+      ],
     ]) {
       expect(isNoise(exception(type, value))).toBe(true);
     }
@@ -55,6 +61,46 @@ describe("isNoise", () => {
 
   it("keeps an error without frames", () => {
     expect(isNoise(exception("Error", "Non-Error promise rejection", []))).toBe(false);
+  });
+});
+
+describe("isChunkLoadError", () => {
+  it("recognizes Webpack and Turbopack chunk load failures", () => {
+    expect(isChunkLoadError(new Error("Loading chunk 456 failed"))).toBe(true);
+    expect(
+      isChunkLoadError(
+        new Error(
+          "Module 39906 was instantiated because it was required from module 383185, but the module factory is not available."
+        )
+      )
+    ).toBe(true);
+    expect(isChunkLoadError({ name: "ChunkLoadError", message: "something" })).toBe(true);
+    expect(isChunkLoadError(new Error("Cannot read properties of undefined"))).toBe(false);
+    expect(isChunkLoadError(null)).toBe(false);
+  });
+});
+
+describe("tryReloadOnChunkError", () => {
+  it("reloads and sets the throttle timestamp on a chunk load error", () => {
+    const reloadMock = vi.fn();
+    const storage: Record<string, string> = {};
+    vi.stubGlobal("window", {
+      location: { reload: reloadMock },
+      sessionStorage: {
+        getItem: (k: string) => storage[k] ?? null,
+        setItem: (k: string, v: string) => {
+          storage[k] = v;
+        },
+      },
+    });
+
+    const error = new Error("the module factory is not available");
+    expect(tryReloadOnChunkError(error)).toBe(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    // Second call immediately after is throttled
+    expect(tryReloadOnChunkError(error)).toBe(false);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
   });
 });
 
