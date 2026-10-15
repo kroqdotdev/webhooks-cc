@@ -25,6 +25,7 @@ const NOISE = [
   /^Load failed$/,
   /^The operation was aborted\.?$/,
   /^Loading (CSS )?chunk [\w-]+ failed/,
+  /the module factory is not available/,
 ];
 const NOISE_TYPES = new Set(["AbortError", "ChunkLoadError"]);
 const EXTENSION = /^(chrome|moz|safari|safari-web|ms-browser)-extension:\/\//;
@@ -40,6 +41,39 @@ export function isNoise(event: Event): boolean {
     // Frames, and none from our own bundles: an extension or a third-party script.
     if (files.length > 0 && !files.some((file) => file.includes("/_next/"))) return true;
     if (files.some((file) => EXTENSION.test(file))) return true;
+  }
+  return false;
+}
+
+/** True if an error indicates a missing or failed chunk/module (e.g. stale tab after deploy). */
+export function isChunkLoadError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { name?: string; message?: string };
+  return (
+    err.name === "ChunkLoadError" ||
+    /Loading (CSS )?chunk [\w-]+ failed/.test(err.message ?? "") ||
+    /the module factory is not available/.test(err.message ?? "")
+  );
+}
+
+/**
+ * Attempts a one-time hard reload to fetch fresh assets if the error is a
+ * stale-tab chunk/module load failure. Throttled to avoid reload loops.
+ */
+export function tryReloadOnChunkError(error: unknown): boolean {
+  if (!isChunkLoadError(error) || typeof window === "undefined") return false;
+  try {
+    const key = "webhooks_chunk_reload";
+    const last = window.sessionStorage?.getItem(key);
+    const lastTs = last ? parseInt(last, 10) : NaN;
+    const now = Date.now();
+    if (Number.isNaN(lastTs) || now - lastTs > 15_000) {
+      window.sessionStorage?.setItem(key, String(now));
+      window.location.reload();
+      return true;
+    }
+  } catch {
+    // sessionStorage blocked or unavailable
   }
   return false;
 }
