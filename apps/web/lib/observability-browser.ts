@@ -65,8 +65,9 @@ export function tryReloadOnChunkError(error: unknown): boolean {
   try {
     const key = "webhooks_chunk_reload";
     const last = window.sessionStorage?.getItem(key);
+    const lastTs = last ? parseInt(last, 10) : NaN;
     const now = Date.now();
-    if (!last || now - parseInt(last, 10) > 15_000) {
+    if (Number.isNaN(lastTs) || now - lastTs > 15_000) {
       window.sessionStorage?.setItem(key, String(now));
       window.location.reload();
       return true;

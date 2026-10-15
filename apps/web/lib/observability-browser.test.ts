@@ -102,6 +102,24 @@ describe("tryReloadOnChunkError", () => {
     expect(tryReloadOnChunkError(error)).toBe(false);
     expect(reloadMock).toHaveBeenCalledTimes(1);
   });
+
+  it("reloads when sessionStorage holds a corrupted timestamp", () => {
+    const reloadMock = vi.fn();
+    const storage: Record<string, string> = { webhooks_chunk_reload: "not-a-number" };
+    vi.stubGlobal("window", {
+      location: { reload: reloadMock },
+      sessionStorage: {
+        getItem: (k: string) => storage[k] ?? null,
+        setItem: (k: string, v: string) => {
+          storage[k] = v;
+        },
+      },
+    });
+
+    const error = new Error("Loading chunk 1 failed");
+    expect(tryReloadOnChunkError(error)).toBe(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("prepareBrowserEvent", () => {
