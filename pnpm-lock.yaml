@@ -170,8 +170,8 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0(@types/react@19.3.0)(react@19.3.0)
       nodemailer:
-        specifier: ^10.0.13
-        version: 10.0.15
+        specifier: ^10.1.1
+        version: 10.1.1
       posthog-js:
         specifier: ^1.435.6
         version: 1.435.9(@types/react@19.3.0)(react@19.3.0)
@@ -3886,8 +3886,8 @@ packages:
     resolution: {integrity: sha512-YHs7BmmcsdAI5Ozuf8JZo6PT0mv2GIWC9vMfvUC3dp65M8hn7Ux8CPL+2oBI7juNuj9d0ndhTcznq2ODBps9cQ==}
     engines: {node: '>=18'}
 
-  nodemailer@10.0.15:
-    resolution: {integrity: sha512-EUqp5PhtcsYXs9Fq/lS7s/8zlTrnBqmzZWzFFROrNikMiz+om/YRKMwqN907t+0A1KKyT8jd39CBUbFZmaZmcA==}
+  nodemailer@10.1.1:
+    resolution: {integrity: sha512-pbqZRoeYUO+1E8TJ/11WeY4D2EVujj1hsYjz3qff/vUFDtGnmi7p3iqzTFslYOfQ6PnjVcWxx/CIUSHCSrO/QA==}
     engines: {node: '>=20.0.0'}
 
   object-assign@4.1.1:
@@ -9185,7 +9185,7 @@ snapshots:
 
   node-releases@2.0.54: {}
 
-  nodemailer@10.0.15: {}
+  nodemailer@10.1.1: {}
 
   object-assign@4.1.1: {}
 
