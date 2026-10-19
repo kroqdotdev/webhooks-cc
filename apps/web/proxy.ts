@@ -5,8 +5,9 @@ import { imgSrcDirective } from "@/lib/csp-img-src";
 /**
  * Proxy: Supabase session refresh + security headers.
  *
- * 1. Refreshes the Supabase JWT on every request so server components get fresh cookies.
- * 2. Sets Content-Security-Policy and related headers on every response.
+ * 1. Refuses Server Action probes and POST requests outside /api.
+ * 2. Refreshes the Supabase JWT on every request so server components get fresh cookies.
+ * 3. Sets Content-Security-Policy and related headers on every response.
  */
 
 function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
@@ -34,6 +35,20 @@ function shouldNoIndexPath(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // The web app has no Server Actions, and every POST route lives under /api.
+  // Refusing Next-Action probes and POSTs to page routes here keeps Next's
+  // action handler from running (which throws InvariantError when RSC: 1 is
+  // also set) and skips the session refresh round-trip on scanner traffic.
+  const isApiPath = pathname === "/api" || pathname.startsWith("/api/");
+  if (request.headers.has("next-action") || (request.method === "POST" && !isApiPath)) {
+    return new NextResponse("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
   // --- Supabase session refresh ---
   let supabaseResponse = NextResponse.next({ request });
 
@@ -59,7 +74,6 @@ export async function proxy(request: NextRequest) {
   // Refresh session (skip for static assets and the auth handoff routes, which
   // set their own cookies: /auth/callback exchanges the OAuth code and
   // /auth/confirm verifies an email token hash).
-  const pathname = request.nextUrl.pathname;
   if (
     !pathname.startsWith("/_next") &&
     !pathname.startsWith("/auth/callback") &&
