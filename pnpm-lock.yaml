@@ -200,8 +200,8 @@ importers:
         specifier: ^4.5.0
         version: 4.5.0
       simple-icons:
-        specifier: ^16.33.0
-        version: 16.33.0
+        specifier: ^16.35.0
+        version: 16.35.0
       source-map-support:
         specifier: ^0.5.21
         version: 0.5.21
@@ -4560,8 +4560,8 @@ packages:
     resolution: {integrity: sha512-6x6dK6zJdpTzF4sQeNYxwtvBzf6Eg4GtlesS94HOvTudUeyK2WXAaIfmDgsyslYrRBeFIlsi54AYsFGUuhmvrQ==}
     engines: {node: '>= 0.4'}
 
-  simple-icons@16.33.0:
-    resolution: {integrity: sha512-z14u6A8ngAg9mgERRsNO8YkjIMefehIpBk7A8Dz3Gd91945qFP19MLPSHgV4z8P5u/MRYd5e07OTzaDoB4d6qA==}
+  simple-icons@16.35.0:
+    resolution: {integrity: sha512-TCfl/2+GTrx0nCo4pEWGvxhOb8c6NsqOU1OpwjtF4lwJAthB8IYVD0fuIMjLMg6JFuG1YBO0t1iETQqJLqkoJA==}
     engines: {node: '>=0.12.18'}
 
   source-map-js@1.2.2:
@@ -10154,7 +10154,7 @@ snapshots:
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
 
-  simple-icons@16.33.0: {}
+  simple-icons@16.35.0: {}
 
   source-map-js@1.2.2: {}
 
