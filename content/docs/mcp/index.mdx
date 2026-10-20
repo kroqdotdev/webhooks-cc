@@ -34,9 +34,7 @@ seo:
 
 ## Available tools
 
-The MCP server exposes 38 tools your AI agent can call (without an API key, 10 sandbox tools; see below):
-
-For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
+The MCP server exposes 38 tools your AI agent can call. Without an API key, 10 sandbox tools are available (see below).
 
 ## Provider-aware testing
 
@@ -50,6 +48,8 @@ Agent: Captured POST request detected as Typeform / form_response
 ```
 
 The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, Adyen, PayPal templates, and Plaid templates.
+
+For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
 
 ### Endpoint management
 
@@ -118,8 +118,8 @@ Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mai
 
 | Tool                | Description                                                  |
 | ------------------- | ------------------------------------------------------------ |
-| `list_team_members` | List a team's members and pending invites                    |
 | `list_teams`        | List the teams you own or belong to, with their pooled quota |
+| `list_team_members` | List a team's members and pending invites                    |
 | `share_endpoint`    | Share an endpoint you own with a team                        |
 | `unshare_endpoint`  | Stop sharing an endpoint you own with a team                 |
 
@@ -205,7 +205,7 @@ The `@webhooks-cc/mcp` server works with Claude Code, Cursor, VS Code (GitHub Co
 </FAQItem>
 <FAQItem question="Can I use the Webhook MCP server without an API key?">
 
-Yes. Running `npx -y @webhooks-cc/mcp` without `WHK_API_KEY` starts in agent sandbox mode with 10 tools (`create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `connect_account`, `wait_for_connection`, and `about_sandbox`), giving your agent up to 3 temporary endpoints and 100 requests for 24 hours.
+Yes. Running `npx -y @webhooks-cc/mcp` without `WHK_API_KEY` starts in agent sandbox mode with 10 tools (`create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `connect_account`, `wait_for_connection`, and `about_sandbox`), giving your agent up to 3 temporary endpoints, 25 requests per endpoint and 100 in total, for 24 hours.
 
 </FAQItem>
 <FAQItem question="What can an AI agent do with webhooks.cc?">

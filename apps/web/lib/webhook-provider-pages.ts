@@ -1008,7 +1008,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       rows: [
         ["conversation.user.created", "A user or lead started a new conversation"],
         ["conversation.user.replied", "A user or lead replied to an existing conversation"],
-        ["conversation.admin.replied", "An teammate/admin replied to a conversation"],
+        ["conversation.admin.replied", "A teammate or admin replied to a conversation"],
         ["conversation.admin.closed", "An admin closed a conversation"],
         ["contact.user.created", "A new user contact was created"],
         ["ticket.created", "A new support ticket was created"],

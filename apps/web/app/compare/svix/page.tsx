@@ -7,12 +7,12 @@ const FAQ_ITEMS = [
   {
     question: "What is the difference between webhooks.cc and Svix?",
     answer:
-      "Svix is outbound webhook delivery infrastructure: you call the Svix API from your backend to send webhooks to your customers, and Svix handles retries, fan-out, and an embeddable customer portal. webhooks.cc is an inbound webhook and email testing platform: it gives you endpoints that capture webhooks from Stripe, GitHub, Shopify, Clerk, Svix, and 50+ other providers, verifies their signatures, forwards deliveries to localhost, and lets you assert on payloads in CI with a TypeScript SDK or MCP server.",
+      "Svix is webhook infrastructure: its core product dispatches outbound webhooks to your customers with retries and an embeddable App Portal, alongside Svix Ingest for managed incoming webhook queuing and Svix Play for basic browser inspection. webhooks.cc is a developer testing platform built for local development and CI/CD: it gives you endpoints that capture webhooks and inbound emails, generates signed test payloads for 32+ providers, forwards HTTP webhooks to localhost via whk tunnel, and provides a TypeScript SDK with waitFor() assertions and a 38-tool MCP server.",
   },
   {
-    question: "webhooks.cc vs Svix Play: how do they compare for webhook testing?",
+    question: "webhooks.cc vs Svix Play and Svix Ingest: how do they compare for webhook testing?",
     answer:
-      "Svix Play is Svix's free browser-based request bin for viewing incoming HTTP requests. webhooks.cc also gives you an instant capture URL, and adds CLI tunneling to localhost (whk tunnel), 32-provider signature generation and verification, inbound email capture (@mailhooks.cc), a TypeScript SDK with waitFor() matchers for Vitest/Jest/Playwright, and a 38-tool MCP server for AI coding agents.",
+      "Svix Play is Svix's free browser-based request bin for viewing incoming HTTP requests, while Svix Ingest is production ingestion infrastructure that receives third-party webhooks (such as Stripe or GitHub) and forwards them into your backend. webhooks.cc focuses on developer and CI testing: it combines an instant capture URL with CLI tunneling to localhost (whk tunnel), 32-provider signature generation and verification, inbound email capture (@mailhooks.cc), a TypeScript SDK with waitFor() matchers for Vitest/Jest/Playwright, and a 38-tool MCP server for AI coding agents.",
   },
   {
     question: "Can webhooks.cc verify Svix and Standard Webhooks signatures?",
@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
   {
     question: "How does pricing compare between webhooks.cc and Svix?",
     answer:
-      "webhooks.cc includes every individual feature on its Free tier (50 requests/day), costs $8/month for Pro (100,000 requests/month), and bills Teams at $12/seat/month with pooled quota. Svix offers open-source self-hosting and Svix Play for basic inspection, while hosted Svix Cloud plans for outbound webhook delivery start at $490/month after the free developer tier.",
+      "webhooks.cc includes every individual feature on its Free tier (50 requests/day), costs $8/month for Pro (100,000 requests/month), and bills Teams at $12/seat/month with pooled quota. Svix offers open-source self-hosting and Svix Play for basic inspection, while hosted Svix Cloud plans start at $20/month (Basic) and $490/month (Professional) after the free developer tier.",
   },
 ];
 
@@ -35,17 +35,17 @@ const ROWS = [
   [
     "Primary focus",
     "Inbound webhook & email testing platform",
-    "Outbound webhook delivery service (+ Svix Play inspector)",
+    "Outbound webhook delivery + Svix Ingest & Svix Play",
   ],
   [
     "Webhook capture & history",
     "Yes, searchable history + full headers/body",
-    "Svix Play for basic bin; outbound logs in Svix Cloud",
+    "Svix Play for basic bin; delivery logs in Svix Cloud / Ingest",
   ],
   [
     "Provider signature verification",
     "32 providers (Stripe, GitHub, Svix, Clerk, Discord, etc.)",
-    "Standard Webhooks / Svix signatures only",
+    "Standard Webhooks / Svix + major providers in Svix Ingest",
   ],
   [
     "Signed test payload templates",
@@ -54,10 +54,14 @@ const ROWS = [
   ],
   ["CLI tunnel to localhost", "Yes (whk tunnel)", "Yes (svix listen for Play endpoints)"],
   ["Mock responses", "Yes, configurable status, headers & body", "Static response in Svix Play"],
-  ["Request replay", "Yes, to any URL from dashboard, CLI, or SDK", "Resend outbound attempts"],
+  ["Request replay", "Yes, to any URL from dashboard, CLI, or SDK", "Resend delivery attempts"],
   ["CI test assertions (waitFor)", "Yes (@webhooks-cc/sdk matchers)", "No inbound assertion SDK"],
   ["Inbound email capture", "Yes ({slug}@mailhooks.cc + OTP extraction)", "No"],
-  ["MCP server for AI agents", "Yes (@webhooks-cc/mcp, 38 tools)", "No"],
+  [
+    "MCP server for AI agents",
+    "Yes (@webhooks-cc/mcp, 38 testing tools)",
+    "App Portal MCP (inspect deliveries & replay)",
+  ],
   ["Outbound customer portal", "No", "Yes (core Svix feature)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (MIT server + libraries)"],
   ["Team collaboration", "$12/seat/mo, pooled quota", "Included on Svix Cloud tiers"],
@@ -66,12 +70,13 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Svix Alternative for Webhook Testing: vs Svix Play (2026)",
   description:
-    "Compare webhooks.cc vs Svix and Svix Play: inbound webhook capture, 32-provider signature verification, CLI tunnel to localhost, TypeScript CI SDK, and MCP.",
+    "Compare webhooks.cc vs Svix, Svix Ingest, and Svix Play: webhook capture, 32-provider signature verification, CLI tunnel to localhost, CI SDK, and MCP.",
   path: "/compare/svix",
   keywords: [
     "svix alternative",
     "svix vs webhooks.cc",
     "svix play alternative",
+    "svix ingest alternative",
     "svix webhook testing",
     "standard webhooks tester",
     "webhook testing tools",
@@ -96,11 +101,11 @@ export default function CompareSvixPage() {
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">webhooks.cc vs Svix</h1>
         <p className="text-lg text-muted-foreground mb-10">
-          Svix and webhooks.cc sit on opposite sides of the webhook lifecycle. Svix is outbound
-          infrastructure for companies sending webhooks to their customers (plus Svix Play, a free
-          request bin). webhooks.cc is an inbound webhook and email testing platform built for
-          capturing, verifying, replaying, and asserting on webhooks from 32+ providers in local
-          development and CI/CD.
+          Svix is production webhook infrastructure: its core platform sends outbound webhooks to
+          your customers, paired with Svix Ingest for receiving production webhooks and Svix Play as
+          a free browser request bin. webhooks.cc is a developer testing platform built for
+          capturing, verifying, replaying, and asserting on webhooks and inbound email across 32+
+          providers in local development and CI/CD.
         </p>
 
         {/* Feature table */}
@@ -116,7 +121,7 @@ export default function CompareSvixPage() {
                   webhooks.cc
                 </th>
                 <th scope="col" className="text-left py-2.5 font-bold">
-                  Svix / Svix Play
+                  Svix / Svix Ingest / Svix Play
                 </th>
               </tr>
             </thead>
@@ -139,17 +144,17 @@ export default function CompareSvixPage() {
         <div className="space-y-6 mb-10">
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">
-              Inbound multi-provider testing vs outbound webhook dispatcher
+              Developer testing platform vs production webhook infrastructure
             </h3>
             <p className="text-muted-foreground">
-              Most developers searching for a webhook tool are integrating incoming webhooks from
-              Stripe, GitHub, Shopify, Clerk, Resend, Linear, or Slack. webhooks.cc generates
-              properly signed test payloads and verifies signatures for 32 providers out of the box
-              (including Svix&apos;s own{" "}
+              Svix is built first for production webhook delivery: dispatching your product&apos;s
+              outbound webhooks to customer endpoints (with an embeddable App Portal) and ingesting
+              production events via Svix Ingest. webhooks.cc is built specifically for local
+              development, staging, and CI testing: it generates properly signed test payloads and
+              verifies signatures for 32 providers out of the box (including Svix&apos;s own{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">svix-signature</code> and{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">webhook-signature</code>{" "}
-              headers). Svix is built for the opposite job: dispatching your own product&apos;s
-              outbound webhooks to customer endpoints.
+              headers).
             </p>
           </div>
 
@@ -176,8 +181,10 @@ export default function CompareSvixPage() {
               </code>{" "}
               with automatic OTP and magic-link extraction, and the{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
-              server exposes 38 tools to Claude Code, Cursor, and Codex. Svix does not capture
-              inbound email or ship a testing MCP server.
+              server exposes 38 testing tools to Claude Code, Cursor, and Codex (creating endpoints,
+              sending signed provider templates, waiting for deliveries, and replaying to
+              localhost). Svix offers an App Portal MCP focused on inspecting and replaying messages
+              on existing Svix endpoints, and does not capture inbound email.
             </p>
           </div>
         </div>
@@ -199,7 +206,7 @@ export default function CompareSvixPage() {
             <ul className="list-disc list-inside text-muted-foreground space-y-1.5">
               <li>An outbound webhook delivery service for your own SaaS product</li>
               <li>An embeddable portal where your customers manage their endpoints</li>
-              <li>Managed outbound retry schedules, fan-out, and Standard Webhooks signing</li>
+              <li>Managed production webhook queuing and retries (Svix Outbound / Ingest)</li>
               <li>A quick unauthenticated browser bin (Svix Play) with no test SDK needed</li>
             </ul>
           </div>

@@ -20,7 +20,7 @@ seo:
 
 ## Overview
 
-Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. For a conceptual walkthrough of HMAC-SHA256, Ed25519, and RSA webhook verification in Express and Next.js handlers, see the [How to Verify Webhook Signatures guide](/docs/guides/verify-webhook-signatures). SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. For a conceptual walkthrough of HMAC-SHA256, Ed25519, and RSA webhook verification in Express and Next.js handlers, see the [How to Verify Webhook Signatures guide](/docs/guides/verify-webhook-signatures). SendGrid is supported for templates and detection; SendGrid signs Event Webhooks with ECDSA (X-Twilio-Email-Event-Webhook-Signature), which the SDK does not currently verify. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
 
 Requests and emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifiers: `verifyRelayedRequest` for requests relayed as received, `verifyForwardedRequest` and `verifyForwardedEmail` for signed JSON. See [Forwarded requests](#forwarded-requests) and [Forwarded emails](#forwarded-emails).
 

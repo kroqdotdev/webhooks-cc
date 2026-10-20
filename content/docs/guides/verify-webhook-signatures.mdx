@@ -20,7 +20,7 @@ seo:
 
 Webhook signatures prove a payload came from the expected sender and was not tampered with in transit. Most providers sign payloads with HMAC-SHA256. Discord uses Ed25519 public-key cryptography, PayPal uses RSA-SHA256 with provider certificates, and Twilio uses HMAC-SHA1. Verifying signatures is the single most important security step in any webhook handler. Skip it, and anyone who knows your endpoint URL can forge payloads.
 
-The webhooks.cc SDK verifies signatures for 32 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection, but its Event Webhook security model uses IP allowlisting rather than cryptographic signatures. Plaid is supported for templates and detection, but JWT/JWK verification requires Plaid API credentials and is not available in the SDK yet.
+The webhooks.cc SDK verifies signatures for 32 signed providers with a single function call. This guide walks through the process for each one. SendGrid is supported for templates and provider detection; SendGrid signs Event Webhooks with ECDSA (X-Twilio-Email-Event-Webhook-Signature), which the SDK does not currently verify. Plaid is supported for templates and detection, but JWT/JWK verification requires Plaid API credentials and is not available in the SDK yet.
 
 ## Verify in the dashboard (no code)
 
@@ -88,7 +88,7 @@ if (!result.valid) {
 const body = JSON.parse(request.body);
 ```
 
-Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, `"telegram"`, `"square"`, `"hubspot"`, `"mailgun"`, `"calendly"`, `"mux"`, `"sentry"`, `"bitbucket"`, `"docusign"`, `"adyen"`, or `"paypal"`.
+Replace `"stripe"` with any supported verification provider name: `"github"`, `"shopify"`, `"twilio"`, `"slack"`, `"paddle"`, `"linear"`, `"clerk"`, `"discord"`, `"vercel"`, `"gitlab"`, `"typeform"`, `"standard-webhooks"`, `"meta"`, `"lemonsqueezy"`, `"coinbase-commerce"`, `"razorpay"`, `"cal"`, `"intercom"`, `"telegram"`, `"square"`, `"hubspot"`, `"mailgun"`, `"calendly"`, `"mux"`, `"sentry"`, `"bitbucket"`, `"docusign"`, `"adyen"`, `"paypal"`, `"resend"`, or `"workos"`.
 
 </Step>
 <Step title="Auto-detect the provider first">
@@ -131,7 +131,7 @@ if (!valid) {
 }
 ```
 
-Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`, `verifySquareSignature`, `verifyHubSpotSignature`, `verifyMailgunSignature`, `verifyCalendlySignature`, `verifyMuxSignature`, `verifySentrySignature`, `verifyBitbucketSignature`, `verifyDocuSignSignature`, `verifyAdyenSignature`, `verifyPayPalSignature`. SendGrid is excluded because it uses IP allowlisting instead of cryptographic signatures. Plaid is excluded because it requires Plaid JWT/JWK lookup credentials.
+Provider-specific functions are available for all supported providers: `verifyStripeSignature`, `verifyGitHubSignature`, `verifyShopifySignature`, `verifyTwilioSignature`, `verifySlackSignature`, `verifyPaddleSignature`, `verifyLinearSignature`, `verifyClerkSignature`, `verifyDiscordSignature`, `verifyVercelSignature`, `verifyGitLabSignature`, `verifyTypeformSignature`, `verifyStandardWebhookSignature`, `verifyMetaSignature`, `verifyLemonSqueezySignature`, `verifyCoinbaseCommerceSignature`, `verifyRazorpaySignature`, `verifyCalSignature`, `verifyIntercomSignature`, `verifyTelegramSignature`, `verifySquareSignature`, `verifyHubSpotSignature`, `verifyMailgunSignature`, `verifyCalendlySignature`, `verifyMuxSignature`, `verifySentrySignature`, `verifyBitbucketSignature`, `verifyDocuSignSignature`, `verifyAdyenSignature`, `verifyPayPalSignature`, `verifyResendSignature`, `verifyWorkOSSignature`. SendGrid is supported for templates and detection, while its ECDSA Event Webhook signature is not yet verified by the SDK. Plaid is excluded because it requires Plaid JWT/JWK lookup credentials.
 
 </Step>
 <Step title="Handle Discord (Ed25519)">

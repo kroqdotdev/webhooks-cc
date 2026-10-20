@@ -6,9 +6,9 @@ import { ComparisonCTA } from "@/components/compare/comparison-cta";
 const FAQ_ITEMS = [
   {
     question:
-      "Are there any webhook or email tools with a CLI that forwards to localhost like the Stripe CLI does?",
+      "Are there any webhook tools with a CLI that forwards to localhost like the Stripe CLI does?",
     answer:
-      "Yes. The webhooks.cc CLI (whk tunnel <port>) works like stripe listen --forward-to, but for every webhook provider and for inbound email. Every HTTP request sent to https://go.webhooks.cc/w/{slug} and every email sent to {slug}@mailhooks.cc is captured in a searchable history, verified, and forwarded to your local server.",
+      "Yes. The webhooks.cc CLI (whk tunnel <port>) works like stripe listen --forward-to, but for any HTTP webhook provider. Every HTTP request sent to https://go.webhooks.cc/w/{slug} is captured in a searchable history, verified, and forwarded to your local server. For inbound emails sent to {slug}@mailhooks.cc, you can configure endpoint forwarding to post each captured email as signed JSON to your server or test locally with the SDK and dashboard.",
   },
   {
     question: "Can webhooks.cc replace stripe listen for testing Stripe webhooks?",
@@ -40,12 +40,12 @@ const ROWS = [
   ],
   [
     "Localhost CLI forwarding",
-    "Yes (whk tunnel 3000)",
+    "Yes (whk tunnel 3000 for HTTP webhooks)",
     "Yes (stripe listen --forward-to localhost:3000)",
   ],
   [
-    "Inbound email forwarding to localhost",
-    "Yes ({slug}@mailhooks.cc forwarded as signed JSON)",
+    "Inbound email capture & forwarding",
+    "Yes ({slug}@mailhooks.cc + HTTP forwarding as signed JSON)",
     "No",
   ],
   [
@@ -76,7 +76,7 @@ const ROWS = [
 export const metadata = createPageMetadata({
   title: "Stripe CLI Alternative: Multi-Provider Webhook & Email CLI",
   description:
-    "Compare webhooks.cc (whk CLI) vs Stripe CLI (stripe listen): forward webhooks and inbound emails to localhost across 32+ providers with stored history and CI SDK.",
+    "Compare webhooks.cc (whk CLI) vs Stripe CLI (stripe listen): forward webhooks to localhost across 32+ providers, capture inbound emails, and test in CI with SDK.",
   path: "/compare/stripe-cli",
   keywords: [
     "stripe cli webhook test",
@@ -113,8 +113,8 @@ export default function CompareStripeCliPage() {
           standard for local Stripe webhook testing. webhooks.cc brings that same workflow to every
           webhook and email provider in your stack: a fast Go CLI tunnel (
           <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">whk tunnel</code>), a hosted
-          request inbox that captures events even when your terminal is closed, and a TypeScript SDK
-          that sends genuine{" "}
+          request and email inbox that captures deliveries even when your terminal is closed, and a
+          TypeScript SDK that sends genuine{" "}
           <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">stripe-signature</code>{" "}
           payloads in CI without a background daemon.
         </p>
@@ -155,18 +155,20 @@ export default function CompareStripeCliPage() {
         <div className="space-y-6 mb-10">
           <div className="ui-card ui-card-static">
             <h3 className="text-lg font-bold mb-2">
-              One CLI for Stripe, GitHub, Clerk, Shopify, and inbound email
+              One platform for Stripe, GitHub, Clerk, Shopify, and inbound email
             </h3>
             <p className="text-muted-foreground">
               Modern apps rarely receive webhooks from Stripe alone; they also handle Clerk or
               WorkOS auth hooks, GitHub or Vercel deploy hooks, and Resend or Postmark email events.
               Instead of juggling separate tunnels and provider CLIs,{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">whk tunnel 3000</code>{" "}
-              forwards any provider&apos;s webhooks and{" "}
+              forwards any provider&apos;s HTTP webhooks to your local server with automatic
+              signature verification, while inbound emails sent to{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">
                 {"{slug}"}@mailhooks.cc
               </code>{" "}
-              inbound emails to your local server with automatic signature verification.
+              are captured with OTP extraction and can be forwarded to your server as signed JSON or
+              asserted in tests via the SDK.
             </p>
           </div>
 
