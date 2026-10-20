@@ -1,20 +1,26 @@
 ---
-title: "Signature Verification"
-description: "Verify webhook signatures for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, Clerk, Discord, Vercel, GitLab, Typeform, Standard Webhooks, Meta, Lemon Squeezy, Coinbase Commerce, Razorpay, Cal.com, Intercom, Telegram, Square, HubSpot, Mailgun, Calendly, Mux, Sentry, Bitbucket, DocuSign, Adyen, and PayPal using the SDK."
+title: "verifySignature() API Reference (@webhooks-cc/sdk)"
+description: "API reference for verifySignature(), verifyRelayedRequest(), verifyForwardedEmail(), and 32 provider-specific verifier functions in the @webhooks-cc/sdk TypeScript package."
 section: sdk
 order: 5
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-20
 schema: faq
 keywords:
-  ["webhook signature verification", "HMAC webhook", "verify stripe signature", "webhook security"]
+  [
+    "verifySignature",
+    "@webhooks-cc/sdk signatures",
+    "verifyStripeSignature",
+    "verifyForwardedEmail",
+    "verifyRelayedRequest",
+  ]
 seo:
-  ogTitle: "Webhook Signature Verification"
-  ogDescription: "Verify webhook signatures for 32 signed providers using the webhooks.cc TypeScript SDK. Supports HMAC-SHA256, HMAC-SHA1, Ed25519, RSA-SHA256, and token comparison."
+  ogTitle: "verifySignature() API Reference (@webhooks-cc/sdk)"
+  ogDescription: "API reference for verifySignature(), verifyRelayedRequest(), verifyForwardedEmail(), and 32 provider verifiers in the @webhooks-cc/sdk TypeScript package."
 ---
 
 ## Overview
 
-Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
+Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. For a conceptual walkthrough of HMAC-SHA256, Ed25519, and RSA webhook verification in Express and Next.js handlers, see the [How to Verify Webhook Signatures guide](/docs/guides/verify-webhook-signatures). SendGrid is supported for templates and detection, but not cryptographic verification because SendGrid's Event Webhook security model uses IP allowlisting. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
 
 Requests and emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifiers: `verifyRelayedRequest` for requests relayed as received, `verifyForwardedRequest` and `verifyForwardedEmail` for signed JSON. See [Forwarded requests](#forwarded-requests) and [Forwarded emails](#forwarded-emails).
 
@@ -719,6 +725,12 @@ No. Discord uses Ed25519 public-key cryptography instead of HMAC. When verifying
 </FAQ>
 
 ## Learn more
+
+<LinkCard
+  href="/docs/guides/verify-webhook-signatures"
+  title="How to Verify Webhook Signatures"
+  description="Step-by-step webhook handler guide for Express, Next.js, and 32 providers."
+/>
 
 <LinkCard
   href="/docs/sdk/matchers"

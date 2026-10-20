@@ -30,6 +30,8 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/auth",
     "/cli/verify",
     "/teams",
+    "/agent/claim",
+    "/blog/preview",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
@@ -147,7 +149,3 @@ export async function proxy(request: NextRequest) {
 
   return response;
 }
-
-export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)"],
-};

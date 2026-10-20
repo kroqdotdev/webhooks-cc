@@ -6,13 +6,16 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 export const metadata = createPageMetadata({
   title: "Webhook Testing Tools Compared: Features & Pricing (2026)",
   description:
-    "One feature checklist for webhooks.cc, Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Smee.io and LocalTunnel: history, replay, mocks, CLI tunnel, CI assertions, MCP and team pricing.",
+    "One feature checklist for webhooks.cc, Webhook.site, RequestBin, Beeceptor, Hookdeck, ngrok, Svix, Stripe CLI, Smee.io and LocalTunnel: history, replay, CLI, CI SDK and MCP.",
   path: "/compare",
   keywords: [
     "webhook testing tool comparison",
     "webhook testing alternatives",
     "webhook.site alternative",
     "ngrok alternative",
+    "ngrok vs hookdeck",
+    "svix alternative",
+    "stripe cli alternative",
     "requestbin alternative",
     "beeceptor alternative",
     "hookdeck alternative",
@@ -36,6 +39,24 @@ const COMPARISONS = [
       "ngrok is a general-purpose tunnel. webhooks.cc is a webhook testing platform with capture, replay, SDK, and MCP built in.",
   },
   {
+    href: "/compare/hookdeck",
+    title: "webhooks.cc vs Hookdeck",
+    summary:
+      "Hookdeck is production webhook infrastructure (retries, routing). webhooks.cc is a development testing tool. They complement each other.",
+  },
+  {
+    href: "/compare/svix",
+    title: "webhooks.cc vs Svix",
+    summary:
+      "Svix is outbound webhook delivery infrastructure (plus Svix Play). webhooks.cc tests inbound webhooks and emails across 32+ signed providers with SDK assertions and MCP.",
+  },
+  {
+    href: "/compare/stripe-cli",
+    title: "webhooks.cc vs Stripe CLI",
+    summary:
+      "Stripe CLI forwards Stripe events to localhost. webhooks.cc brings that CLI tunnel workflow, persistent history, and CI SDK signing to 32+ webhook providers and inbound email.",
+  },
+  {
     href: "/compare/requestbin",
     title: "webhooks.cc vs RequestBin (Pipedream)",
     summary:
@@ -48,12 +69,6 @@ const COMPARISONS = [
       "Beeceptor excels at API mocking. webhooks.cc excels at capturing and testing real webhook payloads with SDK and MCP.",
   },
   {
-    href: "/compare/hookdeck",
-    title: "webhooks.cc vs Hookdeck",
-    summary:
-      "Hookdeck is production webhook infrastructure (retries, routing). webhooks.cc is a development testing tool. They complement each other.",
-  },
-  {
     href: "/compare/smee",
     title: "webhooks.cc vs Smee.io",
     summary:
@@ -63,7 +78,7 @@ const COMPARISONS = [
     href: "/compare/localtunnel",
     title: "webhooks.cc vs LocalTunnel",
     summary:
-      "LocalTunnel is a free, simple tunnel. webhooks.cc tunnels too — and also captures, inspects, replays, and tests every request.",
+      "LocalTunnel is a free, simple tunnel. webhooks.cc tunnels too, and also captures, inspects, replays, and tests every request.",
   },
 ] as const;
 
@@ -74,6 +89,8 @@ const TOOLS = [
   { name: "Beeceptor", href: "/compare/beeceptor" },
   { name: "Hookdeck", href: "/compare/hookdeck" },
   { name: "ngrok", href: "/compare/ngrok" },
+  { name: "Svix", href: "/compare/svix" },
+  { name: "Stripe CLI", href: "/compare/stripe-cli" },
   { name: "Smee.io", href: "/compare/smee" },
   { name: "LocalTunnel", href: "/compare/localtunnel" },
 ] as const;
@@ -89,6 +106,8 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Request log",
     "Event log",
     "Local inspector while running",
+    "Svix Play / Outbound log",
+    "In Stripe Dashboard only",
     "No",
     "No",
   ],
@@ -100,14 +119,52 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "No",
     "Redelivery",
     "To local upstream",
+    "Resend outbound",
+    "stripe events resend",
     "No",
     "No",
   ],
-  ["Mock responses", "Yes", "Paid", "Via workflow code", "Yes, rule-based", "No", "No", "No", "No"],
-  ["CLI tunnel to localhost", "Yes", "Yes", "No", "No", "Yes", "Yes", "Yes", "Yes"],
-  ["SDK assertions in CI", "Yes", "No", "No", "No", "No", "No", "No", "No"],
-  ["MCP server", "Yes", "No", "No", "No", "Operations only", "No", "No", "No"],
-  ["Open source", "Yes", "No", "No", "No", "Partially", "Agent only", "Yes", "Yes"],
+  [
+    "Mock responses",
+    "Yes",
+    "Paid",
+    "Via workflow code",
+    "Yes, rule-based",
+    "No",
+    "No",
+    "Static in Play",
+    "No",
+    "No",
+    "No",
+  ],
+  [
+    "CLI tunnel to localhost",
+    "Yes",
+    "Yes",
+    "No",
+    "No",
+    "Yes",
+    "Yes",
+    "Yes (Play)",
+    "Stripe only",
+    "Yes",
+    "Yes",
+  ],
+  ["SDK assertions in CI", "Yes", "No", "No", "No", "No", "No", "No", "No", "No", "No"],
+  [
+    "MCP server",
+    "Yes",
+    "No",
+    "No",
+    "No",
+    "Operations only",
+    "No",
+    "No",
+    "Stripe API ops",
+    "No",
+    "No",
+  ],
+  ["Open source", "Yes", "No", "No", "No", "Partially", "Agent only", "Yes", "Yes", "Yes", "Yes"],
   [
     "Team plan",
     "$12/seat/mo, pooled quota",
@@ -116,6 +173,8 @@ const MATRIX: readonly (readonly [string, ...string[]])[] = [
     "Team+ $25/mo",
     "Team+ $39/mo",
     "$20/mo incl. 3 seats",
+    "Cloud plans",
+    "Via Stripe account",
     "None",
     "None",
   ],
@@ -131,7 +190,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Which webhook tools have a CLI tunnel to localhost and a free tier?",
     answer:
-      "webhooks.cc (whk tunnel, free plan with 50 requests a day and every feature), Hookdeck (hookdeck listen, free tier with limited events), ngrok (free tier), and the free, open-source Smee.io and LocalTunnel. Only webhooks.cc and Hookdeck also keep a stored history of what arrived.",
+      "webhooks.cc (whk tunnel, free plan with 50 requests a day and every feature), Hookdeck (hookdeck listen, free tier with limited events), ngrok (free tier), Stripe CLI (stripe listen, for Stripe events only), and the free, open-source Smee.io and LocalTunnel. Only webhooks.cc and Hookdeck also keep a stored cross-provider history of what arrived.",
   },
   {
     question: "What should I compare when choosing a paid webhook testing tool?",

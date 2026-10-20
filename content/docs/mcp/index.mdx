@@ -1,23 +1,42 @@
 ---
-title: "MCP Server"
-description: "The @webhooks-cc/mcp package lets AI coding agents create endpoints, inspect webhooks, send test payloads, and replay captured requests — all through natural language."
+title: "Webhook MCP Server (@webhooks-cc/mcp)"
+description: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 38 MCP tools, zero-key sandbox, and official registry."
 section: mcp
 order: 1
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-20
 schema: faq
-keywords: ["MCP server", "AI webhook testing", "Claude Code webhooks", "Cursor webhooks"]
+keywords:
+  [
+    "webhook mcp",
+    "mcp webhooks",
+    "mcp webhook",
+    "@webhooks-cc/mcp",
+    "MCP server",
+    "AI webhook testing",
+    "Claude Code webhooks",
+    "Cursor webhooks",
+  ]
 seo:
-  ogTitle: "MCP Server for Webhook Testing"
-  ogDescription: "Connect Claude Code, Cursor, VS Code, Codex, and Windsurf to webhooks.cc via MCP to create endpoints, inspect requests, and replay webhooks."
+  ogTitle: "Webhook MCP Server (@webhooks-cc/mcp): Claude, Cursor & Codex"
+  ogDescription: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 38 MCP tools, zero-key sandbox, and official registry."
 ---
 
 <McpInstallGuide />
+
+## Registry and client support
+
+`@webhooks-cc/mcp` is published on npm and indexed in the Model Context Protocol ecosystem so AI coding agents can discover and install it directly:
+
+- **npm package**: [`@webhooks-cc/mcp`](https://www.npmjs.com/package/@webhooks-cc/mcp) (`npx -y @webhooks-cc/mcp`)
+- **Official MCP Registry**: `io.github.webhooks-cc/mcp` (`server.json` schema validated in CI)
+- **Glama & Smithery**: Ships with [`glama.json`](https://glama.ai/mcp/servers) metadata and stdio transport support for zero-config inspection
+- **Supported MCP clients**: Claude Code (`claude mcp add webhooks -- npx -y @webhooks-cc/mcp`), Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop
 
 ## Available tools
 
 The MCP server exposes 38 tools your AI agent can call (without an API key, 10 sandbox tools; see below):
 
-For provider templates in `send_webhook`, `secret` is required for every signed provider — only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret. The MCP server does not inject a default secret.
+For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
 
 ## Provider-aware testing
 
@@ -87,20 +106,20 @@ Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mai
 
 ### Forwarding
 
-| Tool                    | Description                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------ |
-| `configure_forwarding`  | Set where and how captured requests and emails are forwarded, and turn it on or off |
-| `get_forwarding_secret` | Read or rotate the signing secret for forwarded deliveries                           |
+| Tool                    | Description                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| `configure_forwarding`  | Set where and how captured requests and emails are forwarded, and turn it on or off   |
+| `get_forwarding_secret` | Read or rotate the signing secret for forwarded deliveries                             |
 | `test_forwarding`       | Send the newest request (or a sample) to the forwarding URL once and report the answer |
-| `list_deliveries`       | The delivery log and its counts for an endpoint, or every try of one request         |
-| `redeliver`             | Forward one request again, or every failed one                                       |
+| `list_deliveries`       | The delivery log and its counts for an endpoint, or every try of one request           |
+| `redeliver`             | Forward one request again, or every failed one                                         |
 
 ### Teams
 
 | Tool                | Description                                                  |
 | ------------------- | ------------------------------------------------------------ |
-| `list_teams`        | List the teams you own or belong to, with their pooled quota |
 | `list_team_members` | List a team's members and pending invites                    |
+| `list_teams`        | List the teams you own or belong to, with their pooled quota |
 | `share_endpoint`    | Share an endpoint you own with a team                        |
 | `unshare_endpoint`  | Stop sharing an endpoint you own with a team                 |
 
@@ -122,17 +141,17 @@ To get everything else, the agent connects to your account: `connect_account` wi
 
 The MCP server provides 3 prompt templates for common workflows:
 
-- **debug_webhook_delivery** — diagnose why webhook delivery is failing or missing
-- **setup_provider_testing** — set up webhook testing for a specific provider
-- **compare_webhook_attempts** — compare two webhook deliveries or retries
+- **debug_webhook_delivery**: diagnose why webhook delivery is failing or missing
+- **setup_provider_testing**: set up webhook testing for a specific provider
+- **compare_webhook_attempts**: compare two webhook deliveries or retries
 
 ## Resources
 
 Three resources provide read-only access to your webhook data:
 
-- **endpoints-overview** (`webhooks://endpoints`) — all endpoints with recent activity
-- **endpoint-recent-requests** (`webhooks://endpoint/{slug}/recent`) — last 10 requests at an endpoint
-- **request-details** (`webhooks://request/{id}`) — full details of a specific request
+- **endpoints-overview** (`webhooks://endpoints`): all endpoints with recent activity
+- **endpoint-recent-requests** (`webhooks://endpoint/{slug}/recent`): last 10 requests at an endpoint
+- **request-details** (`webhooks://request/{id}`): full details of a specific request
 
 Resources return emails without the raw message or the HTML part, like the request tools.
 
@@ -140,7 +159,7 @@ Resources return emails without the raw message or the HTML part, like the reque
 
 With the MCP server connected, you can talk to your AI agent naturally:
 
-```
+```text
 You: "Create a webhook endpoint for testing Stripe"
 Agent: Created endpoint "stripe-test" at https://go.webhooks.cc/w/abc123
 
@@ -152,10 +171,10 @@ Agent: Sent signed Stripe template to stripe-test
 
 You: "Show me what was captured"
 Agent: 1 request captured:
-  POST /w/abc123 — stripe-signature + checkout.session.completed payload
+  POST /w/abc123 - stripe-signature + checkout.session.completed payload
 
 You: "Replay that to my local server"
-Agent: Replayed to http://localhost:3000/webhooks — got 200 OK
+Agent: Replayed to http://localhost:3000/webhooks - got 200 OK
 ```
 
 ## Learn more
@@ -179,14 +198,19 @@ Agent: Replayed to http://localhost:3000/webhooks — got 200 OK
 />
 
 <FAQ>
-<FAQItem question="Which AI coding agents support webhooks.cc?">
+<FAQItem question="Which AI coding agents support @webhooks-cc/mcp?">
 
-The MCP server works with Claude Code, Cursor, VS Code (Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any tool that supports the Model Context Protocol can connect.
+The `@webhooks-cc/mcp` server works with Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop. Any client that supports the Model Context Protocol over stdio can connect with `npx -y @webhooks-cc/mcp`.
+
+</FAQItem>
+<FAQItem question="Can I use the Webhook MCP server without an API key?">
+
+Yes. Running `npx -y @webhooks-cc/mcp` without `WHK_API_KEY` starts in agent sandbox mode with 10 tools (`create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `connect_account`, `wait_for_connection`, and `about_sandbox`), giving your agent up to 3 temporary endpoints and 100 requests for 24 hours.
 
 </FAQItem>
 <FAQItem question="What can an AI agent do with webhooks.cc?">
 
-Your AI agent can create endpoints, send test webhooks, inspect captured requests, configure mock responses, and replay requests to localhost — all through natural language.
+Your AI agent can create webhook and inbound email endpoints, send signed provider templates (Stripe, GitHub, Shopify, Clerk, Linear, and 29 more), wait for incoming requests or verification emails, verify cryptographic signatures, configure forwarding, and replay requests to localhost.
 
 </FAQItem>
 </FAQ>

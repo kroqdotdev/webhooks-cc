@@ -76,7 +76,7 @@ describe("webhook provider pages", () => {
       "2026-09-29T00:00:00.000Z"
     );
     // #446 changed the FAQ wording ("an") on vowel-initial pages on 3 October.
-    for (const slug of ["adyen", "airtable", "auth0", "aws-sns", "intercom", "okta"]) {
+    for (const slug of ["airtable", "auth0", "aws-sns", "okta"]) {
       expect(getWebhookProviderPage(slug)?.lastModified.toISOString(), slug).toBe(
         "2026-10-03T00:00:00.000Z"
       );
@@ -88,10 +88,20 @@ describe("webhook provider pages", () => {
   it("keeps search-driven copy short, dash-free and tied to real pages", () => {
     const withSeo = pages.filter((page) => page.seo);
     expect(withSeo.map((page) => page.slug).sort()).toEqual([
+      "adyen",
+      "cal",
+      "checkout-com",
       "clerk",
+      "coinbase-commerce",
       "discord",
+      "docusign",
+      "intercom",
       "lemonsqueezy",
+      "linear",
       "mux",
+      "paddle",
+      "sendgrid",
+      "square",
     ]);
     for (const page of withSeo) {
       const seo = page.seo!;
@@ -105,7 +115,9 @@ describe("webhook provider pages", () => {
         ...(seo.reference?.rows.flat() ?? []),
       ].join(" ");
       expect(copy, page.slug).not.toContain(String.fromCharCode(0x2014));
-      expect(page.lastModified.toISOString(), page.slug).toBe("2026-10-13T00:00:00.000Z");
+      expect(["2026-10-13T00:00:00.000Z", "2026-10-20T00:00:00.000Z"], page.slug).toContain(
+        page.lastModified.toISOString()
+      );
     }
   });
 });

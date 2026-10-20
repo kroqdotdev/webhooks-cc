@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.1";
+export const APP_VERSION = "0.40.2";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.2",
+    date: "2026-10-20",
+    title: "Svix and Stripe CLI Comparisons, 10 Provider Reference Tables, and Search Hygiene",
+    track: "web",
+    items: [
+      "New side-by-side comparison pages for Svix (/compare/svix) and Stripe CLI (/compare/stripe-cli), plus updated ngrok and comparison hub checklists",
+      "Event and signature reference tables and FAQs on the Linear, DocuSign, SendGrid, Paddle, Intercom, Square, Cal.com, Coinbase Commerce, Adyen, and Checkout.com webhook pages",
+      "Clarified SDK verifySignature() reference vs the signature verification guide, canonicalized the comparison guide to /compare, and expanded MCP server registry and client documentation",
+      "Permanent redirects for /webhooks/amazon-sns and legacy comparison URLs, plus explicit X-Robots-Tag noindex headers on private routes",
+    ],
+  },
   {
     version: "0.40.1",
     date: "2026-10-19",
