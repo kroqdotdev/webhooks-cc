@@ -19,7 +19,7 @@ const EMAIL_PAGES_UPDATED = new Date("2026-10-08T00:00:00.000Z");
 // The Search Console pass: the public Teams page, the landing page that links
 // it, and comparison pages with fresh tables and the questions people (and AI
 // search) ask about them.
-const SEO_PASS_UPDATED = new Date("2026-10-13T00:00:00.000Z");
+const SEO_PASS_UPDATED = new Date("2026-10-20T00:00:00.000Z");
 
 export interface SitemapPageDefinition {
   path: string;
@@ -78,6 +78,18 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     priority: 0.6,
     lastModified: SEO_PASS_UPDATED,
   },
+  {
+    path: "/compare/svix",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
+  {
+    path: "/compare/stripe-cli",
+    changeFrequency: "monthly",
+    priority: 0.6,
+    lastModified: SEO_PASS_UPDATED,
+  },
   { path: "/compare/smee", changeFrequency: "monthly", priority: 0.6 },
   {
     path: "/compare/localtunnel",
@@ -86,9 +98,9 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     lastModified: SEO_PASS_UPDATED,
   },
   // Blog pages are dynamically generated from Supabase in app/sitemap.ts
-  // /api-explorer is noindexed — client-only Scalar viewer, /docs/api owns this query
+  // /api-explorer is noindexed - client-only Scalar viewer, /docs/api owns this query
   { path: "/installation", changeFrequency: "monthly", priority: 0.8 },
-  // /login is noindexed — excluded from sitemap intentionally
+  // /login is noindexed - excluded from sitemap intentionally
   { path: "/changelog", changeFrequency: "weekly", priority: 0.5 },
   { path: "/support", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "yearly", priority: 0.3, lastModified: LEGAL_PAGES_UPDATED },

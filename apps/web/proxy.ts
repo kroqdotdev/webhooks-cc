@@ -30,6 +30,8 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/auth",
     "/cli/verify",
     "/teams",
+    "/agent/claim",
+    "/blog/preview",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

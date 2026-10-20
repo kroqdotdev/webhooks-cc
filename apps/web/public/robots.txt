@@ -1,14 +1,12 @@
 User-agent: *
 Allow: /
-Disallow: /dashboard
-Disallow: /account
-Disallow: /endpoints
-Disallow: /teams
-Disallow: /api-explorer
 Disallow: /api/
-Disallow: /cli/verify
-Disallow: /blog/preview
-Disallow: /agent/claim
+
+# Private app routes (/dashboard, /account, /endpoints, /teams, /api-explorer,
+# /cli/verify, /blog/preview, /agent/claim) intentionally remain crawlable here
+# so crawlers read their X-Robots-Tag: noindex, nofollow response headers and
+# <meta name="robots" content="noindex, nofollow"> tags instead of indexing the
+# bare URL from links.
 
 # Agent registration: how AI agents obtain an API credential (auth.md protocol).
 # Also advertised via the Link response header and <link rel="auth.md"> on every page.

@@ -5,7 +5,7 @@ export type WebhookProviderCategory =
   "Payments & billing" | "Dev & deploy" | "Communication" | "Commerce & SaaS" | "Identity & data";
 
 interface ProviderEditorial {
-  /** What this provider's webhooks notify you about — one factual sentence. */
+  /** What this provider's webhooks notify you about - one factual sentence. */
   blurb: string;
   /** Where webhooks are configured for this provider. */
   configHint: string;
@@ -55,20 +55,20 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Paddle sends webhooks for transactions, subscriptions, customers, and adjustments in Paddle Billing.",
     configHint: "Paddle Dashboard → Developer Tools → Notifications → New destination",
     category: "Payments & billing",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   linear: {
     blurb: "Linear sends webhooks for issue, comment, project, and cycle changes in a workspace.",
     configHint: "Linear → Settings → API → Webhooks → New webhook",
     category: "Commerce & SaaS",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   sendgrid: {
     blurb:
       "SendGrid sends event webhooks for email delivery, opens, clicks, bounces, and spam reports.",
     configHint: "SendGrid → Settings → Mail Settings → Event Webhook",
     category: "Communication",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   clerk: {
     blurb:
@@ -131,7 +131,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Coinbase Commerce sends webhooks as crypto charges are created, pending, confirmed, or failed.",
     configHint: "Coinbase Commerce → Settings → Webhook subscriptions",
     category: "Payments & billing",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   razorpay: {
     blurb:
@@ -145,14 +145,14 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "Cal.com sends webhooks when bookings are created, cancelled, rescheduled, or completed.",
     configHint: "Cal.com → Settings → Developer → Webhooks",
     category: "Commerce & SaaS",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   intercom: {
     blurb:
       "Intercom sends webhooks for conversations, contacts, and admin replies in your workspace.",
     configHint: "Intercom Developer Hub → your app → Webhooks",
     category: "Communication",
-    updated: "2026-10-03",
+    updated: "2026-10-20",
   },
   telegram: {
     blurb:
@@ -165,7 +165,7 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
     blurb: "Square sends webhooks for payments, refunds, orders, inventory, and catalog changes.",
     configHint: "Square Developer Dashboard → your app → Webhooks → Subscriptions",
     category: "Payments & billing",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   hubspot: {
     blurb:
@@ -212,14 +212,14 @@ const PROVIDER_EDITORIAL: Record<TemplateProvider, ProviderEditorial> = {
       "DocuSign Connect sends webhooks as envelopes are sent, viewed, signed, completed, or declined.",
     configHint: "DocuSign Admin → Integrations → Connect → Add Configuration",
     category: "Identity & data",
-    updated: "2026-08-21",
+    updated: "2026-10-20",
   },
   adyen: {
     blurb:
       "Adyen sends standard notification webhooks for authorisations, captures, refunds, and chargebacks.",
     configHint: "Adyen Customer Area → Developers → Webhooks → Create webhook",
     category: "Payments & billing",
-    updated: "2026-10-03",
+    updated: "2026-10-20",
   },
   paypal: {
     blurb:
@@ -374,7 +374,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
       "Checkout.com sends webhooks for payment lifecycle events such as approvals, captures, refunds, and voids, plus dispute events.",
     configHint: "Dashboard → Developers → Webhooks, or the Workflows API (POST /workflows)",
     category: "Payments & billing",
-    updated: "2026-09-29",
+    updated: "2026-10-20",
     signatureHeader: "cko-signature",
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
@@ -846,6 +846,366 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       },
     ],
   },
+  linear: {
+    title: "Linear Webhooks: Events, linear-signature & Free Tester",
+    description:
+      "Inspect Linear webhook events (Issue, Comment, Project, Cycle), verify the linear-signature HMAC-SHA256 header, send signed samples, and forward to localhost.",
+    reference: {
+      heading: "Linear webhook events and headers",
+      intro:
+        "Linear sends a JSON body with action (create, update, remove), type, data, and webhookTimestamp, plus three identifying headers on every delivery.",
+      columns: ["Header or resource type", "Purpose"],
+      codeColumn: 0,
+      rows: [
+        ["linear-signature", "Hex HMAC-SHA256 digest of the raw request body"],
+        ["linear-delivery", "UUID v4 unique to each webhook delivery attempt"],
+        ["linear-event", "Entity type that changed (such as Issue or Comment)"],
+        ["Issue", "Issue created, updated (state, assignee, priority), or removed"],
+        ["Comment", "Comment posted, edited, or deleted on an issue"],
+        ["Project", "Project or ProjectUpdate created, modified, or archived"],
+        ["Cycle", "Cycle started, updated, or completed in a team"],
+      ],
+      source: {
+        label: "Linear webhooks documentation",
+        href: "https://linear.app/developers/webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify Linear's linear-signature header?",
+        answer:
+          "Compute an HMAC-SHA256 hex digest over the raw request body using your webhook signing secret and compare it in constant time against the linear-signature header. Also check that payload.webhookTimestamp is within 60 seconds of the current time to prevent replay attacks.",
+      },
+      {
+        question: "What is Linear's webhook retry schedule?",
+        answer:
+          "If your endpoint does not respond with HTTP 200 within 5 seconds, Linear retries the delivery up to 3 times after 1 minute, 1 hour, and 6 hours. If an endpoint fails repeatedly, Linear disables the webhook subscription automatically.",
+      },
+    ],
+  },
+  docusign: {
+    title: "DocuSign Connect Webhooks: Events, HMAC & Best Practices",
+    description:
+      "Capture DocuSign Connect webhook events (envelope-sent, envelope-completed), verify x-docusign-signature-1 HMAC headers, and follow listener best practices.",
+    reference: {
+      heading: "Common DocuSign Connect webhook events",
+      intro:
+        "DocuSign Connect JSON SIM (Connect 2.0) notifications send an event string alongside envelopeId and data. Configure these events under DocuSign Admin -> Connect.",
+      columns: ["Event", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["envelope-sent", "Envelope has been sent to at least one recipient"],
+        ["envelope-delivered", "All recipients have opened the envelope"],
+        ["envelope-completed", "All recipients have signed and completed the envelope"],
+        ["envelope-declined", "A recipient declined to sign the envelope"],
+        ["envelope-voided", "The sender voided the envelope"],
+        ["recipient-completed", "An individual recipient finished signing"],
+        ["recipient-authenticationfailed", "A recipient failed an identity or access-code check"],
+      ],
+      source: {
+        label: "DocuSign Connect webhook docs",
+        href: "https://developers.docusign.com/platform/webhooks/connect/",
+      },
+    },
+    faq: [
+      {
+        question: "What are the DocuSign webhook listener best practices?",
+        answer:
+          "Acknowledge every delivery with HTTP 200 immediately before running slow tasks or downloading signed PDFs, verify the x-docusign-signature-1 base64 HMAC-SHA256 header against the raw body, deduplicate retries using envelopeId plus event timestamp, and omit Include Documents from the webhook payload so your worker fetches PDFs asynchronously via the eSignature REST API.",
+      },
+      {
+        question: "How do I verify x-docusign-signature-1?",
+        answer:
+          "Enable HMAC security in your DocuSign Connect configuration and copy the HMAC key. Compute a base64-encoded HMAC-SHA256 digest of the raw UTF-8 request body using that key and compare it in constant time with x-docusign-signature-1.",
+      },
+    ],
+  },
+  sendgrid: {
+    title: "SendGrid Event Webhook: ECDSA Signatures, Events & Tester",
+    description:
+      "Test SendGrid Event Webhook deliveries (delivered, open, bounce, spamreport), verify ECDSA signatures with x-twilio-email-event-webhook-signature, and replay.",
+    reference: {
+      heading: "SendGrid Event Webhook event types",
+      intro:
+        "SendGrid batches email events into a JSON array POSTed to your Event Webhook URL. Every object in the array carries an event field and sg_event_id.",
+      columns: ["Event", "Meaning"],
+      codeColumn: 0,
+      rows: [
+        ["processed", "Message received by SendGrid and ready for delivery"],
+        ["delivered", "Receiving mail server accepted the message"],
+        ["deferred", "Receiving server temporarily rejected the message; SendGrid will retry"],
+        ["bounce", "Receiving server permanently rejected the message"],
+        ["dropped", "SendGrid dropped the message (suppression list, invalid address)"],
+        ["open", "Recipient opened the HTML email (tracking pixel loaded)"],
+        ["click", "Recipient clicked a tracked link in the email"],
+        ["spamreport", "Recipient marked the email as spam"],
+      ],
+      source: {
+        label: "SendGrid Event Webhook reference",
+        href: "https://www.twilio.com/docs/sendgrid/for-developers/tracking-events/event",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify SendGrid's x-twilio-email-event-webhook-signature header?",
+        answer:
+          "SendGrid signs Event Webhooks with ECDSA over SHA-256 rather than HMAC. Concatenate the x-twilio-email-event-webhook-timestamp header value and the raw request body bytes, then verify the base64 signature in x-twilio-email-event-webhook-signature using the ECDSA public key from SendGrid Settings -> Mail Settings -> Event Webhook.",
+      },
+      {
+        question: "Why does SendGrid send an array of events instead of a single JSON object?",
+        answer:
+          "SendGrid batches deliveries for throughput, posting a JSON array of event objects every few seconds or when the batch fills. Iterate over the array in your handler and deduplicate each item by its unique sg_event_id.",
+      },
+    ],
+  },
+  paddle: {
+    title: "Paddle Webhooks: paddle-signature & p_signature Guide",
+    description:
+      "Verify Paddle Billing paddle-signature (ts;h1 HMAC-SHA256) and Paddle Classic p_signature (RSA-SHA1 phpserialize), inspect subscription events, and test locally.",
+    reference: {
+      heading: "Paddle Billing events and Classic signature headers",
+      intro:
+        "Paddle Billing sends JSON webhooks signed with paddle-signature. Legacy Paddle Classic sends URL-encoded form POSTs with a p_signature field inside the body.",
+      columns: ["Event or field", "Description"],
+      codeColumn: 0,
+      rows: [
+        ["paddle-signature", "Paddle Billing header: ts=<unix_timestamp>;h1=<hmac_sha256_hex>"],
+        ["p_signature", "Paddle Classic form field: base64 RSA-SHA1 over PHP-serialized fields"],
+        ["transaction.completed", "Paddle Billing transaction payment succeeded"],
+        ["transaction.payment_failed", "Paddle Billing payment attempt failed"],
+        ["subscription.created", "New subscription started in Paddle Billing"],
+        ["subscription.updated", "Subscription plan, quantity, or billing cycle changed"],
+        ["subscription.canceled", "Subscription canceled by customer or billing failure"],
+      ],
+      source: {
+        label: "Paddle webhooks documentation",
+        href: "https://developer.paddle.com/webhooks/overview",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify paddle-signature in Paddle Billing?",
+        answer:
+          "Split the paddle-signature header on ';' to extract ts and h1. Build the signed payload string `${ts}:${rawBody}` using the exact raw request body, compute its hex HMAC-SHA256 digest with your endpoint's secret key (pdl_ntfset_...), and compare it to h1.",
+      },
+      {
+        question: "How do I verify p_signature in Paddle Classic?",
+        answer:
+          "Parse the application/x-www-form-urlencoded body, extract and remove the p_signature field, sort the remaining keys alphabetically, stringify every value, serialize the sorted key-value map using PHP's serialize() format, and verify the base64 p_signature with RSA-SHA1 against your Paddle Classic public key.",
+      },
+    ],
+  },
+  intercom: {
+    title: "Intercom Webhooks: x-hub-signature, Topics & Free Tester",
+    description:
+      "Capture Intercom webhook topics (conversation.user.created, conversation.admin.replied), verify x-hub-signature HMAC-SHA1 with your client secret, and test.",
+    reference: {
+      heading: "Common Intercom webhook topics",
+      intro:
+        "Intercom notifications wrap every event in a notification_event object whose topic field identifies what happened in your workspace.",
+      columns: ["Topic", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["conversation.user.created", "A user or lead started a new conversation"],
+        ["conversation.user.replied", "A user or lead replied to an existing conversation"],
+        ["conversation.admin.replied", "A teammate or admin replied to a conversation"],
+        ["conversation.admin.closed", "An admin closed a conversation"],
+        ["contact.user.created", "A new user contact was created"],
+        ["ticket.created", "A new support ticket was created"],
+      ],
+      source: {
+        label: "Intercom webhooks documentation",
+        href: "https://developers.intercom.com/docs/webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify Intercom's x-hub-signature header?",
+        answer:
+          "Intercom signs the raw JSON body with HMAC-SHA1 using your Intercom app's client_secret and sends the result as sha1=<hex> in the x-hub-signature header. Compute sha1=<hex> over the unparsed request body with your client secret and compare in constant time.",
+      },
+      {
+        question: "What happens if an Intercom webhook endpoint times out?",
+        answer:
+          "Your endpoint must return a 2xx status within 5 seconds. Failed or timed-out deliveries are retried with exponential backoff, and Intercom temporarily suspends the webhook subscription if failures persist.",
+      },
+    ],
+  },
+  square: {
+    title: "Square Webhooks: HMAC-SHA256 Signatures, Events & Tester",
+    description:
+      "Test Square webhook events (payment.updated, order.created, invoice.payment_made), verify x-square-hmacsha256-signature over notificationUrl + body, and replay.",
+    reference: {
+      heading: "Common Square webhook events",
+      intro:
+        "Square webhooks carry event_id, type, merchant_id, and data. Subscribe to specific event types in the Square Developer Dashboard.",
+      columns: ["Event", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["payment.created", "A new payment is initialized"],
+        ["payment.updated", "A payment status changes (such as COMPLETED or FAILED)"],
+        ["order.created", "A new order is created"],
+        ["order.updated", "An order state, fulfillment, or line item changes"],
+        ["refund.updated", "A payment refund completes or fails"],
+        ["invoice.payment_made", "A customer pays a Square invoice"],
+      ],
+      source: {
+        label: "Square webhooks overview",
+        href: "https://developer.squareup.com/docs/webhooks/overview",
+      },
+    },
+    faq: [
+      {
+        question: "Why does Square x-square-hmacsha256-signature verification fail?",
+        answer:
+          "Unlike providers that sign only the body, Square prepends your exact webhook notification URL to the raw UTF-8 body before hashing: base64(HMAC-SHA256(notificationUrl + rawBody, signatureKey)). If your app sits behind a proxy or trailing slash mismatch, pass the exact URL registered in the Square Developer Dashboard.",
+      },
+      {
+        question: "How do I test Square webhooks on localhost?",
+        answer:
+          "Create a free webhooks.cc endpoint, paste its URL into Square Developer Dashboard -> Webhooks -> Subscriptions, and click Send Test Event or run whk tunnel <port> to forward live sandbox deliveries to your local server.",
+      },
+    ],
+  },
+  cal: {
+    title: "Cal.com Webhooks: x-cal-signature-256, Triggers & Tester",
+    description:
+      "Capture Cal.com booking webhooks (BOOKING_CREATED, BOOKING_RESCHEDULED, BOOKING_CANCELLED), verify the x-cal-signature-256 HMAC-SHA256 header, and test locally.",
+    reference: {
+      heading: "Cal.com webhook trigger events",
+      intro:
+        "Cal.com webhooks send triggerEvent, createdAt, and payload with booking details, attendee emails, and custom responses.",
+      columns: ["triggerEvent", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["BOOKING_CREATED", "An attendee schedules a new booking"],
+        ["BOOKING_RESCHEDULED", "An existing booking is moved to a new time"],
+        ["BOOKING_CANCELLED", "A booking is cancelled by attendee or host"],
+        ["BOOKING_REJECTED", "A host rejects a booking request that required confirmation"],
+        ["MEETING_ENDED", "A scheduled meeting's end time is reached"],
+        ["RECORDING_READY", "A Cal Video recording is ready for download"],
+      ],
+      source: {
+        label: "Cal.com webhooks guide",
+        href: "https://cal.com/docs/developing/guides/automation/webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify Cal.com's x-cal-signature-256 header?",
+        answer:
+          "When you set a Secret on a Cal.com webhook, Cal.com computes a hex-encoded HMAC-SHA256 digest of the raw request body using that secret and sends it in the x-cal-signature-256 header. Recompute HMAC-SHA256(rawBody, secret) in hex and compare with timingSafeEqual.",
+      },
+    ],
+  },
+  "coinbase-commerce": {
+    title: "Coinbase Commerce Webhooks: x-cc-webhook-signature & Events",
+    description:
+      "Verify Coinbase Commerce x-cc-webhook-signature (HMAC-SHA256), inspect charge:created, charge:pending, and charge:confirmed payloads, and test on a free URL.",
+    reference: {
+      heading: "Coinbase Commerce webhook events",
+      intro:
+        "Coinbase Commerce wraps each notification in an event object with id, type, api_version, created_at, and data holding the charge resource.",
+      columns: ["Event type", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["charge:created", "A new crypto checkout charge is created"],
+        ["charge:pending", "A transaction is detected on-chain but not yet confirmed"],
+        ["charge:confirmed", "On-chain payment reached the required block confirmations"],
+        ["charge:failed", "Charge expired or payment failed to complete"],
+        ["charge:delayed", "Payment was received after the charge expiration window"],
+        ["charge:resolved", "An underpaid, overpaid, or delayed charge was resolved"],
+      ],
+      source: {
+        label: "Coinbase Commerce webhooks docs",
+        href: "https://docs.cdp.coinbase.com/commerce-onchain/docs/webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify the x-cc-webhook-signature header?",
+        answer:
+          "Copy your Webhook Shared Secret from Coinbase Commerce Settings -> Notifications. Compute a lowercase hex HMAC-SHA256 digest over the raw request body using that shared secret and compare it in constant time with the x-cc-webhook-signature header.",
+      },
+      {
+        question: "Should I fulfill orders on charge:pending or charge:confirmed?",
+        answer:
+          "Always wait for charge:confirmed before fulfilling an order or granting access. charge:pending only means a transaction was broadcast; it has not yet finalized on-chain.",
+      },
+    ],
+  },
+  adyen: {
+    title: "Adyen Webhooks: hmacSignature Verification, Events & Tester",
+    description:
+      "Capture Adyen standard notification webhooks (AUTHORISATION, CAPTURE, REFUND, CHARGEBACK), verify additionalData.hmacSignature (HMAC-SHA256), and test locally.",
+    reference: {
+      heading: "Common Adyen standard webhook eventCodes",
+      intro:
+        'Adyen sends a notificationItems array where each NotificationRequestItem carries eventCode, success ("true" or "false"), pspReference, and additionalData.hmacSignature.',
+      columns: ["eventCode", "Meaning"],
+      codeColumn: 0,
+      rows: [
+        ["AUTHORISATION", "Payment authorization succeeded or failed (check success field)"],
+        ["CAPTURE", "Authorized payment funds were captured"],
+        ["CANCELLATION", "Authorized payment was cancelled before capture"],
+        ["REFUND", "Captured payment was refunded to the shopper"],
+        ["CHARGEBACK", "Shopper disputed the charge and funds were deducted"],
+        ["REPORT_AVAILABLE", "A settlement or accounting report is ready to download"],
+      ],
+      source: {
+        label: "Adyen webhooks documentation",
+        href: "https://docs.adyen.com/development-resources/webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify Adyen's hmacSignature?",
+        answer:
+          "For standard webhooks, Adyen places the signature inside notificationItem.NotificationRequestItem.additionalData.hmacSignature. Join pspReference, originalReference, merchantAccountCode, merchantReference, amount.value, amount.currency, eventCode, and success with ':' (escaping '\\' as '\\\\' and ':' as '\\:'), hex-decode your Adyen HMAC key into binary bytes, and compute a base64 HMAC-SHA256 digest.",
+      },
+      {
+        question: "What response does Adyen expect from a webhook endpoint?",
+        answer:
+          "Adyen requires a 2xx HTTP status (or '[accepted]' on older configurations) within 10 seconds. Always verify hmacSignature and check whether success equals 'true' before fulfilling an AUTHORISATION event.",
+      },
+    ],
+  },
+  "checkout-com": {
+    title: "Checkout.com Webhooks: cko-signature, Events & Free Tester",
+    description:
+      "Test Checkout.com workflow webhooks (payment_approved, payment_captured, payment_refunded), verify the cko-signature HMAC-SHA256 header, and inspect payloads.",
+    reference: {
+      heading: "Common Checkout.com webhook events",
+      intro:
+        "Checkout.com Workflows send JSON notifications with id, type, created_on, and data, signed in the cko-signature header.",
+      columns: ["Event type", "When it fires"],
+      codeColumn: 0,
+      rows: [
+        ["payment_approved", "Payment authorization was approved by the issuer"],
+        ["payment_declined", "Payment authorization was declined"],
+        ["payment_captured", "Authorized payment was captured"],
+        ["payment_refunded", "Captured payment was refunded"],
+        ["payment_voided", "Authorized payment was voided before capture"],
+        ["dispute_received", "Cardholder opened a chargeback dispute"],
+      ],
+      source: {
+        label: "Checkout.com webhooks documentation",
+        href: "https://www.checkout.com/docs/developer-resources/webhooks",
+      },
+    },
+    faq: [
+      {
+        question: "How do I verify Checkout.com's cko-signature header?",
+        answer:
+          "Each webhook action in a Checkout.com Workflow has a signature key. Compute a lowercase hex HMAC-SHA256 digest of the raw request body using that signature key and compare it with the cko-signature header. You can also configure an optional Authorization header on the workflow.",
+      },
+      {
+        question: "How does Checkout.com retry failed webhooks?",
+        answer:
+          "If your endpoint does not return a 2xx response within 10 seconds, Checkout.com Workflows retry the webhook with exponential backoff for up to 24 hours. Use the event id field to deduplicate repeated deliveries.",
+      },
+    ],
+  },
 };
 
 export interface WebhookProviderPage {
@@ -911,7 +1271,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
   const sdkHeader = "signatureHeader" in meta ? (meta.signatureHeader ?? null) : null;
 
   // The web provider catalog carries hand-tuned overrides the raw SDK template
-  // metadata lacks — e.g. Discord verifies with the x-signature-ed25519 header
+  // metadata lacks - e.g. Discord verifies with the x-signature-ed25519 header
   // using Ed25519, neither of which is in its SDK template. Prefer the catalog
   // so this page never contradicts the catalog the dashboard verifies against.
   const catalogHeader = info?.header ? info.header : null;

@@ -55,12 +55,18 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Explicit X-Robots-Tag header at the Next.js router layer in addition
+        // to proxy.ts and layout metadata so crawlers always see noindex.
+        source: "/dashboard/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
     ];
   },
   async redirects() {
     return [
       {
-        // /go is retired — the landing page now IS the guest dashboard.
+        // /go is retired - the landing page now IS the guest dashboard.
         // Permanent redirect preserves the page's search rankings and backlinks.
         source: "/go",
         destination: "/",
@@ -75,6 +81,24 @@ const nextConfig: NextConfig = {
       {
         source: "/sitemaps/:file",
         destination: "/sitemap.xml",
+        permanent: true,
+      },
+      {
+        // Devs and LLMs guess both /webhooks/amazon-sns and /webhooks/aws-sns;
+        // canonical slug in webhook-provider-pages.ts is aws-sns.
+        source: "/webhooks/amazon-sns",
+        destination: "/webhooks/aws-sns",
+        permanent: true,
+      },
+      {
+        // Legacy/guessed comparison paths seen in Search Console.
+        source: "/compare/webhooks-cc",
+        destination: "/compare",
+        permanent: true,
+      },
+      {
+        source: "/compare/webhooks-cc-vs-webhook-site",
+        destination: "/compare/webhook-site",
         permanent: true,
       },
     ];
