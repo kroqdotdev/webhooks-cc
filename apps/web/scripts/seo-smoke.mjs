@@ -40,6 +40,12 @@ async function main() {
   if (!sitemap.response.ok) {
     throw new Error(`Failed to fetch sitemap.xml from ${baseUrl}: ${sitemap.response.status}`);
   }
+  const sitemapLastModified = sitemap.response.headers.get("last-modified");
+  if (!sitemapLastModified || Number.isNaN(Date.parse(sitemapLastModified))) {
+    errors.push(
+      `/sitemap.xml: missing or invalid Last-Modified header (${sitemapLastModified || "missing"})`
+    );
+  }
   const sitemapUrls = [...sitemap.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 
   if (sitemapUrls.length === 0) {
