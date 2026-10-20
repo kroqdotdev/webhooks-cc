@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import {
   adaptiveDifficulty,
@@ -139,8 +139,19 @@ describe("verifySolution", () => {
       ok: false,
       reason: "bad_nonce",
     });
-    const shifted = [nonces[1], nonces[0], nonces[2], nonces[3]];
-    expect(verify(c.challenge, shifted)).toEqual({ ok: false, reason: "insufficient_work" });
+    let badFirstNonce = 0;
+    while (
+      hasLeadingZeroBits(
+        createHash("sha256").update(`${c.challenge}.0.${badFirstNonce}`).digest(),
+        c.difficulty
+      )
+    ) {
+      badFirstNonce += 1;
+    }
+    expect(verify(c.challenge, [String(badFirstNonce), ...nonces.slice(1)])).toEqual({
+      ok: false,
+      reason: "insufficient_work",
+    });
   });
 
   test("refuses malformed input", () => {
