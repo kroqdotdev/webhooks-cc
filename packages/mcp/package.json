@@ -45,12 +45,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@webhooks-cc/sdk": "workspace:*",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
-    "tsup": "^8.5.1",
+    "@types/node": "^26.6.5",
+    "tsup": "^9.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.5"
   }
 }

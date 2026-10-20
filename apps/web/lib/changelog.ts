@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.0";
+export const APP_VERSION = "0.40.1";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.1",
+    date: "2026-10-19",
+    title: "Refuse Server Action Probes at the Edge",
+    track: "web",
+    items: [
+      "POST requests to page routes and requests carrying a Next-Action header now receive a plain 404 from the proxy before reaching Next's Server Action handler",
+    ],
+  },
   {
     version: "0.40.0",
     date: "2026-10-14",
