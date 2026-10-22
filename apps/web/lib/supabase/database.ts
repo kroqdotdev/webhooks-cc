@@ -1025,6 +1025,15 @@ export interface Database {
         Args: { p_user_id: string };
         Returns: number;
       };
+      get_quota_rejections: {
+        Args: { p_user_id: string; p_limit?: number };
+        Returns: Array<{
+          slug: string;
+          quota_rejected: number;
+          total_rejected: number;
+          endpoint_count: number;
+        }>;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

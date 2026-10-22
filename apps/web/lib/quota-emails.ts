@@ -2,6 +2,7 @@ import { publicEnv } from "@/lib/env";
 import { buildQuotaExhaustedEmail } from "@/lib/email/quota-exhausted-email";
 import { sendEmail } from "@/lib/email/mailer";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getQuotaRejections, type QuotaRejections } from "@/lib/supabase/quota-rejections";
 import { reportError } from "@/lib/observability";
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
@@ -12,7 +13,10 @@ const BATCH_SIZE = 50;
  * a 15-minute lease on each user it returns, so concurrent polls never email
  * the same user. Only a successful send starts the 7-day resend window
  * (mark_quota_email_sent); a failed send releases the lease so the next poll
- * retries, and a poll that dies mid-batch simply lets its leases expire.
+ * retries, and a poll that dies mid-batch simply lets its leases expire. Each
+ * email names this period's rejected webhooks per endpoint when there are any
+ * yet; the poll runs every 10 minutes, so a user claimed just after hitting
+ * the limit usually has none and gets the generic copy.
  */
 export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed: number }> {
   const admin = createAdminClient();
@@ -26,6 +30,15 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
   let failed = 0;
 
   for (const user of data ?? []) {
+    // The counts are extra detail: if they cannot be read, the generic email
+    // still goes out rather than the user hearing nothing.
+    let rejections: QuotaRejections | null = null;
+    try {
+      rejections = await getQuotaRejections(user.id);
+    } catch (rejectionsError) {
+      reportError("[quota-emails] rejection counts failed", rejectionsError);
+    }
+
     try {
       await sendEmail(
         buildQuotaExhaustedEmail({
@@ -33,6 +46,7 @@ export async function sendQuotaExhaustedEmails(): Promise<{ sent: number; failed
           requestLimit: user.request_limit,
           periodEnd: new Date(user.period_end),
           teamBilledEndpoints: user.team_billed_endpoints,
+          rejections,
           appUrl,
         })
       );

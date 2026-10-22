@@ -285,6 +285,7 @@ describe("Supabase Control Plane Integration", () => {
       periodEnd: expect.any(Number),
       teamBilledEndpoints: 0,
       emails: 0,
+      quotaRejections: { total: 0, endpointCount: 0, endpoints: [] },
     });
   });
 });

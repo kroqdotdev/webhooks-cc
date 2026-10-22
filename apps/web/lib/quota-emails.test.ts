@@ -72,4 +72,49 @@ describe("sendQuotaExhaustedEmails", () => {
     await expect(sendQuotaExhaustedEmails()).rejects.toThrow("boom");
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  it("names this period's rejected webhooks in each email", async () => {
+    rpc.mockImplementation(async (fn: string, args?: { p_user_id?: string }) => {
+      if (fn === "claim_quota_exhausted_users") return { data: claimed, error: null };
+      if (fn === "get_quota_rejections") {
+        return args?.p_user_id === "u1"
+          ? {
+              data: [
+                { slug: "stripe-prod", quota_rejected: 7, total_rejected: 9, endpoint_count: 2 },
+                { slug: "gh-staging", quota_rejected: 2, total_rejected: 9, endpoint_count: 2 },
+              ],
+              error: null,
+            }
+          : { data: [], error: null };
+      }
+      return { error: null };
+    });
+    sendEmail.mockResolvedValue(undefined);
+
+    await expect(sendQuotaExhaustedEmails()).resolves.toEqual({ sent: 2, failed: 0 });
+    expect(rpc).toHaveBeenCalledWith("get_quota_rejections", { p_user_id: "u1", p_limit: 5 });
+    expect(rpc).toHaveBeenCalledWith("get_quota_rejections", { p_user_id: "u2", p_limit: 5 });
+
+    const [first, second] = sendEmail.mock.calls.map(([message]) => message);
+    expect(first.text).toContain("9 webhooks were rejected across 2 endpoints");
+    expect(first.text).toContain("stripe-prod: 7 rejected webhooks");
+    expect(first.text).toContain("gh-staging: 2 rejected webhooks");
+    expect(second.text).not.toContain("rejected across");
+  });
+
+  it("still sends the generic email when the rejection counts cannot be read", async () => {
+    rpc.mockImplementation(async (fn: string) => {
+      if (fn === "claim_quota_exhausted_users") return { data: [claimed[0]], error: null };
+      if (fn === "get_quota_rejections") return { data: null, error: { message: "stats down" } };
+      return { error: null };
+    });
+    sendEmail.mockResolvedValue(undefined);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(sendQuotaExhaustedEmails()).resolves.toEqual({ sent: 1, failed: 0 });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].text).not.toContain("rejected across");
+    expect(rpc).toHaveBeenCalledWith("mark_quota_email_sent", { p_user_id: "u1" });
+    expect(update).not.toHaveBeenCalled();
+  });
 });

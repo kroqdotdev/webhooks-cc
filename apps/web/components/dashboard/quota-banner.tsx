@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { OctagonAlert } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -8,7 +8,39 @@ import { UpgradeButton } from "@/components/billing/upgrade-button";
 import { ACCOUNT_PROFILE_SELECT, type AccountProfile } from "@/lib/account-profile";
 import { isQuotaExhausted } from "@/lib/quota";
 import { createClient } from "@/lib/supabase/client";
+import type { QuotaRejections } from "@/lib/supabase/quota-rejections";
 import { subscribeToUserProfileChanges } from "@/lib/supabase/realtime";
+
+function plural(count: number, one: string, many: string): string {
+  return `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
+}
+
+/**
+ * What the receiver has turned away this period, per endpoint. Renders nothing
+ * until a webhook has actually been rejected: the banner appears the moment
+ * the quota runs out, before the first 429.
+ */
+export function QuotaRejectionDetail({ rejections }: { rejections: QuotaRejections | null }) {
+  if (!rejections || rejections.total <= 0 || rejections.endpoints.length === 0) return null;
+
+  const more = Math.max(0, rejections.endpointCount - rejections.endpoints.length);
+  return (
+    <p className="text-sm">
+      <span className="font-medium">
+        {plural(rejections.total, "webhook", "webhooks")} rejected this period
+      </span>{" "}
+      on{" "}
+      {rejections.endpoints.map((endpoint, index) => (
+        <Fragment key={endpoint.slug}>
+          {index > 0 && ", "}
+          <code className="font-mono">{endpoint.slug}</code> (
+          {endpoint.rejected.toLocaleString("en-US")})
+        </Fragment>
+      ))}
+      {more > 0 && ` and ${plural(more, "more endpoint", "more endpoints")}`}.
+    </p>
+  );
+}
 
 /**
  * Shown while the receiver is rejecting the user's webhooks with 429. Without
@@ -21,6 +53,7 @@ export function QuotaBanner() {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [teamBilledEndpoints, setTeamBilledEndpoints] = useState(0);
+  const [rejections, setRejections] = useState<QuotaRejections | null>(null);
   const userId = user?.id;
   const accessToken = session?.access_token ?? null;
 
@@ -60,14 +93,17 @@ export function QuotaBanner() {
   const exhausted = isQuotaExhausted(profile, nowMs);
   const periodEnd = profile?.period_end ?? null;
 
-  // team_endpoints is not readable by clients, so ask the usage route.
+  // team_endpoints and endpoint_daily_stats are not readable by clients, so ask
+  // the usage route.
   useEffect(() => {
     if (!exhausted || !accessToken) return;
     let cancelled = false;
     void fetch("/api/usage", { headers: { Authorization: `Bearer ${accessToken}` } })
       .then((response) => (response.ok ? response.json() : null))
-      .then((usage: { teamBilledEndpoints?: number } | null) => {
-        if (!cancelled) setTeamBilledEndpoints(usage?.teamBilledEndpoints ?? 0);
+      .then((usage: { teamBilledEndpoints?: number; quotaRejections?: QuotaRejections } | null) => {
+        if (cancelled) return;
+        setTeamBilledEndpoints(usage?.teamBilledEndpoints ?? 0);
+        setRejections(usage?.quotaRejections ?? null);
       })
       .catch(() => {});
     return () => {
@@ -103,6 +139,7 @@ export function QuotaBanner() {
             {teamBilledEndpoints > 0 &&
               " Endpoints shared with a team use the team's quota and keep capturing."}
           </p>
+          <QuotaRejectionDetail rejections={rejections} />
           <p className="text-sm text-muted-foreground">
             {isFree
               ? "Pro raises the limit to 100,000 requests a month for $8/month. "
