@@ -1,5 +1,6 @@
 import { createAdminClient } from "./admin";
 import type { UserPlan } from "./api-keys";
+import { reportError } from "@/lib/observability";
 import { getQuotaRejections, NO_QUOTA_REJECTIONS, type QuotaRejections } from "./quota-rejections";
 
 export interface UsageInfo {
@@ -58,7 +59,17 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     user.period_start && user.emails_period_start === user.period_start ? user.emails_used : 0;
 
   const exhausted = periodActive && user.request_limit > 0 && used >= user.request_limit;
-  const quotaRejections = exhausted ? await getQuotaRejections(userId) : NO_QUOTA_REJECTIONS;
+  // The counts are extra detail: if they cannot be read (e.g. migration 00060
+  // not applied yet), usage still returns rather than failing for the users
+  // who most need it.
+  let quotaRejections = NO_QUOTA_REJECTIONS;
+  if (exhausted) {
+    try {
+      quotaRejections = await getQuotaRejections(userId);
+    } catch (rejectionsError) {
+      reportError("[usage] quota rejection counts failed", rejectionsError);
+    }
+  }
 
   return {
     used,

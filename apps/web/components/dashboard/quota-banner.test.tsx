@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QuotaRejectionDetail } from "./quota-banner";
 
+/** The text a reader sees: everything outside `<...>` tags in rendered markup. */
+function visibleText(html: string): string {
+  let text = "";
+  let inTag = false;
+  for (const char of html) {
+    if (char === "<") inTag = true;
+    else if (char === ">") inTag = false;
+    else if (!inTag) text += char;
+  }
+  return text;
+}
+
 describe("QuotaRejectionDetail", () => {
   it("renders nothing before any webhook was rejected", () => {
     expect(renderToStaticMarkup(<QuotaRejectionDetail rejections={null} />)).toBe("");
@@ -25,7 +37,7 @@ describe("QuotaRejectionDetail", () => {
         }}
       />
     );
-    const text = html.replace(/<[^>]+>/g, "");
+    const text = visibleText(html);
     expect(text).toBe(
       "1,420 webhooks rejected this period on stripe-prod (1,000), gh-staging (420)."
     );
@@ -37,15 +49,17 @@ describe("QuotaRejectionDetail", () => {
       <QuotaRejectionDetail
         rejections={{ total: 1, endpointCount: 1, endpoints: [{ slug: "solo", rejected: 1 }] }}
       />
-    ).replace(/<[^>]+>/g, "");
-    expect(one).toBe("1 webhook rejected this period on solo (1).");
+    );
+    expect(visibleText(one)).toBe("1 webhook rejected this period on solo (1).");
 
     const many = renderToStaticMarkup(
       <QuotaRejectionDetail
         rejections={{ total: 9, endpointCount: 4, endpoints: [{ slug: "a", rejected: 9 }] }}
       />
-    ).replace(/<[^>]+>/g, "");
-    expect(many).toBe("9 webhooks rejected this period on a (9) and 3 more endpoints.");
+    );
+    expect(visibleText(many)).toBe(
+      "9 webhooks rejected this period on a (9) and 3 more endpoints."
+    );
   });
 
   it("escapes slugs", () => {

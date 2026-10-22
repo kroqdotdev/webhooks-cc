@@ -229,7 +229,8 @@ describe("get_quota_rejections", () => {
   });
 
   it("is only included in usage while the quota is exhausted", async () => {
-    expect((await getUsageForUser(userId))?.quotaRejections.total).toBe(4);
+    const [first] = await rejections(userId);
+    expect((await getUsageForUser(userId))?.quotaRejections.total).toBe(first.total_rejected);
 
     const { error } = await admin.from("users").update({ requests_used: 10 }).eq("id", userId);
     if (error) throw error;
