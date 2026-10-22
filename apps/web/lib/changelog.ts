@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.3";
+export const APP_VERSION = "0.40.4";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.4",
+    date: "2026-10-22",
+    title: "Rejected Webhook Counts in Quota Alerts",
+    track: "web",
+    items: [
+      "The quota-exhausted email and the dashboard quota banner now say how many webhooks were rejected this period and on which endpoints, most rejected first, with the rest summarized as a count",
+      "Rejections on endpoints billed to a subscribed team are left out, matching the existing note that those endpoints keep capturing",
+      "New get_quota_rejections() database function (migration 00060) reads the per-endpoint counts from endpoint_daily_stats; /api/usage returns them as quotaRejections while the quota is exhausted",
+    ],
+  },
   {
     version: "0.40.3",
     date: "2026-10-20",

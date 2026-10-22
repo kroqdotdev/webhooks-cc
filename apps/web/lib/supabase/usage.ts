@@ -1,5 +1,7 @@
 import { createAdminClient } from "./admin";
 import type { UserPlan } from "./api-keys";
+import { reportError } from "@/lib/observability";
+import { getQuotaRejections, NO_QUOTA_REJECTIONS, type QuotaRejections } from "./quota-rejections";
 
 export interface UsageInfo {
   used: number;
@@ -14,6 +16,11 @@ export interface UsageInfo {
   teamBilledEndpoints: number;
   /** How many of `used` were emails (owner-billed, current period). */
   emails: number;
+  /**
+   * Webhooks rejected with 429 this period on the user's own endpoints, by
+   * endpoint. Only read while the quota is exhausted; empty otherwise.
+   */
+  quotaRejections: QuotaRejections;
 }
 
 export async function getUsageForUser(userId: string): Promise<UsageInfo | null> {
@@ -51,6 +58,19 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
   const emails =
     user.period_start && user.emails_period_start === user.period_start ? user.emails_used : 0;
 
+  const exhausted = periodActive && user.request_limit > 0 && used >= user.request_limit;
+  // The counts are extra detail: if they cannot be read (e.g. migration 00060
+  // not applied yet), usage still returns rather than failing for the users
+  // who most need it.
+  let quotaRejections = NO_QUOTA_REJECTIONS;
+  if (exhausted) {
+    try {
+      quotaRejections = await getQuotaRejections(userId);
+    } catch (rejectionsError) {
+      reportError("[usage] quota rejection counts failed", rejectionsError);
+    }
+  }
+
   return {
     used,
     limit: user.request_limit,
@@ -59,5 +79,6 @@ export async function getUsageForUser(userId: string): Promise<UsageInfo | null>
     periodEnd: periodActive ? periodEndMs : null,
     teamBilledEndpoints: teamBilledEndpoints ?? 0,
     emails: Math.min(emails, used),
+    quotaRejections,
   };
 }
