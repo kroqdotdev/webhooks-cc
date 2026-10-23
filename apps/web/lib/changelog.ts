@@ -1558,7 +1558,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "sdk",
     items: [
       "`sendTo()`, `buildRequest()` and `sendTemplate()` take `messageId` for the providers that sign one (`standard-webhooks`, `clerk`, `resend`); with `timestamp`, the signature comes out the same on every run",
-      "Timeouts and poll intervals given as strings read a bare number only as decimal milliseconds, so `\"0x10\"` or `\"1e3\"` is refused instead of quietly read as 16 or 1000",
+      'Timeouts and poll intervals given as strings read a bare number only as decimal milliseconds, so `"0x10"` or `"1e3"` is refused instead of quietly read as 16 or 1000',
       "`extractFromEmail()` returns at most 20 codes, and finding them stays fast on an email stuffed with numbers",
     ],
   },
