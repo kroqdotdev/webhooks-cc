@@ -1,0 +1,183 @@
+---
+title: "Python SDK"
+description: "The webhooks-cc Python package captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes pytest fixtures."
+section: sdk
+order: 6
+lastUpdated: 2026-10-23
+schema: none
+keywords: ["python webhook sdk", "pytest webhooks", "webhook testing python", "verify webhook signature python", "webhooks-cc"]
+seo:
+  ogTitle: "Python Webhook Testing SDK"
+  ogDescription: "Capture and wait for webhooks and test emails from Python, send signed webhooks to your handler, and verify Stripe, GitHub and 30 other provider signatures."
+---
+
+The `webhooks-cc` package brings the [TypeScript SDK](/docs/sdk)'s testing tools to Python: capture webhooks and email, wait for them, send signed webhooks to your own handler, and verify signatures. It passes the same conformance tests as the TypeScript SDK, so signatures and matchers behave identically in both.
+
+## Install
+
+```bash
+pip install webhooks-cc
+pip install "webhooks-cc[crypto]"  # also verify Discord (Ed25519) and PayPal (RSA) signatures
+```
+
+Python 3.10 or later. Create an API key on your [API keys page](/account/api-keys) and set `WHK_API_KEY`, or pass `api_key=`.
+
+## Wait for a webhook
+
+```python
+from webhooks_cc import WebhooksCC, match_body_path
+
+with WebhooksCC() as client:  # reads WHK_API_KEY
+    endpoint = client.endpoints.create(name="checkout test")
+
+    trigger_checkout(webhook_url=endpoint.url)
+
+    request = client.requests.wait_for(
+        endpoint.slug,
+        timeout="30s",
+        match=match_body_path("type", "checkout.session.completed"),
+    )
+    assert request.json()["data"]["object"]["amount_total"] == 2000
+
+    client.endpoints.delete(endpoint.slug)
+```
+
+`wait_for` looks back five minutes, so a webhook that arrived just before you started waiting still counts. `wait_for_all(slug, count=3)` collects several, oldest first.
+
+Durations take `"500ms"`, `"30s"`, `"5m"`, `"2h"`, `"7d"` or a `timedelta`. A bare number is milliseconds, as in every webhooks.cc SDK, so prefer a string where you mean seconds. Times such as `since` and `request.received_at` are milliseconds since the epoch.
+
+## Matchers
+
+Matchers take a captured `Request` and return a bool. Combine them with `match_all()` and `match_any()`, or pass any function of your own.
+
+```python
+from webhooks_cc import match_all, match_header, match_method, match_path
+
+match = match_all(
+    match_method("POST"),
+    match_path("/webhooks/**"),
+    match_header("x-github-event", "push"),
+)
+request = client.requests.wait_for(endpoint.slug, match=match)
+```
+
+Available: `match_method`, `match_path` (globs: `*` within a segment, `**` across segments), `match_header`, `match_query_param`, `match_body_path`, `match_body_subset`, `match_content_type`, `match_verified`, `match_unverified` and `match_email`. See [Matchers & Helpers](/docs/sdk/matchers) for what each one matches.
+
+## pytest
+
+Installing the package adds two fixtures. Tests that use them are skipped when `WHK_API_KEY` is not set.
+
+```python
+def test_sends_a_receipt_webhook(webhooks_cc, webhooks_cc_endpoint):
+    place_order(webhook_url=webhooks_cc_endpoint.url)
+
+    request = webhooks_cc.requests.wait_for(webhooks_cc_endpoint.slug, timeout="30s")
+    assert request.method == "POST"
+```
+
+`webhooks_cc` is a client for the whole session. `webhooks_cc_endpoint` is a new endpoint for each test, named after it and deleted when it ends. Outside pytest, `temporary_endpoint(client)` does the same as a context manager, and `capture_during(client, action)` runs `action(endpoint)` and returns what it sent:
+
+```python
+from webhooks_cc import capture_during
+
+[request] = capture_during(client, lambda endpoint: notify(endpoint.url))
+assert request.json()["event"] == "order.paid"
+```
+
+## Test email: codes and links
+
+Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mailhooks.cc` for any tag. Use a fresh tag per test run to find your own email. webhooks.cc finds the one-time codes and links in each email, the same ones the dashboard shows, and the SDK reads them from the API.
+
+```python
+import uuid
+from webhooks_cc import extract_code, extract_link
+
+run = f"signup-{uuid.uuid4().hex[:8]}"
+sign_up(email=client.emails.address(endpoint, run))
+
+email = client.emails.wait_for(endpoint.slug, tag=run, subject="Confirm your email")
+code = extract_code(email)   # "482913"
+link = extract_link(email)   # "https://app.example.com/confirm?token=..."
+```
+
+`email.email` holds the parsed message: `subject`, `from_`, `to`, `text`, `html`, attachments, and the SPF, DKIM and DMARC results. `extract_code()` raises `ValueError` when the endpoint's **Show codes and links found in emails** setting is off. See [Email capture](/docs/email-capture) for how capture works.
+
+## Send signed webhooks to your handler
+
+Test your own webhook handler, on localhost or anywhere else, with requests signed the way the provider signs them:
+
+```python
+response = client.send_to(
+    "http://localhost:8000/webhooks/stripe",
+    provider="stripe",
+    secret="whsec_test_secret",
+    template="checkout.session.completed",
+)
+assert response.status_code == 200
+```
+
+Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending them. Redirects are not followed, so signed requests only ever reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint, and `TEMPLATE_PROVIDERS` lists the 34 providers.
+
+## Verify signatures
+
+```python
+from webhooks_cc import verify_signature
+
+valid = verify_signature(
+    "stripe",
+    body=request.body,        # the exact bytes or text received
+    headers=request.headers,  # any mapping; names match in any case
+    secret="whsec_...",
+)
+```
+
+Twilio, Square and HubSpot also need `url`; HubSpot also needs `method`. Discord takes `public_key`. One function per provider is in `webhooks_cc.verify`, such as `verify_stripe_signature(body, header, secret)`. See [Signature Verification](/docs/sdk/signatures) for each provider's scheme.
+
+## Verify what webhooks.cc forwards
+
+When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, check that they came from it with the endpoint's forwarding secret (`client.forwarding.secret(slug)`):
+
+```python
+from webhooks_cc import WebhookVerificationError, verify_forwarded_email
+
+try:
+    event = verify_forwarded_email(body, headers, secret)
+except WebhookVerificationError as error:
+    return 400 if error.code == "invalid_payload" else 401
+print(event["data"]["subject"])
+```
+
+`verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received.
+
+## Stream requests as they arrive
+
+```python
+for request in client.requests.subscribe(endpoint.slug, timeout="10m", reconnect=True):
+    print(request.method, request.path)
+```
+
+The stream ends at `timeout`, when the endpoint is deleted, or when you stop iterating. With `reconnect=True` it follows the server's 30-minute connection rotation and recovers from dropped connections without missing requests.
+
+## Errors
+
+API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses:
+
+| Error               | When                                                    |
+| ------------------- | ------------------------------------------------------- |
+| `UnauthorizedError` | 401: the API key is missing or invalid                  |
+| `NotFoundError`     | 404: the endpoint, request or email does not exist      |
+| `RateLimitError`    | 429, with `retry_after` in seconds when the server says |
+| `TimeoutError`      | A request or wait ran out of time                       |
+
+`TimeoutError` is also Python's built-in `TimeoutError`. Network failures raise httpx's exceptions. Retries are off unless you pass `retry=RetryOptions(max_attempts=3)`.
+
+## Configuration
+
+| Argument      | Environment variable | Default                  |
+| ------------- | -------------------- | ------------------------ |
+| `api_key`     | `WHK_API_KEY`        | (required)               |
+| `base_url`    | `WHK_BASE_URL`       | `https://webhooks.cc`    |
+| `webhook_url` | `WHK_WEBHOOK_URL`    | `https://go.webhooks.cc` |
+| `timeout`     |                      | `"30s"` per API call     |
+
+The source is in [`packages/sdk-python`](https://github.com/kroqdotdev/webhooks-cc/tree/main/packages/sdk-python), MIT licensed.

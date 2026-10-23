@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_VERSION, CHANGELOG, MCP_VERSION, SDK_VERSION } from "./changelog";
+import { APP_VERSION, CHANGELOG, MCP_VERSION, PYTHON_SDK_VERSION, SDK_VERSION } from "./changelog";
 
 /**
  * Guards against version drift between the public changelog page and what is
@@ -25,6 +25,14 @@ describe("changelog version constants", () => {
     expect(SDK_VERSION).toBe(readPackageVersion("../../packages/sdk/package.json"));
   });
 
+  it("PYTHON_SDK_VERSION matches packages/sdk-python/pyproject.toml", () => {
+    const pyproject = readFileSync(
+      resolve(__dirname, "..", "../../packages/sdk-python/pyproject.toml"),
+      "utf8"
+    );
+    expect(PYTHON_SDK_VERSION).toBe(/^version = "([^"]+)"/m.exec(pyproject)?.[1]);
+  });
+
   it("MCP_VERSION matches packages/mcp/package.json", () => {
     expect(MCP_VERSION).toBe(readPackageVersion("../../packages/mcp/package.json"));
   });
@@ -33,6 +41,7 @@ describe("changelog version constants", () => {
     const newest = (track: string) => CHANGELOG.find((entry) => entry.track === track)?.version;
     expect(newest("web")).toBe(APP_VERSION);
     expect(newest("sdk")).toBe(SDK_VERSION);
+    expect(newest("python")).toBe(PYTHON_SDK_VERSION);
     expect(newest("mcp")).toBe(MCP_VERSION);
   });
 });

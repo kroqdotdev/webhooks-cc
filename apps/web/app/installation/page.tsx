@@ -224,6 +224,21 @@ console.log(endpoint.url);`}
                   </Link>{" "}
                   for the full API reference.
                 </p>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Python</h2>
+                  <CodeBlock>{`pip install webhooks-cc`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-3">
+                    The same testing tools for Python, with pytest fixtures. See the{" "}
+                    <Link
+                      href="/docs/sdk/python"
+                      className="text-primary hover:underline font-bold"
+                    >
+                      Python SDK docs
+                    </Link>
+                    .
+                  </p>
+                </section>
               </div>
             )}
 
