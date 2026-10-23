@@ -294,8 +294,16 @@ func (s *subscription) connect(ctx context.Context, yield func(*Request, error) 
 				s.lastReceivedAt = request.ReceivedAt
 			}
 			s.rapidRotations = 0
+			// The idle clock only runs while waiting for the server: a slow
+			// loop body is not a silent connection.
+			if idleTimer != nil {
+				idleTimer.Stop()
+			}
 			if !yield(request, nil) {
 				return false, errStop
+			}
+			if idleTimer != nil {
+				idleTimer.Reset(s.idle)
 			}
 		case "timeout":
 			// The server's scheduled rotation (every 30 minutes): not a failure.

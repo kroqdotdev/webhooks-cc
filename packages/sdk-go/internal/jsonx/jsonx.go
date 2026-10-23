@@ -126,18 +126,28 @@ func parseValue(decoder *json.Decoder) (any, error) {
 // Stringify serializes like JSON.stringify(value).
 //
 // It writes Object, []any, map[string]any (keys sorted, since Go maps have no
-// order), strings, booleans, nil and every Go number type itself, passes
-// json.RawMessage through compacted, and hands anything else (structs, typed
-// maps and slices) to encoding/json without HTML escaping.
+// order), strings, booleans, nil and every Go number type itself (floats like
+// String(number), integers exactly), passes json.RawMessage through
+// compacted, and hands anything else (structs, typed maps and slices) to
+// encoding/json without HTML escaping.
 func Stringify(value any) (string, error) {
 	var out strings.Builder
-	if err := write(&out, value); err != nil {
+	if err := write(&out, value, 0); err != nil {
 		return "", err
 	}
 	return out.String(), nil
 }
 
-func write(out *strings.Builder, value any) error {
+// maxDepth bounds nesting, so a map that contains itself fails instead of
+// overflowing the stack.
+const maxDepth = 1000
+
+var errTooDeep = errors.New("jsonx: value nested more than 1000 levels deep (does it contain itself?)")
+
+func write(out *strings.Builder, value any, depth int) error {
+	if depth > maxDepth {
+		return errTooDeep
+	}
 	switch value := value.(type) {
 	case nil:
 		out.WriteString("null")
@@ -146,17 +156,22 @@ func write(out *strings.Builder, value any) error {
 	case string:
 		writeString(out, value)
 	case float64:
-		writeFloat(out, value)
+		writeFloat(out, value, 64)
 	case float32:
-		writeFloat(out, float64(value))
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		writeFloat(out, reflect.ValueOf(value).Convert(reflect.TypeFor[float64]()).Float())
+		// Shortest digits for a float32, so float32(19.99) writes 19.99.
+		writeFloat(out, float64(value), 32)
+	case int, int8, int16, int32, int64:
+		// Go integers are written exactly, even past 2^53 where a JavaScript
+		// number would round (snowflake ids, for one).
+		out.WriteString(strconv.FormatInt(reflect.ValueOf(value).Int(), 10))
+	case uint, uint8, uint16, uint32, uint64:
+		out.WriteString(strconv.FormatUint(reflect.ValueOf(value).Uint(), 10))
 	case json.Number:
 		number, err := strconv.ParseFloat(string(value), 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return fmt.Errorf("jsonx: invalid number %q", string(value))
 		}
-		writeFloat(out, number)
+		writeFloat(out, number, 64)
 	case json.RawMessage:
 		var compact bytes.Buffer
 		if err := json.Compact(&compact, value); err != nil {
@@ -171,7 +186,7 @@ func write(out *strings.Builder, value any) error {
 			}
 			writeString(out, member.Key)
 			out.WriteByte(':')
-			if err := write(out, member.Value); err != nil {
+			if err := write(out, member.Value, depth+1); err != nil {
 				return err
 			}
 		}
@@ -186,14 +201,14 @@ func write(out *strings.Builder, value any) error {
 		for i, key := range keys {
 			object[i] = Member{Key: key, Value: value[key]}
 		}
-		return write(out, object)
+		return write(out, object, depth+1)
 	case []any:
 		out.WriteByte('[')
 		for i, item := range value {
 			if i > 0 {
 				out.WriteByte(',')
 			}
-			if err := write(out, item); err != nil {
+			if err := write(out, item, depth+1); err != nil {
 				return err
 			}
 		}
@@ -258,12 +273,12 @@ func arrayIndex(key string) (uint64, bool) {
 	return index, true
 }
 
-func writeFloat(out *strings.Builder, value float64) {
+func writeFloat(out *strings.Builder, value float64, bitSize int) {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		out.WriteString("null")
 		return
 	}
-	out.WriteString(Number(value))
+	out.WriteString(formatNumber(value, bitSize))
 }
 
 const hexDigits = "0123456789abcdef"
@@ -302,7 +317,11 @@ func writeString(out *strings.Builder, s string) {
 }
 
 // Number formats a number as JavaScript's String(number) does.
-func Number(value float64) string {
+func Number(value float64) string { return formatNumber(value, 64) }
+
+// formatNumber applies String(number)'s layout to the shortest digits that
+// round-trip at bitSize (64, or 32 for a float32).
+func formatNumber(value float64, bitSize int) string {
 	switch {
 	case math.IsNaN(value):
 		return "NaN"
@@ -319,7 +338,7 @@ func Number(value float64) string {
 		value = -value
 	}
 	// The shortest digits that round-trip, as ECMAScript requires: "d.ddde±x".
-	formatted := strconv.FormatFloat(value, 'e', -1, 64)
+	formatted := strconv.FormatFloat(value, 'e', -1, bitSize)
 	mantissa, exponentText, _ := strings.Cut(formatted, "e")
 	exponent, _ := strconv.Atoi(exponentText)
 	digits := strings.TrimRight(strings.Replace(mantissa, ".", "", 1), "0")

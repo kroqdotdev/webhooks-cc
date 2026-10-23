@@ -1,7 +1,7 @@
 package webhookscc
 
 // Field is one setting in an update. The zero value leaves the setting as it
-// is; Value sets it and Null clears it.
+// is; Value sets it and Null clears it, for settings that can be cleared.
 //
 //	client.Endpoints.Update(ctx, slug, webhookscc.UpdateEndpointOptions{
 //		Name:         webhookscc.Value("checkout tests"),
@@ -18,6 +18,9 @@ func Value[T any](v T) Field[T] { return Field[T]{value: v, set: true} }
 
 // Null clears a setting.
 func Null[T any]() Field[T] { return Field[T]{set: true, null: true} }
+
+// isNull reports whether the update clears this setting.
+func (f Field[T]) isNull() bool { return f.set && f.null }
 
 // IsSet reports whether the update changes this setting.
 func (f Field[T]) IsSet() bool { return f.set }

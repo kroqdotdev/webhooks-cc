@@ -23,13 +23,16 @@
 // secret:
 //
 //	event, err := verify.ForwardedEmail(body, r.Header, secret)
-//	var verr *verify.Error
-//	if errors.As(err, &verr) {
+//	if err != nil {
 //		status := http.StatusUnauthorized
-//		if verr.Code == verify.CodeInvalidPayload {
+//		var verr *verify.Error
+//		if errors.As(err, &verr) && verr.Code == verify.CodeInvalidPayload {
 //			status = http.StatusBadRequest
 //		}
-//		http.Error(w, verr.Message, status)
+//		http.Error(w, "invalid delivery", status)
 //		return
 //	}
+//
+// A *Error says why a delivery was refused; any other error means the call
+// itself was wrong, such as an empty secret.
 package verify

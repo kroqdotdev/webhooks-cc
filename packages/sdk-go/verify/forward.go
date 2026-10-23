@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"slices"
 	"strconv"
@@ -109,6 +110,9 @@ func forwarded(body []byte, headers Headers, secret, eventType string, stringFie
 	if secret == "" {
 		return nil, errors.New("verify: forwarding verification requires a non-empty secret")
 	}
+	if _, err := sigutil.StandardWebhookKey(secret); err != nil {
+		return nil, fmt.Errorf("verify: forwarding secret: %w", err)
+	}
 	config := forwardConfig{tolerance: 5 * time.Minute}
 	for _, opt := range opts {
 		opt(&config)
@@ -130,7 +134,9 @@ func forwarded(body []byte, headers Headers, secret, eventType string, stringFie
 	if math.IsNaN(timestamp) || math.IsInf(timestamp, 0) || math.Abs(clock-timestamp) > tolerance {
 		return nil, &Error{CodeTimestampOutOfRange, "webhook-timestamp is more than " + strconv.FormatFloat(tolerance, 'f', -1, 64) + " seconds from now"}
 	}
-	if !standardWebhook(body, headers, secret) {
+	if valid, err := standardWebhook(body, headers, secret); err != nil {
+		return nil, err
+	} else if !valid {
 		return nil, &Error{CodeInvalidSignature, "the webhook-signature does not match the body and secret"}
 	}
 
@@ -226,7 +232,11 @@ func RelayedRequest(body []byte, headers Headers, secret string) (*Relayed, erro
 	if requestID == "" || receivedAt == "" || signatureHeader == "" {
 		return nil, &Error{CodeMissingHeaders, "missing webhooks-cc-request-id, webhooks-cc-received-at or webhooks-cc-signature header"}
 	}
-	expected := hmacSHA256Base64(sigutil.StandardWebhookKey(secret), concat([]byte(requestID+"."+receivedAt+"."), body))
+	key, err := sigutil.StandardWebhookKey(secret)
+	if err != nil {
+		return nil, fmt.Errorf("verify: forwarding secret: %w", err)
+	}
+	expected := hmacSHA256Base64(key, concat([]byte(requestID+"."+receivedAt+"."), body))
 	if !slices.ContainsFunc(standardSignatures(signatureHeader), func(given string) bool { return safeEqual(given, expected) }) {
 		return nil, &Error{CodeInvalidSignature, "the webhooks-cc-signature does not match the body and secret"}
 	}

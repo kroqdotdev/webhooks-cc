@@ -22,6 +22,8 @@ jobs:
     defaults:
       run:
         working-directory: packages/sdk-go
+    env:
+      WHK_CONFORMANCE_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v7
 

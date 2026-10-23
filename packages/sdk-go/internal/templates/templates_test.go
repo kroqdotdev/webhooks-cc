@@ -84,7 +84,7 @@ func TestSigningVectors(t *testing.T) {
 func readTypeScript(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(conformance.Dir(), "..", "src", "templates.ts"))
-	if errors.Is(err, fs.ErrNotExist) && os.Getenv("CI") == "" {
+	if errors.Is(err, fs.ErrNotExist) && !conformance.Required() {
 		t.Skipf("templates.ts not found (%v); run the tests from the webhooks-cc repository", err)
 	}
 	if err != nil {
@@ -573,5 +573,28 @@ func TestRandomValuesHaveTheirShape(t *testing.T) {
 	}
 	if got := isoTime(1767225600123); got != "2026-01-01T00:00:00.123Z" {
 		t.Errorf("isoTime = %q", got)
+	}
+}
+
+func TestHeaderOverridesReplaceBuiltHeadersInAnyCase(t *testing.T) {
+	built, err := Build("https://example.com/hook", Params{
+		Provider: "stripe", Secret: "whsec_test", Body: `{}`, Timestamp: time.Unix(1767225600, 0),
+		Headers: map[string]string{"Content-Type": "text/plain", "Stripe-Signature": "t=1,v1=override"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, lowerType := built.Headers["content-type"]
+	_, lowerSignature := built.Headers["stripe-signature"]
+	if lowerType || lowerSignature || built.Headers["Content-Type"] != "text/plain" || built.Headers["Stripe-Signature"] != "t=1,v1=override" {
+		t.Errorf("headers = %v", built.Headers)
+	}
+}
+
+func TestStandardWebhooksRefuseAnEmptyKey(t *testing.T) {
+	for _, provider := range []string{"standard-webhooks", "clerk", "resend"} {
+		if _, err := Build("https://example.com/hook", Params{Provider: provider, Secret: "whsec_"}); !errors.Is(err, sigutil.ErrEmptyKey) {
+			t.Errorf("%s: %v", provider, err)
+		}
 	}
 }

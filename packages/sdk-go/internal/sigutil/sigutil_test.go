@@ -2,6 +2,7 @@ package sigutil
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"webhooks.cc/go/internal/jsonx"
@@ -32,11 +33,16 @@ func TestDecodeBase64IsForgivingLikeAtob(t *testing.T) {
 }
 
 func TestStandardWebhookKey(t *testing.T) {
-	if got := StandardWebhookKey("whsec_aGk="); string(got) != "hi" {
-		t.Errorf("got %q", got)
+	if got, err := StandardWebhookKey("whsec_aGk="); err != nil || string(got) != "hi" {
+		t.Errorf("got %q, %v", got, err)
 	}
-	if got := StandardWebhookKey("whsec_not base64!"); string(got) != "whsec_not base64!" {
-		t.Errorf("got %q", got)
+	if got, err := StandardWebhookKey("whsec_not base64!"); err != nil || string(got) != "whsec_not base64!" {
+		t.Errorf("got %q, %v", got, err)
+	}
+	for _, secret := range []string{"whsec_", " ", "whsec_\n", "\t\n"} {
+		if _, err := StandardWebhookKey(secret); !errors.Is(err, ErrEmptyKey) {
+			t.Errorf("StandardWebhookKey(%q) = %v, want ErrEmptyKey", secret, err)
+		}
 	}
 }
 

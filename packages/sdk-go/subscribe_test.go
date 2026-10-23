@@ -194,3 +194,37 @@ func TestSubscribeStopsWhenTheLoopBreaks(t *testing.T) {
 		t.Errorf("count = %d", count)
 	}
 }
+
+func TestSubscribeSlowLoopBodyIsNotIdle(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/stream/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		sseStart(w)
+		sseRequest(w, "r1", 1767225600000)
+		sseRequest(w, "r2", 1767225601000)
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(20 * time.Millisecond):
+				fmt.Fprint(w, ": keepalive\n\n")
+				w.(http.Flusher).Flush()
+			}
+		}
+	})
+	var ids []string
+	for request, err := range api.client().Requests.Subscribe(context.Background(), "acme-test", webhookscc.SubscribeOptions{
+		IdleTimeout: 150 * time.Millisecond, Timeout: 2 * time.Second,
+	}) {
+		if err != nil {
+			t.Fatalf("after %v: %v", ids, err)
+		}
+		ids = append(ids, request.ID)
+		time.Sleep(400 * time.Millisecond) // longer than IdleTimeout
+		if len(ids) == 2 {
+			break
+		}
+	}
+	if fmt.Sprint(ids) != "[r1 r2]" {
+		t.Errorf("ids = %v", ids)
+	}
+}

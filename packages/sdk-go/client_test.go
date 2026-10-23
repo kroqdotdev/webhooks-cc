@@ -566,3 +566,11 @@ func TestWaitForToleratesAClientClockAhead(t *testing.T) {
 		t.Fatalf("WaitFor = %v, %v", request, err)
 	}
 }
+
+func TestUpdateRefusesNullForSettingsThatAlwaysHaveAValue(t *testing.T) {
+	client := newFakeAPI(t).client()
+	_, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{ForwardEnabled: webhookscc.Null[bool]()})
+	if err == nil || !strings.Contains(err.Error(), "cannot be cleared") {
+		t.Errorf("err = %v", err)
+	}
+}

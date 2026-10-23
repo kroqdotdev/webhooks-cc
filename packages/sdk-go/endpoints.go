@@ -78,7 +78,9 @@ func (s *EndpointsService) Get(ctx context.Context, slug string) (*Endpoint, err
 }
 
 // UpdateEndpointOptions are the settings an update changes. Only the fields
-// set with Value or Null change; Null clears a setting.
+// set with Value or Null change. Null clears a setting; Name,
+// ShowEmailExtracts and ForwardEnabled always have a value, so they only take
+// Value.
 type UpdateEndpointOptions struct {
 	Name            Field[string]
 	MockResponse    Field[MockResponse]
@@ -99,6 +101,9 @@ type UpdateEndpointOptions struct {
 func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateEndpointOptions) (*Endpoint, error) {
 	if err := validateSegment(slug, "slug"); err != nil {
 		return nil, err
+	}
+	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.ForwardEnabled.isNull() {
+		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts and ForwardEnabled cannot be cleared; set them with Value")
 	}
 	body := map[string]any{}
 	opts.Name.put(body, "name")

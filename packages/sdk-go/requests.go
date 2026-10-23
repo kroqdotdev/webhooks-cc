@@ -19,8 +19,10 @@ const (
 	maxWaitIterations  = 10_000
 	defaultWaitTimeout = 30 * time.Second
 	defaultWaitPoll    = 500 * time.Millisecond
-	// pollOverlap is how far before the newest request a wait's next poll starts.
-	pollOverlap = 5 * time.Second
+	// pollOverlap is how far before the newest request a wait's next poll
+	// starts. The receiver stamps receivedAt before the capture commits, and a
+	// capture can wait its turn behind others for the same account.
+	pollOverlap = 30 * time.Second
 )
 
 // Not replayed: hop-by-hop headers, credentials, and headers our proxies added.

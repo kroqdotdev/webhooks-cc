@@ -1,7 +1,8 @@
 // Package conformance loads the TypeScript SDK's conformance vectors for the
 // tests. They live in packages/sdk/conformance, outside this module, so a copy
-// of the module without the repository around it skips them; in CI (where CI
-// is set) a missing file fails instead.
+// of the module without the repository around it (a user's go test all)
+// skips them. The repository's own CI sets WHK_CONFORMANCE_REQUIRED=1, which
+// turns a missing file into a failure.
 package conformance
 
 import (
@@ -21,11 +22,15 @@ func Dir() string {
 	return filepath.Join(filepath.Dir(file), "..", "..", "..", "sdk", "conformance")
 }
 
+// Required reports whether missing vectors fail the tests instead of
+// skipping them.
+func Required() bool { return os.Getenv("WHK_CONFORMANCE_REQUIRED") == "1" }
+
 // Load reads one vector file (such as "signing.json") into v.
 func Load(t testing.TB, name string, v any) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(Dir(), name))
-	if errors.Is(err, fs.ErrNotExist) && os.Getenv("CI") == "" {
+	if errors.Is(err, fs.ErrNotExist) && !Required() {
 		t.Skipf("conformance vectors not found (%v); run the tests from the webhooks-cc repository", err)
 	}
 	if err != nil {

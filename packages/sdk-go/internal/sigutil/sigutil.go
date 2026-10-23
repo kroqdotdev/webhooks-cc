@@ -85,17 +85,27 @@ func HexToBytes(value string) ([]byte, error) {
 	return hex.DecodeString(normalized)
 }
 
+// ErrEmptyKey is returned for a Standard Webhooks style secret that decodes
+// to no key at all, such as "whsec_" or whitespace. An HMAC keyed with
+// nothing is one anyone can compute, so it is refused, as WebCrypto refuses
+// it in the TypeScript SDK.
+var ErrEmptyKey = errors.New("the secret decodes to an empty key")
+
 // StandardWebhookKey is the HMAC key for a Standard Webhooks style secret, as
 // Standard Webhooks, Clerk, Resend and webhooks.cc forwarding use them.
 //
 // A leading whsec_ is stripped and the rest decoded as base64. When that
-// fails, the key is the UTF-8 bytes of the whole secret, prefix included.
-func StandardWebhookKey(secret string) []byte {
+// fails, the key is the UTF-8 bytes of the whole secret, prefix included. A
+// key of zero bytes is ErrEmptyKey.
+func StandardWebhookKey(secret string) ([]byte, error) {
 	key, err := DecodeBase64(strings.TrimPrefix(secret, "whsec_"))
 	if err != nil {
-		return []byte(secret)
+		key = []byte(secret)
 	}
-	return key
+	if len(key) == 0 {
+		return nil, ErrEmptyKey
+	}
+	return key, nil
 }
 
 var hubspotEscapes = strings.NewReplacer(

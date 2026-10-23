@@ -15,7 +15,7 @@ import (
 // A provider added to the TypeScript SDK must be ported here too.
 func TestProvidersMatchTypeScript(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(conformance.Dir(), "..", "src", "templates.ts"))
-	if errors.Is(err, fs.ErrNotExist) && os.Getenv("CI") == "" {
+	if errors.Is(err, fs.ErrNotExist) && !conformance.Required() {
 		t.Skipf("templates.ts not found (%v); run the tests from the webhooks-cc repository", err)
 	}
 	if err != nil {

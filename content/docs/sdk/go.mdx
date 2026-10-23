@@ -166,13 +166,13 @@ When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, 
 
 ```go
 event, err := verify.ForwardedEmail(body, r.Header, secret)
-var verifyErr *verify.Error
-if errors.As(err, &verifyErr) {
+if err != nil {
 	status := http.StatusUnauthorized
-	if verifyErr.Code == verify.CodeInvalidPayload {
+	var verifyErr *verify.Error
+	if errors.As(err, &verifyErr) && verifyErr.Code == verify.CodeInvalidPayload {
 		status = http.StatusBadRequest
 	}
-	http.Error(w, verifyErr.Message, status)
+	http.Error(w, "invalid delivery", status)
 	return
 }
 var email struct {
@@ -181,7 +181,7 @@ var email struct {
 _ = json.Unmarshal(event.Data, &email)
 ```
 
-`verify.ForwardedRequest` checks a request forwarded as JSON, and `verify.RelayedRequest` one relayed as it was received.
+A `*verify.Error` says why a delivery was refused (`Code`); any other error means the call itself was wrong, such as an empty secret. `verify.ForwardedRequest` checks a request forwarded as JSON, and `verify.RelayedRequest` one relayed as it was received.
 
 ## Stream requests as they arrive
 

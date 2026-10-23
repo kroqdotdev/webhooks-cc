@@ -172,6 +172,9 @@ jobs:
     defaults:
       run:
         working-directory: packages/sdk-go
+    env:
+      # Missing conformance vectors fail here instead of being skipped.
+      WHK_CONFORMANCE_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v7
 

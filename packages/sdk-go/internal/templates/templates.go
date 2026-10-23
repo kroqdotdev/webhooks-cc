@@ -283,8 +283,15 @@ func Build(url string, p Params) (*Request, error) {
 		}
 		return p.Timestamp.Unix()
 	}
+	// Headers the caller passes replace built ones of the same name in any
+	// case, so a request never carries both content-type and Content-Type.
 	finish := func(headers map[string]string, payload string) *Request {
 		for name, value := range p.Headers {
+			for built := range headers {
+				if strings.EqualFold(built, name) {
+					delete(headers, built)
+				}
+			}
 			headers[name] = value
 		}
 		return &Request{Method: method, URL: url, Headers: headers, Body: []byte(payload)}
@@ -309,7 +316,11 @@ func Build(url string, p Params) (*Request, error) {
 			}
 		}
 		ts := strconv.FormatInt(seconds(), 10)
-		signature := sigutil.Base64(sigutil.HMACSHA256(sigutil.StandardWebhookKey(secret), []byte(messageID+"."+ts+"."+payload)))
+		standardKey, err := sigutil.StandardWebhookKey(secret)
+		if err != nil {
+			return nil, fmt.Errorf("provider %q: %w", p.Provider, err)
+		}
+		signature := sigutil.Base64(sigutil.HMACSHA256(standardKey, []byte(messageID+"."+ts+"."+payload)))
 		return finish(map[string]string{
 			"content-type":      contentJSON,
 			"webhook-id":        messageID,
@@ -421,7 +432,11 @@ func Build(url string, p Params) (*Request, error) {
 			messageID = "msg_" + randomHex(16)
 		}
 		t := ts()
-		signature := "v1," + sigutil.Base64(sigutil.HMACSHA256(sigutil.StandardWebhookKey(secret), []byte(messageID+"."+t+"."+payload)))
+		standardKey, err := sigutil.StandardWebhookKey(secret)
+		if err != nil {
+			return nil, fmt.Errorf("provider %q: %w", p.Provider, err)
+		}
+		signature := "v1," + sigutil.Base64(sigutil.HMACSHA256(standardKey, []byte(messageID+"."+t+"."+payload)))
 		out["webhook-id"] = messageID
 		out["webhook-timestamp"] = t
 		out["webhook-signature"] = signature
@@ -480,7 +495,11 @@ func Build(url string, p Params) (*Request, error) {
 		t := ts()
 		out["svix-id"] = messageID
 		out["svix-timestamp"] = t
-		out["svix-signature"] = "v1," + sigutil.Base64(sigutil.HMACSHA256(sigutil.StandardWebhookKey(secret), []byte(messageID+"."+t+"."+payload)))
+		standardKey, err := sigutil.StandardWebhookKey(secret)
+		if err != nil {
+			return nil, fmt.Errorf("provider %q: %w", p.Provider, err)
+		}
+		out["svix-signature"] = "v1," + sigutil.Base64(sigutil.HMACSHA256(standardKey, []byte(messageID+"."+t+"."+payload)))
 	case "workos":
 		// WorkOS signs `${t}.${body}` with t in milliseconds, and the header puts a
 		// space after the comma.

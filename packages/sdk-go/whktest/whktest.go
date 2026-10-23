@@ -25,7 +25,10 @@ import (
 	webhookscc "webhooks.cc/go"
 )
 
-const cleanupTimeout = 30 * time.Second
+const (
+	cleanupTimeout = 30 * time.Second
+	maxNameLength  = 100
+)
 
 // Client returns a client configured from the environment (WHK_API_KEY,
 // WHK_BASE_URL, WHK_WEBHOOK_URL) and opts. It skips the test when
@@ -53,6 +56,10 @@ func Endpoint(t testing.TB, client *webhookscc.Client, opts ...webhookscc.Create
 	}
 	if options.Name == "" {
 		options.Name = t.Name()
+		// Endpoint names are at most 100 characters; subtest names can be longer.
+		if runes := []rune(options.Name); len(runes) > maxNameLength {
+			options.Name = string(runes[:maxNameLength])
+		}
 	}
 	endpoint, err := client.Endpoints.Create(context.Background(), options)
 	if err != nil {

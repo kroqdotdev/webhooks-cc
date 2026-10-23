@@ -50,8 +50,10 @@ func (h Headers) Lookup(name string) (string, bool) {
 // KindEmail. For emails Method is "EMAIL" and Path is the address it was
 // delivered to.
 type Request struct {
-	ID          string
-	EndpointID  string
+	ID         string
+	EndpointID string
+	// Slug is the endpoint's slug, on search results (which carry no EndpointID).
+	Slug        string
 	Method      string
 	Path        string
 	Headers     Headers
@@ -100,6 +102,7 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 	*r = Request{
 		ID:                id,
 		EndpointID:        o.str("endpointId"),
+		Slug:              o.str("slug"),
 		Method:            o.str("method"),
 		Path:              path,
 		Headers:           Headers(o.strMap("headers")),
@@ -133,6 +136,45 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON writes the request in the API's shape, so UnmarshalJSON reads
+// it back.
+func (r Request) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID                string            `json:"id"`
+		EndpointID        string            `json:"endpointId,omitempty"`
+		Slug              string            `json:"slug,omitempty"`
+		Method            string            `json:"method"`
+		Path              string            `json:"path"`
+		Headers           Headers           `json:"headers"`
+		Body              string            `json:"body"`
+		QueryParams       map[string]string `json:"queryParams"`
+		IP                string            `json:"ip"`
+		Size              int               `json:"size"`
+		ReceivedAt        *int64            `json:"receivedAt,omitempty"`
+		ContentType       string            `json:"contentType,omitempty"`
+		BodyRaw           string            `json:"bodyRaw,omitempty"`
+		SignatureVerified *bool             `json:"signatureVerified,omitempty"`
+		SignatureError    string            `json:"signatureError,omitempty"`
+		SigningProvider   string            `json:"signingProvider,omitempty"`
+		Kind              RequestKind       `json:"kind,omitempty"`
+		Email             *EmailCapture     `json:"email,omitempty"`
+		Extracts          *EmailExtracts    `json:"extracts,omitempty"`
+	}{
+		r.ID, r.EndpointID, r.Slug, r.Method, r.Path, r.Headers, r.Body, r.QueryParams, r.IP, r.Size,
+		millisOf(r.ReceivedAt), r.ContentType, r.BodyRaw, r.SignatureVerified, r.SignatureError,
+		r.SigningProvider, r.Kind, r.Email, r.Extracts,
+	})
+}
+
+// millisOf is t in milliseconds since the epoch, or nil for the zero time.
+func millisOf(t time.Time) *int64 {
+	if t.IsZero() {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
 // Header returns the value of a header, in any case, or "".
 func (r *Request) Header(name string) string { return r.Headers.Get(name) }
 
@@ -157,8 +199,8 @@ func (r *Request) IsEmail() bool {
 
 // EmailAddress is a name and address from an email's headers.
 type EmailAddress struct {
-	Name    string
-	Address string
+	Name    string `json:"name,omitempty"`
+	Address string `json:"address"`
 }
 
 // UnmarshalJSON reads an address as the API returns it.
@@ -180,11 +222,11 @@ func (a EmailAddress) String() string {
 
 // EmailAttachment describes an attachment of a captured email.
 type EmailAttachment struct {
-	Filename    string
-	ContentType string
-	Size        int
-	ContentID   string
-	Inline      bool
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"contentType"`
+	Size        int    `json:"size"`
+	ContentID   string `json:"contentId,omitempty"`
+	Inline      bool   `json:"inline"`
 }
 
 // UnmarshalJSON reads an attachment as the API returns it.
@@ -210,28 +252,28 @@ func (a *EmailAttachment) UnmarshalJSON(data []byte) error {
 // EmailCapture is the parsed message of a captured email. Auth (SPF, DKIM,
 // DMARC), Spam (rspamd's verdict) and SMTP are kept as the API sends them.
 type EmailCapture struct {
-	Subject   string
-	From      []EmailAddress
-	To        []EmailAddress
-	Cc        []EmailAddress
-	ReplyTo   []EmailAddress
-	Sender    []EmailAddress
-	Date      string
-	MessageID string
-	InReplyTo []string
+	Subject   string         `json:"subject,omitempty"`
+	From      []EmailAddress `json:"from"`
+	To        []EmailAddress `json:"to"`
+	Cc        []EmailAddress `json:"cc"`
+	ReplyTo   []EmailAddress `json:"replyTo"`
+	Sender    []EmailAddress `json:"sender"`
+	Date      string         `json:"date,omitempty"`
+	MessageID string         `json:"messageId,omitempty"`
+	InReplyTo []string       `json:"inReplyTo"`
 	// Tag is the +tag of the address it was sent to, or "".
-	Tag          string
-	Text         string
-	HTML         string
-	TextFromHTML bool
-	Attachments  []EmailAttachment
-	Auth         json.RawMessage
-	Spam         json.RawMessage
-	SMTP         json.RawMessage
-	ParseError   bool
-	Truncated    map[string]bool
+	Tag          string            `json:"tag,omitempty"`
+	Text         string            `json:"text,omitempty"`
+	HTML         string            `json:"html,omitempty"`
+	TextFromHTML bool              `json:"textFromHtml"`
+	Attachments  []EmailAttachment `json:"attachments"`
+	Auth         json.RawMessage   `json:"auth,omitempty"`
+	Spam         json.RawMessage   `json:"spam,omitempty"`
+	SMTP         json.RawMessage   `json:"smtp,omitempty"`
+	ParseError   bool              `json:"parseError"`
+	Truncated    map[string]bool   `json:"truncated"`
 	// Raw is the JSON the email was read from.
-	Raw json.RawMessage
+	Raw json.RawMessage `json:"-"`
 }
 
 // UnmarshalJSON reads an email as the API returns it.
@@ -288,20 +330,20 @@ func (e *EmailCapture) UnmarshalJSON(data []byte) error {
 
 // ExtractedLink is a link found in an email.
 type ExtractedLink struct {
-	URL string
+	URL string `json:"url"`
 	// Label is the link text, when the link came from HTML.
-	Label string
+	Label string `json:"label,omitempty"`
 	// Action reports whether the link looks like what the email asks you to
 	// click (confirm, verify, reset, sign in).
-	Action bool
+	Action bool `json:"action"`
 }
 
 // EmailExtracts are the one-time codes and links found in an email, at most
 // 20 of each. Codes are in order of appearance, subject first; links come best
 // first.
 type EmailExtracts struct {
-	Codes []string
-	Links []ExtractedLink
+	Codes []string        `json:"codes"`
+	Links []ExtractedLink `json:"links"`
 }
 
 // UnmarshalJSON reads extracts as the API returns them.
@@ -327,8 +369,8 @@ func (x *EmailExtracts) UnmarshalJSON(data []byte) error {
 
 // TeamShare is a team an endpoint is shared with or through.
 type TeamShare struct {
-	TeamID   string
-	TeamName string
+	TeamID   string `json:"teamId"`
+	TeamName string `json:"teamName"`
 }
 
 // UnmarshalJSON reads a team share as the API returns it.
@@ -402,8 +444,9 @@ type ResponseRuleCondition struct {
 	// Field is method, path, header, body_contains, body_path or query.
 	Field string `json:"field"`
 	// Op is eq, contains, starts_with, matches or exists.
-	Op    string `json:"op"`
-	Value string `json:"value,omitempty"`
+	Op string `json:"op"`
+	// Value is sent for every op, since all but exists require one (even "").
+	Value string `json:"value"`
 	// Name is the header or query parameter, for header and query conditions.
 	Name string `json:"name,omitempty"`
 	// Path is the dot-separated JSON path, for body_path conditions.
@@ -484,6 +527,35 @@ func (e *Endpoint) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON writes the endpoint in the API's shape, so UnmarshalJSON reads
+// it back.
+func (e Endpoint) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID                string         `json:"id"`
+		Slug              string         `json:"slug"`
+		Name              string         `json:"name,omitempty"`
+		URL               string         `json:"url,omitempty"`
+		EmailAddress      string         `json:"emailAddress,omitempty"`
+		CreatedAt         *int64         `json:"createdAt,omitempty"`
+		IsEphemeral       bool           `json:"isEphemeral"`
+		ExpiresAt         *int64         `json:"expiresAt,omitempty"`
+		NotificationURL   string         `json:"notificationUrl,omitempty"`
+		MockResponse      *MockResponse  `json:"mockResponse,omitempty"`
+		ResponseRules     []ResponseRule `json:"responseRules,omitempty"`
+		SigningProvider   string         `json:"signingProvider,omitempty"`
+		HasSigningSecret  bool           `json:"hasSigningSecret"`
+		ShowEmailExtracts *bool          `json:"showEmailExtracts,omitempty"`
+		ForwardEnabled    *bool          `json:"forwardEnabled,omitempty"`
+		ForwardURL        string         `json:"forwardUrl,omitempty"`
+		SharedWith        []TeamShare    `json:"sharedWith,omitempty"`
+		FromTeams         []TeamShare    `json:"fromTeams,omitempty"`
+	}{
+		e.ID, e.Slug, e.Name, e.URL, e.EmailAddress, millisOf(e.CreatedAt), e.IsEphemeral, millisOf(e.ExpiresAt),
+		e.NotificationURL, e.MockResponse, e.ResponseRules, e.SigningProvider, e.HasSigningSecret,
+		e.ShowEmailExtracts, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
+	})
+}
+
 // Usage is the requests used and left in the current period.
 type Usage struct {
 	Used      int
@@ -510,6 +582,17 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 		Raw:       bytes.Clone(data),
 	}
 	return nil
+}
+
+// MarshalJSON writes usage in the API's shape, so UnmarshalJSON reads it back.
+func (u Usage) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Used      int    `json:"used"`
+		Limit     int    `json:"limit"`
+		Remaining int    `json:"remaining"`
+		Plan      string `json:"plan"`
+		PeriodEnd *int64 `json:"periodEnd"`
+	}{u.Used, u.Limit, u.Remaining, u.Plan, millisOf(u.PeriodEnd)})
 }
 
 // RequestPage is one page of captured requests. Pass Cursor to get the next.

@@ -133,9 +133,9 @@ func SignatureContext(ctx context.Context, provider string, body []byte, headers
 	case "typeform":
 		return typeform(body, h("typeform-signature"), secret), nil
 	case "standard-webhooks":
-		return standardWebhook(body, headers, secret), nil
+		return standardWebhook(body, headers, secret)
 	case "clerk", "resend":
-		return standardWebhook(body, svixHeaders{headers}, secret), nil
+		return standardWebhook(body, svixHeaders{headers}, secret)
 	case "square":
 		return square(opts.URL, body, h("x-square-hmacsha256-signature"), secret), nil
 	case "hubspot":
@@ -459,13 +459,18 @@ func standardSignatures(value string) []string {
 
 // standardWebhook checks Standard Webhooks: each v1 signature is the base64
 // HMAC-SHA256 of id.timestamp.body, keyed with the decoded whsec_ secret.
-func standardWebhook(body []byte, headers Headers, secret string) bool {
+// A secret that decodes to an empty key is an error, never a verdict.
+func standardWebhook(body []byte, headers Headers, secret string) (bool, error) {
+	key, err := sigutil.StandardWebhookKey(secret)
+	if err != nil {
+		return false, fmt.Errorf("verify: %w", err)
+	}
 	messageID := header(headers, "webhook-id")
 	timestamp := header(headers, "webhook-timestamp")
 	signatureHeader := header(headers, "webhook-signature")
 	if messageID == "" || timestamp == "" || signatureHeader == "" {
-		return false
+		return false, nil
 	}
-	expected := hmacSHA256Base64(sigutil.StandardWebhookKey(secret), concat([]byte(messageID+"."+timestamp+"."), body))
-	return slices.ContainsFunc(standardSignatures(signatureHeader), func(signature string) bool { return safeEqual(signature, expected) })
+	expected := hmacSHA256Base64(key, concat([]byte(messageID+"."+timestamp+"."), body))
+	return slices.ContainsFunc(standardSignatures(signatureHeader), func(signature string) bool { return safeEqual(signature, expected) }), nil
 }

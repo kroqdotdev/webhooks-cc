@@ -109,3 +109,30 @@ func TestString(t *testing.T) {
 		}
 	}
 }
+
+func TestStringifyKeepsGoNumbersExact(t *testing.T) {
+	cases := []struct {
+		value any
+		want  string
+	}{
+		{map[string]any{"guild_id": int64(1234567890123456789)}, `{"guild_id":1234567890123456789}`},
+		{uint64(math.MaxUint64), "18446744073709551615"},
+		{int8(-5), "-5"},
+		{float32(19.99), "19.99"},
+		{float32(1e-7), "1e-7"},
+		{float64(19.99), "19.99"},
+	}
+	for _, c := range cases {
+		if got, err := Stringify(c.value); err != nil || got != c.want {
+			t.Errorf("Stringify(%#v) = %s, %v; want %s", c.value, got, err, c.want)
+		}
+	}
+}
+
+func TestStringifyRefusesAValueThatContainsItself(t *testing.T) {
+	loop := map[string]any{}
+	loop["self"] = loop
+	if _, err := Stringify(loop); err == nil {
+		t.Error("a map that contains itself should fail")
+	}
+}
