@@ -392,8 +392,8 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
               <code>sendTo</code> signs each request the way {page.label} does, with your test
               secret from <code>{providerSecretEnv(page.slug)}</code>, and posts it straight to your
               handler, so its signature check stays on. The second test proves the handler rejects a
-              forged signature. Drop the file into a Vitest or Jest suite that runs against your
-              app.
+              forged signature. Drop the file into a Vitest suite that runs against your app; for
+              Jest, delete the first line, since Jest provides the same globals.
             </p>
             <div className="relative">
               <CopyButton text={testSnippet} />

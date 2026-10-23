@@ -59,7 +59,7 @@ const ROWS = [
   ["Inbound email capture", "Yes ({slug}@mailhooks.cc + OTP extraction)", "No"],
   [
     "MCP server for AI agents",
-    "Yes (@webhooks-cc/mcp, 38 testing tools)",
+    "Yes (@webhooks-cc/mcp, 39 testing tools)",
     "App Portal MCP (inspect deliveries & replay)",
   ],
   ["Outbound customer portal", "No", "Yes (core Svix feature)"],
@@ -181,7 +181,7 @@ export default function CompareSvixPage() {
               </code>{" "}
               with automatic OTP and magic-link extraction, and the{" "}
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
-              server exposes 38 testing tools to Claude Code, Cursor, and Codex (creating endpoints,
+              server exposes 39 testing tools to Claude Code, Cursor, and Codex (creating endpoints,
               sending signed provider templates, waiting for deliveries, and replaying to
               localhost). Svix offers an App Portal MCP focused on inspecting and replaying messages
               on existing Svix endpoints, and does not capture inbound email.

@@ -17,6 +17,7 @@ const PLACEHOLDER_SIGNATURES = new Set(["paypal"]);
 /** The env var a handler usually reads its credential from, where it is not <PROVIDER>_WEBHOOK_SECRET. */
 const SECRET_ENV: Partial<Record<string, string>> = {
   adyen: "ADYEN_HMAC_KEY",
+  clerk: "CLERK_WEBHOOK_SIGNING_SECRET",
   gitlab: "GITLAB_WEBHOOK_TOKEN",
   hubspot: "HUBSPOT_CLIENT_SECRET",
   intercom: "INTERCOM_CLIENT_SECRET",
@@ -74,12 +75,15 @@ ${payload}
 describe(${JSON.stringify(`${page.label} webhook handler`)}, () => {
   it(${JSON.stringify(`accepts ${what}`)}, async () => {
     const response = await send(process.env.${env}!);
-    expect(response.status).toBe(200);
+    expect(response.status).toBeGreaterThanOrEqual(200);
+    expect(response.status).toBeLessThan(300);
   });
 
   it("rejects a forged signature", async () => {
     const response = await send(${JSON.stringify(providerForgedSecret(page.slug))});
+    // A 4xx, not a crash: providers retry 5xx responses.
     expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBeLessThan(500);
   });
 });
 `;

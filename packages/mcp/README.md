@@ -143,7 +143,7 @@ Endpoints shared with you already appear in `list_endpoints` (with `fromTeam`) a
 
 Started without `WHK_API_KEY`, the server registers sandbox tools instead ([auth.md](https://webhooks.cc/auth.md)):
 
-- `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`: the same names and arguments as the full tools, in a sandbox of up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers it (a few seconds of proof of work).
+- `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `generate_payload_schema`: the same names and arguments as the full tools, in a sandbox of up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers it (a few seconds of proof of work).
 - `connect_account`: returns a link and a 6-digit code for a human to connect the agent to their account.
 - `wait_for_connection`: waits for the human, then replaces the sandbox tools with the full tools for that account (`notifications/tools/list_changed`).
 - `about_sandbox`: the limits and how to connect, without a network call.

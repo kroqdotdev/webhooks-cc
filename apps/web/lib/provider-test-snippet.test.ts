@@ -106,6 +106,24 @@ describe("provider test snippet", () => {
     expect(providerSecretEnv("coinbase-commerce")).toBe("COINBASE_COMMERCE_WEBHOOK_SECRET");
   });
 
+  it("reads the env var the provider page tells you to set", () => {
+    for (const page of withSnippet) {
+      const named = JSON.stringify(page).match(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]*(SECRET|KEY|TOKEN)\b/g);
+      if (named) expect(named, page.slug).toContain(providerSecretEnv(page.slug));
+    }
+    expect(providerSecretEnv("clerk")).toBe("CLERK_WEBHOOK_SIGNING_SECRET");
+  });
+
+  it("wants a 2xx for the real signature and a 4xx, not a crash, for the forged one", () => {
+    const snippet = providerTestSnippet(getWebhookProviderPage("stripe")!)!;
+    expect(snippet).toContain(
+      "expect(response.status).toBeGreaterThanOrEqual(200);\n    expect(response.status).toBeLessThan(300);"
+    );
+    expect(snippet).toContain(
+      "expect(response.status).toBeGreaterThanOrEqual(400);\n    expect(response.status).toBeLessThan(500);"
+    );
+  });
+
   it("sends a body for providers without templates", () => {
     const snippet = providerTestSnippet(getWebhookProviderPage("standard-webhooks")!)!;
     expect(snippet).toContain('body: { type: "invoice.paid", data: { id: "inv_123" } },');

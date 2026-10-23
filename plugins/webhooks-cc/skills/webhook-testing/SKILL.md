@@ -38,7 +38,8 @@ the types from them.
    developer to set the returned `url` as the webhook URL in the provider's
    dashboard, or trigger events with the provider's CLI. When neither is
    possible, `send_webhook` with a `provider` and `template` posts a realistic
-   sample (`list_provider_templates` lists the templates).
+   sample (`list_provider_templates` lists the templates). Signed providers
+   need a `secret`; any test string works, since only the shape matters here.
 2. `wait_for_request` until a delivery arrives. Ask for two or three
    deliveries of the same event if the developer can trigger them: every
    extra sample shows which fields are optional or nullable.

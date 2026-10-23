@@ -71,9 +71,20 @@ jobs:
       - name: Publish to the MCP Registry
         working-directory: packages/mcp
         run: |
+          VERSION=$(node -p "require('./package.json').version")
+          # The registry refuses a version it already has, so a rerun, or an
+          # attempt that succeeded but lost its reply, counts as published.
+          listed() {
+            curl -fsS -o /dev/null "https://registry.modelcontextprotocol.io/v0/servers/io.github.kroqdotdev%2Fwebhooks-cc/versions/$VERSION"
+          }
+          if listed; then
+            echo "Version $VERSION is already in the MCP Registry; skipping"
+            exit 0
+          fi
           ../../mcp-publisher login github-oidc
           for attempt in 1 2 3 4 5; do
             ../../mcp-publisher publish && exit 0
+            listed && exit 0
             echo "Attempt $attempt failed; retrying in 20s"
             sleep 20
           done
