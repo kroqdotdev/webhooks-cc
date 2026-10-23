@@ -154,6 +154,20 @@ describe("prepareBrowserEvent", () => {
     });
   });
 
+  it("keeps share tokens out of URLs and navigation breadcrumbs", () => {
+    const token = "AbCdEfGhIjKlMnOpQrStUv";
+    const event: Event = {
+      ...exception("TypeError", `failed on /s/${token}`),
+      request: { url: `https://webhooks.cc/s/${token}` },
+      breadcrumbs: {
+        values: [{ category: "navigation", data: { from: `/s/${token}`, to: "/" } }],
+      },
+    };
+    const sent = JSON.stringify(prepareBrowserEvent(event));
+    expect(sent).not.toContain(token);
+    expect(sent).toContain("https://webhooks.cc/s/[token]");
+  });
+
   it("drops noise", () => {
     expect(prepareBrowserEvent(exception("TypeError", "Failed to fetch"))).toBeNull();
   });

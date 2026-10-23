@@ -50,7 +50,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 12, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 23, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -347,6 +347,12 @@ export default function PrivacyPage() {
             <p>
               <span className="font-bold text-foreground">Guest endpoints:</span> Endpoints created
               without an account, and their requests, are deleted 12 hours after they are created.
+            </p>
+            <p>
+              <span className="font-bold text-foreground">Share links:</span> When you share a
+              request, a copy of it without its authorization and cookie headers is kept until the
+              link expires (after 1, 7 or 30 days, as you choose), you revoke it, or you delete the
+              endpoint. Anyone with the link can view that copy.
             </p>
             <p>
               <span className="font-bold text-foreground">Account data:</span> Your account,

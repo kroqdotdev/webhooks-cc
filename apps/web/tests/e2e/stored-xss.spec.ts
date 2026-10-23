@@ -18,7 +18,7 @@ const JSON_KEY_MARKER = "e2e-json-key-xss";
 const JSON_VALUE_MARKER = "e2e-json-value-xss";
 const JSON_NESTED_MARKER = "e2e-json-nested-xss";
 // Keys end up in generated TypeScript, Zod, Pydantic and JSON Schema source,
-// which the Schema view highlights as HTML.
+// which the Schema view and the share page highlight as HTML.
 const JSON_PAYLOAD = JSON.stringify({
   [`<img src=x onerror="window.__xssHits.push('${JSON_KEY_MARKER}')">`]: `<script>window.__xssHits.push('${JSON_VALUE_MARKER}')</script>`,
   nested: {
@@ -244,7 +244,7 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
   });
 });
 
-test("schema view keeps hostile JSON keys inert", async ({ page }) => {
+test("schema view and share page keep hostile JSON keys inert", async ({ page }) => {
   const dialogs: string[] = [];
 
   page.on("dialog", async (dialog) => {
@@ -268,4 +268,22 @@ test("schema view keeps hostile JSON keys inert", async ({ page }) => {
       await expectInertCode(page, dialogs);
     });
   }
+
+  let token = "";
+  await test.step("a share link can be made", async () => {
+    await page.getByRole("button", { name: "Share", exact: true }).click();
+    await page.getByRole("button", { name: "Create link and copy it" }).click();
+    const link = page.getByText(/^\/s\/[A-Za-z0-9_-]{22}$/);
+    await expect(link).toBeVisible();
+    token = ((await link.textContent()) ?? "").slice(3);
+  });
+
+  await test.step("the share page keeps the payload inert", async () => {
+    await page.goto(`/s/${token}`);
+    await expect(page.getByText("Shared request")).toBeVisible();
+    await page.getByRole("button", { name: "Formatted", exact: true }).click();
+    await expectInertCode(page, dialogs);
+    await page.getByRole("button", { name: "Schema", exact: true }).click();
+    await expectInertCode(page, dialogs);
+  });
 });

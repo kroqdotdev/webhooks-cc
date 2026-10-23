@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { applyStyleExperiment } from "@/lib/analytics";
+import { redactShareTokens } from "@/lib/analytics-redact";
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -17,6 +18,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
         element_allowlist: ["a", "button"],
       },
       defaults: "2026-01-30",
+      // Share link URLs hold their token; analytics never gets it.
+      before_send: redactShareTokens,
       loaded: (ph) => {
         if (process.env.NODE_ENV === "development") ph.debug();
       },

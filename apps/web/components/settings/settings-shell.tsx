@@ -22,6 +22,7 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { href: "/account/plan", label: "Plan and usage" },
   { href: "/account/api-keys", label: "API keys" },
   { href: "/account/agents", label: "Connected agents" },
+  { href: "/account/share-links", label: "Share links" },
 ];
 
 function isActive(pathname: string, item: NavItem): boolean {

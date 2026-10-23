@@ -362,6 +362,52 @@ export async function redeliverRequest(accessToken: string, requestId: string): 
   await readJson<{ id: string }>(response);
 }
 
+/** A share link of a request (migration 00062). */
+export interface RequestShareLink {
+  id: string;
+  token: string;
+  createdAt: number;
+  expiresAt: number;
+  redactedHeaders: string[];
+}
+
+/** The user's live share links for one request. */
+export async function fetchRequestShares(
+  accessToken: string,
+  requestId: string
+): Promise<RequestShareLink[]> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/shares`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson<RequestShareLink[]>(response);
+}
+
+export async function createRequestShare(
+  accessToken: string,
+  requestId: string,
+  options: { expiresInDays: number; hideSensitive: boolean }
+): Promise<RequestShareLink> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}/shares`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    })
+  );
+  return readJson<RequestShareLink>(response);
+}
+
+export async function revokeRequestShare(accessToken: string, shareId: string): Promise<void> {
+  const response = await fetch(
+    `/api/request-shares/${encodeURIComponent(shareId)}`,
+    withAuthHeaders(accessToken, { method: "DELETE" })
+  );
+  // 404: already revoked or expired, which is what the user asked for.
+  if (!response.ok && response.status !== 404) await readJson<unknown>(response);
+}
+
 /** One captured request by id, for opening a delivery whose request the list has not loaded. */
 export async function fetchDashboardRequestById(
   accessToken: string,

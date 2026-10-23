@@ -116,6 +116,9 @@ describe("redaction", () => {
       "at f (https://webhooks.cc/_next/a.js)"
     );
     expect(redactText("plain text, no URL, 3 > 2")).toBe("plain text, no URL, 3 > 2");
+    expect(redactText("GET https://webhooks.cc/s/AbCdEfGhIjKlMnOpQrStUv 500")).toBe(
+      "GET https://webhooks.cc/s/[token] 500"
+    );
     expect(
       redactEvent({ request: { headers: { Referer: "https://webhooks.cc/go?slug=abc" } } })
     ).toEqual({ request: { headers: { Referer: "https://webhooks.cc/go" } } });

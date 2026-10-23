@@ -170,6 +170,16 @@ AI agents get the same schemas from the MCP tool [`generate_payload_schema`](/do
 
 The **Export** menu next to the endpoint name lets you download all visible requests as JSON or CSV.
 
+### Share a request
+
+Click **Share** above a request to publish a read-only copy at a link like `https://webhooks.cc/s/…`, for a pull request, a ticket, or a chat. Anyone with the link can open it without an account and see the method, path, headers, query, and body in the same inspector, including the **Schema** view.
+
+- **Hidden values.** `Authorization`, `Cookie`, and `Set-Cookie` headers are always replaced with `[redacted]`. **Hide signatures, tokens and keys** (on by default) also hides headers such as `stripe-signature` and `x-gitlab-token` and query values such as `token` and `code`; turn it off when a teammate needs the signature to debug verification. The body is shared as it is, so check it holds no customer data first.
+- **Lifetime.** A link lasts 1, 7, or 30 days. It is a copy, so it keeps working after the request itself is deleted by retention or cleared, and it shows exactly what it showed when you made it.
+- **Revoking.** The share dialog lists the request's live links, and **Account → Share links** lists all of them, including those whose request is gone; revoking one makes it answer 404 at once. Deleting the endpoint or your account deletes its links. Each account can have 100 live links.
+
+Only an endpoint's owner can share its requests: team members see shared endpoints but cannot publish them. Share links need a signed-in session; API keys cannot create them. Emails cannot be shared.
+
 ## Replay & send
 
 ### Replay

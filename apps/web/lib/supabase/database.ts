@@ -786,6 +786,31 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      // Migration 00062: read-only snapshots published at /s/{token}.
+      request_shares: {
+        Row: {
+          id: string;
+          token: string;
+          user_id: string;
+          endpoint_id: string;
+          request_id: string | null;
+          snapshot: Json;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          id?: string;
+          token: string;
+          user_id: string;
+          endpoint_id: string;
+          request_id?: string | null;
+          snapshot: Json;
+          created_at?: string;
+          expires_at: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1020,6 +1045,10 @@ export interface Database {
       mark_quota_email_sent: {
         Args: { p_user_id: string };
         Returns: undefined;
+      };
+      cleanup_expired_request_shares: {
+        Args: Record<string, never>;
+        Returns: number;
       };
       count_team_billed_endpoints: {
         Args: { p_user_id: string };
