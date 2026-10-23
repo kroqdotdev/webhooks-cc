@@ -42,6 +42,23 @@ updates:
       - "dependencies"
       - "rust"
 
+  # Python SDK (uv.lock); the runtime dependency ranges in pyproject.toml are
+  # what users get, so only the lock moves here.
+  - package-ecosystem: "uv"
+    directory: "/packages/sdk-python"
+    versioning-strategy: lockfile-only
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "python"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

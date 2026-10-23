@@ -126,6 +126,41 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci-placeholder-service-role-key' }}
           CAPTURE_SHARED_SECRET: ${{ secrets.CAPTURE_SHARED_SECRET || 'ci-placeholder-capture-shared-secret' }}
 
+  test-python:
+    name: Test Python SDK (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Python the package supports, and the newest.
+        python: ["3.10", "3.14"]
+    defaults:
+      run:
+        working-directory: packages/sdk-python
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Format
+        run: uv run ruff format --check src tests
+
+      - name: Typecheck
+        run: uv run mypy
+
+      # Includes the shared conformance vectors in packages/sdk/conformance.
+      - name: Run tests
+        run: uv run pytest
+
   build-cli:
     name: Build Rust CLI
     runs-on: ubuntu-latest
