@@ -28,8 +28,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Change Your Password from the Profile Page",
     track: "web",
     items: [
-      "Accounts that sign in with email and password can change it on the Profile page; the current password is required, and the change signs you out on every other browser and device",
-      "Forgot the current one? The same panel emails you a reset link",
+      "Accounts that sign in with email and password can change it on the Profile page; it asks for the current password, and the change signs you out on every other browser and device",
+      "Forgot the current one, or never set one? The same panel emails you a reset link",
     ],
   },
   {

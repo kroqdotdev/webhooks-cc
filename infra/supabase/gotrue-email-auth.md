@@ -139,11 +139,14 @@ and v2.189.0 extended the email-link exemption to PKCE recovery sessions.
 Older versions ignore it without a warning, so check the running image
 (`docker inspect supabase-auth --format '{{.Config.Image}}'`).
 
-Sessions that came from an email link (recovery, signup confirmation, magic
-link or OTP) are exempt, which is what keeps `/auth/reset-password` and the
-panel's "Email me a reset link" working. Accounts without a password yet
-(GitHub, Google, or created by agent registration) are not asked for one.
-Every successful change ends the account's other sessions.
+Sessions that began with an email link (recovery, signup confirmation,
+magic link or OTP, which `/auth/confirm` and the agent claim produce) are
+exempt for their whole lifetime, token refreshes included. That is what
+keeps `/auth/reset-password` and the panel's "Email me a reset link"
+working, and it means the check only binds sessions that began with a
+password sign-in. Accounts without a password yet (created by agent
+registration) are not asked for one either; the panel lets them leave the
+field empty. Every successful change ends the account's other sessions.
 
 ## 3. Apply
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ChangeEvent, type FormEvent } from "react";
+import { isAuthError } from "@supabase/supabase-js";
 import { PASSWORD_MIN_LENGTH } from "@/components/auth/email-password-form";
 import { InlineMessage, Panel, PanelRow, settingsLink } from "@/components/settings/panel";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,28 @@ import { Input } from "@/components/ui/input";
 import { mapAuthError } from "@/lib/auth-errors";
 import { createClient } from "@/lib/supabase/client";
 
-type Message = { tone: "success" | "error"; text: string };
+type Field = "current" | "next" | "confirm";
+const FIELD_IDS: Record<Field, string> = {
+  current: "current-password",
+  next: "new-password",
+  confirm: "confirm-new-password",
+};
+type Message = { tone: "success" | "error"; text: string; field?: Field };
+
+/** The field a GoTrue refusal is about, so focus can go back to it. */
+function fieldForError(error: unknown): Field | undefined {
+  if (!isAuthError(error)) return undefined;
+  switch (error.code) {
+    case "current_password_invalid":
+    case "current_password_required":
+      return "current";
+    case "weak_password":
+    case "same_password":
+      return "next";
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Password change for accounts that sign in with email and password.
@@ -16,9 +38,10 @@ type Message = { tone: "success" | "error"; text: string };
  * GoTrue checks the current password itself
  * (GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD, see
  * infra/supabase/gotrue-email-auth.md): its user endpoint is public, so a
- * check made here could be skipped by calling it directly. It skips that
- * check for sessions that came from an email link, which is what the reset
- * link offered here relies on, and it ends every other session of the account.
+ * check made here could be skipped by calling it directly. GoTrue skips the
+ * check for accounts without a password (created by agent registration) and
+ * for sessions that began with an email link, which is what the reset link
+ * offered here relies on. A change ends every other session of the account.
  */
 export function ChangePasswordPanel({ email }: { email: string }) {
   const [current, setCurrent] = useState("");
@@ -32,20 +55,22 @@ export function ChangePasswordPanel({ email }: { email: string }) {
     setMessage(null);
   };
 
+  const fail = (text: string, field?: Field) => {
+    setMessage({ tone: "error", text, field });
+    if (field) document.getElementById(FIELD_IDS[field])?.focus();
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
     setMessage(null);
 
     if (next.length < PASSWORD_MIN_LENGTH) {
-      setMessage({
-        tone: "error",
-        text: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
-      });
+      fail(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`, "next");
       return;
     }
     if (next !== confirm) {
-      setMessage({ tone: "error", text: "New passwords don't match" });
+      fail("New passwords don't match", "confirm");
       return;
     }
 
@@ -56,7 +81,7 @@ export function ChangePasswordPanel({ email }: { email: string }) {
         current_password: current,
       });
       if (error) {
-        setMessage({ tone: "error", text: mapAuthError(error) });
+        fail(mapAuthError(error), fieldForError(error));
         return;
       }
       setCurrent("");
@@ -67,7 +92,7 @@ export function ChangePasswordPanel({ email }: { email: string }) {
         text: "Password changed. You were signed out on every other browser and device.",
       });
     } catch (err) {
-      setMessage({ tone: "error", text: mapAuthError(err) });
+      fail(mapAuthError(err));
     } finally {
       setBusy(false);
     }
@@ -80,16 +105,25 @@ export function ChangePasswordPanel({ email }: { email: string }) {
     try {
       const { error } = await createClient().auth.resetPasswordForEmail(email);
       if (error) {
-        setMessage({ tone: "error", text: mapAuthError(error) });
+        fail(mapAuthError(error));
         return;
       }
       setMessage({ tone: "success", text: `Reset link sent to ${email}.` });
     } catch (err) {
-      setMessage({ tone: "error", text: mapAuthError(err) });
+      fail(mapAuthError(err));
     } finally {
       setBusy(false);
     }
   };
+
+  // Read-only rather than disabled while a request runs, so focus stays put.
+  const fieldProps = (field: Field) => ({
+    id: FIELD_IDS[field],
+    name: FIELD_IDS[field],
+    readOnly: busy,
+    "aria-invalid": message?.field === field || undefined,
+    className: "max-w-sm",
+  });
 
   return (
     <form onSubmit={handleSubmit} noValidate>
@@ -101,7 +135,7 @@ export function ChangePasswordPanel({ email }: { email: string }) {
         description="Changing it signs you out everywhere else. API keys and connected agents keep working; revoke them on their own pages."
         footer={
           <>
-            <Button type="submit" disabled={busy || !current || !next || !confirm}>
+            <Button type="submit" disabled={busy || !next || !confirm}>
               {busy ? "Saving..." : "Change password"}
             </Button>
             {message && <InlineMessage tone={message.tone}>{message.text}</InlineMessage>}
@@ -110,10 +144,10 @@ export function ChangePasswordPanel({ email }: { email: string }) {
       >
         <PanelRow
           label="Current password"
-          htmlFor="current-password"
+          htmlFor={FIELD_IDS.current}
           hint={
             <>
-              Forgot it?{" "}
+              Forgot it, or never set one?{" "}
               <button
                 type="button"
                 onClick={() => void sendResetLink()}
@@ -126,44 +160,35 @@ export function ChangePasswordPanel({ email }: { email: string }) {
           }
         >
           <Input
-            id="current-password"
-            name="current-password"
             type="password"
             autoComplete="current-password"
             value={current}
             onChange={edit(setCurrent)}
-            disabled={busy}
-            className="max-w-sm"
+            {...fieldProps("current")}
           />
         </PanelRow>
         <PanelRow
           label="New password"
-          htmlFor="new-password"
+          htmlFor={FIELD_IDS.next}
           hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
         >
           <Input
-            id="new-password"
-            name="new-password"
             type="password"
             autoComplete="new-password"
             minLength={PASSWORD_MIN_LENGTH}
             value={next}
             onChange={edit(setNext)}
-            disabled={busy}
-            className="max-w-sm"
+            {...fieldProps("next")}
           />
         </PanelRow>
-        <PanelRow label="Confirm new password" htmlFor="confirm-new-password">
+        <PanelRow label="Confirm new password" htmlFor={FIELD_IDS.confirm}>
           <Input
-            id="confirm-new-password"
-            name="confirm-new-password"
             type="password"
             autoComplete="new-password"
             minLength={PASSWORD_MIN_LENGTH}
             value={confirm}
             onChange={edit(setConfirm)}
-            disabled={busy}
-            className="max-w-sm"
+            {...fieldProps("confirm")}
           />
         </PanelRow>
       </Panel>

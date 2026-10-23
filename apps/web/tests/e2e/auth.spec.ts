@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
+  admin,
   createTestUser,
   deleteTestUser,
   findUserIdByEmail,
@@ -166,6 +167,8 @@ test.describe("Email/password authentication", () => {
       await page.getByLabel("Confirm new password").fill(newPassword);
       await panel.getByRole("button", { name: "Change password" }).click();
       await expect(panel.getByRole("alert")).toHaveText("Your current password is incorrect");
+      await expect(page.getByLabel("Current password")).toBeFocused();
+      await expect(page.getByLabel("Current password")).toHaveAttribute("aria-invalid", "true");
 
       await page.getByLabel("Current password").fill(user.password);
       await panel.getByRole("button", { name: "Change password" }).click();
@@ -194,6 +197,48 @@ test.describe("Email/password authentication", () => {
       }
     } finally {
       await deleteTestUser(user.id);
+    }
+  });
+
+  test("an account without a password sets one from the account page", async ({
+    page,
+    browser,
+  }) => {
+    // Agent registration creates accounts like this: an email identity, no password.
+    const email = `e2e-nopw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@webhooks-test.local`;
+    const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true });
+    if (error) throw new Error(`Failed to create user: ${error.message}`);
+    const userId = data.user!.id;
+    const newPassword = "a-first-password";
+    try {
+      const base = test.info().project.use.baseURL!;
+      const hash = await generateMagicLinkTokenHash(email);
+      await page.goto(
+        `/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=email&redirect_to=${encodeURIComponent(`${base}/account`)}`
+      );
+      const panel = page.locator("section#password");
+      await expect(panel.getByRole("heading", { name: "Password" })).toBeVisible({
+        timeout: 20000,
+      });
+
+      await page.getByLabel("New password", { exact: true }).fill(newPassword);
+      await page.getByLabel("Confirm new password").fill(newPassword);
+      await panel.getByRole("button", { name: "Change password" }).click();
+      await expect(panel.getByRole("status")).toHaveText(/^Password changed\./);
+
+      const context = await browser.newContext({ baseURL: base });
+      const fresh = await context.newPage();
+      try {
+        await fresh.goto("/login");
+        await fresh.getByLabel("Email").fill(email);
+        await fresh.getByLabel("Password").fill(newPassword);
+        await fresh.getByRole("button", { name: "Sign in", exact: true }).click();
+        await expect(fresh).toHaveURL(/\/dashboard/, { timeout: 20000 });
+      } finally {
+        await context.close();
+      }
+    } finally {
+      await deleteTestUser(userId);
     }
   });
 

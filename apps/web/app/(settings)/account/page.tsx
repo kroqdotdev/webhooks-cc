@@ -226,7 +226,9 @@ export default function ProfilePage() {
         </Panel>
 
         {/* Only an email identity has a password; GitHub and Google sign-ins have none to change. */}
-        {providers.includes("email") && <ChangePasswordPanel email={profile.email} />}
+        {providers.includes("email") && (
+          <ChangePasswordPanel email={authUser?.email ?? profile.email} />
+        )}
 
         <Panel
           id="delete-account"
