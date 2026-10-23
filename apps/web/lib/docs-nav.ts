@@ -69,6 +69,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Matchers & Helpers", href: "/docs/sdk/matchers", isNew: true },
       { title: "Signature Verification", href: "/docs/sdk/signatures", isNew: true },
       { title: "Python", href: "/docs/sdk/python", isNew: true },
+      { title: "Go", href: "/docs/sdk/go", isNew: true },
       { title: "Testing", href: "/docs/sdk/testing" },
       { title: "Standard Webhooks", href: "/docs/sdk/testing/standard-webhooks", depth: 1 },
       { title: "Stripe + Vitest", href: "/docs/sdk/testing/stripe-vitest", depth: 1 },

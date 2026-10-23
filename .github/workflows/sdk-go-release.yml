@@ -1,0 +1,60 @@
+name: Go SDK Release
+
+# Go modules are published by their tags: the module webhooks.cc/go lives in
+# packages/sdk-go, so its versions are tags packages/sdk-go/v<version>, and
+# the go-import route at https://webhooks.cc/go tells the go command where to
+# find them. This workflow checks that a pushed tag matches Version in
+# packages/sdk-go/doc.go and passes the tests, then asks the Go module proxy
+# for it so that pkg.go.dev lists it straight away. Nothing here holds a
+# secret.
+
+on:
+  push:
+    tags:
+      - "packages/sdk-go/v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sdk-go
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Check the tag matches the module version
+        run: |
+          version="$(sed -n 's/^const Version = "\(.*\)"$/\1/p' doc.go)"
+          if [ "packages/sdk-go/v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Version $version in doc.go"
+            exit 1
+          fi
+          echo "VERSION=v$version" >> "$GITHUB_ENV"
+
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      # Resolves through https://webhooks.cc/go, so this also checks the
+      # go-import route is live. pkg.go.dev picks the version up from the proxy.
+      - name: Fetch the version through the Go module proxy
+        working-directory: ${{ runner.temp }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if GOPROXY=https://proxy.golang.org GOFLAGS=-mod=mod go list -m "webhooks.cc/go@$VERSION"; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "The Go module proxy could not fetch webhooks.cc/go@$VERSION"
+          exit 1

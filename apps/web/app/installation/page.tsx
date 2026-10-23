@@ -239,6 +239,18 @@ console.log(endpoint.url);`}
                     .
                   </p>
                 </section>
+
+                <section>
+                  <h2 className="text-lg font-bold mb-3">Go</h2>
+                  <CodeBlock>{`go get webhooks.cc/go`}</CodeBlock>
+                  <p className="text-sm text-muted-foreground mt-3">
+                    The same testing tools for Go, with helpers for <code>testing.TB</code>. See the{" "}
+                    <Link href="/docs/sdk/go" className="text-primary hover:underline font-bold">
+                      Go SDK docs
+                    </Link>
+                    .
+                  </p>
+                </section>
               </div>
             )}
 

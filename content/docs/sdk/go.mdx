@@ -1,0 +1,227 @@
+---
+title: "Go SDK"
+description: "The webhooks.cc Go module captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes testing.TB helpers."
+section: sdk
+order: 7
+lastUpdated: 2026-10-23
+schema: none
+keywords: ["go webhook sdk", "golang webhooks", "webhook testing go", "verify webhook signature go", "webhooks.cc/go"]
+seo:
+  ogTitle: "Go Webhook Testing SDK"
+  ogDescription: "Capture and wait for webhooks and test emails from Go tests, send signed webhooks to your handler, and verify Stripe, GitHub and 30 other provider signatures."
+---
+
+The `webhooks.cc/go` module brings the [TypeScript SDK](/docs/sdk)'s testing tools to Go: capture webhooks and email, wait for them, send signed webhooks to your own handler, and verify signatures. It passes the same conformance tests as the TypeScript SDK, so signatures and matchers behave identically in both. It has no dependencies outside the standard library.
+
+## Install
+
+```bash
+go get webhooks.cc/go
+```
+
+Go 1.25 or later. Create an API key on your [API keys page](/account/api-keys) and set `WHK_API_KEY`, or pass `webhookscc.WithAPIKey`. The package is named `webhookscc`.
+
+## Wait for a webhook
+
+```go
+import (
+	"testing"
+	"time"
+
+	webhookscc "webhooks.cc/go"
+	"webhooks.cc/go/whktest"
+)
+
+func TestCheckoutSendsAWebhook(t *testing.T) {
+	client := whktest.Client(t)             // skipped when WHK_API_KEY is not set
+	endpoint := whktest.Endpoint(t, client) // deleted when the test ends
+
+	triggerCheckout(endpoint.URL)
+
+	request, err := client.Requests.WaitFor(t.Context(), endpoint.Slug, webhookscc.WaitOptions{
+		Timeout: 30 * time.Second,
+		Match:   webhookscc.MatchBodyPath("type", "checkout.session.completed"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event struct {
+		Data struct {
+			Object struct {
+				AmountTotal int `json:"amount_total"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := request.JSON(&event); err != nil || event.Data.Object.AmountTotal != 2000 {
+		t.Errorf("amount_total = %d, %v", event.Data.Object.AmountTotal, err)
+	}
+}
+```
+
+`WaitFor` looks back five minutes, so a webhook that arrived just before you started waiting still counts. `WaitForAll(ctx, slug, 3, opts)` collects several, oldest first. When time runs out the error matches `webhookscc.ErrTimeout`; when your context ends first, you get the context's error. Times such as `ReceivedAt` are `time.Time`.
+
+Outside tests, create a client with `webhookscc.New()`, and use `client.WithTemporaryEndpoint(ctx, opts, fn)` for an endpoint that is deleted when `fn` returns.
+
+## Matchers
+
+A `Matcher` is a `func(*webhookscc.Request) bool`. Combine them with `MatchAll` and `MatchAny`, or write your own.
+
+```go
+match := webhookscc.MatchAll(
+	webhookscc.MatchMethod("POST"),
+	webhookscc.MatchPath("/webhooks/**"),
+	webhookscc.MatchHeader("X-GitHub-Event", "push"),
+)
+request, err := client.Requests.WaitFor(ctx, endpoint.Slug, webhookscc.WaitOptions{Match: match})
+```
+
+Available: `MatchMethod`, `MatchPath` (globs: `*` within a segment, `**` across segments), `MatchHeader` and `MatchHeaderPresent`, `MatchQueryParam` and `MatchQueryParamPresent`, `MatchBodyPath`, `MatchBodySubset`, `MatchContentType`, `MatchVerified`, `MatchUnverified` and `MatchEmail`. See [Matchers & Helpers](/docs/sdk/matchers) for what each one matches.
+
+## Capture what your code sends
+
+`CaptureDuring` creates a temporary endpoint, runs your code with it, waits for what it sent, and deletes the endpoint:
+
+```go
+requests, err := client.CaptureDuring(ctx, func(endpoint *webhookscc.Endpoint) error {
+	return notify(endpoint.URL)
+}, webhookscc.CaptureOptions{})
+if err != nil {
+	t.Fatal(err)
+}
+fmt.Println(requests[0].Body)
+```
+
+## Test email: codes and links
+
+Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mailhooks.cc` for any tag. Use a fresh tag per test run to find your own email. webhooks.cc finds the one-time codes and links in each email, the same ones the dashboard shows, and the SDK reads them from the API.
+
+```go
+run := fmt.Sprintf("signup-%d", time.Now().UnixNano())
+address, err := client.Emails.Address(endpoint.Slug, run)
+if err != nil {
+	t.Fatal(err)
+}
+signUp(address)
+
+email, err := client.Emails.WaitFor(t.Context(), endpoint.Slug, webhookscc.EmailQuery{
+	Tag:     run,
+	Subject: "Confirm your email",
+})
+if err != nil {
+	t.Fatal(err)
+}
+code, _ := webhookscc.ExtractCode(email) // "482913"
+link, _ := webhookscc.ExtractLink(email) // "https://app.example.com/confirm?token=..."
+```
+
+`email.Email` holds the parsed message: `Subject`, `From`, `To`, `Text`, `HTML`, attachments, and the SPF, DKIM and DMARC results. `ExtractCode` returns an error when the endpoint's **Show codes and links found in emails** setting is off. See [Email capture](/docs/email-capture) for how capture works.
+
+## Send signed webhooks to your handler
+
+Test your own webhook handler, on localhost or anywhere else, with requests signed the way the provider signs them:
+
+```go
+response, err := client.SendTo(ctx, "http://localhost:8080/webhooks/stripe", webhookscc.SendOptions{
+	Provider: "stripe",
+	Secret:   "whsec_test_secret",
+	Template: "checkout.session.completed",
+})
+if err != nil {
+	t.Fatal(err)
+}
+if response.StatusCode != http.StatusOK {
+	t.Errorf("status = %d", response.StatusCode)
+}
+```
+
+Leave out `Body` to send the provider's sample payload, or pass your own: a string, `[]byte` or `json.RawMessage` goes as it is, anything else as JSON. `Timestamp` and `MessageID` make the signature repeatable. `webhookscc.BuildRequest` returns the method, URL, headers and body without sending them. Signed requests never follow redirects, even with an `http.Client` of your own that does, so they only reach the host you named. `client.Endpoints.Send(ctx, slug, opts)` sends the same to a webhooks.cc endpoint, and `webhookscc.TemplateProviders()` lists the 34 providers.
+
+## Verify signatures
+
+The `webhooks.cc/go/verify` package checks the signatures of 32 providers. It does not need a client or an API key, so you can use it in production handlers:
+
+```go
+import "webhooks.cc/go/verify"
+
+func stripeWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body) // the exact bytes, before any JSON parsing
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	valid, err := verify.Signature("stripe", body, r.Header, verify.Options{Secret: secret})
+	if err != nil || !valid {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+	// handle the event
+}
+```
+
+Headers can be an `http.Header`, a captured request's `Headers`, or a `verify.Map`. Twilio, Square and HubSpot also need `URL`; HubSpot also needs `Method`. Discord takes `PublicKey`. An invalid signature is `false` with no error; the error is for a call that cannot be checked, such as a missing secret or an unknown provider. See [Signature Verification](/docs/sdk/signatures) for each provider's scheme.
+
+## Verify what webhooks.cc forwards
+
+When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, check that they came from it with the endpoint's forwarding secret (`client.Forwarding.Secret(ctx, slug)`):
+
+```go
+event, err := verify.ForwardedEmail(body, r.Header, secret)
+var verifyErr *verify.Error
+if errors.As(err, &verifyErr) {
+	status := http.StatusUnauthorized
+	if verifyErr.Code == verify.CodeInvalidPayload {
+		status = http.StatusBadRequest
+	}
+	http.Error(w, verifyErr.Message, status)
+	return
+}
+var email struct {
+	Subject string `json:"subject"`
+}
+_ = json.Unmarshal(event.Data, &email)
+```
+
+`verify.ForwardedRequest` checks a request forwarded as JSON, and `verify.RelayedRequest` one relayed as it was received.
+
+## Stream requests as they arrive
+
+```go
+stream := client.Requests.Subscribe(ctx, endpoint.Slug, webhookscc.SubscribeOptions{
+	Timeout:   10 * time.Minute,
+	Reconnect: true,
+})
+for request, err := range stream {
+	if err != nil {
+		return err
+	}
+	fmt.Println(request.Method, request.Path)
+}
+```
+
+The stream ends at `Timeout`, when the endpoint is deleted, or when you break out of the loop. With `Reconnect` it follows the server's 30-minute connection rotation and recovers from dropped connections without missing requests.
+
+## Errors
+
+API errors are a `*webhookscc.Error` with a `StatusCode`. Test them with `errors.Is`:
+
+| Error                         | When                                                         |
+| ----------------------------- | ------------------------------------------------------------ |
+| `webhookscc.ErrUnauthorized`  | 401: the API key is missing or invalid                       |
+| `webhookscc.ErrNotFound`      | 404: the endpoint, request or email does not exist           |
+| `webhookscc.ErrRateLimited`   | 429; the `*Error` carries `RetryAfter` when the server sends it |
+| `webhookscc.ErrTimeout`       | A request, wait or stream ran out of time                    |
+| `webhookscc.ErrMissingAPIKey` | `New` found no API key                                       |
+
+Network failures return the `net/http` error. Retries are off unless you pass `webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 3})`.
+
+## Configuration
+
+| Option                    | Environment variable | Default                  |
+| ------------------------- | -------------------- | ------------------------ |
+| `WithAPIKey`              | `WHK_API_KEY`        | (required)               |
+| `WithBaseURL`             | `WHK_BASE_URL`       | `https://webhooks.cc`    |
+| `WithWebhookURL`          | `WHK_WEBHOOK_URL`    | `https://go.webhooks.cc` |
+| `WithTimeout`             |                      | 30 seconds per API call  |
+| `WithHTTPClient`          |                      | a new `http.Client`      |
+
+The source is in [`packages/sdk-go`](https://github.com/kroqdotdev/webhooks-cc/tree/main/packages/sdk-go), MIT licensed, and the API reference is on [pkg.go.dev](https://pkg.go.dev/webhooks.cc/go).

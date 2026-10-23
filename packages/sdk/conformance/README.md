@@ -8,7 +8,7 @@ Test data every webhooks.cc SDK must pass. The TypeScript SDK in this package is
 | `verify.json`     | Check provider signatures (`verifySignature`) and reach the same verdict, valid or not.                                                 |
 | `forwarding.json` | Verify what webhooks.cc forwards (`verifyForwardedEmail`, `verifyForwardedRequest`, `verifyRelayedRequest`), with the same error codes. |
 | `matchers.json`   | Match captured requests (`matchHeader`, `matchBodyPath`, `matchEmail`, ...), as `waitFor` does.                                         |
-| `durations.json`  | Read timeouts and poll intervals given as `"30s"`, `"5m"` or milliseconds.                                                              |
+| `durations.json`  | Read timeouts and poll intervals given as `"30s"`, `"5m"` or milliseconds. Only for ports that take durations that way (Go does not).   |
 
 Each file has a `version` (raised when the format changes), a `description` that says how to run one vector, and the `vectors`. Codes and links found in emails are not here: the API returns them with each email when asked (`extracts=true` on the request routes), so ports read them instead of reimplementing the extraction.
 
