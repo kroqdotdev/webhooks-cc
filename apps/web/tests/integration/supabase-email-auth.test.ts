@@ -267,11 +267,14 @@ describe("Email/password auth", () => {
   });
 
   // What the account page's password panel relies on. Needs
-  // GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD on the dev GoTrue.
+  // GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD and the
+  // password-changed notification on the dev GoTrue, and migration 00061.
   describe("password change from a password session", () => {
-    const CHANGE_EMAIL = `test-email-auth-change-${ts}@webhooks-test.local`;
+    const CHANGE_LOCAL = `test-email-auth-change-${ts}`;
+    const CHANGE_EMAIL = `${CHANGE_LOCAL}@webhooks-test.local`;
     const OLD_PASSWORD = "the-old-password";
     const NEW_PASSWORD = "the-new-password";
+    let changeUserId: string;
 
     async function signIn(password: string) {
       const client = anonClient();
@@ -289,7 +292,8 @@ describe("Email/password auth", () => {
         email_confirm: true,
       });
       expect(error).toBeNull();
-      createdUserIds.push(data.user!.id);
+      changeUserId = data.user!.id;
+      createdUserIds.push(changeUserId);
     });
 
     it("refuses a new password without the current one", async () => {
@@ -327,5 +331,69 @@ describe("Email/password auth", () => {
       expect((await signIn(NEW_PASSWORD)).error).toBeNull();
       expect((await signIn(OLD_PASSWORD)).error!.code).toBe("invalid_credentials");
     });
+
+    it("records the change once in audit_events, and sign-ins not at all", async () => {
+      // Five sign-ins and two refused changes above touched auth.users too.
+      expect(await passwordAuditRows(changeUserId)).toEqual([
+        { actor_type: "user", via: null, outcome: "ok", metadata: {} },
+      ]);
+    });
+
+    it("emails the account from noreply@webhooks.cc", async () => {
+      const message = await waitForMail(CHANGE_LOCAL, /password was changed/i);
+      expect(message.from).toContain("<noreply@webhooks.cc>");
+    });
+  });
+
+  describe("account created without a password (agent registration)", () => {
+    it("sets one from an email-link session, recorded as an ordinary change", async () => {
+      // admin.createUser without a password still gets one: GoTrue sets a
+      // random password nobody knows. Such accounts sign in with email links,
+      // whose sessions skip the current-password check.
+      const email = `test-email-auth-nopw-${ts}@webhooks-test.local`;
+      const { data: created, error } = await admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+      });
+      expect(error).toBeNull();
+      createdUserIds.push(created.user!.id);
+
+      const { data: link } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+      const client = anonClient();
+      const { error: verifyError } = await client.auth.verifyOtp({
+        type: "email",
+        token_hash: link.properties!.hashed_token,
+      });
+      expect(verifyError).toBeNull();
+      const { error: updateError } = await client.auth.updateUser({ password: "a-first-password" });
+      expect(updateError).toBeNull();
+
+      expect(await passwordAuditRows(created.user!.id)).toEqual([
+        { actor_type: "user", via: null, outcome: "ok", metadata: {} },
+      ]);
+    });
   });
 });
+
+async function passwordAuditRows(userId: string) {
+  const { data, error } = await admin
+    .from("audit_events")
+    .select("actor_type, via, outcome, metadata")
+    .eq("actor_user_id", userId)
+    .eq("action", "account.password_changed");
+  if (error) throw error;
+  return data;
+}
+
+/** Polls the dev Inbucket (mailbox = the address's local part) for a matching message. */
+async function waitForMail(mailbox: string, subject: RegExp) {
+  const base = process.env.INBUCKET_URL ?? "http://localhost:9000";
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const res = await fetch(`${base}/api/v1/mailbox/${encodeURIComponent(mailbox)}`);
+    const messages = res.ok ? ((await res.json()) as { from: string; subject: string }[]) : [];
+    const match = messages.find((message) => subject.test(message.subject));
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`No message matching ${subject} in Inbucket mailbox ${mailbox}`);
+}

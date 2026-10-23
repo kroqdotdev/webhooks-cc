@@ -52,11 +52,14 @@ services:
       GOTRUE_PASSWORD_MIN_LENGTH: "8"
       GOTRUE_MAILER_TEMPLATES_CONFIRMATION: https://webhooks.cc/email-templates/confirm.html
       GOTRUE_MAILER_TEMPLATES_RECOVERY: https://webhooks.cc/email-templates/recovery.html
+      GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: https://webhooks.cc/email-templates/password-changed.html
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: Confirm your webhooks.cc account
       GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your webhooks.cc password
+      GOTRUE_MAILER_SUBJECTS_PASSWORD_CHANGED_NOTIFICATION: Your webhooks.cc password was changed
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/public/hook_before_user_created
       GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: "true"
+      GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: "true"
 ```
 
 Dev override (templates fetched from the Next dev server on the Docker host,
@@ -69,11 +72,14 @@ services:
       GOTRUE_PASSWORD_MIN_LENGTH: "8"
       GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://host.docker.internal:3000/email-templates/confirm.html
       GOTRUE_MAILER_TEMPLATES_RECOVERY: http://host.docker.internal:3000/email-templates/recovery.html
+      GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://host.docker.internal:3000/email-templates/password-changed.html
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: Confirm your webhooks.cc account
       GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your webhooks.cc password
+      GOTRUE_MAILER_SUBJECTS_PASSWORD_CHANGED_NOTIFICATION: Your webhooks.cc password was changed
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/public/hook_before_user_created
       GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: "true"
+      GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: "true"
     extra_hosts:
       - host.docker.internal:host-gateway
 
@@ -151,9 +157,26 @@ magic link or OTP, which `/auth/confirm` and the agent claim produce) are
 exempt for their whole lifetime, token refreshes included. That is what
 keeps `/auth/reset-password` and the panel's "Email me a reset link"
 working, and it means the check only binds sessions that began with a
-password sign-in. Accounts without a password yet (created by agent
-registration) are not asked for one either; the panel lets them leave the
-field empty. Every successful change ends the account's other sessions.
+password sign-in. Accounts created by agent registration rely on it too:
+`admin.createUser` without a password gets a random one from GoTrue that
+nobody knows, so they sign in with email codes, and the panel lets them
+leave the field empty. Every successful change ends the account's other
+sessions.
+
+### Password-changed email
+
+`GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED` makes GoTrue email the
+account after every password change made through `PUT /auth/v1/user` (the
+account page's panel and `/auth/reset-password`), so an owner hears about a
+change they did not make. It goes out from `SMTP_ADMIN_EMAIL`
+(`noreply@webhooks.cc`) like the other auth mail, with the
+`password-changed.html` template; the template has only `{{ .Email }}` and
+`{{ .SiteURL }}` to work with, and no link that signs anyone in. The send
+happens inside the request but never fails it: an SMTP error or the
+instance-wide `RATE_LIMIT_EMAIL_SENT` budget only logs a warning. It is not
+subject to `SMTP_MAX_FREQUENCY`, so it still arrives right after a reset
+email. Every change is also recorded in `public.audit_events` by a trigger
+on `auth.users` (migration 00061), whichever path made it.
 
 ## 3. Apply
 

@@ -200,11 +200,13 @@ test.describe("Email/password authentication", () => {
     }
   });
 
-  test("an account without a password sets one from the account page", async ({
+  test("an account created without a password sets one from the account page", async ({
     page,
     browser,
   }) => {
-    // Agent registration creates accounts like this: an email identity, no password.
+    // Agent registration creates accounts like this: GoTrue gives them a random
+    // password nobody knows, so they sign in with email links, whose sessions
+    // skip the current-password check.
     const email = `e2e-nopw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@webhooks-test.local`;
     const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true });
     if (error) throw new Error(`Failed to create user: ${error.message}`);
