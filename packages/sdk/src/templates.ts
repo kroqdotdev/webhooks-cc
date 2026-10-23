@@ -2460,7 +2460,9 @@ export async function buildTemplateSendOptions(
     const payload = options.body ?? {};
     const body = typeof payload === "string" ? payload : JSON.stringify(payload);
 
-    const msgId = options.event ? `msg_${options.event}_${randomHex(8)}` : `msg_${randomHex(16)}`;
+    const msgId =
+      options.messageId ??
+      (options.event ? `msg_${options.event}_${randomHex(8)}` : `msg_${randomHex(16)}`);
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signingInput = `${msgId}.${timestamp}.${body}`;
 
@@ -2754,7 +2756,7 @@ export async function buildTemplateSendOptions(
   }
 
   if (provider === "clerk") {
-    const msgId = `msg_${randomHex(16)}`;
+    const msgId = options.messageId ?? `msg_${randomHex(16)}`;
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signingInput = `${msgId}.${timestamp}.${built.body}`;
     const secretBytes = decodeStandardWebhookSecret(secret);
@@ -2865,7 +2867,7 @@ export async function buildTemplateSendOptions(
   if (provider === "resend") {
     // Resend delivers through Svix: base64 HMAC-SHA256 of `${id}.${timestamp}.${body}`
     // keyed with the base64-decoded whsec_ secret, sent only as svix-* headers.
-    const msgId = `msg_${randomHex(24)}`;
+    const msgId = options.messageId ?? `msg_${randomHex(24)}`;
     const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
     const signature = await hmacSignRaw(
       "SHA-256",

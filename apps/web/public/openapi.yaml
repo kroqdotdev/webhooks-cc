@@ -280,6 +280,7 @@ paths:
             type: string
             enum: [http, email]
           description: Only HTTP requests (`http`) or only captured emails (`email`)
+        - $ref: "#/components/parameters/extracts"
       responses:
         "200":
           description: Array of captured requests
@@ -350,6 +351,7 @@ paths:
             type: string
             enum: [http, email]
           description: Only HTTP requests (`http`) or only captured emails (`email`); send the same value for every page
+        - $ref: "#/components/parameters/extracts"
       responses:
         "200":
           description: Paginated request listing
@@ -382,6 +384,8 @@ paths:
       description: |
         Get a single captured request by ID. Captured emails are requests too: they have
         `kind: "email"` and the parsed message in `email`.
+      parameters:
+        - $ref: "#/components/parameters/extracts"
       responses:
         "200":
           description: Request details
@@ -389,6 +393,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Request"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1612,6 +1618,16 @@ components:
         API key with `whcc_` prefix. Generate from https://webhooks.cc/account.
 
   parameters:
+    extracts:
+      name: extracts
+      in: query
+      schema:
+        type: string
+        enum: ["true", "false"]
+      description: |
+        `true` adds `extracts` (the one-time codes and links found in it) to each captured email.
+        Off by default.
+
     slug:
       name: slug
       in: path
@@ -1933,6 +1949,14 @@ components:
             - $ref: "#/components/schemas/EmailCapture"
             - type: "null"
           description: The parsed message when `kind` is `email`, null otherwise
+        extracts:
+          oneOf:
+            - $ref: "#/components/schemas/EmailExtracts"
+            - type: "null"
+          description: |
+            Only with `extracts=true`, and only on a captured email: the one-time codes and links
+            found in it, as the dashboard shows them. Null when the endpoint's `showEmailExtracts`
+            is off.
 
     StreamRequest:
       type: object
@@ -2092,6 +2116,40 @@ components:
             attachments:
               type: boolean
               description: The message had more than 100 attachments; only the first 100 are listed
+
+    EmailExtracts:
+      type: object
+      required: [codes, links]
+      description: |
+        One-time codes and links found in an email. Codes are only taken when a word such as
+        "code" or "verification" sits next to them, and come in the order they appear, the subject
+        first. Links that look like what the email asks you to click (confirm, verify, reset, sign
+        in) come first; unsubscribe, tracking and social links are left out.
+      properties:
+        codes:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+          description: Codes with spaces and dashes removed, such as `482913`
+        links:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ExtractedLink"
+
+    ExtractedLink:
+      type: object
+      required: [url, label, action]
+      properties:
+        url:
+          type: string
+        label:
+          type: ["string", "null"]
+          description: The link text, when the link came from the HTML part
+        action:
+          type: boolean
+          description: Looks like what the email asks you to click (confirm, verify, reset, sign in)
 
     EmailAddress:
       type: object

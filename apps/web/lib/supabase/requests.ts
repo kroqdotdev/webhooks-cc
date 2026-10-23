@@ -3,6 +3,7 @@ import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
+import { extractFromEmail, type EmailExtracts } from "@webhooks-cc/sdk/email";
 import type { RequestKind } from "@/lib/supabase/search";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -62,6 +63,11 @@ export interface RequestRecord {
   /** "email" for captured emails (`email` is set), "http" for everything else. */
   kind: "http" | "email";
   email?: EmailCapture | null;
+  /**
+   * For an email in an API response that asked for it, the one-time codes
+   * and links found in it (see withEmailExtracts).
+   */
+  extracts?: EmailExtracts | null;
 }
 
 export interface PaginatedRequestPage {
@@ -155,6 +161,59 @@ function normalizeRequest(row: SelectedRequestRowWithQuery): RequestRecord {
     kind,
     email: kind === "email" ? toEmailCapture(row.email) : null,
   };
+}
+
+/**
+ * The `extracts` query parameter of the request routes: "true" asks for
+ * withEmailExtracts(), "false" or no parameter does not, and anything else is
+ * invalid (null).
+ */
+export function parseExtractsParam(value: string | null): boolean | null {
+  if (value === null || value === "false") return false;
+  return value === "true" ? true : null;
+}
+
+/**
+ * Adds `extracts` to the emails among `records`: the codes and links the
+ * dashboard's "Found in this email" shows, computed by the same function, so
+ * SDKs in other languages read them instead of reimplementing the extraction.
+ * Like forwarding, it honours the endpoint's "Show codes and links found in
+ * emails": `extracts` is null when that is off.
+ *
+ * The routes add it only on `extracts=true`. Up to 20 links can make it tens
+ * of kilobytes, which would break the MCP server's output budget and cost the
+ * dashboard's refreshes for nothing. Extraction takes time linear in the
+ * message, but text and HTML may be 256 KB each, so it yields between emails
+ * instead of holding the event loop for a whole page.
+ */
+export async function withEmailExtracts(records: RequestRecord[]): Promise<RequestRecord[]> {
+  const endpointIds = [
+    ...new Set(records.filter((record) => record.kind === "email").map((r) => r.endpointId)),
+  ];
+  if (endpointIds.length === 0) return records;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("endpoints")
+    .select("id, show_email_extracts")
+    .in("id", endpointIds);
+  if (error) throw error;
+  const enabled = new Set(
+    (data ?? []).filter((row) => row.show_email_extracts !== false).map((row) => row.id)
+  );
+
+  const out: RequestRecord[] = [];
+  for (const record of records) {
+    if (record.kind !== "email") {
+      out.push(record);
+    } else if (!record.email || !enabled.has(record.endpointId)) {
+      out.push({ ...record, extracts: null });
+    } else {
+      out.push({ ...record, extracts: extractFromEmail(record.email) });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+  return out;
 }
 
 function clampLimit(limit: number | undefined, fallback: number): number {

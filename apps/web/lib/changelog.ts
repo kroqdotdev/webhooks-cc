@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.5";
+export const APP_VERSION = "0.40.6";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.6",
+    date: "2026-10-23",
+    title: "Email Codes and Links in the API",
+    track: "web",
+    items: [
+      "Add extracts=true to the request list, the paginated list or a single request, and each email carries extracts: the one-time codes and links found in it, the same ones the dashboard shows",
+      "A test in any language can read the code or confirm link from the response without parsing the message; extracts is null when the endpoint's Show codes and links found in emails is off",
+      "Code detection keeps at most 20 codes per email, so an email stuffed with numbers stays fast to read in the dashboard, forwarding and the API",
+    ],
+  },
   {
     version: "0.40.5",
     date: "2026-10-23",

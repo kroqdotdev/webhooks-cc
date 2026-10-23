@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
+  "description": "Duration options (timeouts, poll intervals): a number is milliseconds; a string is trimmed, then must be ASCII digits with an optional fraction, optionally followed by whitespace and one of ms, s, m, h or d (lowercase). expected.ms is the result; expected.error means the input is refused.",
+  "vectors": [
+    {
+      "input": 0,
+      "expected": {
+        "ms": 0
+      }
+    },
+    {
+      "input": 500,
+      "expected": {
+        "ms": 500
+      }
+    },
+    {
+      "input": 1500.5,
+      "expected": {
+        "ms": 1500.5
+      }
+    },
+    {
+      "input": "500",
+      "expected": {
+        "ms": 500
+      }
+    },
+    {
+      "input": "0",
+      "expected": {
+        "ms": 0
+      }
+    },
+    {
+      "input": "2.5",
+      "expected": {
+        "ms": 2.5
+      }
+    },
+    {
+      "input": "500ms",
+      "expected": {
+        "ms": 500
+      }
+    },
+    {
+      "input": "30s",
+      "expected": {
+        "ms": 30000
+      }
+    },
+    {
+      "input": "1.5s",
+      "expected": {
+        "ms": 1500
+      }
+    },
+    {
+      "input": "5m",
+      "expected": {
+        "ms": 300000
+      }
+    },
+    {
+      "input": "2h",
+      "expected": {
+        "ms": 7200000
+      }
+    },
+    {
+      "input": "7d",
+      "expected": {
+        "ms": 604800000
+      }
+    },
+    {
+      "input": " 10s ",
+      "expected": {
+        "ms": 10000
+      }
+    },
+    {
+      "input": "10 s",
+      "expected": {
+        "ms": 10000
+      }
+    },
+    {
+      "input": "",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "-5",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": -5,
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "5x",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "10S",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "1m30s",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "s",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "0x10",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "1e3",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "0b11",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "+5",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": ".5",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "5.",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "Infinity",
+      "expected": {
+        "error": true
+      }
+    }
+  ]
+}

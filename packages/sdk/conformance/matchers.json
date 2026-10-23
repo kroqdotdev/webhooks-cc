@@ -1,0 +1,1011 @@
+{
+  "version": 1,
+  "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
+  "description": "Request matchers. Build the matcher named by fn (TypeScript names; matchAll and matchAny take matchers as args), apply it to requests[request], and compare with expected. Regular-expression forms of matchEmail are left to each language.",
+  "requests": {
+    "stripe": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000001",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "POST",
+      "path": "/hooks/stripe/live",
+      "headers": {
+        "Content-Type": "application/json; charset=utf-8",
+        "Stripe-Signature": "t=1767225600,v1=abc",
+        "x-request-id": "Req_1"
+      },
+      "body": "{\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_1\",\"amount_total\":2000,\"paid\":true,\"coupon\":null,\"metadata\":{\"order\":\"1001\"}}},\"items\":[{\"sku\":\"A\",\"qty\":1},{\"sku\":\"B\",\"qty\":2}]}",
+      "queryParams": {
+        "attempt": "1",
+        "debug": ""
+      },
+      "contentType": "application/json; charset=utf-8",
+      "ip": "203.0.113.7",
+      "size": 190,
+      "receivedAt": 1767225600000,
+      "signatureVerified": true,
+      "kind": "http"
+    },
+    "form": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000002",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "put",
+      "path": "/a/b/c.json",
+      "headers": {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      "body": "x=1&y=2",
+      "queryParams": {},
+      "ip": "203.0.113.7",
+      "size": 7,
+      "receivedAt": 1767225600000,
+      "signatureVerified": false,
+      "kind": "http"
+    },
+    "email": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000003",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "EMAIL",
+      "path": "signup+run-42@mailhooks.cc",
+      "headers": {
+        "subject": "Confirm your email for Acme"
+      },
+      "body": "Subject: Confirm your email for Acme\r\n\r\nYour verification code is 482913",
+      "queryParams": {},
+      "ip": "198.51.100.1",
+      "size": 72,
+      "receivedAt": 1767225600000,
+      "signatureVerified": null,
+      "kind": "email",
+      "email": {
+        "subject": "Confirm your email for Acme",
+        "from": [
+          {
+            "name": "Acme",
+            "address": "No-Reply@Acme.test"
+          }
+        ],
+        "to": [
+          {
+            "name": null,
+            "address": "signup+run-42@mailhooks.cc"
+          }
+        ],
+        "cc": [
+          {
+            "name": "QA",
+            "address": "qa@acme.test"
+          }
+        ],
+        "replyTo": [],
+        "sender": [],
+        "date": "Thu, 01 Jan 2026 00:00:00 +0000",
+        "messageId": "<1@acme.test>",
+        "inReplyTo": [],
+        "tag": "run-42",
+        "text": "Your verification code is 482913",
+        "html": null,
+        "textFromHtml": false,
+        "attachments": [],
+        "auth": null,
+        "smtp": null,
+        "parseError": false,
+        "truncated": {
+          "raw": false,
+          "text": false,
+          "html": false,
+          "headers": false,
+          "addresses": false,
+          "attachments": false
+        }
+      }
+    },
+    "emailBcc": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000006",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "EMAIL",
+      "path": "signup+run-42@mailhooks.cc",
+      "headers": {},
+      "queryParams": {},
+      "ip": "198.51.100.1",
+      "size": 0,
+      "receivedAt": 1767225600000,
+      "kind": "email",
+      "email": {
+        "subject": "Confirm your email for Acme",
+        "from": [
+          {
+            "name": "Acme",
+            "address": "No-Reply@Acme.test"
+          }
+        ],
+        "to": [
+          {
+            "name": null,
+            "address": "team@acme.test"
+          }
+        ],
+        "cc": [],
+        "replyTo": [],
+        "sender": [],
+        "date": "Thu, 01 Jan 2026 00:00:00 +0000",
+        "messageId": "<1@acme.test>",
+        "inReplyTo": [],
+        "tag": "run-42",
+        "text": "Your verification code is 482913",
+        "html": null,
+        "textFromHtml": false,
+        "attachments": [],
+        "auth": null,
+        "smtp": null,
+        "parseError": false,
+        "truncated": {
+          "raw": false,
+          "text": false,
+          "html": false,
+          "headers": false,
+          "addresses": false,
+          "attachments": false
+        }
+      }
+    },
+    "emailFromOlderServer": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000004",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "EMAIL",
+      "path": "signup@mailhooks.cc",
+      "headers": {},
+      "queryParams": {},
+      "ip": "198.51.100.1",
+      "size": 0,
+      "receivedAt": 1767225600000,
+      "email": {
+        "subject": "Confirm your email for Acme",
+        "from": [
+          {
+            "name": "Acme",
+            "address": "No-Reply@Acme.test"
+          }
+        ],
+        "to": [
+          {
+            "name": null,
+            "address": "signup@mailhooks.cc"
+          }
+        ],
+        "cc": [
+          {
+            "name": "QA",
+            "address": "qa@acme.test"
+          }
+        ],
+        "replyTo": [],
+        "sender": [],
+        "date": "Thu, 01 Jan 2026 00:00:00 +0000",
+        "messageId": "<1@acme.test>",
+        "inReplyTo": [],
+        "tag": null,
+        "text": "Your verification code is 482913",
+        "html": null,
+        "textFromHtml": false,
+        "attachments": [],
+        "auth": null,
+        "smtp": null,
+        "parseError": false,
+        "truncated": {
+          "raw": false,
+          "text": false,
+          "html": false,
+          "headers": false,
+          "addresses": false,
+          "attachments": false
+        }
+      }
+    },
+    "emailFromStream": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000005",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "EMAIL",
+      "path": "signup+run-42@mailhooks.cc",
+      "headers": {},
+      "queryParams": {},
+      "ip": "198.51.100.1",
+      "size": 0,
+      "receivedAt": 1767225600000,
+      "kind": "email",
+      "email": null
+    }
+  },
+  "vectors": [
+    {
+      "name": "method",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchMethod",
+        "args": [
+          "POST"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "method, any case on either side",
+      "request": "form",
+      "matcher": {
+        "fn": "matchMethod",
+        "args": [
+          "Put"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "method, different",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchMethod",
+        "args": [
+          "GET"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "header present, name in any case",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchHeader",
+        "args": [
+          "stripe-signature"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header value, exact",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchHeader",
+        "args": [
+          "X-Request-Id",
+          "Req_1"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "header value, case matters",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchHeader",
+        "args": [
+          "x-request-id",
+          "req_1"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "header absent",
+      "request": "form",
+      "matcher": {
+        "fn": "matchHeader",
+        "args": [
+          "stripe-signature"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "path, exact",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/hooks/stripe/live"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path, * stays within a segment",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/hooks/*"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "path, * matches one segment",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/hooks/*/live"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path, ** crosses segments",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/hooks/**"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path, a dot is literal",
+      "request": "form",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/a/b/c.json"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "path, a dot does not match any character",
+      "request": "form",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/a/b/c.jso?"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "path, the whole path must match",
+      "request": "form",
+      "matcher": {
+        "fn": "matchPath",
+        "args": [
+          "/a/b"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "query parameter present",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchQueryParam",
+        "args": [
+          "attempt"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "query parameter present with an empty value",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchQueryParam",
+        "args": [
+          "debug"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "query parameter value",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchQueryParam",
+        "args": [
+          "attempt",
+          "2"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body path, string",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "type",
+          "checkout.session.completed"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body path, nested number",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "data.object.amount_total",
+          2000
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body path, a number does not equal its string",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "data.object.amount_total",
+          "2000"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body path, boolean",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "data.object.paid",
+          true
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body path, null",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "data.object.coupon",
+          null
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body path, array index",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "items.1.sku",
+          "B"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body path, index past the end",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "items.2.sku",
+          "B"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body path, missing key",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "data.object.missing",
+          null
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body path, objects never match",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "data.object.metadata",
+          {
+            "order": "1001"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body path, a body that is not JSON",
+      "request": "form",
+      "matcher": {
+        "fn": "matchBodyPath",
+        "args": [
+          "x",
+          "1"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body subset, nested",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodySubset",
+        "args": [
+          {
+            "data": {
+              "object": {
+                "metadata": {
+                  "order": "1001"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body subset, arrays match by position",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodySubset",
+        "args": [
+          {
+            "items": [
+              {
+                "sku": "A"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "body subset, arrays do not match out of position",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodySubset",
+        "args": [
+          {
+            "items": [
+              {
+                "sku": "B"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body subset, a value differs",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodySubset",
+        "args": [
+          {
+            "type": "invoice.paid"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "body subset, null matches null",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchBodySubset",
+        "args": [
+          {
+            "data": {
+              "object": {
+                "coupon": null
+              }
+            }
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content type, parameters ignored",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchContentType",
+        "args": [
+          "application/json"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content type, any case",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchContentType",
+        "args": [
+          "Application/JSON"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content type, from the header when contentType is absent",
+      "request": "form",
+      "matcher": {
+        "fn": "matchContentType",
+        "args": [
+          "application/x-www-form-urlencoded"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "content type, a prefix is not enough",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchContentType",
+        "args": [
+          "application/js"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "verified",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchVerified",
+        "args": []
+      },
+      "expected": true
+    },
+    {
+      "name": "verified, failed",
+      "request": "form",
+      "matcher": {
+        "fn": "matchVerified",
+        "args": []
+      },
+      "expected": false
+    },
+    {
+      "name": "unverified",
+      "request": "form",
+      "matcher": {
+        "fn": "matchUnverified",
+        "args": []
+      },
+      "expected": true
+    },
+    {
+      "name": "unverified, not checked at all",
+      "request": "email",
+      "matcher": {
+        "fn": "matchUnverified",
+        "args": []
+      },
+      "expected": false
+    },
+    {
+      "name": "all, every matcher",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchAll",
+        "args": [
+          {
+            "fn": "matchMethod",
+            "args": [
+              "POST"
+            ]
+          },
+          {
+            "fn": "matchPath",
+            "args": [
+              "/hooks/**"
+            ]
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "all, one fails",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchAll",
+        "args": [
+          {
+            "fn": "matchMethod",
+            "args": [
+              "POST"
+            ]
+          },
+          {
+            "fn": "matchPath",
+            "args": [
+              "/other/**"
+            ]
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "any, one matches",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchAny",
+        "args": [
+          {
+            "fn": "matchMethod",
+            "args": [
+              "GET"
+            ]
+          },
+          {
+            "fn": "matchHeader",
+            "args": [
+              "stripe-signature"
+            ]
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "any, none match",
+      "request": "form",
+      "matcher": {
+        "fn": "matchAny",
+        "args": [
+          {
+            "fn": "matchMethod",
+            "args": [
+              "GET"
+            ]
+          },
+          {
+            "fn": "matchHeader",
+            "args": [
+              "stripe-signature"
+            ]
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "is email",
+      "request": "email",
+      "matcher": {
+        "fn": "isEmailRequest",
+        "args": []
+      },
+      "expected": true
+    },
+    {
+      "name": "is email, method EMAIL and an address as the path from a server without kind",
+      "request": "emailFromOlderServer",
+      "matcher": {
+        "fn": "isEmailRequest",
+        "args": []
+      },
+      "expected": true
+    },
+    {
+      "name": "is email, not without the parsed message",
+      "request": "emailFromStream",
+      "matcher": {
+        "fn": "isEmailRequest",
+        "args": []
+      },
+      "expected": false
+    },
+    {
+      "name": "is email, http",
+      "request": "stripe",
+      "matcher": {
+        "fn": "isEmailRequest",
+        "args": []
+      },
+      "expected": false
+    },
+    {
+      "name": "email, no criteria",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {}
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, never an http request",
+      "request": "stripe",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {}
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "email, tag",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "tag": "run-42"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, tags are case-sensitive",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "tag": "RUN-42"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "email, tag null matches untagged mail only",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "tag": null
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "email, tag null on untagged mail",
+      "request": "emailFromOlderServer",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "tag": null
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, subject substring",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "subject": "your email"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, subject substring is case-sensitive",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "subject": "YOUR EMAIL"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "email, from in any case",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "from": "no-reply@acme.test"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, from is the whole address",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "from": "acme.test"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "email, to includes Cc",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "to": "QA@acme.test"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, to includes the address it was delivered to (a Bcc)",
+      "request": "emailBcc",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "to": "signup+run-42@mailhooks.cc"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, to that is in neither To, Cc nor the delivered-to address",
+      "request": "emailBcc",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "to": "someone@else.test"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "email, to also matches the To header",
+      "request": "emailBcc",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "to": "team@acme.test"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, every criterion must match",
+      "request": "email",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "tag": "run-42",
+            "subject": "Reset"
+          }
+        ]
+      },
+      "expected": false
+    }
+  ]
+}

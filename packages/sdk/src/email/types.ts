@@ -128,7 +128,7 @@ export interface ExtractedLink {
   action: boolean;
 }
 
-/** One-time codes and links found in an email, best first. */
+/** One-time codes (in order of appearance, subject first) and links (best first) found in an email, at most 20 of each. */
 export interface EmailExtracts {
   codes: string[];
   links: ExtractedLink[];

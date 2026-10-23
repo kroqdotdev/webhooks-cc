@@ -1,0 +1,2046 @@
+{
+  "version": 1,
+  "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
+  "description": "Signature checks a port must agree with. Verify body and headers for the provider with secret (the webhook id for PayPal), publicKey (Discord), url and method, and a clock frozen at now (milliseconds); for PayPal, the certificate URL serves certificate. The result must equal expected. Header names match in any case. Only HubSpot limits the signature's age. Not verifiable: sendgrid (no signatures), plaid (needs Plaid's API).",
+  "vectors": [
+    {
+      "name": "stripe",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "stripe-signature": "t=1767225600,v1=b25c39051d6ce78e36562b139d0161ada11cefbcae031922ef0cc6f75de1ed03"
+      },
+      "expected": true
+    },
+    {
+      "name": "stripe, wrong secret",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "stripe-signature": "t=1767225600,v1=b25c39051d6ce78e36562b139d0161ada11cefbcae031922ef0cc6f75de1ed03"
+      },
+      "expected": false
+    },
+    {
+      "name": "stripe, changed body",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "stripe-signature": "t=1767225600,v1=b25c39051d6ce78e36562b139d0161ada11cefbcae031922ef0cc6f75de1ed03"
+      },
+      "expected": false
+    },
+    {
+      "name": "stripe, no signature headers",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "github",
+      "provider": "github",
+      "secret": "conformance_github_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature-256": "sha256=a8405b1d20244c84f39b3573f2199ec8eac25527e5a1ca66393e337a013c9c27"
+      },
+      "expected": true
+    },
+    {
+      "name": "github, wrong secret",
+      "provider": "github",
+      "secret": "conformance_github_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature-256": "sha256=a8405b1d20244c84f39b3573f2199ec8eac25527e5a1ca66393e337a013c9c27"
+      },
+      "expected": false
+    },
+    {
+      "name": "github, changed body",
+      "provider": "github",
+      "secret": "conformance_github_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-hub-signature-256": "sha256=a8405b1d20244c84f39b3573f2199ec8eac25527e5a1ca66393e337a013c9c27"
+      },
+      "expected": false
+    },
+    {
+      "name": "github, no signature headers",
+      "provider": "github",
+      "secret": "conformance_github_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "shopify",
+      "provider": "shopify",
+      "secret": "conformance_shopify_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-shopify-hmac-sha256": "6+YNCjEmGTpABwZPISpVei1AQhSrbB3tPjqh+mbEYfg="
+      },
+      "expected": true
+    },
+    {
+      "name": "shopify, wrong secret",
+      "provider": "shopify",
+      "secret": "conformance_shopify_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-shopify-hmac-sha256": "6+YNCjEmGTpABwZPISpVei1AQhSrbB3tPjqh+mbEYfg="
+      },
+      "expected": false
+    },
+    {
+      "name": "shopify, changed body",
+      "provider": "shopify",
+      "secret": "conformance_shopify_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-shopify-hmac-sha256": "6+YNCjEmGTpABwZPISpVei1AQhSrbB3tPjqh+mbEYfg="
+      },
+      "expected": false
+    },
+    {
+      "name": "shopify, no signature headers",
+      "provider": "shopify",
+      "secret": "conformance_shopify_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "twilio",
+      "provider": "twilio",
+      "secret": "conformance_twilio_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "CallSid=CA1234567890ABCDE&From=%2B14155550123&To=%2B14155559876&Body=Caf%C3%A9+%E2%9C%93",
+      "headers": {
+        "x-twilio-signature": "bMobuLvo8Weu6oTeJk4D3v/3OtQ="
+      },
+      "expected": true
+    },
+    {
+      "name": "twilio, wrong secret",
+      "provider": "twilio",
+      "secret": "conformance_twilio_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "CallSid=CA1234567890ABCDE&From=%2B14155550123&To=%2B14155559876&Body=Caf%C3%A9+%E2%9C%93",
+      "headers": {
+        "x-twilio-signature": "bMobuLvo8Weu6oTeJk4D3v/3OtQ="
+      },
+      "expected": false
+    },
+    {
+      "name": "twilio, changed body",
+      "provider": "twilio",
+      "secret": "conformance_twilio_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "CallSid=CA1234567890ABCDE&From=%2B14155550123&To=%2B14155559876&Body=Caf%C3%A9+%E2%9C%93 ",
+      "headers": {
+        "x-twilio-signature": "bMobuLvo8Weu6oTeJk4D3v/3OtQ="
+      },
+      "expected": false
+    },
+    {
+      "name": "twilio, no signature headers",
+      "provider": "twilio",
+      "secret": "conformance_twilio_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "CallSid=CA1234567890ABCDE&From=%2B14155550123&To=%2B14155559876&Body=Caf%C3%A9+%E2%9C%93",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "slack",
+      "provider": "slack",
+      "secret": "conformance_slack_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-slack-request-timestamp": "1767225600",
+        "x-slack-signature": "v0=04caa8d11945d179065b89315f1df4a96400bb31c8e2eba58afae3aa74b62136"
+      },
+      "expected": true
+    },
+    {
+      "name": "slack, wrong secret",
+      "provider": "slack",
+      "secret": "conformance_slack_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-slack-request-timestamp": "1767225600",
+        "x-slack-signature": "v0=04caa8d11945d179065b89315f1df4a96400bb31c8e2eba58afae3aa74b62136"
+      },
+      "expected": false
+    },
+    {
+      "name": "slack, changed body",
+      "provider": "slack",
+      "secret": "conformance_slack_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-slack-request-timestamp": "1767225600",
+        "x-slack-signature": "v0=04caa8d11945d179065b89315f1df4a96400bb31c8e2eba58afae3aa74b62136"
+      },
+      "expected": false
+    },
+    {
+      "name": "slack, no signature headers",
+      "provider": "slack",
+      "secret": "conformance_slack_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "paddle",
+      "provider": "paddle",
+      "secret": "conformance_paddle_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "paddle-signature": "ts=1767225600;h1=5a8124de2d095894f132c0a83567bec26505909faea4220fb1d3b505bf790544"
+      },
+      "expected": true
+    },
+    {
+      "name": "paddle, wrong secret",
+      "provider": "paddle",
+      "secret": "conformance_paddle_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "paddle-signature": "ts=1767225600;h1=5a8124de2d095894f132c0a83567bec26505909faea4220fb1d3b505bf790544"
+      },
+      "expected": false
+    },
+    {
+      "name": "paddle, changed body",
+      "provider": "paddle",
+      "secret": "conformance_paddle_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "paddle-signature": "ts=1767225600;h1=5a8124de2d095894f132c0a83567bec26505909faea4220fb1d3b505bf790544"
+      },
+      "expected": false
+    },
+    {
+      "name": "paddle, no signature headers",
+      "provider": "paddle",
+      "secret": "conformance_paddle_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "linear",
+      "provider": "linear",
+      "secret": "conformance_linear_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "linear-signature": "sha256=5b8972750bd4ac7eaf4b3c9c030be27d6ab09a53658ba8723e3c240a5974b688"
+      },
+      "expected": true
+    },
+    {
+      "name": "linear, wrong secret",
+      "provider": "linear",
+      "secret": "conformance_linear_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "linear-signature": "sha256=5b8972750bd4ac7eaf4b3c9c030be27d6ab09a53658ba8723e3c240a5974b688"
+      },
+      "expected": false
+    },
+    {
+      "name": "linear, changed body",
+      "provider": "linear",
+      "secret": "conformance_linear_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "linear-signature": "sha256=5b8972750bd4ac7eaf4b3c9c030be27d6ab09a53658ba8723e3c240a5974b688"
+      },
+      "expected": false
+    },
+    {
+      "name": "linear, no signature headers",
+      "provider": "linear",
+      "secret": "conformance_linear_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "clerk",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4=",
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "clerk, wrong secret",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4=",
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": false
+    },
+    {
+      "name": "clerk, changed body",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4=",
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": false
+    },
+    {
+      "name": "clerk, no signature headers",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "vercel",
+      "provider": "vercel",
+      "secret": "conformance_vercel_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-vercel-signature": "3fed8da2f83d033030947fd3a4a5f0b247ffb9a9"
+      },
+      "expected": true
+    },
+    {
+      "name": "vercel, wrong secret",
+      "provider": "vercel",
+      "secret": "conformance_vercel_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-vercel-signature": "3fed8da2f83d033030947fd3a4a5f0b247ffb9a9"
+      },
+      "expected": false
+    },
+    {
+      "name": "vercel, changed body",
+      "provider": "vercel",
+      "secret": "conformance_vercel_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-vercel-signature": "3fed8da2f83d033030947fd3a4a5f0b247ffb9a9"
+      },
+      "expected": false
+    },
+    {
+      "name": "vercel, no signature headers",
+      "provider": "vercel",
+      "secret": "conformance_vercel_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "gitlab",
+      "provider": "gitlab",
+      "secret": "conformance_gitlab_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-gitlab-token": "conformance_gitlab_secret"
+      },
+      "expected": true
+    },
+    {
+      "name": "gitlab, wrong secret",
+      "provider": "gitlab",
+      "secret": "conformance_gitlab_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-gitlab-token": "conformance_gitlab_secret"
+      },
+      "expected": false
+    },
+    {
+      "name": "gitlab, changed body",
+      "provider": "gitlab",
+      "secret": "conformance_gitlab_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-gitlab-token": "conformance_gitlab_secret"
+      },
+      "expected": true
+    },
+    {
+      "name": "gitlab, no signature headers",
+      "provider": "gitlab",
+      "secret": "conformance_gitlab_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "typeform",
+      "provider": "typeform",
+      "secret": "conformance_typeform_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "typeform-signature": "sha256=khLTvMPeGLNoqJYPRgqLt60LXs+Or1aHnjZhTraVWgw="
+      },
+      "expected": true
+    },
+    {
+      "name": "typeform, wrong secret",
+      "provider": "typeform",
+      "secret": "conformance_typeform_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "typeform-signature": "sha256=khLTvMPeGLNoqJYPRgqLt60LXs+Or1aHnjZhTraVWgw="
+      },
+      "expected": false
+    },
+    {
+      "name": "typeform, changed body",
+      "provider": "typeform",
+      "secret": "conformance_typeform_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "typeform-signature": "sha256=khLTvMPeGLNoqJYPRgqLt60LXs+Or1aHnjZhTraVWgw="
+      },
+      "expected": false
+    },
+    {
+      "name": "typeform, no signature headers",
+      "provider": "typeform",
+      "secret": "conformance_typeform_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "standard-webhooks",
+      "provider": "standard-webhooks",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, wrong secret",
+      "provider": "standard-webhooks",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": false
+    },
+    {
+      "name": "standard-webhooks, changed body",
+      "provider": "standard-webhooks",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": false
+    },
+    {
+      "name": "standard-webhooks, no signature headers",
+      "provider": "standard-webhooks",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "meta",
+      "provider": "meta",
+      "secret": "conformance_meta_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature-256": "sha256=e20b87bd2685890340f7617082878b96633e7e69f22ec56263d8127d6d0cd6cd"
+      },
+      "expected": true
+    },
+    {
+      "name": "meta, wrong secret",
+      "provider": "meta",
+      "secret": "conformance_meta_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature-256": "sha256=e20b87bd2685890340f7617082878b96633e7e69f22ec56263d8127d6d0cd6cd"
+      },
+      "expected": false
+    },
+    {
+      "name": "meta, changed body",
+      "provider": "meta",
+      "secret": "conformance_meta_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-hub-signature-256": "sha256=e20b87bd2685890340f7617082878b96633e7e69f22ec56263d8127d6d0cd6cd"
+      },
+      "expected": false
+    },
+    {
+      "name": "meta, no signature headers",
+      "provider": "meta",
+      "secret": "conformance_meta_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "lemonsqueezy",
+      "provider": "lemonsqueezy",
+      "secret": "conformance_lemonsqueezy_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-signature": "111e7a645021e9dfaa48bf91d16dcd1015c5eb2f04a4118acfc8b1c1a3b07d0f"
+      },
+      "expected": true
+    },
+    {
+      "name": "lemonsqueezy, wrong secret",
+      "provider": "lemonsqueezy",
+      "secret": "conformance_lemonsqueezy_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-signature": "111e7a645021e9dfaa48bf91d16dcd1015c5eb2f04a4118acfc8b1c1a3b07d0f"
+      },
+      "expected": false
+    },
+    {
+      "name": "lemonsqueezy, changed body",
+      "provider": "lemonsqueezy",
+      "secret": "conformance_lemonsqueezy_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-signature": "111e7a645021e9dfaa48bf91d16dcd1015c5eb2f04a4118acfc8b1c1a3b07d0f"
+      },
+      "expected": false
+    },
+    {
+      "name": "lemonsqueezy, no signature headers",
+      "provider": "lemonsqueezy",
+      "secret": "conformance_lemonsqueezy_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "coinbase-commerce",
+      "provider": "coinbase-commerce",
+      "secret": "conformance_coinbase_commerce_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-cc-webhook-signature": "16b216f06a72afe729f208bfaad69f07b53aeb5eb31fcfedb1425c52c83b2d66"
+      },
+      "expected": true
+    },
+    {
+      "name": "coinbase-commerce, wrong secret",
+      "provider": "coinbase-commerce",
+      "secret": "conformance_coinbase_commerce_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-cc-webhook-signature": "16b216f06a72afe729f208bfaad69f07b53aeb5eb31fcfedb1425c52c83b2d66"
+      },
+      "expected": false
+    },
+    {
+      "name": "coinbase-commerce, changed body",
+      "provider": "coinbase-commerce",
+      "secret": "conformance_coinbase_commerce_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-cc-webhook-signature": "16b216f06a72afe729f208bfaad69f07b53aeb5eb31fcfedb1425c52c83b2d66"
+      },
+      "expected": false
+    },
+    {
+      "name": "coinbase-commerce, no signature headers",
+      "provider": "coinbase-commerce",
+      "secret": "conformance_coinbase_commerce_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "razorpay",
+      "provider": "razorpay",
+      "secret": "conformance_razorpay_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-razorpay-signature": "1e53c578fcca2a3fdf4e6e55e3a2926a7277dc8b3ff248b4a7cdbbbab18dccb5"
+      },
+      "expected": true
+    },
+    {
+      "name": "razorpay, wrong secret",
+      "provider": "razorpay",
+      "secret": "conformance_razorpay_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-razorpay-signature": "1e53c578fcca2a3fdf4e6e55e3a2926a7277dc8b3ff248b4a7cdbbbab18dccb5"
+      },
+      "expected": false
+    },
+    {
+      "name": "razorpay, changed body",
+      "provider": "razorpay",
+      "secret": "conformance_razorpay_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-razorpay-signature": "1e53c578fcca2a3fdf4e6e55e3a2926a7277dc8b3ff248b4a7cdbbbab18dccb5"
+      },
+      "expected": false
+    },
+    {
+      "name": "razorpay, no signature headers",
+      "provider": "razorpay",
+      "secret": "conformance_razorpay_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "cal",
+      "provider": "cal",
+      "secret": "conformance_cal_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-cal-signature-256": "e504da168578c24be10f729227e61973794ba39711ee55fc6fcb83827120e317"
+      },
+      "expected": true
+    },
+    {
+      "name": "cal, wrong secret",
+      "provider": "cal",
+      "secret": "conformance_cal_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-cal-signature-256": "e504da168578c24be10f729227e61973794ba39711ee55fc6fcb83827120e317"
+      },
+      "expected": false
+    },
+    {
+      "name": "cal, changed body",
+      "provider": "cal",
+      "secret": "conformance_cal_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-cal-signature-256": "e504da168578c24be10f729227e61973794ba39711ee55fc6fcb83827120e317"
+      },
+      "expected": false
+    },
+    {
+      "name": "cal, no signature headers",
+      "provider": "cal",
+      "secret": "conformance_cal_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "intercom",
+      "provider": "intercom",
+      "secret": "conformance_intercom_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature": "sha1=1bf257f654bf442b3a1018f6f47744185d523895"
+      },
+      "expected": true
+    },
+    {
+      "name": "intercom, wrong secret",
+      "provider": "intercom",
+      "secret": "conformance_intercom_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature": "sha1=1bf257f654bf442b3a1018f6f47744185d523895"
+      },
+      "expected": false
+    },
+    {
+      "name": "intercom, changed body",
+      "provider": "intercom",
+      "secret": "conformance_intercom_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-hub-signature": "sha1=1bf257f654bf442b3a1018f6f47744185d523895"
+      },
+      "expected": false
+    },
+    {
+      "name": "intercom, no signature headers",
+      "provider": "intercom",
+      "secret": "conformance_intercom_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "telegram",
+      "provider": "telegram",
+      "secret": "conformance_telegram_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-telegram-bot-api-secret-token": "conformance_telegram_secret"
+      },
+      "expected": true
+    },
+    {
+      "name": "telegram, wrong secret",
+      "provider": "telegram",
+      "secret": "conformance_telegram_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-telegram-bot-api-secret-token": "conformance_telegram_secret"
+      },
+      "expected": false
+    },
+    {
+      "name": "telegram, changed body",
+      "provider": "telegram",
+      "secret": "conformance_telegram_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-telegram-bot-api-secret-token": "conformance_telegram_secret"
+      },
+      "expected": true
+    },
+    {
+      "name": "telegram, no signature headers",
+      "provider": "telegram",
+      "secret": "conformance_telegram_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "square",
+      "provider": "square",
+      "secret": "conformance_square_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-square-hmacsha256-signature": "lTc2Al7Sg7WCKeZcPW5RlaaQTzqgfiq1y196dqnd98I="
+      },
+      "expected": true
+    },
+    {
+      "name": "square, wrong secret",
+      "provider": "square",
+      "secret": "conformance_square_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-square-hmacsha256-signature": "lTc2Al7Sg7WCKeZcPW5RlaaQTzqgfiq1y196dqnd98I="
+      },
+      "expected": false
+    },
+    {
+      "name": "square, changed body",
+      "provider": "square",
+      "secret": "conformance_square_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-square-hmacsha256-signature": "lTc2Al7Sg7WCKeZcPW5RlaaQTzqgfiq1y196dqnd98I="
+      },
+      "expected": false
+    },
+    {
+      "name": "square, no signature headers",
+      "provider": "square",
+      "secret": "conformance_square_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "hubspot",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "1HJY2HAEk9MYfY/flFnibX5bvULtMQmXEQtb9O0Zmd4="
+      },
+      "expected": true
+    },
+    {
+      "name": "hubspot, wrong secret",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "1HJY2HAEk9MYfY/flFnibX5bvULtMQmXEQtb9O0Zmd4="
+      },
+      "expected": false
+    },
+    {
+      "name": "hubspot, changed body",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "1HJY2HAEk9MYfY/flFnibX5bvULtMQmXEQtb9O0Zmd4="
+      },
+      "expected": false
+    },
+    {
+      "name": "hubspot, no signature headers",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "mailgun",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "headers": {},
+      "expected": true
+    },
+    {
+      "name": "mailgun, wrong secret",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "mailgun, changed token",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"00000000000000000000000000000000000000000000000000\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "mailgun, changed event data still verifies",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"failed\"}}",
+      "headers": {},
+      "expected": true
+    },
+    {
+      "name": "mailgun, no signature",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "calendly",
+      "provider": "calendly",
+      "secret": "conformance_calendly_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "calendly-webhook-signature": "t=1767225600,v1=a980146db270954ce4c2c2995e24c371db31a33086d04fa9867b138360f6e7a3"
+      },
+      "expected": true
+    },
+    {
+      "name": "calendly, wrong secret",
+      "provider": "calendly",
+      "secret": "conformance_calendly_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "calendly-webhook-signature": "t=1767225600,v1=a980146db270954ce4c2c2995e24c371db31a33086d04fa9867b138360f6e7a3"
+      },
+      "expected": false
+    },
+    {
+      "name": "calendly, changed body",
+      "provider": "calendly",
+      "secret": "conformance_calendly_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "calendly-webhook-signature": "t=1767225600,v1=a980146db270954ce4c2c2995e24c371db31a33086d04fa9867b138360f6e7a3"
+      },
+      "expected": false
+    },
+    {
+      "name": "calendly, no signature headers",
+      "provider": "calendly",
+      "secret": "conformance_calendly_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "mux",
+      "provider": "mux",
+      "secret": "conformance_mux_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "mux-signature": "t=1767225600,v1=f5c4a01195a6af7fd1088a48778f131f4ac58eb8ac7b20c129cd44e28e583376"
+      },
+      "expected": true
+    },
+    {
+      "name": "mux, wrong secret",
+      "provider": "mux",
+      "secret": "conformance_mux_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "mux-signature": "t=1767225600,v1=f5c4a01195a6af7fd1088a48778f131f4ac58eb8ac7b20c129cd44e28e583376"
+      },
+      "expected": false
+    },
+    {
+      "name": "mux, changed body",
+      "provider": "mux",
+      "secret": "conformance_mux_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "mux-signature": "t=1767225600,v1=f5c4a01195a6af7fd1088a48778f131f4ac58eb8ac7b20c129cd44e28e583376"
+      },
+      "expected": false
+    },
+    {
+      "name": "mux, no signature headers",
+      "provider": "mux",
+      "secret": "conformance_mux_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "sentry",
+      "provider": "sentry",
+      "secret": "conformance_sentry_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "sentry-hook-signature": "f978578d37721e0c826bdb363326a356963798838f1ed6e10f796219dfa5e812"
+      },
+      "expected": true
+    },
+    {
+      "name": "sentry, wrong secret",
+      "provider": "sentry",
+      "secret": "conformance_sentry_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "sentry-hook-signature": "f978578d37721e0c826bdb363326a356963798838f1ed6e10f796219dfa5e812"
+      },
+      "expected": false
+    },
+    {
+      "name": "sentry, changed body",
+      "provider": "sentry",
+      "secret": "conformance_sentry_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "sentry-hook-signature": "f978578d37721e0c826bdb363326a356963798838f1ed6e10f796219dfa5e812"
+      },
+      "expected": false
+    },
+    {
+      "name": "sentry, no signature headers",
+      "provider": "sentry",
+      "secret": "conformance_sentry_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "bitbucket",
+      "provider": "bitbucket",
+      "secret": "conformance_bitbucket_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature": "sha256=328aaccf52987d4241c24057ae7f82b07ad2845d843a28e9918e06e07baf1dd6"
+      },
+      "expected": true
+    },
+    {
+      "name": "bitbucket, wrong secret",
+      "provider": "bitbucket",
+      "secret": "conformance_bitbucket_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hub-signature": "sha256=328aaccf52987d4241c24057ae7f82b07ad2845d843a28e9918e06e07baf1dd6"
+      },
+      "expected": false
+    },
+    {
+      "name": "bitbucket, changed body",
+      "provider": "bitbucket",
+      "secret": "conformance_bitbucket_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-hub-signature": "sha256=328aaccf52987d4241c24057ae7f82b07ad2845d843a28e9918e06e07baf1dd6"
+      },
+      "expected": false
+    },
+    {
+      "name": "bitbucket, no signature headers",
+      "provider": "bitbucket",
+      "secret": "conformance_bitbucket_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "docusign",
+      "provider": "docusign",
+      "secret": "conformance_docusign_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-docusign-signature-1": "kpxbJdmJaim4lIhzIoUlINk2rkf8vORav6hq+WLhCzg=",
+        "x-authorization-digest": "HMACSHA256"
+      },
+      "expected": true
+    },
+    {
+      "name": "docusign, wrong secret",
+      "provider": "docusign",
+      "secret": "conformance_docusign_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-docusign-signature-1": "kpxbJdmJaim4lIhzIoUlINk2rkf8vORav6hq+WLhCzg=",
+        "x-authorization-digest": "HMACSHA256"
+      },
+      "expected": false
+    },
+    {
+      "name": "docusign, changed body",
+      "provider": "docusign",
+      "secret": "conformance_docusign_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "x-docusign-signature-1": "kpxbJdmJaim4lIhzIoUlINk2rkf8vORav6hq+WLhCzg=",
+        "x-authorization-digest": "HMACSHA256"
+      },
+      "expected": false
+    },
+    {
+      "name": "docusign, no signature headers",
+      "provider": "docusign",
+      "secret": "conformance_docusign_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "adyen",
+      "provider": "adyen",
+      "secret": "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"live\":\"false\",\"notificationItems\":[{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":2000},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2026-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\",\"additionalData\":{\"hmacSignature\":\"8PkRjf2Ies1KF0xa0YX6zKUSUOq0tZhIe5NUxSag9Wg=\"}}}]}",
+      "headers": {},
+      "expected": true
+    },
+    {
+      "name": "adyen, wrong secret",
+      "provider": "adyen",
+      "secret": "0000000000000000000000000000000000000000000000000000000000000000",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"live\":\"false\",\"notificationItems\":[{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":2000},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2026-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\",\"additionalData\":{\"hmacSignature\":\"8PkRjf2Ies1KF0xa0YX6zKUSUOq0tZhIe5NUxSag9Wg=\"}}}]}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "adyen, changed amount",
+      "provider": "adyen",
+      "secret": "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"live\":\"false\",\"notificationItems\":[{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":1},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2026-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\",\"additionalData\":{\"hmacSignature\":\"8PkRjf2Ies1KF0xa0YX6zKUSUOq0tZhIe5NUxSag9Wg=\"}}}]}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "adyen, changed field outside the signature still verifies",
+      "provider": "adyen",
+      "secret": "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"live\":\"false\",\"notificationItems\":[{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":2000},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2027-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\",\"additionalData\":{\"hmacSignature\":\"8PkRjf2Ies1KF0xa0YX6zKUSUOq0tZhIe5NUxSag9Wg=\"}}}]}",
+      "headers": {},
+      "expected": true
+    },
+    {
+      "name": "adyen, no signature",
+      "provider": "adyen",
+      "secret": "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"live\":\"false\",\"notificationItems\":[{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":2000},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2026-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\"}}]}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "adyen, one unsigned item in a batch",
+      "provider": "adyen",
+      "secret": "44782DEF547AAA06C910C43932B1EB0C71FC68D9D0C057550C48EC2ACF6BA056",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"live\":\"false\",\"notificationItems\":[{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":2000},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2026-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\",\"additionalData\":{\"hmacSignature\":\"8PkRjf2Ies1KF0xa0YX6zKUSUOq0tZhIe5NUxSag9Wg=\"}}},{\"NotificationRequestItem\":{\"amount\":{\"currency\":\"EUR\",\"value\":2000},\"eventCode\":\"AUTHORISATION\",\"eventDate\":\"2026-01-01T00:00:00+01:00\",\"merchantAccountCode\":\"AcmeECOM\",\"merchantReference\":\"order-1001\",\"pspReference\":\"7914073381342284\",\"success\":\"true\"}}]}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "resend",
+      "provider": "resend",
+      "secret": "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,DEIYqhgDmUSC9N8cdsgo1od202WanKSCdebfIXvt6Vg="
+      },
+      "expected": true
+    },
+    {
+      "name": "resend, wrong secret",
+      "provider": "resend",
+      "secret": "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,DEIYqhgDmUSC9N8cdsgo1od202WanKSCdebfIXvt6Vg="
+      },
+      "expected": false
+    },
+    {
+      "name": "resend, changed body",
+      "provider": "resend",
+      "secret": "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,DEIYqhgDmUSC9N8cdsgo1od202WanKSCdebfIXvt6Vg="
+      },
+      "expected": false
+    },
+    {
+      "name": "resend, no signature headers",
+      "provider": "resend",
+      "secret": "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "workos",
+      "provider": "workos",
+      "secret": "conformance_workos_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "workos-signature": "t=1767225600000, v1=e4c6d716ca92c1f5e681b3e25f5eb5b1cde1a5a0648a05f7e89d1fd3a45d3d9a"
+      },
+      "expected": true
+    },
+    {
+      "name": "workos, wrong secret",
+      "provider": "workos",
+      "secret": "conformance_workos_secret-wrong",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "workos-signature": "t=1767225600000, v1=e4c6d716ca92c1f5e681b3e25f5eb5b1cde1a5a0648a05f7e89d1fd3a45d3d9a"
+      },
+      "expected": false
+    },
+    {
+      "name": "workos, changed body",
+      "provider": "workos",
+      "secret": "conformance_workos_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}} ",
+      "headers": {
+        "workos-signature": "t=1767225600000, v1=e4c6d716ca92c1f5e681b3e25f5eb5b1cde1a5a0648a05f7e89d1fd3a45d3d9a"
+      },
+      "expected": false
+    },
+    {
+      "name": "workos, no signature headers",
+      "provider": "workos",
+      "secret": "conformance_workos_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {},
+      "expected": false
+    },
+    {
+      "name": "stripe, empty body",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "",
+      "headers": {
+        "stripe-signature": "t=1767225600,v1=6bdcdca576d6af3e4dc59b83c4ed949542a7b8cfd36dac8710ee93bae5073b6f"
+      },
+      "expected": true
+    },
+    {
+      "name": "twilio, repeated parameters sort by name, then value",
+      "provider": "twilio",
+      "secret": "conformance_twilio_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "To=%2B14155559876&MediaUrl0=b&MediaUrl0=a&AccountSid=AC123",
+      "headers": {
+        "x-twilio-signature": "NvMKh/KAxl0sx3EW4FTPvxgORIo="
+      },
+      "expected": true
+    },
+    {
+      "name": "hubspot, reserved characters in the URL are decoded before signing",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/hub%3Aspot?next=https%3A%2F%2Fexample.com%2Fdone%40home&q=%7Bx%7D",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "8WMujrP3DVkqyUGqU9PigU5Mq9ehljIfsFll4W+5cp8="
+      },
+      "expected": true
+    },
+    {
+      "name": "hubspot, the method is signed",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "PUT",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "vPHAP8Z72rbSiL7WV9zTzPdeLCkR49AE2bGbpyteDQU="
+      },
+      "expected": true
+    },
+    {
+      "name": "hubspot, all twelve uppercase escapes are decoded and lowercase ones are not",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/hooks/%3A%2F%3F%40%21%24%27%28%29%2A%2C%3B?next=%3a%2f%20",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "LTH0N1hqEtxh8MrBbK3BeTkj+1R5K49Ttrk2+TtNE1Y="
+      },
+      "expected": true
+    },
+    {
+      "name": "mailgun, the timestamp and token in the body are signed, not the timestamp option",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767229260000,
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "headers": {},
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, base64 secret without padding",
+      "provider": "standard-webhooks",
+      "secret": "whsec_dGVzdC1zZWNyZXQ",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,zDBvezmGoh/R4A8eh5I8JjWkIILmG7GpdHXksAr3y0E="
+      },
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, a secret without the whsec_ prefix is still base64",
+      "provider": "standard-webhooks",
+      "secret": "MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, a secret that is not base64 signs with its UTF-8 bytes, prefix included",
+      "provider": "standard-webhooks",
+      "secret": "whsec_polar-raw_secret!",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,1Bs0/LoX2A3hCU2f+BamvwHj91o2tbsbzfzACjOqoJ8="
+      },
+      "expected": true
+    },
+    {
+      "name": "github, GitHub's documented example",
+      "provider": "github",
+      "secret": "It's a Secret to Everybody",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "Hello, World!",
+      "headers": {
+        "x-hub-signature-256": "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
+      },
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, Svix's documented example",
+      "provider": "standard-webhooks",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1614265390000,
+      "body": "{\"test\": 2432232314}",
+      "headers": {
+        "webhook-id": "msg_p5jXN8AQM9LWM0D4loKWxJek",
+        "webhook-timestamp": "1614265330",
+        "webhook-signature": "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="
+      },
+      "expected": true
+    },
+    {
+      "name": "resend, the svix-webhooks library's example",
+      "provider": "resend",
+      "secret": "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1649367613000,
+      "body": "{\"email\":\"test@example.com\",\"username\":\"test_user\"}",
+      "headers": {
+        "svix-id": "msg_27UH4WbU6Z5A5EzD8u03UvzRbpk",
+        "svix-timestamp": "1649367553",
+        "svix-signature": "v1,tZ1I4/hDygAJgO5TYxiSd6Sd0kDW6hPenDe+bTa3Kkw="
+      },
+      "expected": true
+    },
+    {
+      "name": "stripe, any v1 signature in the header may match",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "stripe-signature": "t=1767225600,v1=0000000000000000000000000000000000000000000000000000000000000000,v1=b25c39051d6ce78e36562b139d0161ada11cefbcae031922ef0cc6f75de1ed03"
+      },
+      "expected": true
+    },
+    {
+      "name": "stripe, a v0 signature is not checked",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "stripe-signature": "t=1767225600,v0=b25c39051d6ce78e36562b139d0161ada11cefbcae031922ef0cc6f75de1ed03"
+      },
+      "expected": false
+    },
+    {
+      "name": "stripe, no age limit: a day-old signature verifies",
+      "provider": "stripe",
+      "secret": "conformance_stripe_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767312000000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "stripe-signature": "t=1767225600,v1=b25c39051d6ce78e36562b139d0161ada11cefbcae031922ef0cc6f75de1ed03"
+      },
+      "expected": true
+    },
+    {
+      "name": "github, header names match in any case",
+      "provider": "github",
+      "secret": "conformance_github_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "X-Hub-Signature-256": "sha256=a8405b1d20244c84f39b3573f2199ec8eac25527e5a1ca66393e337a013c9c27"
+      },
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, any signature in a space-separated list may match",
+      "provider": "standard-webhooks",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,b2xkLXNlY3JldC1zaWduYXR1cmU= v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "clerk, only the svix-* headers, as Clerk sends them",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "clerk, only the webhook-* headers",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "linear, bare hex without sha256=, as Linear sends it",
+      "provider": "linear",
+      "secret": "conformance_linear_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "linear-signature": "5b8972750bd4ac7eaf4b3c9c030be27d6ab09a53658ba8723e3c240a5974b688"
+      },
+      "expected": true
+    },
+    {
+      "name": "twilio, a different URL",
+      "provider": "twilio",
+      "secret": "conformance_twilio_secret",
+      "url": "https://example.com/webhooks/acme",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "CallSid=CA1234567890ABCDE&From=%2B14155550123&To=%2B14155559876&Body=Caf%C3%A9+%E2%9C%93",
+      "headers": {
+        "x-twilio-signature": "bMobuLvo8Weu6oTeJk4D3v/3OtQ="
+      },
+      "expected": false
+    },
+    {
+      "name": "hubspot, a signature older than five minutes",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225901000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "1HJY2HAEk9MYfY/flFnibX5bvULtMQmXEQtb9O0Zmd4="
+      },
+      "expected": false
+    },
+    {
+      "name": "hubspot, a different method",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "PUT",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "1HJY2HAEk9MYfY/flFnibX5bvULtMQmXEQtb9O0Zmd4="
+      },
+      "expected": false
+    },
+    {
+      "name": "discord",
+      "provider": "discord",
+      "publicKey": "ad4547997dd68ce739d1fd35c45d131f0d58f58c13229bf04800cafd3f366aa0",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"type\":1,\"id\":\"1294763522360823808\",\"application_id\":\"1294763418115096576\",\"version\":1}",
+      "headers": {
+        "x-signature-ed25519": "84792cb8f855aeb33db536f5f707774f932fc5fd88825a399ae6f433f0da40637e1c173fa20a1f43e6a27479104bb6184b274d37aef45fffdada4c840c76d00b",
+        "x-signature-timestamp": "1767225600"
+      },
+      "expected": true
+    },
+    {
+      "name": "discord, changed body",
+      "provider": "discord",
+      "publicKey": "ad4547997dd68ce739d1fd35c45d131f0d58f58c13229bf04800cafd3f366aa0",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"type\":1,\"id\":\"1294763522360823808\",\"application_id\":\"1294763418115096576\",\"version\":1} ",
+      "headers": {
+        "x-signature-ed25519": "84792cb8f855aeb33db536f5f707774f932fc5fd88825a399ae6f433f0da40637e1c173fa20a1f43e6a27479104bb6184b274d37aef45fffdada4c840c76d00b",
+        "x-signature-timestamp": "1767225600"
+      },
+      "expected": false
+    },
+    {
+      "name": "discord, another application's public key",
+      "provider": "discord",
+      "publicKey": "08403ef43393fdd926f4b5a9dbd00cb3e4b4312a4d99103531bc3efded10ad40",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"type\":1,\"id\":\"1294763522360823808\",\"application_id\":\"1294763418115096576\",\"version\":1}",
+      "headers": {
+        "x-signature-ed25519": "84792cb8f855aeb33db536f5f707774f932fc5fd88825a399ae6f433f0da40637e1c173fa20a1f43e6a27479104bb6184b274d37aef45fffdada4c840c76d00b",
+        "x-signature-timestamp": "1767225600"
+      },
+      "expected": false
+    },
+    {
+      "name": "discord, changed timestamp",
+      "provider": "discord",
+      "publicKey": "ad4547997dd68ce739d1fd35c45d131f0d58f58c13229bf04800cafd3f366aa0",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"type\":1,\"id\":\"1294763522360823808\",\"application_id\":\"1294763418115096576\",\"version\":1}",
+      "headers": {
+        "x-signature-ed25519": "84792cb8f855aeb33db536f5f707774f932fc5fd88825a399ae6f433f0da40637e1c173fa20a1f43e6a27479104bb6184b274d37aef45fffdada4c840c76d00b",
+        "x-signature-timestamp": "1767225601"
+      },
+      "expected": false
+    },
+    {
+      "name": "paypal",
+      "provider": "paypal",
+      "secret": "1JE4291016473214C",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}}",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": true
+    },
+    {
+      "name": "paypal, changed body",
+      "provider": "paypal",
+      "secret": "1JE4291016473214C",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}} ",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": false
+    },
+    {
+      "name": "paypal, another webhook id",
+      "provider": "paypal",
+      "secret": "8PT597110X687430LKGECATA",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}}",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": false
+    },
+    {
+      "name": "paypal, a certificate URL outside PayPal is refused",
+      "provider": "paypal",
+      "secret": "1JE4291016473214C",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}}",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://example.com/v1/notifications/certs/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": false
+    },
+    {
+      "name": "paypal, a PayPal host outside /v1/notifications/certs/ is refused",
+      "provider": "paypal",
+      "secret": "1JE4291016473214C",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}}",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/other/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": false
+    },
+    {
+      "name": "paypal, an algorithm other than SHA256withRSA is refused",
+      "provider": "paypal",
+      "secret": "1JE4291016473214C",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}}",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA1withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": false
+    }
+  ]
+}

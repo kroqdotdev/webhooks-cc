@@ -1,5 +1,9 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { listPaginatedRequestsForEndpointByUser } from "@/lib/supabase/requests";
+import {
+  listPaginatedRequestsForEndpointByUser,
+  parseExtractsParam,
+  withEmailExtracts,
+} from "@/lib/supabase/requests";
 import { isRequestKind } from "@/lib/supabase/search";
 import { reportError } from "@/lib/observability";
 
@@ -21,6 +25,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (kind !== null && !isRequestKind(kind)) {
     return Response.json({ error: "invalid_kind" }, { status: 400 });
   }
+  const extracts = parseExtractsParam(url.searchParams.get("extracts"));
+  if (extracts === null) {
+    return Response.json({ error: "invalid_extracts" }, { status: 400 });
+  }
 
   try {
     const page = await listPaginatedRequestsForEndpointByUser({
@@ -35,7 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    return Response.json(page);
+    return Response.json(extracts ? { ...page, items: await withEmailExtracts(page.items) } : page);
   } catch (error) {
     if (error instanceof Error && error.message === "invalid_cursor") {
       return Response.json({ error: "invalid_cursor" }, { status: 400 });

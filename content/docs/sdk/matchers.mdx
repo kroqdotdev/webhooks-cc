@@ -307,7 +307,7 @@ Unsubscribe, preference, privacy, terms, help and support, tracking, and social 
 
 ### extractFromEmail
 
-Every code and link found in a parsed email, best first: action links come before the rest, in the order they appear, up to 20 links.
+Every code and link found in a parsed email: up to 20 codes in the order they appear, the subject first, and up to 20 links, action links before the rest, each in the order they appear.
 
 ```ts
 extractFromEmail(email: Pick<EmailCapture, "subject" | "text" | "html">): EmailExtracts

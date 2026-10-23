@@ -9,6 +9,7 @@ import {
 import {
   listPaginatedRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
+  withEmailExtracts,
 } from "@/lib/supabase/requests";
 import { searchRequestsForUser } from "@/lib/supabase/search";
 import { getUsageForUser } from "@/lib/supabase/usage";
@@ -103,6 +104,9 @@ describe("captured emails in the dashboard's data", () => {
     const found = extractFromEmail(request.email!);
     expect(found.codes).toEqual([code]);
     expect(found.links[0]?.url).toBe("https://webhooks.cc/docs/email-capture");
+    // What the API returns with it, for SDKs that do not extract themselves.
+    const [served] = await withEmailExtracts(requests!);
+    expect(served.extracts).toEqual(found);
   });
 
   it("returns kind and email from search too", async () => {
@@ -132,6 +136,10 @@ describe("captured emails in the dashboard's data", () => {
     });
     expect(updated?.showEmailExtracts).toBe(false);
     expect((await getEndpointBySlugForUser(userId, slug))?.showEmailExtracts).toBe(false);
+    const [served] = await withEmailExtracts(
+      (await listRequestsForEndpointByUser({ userId, slug, kind: "email" }))!
+    );
+    expect(served.extracts).toBeNull();
   });
 
   it("counts emails per billing period, whatever time the email carries", async () => {

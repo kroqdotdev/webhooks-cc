@@ -1,5 +1,9 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { getRequestByIdForUser } from "@/lib/supabase/requests";
+import {
+  getRequestByIdForUser,
+  parseExtractsParam,
+  withEmailExtracts,
+} from "@/lib/supabase/requests";
 import { reportError } from "@/lib/observability";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -7,6 +11,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!auth.success) return auth.response;
 
   const { id } = await params;
+  const extracts = parseExtractsParam(new URL(request.url).searchParams.get("extracts"));
+  if (extracts === null) {
+    return Response.json({ error: "invalid_extracts" }, { status: 400 });
+  }
 
   try {
     const data = await getRequestByIdForUser(auth.userId, id);
@@ -14,7 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    return Response.json(data);
+    return Response.json(extracts ? (await withEmailExtracts([data]))[0] : data);
   } catch (error) {
     reportError("Failed to get request", error);
     return Response.json({ error: "Failed to get request" }, { status: 500 });

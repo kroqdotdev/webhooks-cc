@@ -1794,6 +1794,7 @@ export class WebhooksCC {
         method: options.method,
         headers: options.headers,
         timestamp: options.timestamp,
+        messageId: options.messageId,
       });
 
       return {
@@ -1871,6 +1872,7 @@ export class WebhooksCC {
         method: options.method,
         headers: options.headers,
         timestamp: options.timestamp,
+        messageId: options.messageId,
       });
 
       const method = (sendOptions.method ?? "POST").toUpperCase();
