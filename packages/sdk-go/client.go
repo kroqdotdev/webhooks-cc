@@ -253,12 +253,33 @@ func (c *Client) timeoutOr(parent, call context.Context, err error) error {
 
 var leadingDigits = regexp.MustCompile(`^\s*(\d+)`)
 
-func intHeader(header http.Header, name string) (int64, bool) {
+// headerDigits returns the leading digits of a header, if it starts with any.
+func headerDigits(header http.Header, name string) (string, bool) {
 	match := leadingDigits.FindStringSubmatch(header.Get(name))
 	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
+
+// headerInt reads a header as a count or a number of seconds. Anything past
+// 32 bits reads as absent, so the value fits an int and a time.Duration.
+func headerInt(header http.Header, name string) (int, bool) {
+	digits, ok := headerDigits(header, name)
+	if !ok {
 		return 0, false
 	}
-	value, err := strconv.ParseInt(match[1], 10, 64)
+	value, err := strconv.ParseInt(digits, 10, 32)
+	return int(value), err == nil
+}
+
+// headerInt64 reads a header as a 64-bit number, such as a Unix time.
+func headerInt64(header http.Header, name string) (int64, bool) {
+	digits, ok := headerDigits(header, name)
+	if !ok {
+		return 0, false
+	}
+	value, err := strconv.ParseInt(digits, 10, 64)
 	return value, err == nil
 }
 
@@ -279,14 +300,14 @@ func errorFromResponse(response *apiResponse) *Error {
 			apiErr.Message = strings.TrimSpace(message + " Use Endpoints.List to see your endpoints")
 		}
 	case http.StatusTooManyRequests:
-		if seconds, ok := intHeader(response.header, "Retry-After"); ok {
+		if seconds, ok := headerInt(response.header, "Retry-After"); ok {
 			apiErr.RetryAfter = time.Duration(seconds) * time.Second
 		}
-		limit, okLimit := intHeader(response.header, "X-RateLimit-Limit")
-		remaining, okRemaining := intHeader(response.header, "X-RateLimit-Remaining")
-		reset, okReset := intHeader(response.header, "X-RateLimit-Reset")
+		limit, okLimit := headerInt(response.header, "X-RateLimit-Limit")
+		remaining, okRemaining := headerInt(response.header, "X-RateLimit-Remaining")
+		reset, okReset := headerInt64(response.header, "X-RateLimit-Reset")
 		if okLimit && okRemaining && okReset {
-			apiErr.RateLimit = &RateLimit{Limit: int(limit), Remaining: int(remaining), Reset: reset}
+			apiErr.RateLimit = &RateLimit{Limit: limit, Remaining: remaining, Reset: reset}
 		}
 		if apiErr.RetryAfter > 0 {
 			apiErr.Message = fmt.Sprintf("rate limited, retry after %s", apiErr.RetryAfter)
