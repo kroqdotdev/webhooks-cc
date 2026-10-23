@@ -1480,7 +1480,7 @@ describe("conformance vectors", () => {
   it("durations.json", async () => {
     await expect(
       file(
-        "Duration options (timeouts, poll intervals): a number is milliseconds; a string is trimmed, then must be ASCII digits with an optional fraction, optionally followed by spaces and one of ms, s, m, h or d (lowercase). expected.ms is the result; expected.error means the input is refused.",
+        "Duration options (timeouts, poll intervals): a number is milliseconds; a string is trimmed, then must be ASCII digits with an optional fraction, optionally followed by whitespace and one of ms, s, m, h or d (lowercase). expected.ms is the result; expected.error means the input is refused.",
         buildDurationVectors()
       )
     ).toMatchFileSnapshot("../../conformance/durations.json");
