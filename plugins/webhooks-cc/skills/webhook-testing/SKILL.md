@@ -1,6 +1,6 @@
 ---
 name: webhook-testing
-description: Test webhook handlers and email flows against real, correctly signed traffic with webhooks.cc instead of guessing payloads or disabling signature checks. Use when writing, changing, or debugging code that receives webhooks (Stripe, GitHub, Shopify, Clerk, Twilio, Slack, Paddle and 30 more providers, or any HTTP callback), when you need the exact shape of a provider's payload or types for it, when a test must verify a webhook signature or a retry path, or when a test has to read a signup, magic-link, or one-time-code email.
+description: Test webhook handlers and email flows against real, correctly signed traffic with webhooks.cc instead of guessing payloads or disabling signature checks. Use when writing, changing, or debugging code that receives webhooks (Stripe, GitHub, Shopify, Clerk, Twilio, Slack, Paddle and 27 more providers, or any HTTP callback), when you need the exact shape of a provider's payload or types for it, when a test must verify a webhook signature or a retry path, or when a test has to read a signup, magic-link, or one-time-code email.
 ---
 
 # Webhook testing with webhooks.cc

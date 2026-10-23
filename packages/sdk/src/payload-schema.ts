@@ -47,6 +47,11 @@ export interface RequestSchemaResult {
 const DEFAULT_NAME = "WebhookPayload";
 /** Values nested deeper than this are typed as unknown. */
 const MAX_DEPTH = 32;
+/**
+ * Arrays directly inside arrays past this many levels are typed as unknown:
+ * TypeScript gives up inferring a longer chain of z.array() calls.
+ */
+const MAX_ARRAY_NESTING = 16;
 
 interface Shape {
   /** Values seen at this position, nulls included. */
@@ -83,7 +88,7 @@ function emptyShape(): Shape {
   };
 }
 
-function observe(shape: Shape, value: unknown, depth: number): void {
+function observe(shape: Shape, value: unknown, depth: number, arrayNesting = 0): void {
   shape.count++;
   if (value === null || value === undefined) {
     shape.null = true;
@@ -107,13 +112,14 @@ function observe(shape: Shape, value: unknown, depth: number): void {
       shape.deep = true;
       return;
   }
-  if (depth >= MAX_DEPTH) {
+  const isArray = Array.isArray(value);
+  if (depth >= MAX_DEPTH || (isArray && arrayNesting >= MAX_ARRAY_NESTING)) {
     shape.deep = true;
     return;
   }
-  if (Array.isArray(value)) {
+  if (isArray) {
     shape.array ??= emptyShape();
-    for (const item of value) observe(shape.array, item, depth + 1);
+    for (const item of value) observe(shape.array, item, depth + 1, arrayNesting + 1);
     return;
   }
   shape.object ??= { count: 0, fields: new Map() };
@@ -519,12 +525,10 @@ function pythonFieldName(key: string, taken: Set<string>, classNames: Set<string
     .replace(/_+$/, "");
   if (!name) name = "field";
   if (/^[0-9]/.test(name)) name = `field_${name}`;
-  if (
-    PYTHON_KEYWORDS.has(name) ||
-    PYTHON_SHADOWED.has(name) ||
-    classNames.has(name) ||
-    name.startsWith("model_")
-  ) {
+  // Pydantic reserves names starting with model_, so a suffix would not help.
+  if (name.startsWith("model_")) {
+    name = `field_${name}`;
+  } else if (PYTHON_KEYWORDS.has(name) || PYTHON_SHADOWED.has(name) || classNames.has(name)) {
     name = `${name}_`;
   }
   let candidate = name;

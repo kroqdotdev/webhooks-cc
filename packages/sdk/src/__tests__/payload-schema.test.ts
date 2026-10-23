@@ -76,6 +76,10 @@ function typeErrors(code: string, name: string, samples: unknown[]): string[] {
     noEmit: true,
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
+    // Finds zod in node_modules, so Zod output is checked with its real types.
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    // zod's declarations expect DOM types this lib leaves out.
+    skipLibCheck: true,
     types: [],
     lib: ["lib.es2022.d.ts"],
   };
@@ -208,7 +212,10 @@ describe("generatePayloadSchema", () => {
     );
     expect(code).toContain('    class_: str | None = Field(default=None, alias="class")');
     expect(code).toContain('    json_: bool | None = Field(default=None, alias="json")');
-    expect(code).toContain('    model_id_: str | None = Field(default=None, alias="model_id")');
+    // Pydantic warns about any field starting with model_, whatever follows.
+    expect(code).toContain(
+      '    field_model_id: str | None = Field(default=None, alias="model_id")'
+    );
     expect(code).toContain('    field_123: int | None = Field(default=None, alias="123")');
     // A field named like a generated class would shadow it in the class body.
     expect(code).toContain('    Address_: Address | None = Field(default=None, alias="Address")');
@@ -291,6 +298,15 @@ describe("generatePayloadSchema", () => {
     const code = generatePayloadSchema([value]);
     expect(code).toContain("next: unknown;");
     expect(typeErrors(code, "WebhookPayload", [value])).toEqual([]);
+  });
+
+  it("stops nesting arrays before Zod's inferred type gets too deep for TypeScript", () => {
+    let value: unknown = "leaf";
+    for (let i = 0; i < 40; i++) value = [value];
+    for (const format of ["typescript", "zod"] as const) {
+      const code = generatePayloadSchema([value], { format });
+      expect(typeErrors(code, "WebhookPayload", [value]), format).toEqual([]);
+    }
   });
 });
 
