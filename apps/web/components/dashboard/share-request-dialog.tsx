@@ -208,7 +208,8 @@ export function ShareRequestDialog({
                     key={link.id}
                     className="flex items-center gap-2 rounded-md border-strong border-line px-2 py-1.5"
                   >
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                    {/* ph-no-capture keeps the token out of session recordings. */}
+                    <span className="ph-no-capture min-w-0 flex-1 truncate font-mono text-xs">
                       /s/{link.token}
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">

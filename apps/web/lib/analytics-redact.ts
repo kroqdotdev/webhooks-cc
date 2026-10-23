@@ -1,14 +1,16 @@
 /**
  * Share links carry their capability in the path (/s/{token}), so analytics
  * must never see one: page views, referrers and autocaptured link targets
- * all hold URLs. Every string in an event's properties is rewritten.
+ * all hold URLs. Every string in an event's properties is rewritten, the same
+ * way StatOSS events are (lib/observability-redact.ts).
  */
 
-const SHARE_TOKEN_IN_URL = /\/s\/[A-Za-z0-9_-]{22,64}/g;
-export const REDACTED_SHARE_PATH = "/s/[token]";
+import { REDACTED_SHARE_PATH, redactSharePaths } from "./observability-redact";
+
+export { REDACTED_SHARE_PATH };
 
 function redactValue(value: unknown, depth: number): unknown {
-  if (typeof value === "string") return value.replace(SHARE_TOKEN_IN_URL, REDACTED_SHARE_PATH);
+  if (typeof value === "string") return redactSharePaths(value);
   if (depth > 6 || value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map((item) => redactValue(item, depth + 1));
   const out: Record<string, unknown> = {};

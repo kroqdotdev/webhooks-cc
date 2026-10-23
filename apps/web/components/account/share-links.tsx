@@ -115,7 +115,8 @@ export function ShareLinks({ accessToken }: { accessToken: string | null }) {
               >
                 <div className="min-w-0 space-y-0.5">
                   <p className="truncate text-sm font-medium">
-                    <Link href={`/s/${link.token}`} className="hover:underline">
+                    {/* ph-no-capture keeps the token out of session recordings. */}
+                    <Link href={`/s/${link.token}`} className="ph-no-capture hover:underline">
                       {title}
                     </Link>
                   </p>
