@@ -61,6 +61,14 @@ const nextConfig: NextConfig = {
         source: "/dashboard/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
+      {
+        // GoTrue fetches its email templates from here, through Cloudflare.
+        // no-transform keeps Cloudflare's rewrites out of them: its email
+        // obfuscation turned support@webhooks.cc into a "[email protected]"
+        // link plus a script, which would have gone out in the email.
+        source: "/email-templates/:file",
+        headers: [{ key: "Cache-Control", value: "public, max-age=0, no-transform" }],
+      },
     ];
   },
   async redirects() {
