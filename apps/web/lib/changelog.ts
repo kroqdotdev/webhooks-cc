@@ -28,7 +28,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Email Codes and Links in the API",
     track: "web",
     items: [
-      "Add extracts=true to the request list, the paginated list or a single request, and each email carries extracts: the one-time codes and links found in it, best first, the same ones the dashboard shows",
+      "Add extracts=true to the request list, the paginated list or a single request, and each email carries extracts: the one-time codes and links found in it, the same ones the dashboard shows",
       "A test in any language can read the code or confirm link from the response without parsing the message; extracts is null when the endpoint's Show codes and links found in emails is off",
       "Code detection keeps at most 20 codes per email, so an email stuffed with numbers stays fast to read in the dashboard, forwarding and the API",
     ],

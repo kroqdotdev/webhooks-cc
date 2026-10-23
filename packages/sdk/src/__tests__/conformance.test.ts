@@ -1327,6 +1327,12 @@ const MATCHER_CASES: MatcherCase[] = [
     expected: true,
   },
   {
+    name: "email, to that is in neither To, Cc nor the delivered-to address",
+    request: "emailBcc",
+    matcher: m("matchEmail", { to: "someone@else.test" }),
+    expected: false,
+  },
+  {
     name: "email, to also matches the To header",
     request: "emailBcc",
     matcher: m("matchEmail", { to: "team@acme.test" }),
@@ -1474,7 +1480,7 @@ describe("conformance vectors", () => {
   it("durations.json", async () => {
     await expect(
       file(
-        "Duration options (timeouts, poll intervals): a number is milliseconds; a string is decimal digits with an optional fraction, optionally followed by ms, s, m, h or d, and is trimmed first. expected.ms is the result; expected.error means the input is refused.",
+        "Duration options (timeouts, poll intervals): a number is milliseconds; a string is trimmed, then must be ASCII digits with an optional fraction, optionally followed by spaces and one of ms, s, m, h or d (lowercase). expected.ms is the result; expected.error means the input is refused.",
         buildDurationVectors()
       )
     ).toMatchFileSnapshot("../../conformance/durations.json");

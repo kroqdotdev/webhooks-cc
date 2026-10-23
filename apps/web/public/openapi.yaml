@@ -1956,7 +1956,7 @@ components:
           description: |
             Only with `extracts=true`, and only on a captured email: the one-time codes and links
             found in it, as the dashboard shows them. Null when the endpoint's `showEmailExtracts`
-            is off or the message could not be parsed.
+            is off.
 
     StreamRequest:
       type: object
@@ -2121,13 +2121,14 @@ components:
       type: object
       required: [codes, links]
       description: |
-        One-time codes and links found in an email, best first. Codes are only taken when a word
-        such as "code" or "verification" sits next to them. Links that look like what the email
-        asks you to click (confirm, verify, reset, sign in) come first; unsubscribe, tracking and
-        social links are left out.
+        One-time codes and links found in an email. Codes are only taken when a word such as
+        "code" or "verification" sits next to them, and come in the order they appear, the subject
+        first. Links that look like what the email asks you to click (confirm, verify, reset, sign
+        in) come first; unsubscribe, tracking and social links are left out.
       properties:
         codes:
           type: array
+          maxItems: 20
           items:
             type: string
           description: Codes with spaces and dashes removed, such as `482913`

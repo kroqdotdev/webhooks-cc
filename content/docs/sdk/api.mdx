@@ -1202,7 +1202,7 @@ interface EmailCapture {
 
 // What extractFromEmail() returns
 interface EmailExtracts {
-  codes: string[]; // best first, spaces and dashes removed
+  codes: string[]; // in order of appearance, subject first; spaces and dashes removed
   links: { url: string; label: string | null; action: boolean }[]; // action links first
 }
 

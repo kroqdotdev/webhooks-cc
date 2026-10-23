@@ -178,8 +178,7 @@ export function parseExtractsParam(value: string | null): boolean | null {
  * dashboard's "Found in this email" shows, computed by the same function, so
  * SDKs in other languages read them instead of reimplementing the extraction.
  * Like forwarding, it honours the endpoint's "Show codes and links found in
- * emails": `extracts` is null when that is off, or when the message could not
- * be parsed.
+ * emails": `extracts` is null when that is off.
  *
  * The routes add it only on `extracts=true`. Up to 20 links can make it tens
  * of kilobytes, which would break the MCP server's output budget and cost the

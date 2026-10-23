@@ -198,7 +198,7 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
 
 `kind` is `email` for [captured emails](/docs/email-capture). Those have `method` set to `EMAIL`, the recipient address as `path`, the original message as `body`, and the parsed message (subject, addresses, text and HTML parts, attachment list, sender checks) as `email`.
 
-Add `extracts=true` to the request list, the paginated list or a single request, and each email also carries `extracts`: the one-time codes and links found in it, best first, the same ones the dashboard shows. A signup or login test usually needs only `extracts.codes[0]` or `extracts.links[0].url`. `extracts` is `null` when the endpoint's `showEmailExtracts` is off or the message could not be parsed; HTTP requests never have it. At most 20 codes and 20 links are returned. Search and the stream do not offer it.
+Add `extracts=true` to the request list, the paginated list or a single request, and each email also carries `extracts`: the one-time codes found in it, in the order they appear, and its links, the one it asks you to click first: the same ones the dashboard shows. A signup or login test usually needs only `extracts.codes[0]` or `extracts.links[0].url`. `extracts` is `null` when the endpoint's `showEmailExtracts` is off; HTTP requests never have it. At most 20 codes and 20 links are returned. Search and the stream do not offer it.
 
 ```json
 "extracts": {

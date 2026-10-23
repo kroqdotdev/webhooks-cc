@@ -968,6 +968,19 @@
       "expected": true
     },
     {
+      "name": "email, to that is in neither To, Cc nor the delivered-to address",
+      "request": "emailBcc",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "to": "someone@else.test"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
       "name": "email, to also matches the To header",
       "request": "emailBcc",
       "matcher": {
