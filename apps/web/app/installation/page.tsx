@@ -8,6 +8,7 @@ import { FloatingNavbar } from "@/components/nav/floating-navbar";
 import { BackButton } from "@/components/nav/back-button";
 import { DocsSidebar } from "@/components/docs/sidebar";
 import { DocsBreadcrumbs } from "@/components/docs/breadcrumbs";
+import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
 
 type Tab = "cli" | "sdk" | "mcp";
 const TABS: Tab[] = ["cli", "sdk", "mcp"];
@@ -260,6 +261,8 @@ console.log(endpoint.url);`}
                     .
                   </p>
                 </section>
+
+                <AgentSkillInstall />
 
                 <section>
                   <h2 className="text-lg font-bold mb-3">One-click install</h2>

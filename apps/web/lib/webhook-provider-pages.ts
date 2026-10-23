@@ -1,5 +1,6 @@
 import { TEMPLATE_METADATA, TEMPLATE_PROVIDERS, type TemplateProvider } from "@webhooks-cc/sdk";
 import { getWebProviderCredentialLabel, getWebProviderInfo } from "./provider-catalog";
+import { hasProviderTestSnippet, PROVIDER_TEST_SNIPPET_ADDED } from "./provider-test-snippet";
 
 export type WebhookProviderCategory =
   "Payments & billing" | "Dev & deploy" | "Communication" | "Commerce & SaaS" | "Identity & data";
@@ -1285,14 +1286,29 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     ? (ALGORITHM_LABELS[resolvedAlgorithm] ?? resolvedAlgorithm)
     : null;
 
+  const label = info?.label ?? provider;
+  const defaultTemplate = "defaultTemplate" in meta ? meta.defaultTemplate : null;
+  // A page that shows the CI test snippet changed when the snippet arrived.
+  const showsSnippet = hasProviderTestSnippet({
+    slug: provider,
+    label,
+    inSdk: true,
+    secretRequired: meta.secretRequired,
+    defaultTemplate,
+  });
+  const updated =
+    showsSnippet && PROVIDER_TEST_SNIPPET_ADDED > editorial.updated
+      ? PROVIDER_TEST_SNIPPET_ADDED
+      : editorial.updated;
+
   return {
     slug: provider,
-    label: info?.label ?? provider,
+    label,
     blurb: editorial.blurb,
     configHint: editorial.configHint,
     category: editorial.category,
     templates: meta.templates,
-    defaultTemplate: "defaultTemplate" in meta ? meta.defaultTemplate : null,
+    defaultTemplate,
     signatureHeader,
     signatureAlgorithm: resolvedAlgorithm,
     signatureAlgorithmLabel,
@@ -1302,7 +1318,7 @@ function buildWebhookProviderPage(provider: TemplateProvider): WebhookProviderPa
     signatureNote: null,
     inSdk: true,
     signatureOptional: false,
-    lastModified: new Date(`${editorial.updated}T00:00:00.000Z`),
+    lastModified: new Date(`${updated}T00:00:00.000Z`),
     seo: PROVIDER_SEO[provider] ?? null,
   };
 }

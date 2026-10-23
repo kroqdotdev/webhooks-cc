@@ -1,0 +1,16 @@
+{
+  "name": "webhooks-cc",
+  "description": "webhooks.cc tools for coding agents",
+  "owner": {
+    "name": "webhooks.cc",
+    "url": "https://webhooks.cc"
+  },
+  "plugins": [
+    {
+      "name": "webhooks-cc",
+      "source": "./plugins/webhooks-cc",
+      "description": "Test webhook handlers and signup emails with real, signed traffic, plus the webhooks.cc MCP server.",
+      "skills": ["./skills/webhook-testing"]
+    }
+  ]
+}

@@ -24,7 +24,11 @@ import {
   WebhooksCCError,
   extractCode,
   extractLink,
+  detectWebhookInfo,
+  generateRequestSchema,
+  PAYLOAD_SCHEMA_FORMATS,
   type EmailRequest,
+  type PayloadSchemaFormat,
   type Request,
   type VerifyProvider,
 } from "@webhooks-cc/sdk";
@@ -231,6 +235,115 @@ export const waitForRequestShape = {
     .optional()
     .describe('Interval between polls, for example "500ms" or "1s"'),
 };
+
+export const payloadSchemaShape = {
+  endpointSlug: z.string().describe("The endpoint slug"),
+  format: z
+    .enum(PAYLOAD_SCHEMA_FORMATS as [PayloadSchemaFormat, ...PayloadSchemaFormat[]])
+    .default("typescript")
+    .describe(
+      'Output: "typescript" interfaces, "zod" schemas, "pydantic" models, or "json-schema"'
+    ),
+  name: z
+    .string()
+    .max(100)
+    .optional()
+    .describe("Root type name (default: from the detected event, else WebhookPayload)"),
+  event: z
+    .string()
+    .optional()
+    .describe(
+      'Only requests whose detected provider event matches, e.g. "invoice.paid" or "push". One event per schema gives the tightest types.'
+    ),
+  method: z.string().optional().describe("Only requests with this HTTP method"),
+  path: z.string().optional().describe("Only requests with this path"),
+  requestIds: z
+    .array(z.string())
+    .min(1)
+    .max(50)
+    .optional()
+    .describe("Use exactly these requests instead of the latest ones"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(20)
+    .describe("How many of the latest requests to read before filtering"),
+};
+
+type PayloadSchemaArgs = {
+  format: PayloadSchemaFormat;
+  name?: string;
+  event?: string;
+  method?: string;
+  path?: string;
+};
+
+function eventName(event: string): string {
+  const words = event
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  const name = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("");
+  if (!name) return "WebhookPayload";
+  return /^[0-9]/.test(name) ? `Webhook${name}Event` : `${name}Event`;
+}
+
+/**
+ * generate_payload_schema for the full and the sandbox tools: filter the
+ * requests, learn one schema from their bodies, and say what it was built
+ * from, warning when several events were mixed.
+ */
+export function payloadSchemaResult(requests: Request[], args: PayloadSchemaArgs): ToolResult {
+  const method = args.method?.toUpperCase();
+  const matching = requests.filter(
+    (request) =>
+      request.kind !== "email" &&
+      (!method || request.method.toUpperCase() === method) &&
+      (!args.path || request.path === args.path) &&
+      (!args.event || detectWebhookInfo(request)?.event === args.event)
+  );
+  if (matching.length === 0) {
+    throw new Error(
+      `None of the ${requests.length} requests read matched. Capture a request first, or loosen event, method or path.`
+    );
+  }
+  const events = [
+    ...new Set(
+      matching.map((request) => detectWebhookInfo(request)?.event).filter((e): e is string => !!e)
+    ),
+  ];
+  const name = args.name ?? (events.length === 1 ? eventName(events[0]) : undefined);
+  const result = generateRequestSchema(matching, { format: args.format, name });
+  if (result.samples === 0) {
+    throw new Error(
+      `None of the ${matching.length} matching requests has a JSON or form body to learn from.`
+    );
+  }
+  const output = {
+    format: result.format,
+    name: result.name,
+    samples: result.samples,
+    skipped: result.skipped,
+    ...(events.length > 0 ? { events } : {}),
+    ...(events.length > 1
+      ? {
+          warning: `The samples mix ${events.length} events, so fields of one event show up as optional. Pass event for one schema per event.`,
+        }
+      : {}),
+    code: result.code,
+  };
+  // Measured as sent: escaping quotes and newlines makes the JSON longer than
+  // the code, and a schema cut to fit would be useless.
+  const size = JSON.stringify(output, null, 2).length;
+  if (size > MAX_OUTPUT) {
+    throw new Error(
+      `The schema is ${result.code.length} characters, more than this tool can return. Narrow it with event or requestIds, or call generateRequestSchema() from @webhooks-cc/sdk in code.`
+    );
+  }
+  return jsonContent(output);
+}
 
 type TextContent = { type: "text"; text: string };
 export type ToolResult = { content: TextContent[]; isError?: boolean };
@@ -1154,6 +1267,18 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
       const diff = diffRequests(leftRequest, rightRequest, { ignoreHeaders });
       return jsonContent(diff);
+    })
+  );
+
+  server.tool(
+    "generate_payload_schema",
+    "Generate TypeScript interfaces, Zod schemas, Pydantic models, or JSON Schema from captured request bodies. Several requests of one event teach which fields are optional or nullable, so filter with event (or pass requestIds) and write the result into the codebase instead of hand-typing the payload.",
+    payloadSchemaShape,
+    withErrorHandling(async ({ endpointSlug, requestIds, limit, ...args }) => {
+      const requests = requestIds
+        ? await Promise.all(requestIds.map((id) => client.requests.get(id)))
+        : await client.requests.list(endpointSlug, { limit, kind: "http" });
+      return payloadSchemaResult(requests, args);
     })
   );
 

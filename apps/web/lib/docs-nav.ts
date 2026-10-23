@@ -84,6 +84,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "MCP Server", href: "/docs/mcp", isNew: true },
       { title: "Tool Reference", href: "/docs/mcp/tools", isNew: true },
       { title: "Agent Workflows", href: "/docs/mcp/workflows" },
+      { title: "Agent Skill", href: "/docs/mcp/skills", isNew: true },
     ],
   },
   {

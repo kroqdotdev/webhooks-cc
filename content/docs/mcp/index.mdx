@@ -1,6 +1,6 @@
 ---
 title: "Webhook MCP Server (@webhooks-cc/mcp)"
-description: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 38 MCP tools, zero-key sandbox, and official registry."
+description: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 39 MCP tools, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
 lastUpdated: 2026-10-20
@@ -18,7 +18,7 @@ keywords:
   ]
 seo:
   ogTitle: "Webhook MCP Server (@webhooks-cc/mcp): Claude, Cursor & Codex"
-  ogDescription: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 38 MCP tools, zero-key sandbox, and official registry."
+  ogDescription: "Install @webhooks-cc/mcp to test webhooks and inbound email in Claude Code, Cursor, Codex, and Windsurf. 39 MCP tools, a zero-key sandbox, and a Claude Code plugin."
 ---
 
 <McpInstallGuide />
@@ -28,13 +28,14 @@ seo:
 `@webhooks-cc/mcp` is published on npm and indexed in the Model Context Protocol ecosystem so AI coding agents can discover and install it directly:
 
 - **npm package**: [`@webhooks-cc/mcp`](https://www.npmjs.com/package/@webhooks-cc/mcp) (`npx -y @webhooks-cc/mcp`)
-- **Official MCP Registry**: `io.github.webhooks-cc/mcp` (`server.json` schema validated in CI)
-- **Glama & Smithery**: Ships with [`glama.json`](https://glama.ai/mcp/servers) metadata and stdio transport support for zero-config inspection
+- **Official MCP Registry**: `io.github.kroqdotdev/webhooks-cc`, published with each release from [`server.json`](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/mcp/server.json)
+- **Claude Code plugin**: the server bundled with the [webhook testing skill](/docs/mcp/skills), installed with `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc`
+- **Glama**: ships with [`glama.json`](https://glama.ai/mcp/servers) metadata
 - **Supported MCP clients**: Claude Code (`claude mcp add webhooks -- npx -y @webhooks-cc/mcp`), Cursor, VS Code (GitHub Copilot), OpenAI Codex, Windsurf, and Claude Desktop
 
 ## Available tools
 
-The MCP server exposes 38 tools your AI agent can call. Without an API key, 10 sandbox tools are available (see below).
+The MCP server exposes 39 tools your AI agent can call. Without an API key, 11 sandbox tools are available (see below). The [agent skill](/docs/mcp/skills) tells your agent when to use them.
 
 ## Provider-aware testing
 
@@ -90,6 +91,7 @@ For provider templates in `send_webhook`, `secret` is required for every signed 
 | ---------------------- | ---------------------------------------------------- |
 | `replay_request`       | Replay a captured request to a target URL            |
 | `compare_requests`     | Compare two requests and show structured differences |
+| `generate_payload_schema` | TypeScript, Zod, Pydantic, or JSON Schema from captured bodies |
 | `extract_from_request` | Extract specific JSON fields from a request body     |
 | `verify_signature`     | Verify the webhook signature on a captured request   |
 
@@ -133,7 +135,7 @@ Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mai
 
 ### Without an API key: the agent sandbox
 
-Started without `WHK_API_KEY`, the server still works. It offers `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request` and `wait_for_request` with the same names and arguments as above, backed by the [agent sandbox](/docs/agents): up to 3 temporary endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers the sandbox, which takes a few seconds of proof of work.
+Started without `WHK_API_KEY`, the server still works. It offers `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request` and `generate_payload_schema` with the same names and arguments as above, backed by the [agent sandbox](/docs/agents): up to 3 temporary endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers the sandbox, which takes a few seconds of proof of work.
 
 To get everything else, the agent connects to your account: `connect_account` with your email returns a link and a 6-digit code, you sign in (or sign up) and enter the code, and `wait_for_connection` then swaps in the full tool set for your account, sandbox endpoints included. `about_sandbox` explains the limits without a network call. The connection lasts while the server runs; for a lasting setup, create an API key and set `WHK_API_KEY`.
 

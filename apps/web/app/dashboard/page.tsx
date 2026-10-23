@@ -1232,6 +1232,7 @@ export default function DashboardPage() {
                     onOpenSettings={handleOpenSettings}
                     endpointSlug={currentEndpoint.slug}
                     deliveries={deliveriesProps}
+                    schemaCandidates={recentRequests}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -1274,6 +1275,7 @@ export default function DashboardPage() {
                         onOpenSettings={handleOpenSettings}
                         endpointSlug={currentEndpoint.slug}
                         deliveries={deliveriesProps}
+                        schemaCandidates={recentRequests}
                       />
                     )}
                   </ErrorBoundary>

@@ -11,6 +11,16 @@ The server reads `WHK_API_KEY` from the environment. It also supports:
 - `WHK_BASE_URL` for a custom API base URL
 - `WHK_WEBHOOK_URL` for a custom receiver base URL
 
+### Claude Code plugin
+
+The plugin installs the server together with a webhook testing skill that tells Claude when to use it:
+
+```text
+/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc
+```
+
+For other agents, `npx skills add kroqdotdev/webhooks-cc` installs the same skill. See [Agent skill](https://webhooks.cc/docs/mcp/skills).
+
 ### One-click
 
 - **Cursor**: [Add to Cursor](https://cursor.com/en/install-mcp?name=webhooks-cc&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkB3ZWJob29rcy1jYy9tY3AiXSwiZW52Ijp7IldIS19BUElfS0VZIjoid2hjY18uLi4ifX0=)
@@ -58,7 +68,7 @@ Get your API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/a
 
 ## What it exposes
 
-The server exposes `38` tools, `3` prompts, and `3` resource surfaces with an API key, and `10` sandbox tools without one.
+The server exposes `39` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
 
 ### Endpoint tools
 
@@ -80,6 +90,7 @@ The server exposes `38` tools, `3` prompts, and `3` resource surfaces with an AP
 - `wait_for_requests`
 - `replay_request`
 - `compare_requests`
+- `generate_payload_schema` (TypeScript, Zod, Pydantic, or JSON Schema from captured bodies)
 - `extract_from_request`
 - `verify_signature`
 - `clear_requests`

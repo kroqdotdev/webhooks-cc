@@ -512,6 +512,19 @@ html {
   color: hsl(var(--syntax-punctuation));
 }
 
+.syntax-highlight .token.keyword,
+.syntax-highlight .token.builtin {
+  color: hsl(var(--syntax-number));
+}
+
+.syntax-highlight .token.class-name {
+  color: hsl(var(--syntax-key));
+}
+
+.syntax-highlight .token.comment {
+  color: hsl(var(--muted-foreground));
+}
+
 /* JSON tree syntax colors: reuse the Prism palette */
 .syntax-property {
   color: hsl(var(--syntax-key));

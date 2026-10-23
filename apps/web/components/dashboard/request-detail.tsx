@@ -20,11 +20,13 @@ import { WEBHOOK_BASE_URL, SKIP_HEADERS_FOR_CURL } from "@/lib/constants";
 import { detectFormat, formatBody, getFormatLabel } from "@/lib/format";
 import { getHighlightLanguage, highlightBody } from "@/lib/highlight";
 import { trackRequestViewed, trackRequestDetailTabChanged } from "@/lib/analytics";
-import { jsonToTypeScript } from "@/lib/json-to-typescript";
+import { generatePayloadSchema, payloadSample } from "@webhooks-cc/sdk/schema";
+import { hasSchemaSample, schemaRootName, type SchemaSource } from "@/lib/payload-schema";
 import { JsonTree } from "./json-tree";
 import { SignatureTab, SignatureVerificationBadge } from "./signature-tab";
 import { ProviderBadge } from "./provider-badge";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
+import { PayloadSchemaView } from "./payload-schema-view";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -53,6 +55,8 @@ interface RequestDetailProps {
     canRedeliver: boolean;
     onOpenForwarding?: () => void;
   };
+  /** Recent requests the schema view looks through for ones with the same payload. */
+  schemaCandidates?: SchemaSource[];
 }
 
 /**
@@ -115,6 +119,14 @@ function generateCurlCommand(request: DisplayableRequest): string {
   return parts.join(" \\\n  ");
 }
 
+type BodyView = "tree" | "formatted" | "schema";
+const BODY_VIEWS: BodyView[] = ["tree", "formatted", "schema"];
+const BODY_VIEW_LABELS: Record<BodyView, string> = {
+  tree: "Tree",
+  formatted: "Formatted",
+  schema: "Schema",
+};
+
 export type Tab = "body" | "headers" | "query" | "raw" | "signature" | "deliveries";
 export const TABS: Tab[] = ["body", "headers", "query", "raw", "signature", "deliveries"];
 
@@ -128,6 +140,7 @@ export function RequestDetail({
   onOpenSettings,
   endpointSlug,
   deliveries,
+  schemaCandidates,
 }: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
   const setTab = onTabChange ?? setInternalTab;
@@ -176,10 +189,13 @@ export function RequestDetail({
     [formattedBody, bodyFormat]
   );
   const highlightLanguage = getHighlightLanguage(bodyFormat);
-  const tsInterface = useMemo(
-    () => (bodyFormat === "json" && request.body ? jsonToTypeScript(request.body) : null),
-    [request.body, bodyFormat]
-  );
+  const schemaAvailable = useMemo(() => hasSchemaSample(request), [request]);
+  const tsInterface = useMemo(() => {
+    const sample = schemaAvailable ? payloadSample(request) : undefined;
+    return sample === undefined
+      ? null
+      : generatePayloadSchema([sample], { name: schemaRootName(request) });
+  }, [request, schemaAvailable]);
 
   // JSON tree view: parse once, show tree or formatted view
   const parsedJson = useMemo(() => {
@@ -190,7 +206,11 @@ export function RequestDetail({
       return null;
     }
   }, [request.body, bodyFormat]);
-  const [bodyView, setBodyView] = useState<"tree" | "formatted">("tree");
+  const [bodyViewChoice, setBodyView] = useState<BodyView>("tree");
+  const bodyViews = BODY_VIEWS.filter(
+    (view) => (view !== "tree" || parsedJson !== null) && (view !== "schema" || schemaAvailable)
+  );
+  const bodyView = bodyViews.includes(bodyViewChoice) ? bodyViewChoice : "formatted";
 
   return (
     <div className="flex flex-col h-full">
@@ -271,34 +291,27 @@ export function RequestDetail({
               <span className="px-2 py-0.5 text-[10px] font-bold caps rounded-sm border-strong border-line bg-muted">
                 {getFormatLabel(bodyFormat)}
               </span>
-              {parsedJson !== null && (
+              {bodyViews.length > 1 && (
                 <div className="flex items-center overflow-hidden rounded-sm border-strong border-line">
-                  <button
-                    onClick={() => setBodyView("tree")}
-                    className={cn(
-                      "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
-                      bodyView === "tree"
-                        ? "bg-selected text-selected-foreground"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    Tree
-                  </button>
-                  <button
-                    onClick={() => setBodyView("formatted")}
-                    className={cn(
-                      "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors border-l-strong border-line",
-                      bodyView === "formatted"
-                        ? "bg-selected text-selected-foreground"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    Formatted
-                  </button>
+                  {bodyViews.map((view, i) => (
+                    <button
+                      key={view}
+                      onClick={() => setBodyView(view)}
+                      className={cn(
+                        "px-2 py-0.5 text-[10px] font-bold caps cursor-pointer transition-colors",
+                        i > 0 && "border-l-strong border-line",
+                        bodyView === view
+                          ? "bg-selected text-selected-foreground"
+                          : "hover:bg-muted"
+                      )}
+                    >
+                      {BODY_VIEW_LABELS[view]}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-            {request.body && (
+            {request.body && bodyView !== "schema" && (
               <BodyCopyDropdown
                 body={request.body}
                 formattedBody={formattedBody}
@@ -307,7 +320,14 @@ export function RequestDetail({
                 copied={copied}
               />
             )}
-            {parsedJson !== null && bodyView === "tree" ? (
+            {bodyView === "schema" ? (
+              <PayloadSchemaView
+                request={request}
+                candidates={schemaCandidates}
+                onCopy={handleCopy}
+                copied={copied}
+              />
+            ) : parsedJson !== null && bodyView === "tree" ? (
               <div className="ui-code overflow-x-auto p-3">
                 <JsonTree data={parsedJson} />
               </div>

@@ -548,7 +548,7 @@ codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
 Set `WHK_API_KEY` environment variable to your API key.
 
-### All 25 MCP Tools
+### MCP Tools
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
@@ -568,6 +568,7 @@ Set `WHK_API_KEY` environment variable to your API key.
 | `wait_for_requests` | endpointSlug, count (1-20), timeout?, pollInterval?, method? | Collect N requests |
 | `replay_request` | requestId, targetUrl | Replay request to URL |
 | `compare_requests` | leftRequestId, rightRequestId, ignoreHeaders? | Diff two requests |
+| `generate_payload_schema` | endpointSlug, format?, name?, event?, method?, path?, requestIds?, limit? | TypeScript, Zod, Pydantic, or JSON Schema from captured bodies |
 | `extract_from_request` | requestId, jsonPaths (1-50) | Extract JSON fields |
 | `verify_signature` | requestId, provider, secret?, publicKey?, url? | Verify webhook signature |
 | `clear_requests` | slug, before? | Delete captured requests |

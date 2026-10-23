@@ -1,6 +1,7 @@
 {
   "name": "@webhooks-cc/mcp",
-  "version": "1.12.1",
+  "version": "1.13.0",
+  "mcpName": "io.github.kroqdotdev/webhooks-cc",
   "description": "MCP server for webhooks.cc — AI agent integration for webhook testing",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -38,7 +39,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/webhooks-cc/webhooks-cc",
+    "url": "https://github.com/kroqdotdev/webhooks-cc",
     "directory": "packages/mcp"
   },
   "homepage": "https://webhooks.cc",

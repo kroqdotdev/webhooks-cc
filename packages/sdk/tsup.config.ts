@@ -8,6 +8,7 @@ export default defineConfig({
     index: "src/index.ts",
     testing: "src/testing.ts",
     email: "src/email/index.ts",
+    schema: "src/payload-schema.ts",
   },
   format: ["cjs", "esm"],
   dts: true,

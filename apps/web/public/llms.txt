@@ -44,6 +44,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - SDK API reference: https://webhooks.cc/docs/sdk/api
 - SDK testing patterns: https://webhooks.cc/docs/sdk/testing
 - MCP server docs: https://webhooks.cc/docs/mcp
+- Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, teaches coding agents to test webhook handlers with signed payloads and generate payload types from captures
 - Email capture: https://webhooks.cc/docs/email-capture
 - Email forwarding: https://webhooks.cc/docs/forwarding
 - Email testing overview: https://webhooks.cc/email-testing
@@ -129,7 +130,13 @@ await client.endpoints.delete(endpoint.slug);
 ## MCP server setup
 
 ```bash
-# Claude Code
+# Claude Code: plugin with the MCP server and the webhook testing skill
+/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc
+
+# The skill for Cursor, Codex, Copilot and other agents
+npx skills add kroqdotdev/webhooks-cc
+
+# Claude Code, MCP server only
 claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
 # Cursor / VS Code / Windsurf

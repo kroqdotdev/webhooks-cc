@@ -159,6 +159,10 @@ export function trackRequestDetailTabChanged(tab: string) {
   capture("request_detail_tab_changed", { tab });
 }
 
+export function trackPayloadSchemaCopied(format: string, samples: number) {
+  capture("payload_schema_copied", { format, samples });
+}
+
 // ── Endpoint management ──────────────────────────────────────────
 export function trackEndpointDeleted() {
   capture("endpoint_deleted");

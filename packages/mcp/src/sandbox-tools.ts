@@ -17,6 +17,8 @@ import {
   jsonContent,
   listEndpointsShape,
   listRequestsShape,
+  payloadSchemaResult,
+  payloadSchemaShape,
   registerTools,
   waitForRequestShape,
   withErrorHandling,
@@ -305,6 +307,21 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
         const sandbox = await session.requireSandbox();
         const request = await sandbox.requests.waitFor(endpointSlug, { timeout, pollInterval });
         return jsonContent(compactRequest(request));
+      })
+    )
+  );
+
+  registered.push(
+    server.tool(
+      "generate_payload_schema",
+      "Generate TypeScript interfaces, Zod schemas, Pydantic models, or JSON Schema from the bodies of requests captured by a sandbox endpoint. Several requests of one event teach which fields are optional or nullable.",
+      payloadSchemaShape,
+      withErrorHandling(async ({ endpointSlug, requestIds, limit, ...args }) => {
+        const sandbox = await session.requireSandbox();
+        const requests = requestIds
+          ? await Promise.all(requestIds.map((id) => sandbox.requests.get(id)))
+          : await sandbox.requests.list(endpointSlug, { limit });
+        return payloadSchemaResult(requests, args);
       })
     )
   );

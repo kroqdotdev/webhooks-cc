@@ -32,6 +32,7 @@ const EXPECTED_TOOLS = [
   "wait_for_requests",
   "replay_request",
   "compare_requests",
+  "generate_payload_schema",
   "extract_from_request",
   "verify_signature",
   "clear_requests",
@@ -217,7 +218,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(38);
+    expect(Object.keys(tools)).toHaveLength(39);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -834,6 +835,137 @@ describe("registerTools", () => {
 
     expect(diff.matches).toBe(false);
     expect(diff.differences.body.type).toBe("json");
+  });
+
+  describe("generate_payload_schema", () => {
+    const stripeRequest = (id: string, body: Record<string, unknown>) =>
+      makeRequest({
+        id,
+        path: "/webhooks/stripe",
+        headers: { "content-type": "application/json", "stripe-signature": "t=1,v1=abc" },
+        body: JSON.stringify(body),
+      });
+    const paid = stripeRequest("req_paid_1", {
+      type: "invoice.paid",
+      data: { object: { id: "in_1", amount_paid: 100, discount: null } },
+    });
+    const paidAgain = stripeRequest("req_paid_2", {
+      type: "invoice.paid",
+      data: { object: { id: "in_2", amount_paid: 250, discount: "SAVE10", note: "x" } },
+    });
+    const created = stripeRequest("req_customer", {
+      type: "customer.created",
+      data: { object: { id: "cus_1", email: "dev@acme.test" } },
+    });
+
+    it("learns one schema from the requests of one event", async () => {
+      const list = vi.fn(async () => [paid, created, paidAgain]);
+      const tools = getRegisteredTools(
+        createMockClient({ requests: { list } as unknown as WebhooksCC["requests"] })
+      );
+      const result = parseJsonResult(
+        await tools.generate_payload_schema.handler({
+          endpointSlug: "acme",
+          format: "zod",
+          event: "invoice.paid",
+          limit: 20,
+        })
+      );
+      expect(list).toHaveBeenCalledWith("acme", { limit: 20, kind: "http" });
+      expect(result).toMatchObject({
+        format: "zod",
+        name: "InvoicePaidEvent",
+        samples: 2,
+        skipped: 0,
+        events: ["invoice.paid"],
+      });
+      expect(result.warning).toBeUndefined();
+      expect(result.code).toContain("export const InvoicePaidEvent = z.object({");
+      expect(result.code).toContain("note: z.string().optional(),");
+      expect(result.code).toContain("discount: z.string().nullable(),");
+    });
+
+    it("warns when the samples mix events", async () => {
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: {
+            list: vi.fn(async () => [paid, created]),
+          } as unknown as WebhooksCC["requests"],
+        })
+      );
+      const result = parseJsonResult(
+        await tools.generate_payload_schema.handler({ endpointSlug: "acme", format: "typescript" })
+      );
+      expect(result.name).toBe("WebhookPayload");
+      expect(result.events).toEqual(["invoice.paid", "customer.created"]);
+      expect(result.warning).toContain("mix 2 events");
+    });
+
+    it("uses exactly the requests asked for", async () => {
+      const get = vi.fn(async (id: string) => (id === paid.id ? paid : paidAgain));
+      const list = vi.fn();
+      const tools = getRegisteredTools(
+        createMockClient({ requests: { get, list } as unknown as WebhooksCC["requests"] })
+      );
+      const result = parseJsonResult(
+        await tools.generate_payload_schema.handler({
+          endpointSlug: "acme",
+          format: "pydantic",
+          name: "Invoice",
+          requestIds: [paid.id, paidAgain.id],
+        })
+      );
+      expect(list).not.toHaveBeenCalled();
+      expect(get).toHaveBeenCalledTimes(2);
+      expect(result.name).toBe("Invoice");
+      expect(result.code).toContain("class Invoice(BaseModel):");
+    });
+
+    it("refuses a schema too big to return whole", async () => {
+      // Many keys with quotes: the escaped JSON is much longer than the code.
+      const body = Object.fromEntries(
+        Array.from({ length: 900 }, (_, i) => [`field "${i}" with quotes`, i])
+      );
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: {
+            list: vi.fn(async () => [makeRequest({ body: JSON.stringify(body) })]),
+          } as unknown as WebhooksCC["requests"],
+        })
+      );
+      const result = await tools.generate_payload_schema.handler({
+        endpointSlug: "acme",
+        format: "json-schema",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("more than this tool can return");
+    });
+
+    it("explains when nothing can be learned", async () => {
+      const tools = getRegisteredTools(
+        createMockClient({
+          requests: {
+            list: vi.fn(async () => [
+              makeRequest({ body: "plain", contentType: "text/plain", headers: {} }),
+            ]),
+          } as unknown as WebhooksCC["requests"],
+        })
+      );
+      const noBody = await tools.generate_payload_schema.handler({
+        endpointSlug: "acme",
+        format: "typescript",
+      });
+      expect(noBody.isError).toBe(true);
+      expect(noBody.content[0].text).toContain("has a JSON or form body");
+
+      const noMatch = await tools.generate_payload_schema.handler({
+        endpointSlug: "acme",
+        format: "typescript",
+        method: "PUT",
+      });
+      expect(noMatch.isError).toBe(true);
+      expect(noMatch.content[0].text).toContain("None of the 1 requests read matched");
+    });
   });
 
   it("formats usage periodEnd as ISO", async () => {

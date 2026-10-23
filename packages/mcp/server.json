@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kroqdotdev/webhooks-cc",
+  "title": "webhooks.cc",
+  "description": "Capture, inspect, send and assert on webhooks and inbound email from your coding agent.",
+  "repository": {
+    "url": "https://github.com/kroqdotdev/webhooks-cc",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "websiteUrl": "https://webhooks.cc/docs/mcp",
+  "version": "1.13.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@webhooks-cc/mcp",
+      "version": "1.13.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "WHK_API_KEY",
+          "description": "webhooks.cc API key (whcc_...). Without one, the server offers the keyless agent sandbox.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

@@ -73,6 +73,7 @@ export function registerPrompts(server: McpServer): void {
                 "If a target URL is provided, use preview_webhook before send_to so the request shape is visible.",
                 targetUrl ? `Target URL: ${targetUrl}.` : null,
                 "Send a realistic provider webhook, wait for capture, and verify the signature if a secret is available.",
+                "Once real deliveries are captured, use generate_payload_schema to write the payload types for the handler.",
                 "Return the endpoint URL, the exact tools used, and the next step for the developer.",
               ]
                 .filter(Boolean)

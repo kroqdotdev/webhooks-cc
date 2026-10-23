@@ -1,6 +1,6 @@
 {
   "name": "@webhooks-cc/sdk",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "description": "TypeScript SDK for webhooks.cc \u2014 create endpoints, capture requests, assert in tests",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -20,6 +20,11 @@
       "types": "./dist/email.d.ts",
       "import": "./dist/email.mjs",
       "require": "./dist/email.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.mjs",
+      "require": "./dist/schema.js"
     }
   },
   "files": [
@@ -45,7 +50,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/webhooks-cc/webhooks-cc",
+    "url": "https://github.com/kroqdotdev/webhooks-cc",
     "directory": "packages/sdk"
   },
   "homepage": "https://webhooks.cc",
@@ -53,6 +58,7 @@
     "@types/node": "^26.6.5",
     "tsup": "^9.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
   }
 }
