@@ -16,7 +16,7 @@ your own handlers, and verify provider and forwarding signatures.
 Every signature check for each provider is in :mod:`webhooks_cc.verify`.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from .client import Emails, Endpoints, Forwarding, Requests, RetryOptions, WebhooksCC
 from .durations import Duration, parse_duration

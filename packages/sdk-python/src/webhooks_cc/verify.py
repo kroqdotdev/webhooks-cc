@@ -976,13 +976,14 @@ def verify_standard_webhook_signature(body: BodyInput, headers: HeadersInput, se
     The key is the ``whsec_`` secret decoded from base64, or its UTF-8 bytes when it is not base64.
     """
     _require_secret(secret, "verify_standard_webhook_signature")
+    key = decode_standard_webhook_secret(secret)
     message_id = _get_header(headers, "webhook-id")
     timestamp = _get_header(headers, "webhook-timestamp")
     signature_header = _get_header(headers, "webhook-signature")
     if not message_id or not timestamp or not signature_header:
         return False
     payload = _encode_text(f"{message_id}.{timestamp}.") + _body_bytes(body)
-    expected = _hmac_base64("sha256", decode_standard_webhook_secret(secret), payload)
+    expected = _hmac_base64("sha256", key, payload)
     return any(
         _safe_equal(signature, expected)
         for signature in _parse_standard_signatures(signature_header)
@@ -1044,6 +1045,7 @@ def _verify_signed_forward(
     function_name: str,
 ) -> Any:
     _require_secret(secret, function_name)
+    decode_standard_webhook_secret(secret)  # an empty key is a ValueError, never a verdict
     message_id = _get_header(headers, "webhook-id")
     timestamp_header = _get_header(headers, "webhook-timestamp")
     signature_header = _get_header(headers, "webhook-signature")
@@ -1139,6 +1141,7 @@ def verify_relayed_request(
     Raises ``WebhookVerificationError`` with ``code`` ``missing_headers`` or ``invalid_signature``.
     """
     _require_secret(secret, "verify_relayed_request")
+    key = decode_standard_webhook_secret(secret)
     request_id = _get_header(headers, "webhooks-cc-request-id")
     received_at = _get_header(headers, "webhooks-cc-received-at")
     signature_header = _get_header(headers, "webhooks-cc-signature")
@@ -1149,7 +1152,7 @@ def verify_relayed_request(
             "or webhooks-cc-signature header",
         )
     payload = _encode_text(f"{request_id}.{received_at}.") + _body_bytes(body)
-    expected = _hmac_base64("sha256", decode_standard_webhook_secret(secret), payload)
+    expected = _hmac_base64("sha256", key, payload)
     if not any(
         _safe_equal(given, expected) for given in _parse_standard_signatures(signature_header)
     ):

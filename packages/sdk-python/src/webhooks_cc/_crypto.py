@@ -82,12 +82,19 @@ def decode_standard_webhook_secret(secret: str) -> bytes:
 
     A leading ``whsec_`` is stripped and the rest decoded as base64. When that
     fails, the key is the UTF-8 bytes of the whole secret, prefix included.
+
+    Raises ``ValueError`` when that leaves no key at all (``"whsec_"``, or only
+    whitespace): an HMAC keyed with nothing is one anyone can compute, and
+    WebCrypto refuses it in the TypeScript SDK too.
     """
     raw = secret[6:] if secret.startswith("whsec_") else secret
     try:
-        return from_base64(raw)
+        key = from_base64(raw)
     except ValueError:
-        return secret.encode("utf-8")
+        key = secret.encode("utf-8")
+    if not key:
+        raise ValueError("The secret decodes to an empty key")
+    return key
 
 
 _HUBSPOT_ESCAPES = {
