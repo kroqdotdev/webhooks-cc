@@ -11,6 +11,8 @@ describe("mapAuthError", () => {
     ["email_exists", "An account with this email already exists. Sign in instead."],
     ["weak_password", "Password must be at least 8 characters"],
     ["same_password", "Choose a password you haven't used before"],
+    ["current_password_invalid", "Your current password is incorrect"],
+    ["current_password_required", "Enter your current password"],
     ["email_address_invalid", "Enter a valid email address"],
     ["otp_expired", "That link has expired. Request a new one."],
     ["over_email_send_rate_limit", "Too many emails sent. Wait a minute and try again."],

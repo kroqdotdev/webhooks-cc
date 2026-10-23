@@ -2,7 +2,7 @@ import { isAuthError, isAuthRetryableFetchError } from "@supabase/supabase-js";
 
 /**
  * User-facing copy for the GoTrue error codes the email/password flows
- * (sign-in, sign-up, forgot/reset password) can surface. Strictly an
+ * (sign-in, sign-up, forgot/reset/change password) can surface. Strictly an
  * allowlist: any other code, and any non-GoTrue failure, collapses to the
  * generic message so backend detail never reaches the page.
  */
@@ -14,6 +14,8 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   email_exists: "An account with this email already exists. Sign in instead.",
   weak_password: "Password must be at least 8 characters",
   same_password: "Choose a password you haven't used before",
+  current_password_invalid: "Your current password is incorrect",
+  current_password_required: "Enter your current password",
   email_address_invalid: "Enter a valid email address",
   email_address_not_authorized: "This email address can't be used to sign up",
   validation_failed: "Check the email address and password and try again",

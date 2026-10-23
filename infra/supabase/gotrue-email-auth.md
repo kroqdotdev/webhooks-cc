@@ -1,7 +1,7 @@
 # GoTrue configuration for email/password auth
 
 The web app's email/password sign-in (login page form, `/auth/confirm`,
-`/auth/reset-password`) needs nothing in the app's own env. Everything that
+`/auth/reset-password`, the password panel on `/account`) needs nothing in the app's own env. Everything that
 enables it lives on the self-hosted Supabase instance: real SMTP, a password
 minimum length, and custom email templates that link back to the app instead
 of GoTrue's `/auth/v1/verify` endpoint. This file is the operator reference
@@ -56,6 +56,7 @@ services:
       GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your webhooks.cc password
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/public/hook_before_user_created
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: "true"
 ```
 
 Dev override (templates fetched from the Next dev server on the Docker host,
@@ -72,6 +73,7 @@ services:
       GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your webhooks.cc password
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: "true"
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/public/hook_before_user_created
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: "true"
     extra_hosts:
       - host.docker.internal:host-gateway
 
@@ -121,6 +123,37 @@ log: a malformed hook URI stops GoTrue from starting at all, which takes
 down every sign-in, not only signups. To roll back, remove the two lines
 (or set `..._ENABLED` to `"false"`) and recreate `auth` again; never drop the
 function while the hook is on.
+
+### Current password on password change
+
+`GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD` makes GoTrue refuse
+a new password from a password session unless the request carries the
+correct `current_password` (`current_password_required`,
+`current_password_invalid`). The account page's password panel sends it,
+but the check has to live in GoTrue: `PUT /auth/v1/user` is reachable with
+any session's access token, so a check in the app could be skipped.
+
+**Do not deploy a web release with the panel to an instance until its
+`auth` container runs GoTrue v2.189.0 or later with this setting on.**
+v2.187.0 added the setting and v2.189.0 extended the email-link exemption
+to PKCE recovery sessions; older versions, and any version without the
+line, ignore `current_password`, so the holder of a password session could
+change the password without knowing it. Neither case warns. After
+recreating `auth`, check both:
+
+```bash
+docker inspect supabase-auth --format '{{.Config.Image}}'   # v2.189.0 or later
+docker exec supabase-auth env | grep REQUIRE_CURRENT_PASSWORD   # =true
+```
+
+Sessions that began with an email link (recovery, signup confirmation,
+magic link or OTP, which `/auth/confirm` and the agent claim produce) are
+exempt for their whole lifetime, token refreshes included. That is what
+keeps `/auth/reset-password` and the panel's "Email me a reset link"
+working, and it means the check only binds sessions that began with a
+password sign-in. Accounts without a password yet (created by agent
+registration) are not asked for one either; the panel lets them leave the
+field empty. Every successful change ends the account's other sessions.
 
 ## 3. Apply
 

@@ -9,7 +9,7 @@
  * email and fails at the SMTP hop without it.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, isAuthSessionMissingError } from "@supabase/supabase-js";
 import { createInvite, createTeam, deleteTeam } from "@/lib/supabase/teams";
 import type { Database } from "@/lib/supabase/database";
 
@@ -263,6 +263,69 @@ describe("Email/password auth", () => {
       const second = await anonClient().auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
       expect(second.data.session).toBeNull();
       expect(second.error).toBeTruthy();
+    });
+  });
+
+  // What the account page's password panel relies on. Needs
+  // GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD on the dev GoTrue.
+  describe("password change from a password session", () => {
+    const CHANGE_EMAIL = `test-email-auth-change-${ts}@webhooks-test.local`;
+    const OLD_PASSWORD = "the-old-password";
+    const NEW_PASSWORD = "the-new-password";
+
+    async function signIn(password: string) {
+      const client = anonClient();
+      const { data, error } = await client.auth.signInWithPassword({
+        email: CHANGE_EMAIL,
+        password,
+      });
+      return { client, session: data.session, error };
+    }
+
+    it("creates the account", async () => {
+      const { data, error } = await admin.auth.admin.createUser({
+        email: CHANGE_EMAIL,
+        password: OLD_PASSWORD,
+        email_confirm: true,
+      });
+      expect(error).toBeNull();
+      createdUserIds.push(data.user!.id);
+    });
+
+    it("refuses a new password without the current one", async () => {
+      const { client } = await signIn(OLD_PASSWORD);
+      const { error } = await client.auth.updateUser({ password: NEW_PASSWORD });
+      expect(error!.code).toBe("current_password_required");
+    });
+
+    it("refuses a wrong current password", async () => {
+      const { client } = await signIn(OLD_PASSWORD);
+      const { error } = await client.auth.updateUser({
+        password: NEW_PASSWORD,
+        current_password: "not-the-old-password",
+      });
+      expect(error!.code).toBe("current_password_invalid");
+    });
+
+    it("changes it with the current one and ends only the other sessions", async () => {
+      const other = await signIn(OLD_PASSWORD);
+      const changing = await signIn(OLD_PASSWORD);
+      expect(other.session).toBeTruthy();
+
+      const { error } = await changing.client.auth.updateUser({
+        password: NEW_PASSWORD,
+        current_password: OLD_PASSWORD,
+      });
+      expect(error).toBeNull();
+
+      const kept = await changing.client.auth.getUser();
+      expect(kept.error).toBeNull();
+      // GoTrue answers session_not_found, which auth-js reports as a missing session.
+      const ended = await anonClient().auth.getUser(other.session!.access_token);
+      expect(isAuthSessionMissingError(ended.error)).toBe(true);
+
+      expect((await signIn(NEW_PASSWORD)).error).toBeNull();
+      expect((await signIn(OLD_PASSWORD)).error!.code).toBe("invalid_credentials");
     });
   });
 });
