@@ -25,21 +25,19 @@ Python 3.10 or later. Create an API key on your [API keys page](/account/api-key
 ## Wait for a webhook
 
 ```python
-from webhooks_cc import WebhooksCC, match_body_path
+from webhooks_cc import WebhooksCC, match_body_path, temporary_endpoint
 
 with WebhooksCC() as client:  # reads WHK_API_KEY
-    endpoint = client.endpoints.create(name="checkout test")
+    # Deleted when the block ends, even when the test fails.
+    with temporary_endpoint(client, "checkout test") as endpoint:
+        trigger_checkout(webhook_url=endpoint.url)
 
-    trigger_checkout(webhook_url=endpoint.url)
-
-    request = client.requests.wait_for(
-        endpoint.slug,
-        timeout="30s",
-        match=match_body_path("type", "checkout.session.completed"),
-    )
-    assert request.json()["data"]["object"]["amount_total"] == 2000
-
-    client.endpoints.delete(endpoint.slug)
+        request = client.requests.wait_for(
+            endpoint.slug,
+            timeout="30s",
+            match=match_body_path("type", "checkout.session.completed"),
+        )
+        assert request.json()["data"]["object"]["amount_total"] == 2000
 ```
 
 `wait_for` looks back five minutes, so a webhook that arrived just before you started waiting still counts. `wait_for_all(slug, count=3)` collects several, oldest first.
@@ -116,7 +114,7 @@ response = client.send_to(
 assert response.status_code == 200
 ```
 
-Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending them. Redirects are not followed, so signed requests only ever reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint, and `TEMPLATE_PROVIDERS` lists the 34 providers.
+Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending them. The client the SDK creates does not follow redirects, so signed requests only reach the host you named; if you pass an `http_client` of your own, leave its `follow_redirects` off. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint, and `TEMPLATE_PROVIDERS` lists the 34 providers.
 
 ## Verify signatures
 

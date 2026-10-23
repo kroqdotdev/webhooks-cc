@@ -622,3 +622,17 @@ def test_bytes_like_bodies_everywhere() -> None:
         "http://localhost/", provider="github", secret="s", body=bytearray(b'{"a":1}')
     )
     assert built.body == '{"a":1}'
+
+
+def test_send_to_never_follows_redirects_even_with_a_client_that_would() -> None:
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        return httpx.Response(302, headers={"Location": "https://elsewhere.test/hook"})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    client = WebhooksCC("whcc_test", http_client=http)
+    response = client.send_to("https://handler.test/hook", provider="github", secret="s")
+    assert response.status_code == 302
+    assert hosts == ["handler.test"]
