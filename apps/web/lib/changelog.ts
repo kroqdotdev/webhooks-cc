@@ -15,13 +15,22 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.7";
+export const APP_VERSION = "0.40.8";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.8",
+    date: "2026-10-23",
+    title: "Clean Support Link in the Password Email",
+    track: "web",
+    items: [
+      "The templates GoTrue fetches for sign-up, reset and password-changed emails are served with Cache-Control: no-transform, so Cloudflare no longer swaps the support address in them for an obfuscated placeholder",
+    ],
+  },
   {
     version: "0.40.7",
     date: "2026-10-23",
