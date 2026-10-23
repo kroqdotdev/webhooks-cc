@@ -486,7 +486,7 @@ def test_temporary_endpoint_and_capture_during() -> None:
 class _SlowStream:
     """A local SSE server: keepalives every ``interval`` seconds, then one request."""
 
-    def __init__(self, keepalives: int, interval: float) -> None:
+    def __init__(self, keepalives: int, interval: float, header_delay: float = 0) -> None:
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
         outer = self
@@ -498,6 +498,7 @@ class _SlowStream:
                 pass
 
             def do_GET(self) -> None:
+                time.sleep(outer.header_delay)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
@@ -514,6 +515,7 @@ class _SlowStream:
 
         self.keepalives = keepalives
         self.interval = interval
+        self.header_delay = header_delay
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         import threading
 
@@ -597,3 +599,26 @@ def test_errors_survive_pickling() -> None:
         assert type(back) is type(error)
         assert str(back) == str(error)
         assert back.__dict__ == error.__dict__
+
+
+def test_subscribe_timeout_covers_the_wait_for_headers() -> None:
+    server = _SlowStream(keepalives=1, interval=0.05, header_delay=2.0)
+    try:
+        started = time.monotonic()
+        with server.client() as client:
+            assert list(client.requests.subscribe("acme", timeout="300ms")) == []
+        assert time.monotonic() - started < 1.5
+    finally:
+        server.close()
+
+
+def test_bytes_like_bodies_everywhere() -> None:
+    from webhooks_cc import build_template_request
+
+    client = make_client(lambda request: httpx.Response(500))
+    assert client.build_request("http://localhost/", body=bytearray(b"x=1")).body == b"x=1"
+    assert client.build_request("http://localhost/", body=memoryview(b"x=1")).body == b"x=1"
+    built = build_template_request(
+        "http://localhost/", provider="github", secret="s", body=bytearray(b'{"a":1}')
+    )
+    assert built.body == '{"a":1}'

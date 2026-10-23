@@ -239,17 +239,9 @@ def _decode_base64(value: str) -> bytes | None:
 
 def _body_bytes_or_text(body: Any) -> str | bytes:
     """A body to send as it is: bytes and strings unchanged, anything else as JSON."""
-    return body if isinstance(body, bytes) else json_body(body)
-
-
-def _signable_body(body: Any) -> Any:
-    """A body for a provider template: bytes must be UTF-8 text, as providers sign text."""
-    if not isinstance(body, bytes):
-        return body
-    try:
-        return body.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise ValueError("A signed body given as bytes must be UTF-8 text") from error
+    if isinstance(body, (bytes, bytearray, memoryview)):
+        return bytes(body)
+    return json_body(body)
 
 
 class WebhooksCC:
@@ -426,7 +418,7 @@ class WebhooksCC:
                 secret=secret,
                 template=template,
                 event=event,
-                body=_signable_body(body),
+                body=body,
                 method=method,
                 headers=headers,
                 timestamp=timestamp,
@@ -622,7 +614,7 @@ class Endpoints:
             secret=secret,
             template=template,
             event=event,
-            body=_signable_body(body),
+            body=body,
             method=method,
             headers=headers,
             timestamp=timestamp,
@@ -1134,7 +1126,8 @@ def _end_stream_at(response: httpx.Response, seconds: float) -> threading.Timer:
     def stop() -> None:
         stream = response.extensions.get("network_stream")
         sock = stream.get_extra_info("socket") if stream is not None else None
-        if isinstance(sock, socket.socket):
+        # On HTTP/2 the socket carries other requests too: leave it to the read timeout.
+        if response.http_version in ("HTTP/1.0", "HTTP/1.1") and isinstance(sock, socket.socket):
             with suppress(OSError):
                 sock.shutdown(socket.SHUT_RDWR)
         else:
@@ -1188,6 +1181,11 @@ def _subscribe(
     while not expired():
         since = last_received_at - 1 if last_received_at is not None else resume_floor
         params = {"since": str(max(0, int(since)))} if since is not None else {}
+        # Bounds the wait for headers and, where the deadline timer cannot (HTTP/2), each read.
+        read_s: float | None = idle_ms / 1000 if idle_ms > 0 else None
+        if deadline is not None:
+            left = max(0.001, (deadline - _now_ms()) / 1000)
+            read_s = left if read_s is None else min(read_s, left)
         connect_started = _now_ms()
         error: BaseException
         try:
@@ -1196,9 +1194,7 @@ def _subscribe(
                 f"{client._base_url}/api/stream/{slug}",
                 params=params,
                 headers={**client._auth(), "Accept": "text/event-stream"},
-                timeout=httpx.Timeout(
-                    _STREAM_CONNECT_TIMEOUT_S, read=idle_ms / 1000 if idle_ms > 0 else None
-                ),
+                timeout=httpx.Timeout(_STREAM_CONNECT_TIMEOUT_S, read=read_s),
             ) as response:
                 if response.status_code >= 400:
                     response.read()
@@ -1246,7 +1242,9 @@ def _subscribe(
                             attempts = 0  # a keepalive: the connection is healthy
                 finally:
                     if deadline_timer is not None:
+                        # Wait for a shutdown already under way before the connection is released.
                         deadline_timer.cancel()
+                        deadline_timer.join()
             if expired():
                 return
             if rotated:

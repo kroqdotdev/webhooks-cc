@@ -2121,8 +2121,8 @@ def build_template_request(
 ) -> BuiltRequest:
     """Build a webhook request the way ``provider`` sends it, signed with ``secret``.
 
-    ``body`` is sent as is when it is a string and as JSON otherwise; without
-    it the template's sample payload is used. ``timestamp`` (Unix seconds) and
+    ``body`` is sent as is when it is a string (or UTF-8 bytes) and as JSON
+    otherwise; without it the template's sample payload is used. ``timestamp`` (Unix seconds) and
     ``message_id`` (Standard Webhooks, Clerk, Resend) make signatures
     repeatable in tests. ``headers`` are added last and override the built ones.
 
@@ -2131,6 +2131,12 @@ def build_template_request(
     """
     if provider not in TEMPLATE_METADATA:
         raise ValueError(f"Unsupported provider: {provider}")
+    if isinstance(body, (bytes, bytearray, memoryview)):
+        # Providers sign text; bytes are taken as the UTF-8 text they hold.
+        try:
+            body = bytes(body).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("A signed body given as bytes must be UTF-8 text") from error
     extra = dict(headers or {})
     resolved_method = (method if method is not None else "POST").upper()
 
