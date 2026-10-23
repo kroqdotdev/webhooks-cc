@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -531,5 +532,37 @@ func TestCaptureDuringDeletesTheEndpoint(t *testing.T) {
 	}
 	if !deleted.Load() {
 		t.Error("the endpoint was not deleted after a failed action")
+	}
+}
+
+// A client whose clock runs ahead of the server's must not skip requests that
+// arrive between two polls.
+func TestWaitForToleratesAClientClockAhead(t *testing.T) {
+	api := newFakeAPI(t)
+	serverNow := time.Now().Add(-2 * time.Minute).UnixMilli() // the server is two minutes behind
+	var mu sync.Mutex
+	stored := []map[string]any{requestJSON("earlier", serverNow, map[string]any{"body": `{"type":"other"}`})}
+	var polls atomic.Int32
+	api.handle("GET /api/endpoints/{slug}/requests", func(w http.ResponseWriter, r *http.Request) {
+		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+		mu.Lock()
+		defer mu.Unlock()
+		if polls.Add(1) == 2 {
+			// Arrives just after the first poll, on the server's clock.
+			stored = append(stored, requestJSON("late", serverNow+1000, map[string]any{"body": `{"type":"invoice.paid"}`}))
+		}
+		var out []any
+		for _, request := range stored {
+			if request["receivedAt"].(int64) >= since { // the route's filter
+				out = append(out, request)
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	request, err := api.client().Requests.WaitFor(context.Background(), "acme-test", webhookscc.WaitOptions{
+		Timeout: 3 * time.Second, PollInterval: 10 * time.Millisecond, Match: webhookscc.MatchBodyPath("type", "invoice.paid"),
+	})
+	if err != nil || request.ID != "late" {
+		t.Fatalf("WaitFor = %v, %v", request, err)
 	}
 }

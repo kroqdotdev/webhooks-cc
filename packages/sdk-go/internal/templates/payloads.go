@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"webhooks.cc/go/internal/jsonx"
+	"webhooks.cc/go/internal/webtext"
 )
 
 // o builds an ordered object from alternating keys and values.
@@ -1342,7 +1343,7 @@ func twilioPayload(c payloadContext) (built, error) {
 	var params [][2]string
 	switch {
 	case c.body.present && c.body.isText:
-		return built{body: c.body.text, contentType: contentForm, headers: headers, twilioParams: formDecode(c.body.text)}, nil
+		return built{body: c.body.text, contentType: contentForm, headers: headers, twilioParams: webtext.FormParams(c.body.text)}, nil
 	case c.body.present:
 		var ok bool
 		params, ok = stringRecord(c.body.value)

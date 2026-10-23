@@ -14,6 +14,7 @@ import (
 
 	"webhooks.cc/go/internal/jsonx"
 	"webhooks.cc/go/internal/sigutil"
+	"webhooks.cc/go/internal/webtext"
 )
 
 // Options carries what a provider's check needs besides the body and headers.
@@ -231,7 +232,7 @@ func twilio(url string, body []byte, signatureHeader, secret string) bool {
 	if signatureHeader == "" {
 		return false
 	}
-	payload := sigutil.TwilioPayload(url, formParams(bodyText(body)))
+	payload := sigutil.TwilioPayload(url, webtext.FormParams(bodyText(body)))
 	expected := sigutil.Base64(sigutil.HMACSHA1([]byte(secret), []byte(payload)))
 	return safeEqual(jsTrim(signatureHeader), expected)
 }

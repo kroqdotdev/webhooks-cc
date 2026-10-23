@@ -33,7 +33,8 @@ type SubscribeOptions struct {
 	// connections. Without it the stream ends at the first rotation.
 	Reconnect bool
 	// MaxReconnectAttempts is how many reconnects in a row are tried
-	// (default 5), backing off from ReconnectBackoff (default 1 second).
+	// (default 5), backing off from ReconnectBackoff (default 1 second),
+	// doubled each time up to 30 seconds.
 	MaxReconnectAttempts int
 	ReconnectBackoff     time.Duration
 	// IdleTimeout drops a connection that went silent (default 90 seconds,
@@ -187,7 +188,7 @@ func (s *subscription) backOff(ctx context.Context) bool {
 			s.opts.OnReconnect(s.attempts)
 		}()
 	}
-	_ = sleep(ctx, s.backoff<<(s.attempts-1))
+	_ = sleep(ctx, backoffDelay(s.backoff, s.attempts))
 	return ctx.Err() == nil
 }
 

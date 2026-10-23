@@ -406,14 +406,6 @@ func TestFormEncodingMatchesURLSearchParams(t *testing.T) {
 	if want := "a+b=%C3%A9%2F%3F%26%3D%2B&%7E=*-._&bad=%EF%BF%BD"; got != want {
 		t.Errorf("formEncode = %s\nwant        %s", got, want)
 	}
-	decoded := formDecode("?a=1&&b&c=x+y%2Bz&a=%zz%4&d=%E2%82&e=%F0%9F%98%80=")
-	want := [][2]string{{"a", "1"}, {"b", ""}, {"c", "x y+z"}, {"a", "%zz%4"}, {"d", "�"}, {"e", "😀="}}
-	if !slices.Equal(decoded, want) {
-		t.Errorf("formDecode = %q\nwant %q", decoded, want)
-	}
-	if got := decodeUTF8([]byte("a\xff\xfeb\xed\xa0\x80c")); got != "a��b���c" {
-		t.Errorf("decodeUTF8 = %q", got)
-	}
 }
 
 func TestTwilioSignsObjectOverridesBySortedParameters(t *testing.T) {

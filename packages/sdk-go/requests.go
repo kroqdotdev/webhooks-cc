@@ -19,6 +19,8 @@ const (
 	maxWaitIterations  = 10_000
 	defaultWaitTimeout = 30 * time.Second
 	defaultWaitPoll    = 500 * time.Millisecond
+	// pollOverlap is how far before the newest request a wait's next poll starts.
+	pollOverlap = 5 * time.Second
 )
 
 // Not replayed: hop-by-hop headers, credentials, and headers our proxies added.
@@ -181,11 +183,19 @@ func collect(
 	seen := map[string]bool{}
 
 	for iterations := 0; time.Since(start) < timeout && iterations < maxWaitIterations; iterations++ {
-		checkTime := time.Now()
 		requests, err := fetch(ctx, lastChecked)
 		switch {
 		case err == nil:
-			lastChecked = checkTime
+			// The next poll starts a little before the newest request seen, on
+			// the server's clock. A boundary taken from the local clock would
+			// skip whatever arrives in the gap when this machine's clock runs
+			// ahead of the server's; the overlap also catches a capture that
+			// committed after a newer one. Repeats are skipped by id.
+			for _, request := range requests {
+				if boundary := request.ReceivedAt.Add(-pollOverlap); boundary.After(lastChecked) {
+					lastChecked = boundary
+				}
+			}
 		case ctx.Err() != nil:
 			return nil, ctx.Err()
 		case errors.Is(err, ErrUnauthorized), errors.Is(err, ErrNotFound):

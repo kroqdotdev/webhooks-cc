@@ -66,7 +66,8 @@ type RetryOptions struct {
 	// MaxAttempts is the number of tries, the first included.
 	MaxAttempts int
 	// Backoff is the wait before the first retry, doubled for each further
-	// one (default 1 second). A 429's Retry-After takes precedence.
+	// one up to 30 seconds (default 1 second). A 429's Retry-After takes
+	// precedence.
 	Backoff time.Duration
 	// RetryOn lists the statuses to retry (default 429, 500, 502, 503 and 504).
 	// Network errors and timeouts are always retried.
@@ -169,7 +170,7 @@ func (c *Client) api(ctx context.Context, method, path string, query url.Values,
 		}
 	}
 	for attempt := 1; ; attempt++ {
-		backoff := c.retry.Backoff << (attempt - 1)
+		backoff := backoffDelay(c.retry.Backoff, attempt)
 		more := attempt < c.retry.MaxAttempts
 		response, err := c.apiOnce(ctx, method, endpoint, payload)
 		if err != nil {
@@ -316,6 +317,20 @@ func errorFromResponse(response *apiResponse) *Error {
 		}
 	}
 	return apiErr
+}
+
+// maxBackoff caps retry and reconnect delays; doubling without a cap would
+// overflow time.Duration after a few dozen attempts.
+const maxBackoff = 30 * time.Second
+
+// backoffDelay is base doubled for each attempt after the first, at most
+// maxBackoff (or base, when that is longer).
+func backoffDelay(base time.Duration, attempt int) time.Duration {
+	delay := base
+	for i := 1; i < attempt && delay < maxBackoff; i++ {
+		delay *= 2
+	}
+	return min(delay, max(base, maxBackoff))
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
