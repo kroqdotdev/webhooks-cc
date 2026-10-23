@@ -172,7 +172,9 @@ change they did not make. It goes out from `SMTP_ADMIN_EMAIL`
 (`noreply@webhooks.cc`) like the other auth mail, with the
 `password-changed.html` template. GoTrue gives the template `{{ .Email }}`,
 `{{ .SiteURL }}` and `{{ .Data }}`; leave `.Data` unused, because it is user
-metadata the user can write. The template has no link that signs anyone in,
+metadata the user can write. It needs GoTrue v2.190.0 or later, a higher
+floor than the current-password check: earlier versions do not pass
+`.SiteURL` to this template, so its links would come out without a host. The template has no link that signs anyone in,
 and it points out that API keys, CLI logins and connected agents outlive a
 password change and a reset, which end only browser sessions. The send
 happens inside the request but never fails it: an SMTP error or the
