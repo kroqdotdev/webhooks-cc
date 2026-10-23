@@ -26,3 +26,6 @@ apps/web/public/email-templates/
 
 # Internal planning docs (hand-written markdown, not part of the build)
 docs/
+
+# SDK conformance vectors: written by a test that compares them byte for byte
+packages/sdk/conformance/*.json

@@ -486,6 +486,12 @@ export interface SendTemplateOptions {
   body?: unknown;
   /** Unix timestamp (seconds) override for deterministic signatures in tests */
   timestamp?: number;
+  /**
+   * Message id override for providers that sign one (`standard-webhooks`,
+   * `clerk`, `resend`); random when omitted. With `timestamp`, makes their
+   * signatures deterministic in tests.
+   */
+  messageId?: string;
 }
 
 /**
@@ -717,6 +723,11 @@ export interface SendToOptions {
   body?: unknown;
   /** Unix timestamp (seconds) override for deterministic signatures in tests */
   timestamp?: number;
+  /**
+   * Message id override for providers that sign one (`standard-webhooks`,
+   * `clerk`, `resend`); random when omitted.
+   */
+  messageId?: string;
 }
 
 /** Result returned by verifySignature(). */

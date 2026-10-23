@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
+  "description": "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises.",
+  "vectors": [
+    {
+      "name": "forwarded email",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,i+YTLSte8SnefCAGJ3X12oo92r3yFm64U5O6DjvSSTs="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "forwarded email, changed body",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}} ",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,i+YTLSte8SnefCAGJ3X12oo92r3yFm64U5O6DjvSSTs="
+      },
+      "expected": {
+        "error": "invalid_signature"
+      }
+    },
+    {
+      "name": "forwarded email, wrong secret",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_d3Jvbmctc2VjcmV0LWZvci1jb25mb3JtYW5jZQ==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,i+YTLSte8SnefCAGJ3X12oo92r3yFm64U5O6DjvSSTs="
+      },
+      "expected": {
+        "error": "invalid_signature"
+      }
+    },
+    {
+      "name": "forwarded email, timestamp more than 300 seconds old",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225901000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,i+YTLSte8SnefCAGJ3X12oo92r3yFm64U5O6DjvSSTs="
+      },
+      "expected": {
+        "error": "timestamp_out_of_range"
+      }
+    },
+    {
+      "name": "forwarded email, timestamp more than 300 seconds ahead",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225299000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,i+YTLSte8SnefCAGJ3X12oo92r3yFm64U5O6DjvSSTs="
+      },
+      "expected": {
+        "error": "timestamp_out_of_range"
+      }
+    },
+    {
+      "name": "forwarded email, missing webhook-signature",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600"
+      },
+      "expected": {
+        "error": "missing_headers"
+      }
+    },
+    {
+      "name": "forwarded email, a signed body that is not JSON",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "email.received",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,NRVM49diJgMrq7oHpSPEoeqjyM8/zYYvZrjYeoU8qAI="
+      },
+      "expected": {
+        "error": "invalid_payload"
+      }
+    },
+    {
+      "name": "forwarded email, a signed request.received event",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"request.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d\",\"method\":\"POST\",\"path\":\"/webhooks/stripe\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"ok\\\":true}\"}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,Wocwht01TR4rtNI3ORN5q9seHBJokaTujgz6EWHrYgY="
+      },
+      "expected": {
+        "error": "invalid_payload"
+      }
+    },
+    {
+      "name": "forwarded request",
+      "function": "verifyForwardedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"request.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d\",\"method\":\"POST\",\"path\":\"/webhooks/stripe\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"ok\\\":true}\"}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,Wocwht01TR4rtNI3ORN5q9seHBJokaTujgz6EWHrYgY="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "forwarded request, a signed email.received event",
+      "function": "verifyForwardedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,i+YTLSte8SnefCAGJ3X12oo92r3yFm64U5O6DjvSSTs="
+      },
+      "expected": {
+        "error": "invalid_payload"
+      }
+    },
+    {
+      "name": "relayed request",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_1\",\"note\":\"café ✓\"}",
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-received-at": "1767225600123",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,lGj+qm4TMP/yxkp386sKWqXvHA8dJfCOz3fNJJohW9c="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "relayed request, no age limit: a week later still verifies",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767830400000,
+      "body": "{\"id\":\"evt_1\",\"note\":\"café ✓\"}",
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-received-at": "1767225600123",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,lGj+qm4TMP/yxkp386sKWqXvHA8dJfCOz3fNJJohW9c="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "relayed request, a body that is not UTF-8",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-received-at": "1767225600123",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,a5RCRjXH6Gy/a6ORdidqYLO6R8oKNG3h7qiAXAgzSMA="
+      },
+      "expected": {
+        "ok": true
+      },
+      "bodyBase64": "AP/+QQrD"
+    },
+    {
+      "name": "relayed request, changed body",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_2\",\"note\":\"café ✓\"}",
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-received-at": "1767225600123",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,lGj+qm4TMP/yxkp386sKWqXvHA8dJfCOz3fNJJohW9c="
+      },
+      "expected": {
+        "error": "invalid_signature"
+      }
+    },
+    {
+      "name": "relayed request, any signature in a space-separated list may match",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_1\",\"note\":\"café ✓\"}",
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-received-at": "1767225600123",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,b2xkLXNlY3JldC1zaWduYXR1cmU= v1,lGj+qm4TMP/yxkp386sKWqXvHA8dJfCOz3fNJJohW9c="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "relayed request, missing webhooks-cc-received-at",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_1\",\"note\":\"café ✓\"}",
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,lGj+qm4TMP/yxkp386sKWqXvHA8dJfCOz3fNJJohW9c="
+      },
+      "expected": {
+        "error": "missing_headers"
+      }
+    }
+  ]
+}
