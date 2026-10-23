@@ -1,0 +1,70 @@
+name: Python SDK Publish
+
+# Publishes packages/sdk-python to PyPI as webhooks-cc when a tag
+# sdk-python-v<version> is pushed. PyPI trusts this workflow through OIDC
+# (trusted publishing), so there is no token to store or rotate: on pypi.org
+# the project's trusted publisher is kroqdotdev/webhooks-cc, workflow
+# sdk-python-publish.yml, environment pypi.
+
+on:
+  push:
+    tags:
+      - "sdk-python-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sdk-python
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.14"
+
+      - name: Check the tag matches the package version
+        run: |
+          version="$(uv version --short)"
+          if [ "sdk-python-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint, typecheck and test
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+          uv run mypy
+          uv run pytest
+
+      - name: Build
+        run: uv build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: packages/sdk-python/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
