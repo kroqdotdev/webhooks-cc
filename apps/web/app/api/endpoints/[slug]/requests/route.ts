@@ -2,6 +2,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   clearRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
+  withEmailExtracts,
 } from "@/lib/supabase/requests";
 import { isRequestKind } from "@/lib/supabase/search";
 import { reportError } from "@/lib/observability";
@@ -42,7 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    return Response.json(data);
+    return Response.json(await withEmailExtracts(data));
   } catch (error) {
     reportError("Failed to list requests", error);
     return Response.json({ error: "Failed to list requests" }, { status: 500 });

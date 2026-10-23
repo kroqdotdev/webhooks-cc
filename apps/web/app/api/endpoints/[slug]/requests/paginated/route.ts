@@ -1,5 +1,5 @@
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { listPaginatedRequestsForEndpointByUser } from "@/lib/supabase/requests";
+import { listPaginatedRequestsForEndpointByUser, withEmailExtracts } from "@/lib/supabase/requests";
 import { isRequestKind } from "@/lib/supabase/search";
 import { reportError } from "@/lib/observability";
 
@@ -35,7 +35,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    return Response.json(page);
+    return Response.json({ ...page, items: await withEmailExtracts(page.items) });
   } catch (error) {
     if (error instanceof Error && error.message === "invalid_cursor") {
       return Response.json({ error: "invalid_cursor" }, { status: 400 });

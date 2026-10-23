@@ -1933,6 +1933,13 @@ components:
             - $ref: "#/components/schemas/EmailCapture"
             - type: "null"
           description: The parsed message when `kind` is `email`, null otherwise
+        extracts:
+          oneOf:
+            - $ref: "#/components/schemas/EmailExtracts"
+            - type: "null"
+          description: |
+            For a captured email, the one-time codes and links found in it, as the dashboard shows
+            them; null when the endpoint's `showEmailExtracts` is off. Absent on HTTP requests.
 
     StreamRequest:
       type: object
@@ -2092,6 +2099,39 @@ components:
             attachments:
               type: boolean
               description: The message had more than 100 attachments; only the first 100 are listed
+
+    EmailExtracts:
+      type: object
+      required: [codes, links]
+      description: |
+        One-time codes and links found in an email, best first. Codes are only taken when a word
+        such as "code" or "verification" sits next to them. Links that look like what the email
+        asks you to click (confirm, verify, reset, sign in) come first; unsubscribe, tracking and
+        social links are left out.
+      properties:
+        codes:
+          type: array
+          items:
+            type: string
+          description: Codes with spaces and dashes removed, such as `482913`
+        links:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ExtractedLink"
+
+    ExtractedLink:
+      type: object
+      required: [url, label, action]
+      properties:
+        url:
+          type: string
+        label:
+          type: ["string", "null"]
+          description: The link text, when the link came from the HTML part
+        action:
+          type: boolean
+          description: Looks like what the email asks you to click (confirm, verify, reset, sign in)
 
     EmailAddress:
       type: object

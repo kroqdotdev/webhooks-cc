@@ -1158,6 +1158,7 @@ interface Request {
   signingProvider?: string | null;
   kind?: "http" | "email";
   email?: EmailCapture | null; // the parsed message, for a captured email
+  extracts?: EmailExtracts | null; // codes and links found in an email; null when turned off
 }
 
 // A captured email: method "EMAIL", path is the recipient address, body the raw message
@@ -1198,6 +1199,12 @@ interface EmailCapture {
     addresses: boolean;
     attachments: boolean;
   };
+}
+
+// What extractFromEmail() returns, and what the API sends as a request's extracts
+interface EmailExtracts {
+  codes: string[]; // best first, spaces and dashes removed
+  links: { url: string; label: string | null; action: boolean }[]; // action links first
 }
 
 interface EmailCriteria {
