@@ -12,21 +12,19 @@ Python 3.10 or later. Get an API key at [webhooks.cc/account/api-keys](https://w
 ## Wait for a webhook
 
 ```python
-from webhooks_cc import WebhooksCC, match_body_path
+from webhooks_cc import WebhooksCC, match_body_path, temporary_endpoint
 
 with WebhooksCC() as client:
-    endpoint = client.endpoints.create(name="checkout test")
+    # Deleted when the block ends, even when the test fails.
+    with temporary_endpoint(client, "checkout test") as endpoint:
+        trigger_checkout(webhook_url=endpoint.url)
 
-    trigger_checkout(webhook_url=endpoint.url)
-
-    request = client.requests.wait_for(
-        endpoint.slug,
-        timeout="30s",
-        match=match_body_path("type", "checkout.session.completed"),
-    )
-    assert request.json()["data"]["object"]["amount_total"] == 2000
-
-    client.endpoints.delete(endpoint.slug)
+        request = client.requests.wait_for(
+            endpoint.slug,
+            timeout="30s",
+            match=match_body_path("type", "checkout.session.completed"),
+        )
+        assert request.json()["data"]["object"]["amount_total"] == 2000
 ```
 
 Durations take `"500ms"`, `"30s"`, `"5m"`, `"2h"`, `"7d"`, a `timedelta`, or a number of milliseconds (the unit every webhooks.cc SDK uses, so prefer a string where you mean seconds). Times such as `since` and `Request.received_at` are milliseconds since the epoch.
@@ -79,7 +77,7 @@ response = client.send_to(
 assert response.status_code == 200
 ```
 
-Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending. Redirects are not followed, so signed requests only ever reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint. `TEMPLATE_PROVIDERS` lists the 34 providers.
+Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending. Redirects are never followed, even by an `http_client` of your own, so signed requests only reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint. `TEMPLATE_PROVIDERS` lists the 34 providers.
 
 ## Verify signatures
 

@@ -1,4 +1,4 @@
-export type ChangelogTrack = "web" | "cli" | "sdk" | "mcp";
+export type ChangelogTrack = "web" | "cli" | "sdk" | "python" | "mcp";
 
 export interface ChangelogEntry {
   version: string;
@@ -12,16 +12,28 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   web: "Web App",
   cli: "CLI",
   sdk: "SDK",
+  python: "Python SDK",
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.42.0";
+export const APP_VERSION = "0.42.1";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.0";
+export const PYTHON_SDK_VERSION = "0.1.0";
 export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.42.1",
+    date: "2026-10-23",
+    title: "Python SDK Docs",
+    track: "web",
+    items: [
+      "A Python SDK page in the docs: install, waiting for webhooks, pytest fixtures, codes and links from test email, signed webhooks for your handler, and signature verification",
+      "The changelog has a Python SDK track",
+    ],
+  },
   {
     version: "0.42.0",
     date: "2026-10-23",
@@ -1879,6 +1891,22 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Request list, waitFor with timeout and polling",
       "Replay captured requests to any URL",
       "Human-readable duration strings (30s, 5m)",
+    ],
+  },
+
+  // ─── Python SDK ─────────────────────────────────────────────────────
+  {
+    version: "0.1.0",
+    date: "2026-10-23",
+    title: "The Python SDK",
+    track: "python",
+    items: [
+      "`pip install webhooks-cc`: a client for endpoints, captured requests and test email, with `wait_for`, `wait_for_all` and a live `subscribe` stream that follows the server's connection rotation",
+      "`send_to()` and `build_request()` sign webhooks for your own handler the way 34 providers sign theirs, with their sample payloads",
+      "`verify_signature()` checks 32 providers' signatures, and `verify_forwarded_email()`, `verify_forwarded_request()` and `verify_relayed_request()` check what webhooks.cc forwards (Discord and PayPal need the `crypto` extra)",
+      "Matchers, `extract_code()` and `extract_link()` for test email, `temporary_endpoint`, `capture_during` and `capture_email_during`",
+      "pytest fixtures `webhooks_cc` and `webhooks_cc_endpoint`, skipped when `WHK_API_KEY` is not set",
+      "Passes the same conformance tests as the TypeScript SDK for signing, verification, matchers and durations",
     ],
   },
 

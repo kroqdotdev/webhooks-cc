@@ -5,13 +5,14 @@ import {
   APP_VERSION,
   CLI_VERSION,
   SDK_VERSION,
+  PYTHON_SDK_VERSION,
   MCP_VERSION,
   CHANGELOG,
   TRACK_LABELS,
   type ChangelogTrack,
 } from "@/lib/changelog";
 
-const TRACKS: (ChangelogTrack | "all")[] = ["all", "web", "cli", "sdk", "mcp"];
+const TRACKS: (ChangelogTrack | "all")[] = ["all", "web", "cli", "sdk", "python", "mcp"];
 
 function formatDate(iso: string): string {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
@@ -43,6 +44,10 @@ export default function ChangelogPage() {
             </span>
             <span>
               SDK <span className="font-mono font-bold text-foreground">v{SDK_VERSION}</span>
+            </span>
+            <span>
+              Python{" "}
+              <span className="font-mono font-bold text-foreground">v{PYTHON_SDK_VERSION}</span>
             </span>
             <span>
               MCP <span className="font-mono font-bold text-foreground">v{MCP_VERSION}</span>

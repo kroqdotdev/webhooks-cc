@@ -364,12 +364,15 @@ class WebhooksCC:
         self, method: str, url: str, headers: Mapping[str, str], body: str | bytes | None
     ) -> httpx.Response:
         try:
+            # Never follow a redirect, even with an http_client configured to: signature
+            # and captured headers must only reach the host the caller named.
             return self._http.request(
                 method,
                 url,
                 headers=dict(headers),
                 content=body,
                 timeout=self._timeout_s,
+                follow_redirects=False,
             )
         except httpx.TimeoutException:
             raise TimeoutError(self._timeout_ms) from None
