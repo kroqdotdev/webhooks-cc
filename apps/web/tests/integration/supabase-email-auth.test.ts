@@ -340,6 +340,8 @@ describe("Email/password auth", () => {
     });
 
     it("emails the account from noreply@webhooks.cc", async () => {
+      // Also matches GoTrue's default subject, which it falls back to when the
+      // template host (the Next dev server) is down; this checks the sender.
       const message = await waitForMail(CHANGE_LOCAL, /password was changed/i);
       expect(message.from).toContain("<noreply@webhooks.cc>");
     });

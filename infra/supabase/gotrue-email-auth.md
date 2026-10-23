@@ -170,12 +170,18 @@ account after every password change made through `PUT /auth/v1/user` (the
 account page's panel and `/auth/reset-password`), so an owner hears about a
 change they did not make. It goes out from `SMTP_ADMIN_EMAIL`
 (`noreply@webhooks.cc`) like the other auth mail, with the
-`password-changed.html` template; the template has only `{{ .Email }}` and
-`{{ .SiteURL }}` to work with, and no link that signs anyone in. The send
+`password-changed.html` template. GoTrue gives the template `{{ .Email }}`,
+`{{ .SiteURL }}` and `{{ .Data }}`; leave `.Data` unused, because it is user
+metadata the user can write. The template has no link that signs anyone in,
+and it points out that API keys, CLI logins and connected agents outlive a
+password change and a reset, which end only browser sessions. The send
 happens inside the request but never fails it: an SMTP error or the
-instance-wide `RATE_LIMIT_EMAIL_SENT` budget only logs a warning. It is not
-subject to `SMTP_MAX_FREQUENCY`, so it still arrives right after a reset
-email. Every change is also recorded in `public.audit_events` by a trigger
+instance-wide `RATE_LIMIT_EMAIL_SENT` budget (30 an hour unless set) only
+logs a warning. That budget is shared with confirmation and reset email, and
+a run of `tests/integration/supabase-email-auth.test.ts` spends about five of
+it, so raise it in the dev `.env` if repeated runs start failing at the SMTP
+step. It is not subject to `SMTP_MAX_FREQUENCY`, so it still arrives right
+after a reset email. Every change is also recorded in `public.audit_events` by a trigger
 on `auth.users` (migration 00061), whichever path made it.
 
 ## 3. Apply

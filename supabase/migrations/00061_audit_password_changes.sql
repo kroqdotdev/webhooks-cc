@@ -18,6 +18,11 @@
 --
 -- The WHEN clause keeps the trigger to real changes of the hash: the
 -- last_sign_in_at and similar updates GoTrue makes on every sign-in skip it.
+-- That holds while GoTrue's database encryption stays off: turning it on, or
+-- rotating its key, makes GoTrue rewrite encrypted_password at each user's
+-- next sign-in, and every rewrite would be recorded as a change. Like
+-- on_auth_user_updated, the trigger depends on its column, so a GoTrue
+-- upgrade whose migrations alter encrypted_password must drop it first.
 -- Recording never blocks the change: a failed insert raises a warning and the
 -- update goes ahead, as auditUserAction() never fails a request.
 --
