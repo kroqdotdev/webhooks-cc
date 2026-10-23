@@ -134,7 +134,10 @@ but the check has to live in GoTrue: `PUT /auth/v1/user` is reachable with
 any session's access token, so a check in the app could be skipped. Without
 this line GoTrue ignores the field and the panel accepts any current
 password, so set it on an instance **before** deploying a web release with
-the panel.
+the panel. It needs GoTrue v2.189.0 or later: v2.187.0 added the setting
+and v2.189.0 extended the email-link exemption to PKCE recovery sessions.
+Older versions ignore it without a warning, so check the running image
+(`docker inspect supabase-auth --format '{{.Config.Image}}'`).
 
 Sessions that came from an email link (recovery, signup confirmation, magic
 link or OTP) are exempt, which is what keeps `/auth/reset-password` and the
