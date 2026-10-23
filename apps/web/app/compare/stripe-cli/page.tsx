@@ -69,7 +69,7 @@ const ROWS = [
     "stripe events resend (to Stripe URL)",
   ],
   ["Mock custom status codes & bodies", "Yes (configurable per endpoint)", "No"],
-  ["MCP server for AI coding agents", "Yes (@webhooks-cc/mcp, 38 tools)", "Stripe MCP (API ops)"],
+  ["MCP server for AI coding agents", "Yes (@webhooks-cc/mcp, 39 tools)", "Stripe MCP (API ops)"],
   ["Open source", "Yes (AGPL + MIT)", "Yes (Apache 2.0 CLI)"],
 ] as const;
 

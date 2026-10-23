@@ -15,13 +15,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.8";
+export const APP_VERSION = "0.41.0";
 export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.16.0";
-export const MCP_VERSION = "1.12.1";
+export const SDK_VERSION = "1.17.0";
+export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.41.0",
+    date: "2026-10-23",
+    title: "Payload Schemas, Provider Test Files, and an Agent Skill",
+    track: "web",
+    items: [
+      "A Schema view next to Tree and Formatted turns a request body into TypeScript interfaces, Zod schemas, Pydantic models or JSON Schema, learned from every recent request of the same event so optional and nullable fields come out right",
+      "Provider pages for the 30 providers whose test payloads a real handler can verify show a ready-to-run Vitest file that sends signed samples to your local handler and checks it rejects forged ones",
+      "A webhook testing skill for coding agents, as a Claude Code plugin with the MCP server (/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc) and for Cursor, Codex and Copilot through npx skills add; docs at /docs/mcp/skills",
+    ],
+  },
   {
     version: "0.40.8",
     date: "2026-10-23",
@@ -1552,6 +1563,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.17.0",
+    date: "2026-10-23",
+    title: "Payload Schemas from Captured Requests",
+    track: "sdk",
+    items: [
+      "`generateRequestSchema()` writes TypeScript interfaces, Zod schemas, Pydantic models or JSON Schema from captured requests; several requests of one event mark fields missing from some as optional and sometimes-null ones as nullable",
+      "`generatePayloadSchema()` does the same from parsed values, and `payloadSample()` returns the value a request contributes (JSON, or form fields as strings)",
+      "The new `@webhooks-cc/sdk/schema` entry point exports them without the client, for browser bundles",
+    ],
+  },
+  {
     version: "1.16.0",
     date: "2026-10-23",
     title: "Repeatable Standard Webhooks, Clerk and Resend Signatures",
@@ -1849,6 +1871,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.13.0",
+    date: "2026-10-23",
+    title: "Payload Schemas and the MCP Registry",
+    track: "mcp",
+    items: [
+      "New `generate_payload_schema` tool, with an API key and in the sandbox: TypeScript, Zod, Pydantic or JSON Schema from captured bodies, filtered by event, method, path or request ids, with a warning when the samples mix events",
+      "Published to the official MCP Registry as `io.github.kroqdotdev/webhooks-cc` with each release",
+      "The `setup_provider_testing` prompt ends with generating the payload types",
+    ],
+  },
   {
     version: "1.12.1",
     date: "2026-10-11",

@@ -87,6 +87,18 @@ export {
   isEmailRequest,
 } from "./matchers";
 export { diffRequests } from "./diff";
+export {
+  generatePayloadSchema,
+  generateRequestSchema,
+  payloadSample,
+  PAYLOAD_SCHEMA_FORMATS,
+} from "./payload-schema";
+export type {
+  PayloadSchemaFormat,
+  PayloadSchemaOptions,
+  RequestSchemaResult,
+  SchemaRequestLike,
+} from "./payload-schema";
 export { parseDuration } from "./utils";
 export { parseSSE } from "./sse";
 export {

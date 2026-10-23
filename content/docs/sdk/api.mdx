@@ -3,7 +3,7 @@ title: "API Reference"
 description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-23
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -1031,6 +1031,25 @@ const parsed = parseBody(request);
 // Extract nested JSON field by dot notation
 const email = extractJsonField<string>(request, "data.customer.email");
 ```
+
+## Payload Schemas
+
+Generate types from captured requests: TypeScript interfaces, Zod schemas, Pydantic models, or JSON Schema. One schema is learned from every sample, so pass several requests of the same event to find optional fields (missing from some samples) and nullable ones (sometimes `null`).
+
+```ts
+import { generateRequestSchema, generatePayloadSchema } from "@webhooks-cc/sdk";
+
+const requests = await client.requests.list("acme-stripe", { limit: 20 });
+const { code, samples, skipped } = generateRequestSchema(requests, {
+  format: "zod", // "typescript" (default), "zod", "pydantic", or "json-schema"
+  name: "InvoicePaidEvent",
+});
+
+// From parsed values instead of requests
+const ts = generatePayloadSchema([{ id: "evt_1", amount: 100 }], { name: "Payment" });
+```
+
+`generateRequestSchema()` reads JSON bodies, and form bodies as string fields; it skips emails and other bodies and counts them in `skipped`. `payloadSample(request)` returns the value it would use. Both run without network access, and `@webhooks-cc/sdk/schema` exports them without the client, for browser bundles.
 
 ## Request Diffing
 

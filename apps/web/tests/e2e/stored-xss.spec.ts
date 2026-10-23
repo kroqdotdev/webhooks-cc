@@ -13,6 +13,18 @@ const HEADER_MARKER = "e2e-header-xss";
 const QUERY_MARKER = "e2e-query-xss";
 const REQUEST_PATH = "/xss-regression-check";
 const HEADER_NAME = "x-xss-header";
+const JSON_PATH = "/xss-json-check";
+const JSON_KEY_MARKER = "e2e-json-key-xss";
+const JSON_VALUE_MARKER = "e2e-json-value-xss";
+const JSON_NESTED_MARKER = "e2e-json-nested-xss";
+// Keys end up in generated TypeScript, Zod, Pydantic and JSON Schema source,
+// which the Schema view highlights as HTML.
+const JSON_PAYLOAD = JSON.stringify({
+  [`<img src=x onerror="window.__xssHits.push('${JSON_KEY_MARKER}')">`]: `<script>window.__xssHits.push('${JSON_VALUE_MARKER}')</script>`,
+  nested: {
+    [`</code><svg onload="window.__xssHits.push('${JSON_NESTED_MARKER}')">`]: 1,
+  },
+});
 const QUERY_NAME = "payload";
 
 const BODY_PAYLOAD =
@@ -71,6 +83,39 @@ async function insertCapturedRequest(endpointIdValue: string, userId: string) {
   }
 }
 
+async function insertJsonRequest(endpointIdValue: string, userId: string) {
+  // Older than the HTML request, so the dashboard still opens that one first.
+  const { error } = await admin.from("requests").insert({
+    endpoint_id: endpointIdValue,
+    user_id: userId,
+    method: "POST",
+    path: JSON_PATH,
+    headers: { "content-type": "application/json" },
+    body: JSON_PAYLOAD,
+    query_params: {},
+    content_type: "application/json",
+    ip: "127.0.0.1",
+    size: JSON_PAYLOAD.length,
+    received_at: new Date(Date.now() - 60_000).toISOString(),
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function expectInertCode(page: Page, dialogs: string[]) {
+  const code = page.locator("pre.syntax-highlight code").first();
+  await expect(code).toBeVisible();
+  await expect(code).toContainText("onerror");
+  expect(await code.locator("img, script, svg").count()).toBe(0);
+  const html = await code.innerHTML();
+  expect(html).not.toContain("<img");
+  expect(html).not.toContain("<script");
+  expect(html).not.toContain("<svg");
+  await expectNoXssExecution(page, dialogs);
+}
+
 async function expectNoXssExecution(page: Page, dialogs: string[]) {
   const hits = await page.evaluate(() => {
     const win = window as Window & { __xssHits?: string[] };
@@ -89,6 +134,7 @@ test.beforeAll(async () => {
   endpointSlug = endpoint.slug;
 
   await insertCapturedRequest(endpoint.id, testUser.id);
+  await insertJsonRequest(endpoint.id, testUser.id);
 });
 
 test.afterAll(async () => {
@@ -196,4 +242,30 @@ test("dashboard renders hostile request payloads inertly", async ({ page }) => {
 
     await expectNoXssExecution(page, dialogs);
   });
+});
+
+test("schema view keeps hostile JSON keys inert", async ({ page }) => {
+  const dialogs: string[] = [];
+
+  page.on("dialog", async (dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.dismiss();
+  });
+
+  await page.addInitScript(() => {
+    const win = window as Window & { __xssHits?: string[] };
+    win.__xssHits = [];
+  });
+
+  await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
+  await page.getByText(JSON_PATH).first().click();
+  await page.getByRole("button", { name: /^body$/i }).click();
+  await page.getByRole("button", { name: "Schema", exact: true }).click();
+
+  for (const format of ["TypeScript", "Zod", "Pydantic", "JSON Schema"]) {
+    await test.step(`${format} schema stays inert`, async () => {
+      await page.getByRole("radio", { name: format, exact: true }).click();
+      await expectInertCode(page, dialogs);
+    });
+  }
 });

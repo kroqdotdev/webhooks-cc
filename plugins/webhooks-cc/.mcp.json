@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "webhooks-cc": {
+      "command": "npx",
+      "args": ["-y", "@webhooks-cc/mcp"],
+      "env": {
+        "WHK_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}

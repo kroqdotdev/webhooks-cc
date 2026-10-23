@@ -11,6 +11,7 @@ const SANDBOX_TOOLS = [
   "connect_account",
   "create_endpoint",
   "delete_endpoint",
+  "generate_payload_schema",
   "get_endpoint",
   "get_request",
   "list_endpoints",
@@ -133,6 +134,10 @@ describe("sandbox tools (no API key)", () => {
     expect((await call("get_request", { requestId: "req1" })).body.id).toBe("req1");
     expect((await call("wait_for_request", { endpointSlug: "sbx1" })).body.id).toBe("req1");
     expect((await call("list_requests", { endpointSlug: "sbx1", kind: "email" })).body).toEqual([]);
+    const schema = await call("generate_payload_schema", { endpointSlug: "sbx1" });
+    expect(schema.isError).toBe(false);
+    expect(schema.body).toMatchObject({ format: "typescript", samples: 1 });
+    expect(schema.body.code).toContain("export interface WebhookPayload {");
     expect((await call("delete_endpoint", { slug: "sbx1" })).body).toEqual({ deleted: "sbx1" });
   });
 
@@ -302,11 +307,11 @@ describe("sandbox tools (no API key)", () => {
     expect(connected.body.message).toContain("now that account's endpoints");
 
     const after = await names();
-    expect(after).toHaveLength(38);
+    expect(after).toHaveLength(39);
     expect(after).toEqual(expect.arrayContaining(["send_webhook", "describe", "list_teams"]));
     expect(after).not.toContain("connect_account");
     expect(after).not.toContain("about_sandbox");
-    // Debounced: removing ten tools and adding 38 is one notification.
+    // Debounced: removing eleven tools and adding 39 is one notification.
     await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0));
     expect(changes).toHaveLength(1);
 

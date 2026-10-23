@@ -3,7 +3,7 @@ title: "Dashboard Features"
 description: "Complete guide to every feature in the webhooks.cc dashboard — keyboard shortcuts, pinning, notes, request comparison, timeline view, and more."
 section: dashboard
 order: 5
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-23
 schema: none
 keywords:
   [
@@ -153,10 +153,18 @@ Click the **cURL** button (or press `c`) to copy a shell command that reproduces
 
 In the **Body** tab, the **Copy** dropdown offers:
 
-- **Raw body** — the original body text
-- **Formatted** — prettified JSON, XML, etc.
-- **TypeScript interface** — a generated TypeScript type from the JSON structure (JSON bodies only)
-- **CSV** — the body as CSV (JSON objects/arrays only)
+- **Raw body**: the original body text
+- **Formatted**: prettified JSON, XML, etc.
+- **TypeScript interface**: a generated TypeScript type from the JSON structure (JSON and form bodies)
+- **CSV**: the body as CSV (JSON objects/arrays only)
+
+### Payload schemas
+
+The **Schema** view next to **Tree** and **Formatted** turns a JSON or form body into code you can paste into your handler: **TypeScript** interfaces, **Zod** schemas, **Pydantic** models, or **JSON Schema**. The dashboard remembers the format you picked.
+
+It learns from every recent request carrying the same payload: the same detected event (such as Stripe `invoice.paid`), or without one, the same method and path. A field missing from some of them is optional, a field that is sometimes `null` is nullable, and nested objects with the same shape share one type. Switch to **This request** to type only the selected one. The root type is named after the event, such as `InvoicePaidEvent`.
+
+AI agents get the same schemas from the MCP tool [`generate_payload_schema`](/docs/mcp/tools#generate_payload_schema), and code from `generateRequestSchema()` in the [SDK](/docs/sdk/api#payload-schemas).
 
 ### Export
 

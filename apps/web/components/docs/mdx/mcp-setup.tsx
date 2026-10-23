@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { CopyButton } from "@/components/ui/copy-button";
+import { AgentSkillInstall } from "@/components/docs/agent-skill-install";
 
 const KEY_PLACEHOLDER = "whcc_...";
 const KEY_REGEX = /^whcc_[A-Za-z0-9_-]+$/;
@@ -67,6 +68,8 @@ export function McpInstallGuide() {
           .
         </p>
       </section>
+
+      <AgentSkillInstall headingClassName="text-xl" />
 
       <section>
         <h2 className="text-xl font-bold mb-3">One-click install</h2>

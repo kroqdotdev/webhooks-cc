@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 38 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 39 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-10-11
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 38 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 39 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -386,6 +386,23 @@ Diff two captured requests. Returns structured differences in method, headers, a
 | `rightRequestId` | `string`   | yes      | Second request ID                       |
 | `ignoreHeaders`  | `string[]` | no       | Header names to exclude from comparison |
 
+### generate_payload_schema
+
+Generate TypeScript interfaces, Zod schemas, Pydantic models, or JSON Schema from the bodies of captured requests. It reads the latest requests (or exactly the ones you name), keeps those that match the filters, and learns one schema from all of their JSON or form bodies: a field missing from some samples is optional, a field that is sometimes `null` is nullable, and identical nested objects become one type. Filter to one event for the tightest types; the result warns when the samples mix events.
+
+| Parameter      | Type       | Required | Description                                                                                    |
+| -------------- | ---------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `endpointSlug` | `string`   | yes      | Endpoint slug                                                                                  |
+| `format`       | `string`   | no       | `typescript` (default), `zod`, `pydantic`, or `json-schema`                                    |
+| `name`         | `string`   | no       | Root type name (default: from the detected event, such as `InvoicePaidEvent`, else `WebhookPayload`) |
+| `event`        | `string`   | no       | Only requests whose detected provider event matches, such as `invoice.paid` or `push`          |
+| `method`       | `string`   | no       | Only requests with this HTTP method                                                            |
+| `path`         | `string`   | no       | Only requests with this path                                                                   |
+| `requestIds`   | `string[]` | no       | Use exactly these requests (1 to 50) instead of the latest ones                                |
+| `limit`        | `number`   | no       | How many of the latest requests to read before filtering, 1 to 100 (default 20)                |
+
+Returns `format`, `name`, `samples` (requests used), `skipped` (emails and bodies that are neither JSON nor form data), the detected `events`, and `code`. The same generator is `generateRequestSchema()` in [`@webhooks-cc/sdk`](/docs/sdk/api), and the dashboard shows it as the **Schema** view of a request body.
+
 ### extract_from_request
 
 Extract specific JSON fields from a captured request body using dot-notation paths.
@@ -468,7 +485,7 @@ Self-documenting schema of all available operations and their parameters. No par
 
 ## Without an API key: the agent sandbox
 
-A server started without `WHK_API_KEY` registers these ten tools instead of the ones above. The seven endpoint and request tools have the same names and arguments as the full tools, but run in the [agent sandbox](/docs/agents) ([auth.md](https://webhooks.cc/auth.md)): up to 3 endpoints at a time, 25 captured requests each and 100 in all, deleted 24 hours after the sandbox was created. Captures are readable only by this agent.
+A server started without `WHK_API_KEY` registers these eleven tools instead of the ones above. The eight endpoint and request tools have the same names and arguments as the full tools, but run in the [agent sandbox](/docs/agents) ([auth.md](https://webhooks.cc/auth.md)): up to 3 endpoints at a time, 25 captured requests each and 100 in all, deleted 24 hours after the sandbox was created. Captures are readable only by this agent.
 
 | Tool               | In the sandbox                                                                                                                         |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -479,6 +496,7 @@ A server started without `WHK_API_KEY` registers these ten tools instead of the 
 | `list_requests`    | Captured requests, newest first (HTTP only)                                                                                            |
 | `get_request`      | One captured request                                                                                                                   |
 | `wait_for_request` | Waits for a capture                                                                                                                    |
+| `generate_payload_schema` | Types from the sandbox's captured requests, as above                                                                          |
 
 ### connect_account
 

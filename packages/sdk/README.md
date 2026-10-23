@@ -550,6 +550,25 @@ isDocuSignWebhook      isAdyenWebhook          isPayPalWebhook      isPlaidWebho
 isResendWebhook        isWorkOSWebhook
 ```
 
+## Payload schemas
+
+Generate types for a handler from captured requests: TypeScript interfaces, Zod schemas, Pydantic
+models, or JSON Schema. Pass several requests of the same event: a field missing from some samples
+becomes optional, one that is sometimes `null` becomes nullable.
+
+```typescript
+import { generateRequestSchema } from "@webhooks-cc/sdk";
+
+const requests = await client.requests.list(endpoint.slug, { limit: 20 });
+const { code, samples } = generateRequestSchema(requests, {
+  format: "zod", // "typescript" (default), "zod", "pydantic", or "json-schema"
+  name: "InvoicePaidEvent",
+});
+```
+
+`generatePayloadSchema(values, options)` does the same from parsed values. Both work offline, and
+`@webhooks-cc/sdk/schema` exports them without the client, for browser bundles.
+
 ## Matchers, parsing, and diffing
 
 Use matchers with `waitFor()` or `waitForAll()`:

@@ -69,8 +69,9 @@ describe("webhook provider pages", () => {
     expect(getWebhookProviderPage("zapier")?.lastModified.toISOString()).toBe(
       "2026-10-02T00:00:00.000Z"
     );
+    // Pages with the CI test snippet changed when it arrived on 23 October.
     expect(getWebhookProviderPage("resend")?.lastModified.toISOString()).toBe(
-      "2026-10-02T00:00:00.000Z"
+      "2026-10-23T00:00:00.000Z"
     );
     expect(getWebhookProviderPage("bigcommerce")?.lastModified.toISOString()).toBe(
       "2026-09-29T00:00:00.000Z"
@@ -115,9 +116,10 @@ describe("webhook provider pages", () => {
         ...(seo.reference?.rows.flat() ?? []),
       ].join(" ");
       expect(copy, page.slug).not.toContain(String.fromCharCode(0x2014));
-      expect(["2026-10-13T00:00:00.000Z", "2026-10-20T00:00:00.000Z"], page.slug).toContain(
-        page.lastModified.toISOString()
-      );
+      expect(
+        ["2026-10-13T00:00:00.000Z", "2026-10-20T00:00:00.000Z", "2026-10-23T00:00:00.000Z"],
+        page.slug
+      ).toContain(page.lastModified.toISOString());
     }
   });
 });

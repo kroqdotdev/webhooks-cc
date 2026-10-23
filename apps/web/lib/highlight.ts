@@ -2,6 +2,10 @@ import Prism from "prismjs";
 Prism.manual = true;
 import "prismjs/components/prism-json";
 import "prismjs/components/prism-markup";
+import "prismjs/components/prism-clike";
+import "prismjs/components/prism-javascript";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-python";
 import type { BodyFormat } from "./format";
 
 function escapeHtml(value: string): string {
@@ -31,4 +35,11 @@ export function getHighlightLanguage(format: BodyFormat): string {
   const language = getLanguage(format);
   if (language === "plain") return "text";
   return language;
+}
+
+/** Highlight generated source; the output is escaped HTML. */
+export function highlightCode(code: string, language: "typescript" | "python" | "json"): string {
+  const grammar = Prism.languages[language];
+  if (!grammar) return escapeHtml(code);
+  return Prism.highlight(code, grammar, language);
 }

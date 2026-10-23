@@ -1,0 +1,96 @@
+---
+title: "Agent Skill and Claude Code Plugin"
+description: "Install the webhooks.cc webhook testing skill so Claude Code, Cursor, Codex, and Copilot test webhook handlers with real, signed payloads, generate payload types from captured requests, and read signup emails in tests."
+section: mcp
+order: 4
+lastUpdated: 2026-10-23
+schema: tech-article
+keywords:
+  [
+    "webhook testing skill",
+    "Claude Code plugin",
+    "agent skills",
+    "SKILL.md",
+    "Cursor webhook testing",
+    "test Stripe webhooks with AI",
+    "AI coding agent webhooks",
+  ]
+seo:
+  ogTitle: "webhooks.cc Agent Skill and Claude Code Plugin"
+  ogDescription: "One install teaches your coding agent to test webhook handlers with real, signed payloads, write payload types from captured requests, and read signup emails in tests."
+---
+
+The [MCP server](/docs/mcp) gives a coding agent the tools to capture, send, and inspect webhooks. The **webhook testing skill** tells it when to use them. Without the skill, an agent asked to "add a Stripe webhook handler" writes types from memory, guesses the payload, and often comments out the signature check to get a test passing. With the skill, it does this instead:
+
+1. Captures real deliveries, or sends a realistic provider template, to a webhooks.cc endpoint.
+2. Generates the payload types from those captures with `generate_payload_schema` (TypeScript, Zod, Pydantic, or JSON Schema) and writes them next to the handler.
+3. Sends correctly signed payloads to your local route with `send_to`, using your test signing secret, and checks the side effect, not only the status code.
+4. Writes a Vitest, Jest, or Playwright test with [`@webhooks-cc/sdk`](/docs/sdk) so the check runs in CI.
+
+The skill also covers webhooks your app sends, retry tests with failing mock responses, signup and magic-link emails, and debugging a delivery that fails.
+
+## Install in Claude Code
+
+The plugin bundles the skill and the MCP server, so one command sets up both:
+
+```text
+/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc
+```
+
+On Claude Code before 2.1.275, add the marketplace first:
+
+```text
+/plugin marketplace add kroqdotdev/webhooks-cc
+/plugin install webhooks-cc@webhooks-cc
+```
+
+When you enable the plugin, Claude Code asks for an API key and keeps it in your system's credential store. Leave it empty to start in the [keyless sandbox](/docs/agents): 3 endpoints for 24 hours, which Claude can connect to your account later with `connect_account`. Create a key on the [API keys page](/account/api-keys).
+
+The skill runs on its own when a task involves webhooks. To call it by name, type `/webhooks-cc:webhook-testing`.
+
+## Install in Cursor, Codex, Copilot, and other agents
+
+Most coding agents read skills in the open `SKILL.md` format. Install it with the [skills CLI](https://github.com/vercel-labs/skills), which asks which agents to install it for:
+
+```bash
+npx skills add kroqdotdev/webhooks-cc
+```
+
+Then add the MCP server, for example:
+
+```bash
+npx @webhooks-cc/mcp setup cursor --api-key whcc_...
+```
+
+The [MCP server page](/docs/mcp) has the command for each agent. To install the skill by hand, copy [`plugins/webhooks-cc/skills/webhook-testing`](https://github.com/kroqdotdev/webhooks-cc/tree/main/plugins/webhooks-cc/skills/webhook-testing) into your agent's skills folder, for example `.agents/skills/` or `.claude/skills/`.
+
+## For agents that read AGENTS.md
+
+For an agent without skill support, or to make the rule hold in every session, add this to the project's `AGENTS.md` or `CLAUDE.md`:
+
+```markdown
+## Webhooks
+
+Test webhook handlers with webhooks.cc, never by disabling signature checks:
+send provider-signed payloads to the local route with the webhooks-cc MCP tool
+`send_to` (or `sendTo` from `@webhooks-cc/sdk` in tests), and generate payload
+types from captured requests with `generate_payload_schema`.
+```
+
+## What the skill covers
+
+| Situation                                   | What the agent does                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Writing types for a provider's payload      | Captures real deliveries, then `generate_payload_schema` for the event in the project's language       |
+| Testing a local handler                     | `send_to` with the provider, template, and your test secret; fixes raw-body parsing instead of the check |
+| Adding a CI test                            | A Vitest, Jest, or Playwright test with `sendTo`, `captureDuring`, or `emails.waitFor`                 |
+| Checking webhooks your app sends            | Points the app at an endpoint, waits for the delivery, verifies its signature                          |
+| Testing retries                             | An endpoint with a `503` or slow mock response, cleared afterwards                                     |
+| Signup, magic-link, and code emails         | A tagged `{slug}+{run}@mailhooks.cc` address and `wait_for_email` for the code or link                 |
+| A delivery that fails                       | `verify_signature`, `compare_requests`, and `replay_request` to the local handler                      |
+
+It also sets rules: captured customer data never goes into fixtures, endpoints made for a task are deleted afterwards, and the agent stops at the free plan's daily limit instead of retrying.
+
+## Keep it up to date
+
+Claude Code updates the plugin with `/plugin marketplace update webhooks-cc`. Skills installed with the skills CLI update with `npx skills update`.

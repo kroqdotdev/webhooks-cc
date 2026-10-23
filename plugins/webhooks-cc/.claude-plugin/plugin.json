@@ -1,0 +1,23 @@
+{
+  "name": "webhooks-cc",
+  "displayName": "webhooks.cc",
+  "version": "1.0.0",
+  "description": "Test webhook handlers and signup emails with real, signed traffic: capture URLs, provider-signed payloads, types learned from captured requests, and the webhooks.cc MCP server.",
+  "author": {
+    "name": "webhooks.cc",
+    "url": "https://webhooks.cc"
+  },
+  "homepage": "https://webhooks.cc/docs/mcp/skills",
+  "repository": "https://github.com/kroqdotdev/webhooks-cc",
+  "license": "MIT",
+  "keywords": ["webhooks", "testing", "stripe", "github", "signatures", "email", "mcp"],
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "webhooks.cc API key (optional)",
+      "description": "Create one at https://webhooks.cc/account/api-keys. Leave empty to start in the keyless sandbox: 3 endpoints for 24 hours, which you can connect to an account later.",
+      "sensitive": true,
+      "default": ""
+    }
+  }
+}

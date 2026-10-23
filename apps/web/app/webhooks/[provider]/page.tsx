@@ -8,7 +8,10 @@ import { FAQAccordion } from "@/components/landing/faq-accordion";
 import { StartFreeCTA } from "@/components/landing/start-free-cta";
 import { PricingCTA } from "@/components/landing/pricing-cta";
 import { ProviderIcon } from "@/components/dashboard/provider-icon";
+import { CopyButton } from "@/components/ui/copy-button";
+import { highlightCode } from "@/lib/highlight";
 import { getWebProviderInfo } from "@/lib/provider-catalog";
+import { providerSecretEnv, providerTestSnippet } from "@/lib/provider-test-snippet";
 import {
   getAllWebhookProviderPages,
   getWebhookProviderPage,
@@ -117,6 +120,7 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
   const guide = GUIDE_BY_PROVIDER[page.slug];
   const faqItems = buildFaq(page);
   const reference = page.seo?.reference;
+  const testSnippet = providerTestSnippet(page);
   const related = getAllWebhookProviderPages()
     .filter((p) => p.category === page.category && p.slug !== page.slug)
     .slice(0, 3);
@@ -375,6 +379,43 @@ export default async function ProviderWebhookPage({ params }: PageProps) {
                 </code>
               </pre>
             </div>
+          </section>
+        )}
+
+        {/* Test the handler in CI */}
+        {testSnippet && (
+          <section className="mb-12">
+            <h2 className="text-2xl md:text-3xl font-bold mb-4">
+              Test your {page.label} webhook handler in CI
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              <code>sendTo</code> signs each request the way {page.label} does, with your test
+              secret from <code>{providerSecretEnv(page.slug)}</code>, and posts it straight to your
+              handler, so its signature check stays on. The second test proves the handler rejects a
+              forged signature. Drop the file into a Vitest suite that runs against your app; for
+              Jest, delete the first line, since Jest provides the same globals.
+            </p>
+            <div className="relative">
+              <CopyButton text={testSnippet} />
+              <pre className="ui-code syntax-highlight overflow-x-auto text-sm pr-10">
+                {/* Safe: highlightCode returns Prism-encoded tokens for a snippet built from static provider metadata. */}
+                <code
+                  dangerouslySetInnerHTML={{ __html: highlightCode(testSnippet, "typescript") }}
+                />
+              </pre>
+            </div>
+            <p className="text-sm text-muted-foreground mt-3">
+              Let your coding agent write and run it: the{" "}
+              <Link href="/docs/mcp/skills" className="text-primary font-bold hover:underline">
+                webhooks.cc agent skill
+              </Link>{" "}
+              teaches Claude Code, Cursor, and Codex to test webhook handlers with signed payloads.
+              More patterns in the{" "}
+              <Link href="/docs/sdk/testing" className="text-primary font-bold hover:underline">
+                SDK testing docs
+              </Link>
+              .
+            </p>
           </section>
         )}
 
