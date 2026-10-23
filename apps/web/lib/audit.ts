@@ -14,6 +14,9 @@ import { reportError } from "@/lib/observability";
  * errors (they embed the bearer token).
  */
 
+// Password changes go straight to GoTrue and are recorded as
+// "account.password_changed" by a trigger on auth.users (migration 00061),
+// never from here.
 export type AuditAction =
   | "account.deleted"
   | "account.name_updated"

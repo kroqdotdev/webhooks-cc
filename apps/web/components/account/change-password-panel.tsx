@@ -39,9 +39,11 @@ function fieldForError(error: unknown): Field | undefined {
  * (GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD, see
  * infra/supabase/gotrue-email-auth.md): its user endpoint is public, so a
  * check made here could be skipped by calling it directly. GoTrue skips the
- * check for accounts without a password (created by agent registration) and
- * for sessions that began with an email link, which is what the reset link
- * offered here relies on. A change ends every other session of the account.
+ * check for sessions that began with an email link: the reset link offered
+ * here relies on that, and so do accounts created by agent registration,
+ * which sign in with email codes and hold a random password from GoTrue that
+ * nobody knows. A change ends every other session of the account, and GoTrue
+ * emails the account (GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED).
  */
 export function ChangePasswordPanel({ email }: { email: string }) {
   const [current, setCurrent] = useState("");
