@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail } from "lucide-react";
+import { ChangePasswordPanel } from "@/components/account/change-password-panel";
 import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
 import { Avatar } from "@/components/settings/avatar";
 import {
@@ -223,6 +224,9 @@ export default function ProfilePage() {
             )}
           </PanelRow>
         </Panel>
+
+        {/* Only an email identity has a password; GitHub and Google sign-ins have none to change. */}
+        {providers.includes("email") && <ChangePasswordPanel email={profile.email} />}
 
         <Panel
           id="delete-account"

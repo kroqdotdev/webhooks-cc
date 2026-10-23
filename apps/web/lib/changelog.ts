@@ -15,13 +15,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.40.4";
+export const APP_VERSION = "0.40.5";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.15.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.40.5",
+    date: "2026-10-23",
+    title: "Change Your Password from the Profile Page",
+    track: "web",
+    items: [
+      "Accounts that sign in with email and password can change it on the Profile page; the current password is required, and the change signs you out on every other browser and device",
+      "Forgot the current one? The same panel emails you a reset link",
+    ],
+  },
   {
     version: "0.40.4",
     date: "2026-10-22",
