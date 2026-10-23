@@ -226,15 +226,15 @@ func RelayedRequest(body []byte, headers Headers, secret string) (*Relayed, erro
 	if secret == "" {
 		return nil, errors.New("verify: forwarding verification requires a non-empty secret")
 	}
+	key, err := sigutil.StandardWebhookKey(secret)
+	if err != nil {
+		return nil, fmt.Errorf("verify: forwarding secret: %w", err)
+	}
 	requestID := header(headers, "webhooks-cc-request-id")
 	receivedAt := header(headers, "webhooks-cc-received-at")
 	signatureHeader := header(headers, "webhooks-cc-signature")
 	if requestID == "" || receivedAt == "" || signatureHeader == "" {
 		return nil, &Error{CodeMissingHeaders, "missing webhooks-cc-request-id, webhooks-cc-received-at or webhooks-cc-signature header"}
-	}
-	key, err := sigutil.StandardWebhookKey(secret)
-	if err != nil {
-		return nil, fmt.Errorf("verify: forwarding secret: %w", err)
 	}
 	expected := hmacSHA256Base64(key, concat([]byte(requestID+"."+receivedAt+"."), body))
 	if !slices.ContainsFunc(standardSignatures(signatureHeader), func(given string) bool { return safeEqual(given, expected) }) {

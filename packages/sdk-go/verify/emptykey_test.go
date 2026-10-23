@@ -39,3 +39,24 @@ func TestSecretsThatDecodeToNothingAreRefused(t *testing.T) {
 		}
 	}
 }
+
+// Missing headers or a stale timestamp must not hide the misconfigured secret
+// behind missing_headers or timestamp_out_of_range.
+func TestAnEmptyKeyIsReportedBeforeTheHeadersAreChecked(t *testing.T) {
+	body := []byte(`{}`)
+	stale := Map{"webhook-id": "m", "webhook-timestamp": "1", "webhook-signature": "v1,x"}
+	for name, headers := range map[string]Map{"no headers": {}, "stale timestamp": stale} {
+		if _, err := ForwardedEmail(body, headers, "whsec_"); !errors.Is(err, sigutil.ErrEmptyKey) {
+			t.Errorf("ForwardedEmail, %s: %v", name, err)
+		}
+		if _, err := ForwardedRequest(body, headers, "whsec_"); !errors.Is(err, sigutil.ErrEmptyKey) {
+			t.Errorf("ForwardedRequest, %s: %v", name, err)
+		}
+		if _, err := RelayedRequest(body, headers, "whsec_"); !errors.Is(err, sigutil.ErrEmptyKey) {
+			t.Errorf("RelayedRequest, %s: %v", name, err)
+		}
+		if _, err := Signature("standard-webhooks", body, headers, Options{Secret: "whsec_"}); !errors.Is(err, sigutil.ErrEmptyKey) {
+			t.Errorf("Signature, %s: %v", name, err)
+		}
+	}
+}
