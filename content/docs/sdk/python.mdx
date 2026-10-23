@@ -114,7 +114,7 @@ response = client.send_to(
 assert response.status_code == 200
 ```
 
-Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending them. The client the SDK creates does not follow redirects, so signed requests only reach the host you named; if you pass an `http_client` of your own, leave its `follow_redirects` off. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint, and `TEMPLATE_PROVIDERS` lists the 34 providers.
+Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending them. Signed requests never follow redirects, even with an `http_client` of your own that does, so they only reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint, and `TEMPLATE_PROVIDERS` lists the 34 providers.
 
 ## Verify signatures
 

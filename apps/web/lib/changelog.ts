@@ -16,14 +16,23 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.42.1";
+export const APP_VERSION = "0.42.2";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.0";
-export const PYTHON_SDK_VERSION = "0.1.0";
+export const PYTHON_SDK_VERSION = "0.1.1";
 export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.42.2",
+    date: "2026-10-23",
+    title: "Python SDK 0.1.1 Docs",
+    track: "web",
+    items: [
+      "The Python SDK page says signed requests never follow redirects, now that 0.1.1 refuses them with your own HTTP client too",
+    ],
+  },
   {
     version: "0.42.1",
     date: "2026-10-23",
@@ -1895,6 +1904,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── Python SDK ─────────────────────────────────────────────────────
+  {
+    version: "0.1.1",
+    date: "2026-10-23",
+    title: "Signed Requests Never Follow Redirects",
+    track: "python",
+    items: [
+      "`send_to()`, `endpoints.send()`, `send_template()` and `requests.replay()` refuse redirects even when the `http_client` you pass follows them, so a signed request only reaches the host you named",
+    ],
+  },
   {
     version: "0.1.0",
     date: "2026-10-23",
