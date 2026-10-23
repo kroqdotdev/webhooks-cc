@@ -27,6 +27,7 @@ import { SignatureTab, SignatureVerificationBadge } from "./signature-tab";
 import { ProviderBadge } from "./provider-badge";
 import { DeliveriesPane, type DeliveryEndpoint } from "./delivery-pane";
 import { PayloadSchemaView } from "./payload-schema-view";
+import { ShareRequestDialog } from "./share-request-dialog";
 
 /** Any request shape that has the fields needed for display. */
 export type DisplayableRequest = Request | ClickHouseRequest;
@@ -57,6 +58,8 @@ interface RequestDetailProps {
   };
   /** Recent requests the schema view looks through for ones with the same payload. */
   schemaCandidates?: SchemaSource[];
+  /** Shows the Share button, for a signed-in user (share links take a session). */
+  share?: { accessToken: string };
 }
 
 /**
@@ -141,6 +144,7 @@ export function RequestDetail({
   endpointSlug,
   deliveries,
   schemaCandidates,
+  share,
 }: RequestDetailProps) {
   const [internalTab, setInternalTab] = useState<Tab>("body");
   const setTab = onTabChange ?? setInternalTab;
@@ -255,6 +259,14 @@ export function RequestDetail({
                 </>
               )}
             </button>
+            {share && request.kind !== "email" && (
+              <ShareRequestDialog
+                requestId={requestId}
+                headers={request.headers}
+                queryParams={request.queryParams}
+                accessToken={share.accessToken}
+              />
+            )}
             <ReplayDialog method={request.method} headers={request.headers} body={request.body} />
           </div>
         </div>

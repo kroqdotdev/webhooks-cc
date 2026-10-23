@@ -163,6 +163,10 @@ export function trackPayloadSchemaCopied(format: string, samples: number) {
   capture("payload_schema_copied", { format, samples });
 }
 
+export function trackRequestShared(expiresInDays: number, hideSensitive: boolean) {
+  capture("request_shared", { expires_in_days: expiresInDays, hide_sensitive: hideSensitive });
+}
+
 // ── Endpoint management ──────────────────────────────────────────
 export function trackEndpointDeleted() {
   capture("endpoint_deleted");

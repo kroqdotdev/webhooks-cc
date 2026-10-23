@@ -416,6 +416,14 @@ export default function DashboardPage() {
 
   const displayRequest = selectedRecentRequest ?? selectedClickHouseDetail ?? undefined;
 
+  // Only an endpoint's owner can share its requests (lib/supabase/request-shares.ts).
+  // Endpoints shared with you arrive with fromTeam (app/api/endpoints/route.ts).
+  const ownsCurrentEndpoint = currentEndpoint !== undefined && !("fromTeam" in currentEndpoint);
+  const shareProps = useMemo(
+    () => (accessToken && ownsCurrentEndpoint ? { accessToken } : undefined),
+    [accessToken, ownsCurrentEndpoint]
+  );
+
   const fetchFromClickHouse = useCallback(
     async (params: Record<string, string>): Promise<{ data: ClickHouseRequest[]; ok: boolean }> => {
       if (!accessToken) return { data: [], ok: false };
@@ -1233,6 +1241,7 @@ export default function DashboardPage() {
                     endpointSlug={currentEndpoint.slug}
                     deliveries={deliveriesProps}
                     schemaCandidates={recentRequests}
+                    share={shareProps}
                   />
                 ) : (
                   <RequestDetailEmpty slug={currentEndpoint.slug} />
@@ -1276,6 +1285,7 @@ export default function DashboardPage() {
                         endpointSlug={currentEndpoint.slug}
                         deliveries={deliveriesProps}
                         schemaCandidates={recentRequests}
+                        share={shareProps}
                       />
                     )}
                   </ErrorBoundary>

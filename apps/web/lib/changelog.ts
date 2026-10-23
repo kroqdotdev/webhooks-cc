@@ -15,13 +15,25 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.41.0";
+export const APP_VERSION = "0.42.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.0";
 export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.42.0",
+    date: "2026-10-23",
+    title: "Share Links",
+    track: "web",
+    items: [
+      "Share a captured request as a read-only link for a pull request, ticket or chat; anyone with the link sees it in the same inspector, Schema view included, without an account",
+      "Authorization and cookie headers are always hidden, signatures, tokens and keys by default, and the dialog shows what will be hidden before you create the link",
+      "Links last 1, 7 or 30 days and keep working after the request itself is deleted; revoke one from the request's Share dialog or from Account, Share links, which lists every live link (migration 00062)",
+      "Only an endpoint's owner can share its requests, and share links take a signed-in session, never an API key",
+    ],
+  },
   {
     version: "0.41.0",
     date: "2026-10-23",

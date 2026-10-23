@@ -32,6 +32,8 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/teams",
     "/agent/claim",
     "/blog/preview",
+    // Shared request snapshots: links people pass around, never search results.
+    "/s",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
