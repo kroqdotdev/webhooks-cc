@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from typing import Any
 
+import httpx
 import pytest
 
 from tests.conformance import load, vector_id
@@ -216,6 +217,55 @@ def test_paypal_follows_only_paypal_redirects(monkeypatch: pytest.MonkeyPatch) -
         verify_signature(
             "paypal", body=vector["body"], headers=vector["headers"], secret=vector["secret"]
         )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Read as api.paypal.com (backslashes are slashes, as in browsers); httpx would
+        # read the raw string's host as evil.test. Only the rebuilt URL may be fetched.
+        "https://api.paypal.com\\v1\\notifications\\certs\\x@evil.test/",
+        "https://user@api.paypal.com/v1/notifications/certs/x",
+        "\thttps://api.paypal.com/v1/notifications/certs/x\n",
+    ],
+)
+def test_paypal_downloads_only_from_the_url_it_checked(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    vector = _paypal_vector()
+    fetched: list[str] = []
+
+    def fake_get(target: str) -> tuple[int, dict[str, str], str]:
+        fetched.append(target)
+        return 200, {}, vector["certificate"]
+
+    monkeypatch.setattr(verify_module, "_http_get", fake_get)
+    monkeypatch.setattr(verify_module, "_PAYPAL_CERTIFICATE_CACHE", {})
+    headers = {**vector["headers"], "paypal-cert-url": url}
+    verify_signature("paypal", body=vector["body"], headers=headers, secret=vector["secret"])
+    assert len(fetched) == 1
+    assert httpx.URL(fetched[0]).host == "api.paypal.com"
+    assert "@" not in fetched[0].split("/")[2]
+
+
+def test_paypal_redirects_are_rebuilt_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    vector = _paypal_vector()
+    fetched: list[str] = []
+
+    def fake_get(target: str) -> tuple[int, dict[str, str], str]:
+        fetched.append(target)
+        if len(fetched) == 1:
+            location = "https://api.paypal.com\\v1\\notifications\\certs\\y@evil.test/"
+            return 302, {"Location": location}, ""
+        return 200, {}, vector["certificate"]
+
+    monkeypatch.setattr(verify_module, "_http_get", fake_get)
+    monkeypatch.setattr(verify_module, "_PAYPAL_CERTIFICATE_CACHE", {})
+    verify_signature(
+        "paypal", body=vector["body"], headers=vector["headers"], secret=vector["secret"]
+    )
+    assert len(fetched) == 2
+    assert httpx.URL(fetched[1]).host == "api.paypal.com"
 
 
 def test_paypal_fetcher_failure_is_not_a_verdict() -> None:

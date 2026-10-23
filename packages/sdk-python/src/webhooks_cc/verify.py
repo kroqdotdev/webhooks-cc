@@ -20,7 +20,7 @@ import zlib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeAlias
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -657,23 +657,49 @@ def _remove_dot_segments(path: str) -> str:
     return "/".join(output)
 
 
-def _is_allowed_paypal_certificate_url(cert_url: str) -> bool:
-    """An https URL on a PayPal API host whose path starts with ``/v1/notifications/certs/``."""
+_PAYPAL_CERTIFICATE_PATH = "/v1/notifications/certs/"
+
+
+def _canonical_paypal_certificate_url(cert_url: str) -> str | None:
+    """The URL to download a PayPal certificate from, or ``None`` when it is not allowed.
+
+    Allowed: https on a PayPal API host, with a path under
+    ``/v1/notifications/certs/``. The URL is read the way browsers (and the
+    TypeScript SDK) read it, then rebuilt without user info, and only the
+    rebuilt URL may be fetched: httpx parses a raw URL differently (it does
+    not read ``\\`` as ``/``), so fetching the raw string could reach a host
+    the check never saw.
+    """
     # Browsers drop tabs and newlines and trim spaces and control characters before parsing.
     cleaned = re.sub(r"[\t\n\r]", "", cert_url).strip(_C0_AND_SPACE)
     cleaned = cleaned.replace("\\", "/")
     try:
         parts = urlsplit(cleaned)
         hostname = parts.hostname
-        _ = parts.port  # raises ValueError for a port that is not a number
+        port = parts.port  # raises ValueError for a port that is not a number
     except ValueError:
-        return False
+        return None
     if parts.scheme.lower() != "https" or not hostname:
-        return False
+        return None
+    host = hostname.lower()
     path = _remove_dot_segments(parts.path or "/")
-    return hostname.lower() in _PAYPAL_CERTIFICATE_HOSTS and path.startswith(
-        "/v1/notifications/certs/"
+    if host not in _PAYPAL_CERTIFICATE_HOSTS or not path.startswith(_PAYPAL_CERTIFICATE_PATH):
+        return None
+    canonical = urlunsplit(
+        ("https", host if port is None else f"{host}:{port}", path, parts.query, "")
     )
+    try:
+        fetched = httpx.URL(canonical)
+    except httpx.InvalidURL:
+        return None
+    if fetched.scheme != "https" or fetched.host != host:
+        return None
+    return canonical
+
+
+def _is_allowed_paypal_certificate_url(cert_url: str) -> bool:
+    """An https URL on a PayPal API host whose path starts with ``/v1/notifications/certs/``."""
+    return _canonical_paypal_certificate_url(cert_url) is not None
 
 
 _C0_AND_SPACE = "".join(chr(code) for code in range(0x21))
@@ -765,9 +791,11 @@ def _download_paypal_certificate(cert_url: str) -> str:
         )
         if 300 <= status < 400 and location:
             # Follow PayPal's own redirects only: a certificate is trusted by where it comes from.
-            url = urljoin(url, location)
-            if not _is_allowed_paypal_certificate_url(url):
-                raise RuntimeError(f"redirected outside PayPal's certificate URLs to {url}")
+            target = urljoin(url, location)
+            canonical = _canonical_paypal_certificate_url(target)
+            if canonical is None:
+                raise RuntimeError(f"redirected outside PayPal's certificate URLs to {target}")
+            url = canonical
             continue
         if not 200 <= status < 300:
             raise RuntimeError(f"HTTP {status}")
@@ -835,7 +863,8 @@ def verify_paypal_signature(
         return False
     if auth_algo and auth_algo.upper() != "SHA256WITHRSA":
         return False
-    if not _is_allowed_paypal_certificate_url(cert_url):
+    certificate_url = _canonical_paypal_certificate_url(cert_url)
+    if certificate_url is None:
         return False
 
     try:
@@ -845,7 +874,7 @@ def verify_paypal_signature(
     except ImportError as error:  # pragma: no cover - the dev environment has it
         raise ImportError(_CRYPTO_MISSING) from error
 
-    certificate = _fetch_paypal_certificate(cert_url, fetch_certificate)
+    certificate = _fetch_paypal_certificate(certificate_url, fetch_certificate)
     public_key_der = _public_key_der_from_pem(certificate)
     if not public_key_der:
         return False
