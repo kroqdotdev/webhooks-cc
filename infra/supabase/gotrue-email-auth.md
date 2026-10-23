@@ -131,13 +131,20 @@ a new password from a password session unless the request carries the
 correct `current_password` (`current_password_required`,
 `current_password_invalid`). The account page's password panel sends it,
 but the check has to live in GoTrue: `PUT /auth/v1/user` is reachable with
-any session's access token, so a check in the app could be skipped. Without
-this line GoTrue ignores the field and the panel accepts any current
-password, so set it on an instance **before** deploying a web release with
-the panel. It needs GoTrue v2.189.0 or later: v2.187.0 added the setting
-and v2.189.0 extended the email-link exemption to PKCE recovery sessions.
-Older versions ignore it without a warning, so check the running image
-(`docker inspect supabase-auth --format '{{.Config.Image}}'`).
+any session's access token, so a check in the app could be skipped.
+
+**Do not deploy a web release with the panel to an instance until its
+`auth` container runs GoTrue v2.189.0 or later with this setting on.**
+v2.187.0 added the setting and v2.189.0 extended the email-link exemption
+to PKCE recovery sessions; older versions, and any version without the
+line, ignore `current_password`, so the holder of a password session could
+change the password without knowing it. Neither case warns. After
+recreating `auth`, check both:
+
+```bash
+docker inspect supabase-auth --format '{{.Config.Image}}'   # v2.189.0 or later
+docker exec supabase-auth env | grep REQUIRE_CURRENT_PASSWORD   # =true
+```
 
 Sessions that began with an email link (recovery, signup confirmation,
 magic link or OTP, which `/auth/confirm` and the agent claim produce) are
