@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 
 export const APP_VERSION = "0.40.8";
 export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.15.0";
+export const SDK_VERSION = "1.16.0";
 export const MCP_VERSION = "1.12.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
@@ -1551,6 +1551,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.16.0",
+    date: "2026-10-23",
+    title: "Repeatable Standard Webhooks, Clerk and Resend Signatures",
+    track: "sdk",
+    items: [
+      "`sendTo()`, `buildRequest()` and `sendTemplate()` take `messageId` for the providers that sign one (`standard-webhooks`, `clerk`, `resend`); with `timestamp`, the signature comes out the same on every run",
+      'Timeouts and poll intervals given as strings read a bare number only as decimal milliseconds, so `"0x10"` or `"1e3"` is refused instead of quietly read as 16 or 1000',
+      "`extractFromEmail()` returns at most 20 codes, and finding them stays fast on an email stuffed with numbers",
+    ],
+  },
   {
     version: "1.15.0",
     date: "2026-10-11",
