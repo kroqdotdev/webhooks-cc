@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from typing import Literal
+from typing import Any, Literal
 
 
 class WebhooksCCError(Exception):
@@ -13,6 +13,10 @@ class WebhooksCCError(Exception):
         super().__init__(message)
         self.status_code = status_code
         self.message = message
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # Rebuild from the attributes, so errors survive pickling (multiprocessing).
+        return (_rebuild, (type(self), self.__dict__.copy()))
 
 
 class UnauthorizedError(WebhooksCCError):
@@ -79,6 +83,16 @@ class WebhookVerificationError(Exception):
         super().__init__(message)
         self.code: WebhookVerificationErrorCode = code
         self.message = message
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (_rebuild, (type(self), self.__dict__.copy()))
+
+
+def _rebuild(cls: type[Exception], state: dict[str, Any]) -> Exception:
+    error = cls.__new__(cls)
+    Exception.__init__(error, state.get("message", ""))
+    error.__dict__.update(state)
+    return error
 
 
 def _format_ms(value: float) -> str:

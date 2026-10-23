@@ -19,6 +19,7 @@ from webhooks_cc.email import email_address, extract_code, extract_link, is_vali
 from webhooks_cc.matchers import match_body_path, match_email
 from webhooks_cc.models import Endpoint, Request
 from webhooks_cc.testing import capture_during, temporary_endpoint
+from webhooks_cc.verify import verify_signature
 
 Handler = Callable[[httpx.Request], httpx.Response]
 NOW_MS = int(time.time() * 1000)
@@ -480,3 +481,119 @@ def test_temporary_endpoint_and_capture_during() -> None:
     assert request.id == "r1"
     assert actions == ["tmp"]
     assert len(deleted) == 2
+
+
+class _SlowStream:
+    """A local SSE server: keepalives every ``interval`` seconds, then one request."""
+
+    def __init__(self, keepalives: int, interval: float) -> None:
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.0"
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+            def do_GET(self) -> None:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                try:
+                    for _ in range(outer.keepalives):
+                        time.sleep(outer.interval)
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                    self.wfile.write(request_frame("late", NOW_MS).encode())
+                    self.wfile.flush()
+                    time.sleep(0.5)
+                except OSError:
+                    pass
+
+        self.keepalives = keepalives
+        self.interval = interval
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        import threading
+
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def client(self) -> WebhooksCC:
+        return WebhooksCC("whcc_test", base_url=f"http://127.0.0.1:{self.server.server_port}")
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_subscribe_ends_at_its_timeout_while_keepalives_arrive() -> None:
+    server = _SlowStream(keepalives=30, interval=0.05)  # the request comes after 1.5 s
+    try:
+        started = time.monotonic()
+        with server.client() as client:
+            got = list(client.requests.subscribe("acme", timeout="400ms"))
+        elapsed = time.monotonic() - started
+    finally:
+        server.close()
+    assert got == []
+    assert 0.35 < elapsed < 1.0
+
+
+def test_subscribe_raises_when_the_stream_goes_idle() -> None:
+    server = _SlowStream(keepalives=1, interval=2.0)  # silent for 2 s
+    try:
+        with server.client() as client, pytest.raises(errors.TimeoutError, match="idle"):
+            list(client.requests.subscribe("acme", idle_timeout="300ms"))
+    finally:
+        server.close()
+
+
+def test_version_matches_pyproject() -> None:
+    from pathlib import Path
+
+    import webhooks_cc
+
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    match = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
+    assert match is not None
+    assert webhooks_cc.__version__ == match.group(1)
+
+
+def test_bytes_bodies_are_sent_as_they_are() -> None:
+    client = make_client(lambda request: httpx.Response(500))
+    raw = b"a=1&b=%C3%A9"
+    built = client.build_request(
+        "http://localhost/hook",
+        body=raw,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert built.body == raw
+    signed = client.build_request(
+        "http://localhost/hook", provider="github", secret="s", body=b'{"zen":"ok"}'
+    )
+    assert signed.body == '{"zen":"ok"}'
+    assert verify_signature("github", body=signed.body, headers=signed.headers, secret="s")
+    with pytest.raises(ValueError, match="UTF-8"):
+        client.build_request("http://localhost/hook", provider="github", secret="s", body=b"\xff")
+
+
+def test_a_trailing_newline_is_not_a_valid_slug() -> None:
+    client = make_client(lambda request: httpx.Response(500))
+    with pytest.raises(ValueError, match="slug"):
+        client.endpoints.get("acme\n")
+
+
+def test_errors_survive_pickling() -> None:
+    import pickle
+
+    for error in [
+        errors.WebhooksCCError(503, "busy"),
+        errors.TimeoutError(2000),
+        errors.RateLimitError(5, limit=10, remaining=0, reset=1),
+        errors.WebhookVerificationError("invalid_signature", "bad"),
+    ]:
+        back = pickle.loads(pickle.dumps(error))
+        assert type(back) is type(error)
+        assert str(back) == str(error)
+        assert back.__dict__ == error.__dict__

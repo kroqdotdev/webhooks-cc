@@ -400,4 +400,4 @@ class BuiltRequest:
     method: str
     url: str
     headers: dict[str, str]
-    body: str | None
+    body: str | bytes | None

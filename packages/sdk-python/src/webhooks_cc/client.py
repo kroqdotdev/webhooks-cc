@@ -19,6 +19,8 @@ import builtins
 import json
 import os
 import re
+import socket
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -127,7 +129,7 @@ def _sleep_ms(ms: float) -> None:
 
 
 def _validate_segment(value: str, name: str) -> None:
-    if not isinstance(value, str) or not _SAFE_SEGMENT.match(value):
+    if not isinstance(value, str) or not _SAFE_SEGMENT.fullmatch(value):
         raise ValueError(
             f"Invalid {name}: must contain only alphanumeric characters, hyphens, and underscores"
         )
@@ -233,6 +235,21 @@ def _decode_base64(value: str) -> bytes | None:
         return base64.b64decode(value, validate=True)
     except (binascii.Error, ValueError):
         return None
+
+
+def _body_bytes_or_text(body: Any) -> str | bytes:
+    """A body to send as it is: bytes and strings unchanged, anything else as JSON."""
+    return body if isinstance(body, bytes) else json_body(body)
+
+
+def _signable_body(body: Any) -> Any:
+    """A body for a provider template: bytes must be UTF-8 text, as providers sign text."""
+    if not isinstance(body, bytes):
+        return body
+    try:
+        return body.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("A signed body given as bytes must be UTF-8 text") from error
 
 
 class WebhooksCC:
@@ -391,6 +408,10 @@ class WebhooksCC:
         webhooks (``secret`` required unless the provider does not sign), and
         ``body=None`` sends the provider's template payload. ``timestamp``
         (seconds) and ``message_id`` make signatures repeatable in tests.
+
+        ``body`` may be a string or bytes, sent as they are, or anything else,
+        sent as JSON. Redirects are not followed, so signature headers never
+        travel to a host you did not name.
         """
         _validate_url(url)
         if provider is not None:
@@ -405,7 +426,7 @@ class WebhooksCC:
                 secret=secret,
                 template=template,
                 event=event,
-                body=body,
+                body=_signable_body(body),
                 method=method,
                 headers=headers,
                 timestamp=timestamp,
@@ -423,7 +444,7 @@ class WebhooksCC:
             method=upper,
             url=url,
             headers=out_headers,
-            body=json_body(body) if body is not None else None,
+            body=_body_bytes_or_text(body) if body is not None else None,
         )
 
     def send_to(
@@ -573,7 +594,7 @@ class Endpoints:
             upper,
             f"{self._client._webhook_url}/w/{slug}",
             out_headers,
-            json_body(body) if body is not None else None,
+            _body_bytes_or_text(body) if body is not None else None,
         )
 
     def send_template(
@@ -601,7 +622,7 @@ class Endpoints:
             secret=secret,
             template=template,
             event=event,
-            body=body,
+            body=_signable_body(body),
             method=method,
             headers=headers,
             timestamp=timestamp,
@@ -1103,6 +1124,29 @@ def _search_params(
 # --- streaming -------------------------------------------------------------------------
 
 
+def _end_stream_at(response: httpx.Response, seconds: float) -> threading.Timer:
+    """End a stream after ``seconds``, even in the middle of a blocked read.
+
+    Closing a socket from another thread does not wake a thread reading from
+    it; shutting it down does, and the read then sees the end of the stream.
+    """
+
+    def stop() -> None:
+        stream = response.extensions.get("network_stream")
+        sock = stream.get_extra_info("socket") if stream is not None else None
+        if isinstance(sock, socket.socket):
+            with suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+        else:
+            with suppress(Exception):
+                response.close()
+
+    timer = threading.Timer(max(0.0, seconds), stop)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
 def _subscribe(
     client: WebhooksCC,
     slug: str,
@@ -1144,10 +1188,6 @@ def _subscribe(
     while not expired():
         since = last_received_at - 1 if last_received_at is not None else resume_floor
         params = {"since": str(max(0, int(since)))} if since is not None else {}
-        read_s: float | None = idle_ms / 1000 if idle_ms > 0 else None
-        if deadline is not None:
-            left = max(0.001, (deadline - _now_ms()) / 1000)
-            read_s = left if read_s is None else min(read_s, left)
         connect_started = _now_ms()
         error: BaseException
         try:
@@ -1156,7 +1196,9 @@ def _subscribe(
                 f"{client._base_url}/api/stream/{slug}",
                 params=params,
                 headers={**client._auth(), "Accept": "text/event-stream"},
-                timeout=httpx.Timeout(_STREAM_CONNECT_TIMEOUT_S, read=read_s),
+                timeout=httpx.Timeout(
+                    _STREAM_CONNECT_TIMEOUT_S, read=idle_ms / 1000 if idle_ms > 0 else None
+                ),
             ) as response:
                 if response.status_code >= 400:
                     response.read()
@@ -1164,37 +1206,49 @@ def _subscribe(
                 connected_at = _now_ms()
                 if resume_floor is None:
                     resume_floor = _server_date_ms(response.headers) or connect_started - 1000
+                # Keepalives reset httpx's read timeout, so the deadline needs a timer of its own.
+                deadline_timer = (
+                    _end_stream_at(response, (deadline - _now_ms()) / 1000)
+                    if deadline is not None
+                    else None
+                )
                 rotated = False
-                for frame in parse_sse(response.iter_lines()):
-                    if frame.event == "request":
-                        request = _stream_request(frame.data)
-                        if request is None:
-                            continue
-                        # A delivered request proves the stream healthy.
-                        attempts = 0
-                        if request.id and request.id in seen:
-                            continue
-                        if request.id:
-                            seen.add(request.id)
-                        last_received_at = (
-                            request.received_at
-                            if last_received_at is None
-                            else max(last_received_at, request.received_at)
-                        )
-                        rapid_rotations = 0
-                        yield request
+                try:
+                    for frame in parse_sse(response.iter_lines()):
                         if expired():
                             return
-                    elif frame.event == "timeout":
-                        # The server's scheduled rotation (every 30 minutes): not a failure.
-                        rapid = _now_ms() - connected_at < _STREAM_RAPID_ROTATION_MS
-                        rapid_rotations = rapid_rotations + 1 if rapid else 0
-                        rotated = True
-                        break
-                    elif frame.event == "endpoint_deleted":
-                        return
-                    elif frame.event == "comment":
-                        attempts = 0  # a keepalive: the connection is healthy
+                        if frame.event == "request":
+                            request = _stream_request(frame.data)
+                            if request is None:
+                                continue
+                            # A delivered request proves the stream healthy.
+                            attempts = 0
+                            if request.id and request.id in seen:
+                                continue
+                            if request.id:
+                                seen.add(request.id)
+                            last_received_at = (
+                                request.received_at
+                                if last_received_at is None
+                                else max(last_received_at, request.received_at)
+                            )
+                            rapid_rotations = 0
+                            yield request
+                        elif frame.event == "timeout":
+                            # The server's scheduled rotation (every 30 minutes): not a failure.
+                            rapid = _now_ms() - connected_at < _STREAM_RAPID_ROTATION_MS
+                            rapid_rotations = rapid_rotations + 1 if rapid else 0
+                            rotated = True
+                            break
+                        elif frame.event == "endpoint_deleted":
+                            return
+                        elif frame.event == "comment":
+                            attempts = 0  # a keepalive: the connection is healthy
+                finally:
+                    if deadline_timer is not None:
+                        deadline_timer.cancel()
+            if expired():
+                return
             if rotated:
                 if not reconnect:
                     return
@@ -1205,25 +1259,29 @@ def _subscribe(
             if back_off():
                 continue
             return
-        except httpx.ReadTimeout:
-            if expired():
-                return
-            error = TimeoutError(
-                idle_ms, f"Stream idle for {idle_ms:g}ms: no data or keepalive received"
-            )
-        except httpx.ConnectTimeout:
-            error = TimeoutError(
-                _STREAM_CONNECT_TIMEOUT_S * 1000,
-                f"Stream connection timed out after {_STREAM_CONNECT_TIMEOUT_S * 1000:g}ms",
-            )
         except (UnauthorizedError, NotFoundError):
             raise
-        except WebhooksCCError as api_error:
-            if api_error.status_code != 429 and api_error.status_code < 500:
+        except (WebhooksCCError, httpx.TransportError) as caught:
+            # The deadline timer ends a read with an error; that is the normal end.
+            if expired():
+                return
+            if isinstance(caught, httpx.ReadTimeout):
+                error = TimeoutError(
+                    idle_ms, f"Stream idle for {idle_ms:g}ms: no data or keepalive received"
+                )
+            elif isinstance(caught, httpx.ConnectTimeout):
+                error = TimeoutError(
+                    _STREAM_CONNECT_TIMEOUT_S * 1000,
+                    f"Stream connection timed out after {_STREAM_CONNECT_TIMEOUT_S * 1000:g}ms",
+                )
+            elif (
+                isinstance(caught, WebhooksCCError)
+                and caught.status_code != 429
+                and caught.status_code < 500
+            ):
                 raise
-            error = api_error
-        except httpx.TransportError as transport_error:
-            error = transport_error
+            else:
+                error = caught
         if back_off():
             continue
         if expired():

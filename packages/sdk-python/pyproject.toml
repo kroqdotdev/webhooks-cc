@@ -47,7 +47,8 @@ build-backend = "hatchling.build"
 packages = ["src/webhooks_cc"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "README.md", "LICENSE"]
+# The tests read packages/sdk/conformance, which only the repository has.
+include = ["src", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

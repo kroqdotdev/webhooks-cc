@@ -79,7 +79,7 @@ response = client.send_to(
 assert response.status_code == 200
 ```
 
-Leave out `body` to send the provider's sample payload, or pass your own. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint. `TEMPLATE_PROVIDERS` lists the 34 providers.
+Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending. Redirects are not followed, so signed requests only ever reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint. `TEMPLATE_PROVIDERS` lists the 34 providers.
 
 ## Verify signatures
 

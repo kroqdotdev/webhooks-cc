@@ -43,9 +43,9 @@ def parse_duration(value: Duration) -> float:
         raise ValueError(f"Invalid duration: {value!r}")
 
     trimmed = value.strip()
-    if _PLAIN_NUMBER.match(trimmed):
+    if _PLAIN_NUMBER.fullmatch(trimmed):
         return _number(trimmed)
-    match = _DURATION.match(trimmed)
+    match = _DURATION.fullmatch(trimmed)
     if not match:
         raise ValueError(f'Invalid duration: "{value}"')
     return _number(match.group(1)) * _UNIT_MS[match.group(2)]
