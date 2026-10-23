@@ -1,0 +1,482 @@
+"""The client against a mocked API."""
+
+from __future__ import annotations
+
+import base64
+import json
+import re
+import time
+from collections.abc import Callable
+from datetime import timedelta
+from typing import Any
+
+import httpx
+import pytest
+
+from webhooks_cc import errors
+from webhooks_cc.client import RetryOptions, WebhooksCC
+from webhooks_cc.email import email_address, extract_code, extract_link, is_valid_email_tag
+from webhooks_cc.matchers import match_body_path, match_email
+from webhooks_cc.models import Endpoint, Request
+from webhooks_cc.testing import capture_during, temporary_endpoint
+
+Handler = Callable[[httpx.Request], httpx.Response]
+NOW_MS = int(time.time() * 1000)
+
+
+def make_client(handler: Handler, **options: Any) -> WebhooksCC:
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    return WebhooksCC("whcc_test", http_client=http, **options)
+
+
+def captured(request_id: str, **fields: Any) -> dict[str, Any]:
+    return {
+        "id": request_id,
+        "endpointId": "e1",
+        "method": "POST",
+        "path": "/",
+        "headers": {"content-type": "application/json"},
+        "body": "{}",
+        "queryParams": {},
+        "ip": "203.0.113.7",
+        "size": 2,
+        "receivedAt": NOW_MS,
+        "kind": "http",
+        **fields,
+    }
+
+
+def email_record(request_id: str, tag: str | None, subject: str) -> dict[str, Any]:
+    return captured(
+        request_id,
+        method="EMAIL",
+        path=f"acme+{tag}@mailhooks.cc" if tag else "acme@mailhooks.cc",
+        kind="email",
+        email={
+            "subject": subject,
+            "from": [{"name": "Acme", "address": "no-reply@acme.test"}],
+            "to": [{"name": None, "address": "acme@mailhooks.cc"}],
+            "cc": [],
+            "replyTo": [],
+            "sender": [],
+            "date": None,
+            "messageId": None,
+            "inReplyTo": [],
+            "tag": tag,
+            "text": "Your code is 482913",
+            "html": None,
+            "textFromHtml": False,
+            "attachments": [],
+            "auth": None,
+            "smtp": None,
+            "parseError": False,
+            "truncated": {},
+        },
+        extracts={
+            "codes": ["482913"],
+            "links": [{"url": "https://acme.test/confirm", "label": "Confirm", "action": True}],
+        },
+    )
+
+
+def test_api_key_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WHK_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="WHK_API_KEY"):
+        WebhooksCC()
+    monkeypatch.setenv("WHK_API_KEY", "whcc_env")
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["authorization"])
+        return httpx.Response(200, json={"used": 1, "limit": 50, "remaining": 49, "plan": "free"})
+
+    client = WebhooksCC(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert client.usage().remaining == 49
+    assert seen == ["Bearer whcc_env"]
+
+
+def test_base_url_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WHK_BASE_URL", "http://localhost:3000/")
+    urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        urls.append(str(request.url))
+        return httpx.Response(200, json={"owned": [], "shared": []})
+
+    make_client(handler).endpoints.list()
+    assert urls == ["http://localhost:3000/api/endpoints"]
+
+
+def test_endpoints_create_and_list() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            bodies.append(json.loads(request.content))
+            return httpx.Response(200, json={"id": "e1", "slug": "acme", "createdAt": NOW_MS})
+        return httpx.Response(
+            200,
+            json={
+                "owned": [{"id": "e1", "slug": "acme", "createdAt": 1}],
+                "shared": [
+                    {
+                        "id": "e2",
+                        "slug": "team",
+                        "createdAt": 2,
+                        "fromTeam": {"teamId": "t1", "teamName": "Acme"},
+                    }
+                ],
+            },
+        )
+
+    client = make_client(handler)
+    endpoint = client.endpoints.create("ci", expires_in="1h")
+    assert endpoint.slug == "acme"
+    assert bodies[0]["name"] == "ci"
+    assert bodies[0]["isEphemeral"] is True
+    assert abs(bodies[0]["expiresAt"] - (NOW_MS + 3_600_000)) < 60_000
+    listed = client.endpoints.list()
+    assert [item.slug for item in listed] == ["acme", "team"]
+    assert listed[1].from_teams[0].team_name == "Acme"
+
+
+def test_update_sends_only_given_fields() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": "e1", "slug": "acme", "createdAt": 1})
+
+    make_client(handler).endpoints.update("acme", name="renamed", forward_url=None)
+    assert bodies == [{"name": "renamed", "forwardUrl": None}]
+
+
+def test_slugs_are_validated() -> None:
+    client = make_client(lambda request: httpx.Response(500))
+    with pytest.raises(ValueError, match="slug"):
+        client.endpoints.get("../admin")
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (401, errors.UnauthorizedError),
+        (404, errors.NotFoundError),
+        (400, errors.WebhooksCCError),
+        (503, errors.WebhooksCCError),
+    ],
+)
+def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
+    client = make_client(lambda request: httpx.Response(status, text="nope"))
+    with pytest.raises(error_type) as caught:
+        client.endpoints.get("acme")
+    assert isinstance(caught.value, errors.WebhooksCCError)
+    assert caught.value.status_code == status
+
+
+def test_rate_limit_error_carries_the_headers() -> None:
+    headers = {
+        "retry-after": "7",
+        "x-ratelimit-limit": "100",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": "1767225600",
+    }
+    client = make_client(lambda request: httpx.Response(429, headers=headers, text="slow down"))
+    with pytest.raises(errors.RateLimitError) as caught:
+        client.usage()
+    assert (caught.value.retry_after, caught.value.limit, caught.value.reset) == (
+        7,
+        100,
+        1767225600,
+    )
+
+
+def test_retries_follow_the_options() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, json={"used": 0, "limit": 1, "remaining": 1, "plan": "pro"})
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=3, backoff=1))
+    assert client.usage().plan == "pro"
+    assert len(calls) == 3
+
+
+def test_timeouts_raise_the_sdk_timeout_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    client = make_client(handler, timeout="2s")
+    with pytest.raises(TimeoutError) as caught:  # the built-in name catches it too
+        client.usage()
+    assert isinstance(caught.value, errors.TimeoutError)
+    assert caught.value.timeout_ms == 2000
+
+
+def test_requests_list_asks_for_extracts() -> None:
+    params: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params.append(dict(request.url.params))
+        return httpx.Response(200, json=[captured("r1")])
+
+    [request] = make_client(handler).requests.list("acme", limit=5, since=10, kind="http")
+    assert params == [{"extracts": "true", "limit": "5", "since": "10", "kind": "http"}]
+    assert request.received_at == NOW_MS
+    assert request.json() == {}
+
+
+def test_wait_for_polls_until_a_match_arrives() -> None:
+    polls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        polls.append(request.url.params["since"])
+        if len(polls) == 1:
+            return httpx.Response(200, json=[captured("r1", body='{"type":"a"}')])
+        if len(polls) == 2:
+            return httpx.Response(503, text="blip")
+        return httpx.Response(
+            200,
+            json=[
+                captured("r1", body='{"type":"a"}'),
+                captured("r2", body='{"type":"b"}', receivedAt=NOW_MS + 1),
+            ],
+        )
+
+    client = make_client(handler)
+    request = client.requests.wait_for(
+        "acme", timeout="5s", poll_interval=10, match=match_body_path("type", "b")
+    )
+    assert request.id == "r2"
+    assert len(polls) == 3
+    # Looks back five minutes on the first poll.
+    assert NOW_MS - int(polls[0]) >= 5 * 60 * 1000 - 1000
+
+
+def test_wait_for_all_returns_them_oldest_first() -> None:
+    newer = captured("new", receivedAt=NOW_MS + 5)
+    older = captured("old", receivedAt=NOW_MS)
+    client = make_client(lambda request: httpx.Response(200, json=[newer, older]))
+    assert [r.id for r in client.requests.wait_for_all("acme", count=2, timeout="1s")] == [
+        "old",
+        "new",
+    ]
+
+
+def test_wait_for_times_out() -> None:
+    client = make_client(lambda request: httpx.Response(200, json=[]))
+    with pytest.raises(errors.TimeoutError):
+        client.requests.wait_for("acme", timeout=timedelta(milliseconds=50), poll_interval=10)
+
+
+def test_wait_for_stops_on_errors_that_will_not_go_away() -> None:
+    client = make_client(lambda request: httpx.Response(401, text="bad key"))
+    with pytest.raises(errors.UnauthorizedError):
+        client.requests.wait_for("acme", timeout="5s", poll_interval=10)
+
+
+def test_emails_wait_for_filters_and_extracts() -> None:
+    params: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params.append(dict(request.url.params))
+        return httpx.Response(
+            200,
+            json=[
+                email_record("m1", "other-run", "Confirm your email"),
+                email_record("m2", "run-42", "Confirm your email"),
+            ],
+        )
+
+    client = make_client(handler)
+    email = client.emails.wait_for("acme", tag="run-42", subject="Confirm", timeout="1s")
+    assert email.id == "m2"
+    assert params[0]["kind"] == "email"
+    assert extract_code(email) == "482913"
+    assert extract_link(email, action_only=True) == "https://acme.test/confirm"
+    assert client.emails.latest("acme", tag=None) is None
+
+
+def test_extract_code_needs_extracts() -> None:
+    email = Request.from_dict({**email_record("m1", None, "Hi"), "extracts": None})
+    with pytest.raises(ValueError, match="Show codes and links"):
+        extract_code(email)
+    with pytest.raises(ValueError, match="not a captured email"):
+        extract_code(Request.from_dict(captured("r1")))
+
+
+def test_email_addresses() -> None:
+    assert email_address("Acme", "run-42") == "acme+run-42@mailhooks.cc"
+    assert not is_valid_email_tag("has space")
+    with pytest.raises(ValueError):
+        email_address("acme", "a@b")
+    client = make_client(lambda request: httpx.Response(500))
+    endpoint = Endpoint.from_dict(
+        {"id": "e1", "slug": "acme", "createdAt": 1, "emailAddress": "acme@example.test"}
+    )
+    assert client.emails.address(endpoint, "x") == "acme+x@example.test"
+    assert client.emails.address("acme") == "acme@mailhooks.cc"
+
+
+def test_email_matcher_uses_from_underscore() -> None:
+    email = Request.from_dict(email_record("m1", None, "Hello"))
+    assert match_email(from_="NO-REPLY@acme.test")(email)
+    assert match_email(from_=re.compile(r"^Acme <"))(email)
+    assert not match_email(tag="x")(email)
+
+
+def test_replay_sends_the_exact_body_without_credentials() -> None:
+    sent: list[httpx.Request] = []
+    raw = bytes([0xFF, 0x00, 0x41])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "webhooks.cc":
+            return httpx.Response(
+                200,
+                json=captured(
+                    "r1",
+                    method="PUT",
+                    headers={"Authorization": "secret", "X-Custom": "1", "Host": "go.webhooks.cc"},
+                    body="ignored",
+                    bodyRaw=base64.b64encode(raw).decode(),
+                ),
+            )
+        sent.append(request)
+        return httpx.Response(204)
+
+    response = make_client(handler).requests.replay("r1", "http://localhost:8000/hook")
+    assert response.status_code == 204
+    assert sent[0].method == "PUT"
+    assert sent[0].content == raw
+    assert sent[0].headers["x-custom"] == "1"
+    assert "authorization" not in sent[0].headers
+
+
+def test_build_request_without_a_provider() -> None:
+    client = make_client(lambda request: httpx.Response(500))
+    built = client.build_request("http://localhost:8000/hook", body={"a": 1.0, "b": "é"})
+    assert built.method == "POST"
+    assert built.headers == {"Content-Type": "application/json"}
+    assert built.body == '{"a":1,"b":"é"}'
+    with pytest.raises(ValueError, match="http and https"):
+        client.build_request("ftp://example.com")
+    with pytest.raises(ValueError, match="secret"):
+        client.build_request("http://localhost/hook", provider="stripe")
+
+
+def stream_response(*frames: str, date: str | None = None) -> httpx.Response:
+    headers = {"content-type": "text/event-stream"}
+    if date:
+        headers["date"] = date
+    return httpx.Response(200, headers=headers, content="".join(frames).encode())
+
+
+def request_frame(request_id: str, received_at: int) -> str:
+    return f"event: request\ndata: {json.dumps(captured(request_id, receivedAt=received_at))}\n\n"
+
+
+def test_subscribe_yields_requests_and_ends_when_the_endpoint_is_deleted() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/stream/acme"
+        return stream_response(
+            "event: connected\ndata: {}\n\n",
+            ": keepalive\n\n",
+            request_frame("r1", 1000),
+            request_frame("r1", 1000),
+            "event: request\ndata: not json\n\n",
+            request_frame("r2", 2000),
+            "event: endpoint_deleted\ndata: {}\n\n",
+            request_frame("r3", 3000),
+        )
+
+    ids = [request.id for request in make_client(handler).requests.subscribe("acme")]
+    assert ids == ["r1", "r2"]
+
+
+def test_subscribe_without_reconnect_ends_at_a_rotation() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return stream_response(request_frame("r1", 1000), "event: timeout\ndata: {}\n\n")
+
+    assert [r.id for r in make_client(handler).requests.subscribe("acme")] == ["r1"]
+    assert len(calls) == 1
+
+
+def test_subscribe_reconnects_after_the_last_request() -> None:
+    sinces: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sinces.append(request.url.params.get("since"))
+        if len(sinces) == 1:
+            return stream_response(
+                request_frame("r1", 1000),
+                "event: timeout\ndata: {}\n\n",
+                date="Thu, 01 Jan 2026 00:00:00 GMT",
+            )
+        if len(sinces) == 2:
+            # A replay of r1 is skipped; then the connection drops.
+            return stream_response(request_frame("r1", 1000), request_frame("r2", 2000))
+        return stream_response(request_frame("r3", 3000), "event: endpoint_deleted\ndata: {}\n\n")
+
+    reconnects: list[int] = []
+    stream = make_client(handler).requests.subscribe(
+        "acme", reconnect=True, reconnect_backoff=1, on_reconnect=reconnects.append
+    )
+    assert [r.id for r in stream] == ["r1", "r2", "r3"]
+    assert sinces == [None, "999", "1999"]
+    assert reconnects == [1]
+
+
+def test_subscribe_stops_after_max_reconnect_attempts() -> None:
+    client = make_client(lambda request: httpx.Response(503, text="down"))
+    stream = client.requests.subscribe(
+        "acme", reconnect=True, max_reconnect_attempts=2, reconnect_backoff=1
+    )
+    with pytest.raises(errors.WebhooksCCError) as caught:
+        list(stream)
+    assert caught.value.status_code == 503
+
+
+def test_subscribe_does_not_retry_a_bad_key() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(401, text="bad key")
+
+    with pytest.raises(errors.UnauthorizedError):
+        list(make_client(handler).requests.subscribe("acme", reconnect=True))
+    assert len(calls) == 1
+
+
+def test_temporary_endpoint_and_capture_during() -> None:
+    deleted: list[str] = []
+    requests_seen = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests_seen
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "e1", "slug": "tmp", "createdAt": NOW_MS})
+        if request.method == "DELETE":
+            deleted.append(request.url.path)
+            return httpx.Response(404, text="gone")  # already gone is fine
+        requests_seen += 1
+        return httpx.Response(200, json=[] if requests_seen == 1 else [captured("r1")])
+
+    client = make_client(handler)
+    with pytest.raises(RuntimeError), temporary_endpoint(client):
+        raise RuntimeError("test failed")
+    assert deleted == ["/api/endpoints/tmp"]
+
+    actions: list[str] = []
+    [request] = capture_during(
+        client, lambda endpoint: actions.append(endpoint.slug), poll_interval=10, timeout="2s"
+    )
+    assert request.id == "r1"
+    assert actions == ["tmp"]
+    assert len(deleted) == 2
