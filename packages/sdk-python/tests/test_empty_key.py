@@ -72,3 +72,21 @@ def test_a_real_secret_still_verifies() -> None:
     assert verify_signature(
         "standard-webhooks", body=built.body, headers=built.headers, secret=secret
     )
+
+
+STALE = {"webhook-id": "m", "webhook-timestamp": "1", "webhook-signature": "v1,x"}
+
+
+@pytest.mark.parametrize("headers", [{}, STALE], ids=["no headers", "stale timestamp"])
+def test_an_empty_key_is_reported_before_the_headers_are_checked(
+    headers: dict[str, str],
+) -> None:
+    # Otherwise missing_headers or timestamp_out_of_range would hide the misconfiguration.
+    with pytest.raises(ValueError, match="empty key"):
+        verify_forwarded_email(BODY, headers, "whsec_", now=1767225600000)
+    with pytest.raises(ValueError, match="empty key"):
+        verify_forwarded_request(BODY, headers, "whsec_", now=1767225600000)
+    with pytest.raises(ValueError, match="empty key"):
+        verify_relayed_request(BODY, headers, "whsec_")
+    with pytest.raises(ValueError, match="empty key"):
+        verify_signature("standard-webhooks", body=BODY, headers=headers, secret="whsec_")
