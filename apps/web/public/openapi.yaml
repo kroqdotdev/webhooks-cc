@@ -280,6 +280,7 @@ paths:
             type: string
             enum: [http, email]
           description: Only HTTP requests (`http`) or only captured emails (`email`)
+        - $ref: "#/components/parameters/extracts"
       responses:
         "200":
           description: Array of captured requests
@@ -350,6 +351,7 @@ paths:
             type: string
             enum: [http, email]
           description: Only HTTP requests (`http`) or only captured emails (`email`); send the same value for every page
+        - $ref: "#/components/parameters/extracts"
       responses:
         "200":
           description: Paginated request listing
@@ -382,6 +384,8 @@ paths:
       description: |
         Get a single captured request by ID. Captured emails are requests too: they have
         `kind: "email"` and the parsed message in `email`.
+      parameters:
+        - $ref: "#/components/parameters/extracts"
       responses:
         "200":
           description: Request details
@@ -389,6 +393,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Request"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1612,6 +1618,16 @@ components:
         API key with `whcc_` prefix. Generate from https://webhooks.cc/account.
 
   parameters:
+    extracts:
+      name: extracts
+      in: query
+      schema:
+        type: string
+        enum: ["true", "false"]
+      description: |
+        `true` adds `extracts` (the one-time codes and links found in it) to each captured email.
+        Off by default.
+
     slug:
       name: slug
       in: path
@@ -1938,8 +1954,9 @@ components:
             - $ref: "#/components/schemas/EmailExtracts"
             - type: "null"
           description: |
-            For a captured email, the one-time codes and links found in it, as the dashboard shows
-            them; null when the endpoint's `showEmailExtracts` is off. Absent on HTTP requests.
+            Only with `extracts=true`, and only on a captured email: the one-time codes and links
+            found in it, as the dashboard shows them. Null when the endpoint's `showEmailExtracts`
+            is off or the message could not be parsed.
 
     StreamRequest:
       type: object

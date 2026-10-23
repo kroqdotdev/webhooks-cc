@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
-  "description": "Duration options (timeouts, poll intervals): a number is milliseconds; a string is a number of milliseconds or a number with ms, s, m, h or d. expected.ms is the result; expected.error means the input is refused.",
+  "description": "Duration options (timeouts, poll intervals): a number is milliseconds; a string is decimal digits with an optional fraction, optionally followed by ms, s, m, h or d, and is trimmed first. expected.ms is the result; expected.error means the input is refused.",
   "vectors": [
     {
       "input": 0,
@@ -125,6 +125,48 @@
     },
     {
       "input": "s",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "0x10",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "1e3",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "0b11",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "+5",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": ".5",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "5.",
+      "expected": {
+        "error": true
+      }
+    },
+    {
+      "input": "Infinity",
       "expected": {
         "error": true
       }

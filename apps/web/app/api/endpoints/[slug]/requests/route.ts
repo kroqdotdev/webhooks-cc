@@ -2,6 +2,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   clearRequestsForEndpointByUser,
   listRequestsForEndpointByUser,
+  parseExtractsParam,
   withEmailExtracts,
 } from "@/lib/supabase/requests";
 import { isRequestKind } from "@/lib/supabase/search";
@@ -29,6 +30,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (kind !== null && !isRequestKind(kind)) {
     return Response.json({ error: "invalid_kind" }, { status: 400 });
   }
+  const extracts = parseExtractsParam(url.searchParams.get("extracts"));
+  if (extracts === null) {
+    return Response.json({ error: "invalid_extracts" }, { status: 400 });
+  }
 
   try {
     const data = await listRequestsForEndpointByUser({
@@ -43,7 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       return Response.json({ error: "not_found" }, { status: 404 });
     }
 
-    return Response.json(await withEmailExtracts(data));
+    return Response.json(extracts ? await withEmailExtracts(data) : data);
   } catch (error) {
     reportError("Failed to list requests", error);
     return Response.json({ error: "Failed to list requests" }, { status: 500 });

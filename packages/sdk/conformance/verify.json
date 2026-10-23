@@ -1615,6 +1615,31 @@
       "expected": true
     },
     {
+      "name": "hubspot, all twelve uppercase escapes are decoded and lowercase ones are not",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "url": "https://example.com/hooks/%3A%2F%3F%40%21%24%27%28%29%2A%2C%3B?next=%3a%2f%20",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "x-hubspot-request-timestamp": "1767225600000",
+        "x-hubspot-signature-v3": "LTH0N1hqEtxh8MrBbK3BeTkj+1R5K49Ttrk2+TtNE1Y="
+      },
+      "expected": true
+    },
+    {
+      "name": "mailgun, the timestamp and token in the body are signed, not the timestamp option",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767229260000,
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "headers": {},
+      "expected": true
+    },
+    {
       "name": "standard-webhooks, base64 secret without padding",
       "provider": "standard-webhooks",
       "secret": "whsec_dGVzdC1zZWNyZXQ",
@@ -1626,6 +1651,21 @@
         "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
         "webhook-timestamp": "1767225600",
         "webhook-signature": "v1,zDBvezmGoh/R4A8eh5I8JjWkIILmG7GpdHXksAr3y0E="
+      },
+      "expected": true
+    },
+    {
+      "name": "standard-webhooks, a secret without the whsec_ prefix is still base64",
+      "provider": "standard-webhooks",
+      "secret": "MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
       },
       "expected": true
     },
@@ -1755,6 +1795,49 @@
       "expected": true
     },
     {
+      "name": "clerk, only the svix-* headers, as Clerk sends them",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "svix-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "svix-timestamp": "1767225600",
+        "svix-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "clerk, only the webhook-* headers",
+      "provider": "clerk",
+      "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
+      },
+      "expected": true
+    },
+    {
+      "name": "linear, bare hex without sha256=, as Linear sends it",
+      "provider": "linear",
+      "secret": "conformance_linear_secret",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "headers": {
+        "linear-signature": "5b8972750bd4ac7eaf4b3c9c030be27d6ab09a53658ba8723e3c240a5974b688"
+      },
+      "expected": true
+    },
+    {
       "name": "twilio, a different URL",
       "provider": "twilio",
       "secret": "conformance_twilio_secret",
@@ -1855,7 +1938,7 @@
       "name": "paypal",
       "provider": "paypal",
       "secret": "1JE4291016473214C",
-      "certificate": "-----BEGIN CERTIFICATE-----\nMIIDSTCCAjGgAwIBAgIUGEHQrgPZ4CeZHK2ImX3TZEPeEDswDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNjEwMjMxMzM0NDRaGA8yMTI2MDkyOTEzMzQ0NFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALUljhoQF5E5JjxgotSur1E/\ner5y4Cjqg44AXNfKRT0EB7RbXcZ8k6XNrcYIEIXM93Rjd6blQ+aH/WENzzNADk/M\nbskUHn5NrmZrobBDanwnFVLDg9j9V3a5SbhxQ/6FYkZ1Soh+XG3MV7k58DyXy555\nOJR62G4xSi67mxK+yvy+T3288e+NZEUkH848poz5BHkY0OzNXHMokHrMbLTYioOK\nBuRGEa9YzuU4W7AK8lxou4XbotDUHSqbIMOWe2UoTSls/o3rdyn4kw9Cnlr51QZr\ncft5KwrxjjvQJn4ZyT1GqAwFMV4Bmzyz6Nl4vb2aUaJ8mEGE/uEkoXz7pIA0lxcC\nAwEAAaNTMFEwHQYDVR0OBBYEFBWMpcmc8T7f0FTNr4J/qKyM88esMB8GA1UdIwQY\nMBaAFBWMpcmc8T7f0FTNr4J/qKyM88esMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI\nhvcNAQELBQADggEBAEr+d2tXucCmidFb3c/r4U0T0GjrqsCl4LoIpMz+EZHvtUdx\n30bFyqn25mUgfS744U0anH3tzDW1zxOuh3Coe0VZ/moEXi8rpfPppul54P0GugP+\n17rb2htdjzTzqfsFyg9RsJpKxEhvFsqs6NGY33Eqi7+ZujLKQ93e97LPPkLRqLIr\nwg0o3vJ5Ci7Gb3ZoB1OqzVYqqF4mZ4BWZAe1RE85dNwqDXe6Hqn9FXdzkbsq0tIZ\nl8EeZUEaqM54NZqsFKF/rkzbyR1T10m9wOLPbJNwuZB8zY5weXJckkSFH1KJz49E\n50FxdEK2lrwF0/LkRA2y091n8nu9/SACP8wfJM0=\n-----END CERTIFICATE-----\n",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
       "url": "https://example.com/webhooks/acme?source=conformance",
       "method": "POST",
       "now": 1767225660000,
@@ -1865,7 +1948,7 @@
         "paypal-transmission-time": "2026-01-01T00:00:00Z",
         "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
         "paypal-auth-algo": "SHA256withRSA",
-        "paypal-transmission-sig": "NzEXmn0F49l32wr5t9rgtvQtOY72VboQWLUxzE9VfZ9GFBbWai7M7cfAtbphEHNqou64NYISC74NhM5iNmBkVSO6BdGASiqf2V05UkEyJW5sxCuKB7k1TIUw+RC25TXCcN6kK9pYWgKZIlvD9o2RDz6dwIf4U09nTY7hOkhAkpYQwioqoepjsTd2E2jSbnkah2HmoYMZfDllaZoukeCSnjAYJ54ssCWe1Rt8uTXC3LM9ecfTg69FZJWrOz6vHFCuPmRn28nsOf4L7RAHHs0trMMNJrFanFCQHzq+0bWB2YfO3twDHOz/AJ0ljAOXHKzgqW5T9wZAc7BcXJ3Q2nU5hw=="
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
       },
       "expected": true
     },
@@ -1873,7 +1956,7 @@
       "name": "paypal, changed body",
       "provider": "paypal",
       "secret": "1JE4291016473214C",
-      "certificate": "-----BEGIN CERTIFICATE-----\nMIIDSTCCAjGgAwIBAgIUGEHQrgPZ4CeZHK2ImX3TZEPeEDswDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNjEwMjMxMzM0NDRaGA8yMTI2MDkyOTEzMzQ0NFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALUljhoQF5E5JjxgotSur1E/\ner5y4Cjqg44AXNfKRT0EB7RbXcZ8k6XNrcYIEIXM93Rjd6blQ+aH/WENzzNADk/M\nbskUHn5NrmZrobBDanwnFVLDg9j9V3a5SbhxQ/6FYkZ1Soh+XG3MV7k58DyXy555\nOJR62G4xSi67mxK+yvy+T3288e+NZEUkH848poz5BHkY0OzNXHMokHrMbLTYioOK\nBuRGEa9YzuU4W7AK8lxou4XbotDUHSqbIMOWe2UoTSls/o3rdyn4kw9Cnlr51QZr\ncft5KwrxjjvQJn4ZyT1GqAwFMV4Bmzyz6Nl4vb2aUaJ8mEGE/uEkoXz7pIA0lxcC\nAwEAAaNTMFEwHQYDVR0OBBYEFBWMpcmc8T7f0FTNr4J/qKyM88esMB8GA1UdIwQY\nMBaAFBWMpcmc8T7f0FTNr4J/qKyM88esMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI\nhvcNAQELBQADggEBAEr+d2tXucCmidFb3c/r4U0T0GjrqsCl4LoIpMz+EZHvtUdx\n30bFyqn25mUgfS744U0anH3tzDW1zxOuh3Coe0VZ/moEXi8rpfPppul54P0GugP+\n17rb2htdjzTzqfsFyg9RsJpKxEhvFsqs6NGY33Eqi7+ZujLKQ93e97LPPkLRqLIr\nwg0o3vJ5Ci7Gb3ZoB1OqzVYqqF4mZ4BWZAe1RE85dNwqDXe6Hqn9FXdzkbsq0tIZ\nl8EeZUEaqM54NZqsFKF/rkzbyR1T10m9wOLPbJNwuZB8zY5weXJckkSFH1KJz49E\n50FxdEK2lrwF0/LkRA2y091n8nu9/SACP8wfJM0=\n-----END CERTIFICATE-----\n",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
       "url": "https://example.com/webhooks/acme?source=conformance",
       "method": "POST",
       "now": 1767225660000,
@@ -1883,7 +1966,7 @@
         "paypal-transmission-time": "2026-01-01T00:00:00Z",
         "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
         "paypal-auth-algo": "SHA256withRSA",
-        "paypal-transmission-sig": "NzEXmn0F49l32wr5t9rgtvQtOY72VboQWLUxzE9VfZ9GFBbWai7M7cfAtbphEHNqou64NYISC74NhM5iNmBkVSO6BdGASiqf2V05UkEyJW5sxCuKB7k1TIUw+RC25TXCcN6kK9pYWgKZIlvD9o2RDz6dwIf4U09nTY7hOkhAkpYQwioqoepjsTd2E2jSbnkah2HmoYMZfDllaZoukeCSnjAYJ54ssCWe1Rt8uTXC3LM9ecfTg69FZJWrOz6vHFCuPmRn28nsOf4L7RAHHs0trMMNJrFanFCQHzq+0bWB2YfO3twDHOz/AJ0ljAOXHKzgqW5T9wZAc7BcXJ3Q2nU5hw=="
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
       },
       "expected": false
     },
@@ -1891,7 +1974,7 @@
       "name": "paypal, another webhook id",
       "provider": "paypal",
       "secret": "8PT597110X687430LKGECATA",
-      "certificate": "-----BEGIN CERTIFICATE-----\nMIIDSTCCAjGgAwIBAgIUGEHQrgPZ4CeZHK2ImX3TZEPeEDswDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNjEwMjMxMzM0NDRaGA8yMTI2MDkyOTEzMzQ0NFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALUljhoQF5E5JjxgotSur1E/\ner5y4Cjqg44AXNfKRT0EB7RbXcZ8k6XNrcYIEIXM93Rjd6blQ+aH/WENzzNADk/M\nbskUHn5NrmZrobBDanwnFVLDg9j9V3a5SbhxQ/6FYkZ1Soh+XG3MV7k58DyXy555\nOJR62G4xSi67mxK+yvy+T3288e+NZEUkH848poz5BHkY0OzNXHMokHrMbLTYioOK\nBuRGEa9YzuU4W7AK8lxou4XbotDUHSqbIMOWe2UoTSls/o3rdyn4kw9Cnlr51QZr\ncft5KwrxjjvQJn4ZyT1GqAwFMV4Bmzyz6Nl4vb2aUaJ8mEGE/uEkoXz7pIA0lxcC\nAwEAAaNTMFEwHQYDVR0OBBYEFBWMpcmc8T7f0FTNr4J/qKyM88esMB8GA1UdIwQY\nMBaAFBWMpcmc8T7f0FTNr4J/qKyM88esMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI\nhvcNAQELBQADggEBAEr+d2tXucCmidFb3c/r4U0T0GjrqsCl4LoIpMz+EZHvtUdx\n30bFyqn25mUgfS744U0anH3tzDW1zxOuh3Coe0VZ/moEXi8rpfPppul54P0GugP+\n17rb2htdjzTzqfsFyg9RsJpKxEhvFsqs6NGY33Eqi7+ZujLKQ93e97LPPkLRqLIr\nwg0o3vJ5Ci7Gb3ZoB1OqzVYqqF4mZ4BWZAe1RE85dNwqDXe6Hqn9FXdzkbsq0tIZ\nl8EeZUEaqM54NZqsFKF/rkzbyR1T10m9wOLPbJNwuZB8zY5weXJckkSFH1KJz49E\n50FxdEK2lrwF0/LkRA2y091n8nu9/SACP8wfJM0=\n-----END CERTIFICATE-----\n",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
       "url": "https://example.com/webhooks/acme?source=conformance",
       "method": "POST",
       "now": 1767225660000,
@@ -1901,7 +1984,7 @@
         "paypal-transmission-time": "2026-01-01T00:00:00Z",
         "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
         "paypal-auth-algo": "SHA256withRSA",
-        "paypal-transmission-sig": "NzEXmn0F49l32wr5t9rgtvQtOY72VboQWLUxzE9VfZ9GFBbWai7M7cfAtbphEHNqou64NYISC74NhM5iNmBkVSO6BdGASiqf2V05UkEyJW5sxCuKB7k1TIUw+RC25TXCcN6kK9pYWgKZIlvD9o2RDz6dwIf4U09nTY7hOkhAkpYQwioqoepjsTd2E2jSbnkah2HmoYMZfDllaZoukeCSnjAYJ54ssCWe1Rt8uTXC3LM9ecfTg69FZJWrOz6vHFCuPmRn28nsOf4L7RAHHs0trMMNJrFanFCQHzq+0bWB2YfO3twDHOz/AJ0ljAOXHKzgqW5T9wZAc7BcXJ3Q2nU5hw=="
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
       },
       "expected": false
     },
@@ -1909,7 +1992,7 @@
       "name": "paypal, a certificate URL outside PayPal is refused",
       "provider": "paypal",
       "secret": "1JE4291016473214C",
-      "certificate": "-----BEGIN CERTIFICATE-----\nMIIDSTCCAjGgAwIBAgIUGEHQrgPZ4CeZHK2ImX3TZEPeEDswDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNjEwMjMxMzM0NDRaGA8yMTI2MDkyOTEzMzQ0NFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALUljhoQF5E5JjxgotSur1E/\ner5y4Cjqg44AXNfKRT0EB7RbXcZ8k6XNrcYIEIXM93Rjd6blQ+aH/WENzzNADk/M\nbskUHn5NrmZrobBDanwnFVLDg9j9V3a5SbhxQ/6FYkZ1Soh+XG3MV7k58DyXy555\nOJR62G4xSi67mxK+yvy+T3288e+NZEUkH848poz5BHkY0OzNXHMokHrMbLTYioOK\nBuRGEa9YzuU4W7AK8lxou4XbotDUHSqbIMOWe2UoTSls/o3rdyn4kw9Cnlr51QZr\ncft5KwrxjjvQJn4ZyT1GqAwFMV4Bmzyz6Nl4vb2aUaJ8mEGE/uEkoXz7pIA0lxcC\nAwEAAaNTMFEwHQYDVR0OBBYEFBWMpcmc8T7f0FTNr4J/qKyM88esMB8GA1UdIwQY\nMBaAFBWMpcmc8T7f0FTNr4J/qKyM88esMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI\nhvcNAQELBQADggEBAEr+d2tXucCmidFb3c/r4U0T0GjrqsCl4LoIpMz+EZHvtUdx\n30bFyqn25mUgfS744U0anH3tzDW1zxOuh3Coe0VZ/moEXi8rpfPppul54P0GugP+\n17rb2htdjzTzqfsFyg9RsJpKxEhvFsqs6NGY33Eqi7+ZujLKQ93e97LPPkLRqLIr\nwg0o3vJ5Ci7Gb3ZoB1OqzVYqqF4mZ4BWZAe1RE85dNwqDXe6Hqn9FXdzkbsq0tIZ\nl8EeZUEaqM54NZqsFKF/rkzbyR1T10m9wOLPbJNwuZB8zY5weXJckkSFH1KJz49E\n50FxdEK2lrwF0/LkRA2y091n8nu9/SACP8wfJM0=\n-----END CERTIFICATE-----\n",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
       "url": "https://example.com/webhooks/acme?source=conformance",
       "method": "POST",
       "now": 1767225660000,
@@ -1919,7 +2002,25 @@
         "paypal-transmission-time": "2026-01-01T00:00:00Z",
         "paypal-cert-url": "https://example.com/v1/notifications/certs/CERT-360caa42-conformance",
         "paypal-auth-algo": "SHA256withRSA",
-        "paypal-transmission-sig": "NzEXmn0F49l32wr5t9rgtvQtOY72VboQWLUxzE9VfZ9GFBbWai7M7cfAtbphEHNqou64NYISC74NhM5iNmBkVSO6BdGASiqf2V05UkEyJW5sxCuKB7k1TIUw+RC25TXCcN6kK9pYWgKZIlvD9o2RDz6dwIf4U09nTY7hOkhAkpYQwioqoepjsTd2E2jSbnkah2HmoYMZfDllaZoukeCSnjAYJ54ssCWe1Rt8uTXC3LM9ecfTg69FZJWrOz6vHFCuPmRn28nsOf4L7RAHHs0trMMNJrFanFCQHzq+0bWB2YfO3twDHOz/AJ0ljAOXHKzgqW5T9wZAc7BcXJ3Q2nU5hw=="
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
+      },
+      "expected": false
+    },
+    {
+      "name": "paypal, a PayPal host outside /v1/notifications/certs/ is refused",
+      "provider": "paypal",
+      "secret": "1JE4291016473214C",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "method": "POST",
+      "now": 1767225660000,
+      "body": "{\"id\":\"WH-58D329510W468432D-8HN650336L201105X\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"amount\":{\"currency_code\":\"EUR\",\"value\":\"20.00\"},\"note\":\"café ✓\"}}",
+      "headers": {
+        "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+        "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        "paypal-cert-url": "https://api.sandbox.paypal.com/v1/other/CERT-360caa42-conformance",
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
       },
       "expected": false
     },
@@ -1927,7 +2028,7 @@
       "name": "paypal, an algorithm other than SHA256withRSA is refused",
       "provider": "paypal",
       "secret": "1JE4291016473214C",
-      "certificate": "-----BEGIN CERTIFICATE-----\nMIIDSTCCAjGgAwIBAgIUGEHQrgPZ4CeZHK2ImX3TZEPeEDswDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNjEwMjMxMzM0NDRaGA8yMTI2MDkyOTEzMzQ0NFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALUljhoQF5E5JjxgotSur1E/\ner5y4Cjqg44AXNfKRT0EB7RbXcZ8k6XNrcYIEIXM93Rjd6blQ+aH/WENzzNADk/M\nbskUHn5NrmZrobBDanwnFVLDg9j9V3a5SbhxQ/6FYkZ1Soh+XG3MV7k58DyXy555\nOJR62G4xSi67mxK+yvy+T3288e+NZEUkH848poz5BHkY0OzNXHMokHrMbLTYioOK\nBuRGEa9YzuU4W7AK8lxou4XbotDUHSqbIMOWe2UoTSls/o3rdyn4kw9Cnlr51QZr\ncft5KwrxjjvQJn4ZyT1GqAwFMV4Bmzyz6Nl4vb2aUaJ8mEGE/uEkoXz7pIA0lxcC\nAwEAAaNTMFEwHQYDVR0OBBYEFBWMpcmc8T7f0FTNr4J/qKyM88esMB8GA1UdIwQY\nMBaAFBWMpcmc8T7f0FTNr4J/qKyM88esMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI\nhvcNAQELBQADggEBAEr+d2tXucCmidFb3c/r4U0T0GjrqsCl4LoIpMz+EZHvtUdx\n30bFyqn25mUgfS744U0anH3tzDW1zxOuh3Coe0VZ/moEXi8rpfPppul54P0GugP+\n17rb2htdjzTzqfsFyg9RsJpKxEhvFsqs6NGY33Eqi7+ZujLKQ93e97LPPkLRqLIr\nwg0o3vJ5Ci7Gb3ZoB1OqzVYqqF4mZ4BWZAe1RE85dNwqDXe6Hqn9FXdzkbsq0tIZ\nl8EeZUEaqM54NZqsFKF/rkzbyR1T10m9wOLPbJNwuZB8zY5weXJckkSFH1KJz49E\n50FxdEK2lrwF0/LkRA2y091n8nu9/SACP8wfJM0=\n-----END CERTIFICATE-----\n",
+      "certificate": "-----BEGIN CERTIFICATE-----\nMIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL\nBQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0\naWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G\nA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC\nASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy\nFvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd\nU1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd\nOFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV\nGZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV\nKgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC\nAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb\n8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw\nbRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+\nMZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts\nobxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV\nNKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==\n-----END CERTIFICATE-----\n",
       "url": "https://example.com/webhooks/acme?source=conformance",
       "method": "POST",
       "now": 1767225660000,
@@ -1937,7 +2038,7 @@
         "paypal-transmission-time": "2026-01-01T00:00:00Z",
         "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
         "paypal-auth-algo": "SHA1withRSA",
-        "paypal-transmission-sig": "NzEXmn0F49l32wr5t9rgtvQtOY72VboQWLUxzE9VfZ9GFBbWai7M7cfAtbphEHNqou64NYISC74NhM5iNmBkVSO6BdGASiqf2V05UkEyJW5sxCuKB7k1TIUw+RC25TXCcN6kK9pYWgKZIlvD9o2RDz6dwIf4U09nTY7hOkhAkpYQwioqoepjsTd2E2jSbnkah2HmoYMZfDllaZoukeCSnjAYJ54ssCWe1Rt8uTXC3LM9ecfTg69FZJWrOz6vHFCuPmRn28nsOf4L7RAHHs0trMMNJrFanFCQHzq+0bWB2YfO3twDHOz/AJ0ljAOXHKzgqW5T9wZAc7BcXJ3Q2nU5hw=="
+        "paypal-transmission-sig": "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew=="
       },
       "expected": false
     }

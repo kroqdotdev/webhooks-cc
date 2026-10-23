@@ -31,6 +31,7 @@ const CODE_CANDIDATE =
 /** How far a code word may be from the code, in characters, within the same line. */
 const CODE_WORD_REACH = 48;
 const YEAR = /^(?:19|20)\d{2}$/;
+const MAX_CODES = 20;
 
 const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
 /** The href in an anchor's attributes (the text between `<a` and `>`). */
@@ -182,38 +183,41 @@ export function htmlToText(html: string): string {
     .join("\n");
 }
 
+/** At most MAX_CODES codes, in order of appearance; a Set keeps an email full of them linear. */
 function findCodes(sources: string[]): string[] {
-  const found: string[] = [];
+  const found = new Set<string>();
   const add = (raw: string) => {
     const value = raw.replace(/[ -]/g, "");
-    if (!YEAR.test(value) && !found.includes(value)) found.push(value);
+    if (!YEAR.test(value)) found.add(value);
   };
   for (const source of sources) {
     const lines = source
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
-    lines.forEach((line, index) => {
+    for (let index = 0; index < lines.length && found.size < MAX_CODES; index++) {
+      const line = lines[index];
       // A code alone on its line, under a line that names it ("Your code is").
       const alone = trimNonWord(line);
       if (index > 0 && CODE_WORD.test(lines[index - 1])) {
         const match = [...alone.matchAll(CODE_CANDIDATE)];
         if (match.length === 1 && match[0][1] === alone) {
           add(alone);
-          return;
+          continue;
         }
       }
-      if (!CODE_WORD.test(line)) return;
+      if (!CODE_WORD.test(line)) continue;
       for (const match of line.matchAll(CODE_CANDIDATE)) {
         const raw = match[1];
         const start = match.index ?? 0;
         const before = line.slice(Math.max(0, start - CODE_WORD_REACH), start);
         const after = line.slice(start + raw.length, start + raw.length + CODE_WORD_REACH);
         if (CODE_WORD.test(before) || CODE_WORD.test(after)) add(raw);
+        if (found.size >= MAX_CODES) break;
       }
-    });
+    }
   }
-  return found;
+  return [...found];
 }
 
 const TRAILING_PUNCTUATION = ".,;:!?";

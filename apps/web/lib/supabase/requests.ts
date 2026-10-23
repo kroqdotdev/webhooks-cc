@@ -64,8 +64,8 @@ export interface RequestRecord {
   kind: "http" | "email";
   email?: EmailCapture | null;
   /**
-   * For an email in an API response, the one-time codes and links found in
-   * it (see withEmailExtracts); null when the endpoint turned that off.
+   * For an email in an API response that asked for it, the one-time codes
+   * and links found in it (see withEmailExtracts).
    */
   extracts?: EmailExtracts | null;
 }
@@ -164,13 +164,28 @@ function normalizeRequest(row: SelectedRequestRowWithQuery): RequestRecord {
 }
 
 /**
+ * The `extracts` query parameter of the request routes: "true" asks for
+ * withEmailExtracts(), "false" or no parameter does not, and anything else is
+ * invalid (null).
+ */
+export function parseExtractsParam(value: string | null): boolean | null {
+  if (value === null || value === "false") return false;
+  return value === "true" ? true : null;
+}
+
+/**
  * Adds `extracts` to the emails among `records`: the codes and links the
  * dashboard's "Found in this email" shows, computed by the same function, so
  * SDKs in other languages read them instead of reimplementing the extraction.
  * Like forwarding, it honours the endpoint's "Show codes and links found in
- * emails": `extracts` is null when that is off. Extraction takes time linear
- * in the message, but text and HTML may be 256 KB each, so it yields between
- * emails instead of holding the event loop for a whole page.
+ * emails": `extracts` is null when that is off, or when the message could not
+ * be parsed.
+ *
+ * The routes add it only on `extracts=true`. Up to 20 links can make it tens
+ * of kilobytes, which would break the MCP server's output budget and cost the
+ * dashboard's refreshes for nothing. Extraction takes time linear in the
+ * message, but text and HTML may be 256 KB each, so it yields between emails
+ * instead of holding the event loop for a whole page.
  */
 export async function withEmailExtracts(records: RequestRecord[]): Promise<RequestRecord[]> {
   const endpointIds = [

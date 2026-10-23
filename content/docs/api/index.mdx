@@ -78,7 +78,7 @@ Email and forwarding fields on every endpoint:
 | Field               | Description                                                                                                         |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `emailAddress`      | The endpoint's [email address](/docs/email-capture). `null` for guest endpoints, which receive no email.            |
-| `showEmailExtracts` | Whether codes and links found in emails are shown in the dashboard, returned with each email (`extracts`), and included in forwarded JSON. Default `true`. |
+| `showEmailExtracts` | Whether codes and links found in emails are shown in the dashboard, returned by the API (`extracts`), and included in forwarded JSON. Default `true`. |
 | `forwardEnabled`    | Whether captured requests are [forwarded](/docs/forwarding) to `forwardUrl`.                                        |
 | `forwardUrl`        | Where requests are forwarded. Only returned to the endpoint's owner.                                                |
 | `hasForwardSecret`  | Whether a forwarding secret exists. The secret itself is never included.                                            |
@@ -198,7 +198,7 @@ curl https://webhooks.cc/api/requests/REQUEST_ID \
 
 `kind` is `email` for [captured emails](/docs/email-capture). Those have `method` set to `EMAIL`, the recipient address as `path`, the original message as `body`, and the parsed message (subject, addresses, text and HTML parts, attachment list, sender checks) as `email`.
 
-An email also carries `extracts`: the one-time codes and links found in it, best first, the same ones the dashboard shows. A signup or login test usually needs only `extracts.codes[0]` or `extracts.links[0].url`. `extracts` is `null` when the endpoint's `showEmailExtracts` is off, and HTTP requests do not have it. The request list, the paginated list and the single request include it; search and the stream do not.
+Add `extracts=true` to the request list, the paginated list or a single request, and each email also carries `extracts`: the one-time codes and links found in it, best first, the same ones the dashboard shows. A signup or login test usually needs only `extracts.codes[0]` or `extracts.links[0].url`. `extracts` is `null` when the endpoint's `showEmailExtracts` is off or the message could not be parsed; HTTP requests never have it. At most 20 codes and 20 links are returned. Search and the stream do not offer it.
 
 ```json
 "extracts": {

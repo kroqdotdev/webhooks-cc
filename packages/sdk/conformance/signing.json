@@ -527,6 +527,35 @@
       }
     },
     {
+      "name": "hubspot, all twelve uppercase escapes are decoded and lowercase ones are not",
+      "provider": "hubspot",
+      "secret": "conformance_hubspot_secret",
+      "method": "POST",
+      "url": "https://example.com/hooks/%3A%2F%3F%40%21%24%27%28%29%2A%2C%3B?next=%3a%2f%20",
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "timestamp": 1767225600,
+      "expected": {
+        "headers": {
+          "x-hubspot-request-timestamp": "1767225600000",
+          "x-hubspot-signature-v3": "LTH0N1hqEtxh8MrBbK3BeTkj+1R5K49Ttrk2+TtNE1Y="
+        },
+        "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}"
+      }
+    },
+    {
+      "name": "mailgun, the timestamp and token in the body are signed, not the timestamp option",
+      "provider": "mailgun",
+      "secret": "conformance_mailgun_secret",
+      "method": "POST",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"to-be-signed\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}",
+      "timestamp": 1767229200,
+      "expected": {
+        "headers": {},
+        "body": "{\"signature\":{\"timestamp\":\"1767225600\",\"token\":\"a8ce0edb2dd8301dee6c2405235584e45aa91d1e9f979f3de0\",\"signature\":\"676ea284285d2194bb826d8474e25af82ae2049707db52d76f244eafb545518e\"},\"event-data\":{\"event\":\"delivered\",\"id\":\"CPgfbmQMTCKtHW6uIWtuVe\",\"recipient\":\"alice@example.com\"}}"
+      }
+    },
+    {
       "name": "standard-webhooks, base64 secret without padding",
       "provider": "standard-webhooks",
       "secret": "whsec_dGVzdC1zZWNyZXQ",
@@ -540,6 +569,24 @@
           "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
           "webhook-timestamp": "1767225600",
           "webhook-signature": "v1,zDBvezmGoh/R4A8eh5I8JjWkIILmG7GpdHXksAr3y0E="
+        },
+        "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}"
+      }
+    },
+    {
+      "name": "standard-webhooks, a secret without the whsec_ prefix is still base64",
+      "provider": "standard-webhooks",
+      "secret": "MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "method": "POST",
+      "url": "https://example.com/webhooks/acme?source=conformance",
+      "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}",
+      "timestamp": 1767225600,
+      "messageId": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+      "expected": {
+        "headers": {
+          "webhook-id": "msg_2LJJbVBoPJyDAfGDSaxj6XQkPNy",
+          "webhook-timestamp": "1767225600",
+          "webhook-signature": "v1,ISBRI1DZZ5VQxXYxx//62vRaExRE90cH6HSCH2fY2Z4="
         },
         "body": "{\"id\":\"evt_conformance_1\",\"type\":\"order.paid\",\"data\":{\"amount\":2000,\"currency\":\"eur\",\"note\":\"café ✓\"}}"
       }

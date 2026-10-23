@@ -9,7 +9,7 @@ vi.mock("./admin", () => ({
   createAdminClient: () => ({ from }),
 }));
 
-const { withEmailExtracts } = await import("./requests");
+const { parseExtractsParam, withEmailExtracts } = await import("./requests");
 type RequestRecord = import("./requests").RequestRecord;
 
 function email(overrides: Partial<EmailCapture> = {}): EmailCapture {
@@ -64,6 +64,20 @@ const FOUND = {
   codes: ["482913"],
   links: [{ url: "https://app.acme.test/confirm?token=abc", label: "Confirm email", action: true }],
 };
+
+describe("parseExtractsParam", () => {
+  it("is off unless asked for with true", () => {
+    expect(parseExtractsParam(null)).toBe(false);
+    expect(parseExtractsParam("false")).toBe(false);
+    expect(parseExtractsParam("true")).toBe(true);
+  });
+
+  it("refuses anything else", () => {
+    for (const value of ["", "1", "yes", "TRUE", "true "]) {
+      expect(parseExtractsParam(value), value).toBeNull();
+    }
+  });
+});
 
 describe("withEmailExtracts", () => {
   beforeEach(() => {

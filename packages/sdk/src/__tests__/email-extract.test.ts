@@ -158,6 +158,11 @@ describe("extraction time on hostile input", () => {
     },
     "punctuation line": { subject: null, text: "code\n" + "!".repeat(size) + "a", html: null },
     "code word and capitals": { subject: null, text: "code " + "A".repeat(size), html: null },
+    "a distinct code on every line": {
+      subject: null,
+      text: Array.from({ length: size / 12 }, (_, i) => `code ${100000 + i}`).join("\n"),
+      html: null,
+    },
   };
 
   for (const [name, email] of Object.entries(hostile)) {
@@ -167,6 +172,16 @@ describe("extraction time on hostile input", () => {
       expect(performance.now() - started).toBeLessThan(1000);
     });
   }
+});
+
+describe("code limit", () => {
+  it("keeps the first 20 codes, in order", () => {
+    const text = Array.from({ length: 30 }, (_, i) => `code ${100000 + i}`).join("\n");
+    const { codes } = extractFromEmail({ subject: "Your code is 999999", text, html: null });
+    expect(codes).toHaveLength(20);
+    expect(codes.slice(0, 3)).toEqual(["999999", "100000", "100001"]);
+    expect(codes[19]).toBe("100018");
+  });
 });
 
 describe("tag handling edge cases", () => {

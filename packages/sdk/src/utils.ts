@@ -1,4 +1,6 @@
 const DURATION_REGEX = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/;
+/** Decimal digits with an optional fraction: not `Number()`, which also takes "0x10" and "1e3". */
+const PLAIN_NUMBER_REGEX = /^\d+(?:\.\d+)?$/;
 
 /**
  * Parse a duration value into milliseconds.
@@ -21,12 +23,8 @@ export function parseDuration(input: number | string): number {
   const trimmed = input.trim();
 
   // Try plain numeric string first
-  const asNumber = Number(trimmed);
-  if (!isNaN(asNumber) && trimmed.length > 0) {
-    if (!Number.isFinite(asNumber) || asNumber < 0) {
-      throw new Error(`Invalid duration: must be a finite non-negative number, got "${input}"`);
-    }
-    return asNumber;
+  if (PLAIN_NUMBER_REGEX.test(trimmed)) {
+    return Number(trimmed);
   }
 
   const match = DURATION_REGEX.exec(trimmed);

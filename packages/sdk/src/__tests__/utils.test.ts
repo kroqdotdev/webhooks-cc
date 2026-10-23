@@ -116,5 +116,12 @@ describe("parseDuration", () => {
     it("throws on negative duration string", () => {
       expect(() => parseDuration("-5s")).toThrow('Invalid duration: "-5s"');
     });
+
+    it("takes only decimal numbers, not everything Number() reads", () => {
+      for (const input of ["0x10", "1e3", "0b11", "+5", ".5", "5.", "Infinity", "-5"]) {
+        expect(() => parseDuration(input), input).toThrow(`Invalid duration: "${input}"`);
+      }
+      expect(parseDuration("2.5")).toBe(2.5);
+    });
   });
 });

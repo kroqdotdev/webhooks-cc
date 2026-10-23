@@ -148,18 +148,18 @@ sendTemplate(slug: string, options: SendTemplateOptions): Promise<Response>
 
 <ParamTable>
 
-| Param       | Type                     | Required | Description                                                                             |
-| ----------- | ------------------------ | -------- | --------------------------------------------------------------------------------------- |
-| `slug`      | `string`                 | yes      | Endpoint slug                                                                           |
-| `provider`  | `TemplateProvider`       | yes      | Provider template to generate                                                           |
-| `template`  | `string`                 | no       | Provider-specific template preset                                                       |
-| `secret`    | `string`                 | yes      | Shared secret for signature generation                                                  |
-| `event`     | `string`                 | no       | Provider event/topic override                                                           |
-| `method`    | `string`                 | no       | HTTP method override (defaults to POST)                                                 |
-| `timestamp` | `number`                 | no       | Unix timestamp override for signature generation                                        |
-| `messageId` | `string`                 | no       | Message id for `standard-webhooks`, `clerk` and `resend` signatures (random by default) |
-| `headers`   | `Record<string, string>` | no       | Additional headers                                                                      |
-| `body`      | `unknown`                | no       | Template body override                                                                  |
+| Param       | Type                     | Required | Description                                                                                                           |
+| ----------- | ------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `slug`      | `string`                 | yes      | Endpoint slug                                                                                                         |
+| `provider`  | `TemplateProvider`       | yes      | Provider template to generate                                                                                         |
+| `template`  | `string`                 | no       | Provider-specific template preset                                                                                     |
+| `secret`    | `string`                 | yes      | Shared secret for signature generation                                                                                |
+| `event`     | `string`                 | no       | Provider event/topic override                                                                                         |
+| `method`    | `string`                 | no       | HTTP method override (defaults to POST)                                                                               |
+| `timestamp` | `number`                 | no       | Unix timestamp override for signature generation                                                                      |
+| `messageId` | `string`                 | no       | Message id for `standard-webhooks`, `clerk` and `resend` signatures (random by default); not in SDK 1.15.0 or earlier |
+| `headers`   | `Record<string, string>` | no       | Additional headers                                                                                                    |
+| `body`      | `unknown`                | no       | Template body override                                                                                                |
 
 </ParamTable>
 </ApiMethod>
@@ -176,17 +176,17 @@ sendTo(url: string, options?: SendToOptions): Promise<Response>
 
 <ParamTable>
 
-| Param       | Type                     | Required | Description                                                                                                                         |
-| ----------- | ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `url`       | `string`                 | yes      | Target URL (http or https)                                                                                                          |
-| `provider`  | `TemplateProvider`       | no       | Provider template for signing                                                                                                       |
-| `secret`    | `string`                 | no       | Secret for signature generation (required when provider is set)                                                                     |
-| `body`      | `unknown`                | no       | Request body (JSON-serialized if not a string)                                                                                      |
-| `headers`   | `Record<string, string>` | no       | Additional headers                                                                                                                  |
-| `method`    | `string`                 | no       | HTTP method (default: `"POST"`)                                                                                                     |
-| `event`     | `string`                 | no       | Event name                                                                                                                          |
-| `timestamp` | `number`                 | no       | Unix timestamp override for deterministic signatures in tests                                                                       |
-| `messageId` | `string`                 | no       | Message id for `standard-webhooks`, `clerk` and `resend` signatures (random by default); with `timestamp`, makes them deterministic |
+| Param       | Type                     | Required | Description                                                                                                                                                       |
+| ----------- | ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`       | `string`                 | yes      | Target URL (http or https)                                                                                                                                        |
+| `provider`  | `TemplateProvider`       | no       | Provider template for signing                                                                                                                                     |
+| `secret`    | `string`                 | no       | Secret for signature generation (required when provider is set)                                                                                                   |
+| `body`      | `unknown`                | no       | Request body (JSON-serialized if not a string)                                                                                                                    |
+| `headers`   | `Record<string, string>` | no       | Additional headers                                                                                                                                                |
+| `method`    | `string`                 | no       | HTTP method (default: `"POST"`)                                                                                                                                   |
+| `event`     | `string`                 | no       | Event name                                                                                                                                                        |
+| `timestamp` | `number`                 | no       | Unix timestamp override for deterministic signatures in tests                                                                                                     |
+| `messageId` | `string`                 | no       | Message id for `standard-webhooks`, `clerk` and `resend` signatures (random by default); with `timestamp`, makes them deterministic. Not in SDK 1.15.0 or earlier |
 
 </ParamTable>
 </ApiMethod>
@@ -1158,7 +1158,6 @@ interface Request {
   signingProvider?: string | null;
   kind?: "http" | "email";
   email?: EmailCapture | null; // the parsed message, for a captured email
-  extracts?: EmailExtracts | null; // codes and links found in an email; null when turned off
 }
 
 // A captured email: method "EMAIL", path is the recipient address, body the raw message
@@ -1201,7 +1200,7 @@ interface EmailCapture {
   };
 }
 
-// What extractFromEmail() returns, and what the API sends as a request's extracts
+// What extractFromEmail() returns
 interface EmailExtracts {
   codes: string[]; // best first, spaces and dashes removed
   links: { url: string; label: string | null; action: boolean }[]; // action links first

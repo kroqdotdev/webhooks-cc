@@ -1,4 +1,4 @@
-import type { EmailCapture, EmailExtracts, RequestKind } from "./email/types";
+import type { EmailCapture, RequestKind } from "./email/types";
 
 /**
  * A webhook endpoint that captures incoming HTTP requests.
@@ -170,14 +170,6 @@ export interface Request {
   kind?: RequestKind;
   /** The parsed message, for a captured email */
   email?: EmailCapture | null;
-  /**
-   * The one-time codes and links the server found in a captured email, best
-   * first; what `extractFromEmail()` returns. Null when the endpoint turned
-   * "Show codes and links found in emails" off. On what `requests.list()`,
-   * `requests.listPaginated()`, `requests.get()` and the `emails` methods
-   * return; absent on HTTP requests and from servers before web 0.40.6.
-   */
-  extracts?: EmailExtracts | null;
 }
 
 /**

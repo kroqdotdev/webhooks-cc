@@ -99,6 +99,55 @@
         }
       }
     },
+    "emailBcc": {
+      "id": "4f0e7c1a-0000-4000-8000-000000000006",
+      "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
+      "method": "EMAIL",
+      "path": "signup+run-42@mailhooks.cc",
+      "headers": {},
+      "queryParams": {},
+      "ip": "198.51.100.1",
+      "size": 0,
+      "receivedAt": 1767225600000,
+      "kind": "email",
+      "email": {
+        "subject": "Confirm your email for Acme",
+        "from": [
+          {
+            "name": "Acme",
+            "address": "No-Reply@Acme.test"
+          }
+        ],
+        "to": [
+          {
+            "name": null,
+            "address": "team@acme.test"
+          }
+        ],
+        "cc": [],
+        "replyTo": [],
+        "sender": [],
+        "date": "Thu, 01 Jan 2026 00:00:00 +0000",
+        "messageId": "<1@acme.test>",
+        "inReplyTo": [],
+        "tag": "run-42",
+        "text": "Your verification code is 482913",
+        "html": null,
+        "textFromHtml": false,
+        "attachments": [],
+        "auth": null,
+        "smtp": null,
+        "parseError": false,
+        "truncated": {
+          "raw": false,
+          "text": false,
+          "html": false,
+          "headers": false,
+          "addresses": false,
+          "attachments": false
+        }
+      }
+    },
     "emailFromOlderServer": {
       "id": "4f0e7c1a-0000-4000-8000-000000000004",
       "endpointId": "9a8b7c6d-0000-4000-8000-000000000001",
@@ -906,13 +955,26 @@
       "expected": true
     },
     {
-      "name": "email, to includes the address it was delivered to",
-      "request": "emailFromOlderServer",
+      "name": "email, to includes the address it was delivered to (a Bcc)",
+      "request": "emailBcc",
       "matcher": {
         "fn": "matchEmail",
         "args": [
           {
-            "to": "signup@mailhooks.cc"
+            "to": "signup+run-42@mailhooks.cc"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "email, to also matches the To header",
+      "request": "emailBcc",
+      "matcher": {
+        "fn": "matchEmail",
+        "args": [
+          {
+            "to": "team@acme.test"
           }
         ]
       },

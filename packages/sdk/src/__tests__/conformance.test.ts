@@ -200,9 +200,21 @@ const SIGNING_CASES: SigningCase[] = [
     url: "https://example.com/webhooks/hub%3Aspot?next=https%3A%2F%2Fexample.com%2Fdone%40home&q=%7Bx%7D",
   }),
   signingCase("hubspot", { name: "hubspot, the method is signed", method: "PUT" }),
+  signingCase("hubspot", {
+    name: "hubspot, all twelve uppercase escapes are decoded and lowercase ones are not",
+    url: "https://example.com/hooks/%3A%2F%3F%40%21%24%27%28%29%2A%2C%3B?next=%3a%2f%20",
+  }),
+  signingCase("mailgun", {
+    name: "mailgun, the timestamp and token in the body are signed, not the timestamp option",
+    timestamp: TIMESTAMP + 3600,
+  }),
   signingCase("standard-webhooks", {
     name: "standard-webhooks, base64 secret without padding",
     secret: "whsec_dGVzdC1zZWNyZXQ",
+  }),
+  signingCase("standard-webhooks", {
+    name: "standard-webhooks, a secret without the whsec_ prefix is still base64",
+    secret: "MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
   }),
   signingCase("standard-webhooks", {
     name: "standard-webhooks, a secret that is not base64 signs with its UTF-8 bytes, prefix included",
@@ -315,7 +327,10 @@ const DISCORD = {
     "84792cb8f855aeb33db536f5f707774f932fc5fd88825a399ae6f433f0da40637e1c173fa20a1f43e6a27479104bb6184b274d37aef45fffdada4c840c76d00b",
 };
 
-/** A self-signed test certificate; its private key signed `signature` once and was thrown away. */
+/**
+ * A self-signed test certificate, valid 2025 to 2125; its private key signed
+ * `signature` once and was thrown away.
+ */
 const PAYPAL = {
   webhookId: "1JE4291016473214C",
   certUrl: "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-conformance",
@@ -323,26 +338,24 @@ const PAYPAL = {
   transmissionTime: "2026-01-01T00:00:00Z",
   body: '{"id":"WH-58D329510W468432D-8HN650336L201105X","event_type":"PAYMENT.CAPTURE.COMPLETED","resource":{"amount":{"currency_code":"EUR","value":"20.00"},"note":"café ✓"}}',
   signature:
-    "NzEXmn0F49l32wr5t9rgtvQtOY72VboQWLUxzE9VfZ9GFBbWai7M7cfAtbphEHNqou64NYISC74NhM5iNmBkVSO6BdGASiqf2V05UkEyJW5sxCuKB7k1TIUw+RC25TXCcN6kK9pYWgKZIlvD9o2RDz6dwIf4U09nTY7hOkhAkpYQwioqoepjsTd2E2jSbnkah2HmoYMZfDllaZoukeCSnjAYJ54ssCWe1Rt8uTXC3LM9ecfTg69FZJWrOz6vHFCuPmRn28nsOf4L7RAHHs0trMMNJrFanFCQHzq+0bWB2YfO3twDHOz/AJ0ljAOXHKzgqW5T9wZAc7BcXJ3Q2nU5hw==",
+    "SYEldQX06SEqfGQQQLV+6MZjUtAEEfvbAc5xyDIMrgi/7nrJkZt/M0IW8vroXclfXGvag6odo64mnwE2QQtq+trWsdtNONN/bNr/6s4YVKLzQz6vsmJ3U8BHtA0/ux/Fno4rFwX0kKMW3xCXj9+nGotTOru3QPDYAEl+lw3rHCecSh6KHa08Q9z7NLEodrSkU9foDuYolqeocRXF7KXKYhnmcc6BiM22LXW396OA7WquGqP1hFcuQ8b/jJC1cMQuejIYn1wAgId5akmoLzcYDa9WhtoODuYpNletuiCZtrlRtGeCA9/eM3rBWpx1YbxY2ta0cUMT10hi7ud1uT4mew==",
   certificate: `-----BEGIN CERTIFICATE-----
-MIIDSTCCAjGgAwIBAgIUGEHQrgPZ4CeZHK2ImX3TZEPeEDswDQYJKoZIhvcNAQEL
+MIIC9DCCAdygAwIBAgIUBg8VlgFh4jj4NbjGUMAEtJYo8rkwDQYJKoZIhvcNAQEL
 BQAwMzExMC8GA1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0
-aWZpY2F0ZTAgFw0yNjEwMjMxMzM0NDRaGA8yMTI2MDkyOTEzMzQ0NFowMzExMC8G
+aWZpY2F0ZTAgFw0yNTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowMzExMC8G
 A1UEAwwod2ViaG9va3MuY2MgY29uZm9ybWFuY2UgdGVzdCBjZXJ0aWZpY2F0ZTCC
-ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALUljhoQF5E5JjxgotSur1E/
-er5y4Cjqg44AXNfKRT0EB7RbXcZ8k6XNrcYIEIXM93Rjd6blQ+aH/WENzzNADk/M
-bskUHn5NrmZrobBDanwnFVLDg9j9V3a5SbhxQ/6FYkZ1Soh+XG3MV7k58DyXy555
-OJR62G4xSi67mxK+yvy+T3288e+NZEUkH848poz5BHkY0OzNXHMokHrMbLTYioOK
-BuRGEa9YzuU4W7AK8lxou4XbotDUHSqbIMOWe2UoTSls/o3rdyn4kw9Cnlr51QZr
-cft5KwrxjjvQJn4ZyT1GqAwFMV4Bmzyz6Nl4vb2aUaJ8mEGE/uEkoXz7pIA0lxcC
-AwEAAaNTMFEwHQYDVR0OBBYEFBWMpcmc8T7f0FTNr4J/qKyM88esMB8GA1UdIwQY
-MBaAFBWMpcmc8T7f0FTNr4J/qKyM88esMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
-hvcNAQELBQADggEBAEr+d2tXucCmidFb3c/r4U0T0GjrqsCl4LoIpMz+EZHvtUdx
-30bFyqn25mUgfS744U0anH3tzDW1zxOuh3Coe0VZ/moEXi8rpfPppul54P0GugP+
-17rb2htdjzTzqfsFyg9RsJpKxEhvFsqs6NGY33Eqi7+ZujLKQ93e97LPPkLRqLIr
-wg0o3vJ5Ci7Gb3ZoB1OqzVYqqF4mZ4BWZAe1RE85dNwqDXe6Hqn9FXdzkbsq0tIZ
-l8EeZUEaqM54NZqsFKF/rkzbyR1T10m9wOLPbJNwuZB8zY5weXJckkSFH1KJz49E
-50FxdEK2lrwF0/LkRA2y091n8nu9/SACP8wfJM0=
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALKq/nA++XEt4wrHaIWe+uAy
+FvRzn1IxYmQI0AdEdirN/IhkTzQrPhKOnXbuao1wGp89JR/Q9Tc3Vi9sgp9XaLZd
+U1BBmFC14pTDDuswC8H1Vl06/onIfPCTW3OH22OBdHdWAkA/F39R3XAJQTNEV/zd
+OFi+Xh4UQqbmpYnf3oDv/megSJJF2eHTd+mXq3+ecuCvnx/FojGN6JD0BGPXTTKV
+GZIWVAi/UYHNETxM2t4SKpPcay46lxPu7TwlQ1ItLBU2XFkFzh2YCY0ezb8J8VVV
+KgW9eaUK8tUmkCnfybGyVJMWn3pA0B8yirPEiF/T2xGjj0RkXIzboeoOoTPLavEC
+AwEAATANBgkqhkiG9w0BAQsFAAOCAQEAeRHkjRgxd57Ux+9Yl/CoEhZHD5IconZb
+8OPD4zn/pyhgOSyoezxyDx8YcK+k+pZBx5Y2piLwXQOpdmL4YyD9qVhYXER+LSSw
+bRwmPPpDCczNkOeozS3OjavLLuJpa/ICkOHjazlDUYqTc5McdbCtRQkSI1mI3pI+
+MZSE/E4LIiYYUqY/mg5hAgSOwWoPNv7svFpxMFE2zORhMzqYYZwONam0RARFfMts
+obxhHbKleok2xkAZhNfdL9C2M/oJXQmRd5EIRL7JxV2vQNxt2Ke/qWxM6Q4/LBNV
+NKtDhXWxkSyf1aKNpLH/LgGfQDjMGHrJPeu1WGlPY90FxH7La3Hklg==
 -----END CERTIFICATE-----
 `,
 };
@@ -484,6 +497,30 @@ function buildVerifyCases(signing: SigningVector[]): VerifyVector[] {
     expected: true,
   });
 
+  const clerk = byName("clerk");
+  fromSigning(clerk, "clerk, only the svix-* headers, as Clerk sends them", {
+    headers: withoutHeaders(clerk.expected.headers, [
+      "webhook-id",
+      "webhook-timestamp",
+      "webhook-signature",
+    ]),
+    expected: true,
+  });
+  fromSigning(clerk, "clerk, only the webhook-* headers", {
+    headers: withoutHeaders(clerk.expected.headers, [
+      "svix-id",
+      "svix-timestamp",
+      "svix-signature",
+    ]),
+    expected: true,
+  });
+
+  const linear = byName("linear");
+  fromSigning(linear, "linear, bare hex without sha256=, as Linear sends it", {
+    headers: { "linear-signature": linear.expected.headers["linear-signature"].slice(7) },
+    expected: true,
+  });
+
   const twilio = byName("twilio");
   fromSigning(twilio, "twilio, a different URL", {
     url: "https://example.com/webhooks/acme",
@@ -553,6 +590,14 @@ function buildVerifyCases(signing: SigningVector[]): VerifyVector[] {
     ...paypal,
     headers: paypalHeaders({
       "paypal-cert-url": "https://example.com/v1/notifications/certs/CERT-360caa42-conformance",
+    }),
+    expected: false,
+  });
+  add({
+    name: "paypal, a PayPal host outside /v1/notifications/certs/ is refused",
+    ...paypal,
+    headers: paypalHeaders({
+      "paypal-cert-url": "https://api.sandbox.paypal.com/v1/other/CERT-360caa42-conformance",
     }),
     expected: false,
   });
@@ -902,6 +947,19 @@ const MATCHER_REQUESTS: Record<string, Request> = {
     signatureVerified: null,
     kind: "email",
     email: EMAIL_CAPTURE,
+  },
+  emailBcc: {
+    id: "4f0e7c1a-0000-4000-8000-000000000006",
+    endpointId: "9a8b7c6d-0000-4000-8000-000000000001",
+    method: "EMAIL",
+    path: "signup+run-42@mailhooks.cc",
+    headers: {},
+    queryParams: {},
+    ip: "198.51.100.1",
+    size: 0,
+    receivedAt: 1767225600000,
+    kind: "email",
+    email: { ...EMAIL_CAPTURE, to: [{ name: null, address: "team@acme.test" }], cc: [] },
   },
   emailFromOlderServer: {
     id: "4f0e7c1a-0000-4000-8000-000000000004",
@@ -1263,9 +1321,15 @@ const MATCHER_CASES: MatcherCase[] = [
     expected: true,
   },
   {
-    name: "email, to includes the address it was delivered to",
-    request: "emailFromOlderServer",
-    matcher: m("matchEmail", { to: "signup@mailhooks.cc" }),
+    name: "email, to includes the address it was delivered to (a Bcc)",
+    request: "emailBcc",
+    matcher: m("matchEmail", { to: "signup+run-42@mailhooks.cc" }),
+    expected: true,
+  },
+  {
+    name: "email, to also matches the To header",
+    request: "emailBcc",
+    matcher: m("matchEmail", { to: "team@acme.test" }),
     expected: true,
   },
   {
@@ -1302,6 +1366,13 @@ const DURATION_INPUTS: (number | string)[] = [
   "10S",
   "1m30s",
   "s",
+  "0x10",
+  "1e3",
+  "0b11",
+  "+5",
+  ".5",
+  "5.",
+  "Infinity",
 ];
 
 function buildDurationVectors() {
@@ -1403,7 +1474,7 @@ describe("conformance vectors", () => {
   it("durations.json", async () => {
     await expect(
       file(
-        "Duration options (timeouts, poll intervals): a number is milliseconds; a string is a number of milliseconds or a number with ms, s, m, h or d. expected.ms is the result; expected.error means the input is refused.",
+        "Duration options (timeouts, poll intervals): a number is milliseconds; a string is decimal digits with an optional fraction, optionally followed by ms, s, m, h or d, and is trimmed first. expected.ms is the result; expected.error means the input is refused.",
         buildDurationVectors()
       )
     ).toMatchFileSnapshot("../../conformance/durations.json");
