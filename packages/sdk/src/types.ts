@@ -660,13 +660,21 @@ export interface ClientHooks {
   onError?: (info: ErrorHookInfo) => void;
 }
 
-/** Retry configuration for transient API failures. */
+/**
+ * Retry configuration for transient API failures. Off by default.
+ *
+ * Network errors, timeouts and the statuses in `retryOn` are retried for
+ * GET, HEAD, OPTIONS, PUT and DELETE, whose repeat is harmless. Other calls
+ * (creating an endpoint, sending a test email) are retried only after a 429,
+ * which the API sends before doing anything: one that timed out or failed
+ * with a 5xx may have gone through.
+ */
 export interface RetryOptions {
   /** Total attempts including the initial request */
   maxAttempts?: number;
   /** Base backoff delay in milliseconds */
   backoffMs?: number;
-  /** HTTP status codes that should be retried */
+  /** HTTP status codes that should be retried (default 429, 500, 502, 503, 504) */
   retryOn?: number[];
 }
 

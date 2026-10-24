@@ -2171,6 +2171,62 @@ describe("WebhooksCC", () => {
       expect(result.id).toBe("r1");
       expect(callCount).toBeGreaterThanOrEqual(2);
     });
+
+    // A stand-in for the requests route: newest first, filtered by `since`.
+    function serveRequests(requests: () => { id: string; method: string; receivedAt: number }[]) {
+      const sinces: number[] = [];
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        const since = Number(new URL(url).searchParams.get("since"));
+        sinces.push(since);
+        const body = requests()
+          .filter((request) => request.receivedAt > since)
+          .sort((a, b) => b.receivedAt - a.receivedAt);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => Promise.resolve(body),
+          text: () => Promise.resolve(JSON.stringify(body)),
+        });
+      });
+      return sinces;
+    }
+
+    it("finds a request when the local clock runs ahead of the server's", async () => {
+      // The server's clock is a minute behind: what arrives after the first
+      // poll still carries a receivedAt before the local time of that poll.
+      const serverNow = () => Date.now() - 60_000;
+      const arrived: { id: string; method: string; receivedAt: number }[] = [];
+      let polls = 0;
+      serveRequests(() => {
+        polls++;
+        if (polls === 2) arrived.push({ id: "r1", method: "POST", receivedAt: serverNow() });
+        return arrived;
+      });
+
+      const result = await createClient().requests.waitFor("abc123", {
+        timeout: 2000,
+        pollInterval: 10,
+      });
+
+      expect(result.id).toBe("r1");
+    });
+
+    it("polls from 30 seconds before the newest request seen", async () => {
+      const receivedAt = Date.now() - 10_000;
+      const sinces = serveRequests(() => [{ id: "r1", method: "GET", receivedAt }]);
+
+      await expect(
+        createClient().requests.waitFor("abc123", {
+          timeout: 100,
+          pollInterval: 10,
+          match: (request) => request.method === "POST",
+        })
+      ).rejects.toBeInstanceOf(TimeoutError);
+
+      expect(sinces.length).toBeGreaterThan(1);
+      expect(sinces.slice(1).every((since) => since === receivedAt - 30_000)).toBe(true);
+    });
   });
 
   describe("error handling", () => {
@@ -2282,6 +2338,78 @@ describe("WebhooksCC", () => {
 
       await vi.advanceTimersByTimeAsync(1);
       await expect(promise).resolves.toMatchObject({ remaining: 49 });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    function status(code: number) {
+      return {
+        ok: false,
+        status: code,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: () => Promise.resolve({ error: "failed" }),
+        text: () => Promise.resolve('{"error":"failed"}'),
+      };
+    }
+
+    const created = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ id: "ep1", slug: "abc123", createdAt: 0 }),
+      text: () => Promise.resolve('{"id":"ep1","slug":"abc123","createdAt":0}'),
+    };
+
+    it("does not repeat a POST after a 5xx, a network error or a timeout", async () => {
+      const retry = { maxAttempts: 3, backoffMs: 0 };
+
+      globalThis.fetch = vi.fn().mockResolvedValue(status(503));
+      await expect(createClient({ retry }).endpoints.create()).rejects.toBeInstanceOf(
+        WebhooksCCError
+      );
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+      await expect(createClient({ retry }).endpoints.create()).rejects.toThrow("fetch failed");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      globalThis.fetch = vi.fn().mockImplementation(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener("abort", () =>
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+            );
+          })
+      );
+      await expect(createClient({ retry, timeout: 10 }).endpoints.create()).rejects.toBeInstanceOf(
+        TimeoutError
+      );
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("repeats a POST after a 429", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(status(429)).mockResolvedValueOnce(created);
+
+      await expect(
+        createClient({ retry: { maxAttempts: 2, backoffMs: 0 } }).endpoints.create()
+      ).resolves.toMatchObject({ slug: "abc123" });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("repeats a GET or a DELETE after a network error", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockResolvedValueOnce(created);
+      await expect(
+        createClient({ retry: { maxAttempts: 2, backoffMs: 0 } }).endpoints.get("abc123")
+      ).resolves.toMatchObject({ slug: "abc123" });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockResolvedValueOnce({ ...created, status: 204, json: () => Promise.resolve(undefined) });
+      await createClient({ retry: { maxAttempts: 2, backoffMs: 0 } }).endpoints.delete("abc123");
       expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
 

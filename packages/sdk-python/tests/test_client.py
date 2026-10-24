@@ -206,6 +206,67 @@ def test_retries_follow_the_options() -> None:
     assert len(calls) == 3
 
 
+ENDPOINT = {"id": "e1", "slug": "acme", "createdAt": NOW_MS}
+
+
+def _connect_error(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("refused", request=request)
+
+
+def _read_timeout(request: httpx.Request) -> httpx.Response:
+    raise httpx.ReadTimeout("slow", request=request)
+
+
+@pytest.mark.parametrize(
+    "fail",
+    [lambda request: httpx.Response(503, text="busy"), _connect_error, _read_timeout],
+    ids=["5xx", "network error", "timeout"],
+)
+def test_a_post_is_not_repeated_after_a_5xx_a_network_error_or_a_timeout(fail: Handler) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        return fail(request)
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=3, backoff=1))
+    with pytest.raises((errors.WebhooksCCError, httpx.TransportError)):
+        client.endpoints.create("acme")
+    assert calls == ["POST"]
+
+
+def test_a_post_is_repeated_after_a_429() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        if len(calls) == 1:
+            return httpx.Response(429, text="slow down")
+        return httpx.Response(200, json=ENDPOINT)
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
+    assert client.endpoints.create("acme").slug == "acme"
+    assert calls == ["POST", "POST"]
+
+
+@pytest.mark.parametrize("method", ["GET", "DELETE"])
+def test_a_get_or_a_delete_is_repeated_after_a_network_error(method: str) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        if len(calls) == 1:
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(204) if method == "DELETE" else httpx.Response(200, json=ENDPOINT)
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
+    if method == "DELETE":
+        client.endpoints.delete("acme")
+    else:
+        client.endpoints.get("acme")
+    assert calls == [method, method]
+
+
 def test_timeouts_raise_the_sdk_timeout_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=request)
@@ -277,6 +338,42 @@ def test_wait_for_stops_on_errors_that_will_not_go_away() -> None:
     client = make_client(lambda request: httpx.Response(401, text="bad key"))
     with pytest.raises(errors.UnauthorizedError):
         client.requests.wait_for("acme", timeout="5s", poll_interval=10)
+
+
+def test_wait_for_finds_a_request_when_the_local_clock_runs_ahead() -> None:
+    # The server's clock is a minute behind: what arrives after the first poll
+    # still carries a receivedAt before the local time of that poll.
+    arrived: list[dict[str, Any]] = []
+    polls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        polls.append(1)
+        if len(polls) == 2:
+            arrived.append(captured("r1", receivedAt=int(time.time() * 1000) - 60_000))
+        since = int(request.url.params["since"])
+        return httpx.Response(200, json=[r for r in arrived if r["receivedAt"] > since])
+
+    request = make_client(handler).requests.wait_for("acme", timeout="2s", poll_interval=10)
+    assert request.id == "r1"
+
+
+def test_wait_for_polls_from_30_seconds_before_the_newest_request() -> None:
+    received_at = int(time.time() * 1000) - 10_000
+    sinces: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sinces.append(int(request.url.params["since"]))
+        return httpx.Response(200, json=[captured("r1", method="GET", receivedAt=received_at)])
+
+    with pytest.raises(errors.TimeoutError):
+        make_client(handler).requests.wait_for(
+            "acme",
+            timeout=timedelta(milliseconds=100),
+            poll_interval=10,
+            match=lambda request: request.method == "POST",
+        )
+    assert len(sinces) > 1
+    assert all(since == received_at - 30_000 for since in sinces[1:])
 
 
 def test_emails_wait_for_filters_and_extracts() -> None:

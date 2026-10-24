@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from ._js import js_trim
 from ._sentinel import UNSET
 from .models import EmailAddress, Request
 
@@ -146,13 +147,13 @@ def match_body_subset(subset: Mapping[str, Any]) -> Matcher:
 
 def match_content_type(content_type: str) -> Matcher:
     """The content type, ignoring parameters such as ``charset``."""
-    expected = content_type.strip().lower()
+    expected = js_trim(content_type).lower()
 
     def matches(request: Request) -> bool:
         raw = request.content_type or request.header("content-type")
         if not raw:
             return False
-        normalized = raw.strip().lower()
+        normalized = js_trim(raw).lower()
         return normalized == expected or normalized.startswith(f"{expected};")
 
     return matches

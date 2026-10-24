@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 
 	"webhooks.cc/go/internal/jsonx"
+	"webhooks.cc/go/internal/webtext"
 )
 
 // HMACSHA256 is the HMAC-SHA256 of payload under key.
@@ -78,7 +79,7 @@ func DecodeBase64(value string) ([]byte, error) {
 
 // HexToBytes decodes a hex string after trimming surrounding whitespace.
 func HexToBytes(value string) ([]byte, error) {
-	normalized := strings.TrimSpace(value)
+	normalized := webtext.JSTrim(value)
 	if normalized == "" || len(normalized)%2 != 0 {
 		return nil, errors.New("expected a hex-encoded value")
 	}

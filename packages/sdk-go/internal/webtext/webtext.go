@@ -1,12 +1,21 @@
-// Package webtext decodes text the way browsers and Node do, so request
-// building and signature verification read form bodies identically: a
-// Twilio request the SDK signs must verify with the SDK.
+// Package webtext reads text the way browsers and Node do, so request
+// building and signature verification read form bodies identically (a
+// Twilio request the SDK signs must verify with the SDK), and strings are
+// trimmed of the whitespace the TypeScript SDK trims.
 package webtext
 
 import (
 	"strings"
 	"unicode/utf8"
 )
+
+// JSWhitespace is what JavaScript's String.prototype.trim, Number() and a
+// regular expression's \s treat as whitespace. Go's strings.TrimSpace
+// differs: it also takes U+0085 but not U+FEFF.
+const JSWhitespace = "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+
+// JSTrim is JavaScript's s.trim().
+func JSTrim(s string) string { return strings.Trim(s, JSWhitespace) }
 
 // DecodeUTF8 decodes bytes as UTF-8, replacing each maximal ill-formed
 // subsequence with one U+FFFD, as the WHATWG decoder (TextDecoder) does.

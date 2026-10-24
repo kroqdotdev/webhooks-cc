@@ -630,6 +630,8 @@ console.log(event.data.method, event.data.path, event.data.body);
 3. One of the signatures in `webhook-signature` matches the raw body and your endpoint's `whsec_` secret, compared in constant time.
 4. The body is an `email.received` event.
 
+A secret that decodes to no key at all (`whsec_` alone, or whitespace) throws a plain `Error` before the request is read, here and in `verifyRelayedRequest`: it is a setup mistake, not a forged request, so let it surface as a 500 rather than a 401.
+
 ```ts
 import { verifyForwardedEmail, WebhookVerificationError } from "@webhooks-cc/sdk";
 

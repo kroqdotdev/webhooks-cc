@@ -1194,6 +1194,8 @@ export async function verifyStandardWebhookSignature(
   secret: string
 ): Promise<boolean> {
   requireSecret(secret, "verifyStandardWebhookSignature");
+  // Decoded first, so a secret with no key throws whatever the request carries.
+  const key = decodeStandardWebhookSecret(secret);
   const messageId = getHeader(headers, "webhook-id");
   const timestamp = getHeader(headers, "webhook-timestamp");
   const signatureHeader = getHeader(headers, "webhook-signature");
@@ -1203,11 +1205,7 @@ export async function verifyStandardWebhookSignature(
   }
 
   const expected = toBase64(
-    await hmacSignRaw(
-      "SHA-256",
-      decodeStandardWebhookSecret(secret),
-      `${messageId}.${timestamp}.${normalizeBody(body)}`
-    )
+    await hmacSignRaw("SHA-256", key, `${messageId}.${timestamp}.${normalizeBody(body)}`)
   );
   return parseStandardSignatures(signatureHeader).some((signature) =>
     timingSafeEqual(signature, expected)
@@ -1276,6 +1274,8 @@ async function verifySignedForward(
   functionName: string
 ): Promise<unknown> {
   requireSecret(secret, functionName);
+  // A secret with no key is a setup error, reported before the request is looked at.
+  decodeStandardWebhookSecret(secret);
   const text = bodyText(body);
 
   const messageId = getHeader(headers, "webhook-id");
@@ -1323,6 +1323,7 @@ async function verifySignedForward(
  *
  * @throws WebhookVerificationError with `code` "missing_headers",
  *   "timestamp_out_of_range", "invalid_signature" or "invalid_payload"
+ * @throws Error when the secret decodes to an empty key, such as "whsec_"
  *
  * @example
  * ```ts
@@ -1367,6 +1368,7 @@ export async function verifyForwardedEmail(
  *
  * @throws WebhookVerificationError with `code` "missing_headers",
  *   "timestamp_out_of_range", "invalid_signature" or "invalid_payload"
+ * @throws Error when the secret decodes to an empty key, such as "whsec_"
  */
 export async function verifyForwardedRequest(
   body: string | Uint8Array | ArrayBuffer,
@@ -1427,6 +1429,7 @@ async function hmacSha256(key: Uint8Array, parts: Uint8Array[]): Promise<Uint8Ar
  *
  * @throws WebhookVerificationError with `code` "missing_headers" or
  *   "invalid_signature"
+ * @throws Error when the secret decodes to an empty key, such as "whsec_"
  */
 export async function verifyRelayedRequest(
   body: string | Uint8Array | ArrayBuffer,
@@ -1434,6 +1437,8 @@ export async function verifyRelayedRequest(
   secret: string
 ): Promise<RelayedRequestInfo> {
   requireSecret(secret, "verifyRelayedRequest");
+  // Decoded first, so a secret with no key throws whatever the request carries.
+  const key = decodeStandardWebhookSecret(secret);
   const requestId = getHeader(headers, "webhooks-cc-request-id");
   const receivedAt = getHeader(headers, "webhooks-cc-received-at");
   const signatureHeader = getHeader(headers, "webhooks-cc-signature");
@@ -1444,7 +1449,7 @@ export async function verifyRelayedRequest(
     );
   }
   const expected = toBase64(
-    await hmacSha256(decodeStandardWebhookSecret(secret), [
+    await hmacSha256(key, [
       new TextEncoder().encode(`${requestId}.${receivedAt}.`),
       bodyBytes(body),
     ])

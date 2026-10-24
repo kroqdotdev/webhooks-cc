@@ -1,6 +1,6 @@
 [project]
 name = "webhooks-cc"
-version = "0.1.2"
+version = "0.1.3"
 description = "Python SDK for webhooks.cc: capture, wait for, sign and verify webhooks and test emails"
 readme = "README.md"
 license = "MIT"

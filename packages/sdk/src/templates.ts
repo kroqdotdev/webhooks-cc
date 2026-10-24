@@ -2371,6 +2371,14 @@ export function buildTwilioSignaturePayload(
   return payload;
 }
 
+/**
+ * The HMAC key for a Standard Webhooks style secret (Standard Webhooks, Clerk,
+ * Resend, webhooks.cc forwarding): a leading `whsec_` is stripped and the rest
+ * decoded as base64, or, when that fails, the whole secret's UTF-8 bytes.
+ *
+ * @throws Error when the secret decodes to no key at all ("whsec_",
+ *   whitespace): an HMAC keyed with nothing is one anyone can compute.
+ */
 export function decodeStandardWebhookSecret(secret: string): Uint8Array {
   let rawSecret = secret;
   const hadPrefix = rawSecret.startsWith("whsec_");
@@ -2378,12 +2386,16 @@ export function decodeStandardWebhookSecret(secret: string): Uint8Array {
     rawSecret = rawSecret.slice(6);
   }
 
+  let key: Uint8Array;
   try {
-    return fromBase64(rawSecret);
+    key = fromBase64(rawSecret);
   } catch {
-    const raw = hadPrefix ? secret : rawSecret;
-    return new TextEncoder().encode(raw);
+    key = new TextEncoder().encode(hadPrefix ? secret : rawSecret);
   }
+  if (key.byteLength === 0) {
+    throw new Error("The secret decodes to an empty key");
+  }
+  return key;
 }
 
 function hexToBytes(hex: string): Uint8Array {

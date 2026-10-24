@@ -13,8 +13,10 @@ import hmac
 import json
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
+
+from ._js import js_trim
 
 HashName = Literal["sha256", "sha1"]
 
@@ -69,7 +71,7 @@ def from_base64(value: str) -> bytes:
 
 
 def hex_to_bytes(value: str) -> bytes:
-    normalized = value.strip()
+    normalized = js_trim(value)
     if not _HEX.match(normalized) or len(normalized) % 2 != 0:
         raise ValueError("Expected a hex-encoded value")
     return bytes.fromhex(normalized)
@@ -217,7 +219,9 @@ def js_string(value: Any) -> str:
 def js_json(value: Any) -> str:
     """Serialize like JavaScript's ``JSON.stringify(value)``.
 
-    Compact, keys in their order, non-ASCII characters left as they are.
+    Compact, keys in the order a JavaScript object keeps them (array-index keys
+    such as ``"2"`` first, ascending, then the rest as inserted), non-ASCII
+    characters left as they are.
     """
     parts: list[str] = []
     _write_json(value, parts)
@@ -238,11 +242,11 @@ def _write_json(value: Any, out: list[str]) -> None:
     elif isinstance(value, Mapping):
         out.append("{")
         first = True
-        for key, item in value.items():
+        for key, item in _js_key_order(value.items()):
             if not first:
                 out.append(",")
             first = False
-            out.append(json.dumps(str(key), ensure_ascii=False))
+            out.append(json.dumps(key, ensure_ascii=False))
             out.append(":")
             _write_json(item, out)
         out.append("}")
@@ -255,6 +259,22 @@ def _write_json(value: Any, out: list[str]) -> None:
         out.append("]")
     else:
         raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _is_array_index(key: str) -> bool:
+    """Whether a JavaScript object treats ``key`` as an array index (0 to 2**32 - 2)."""
+    if not (key.isascii() and key.isdigit()) or (len(key) > 1 and key[0] == "0"):
+        return False
+    return int(key) < 2**32 - 1
+
+
+def _js_key_order(items: Iterable[tuple[Any, Any]]) -> list[tuple[str, Any]]:
+    """Members in the order a JavaScript object enumerates them."""
+    members = [(str(key), item) for key, item in items]
+    indexes = sorted((m for m in members if _is_array_index(m[0])), key=lambda m: int(m[0]))
+    if not indexes:
+        return members
+    return indexes + [m for m in members if not _is_array_index(m[0])]
 
 
 def json_body(value: Any) -> str:

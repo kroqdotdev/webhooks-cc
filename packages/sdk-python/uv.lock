@@ -744,7 +744,7 @@ wheels = [
 
 [[package]]
 name = "webhooks-cc"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

@@ -100,9 +100,11 @@ const client = new WebhooksCC({
 | `baseUrl`     | `string`       | `https://webhooks.cc`    | API base URL                                                             |
 | `webhookUrl`  | `string`       | `https://go.webhooks.cc` | receiver base URL used by `endpoints.send()`                             |
 | `timeout`     | `number`       | `30000`                  | request timeout in milliseconds                                          |
-| `retry`       | `RetryOptions` | `1` attempt              | retries transient SDK requests                                           |
+| `retry`       | `RetryOptions` | `1` attempt              | retries transient failures (see below)                                   |
 | `hooks`       | `ClientHooks`  | none                     | lifecycle callbacks for request logging                                  |
 | `emailDomain` | `string`       | `mailhooks.cc`           | domain `emails.address()` builds addresses on                            |
+
+With `retry`, GET, PUT and DELETE calls are repeated after a network error, a timeout or a status in `retryOn` (429 and 5xx by default), and any call after a 429, which the API sends before doing anything. A POST or PATCH that failed any other way is not repeated: it may have gone through, and a second `endpoints.create()` would leave an extra endpoint.
 
 ## API overview
 

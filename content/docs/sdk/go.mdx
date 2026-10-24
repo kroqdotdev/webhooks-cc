@@ -212,7 +212,7 @@ API errors are a `*webhookscc.Error` with a `StatusCode`. Test them with `errors
 | `webhookscc.ErrTimeout`       | A request, wait or stream ran out of time                    |
 | `webhookscc.ErrMissingAPIKey` | `New` found no API key                                       |
 
-Network failures return the `net/http` error. Retries are off unless you pass `webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 3})`.
+Network failures return the `net/http` error. Retries are off unless you pass `webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 3})`. They repeat GET, PUT and DELETE calls after a network error, a timeout or a 5xx, and any call after a 429; a POST or PATCH that failed any other way may have gone through, so it is not repeated.
 
 ## Configuration
 

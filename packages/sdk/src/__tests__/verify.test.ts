@@ -1440,3 +1440,41 @@ describe("WorkOS verification (t=<ms>, v1=<hex>)", () => {
     );
   });
 });
+
+describe("secrets that decode to an empty key", () => {
+  const body = '{"type":"test"}';
+  // Signed with no key at all, as anyone could sign it.
+  const forged = {
+    "webhook-id": "msg_1",
+    "webhook-timestamp": "1700000000",
+    "webhook-signature": `v1,${createHmac("sha256", Buffer.alloc(0))
+      .update(`msg_1.1700000000.${body}`)
+      .digest("base64")}`,
+  };
+
+  for (const secret of ["whsec_", "whsec_ ", " ", "\n\t"]) {
+    it(`refuses ${JSON.stringify(secret)}, with or without headers`, async () => {
+      await expect(verifyStandardWebhookSignature(body, forged, secret)).rejects.toThrow(
+        "The secret decodes to an empty key"
+      );
+      await expect(verifyStandardWebhookSignature(body, {}, secret)).rejects.toThrow(
+        "The secret decodes to an empty key"
+      );
+      for (const provider of ["standard-webhooks", "clerk", "resend"] as const) {
+        await expect(
+          verifySignature({ body, headers: forged }, { provider, secret })
+        ).rejects.toThrow("The secret decodes to an empty key");
+      }
+    });
+  }
+
+  it("refuses to sign with one", async () => {
+    await expect(
+      client.buildRequest("https://example.com/webhooks/standard", {
+        provider: "standard-webhooks",
+        secret: "whsec_",
+        body: {},
+      })
+    ).rejects.toThrow("The secret decodes to an empty key");
+  });
+});

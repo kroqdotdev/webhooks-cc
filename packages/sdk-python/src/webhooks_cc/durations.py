@@ -7,11 +7,13 @@ import re
 from datetime import timedelta
 from typing import TypeAlias
 
+from ._js import JS_SPACE, js_trim
+
 Duration: TypeAlias = int | float | str | timedelta
 """``"30s"``, ``"500ms"``, ``"5m"``, ``"2h"`` or ``"7d"``, a ``timedelta``, or milliseconds."""
 
 _PLAIN_NUMBER = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
-_DURATION = re.compile(r"^([0-9]+(?:\.[0-9]+)?)\s*(ms|s|m|h|d)$")
+_DURATION = re.compile(rf"^([0-9]+(?:\.[0-9]+)?){JS_SPACE}*(ms|s|m|h|d)$")
 _UNIT_MS = {"ms": 1, "s": 1000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 
 
@@ -42,7 +44,7 @@ def parse_duration(value: Duration) -> float:
     if not isinstance(value, str):
         raise ValueError(f"Invalid duration: {value!r}")
 
-    trimmed = value.strip()
+    trimmed = js_trim(value)
     if _PLAIN_NUMBER.fullmatch(trimmed):
         return _number(trimmed)
     match = _DURATION.fullmatch(trimmed)

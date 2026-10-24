@@ -38,6 +38,8 @@ import {
 } from "../verify";
 
 const FORMAT_VERSION = 1;
+/** forwarding.json is at 2: version 2 added expected.invalidSecret. */
+const FORWARDING_FORMAT_VERSION = 2;
 const GENERATED_BY = "packages/sdk/src/__tests__/conformance.test.ts";
 
 /** 2026-01-01T00:00:00Z, in seconds. */
@@ -48,9 +50,9 @@ const URL_SIGNED = "https://example.com/webhooks/acme?source=conformance";
 const JSON_BODY =
   '{"id":"evt_conformance_1","type":"order.paid","data":{"amount":2000,"currency":"eur","note":"café ✓"}}';
 
-function file(description: string, vectors: unknown[]): string {
+function file(description: string, vectors: unknown[], version = FORMAT_VERSION): string {
   return `${JSON.stringify(
-    { version: FORMAT_VERSION, generatedBy: GENERATED_BY, description, vectors },
+    { version, generatedBy: GENERATED_BY, description, vectors },
     null,
     2
   )}\n`;
@@ -646,7 +648,7 @@ interface ForwardingVector {
   body?: string;
   bodyBase64?: string;
   headers: Record<string, string>;
-  expected: { ok: true } | { error: string };
+  expected: { ok: true } | { error: string } | { invalidSecret: true };
 }
 
 const FORWARD_SECRET = "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==";
@@ -676,16 +678,23 @@ const REQUEST_EVENT = JSON.stringify({
   },
 });
 
-function standardHeaders(body: string, timestamp = TIMESTAMP): Record<string, string> {
+/** What anyone can sign with: a secret that decodes to no key at all. */
+const EMPTY_KEY = Buffer.alloc(0);
+
+function standardHeaders(
+  body: string,
+  timestamp = TIMESTAMP,
+  key = whsecKey(FORWARD_SECRET)
+): Record<string, string> {
   const id = "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90";
   return {
     "webhook-id": id,
     "webhook-timestamp": String(timestamp),
-    "webhook-signature": `v1,${hmacBase64(whsecKey(FORWARD_SECRET), `${id}.${timestamp}.${body}`)}`,
+    "webhook-signature": `v1,${hmacBase64(key, `${id}.${timestamp}.${body}`)}`,
   };
 }
 
-function relayedHeaders(body: Buffer): Record<string, string> {
+function relayedHeaders(body: Buffer, key = whsecKey(FORWARD_SECRET)): Record<string, string> {
   const requestId = "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d";
   const receivedAt = "1767225600123";
   return {
@@ -694,7 +703,7 @@ function relayedHeaders(body: Buffer): Record<string, string> {
     "webhooks-cc-endpoint": "acme-signup",
     "webhooks-cc-attempt": "1",
     "webhooks-cc-signature": `v1,${hmacBase64(
-      whsecKey(FORWARD_SECRET),
+      key,
       Buffer.concat([Buffer.from(`${requestId}.${receivedAt}.`), body])
     )}`,
   };
@@ -757,6 +766,17 @@ function buildForwardingVectors(): ForwardingVector[] {
       headers: standardHeaders(REQUEST_EVENT),
       expected: { error: "invalid_payload" },
     }),
+    // Signed with the empty key, as anyone could sign it.
+    email("forwarded email, a secret that decodes to an empty key", {
+      secret: "whsec_",
+      headers: standardHeaders(EMAIL_EVENT, TIMESTAMP, EMPTY_KEY),
+      expected: { invalidSecret: true },
+    }),
+    email("forwarded email, an empty key is refused before the headers are read", {
+      secret: "whsec_ ",
+      headers: {},
+      expected: { invalidSecret: true },
+    }),
     {
       name: "forwarded request",
       function: "verifyForwardedRequest",
@@ -774,6 +794,15 @@ function buildForwardingVectors(): ForwardingVector[] {
       body: EMAIL_EVENT,
       headers: standardHeaders(EMAIL_EVENT),
       expected: { error: "invalid_payload" },
+    },
+    {
+      name: "forwarded request, a secret of only whitespace",
+      function: "verifyForwardedRequest",
+      secret: " \n",
+      now: NOW,
+      body: REQUEST_EVENT,
+      headers: standardHeaders(REQUEST_EVENT, TIMESTAMP, EMPTY_KEY),
+      expected: { invalidSecret: true },
     },
     relayed("relayed request", {}),
     relayed("relayed request, no age limit: a week later still verifies", {
@@ -798,6 +827,16 @@ function buildForwardingVectors(): ForwardingVector[] {
       headers: withoutHeaders(relayedHeaders(relayedJson), ["webhooks-cc-received-at"]),
       expected: { error: "missing_headers" },
     }),
+    relayed("relayed request, a secret that decodes to an empty key", {
+      secret: "whsec_",
+      headers: relayedHeaders(relayedJson, EMPTY_KEY),
+      expected: { invalidSecret: true },
+    }),
+    relayed("relayed request, an empty key is refused before the headers are read", {
+      secret: "whsec_",
+      headers: {},
+      expected: { invalidSecret: true },
+    }),
   ];
 }
 
@@ -817,6 +856,9 @@ async function runForwarding(vector: ForwardingVector): Promise<ForwardingVector
     return { ok: true };
   } catch (error) {
     if (error instanceof WebhookVerificationError) return { error: error.code };
+    if (error instanceof Error && error.message === "The secret decodes to an empty key") {
+      return { invalidSecret: true };
+    }
     throw error;
   }
 }
@@ -1449,8 +1491,9 @@ describe("conformance vectors", () => {
     }
     await expect(
       file(
-        "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises.",
-        vectors
+        "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises. expected.invalidSecret means it refuses the secret itself, whatever the request carries, with the error the language uses for a bad argument rather than a verification error: the secret decodes to an empty key, and an HMAC keyed with nothing is one anyone can compute.",
+        vectors,
+        FORWARDING_FORMAT_VERSION
       )
     ).toMatchFileSnapshot("../../conformance/forwarding.json");
   });

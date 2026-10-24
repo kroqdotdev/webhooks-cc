@@ -117,7 +117,7 @@ for request in client.requests.subscribe(endpoint.slug, timeout="10m", reconnect
 
 ## Errors
 
-API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses: `UnauthorizedError` (401), `NotFoundError` (404), `RateLimitError` (429, with `retry_after`) and `TimeoutError`, which is also Python's built-in `TimeoutError`. Network failures raise httpx's exceptions. Retries are off unless you pass `retry=RetryOptions(max_attempts=3)`.
+API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses: `UnauthorizedError` (401), `NotFoundError` (404), `RateLimitError` (429, with `retry_after`) and `TimeoutError`, which is also Python's built-in `TimeoutError`. Network failures raise httpx's exceptions. Retries are off unless you pass `retry=RetryOptions(max_attempts=3)`. They repeat GET, PUT and DELETE calls after a network error, a timeout or a 5xx, and any call after a 429; a POST or PATCH that failed any other way may have gone through, so it is not repeated.
 
 ## Same behaviour as the TypeScript SDK
 
