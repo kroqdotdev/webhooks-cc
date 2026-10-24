@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_VERSION, CHANGELOG, MCP_VERSION, PYTHON_SDK_VERSION, SDK_VERSION } from "./changelog";
+import {
+  APP_VERSION,
+  CHANGELOG,
+  GO_SDK_VERSION,
+  MCP_VERSION,
+  PYTHON_SDK_VERSION,
+  SDK_VERSION,
+} from "./changelog";
 
 /**
  * Guards against version drift between the public changelog page and what is
@@ -33,6 +40,11 @@ describe("changelog version constants", () => {
     expect(PYTHON_SDK_VERSION).toBe(/^version = "([^"]+)"/m.exec(pyproject)?.[1]);
   });
 
+  it("GO_SDK_VERSION matches Version in packages/sdk-go/doc.go", () => {
+    const doc = readFileSync(resolve(__dirname, "..", "../../packages/sdk-go/doc.go"), "utf8");
+    expect(GO_SDK_VERSION).toBe(/^const Version = "([^"]+)"/m.exec(doc)?.[1]);
+  });
+
   it("MCP_VERSION matches packages/mcp/package.json", () => {
     expect(MCP_VERSION).toBe(readPackageVersion("../../packages/mcp/package.json"));
   });
@@ -42,6 +54,7 @@ describe("changelog version constants", () => {
     expect(newest("web")).toBe(APP_VERSION);
     expect(newest("sdk")).toBe(SDK_VERSION);
     expect(newest("python")).toBe(PYTHON_SDK_VERSION);
+    expect(newest("go")).toBe(GO_SDK_VERSION);
     expect(newest("mcp")).toBe(MCP_VERSION);
   });
 });

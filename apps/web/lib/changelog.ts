@@ -1,4 +1,4 @@
-export type ChangelogTrack = "web" | "cli" | "sdk" | "python" | "mcp";
+export type ChangelogTrack = "web" | "cli" | "sdk" | "python" | "go" | "mcp";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,17 +13,30 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   cli: "CLI",
   sdk: "SDK",
   python: "Python SDK",
+  go: "Go SDK",
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.42.2";
+export const APP_VERSION = "0.42.3";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.0";
 export const PYTHON_SDK_VERSION = "0.1.2";
+export const GO_SDK_VERSION = "0.1.0";
 export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.42.3",
+    date: "2026-10-24",
+    title: "Go SDK Docs",
+    track: "web",
+    items: [
+      "A Go SDK page in the docs: install, waiting for webhooks, testing helpers, codes and links from test email, signed webhooks for your handler, and signature verification",
+      "`go get webhooks.cc/go` resolves: webhooks.cc tells the go command where the module lives",
+      "The changelog has a Go SDK track",
+    ],
+  },
   {
     version: "0.42.2",
     date: "2026-10-23",
@@ -1906,7 +1919,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
     version: "0.1.2",
-    date: "2026-10-23",
+    date: "2026-10-24",
     title: "Empty Signing Keys Are Refused",
     track: "python",
     items: [
@@ -1934,6 +1947,21 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Matchers, `extract_code()` and `extract_link()` for test email, `temporary_endpoint`, `capture_during` and `capture_email_during`",
       "pytest fixtures `webhooks_cc` and `webhooks_cc_endpoint`, skipped when `WHK_API_KEY` is not set",
       "Passes the same conformance tests as the TypeScript SDK for signing, verification, matchers and durations",
+    ],
+  },
+
+  // ─── Go SDK ─────────────────────────────────────────────────────────
+  {
+    version: "0.1.0",
+    date: "2026-10-24",
+    title: "The Go SDK",
+    track: "go",
+    items: [
+      "`go get webhooks.cc/go`: a client for endpoints, captured requests and test email, with `WaitFor`, `WaitForAll` and a live `Subscribe` stream you range over, which follows the server's connection rotation",
+      "`SendTo` and `BuildRequest` sign webhooks for your own handler the way 34 providers sign theirs, with their sample payloads",
+      "The `verify` package checks 32 providers' signatures, and `ForwardedEmail`, `ForwardedRequest` and `RelayedRequest` check what webhooks.cc forwards, with no client or API key needed",
+      "Matchers, `ExtractCode` and `ExtractLink` for test email, `CaptureDuring` and `CaptureEmailDuring`, and the `whktest` helpers for `testing.TB`",
+      "Standard library only, `context.Context` and `time.Duration` throughout, and the same conformance tests as the TypeScript SDK for signing, verification and matchers",
     ],
   },
 

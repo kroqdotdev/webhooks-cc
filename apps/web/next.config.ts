@@ -76,7 +76,10 @@ const nextConfig: NextConfig = {
       {
         // /go is retired - the landing page now IS the guest dashboard.
         // Permanent redirect preserves the page's search rankings and backlinks.
+        // The go command's ?go-get=1 lookups for webhooks.cc/go (the Go SDK's
+        // import path) skip it and reach app/go/[[...path]]/route.ts.
         source: "/go",
+        missing: [{ type: "query", key: "go-get" }],
         destination: "/",
         permanent: true,
       },

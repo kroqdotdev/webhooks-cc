@@ -58,6 +58,39 @@ jobs:
         with:
           category: "/language:rust"
 
+  analyze-go:
+    name: Analyze Go
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+
+      - name: Build
+        working-directory: packages/sdk-go
+        run: go build ./...
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:go"
+
   analyze-python:
     name: Analyze Python
     runs-on: ubuntu-latest
