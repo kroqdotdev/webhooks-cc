@@ -19,7 +19,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 export const APP_VERSION = "0.42.2";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.0";
-export const PYTHON_SDK_VERSION = "0.1.1";
+export const PYTHON_SDK_VERSION = "0.1.2";
 export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
@@ -1904,6 +1904,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── Python SDK ─────────────────────────────────────────────────────
+  {
+    version: "0.1.2",
+    date: "2026-10-23",
+    title: "Empty Signing Keys Are Refused",
+    track: "python",
+    items: [
+      "A Standard Webhooks, Clerk, Resend or forwarding secret that decodes to no key at all (`whsec_` alone, or whitespace) now raises `ValueError` in `verify_signature()`, the forwarding checks and request building. Before, such a secret accepted any signature made with an empty key, which anyone can compute",
+    ],
+  },
   {
     version: "0.1.1",
     date: "2026-10-23",
