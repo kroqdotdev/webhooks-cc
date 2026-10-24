@@ -1106,10 +1106,28 @@ const MATCHER_CASES: MatcherCase[] = [
     expected: true,
   },
   {
-    name: "path, a dot does not match any character",
+    name: "path, ? is one character",
     request: "form",
     matcher: m("matchPath", "/a/b/c.jso?"),
+    expected: true,
+  },
+  {
+    name: "path, ? is not a slash",
+    request: "form",
+    matcher: m("matchPath", "/a?b/c.json"),
     expected: false,
+  },
+  {
+    name: "path, a dot in the pattern matches only a dot",
+    request: "form",
+    matcher: m("matchPath", "/a/b/c.jso."),
+    expected: false,
+  },
+  {
+    name: "path, ** takes the slash after it",
+    request: "form",
+    matcher: m("matchPath", "/a/**/b/c.json"),
+    expected: true,
   },
   {
     name: "path, the whole path must match",

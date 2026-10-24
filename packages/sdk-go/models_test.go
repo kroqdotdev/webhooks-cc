@@ -33,8 +33,19 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		SharedWith:    []webhookscc.TeamShare{{TeamID: "t1", TeamName: "Acme"}},
 	}
 	usage := webhookscc.Usage{Used: 1, Limit: 100, Remaining: 99, Plan: "free"}
+	preview := webhookscc.ResponsePreview{
+		Rule:                &webhookscc.PreviewRule{Index: 2, Name: "pings"},
+		Response:            &webhookscc.MockResponse{Status: 202, Body: "evt_1", Headers: map[string]string{"x": "y"}, Delay: time.Second},
+		UnknownPlaceholders: []string{"json.nope"},
+		Request:             webhookscc.PreviewRequest{ID: "r1", Method: "POST", Path: "/hooks", ReceivedAt: time.UnixMilli(1767225600123)},
+	}
+	sample := webhookscc.ResponsePreview{
+		Rule:    &webhookscc.PreviewRule{},
+		Email:   true,
+		Request: webhookscc.PreviewRequest{Method: "EMAIL", Path: "acme-test@mailhooks.cc", Sample: true},
+	}
 
-	for _, value := range []any{&request, &endpoint, &usage} {
+	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample} {
 		data, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)

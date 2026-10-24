@@ -58,6 +58,21 @@ response, err := client.SendTo(ctx, "http://localhost:8080/webhooks/stripe", web
 })
 ```
 
+## Mock responses and response rules
+
+An endpoint answers with its `MockResponse` instead of a plain 200 OK, or with the first of its `ResponseRules` whose conditions match the request (method, path, header, query, body, body_path, content_type or size). Bodies and header values may hold `{{ placeholders }}` filled in from each request, such as `{{ json.id }}`. Check what a sender would get back without sending anything:
+
+```go
+preview, err := client.Endpoints.PreviewResponse(ctx, endpoint.Slug, webhookscc.PreviewResponseOptions{
+	ResponseRules: webhookscc.Value([]webhookscc.ResponseRule{{
+		Conditions: []webhookscc.ResponseRuleCondition{{Field: "body_path", Path: "type", Op: "eq", Value: "ping"}},
+		Response:   webhookscc.MockResponse{Status: 202, Body: `{"pong":"{{ json.id }}"}`},
+	}}),
+})
+```
+
+It runs against the endpoint's newest HTTP request unless you set `RequestID`, and uses the saved settings unless you set `MockResponse` or `ResponseRules` (`webhookscc.Null` tries none at all). `Endpoints.Update` saves them.
+
 ## Verify signatures
 
 ```go

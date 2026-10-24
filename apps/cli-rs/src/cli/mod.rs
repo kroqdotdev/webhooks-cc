@@ -69,7 +69,7 @@ pub enum Command {
         #[arg(long)]
         mock_status: Option<u16>,
 
-        /// Mock response body
+        /// Mock response body; {{ json.id }}, {{ headers.x-name }}, {{ uuid }} and other placeholders are filled in from each request
         #[arg(long)]
         mock_body: Option<String>,
 
@@ -113,7 +113,7 @@ pub enum Command {
         #[arg(long)]
         mock_status: Option<u16>,
 
-        /// Mock response body
+        /// Mock response body; {{ json.id }}, {{ headers.x-name }}, {{ uuid }} and other placeholders are filled in from each request
         #[arg(long)]
         mock_body: Option<String>,
 

@@ -207,6 +207,57 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("endpoints.previewResponse", () => {
+    it("posts unsaved rules and returns the preview", async () => {
+      const preview = {
+        rule: { index: 0, name: "Failed" },
+        response: { status: 422, headers: {}, body: '{"id":"evt_1"}', delay: 0 },
+        unknownPlaceholders: [],
+        email: false,
+        request: { id: "r1", method: "POST", path: "/", receivedAt: 1, sample: false },
+      };
+      const fetchMock = mockFetch({ body: preview });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const rules = [
+        {
+          conditions: [
+            { field: "body_path" as const, op: "eq" as const, path: "type", value: "x" },
+          ],
+          response: { status: 422, body: '{"id":"{{ json.id }}"}', headers: {} },
+        },
+      ];
+      const result = await client.endpoints.previewResponse("abc123", {
+        requestId: "r1",
+        responseRules: rules,
+      });
+
+      expect(result.rule?.index).toBe(0);
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/api/endpoints/abc123/responses/preview`);
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body)).toEqual({ requestId: "r1", responseRules: rules });
+    });
+
+    it("refuses invalid rules before sending", async () => {
+      const fetchMock = mockFetch({ body: {} });
+      globalThis.fetch = fetchMock;
+      const client = createClient();
+      await expect(
+        client.endpoints.previewResponse("abc123", {
+          responseRules: [
+            {
+              conditions: [{ field: "size", op: "gt", value: "big" }],
+              response: { status: 200, body: "", headers: {} },
+            },
+          ],
+        })
+      ).rejects.toThrow("must be a number");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe("endpoints.update", () => {
     it("sends PATCH /api/endpoints/:slug with notificationUrl", async () => {
       const endpoint = {

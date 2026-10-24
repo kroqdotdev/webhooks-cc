@@ -60,15 +60,30 @@ const STATUS_CODES = [
 
 const ALL_PRESET_VALUES = STATUS_CODES.flatMap((g) => g.codes.map((c) => c.value));
 
+/** "201 Created" for a known code, the number alone otherwise. */
+export function statusLine(status: number): string {
+  for (const group of STATUS_CODES) {
+    const code = group.codes.find((c) => c.value === String(status));
+    if (code) return code.label;
+  }
+  return String(status);
+}
+
 const CUSTOM_VALUE = "__custom__";
 
 interface StatusCodePickerProps {
   id: string;
   value: string;
   onChange: (value: string) => void;
+  label?: string;
 }
 
-export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps) {
+export function StatusCodePicker({
+  id,
+  value,
+  onChange,
+  label = "Status Code",
+}: StatusCodePickerProps) {
   const isPreset = ALL_PRESET_VALUES.includes(value);
   const [isCustom, setIsCustom] = useState(!isPreset);
   const [customValue, setCustomValue] = useState(isPreset ? "" : value);
@@ -107,7 +122,7 @@ export function StatusCodePicker({ id, value, onChange }: StatusCodePickerProps)
   return (
     <div className="space-y-2">
       <Label htmlFor={id} className="font-bold caps text-xs">
-        Status Code
+        {label}
       </Label>
       <div className="flex gap-2">
         <Select value={isCustom ? CUSTOM_VALUE : value} onValueChange={handleSelectChange}>

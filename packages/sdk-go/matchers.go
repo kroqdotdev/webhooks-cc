@@ -34,25 +34,40 @@ func MatchHeaderPresent(name string) Matcher {
 	}
 }
 
-// MatchPath matches the path against a glob: * within one segment, ** across
-// segments.
+// MatchPath matches the whole path against a glob, the way response rules
+// match paths: * is any run of characters other than /, ** is anything (and
+// takes a / right after it, so /a/**/b also matches /a/b), ? is one
+// character other than /, and every other character stands for itself.
 func MatchPath(pattern string) Matcher {
+	compiled := regexp.MustCompile(globSource(pattern))
+	return func(r *Request) bool { return compiled.MatchString(r.Path) }
+}
+
+// globSource is a glob as a regular expression, as the TypeScript SDK's
+// globToRegexSource and the receiver translate it. (?s) lets * and ** cross
+// line breaks.
+func globSource(pattern string) string {
 	var source strings.Builder
-	source.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
+	source.WriteString("(?s)^")
+	chars := []rune(pattern)
+	for i := 0; i < len(chars); i++ {
 		switch {
-		case strings.HasPrefix(pattern[i:], "**"):
+		case chars[i] == '*' && i+1 < len(chars) && chars[i+1] == '*':
 			source.WriteString(".*")
 			i++
-		case pattern[i] == '*':
+			if i+1 < len(chars) && chars[i+1] == '/' {
+				i++
+			}
+		case chars[i] == '*':
 			source.WriteString("[^/]*")
+		case chars[i] == '?':
+			source.WriteString("[^/]")
 		default:
-			source.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+			source.WriteString(regexp.QuoteMeta(string(chars[i])))
 		}
 	}
 	source.WriteString("$")
-	compiled := regexp.MustCompile(source.String())
-	return func(r *Request) bool { return compiled.MatchString(r.Path) }
+	return source.String()
 }
 
 // MatchQueryParam matches a query parameter whose value is exactly value.

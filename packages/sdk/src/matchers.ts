@@ -1,6 +1,7 @@
 import type { EmailAddress } from "./email/types";
 import type { EmailCriteria, EmailRequest, Request } from "./types";
 import { parseJsonBody, matchJsonField } from "./helpers";
+import { globToRegexSource } from "./rules";
 
 // Re-export matchJsonField for convenience
 export { matchJsonField };
@@ -15,27 +16,10 @@ function getHeaderValue(headers: Record<string, string>, name: string): string |
   return undefined;
 }
 
+/** The receiver's globs (rules.ts): `*` within a segment, `**` across them, `?` one character. */
 function globToRegExp(pattern: string): RegExp {
-  let source = "^";
-
-  for (let index = 0; index < pattern.length; index++) {
-    const char = pattern[index];
-
-    if (char === "*") {
-      if (pattern[index + 1] === "*") {
-        source += ".*";
-        index++;
-      } else {
-        source += "[^/]*";
-      }
-      continue;
-    }
-
-    source += /[\\^$+?.()|[\]{}]/.test(char) ? `\\${char}` : char;
-  }
-
-  source += "$";
-  return new RegExp(source);
+  // u: ? is one character, even one outside the Basic Multilingual Plane.
+  return new RegExp(globToRegexSource(pattern), "su");
 }
 
 function isDeepSubset(expected: unknown, actual: unknown): boolean {

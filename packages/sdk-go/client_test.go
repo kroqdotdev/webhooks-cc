@@ -181,6 +181,95 @@ func TestUpdateSendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestPreviewResponseSendsOnlyGivenSettings(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("POST /api/endpoints/{slug}/responses/preview", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"rule":                map[string]any{"index": 1, "name": "pings"},
+			"response":            map[string]any{"status": 202, "headers": map[string]string{"x-id": "evt_1"}, "body": `{"id":"evt_1"}`, "delay": 250},
+			"unknownPlaceholders": []string{"json.nope"},
+			"email":               false,
+			"request": map[string]any{
+				"id": "4f0e7c1a-0000-4000-8000-000000000002", "method": "POST", "path": "/hooks",
+				"receivedAt": 1767225600000, "sample": false,
+			},
+		})
+	})
+	client := api.client()
+	ctx := context.Background()
+
+	preview, err := client.Endpoints.PreviewResponse(ctx, "acme-test", webhookscc.PreviewResponseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, body := api.last()
+	if request.URL.Path != "/api/endpoints/acme-test/responses/preview" || body != "{}" {
+		t.Errorf("sent %s %s", request.URL.Path, body)
+	}
+	if preview.Rule == nil || preview.Rule.Index != 1 || preview.Rule.Name != "pings" {
+		t.Errorf("rule = %+v", preview.Rule)
+	}
+	if preview.Response == nil || preview.Response.Status != 202 || preview.Response.Body != `{"id":"evt_1"}` ||
+		preview.Response.Headers["x-id"] != "evt_1" || preview.Response.Delay != 250*time.Millisecond {
+		t.Errorf("response = %+v", preview.Response)
+	}
+	if len(preview.UnknownPlaceholders) != 1 || preview.UnknownPlaceholders[0] != "json.nope" || preview.Email {
+		t.Errorf("preview = %+v", preview)
+	}
+	if preview.Request.ID != "4f0e7c1a-0000-4000-8000-000000000002" || preview.Request.Path != "/hooks" ||
+		preview.Request.ReceivedAt.UnixMilli() != 1767225600000 || preview.Request.Sample {
+		t.Errorf("request = %+v", preview.Request)
+	}
+
+	_, err = client.Endpoints.PreviewResponse(ctx, "acme-test", webhookscc.PreviewResponseOptions{
+		RequestID:    "4f0e7c1a-0000-4000-8000-000000000002",
+		MockResponse: webhookscc.Null[webhookscc.MockResponse](),
+		ResponseRules: webhookscc.Value([]webhookscc.ResponseRule{{
+			Conditions: []webhookscc.ResponseRuleCondition{{Field: "size", Op: "gt", Value: "1024"}},
+			Response:   webhookscc.MockResponse{Status: 413},
+		}}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, body = api.last()
+	want := `{"mockResponse":null,"requestId":"4f0e7c1a-0000-4000-8000-000000000002",` +
+		`"responseRules":[{"conditions":[{"field":"size","op":"gt","value":"1024"}],"response":{"status":413,"body":"","headers":{}}}]}`
+	if body != want {
+		t.Errorf("body = %s, want %s", body, want)
+	}
+
+	if _, err := client.Endpoints.PreviewResponse(ctx, "acme-test", webhookscc.PreviewResponseOptions{
+		ResponseRules: webhookscc.Null[[]webhookscc.ResponseRule](),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body = api.last(); body != `{"responseRules":null}` {
+		t.Errorf("body = %s", body)
+	}
+
+	if _, err := client.Endpoints.PreviewResponse(ctx, "../admin", webhookscc.PreviewResponseOptions{}); err == nil {
+		t.Error("an invalid slug reached the API")
+	}
+}
+
+func TestPreviewResponseReadsASampleAndThePlain200(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("POST /api/endpoints/{slug}/responses/preview", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"rule": nil, "response": nil, "unknownPlaceholders": []string{}, "email": false,
+			"request": map[string]any{"id": nil, "method": "POST", "path": "/", "receivedAt": 1, "sample": true},
+		})
+	})
+	preview, err := api.client().Endpoints.PreviewResponse(context.Background(), "acme-test", webhookscc.PreviewResponseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Rule != nil || preview.Response != nil || preview.Request.ID != "" || !preview.Request.Sample {
+		t.Errorf("preview = %+v", preview)
+	}
+}
+
 func TestInvalidSlugsNeverReachTheAPI(t *testing.T) {
 	client := newFakeAPI(t).client()
 	for _, slug := range []string{"", "../admin", "a/b", "a?b"} {

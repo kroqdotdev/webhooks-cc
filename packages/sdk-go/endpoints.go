@@ -123,6 +123,46 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	return &endpoint, nil
 }
 
+// PreviewResponseOptions say what EndpointsService.PreviewResponse runs. All
+// are optional.
+type PreviewResponseOptions struct {
+	// RequestID is a captured request on the endpoint. "" uses the newest
+	// HTTP request, or a sample when there is none.
+	RequestID string
+	// MockResponse and ResponseRules try settings that are not saved: Value
+	// tries one, Null tries none at all, and leaving them unset uses the
+	// saved ones.
+	MockResponse  Field[MockResponse]
+	ResponseRules Field[[]ResponseRule]
+}
+
+// PreviewResponse reports what a sender would get back for a captured
+// request, without sending anything: which response rule matches and the
+// response with its placeholders filled in.
+//
+//	preview, err := client.Endpoints.PreviewResponse(ctx, endpoint.Slug, webhookscc.PreviewResponseOptions{
+//		ResponseRules: webhookscc.Value([]webhookscc.ResponseRule{{
+//			Conditions: []webhookscc.ResponseRuleCondition{{Field: "header", Name: "x-event", Op: "eq", Value: "ping"}},
+//			Response:   webhookscc.MockResponse{Status: 202, Body: `{"id":"{{ json.id }}"}`},
+//		}}),
+//	})
+func (s *EndpointsService) PreviewResponse(ctx context.Context, slug string, opts PreviewResponseOptions) (*ResponsePreview, error) {
+	if err := validateSegment(slug, "slug"); err != nil {
+		return nil, err
+	}
+	body := map[string]any{}
+	if opts.RequestID != "" {
+		body["requestId"] = opts.RequestID
+	}
+	opts.MockResponse.put(body, "mockResponse")
+	opts.ResponseRules.put(body, "responseRules")
+	var preview ResponsePreview
+	if err := s.c.api(ctx, http.MethodPost, "/endpoints/"+slug+"/responses/preview", nil, body, &preview); err != nil {
+		return nil, err
+	}
+	return &preview, nil
+}
+
 // Delete deletes an endpoint and everything it captured.
 func (s *EndpointsService) Delete(ctx context.Context, slug string) error {
 	if err := validateSegment(slug, "slug"); err != nil {

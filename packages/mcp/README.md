@@ -68,7 +68,7 @@ Get your API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/a
 
 ## What it exposes
 
-The server exposes `39` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
+The server exposes `40` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
 
 ### Endpoint tools
 
@@ -76,6 +76,7 @@ The server exposes `39` tools, `3` prompts, and `3` resource surfaces with an AP
 - `list_endpoints`
 - `get_endpoint`
 - `update_endpoint`
+- `preview_response`
 - `delete_endpoint`
 - `create_endpoints`
 - `delete_endpoints`

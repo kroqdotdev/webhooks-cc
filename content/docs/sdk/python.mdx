@@ -59,7 +59,24 @@ match = match_all(
 request = client.requests.wait_for(endpoint.slug, match=match)
 ```
 
-Available: `match_method`, `match_path` (globs: `*` within a segment, `**` across segments), `match_header`, `match_query_param`, `match_body_path`, `match_body_subset`, `match_content_type`, `match_verified`, `match_unverified` and `match_email`. See [Matchers & Helpers](/docs/sdk/matchers) for what each one matches.
+Available: `match_method`, `match_path` (globs: `*` within a segment, `**` across segments, `?` one character), `match_header`, `match_query_param`, `match_body_path`, `match_body_subset`, `match_content_type`, `match_verified`, `match_unverified` and `match_email`. See [Matchers & Helpers](/docs/sdk/matchers) for what each one matches.
+
+## Preview a response
+
+`preview_response` shows what a captured request would get back from the endpoint's [response rules](/docs/mock-responses#conditional-response-rules), with [placeholders](/docs/mock-responses#placeholders) filled in, without sending anything. Pass `response_rules` or `mock_response` to try settings before saving them; leave them out to use the saved ones.
+
+```python
+preview = client.endpoints.preview_response(
+    endpoint.slug,
+    response_rules=[
+        {
+            "conditions": [{"field": "body_path", "op": "gt", "path": "data.amount", "value": "10000"}],
+            "response": {"status": 422, "body": '{"amount": {{ json.data.amount }}}', "headers": {}},
+        }
+    ],
+)
+print(preview.rule, preview.response)
+```
 
 ## pytest
 

@@ -57,9 +57,9 @@ test.afterAll(async () => {
 
 type Page = import("@playwright/test").Page;
 
-/** The "HTTP responses" card on the endpoint's Settings tab. */
+/** The "Responses" card on the endpoint's Settings tab. */
 function responsesSection(page: Page) {
-  return page.getByRole("region", { name: "HTTP responses" });
+  return page.getByRole("region", { name: "Responses" });
 }
 
 async function openSettingsTab(page: Page) {
@@ -79,144 +79,77 @@ async function openSettings(page: Page) {
   await openSettingsTab(page);
 }
 
-test("settings tab shows the response rules", async ({ page }) => {
+test("settings tab shows the responses in the order they are checked", async ({ page }) => {
   await openSettings(page);
 
   const section = responsesSection(page);
-  await expect(section.getByText("Response Rules")).toBeVisible();
-  await expect(
-    section.getByText(
-      "The first matching rule wins. Without a match, the status code and body above are sent."
-    )
-  ).toBeVisible();
-  await expect(section.getByRole("button", { name: "Add Rule" })).toBeVisible();
+  const list = section.getByRole("list", { name: "Responses in the order they are checked" });
+  await expect(list).toBeVisible();
+  // Without rules, the default answers every request.
+  await expect(list.getByRole("button", { name: /^Always/ })).toBeVisible();
+  await expect(section.getByRole("button", { name: "Add rule" })).toBeVisible();
 });
 
 test("can add a rule with a condition", async ({ page }) => {
   await openSettings(page);
+  const section = responsesSection(page);
+  await section.getByRole("button", { name: "Add rule" }).click();
 
-  // Click Add Rule
-  await page.getByRole("button", { name: "Add Rule" }).click();
-
-  // Rule card should appear
-  await expect(page.getByText("Rule 1: 1 condition")).toBeVisible();
-
-  // Default condition should be method = POST
-  const fieldSelect = page.getByLabel("Condition field");
-  await expect(fieldSelect).toHaveValue("method");
+  await expect(section.getByRole("button", { name: /^Rule 1 When method is POST/ })).toBeVisible();
+  await expect(section.getByRole("button", { name: /^Otherwise/ })).toBeVisible();
+  await expect(section.getByLabel("Condition 1: what to check")).toHaveValue("method");
 });
 
 test("can change condition field and operator", async ({ page }) => {
   await openSettings(page);
-  await page.getByRole("button", { name: "Add Rule" }).click();
+  const section = responsesSection(page);
+  await section.getByRole("button", { name: "Add rule" }).click();
 
-  // Change field to "Header"
-  const fieldSelect = page.getByLabel("Condition field");
-  await fieldSelect.selectOption("header");
+  await section.getByLabel("Condition 1: what to check").selectOption("header");
+  const op = section.getByLabel("Condition 1: how to compare");
+  await expect(op).toHaveValue("exists");
+  await expect(section.getByLabel("Condition 1: Header name")).toBeVisible();
 
-  // Operator should update to header-compatible ops
-  const opSelect = page.getByLabel("Condition operator");
-  await expect(opSelect).toHaveValue("exists");
-
-  // Header name input should appear
-  await expect(page.getByLabel("Header name")).toBeVisible();
-
-  // Change op to "equals" — value input should appear
-  await opSelect.selectOption("eq");
-  await expect(page.getByLabel("Condition value")).toBeVisible();
+  await op.selectOption("regex");
+  await expect(section.getByLabel("Condition 1: value")).toBeVisible();
+  await expect(section.getByText(/RE2 syntax/)).toBeVisible();
 });
 
-test("can add multiple conditions to a rule", async ({ page }) => {
+test("can add, combine and remove conditions", async ({ page }) => {
   await openSettings(page);
-  await page.getByRole("button", { name: "Add Rule" }).click();
+  const section = responsesSection(page);
+  await section.getByRole("button", { name: "Add rule" }).click();
+  await section.getByRole("button", { name: "Add condition" }).click();
 
-  // Add a second condition
-  await page.getByRole("button", { name: "Add condition" }).click();
+  await expect(section.getByLabel(/^Condition \d: what to check$/)).toHaveCount(2);
+  const logic = section.getByLabel("How the conditions combine");
+  await expect(logic).toHaveValue("and");
+  await logic.selectOption("or");
+  await expect(logic).toHaveValue("or");
 
-  // Should now show 2 condition rows (2 field selects)
-  const fieldSelects = page.getByLabel("Condition field");
-  await expect(fieldSelects).toHaveCount(2);
-
-  // Remove buttons should appear (since there are >1 conditions)
-  const removeButtons = page.getByLabel("Remove condition");
-  await expect(removeButtons).toHaveCount(2);
+  await section.getByRole("button", { name: "Remove condition 1" }).click();
+  await expect(section.getByLabel(/^Condition \d: what to check$/)).toHaveCount(1);
 });
 
-test("can remove a condition", async ({ page }) => {
+test("can switch off, reorder and delete rules", async ({ page }) => {
   await openSettings(page);
-  await page.getByRole("button", { name: "Add Rule" }).click();
-  await page.getByRole("button", { name: "Add condition" }).click();
+  const section = responsesSection(page);
 
-  // Remove the first condition
-  await page.getByLabel("Remove condition").first().click();
+  await section.getByRole("button", { name: "Add rule" }).click();
+  await section.getByPlaceholder("Optional, for example Payment failed").first().fill("First");
+  await section.getByRole("button", { name: "Add rule" }).click();
+  await section.getByPlaceholder("Optional, for example Payment failed").last().fill("Second");
 
-  // Should be back to 1 condition
-  await expect(page.getByLabel("Condition field")).toHaveCount(1);
-});
+  await section.getByRole("switch", { name: "Rule 1 on" }).click();
+  await expect(section.getByRole("button", { name: /^Rule 1 First \(off\)/ })).toBeVisible();
 
-test("can add multiple rules", async ({ page }) => {
-  await openSettings(page);
+  await section.getByRole("button", { name: "Check later" }).first().click();
+  await expect(section.getByRole("button", { name: /^Rule 1 Second/ })).toBeVisible();
+  await expect(section.getByRole("button", { name: /^Rule 2 First/ })).toBeVisible();
 
-  await page.getByRole("button", { name: "Add Rule" }).click();
-  await page.getByRole("button", { name: "Add Rule" }).click();
-
-  // Should show 2 rule cards
-  await expect(page.getByText("Rule 1: 1 condition")).toBeVisible();
-  await expect(page.getByText("Rule 2: 1 condition")).toBeVisible();
-});
-
-test("can disable and delete a rule", async ({ page }) => {
-  await openSettings(page);
-  await page.getByRole("button", { name: "Add Rule" }).click();
-
-  // Rule should be visible
-  await expect(page.getByText("Rule 1: 1 condition")).toBeVisible();
-
-  // Uncheck the enabled checkbox (the one inside the rule card header, labeled "Enabled")
-  const enableCheckbox = page.getByRole("checkbox", { name: "Enabled" });
-  await enableCheckbox.uncheck();
-
-  // Delete the rule
-  await page.getByLabel("Delete rule").click();
-
-  // Rule should be gone
-  await expect(page.getByText("Rule 1: 1 condition")).not.toBeVisible();
-});
-
-test("can reorder rules with move buttons", async ({ page }) => {
-  await openSettings(page);
-
-  // Add 2 rules with names
-  await page.getByRole("button", { name: "Add Rule" }).click();
-  await page.getByPlaceholder("Rule name (optional)").first().fill("First Rule");
-
-  await page.getByRole("button", { name: "Add Rule" }).click();
-  await page.getByPlaceholder("Rule name (optional)").last().fill("Second Rule");
-
-  // Verify initial order
-  const ruleHeaders = responsesSection(page).getByRole("button", { name: /^(Collapse|Expand) / });
-  await expect(ruleHeaders.first()).toContainText("First Rule");
-  await expect(ruleHeaders.last()).toContainText("Second Rule");
-
-  // Move the first rule down
-  await page.getByLabel("Move rule down").first().click();
-
-  // Order should be swapped
-  await expect(ruleHeaders.first()).toContainText("Second Rule");
-  await expect(ruleHeaders.last()).toContainText("First Rule");
-});
-
-test("can set rule response status and body", async ({ page }) => {
-  await openSettings(page);
-  await page.getByRole("button", { name: "Add Rule" }).click();
-
-  // The rule card has its own response, below the endpoint's default one
-  await expect(responsesSection(page).getByText("Response", { exact: true })).toBeVisible();
-
-  // Set body text
-  const bodyTextarea = responsesSection(page).getByPlaceholder("Response body");
-  await bodyTextarea.fill('{"matched": true}');
-  await expect(bodyTextarea).toHaveValue('{"matched": true}');
+  await section.getByRole("button", { name: "Delete rule" }).first().click();
+  await expect(section.getByRole("button", { name: /^Rule 1 First/ })).toBeVisible();
+  await expect(section.getByRole("button", { name: /^Rule 2/ })).toHaveCount(0);
 });
 
 test("save stays disabled until the responses change", async ({ page }) => {
@@ -226,96 +159,76 @@ test("save stays disabled until the responses change", async ({ page }) => {
   const save = section.getByRole("button", { name: "Save changes" });
   await expect(save).toBeDisabled();
 
-  await section.getByRole("button", { name: "Add Rule" }).click();
+  await section.getByRole("button", { name: "Add rule" }).click();
   await expect(save).toBeEnabled();
-  await expect(section.getByText("Response changed.")).toBeVisible();
+  await expect(section.getByText("Rules changed.")).toBeVisible();
 
-  // Cancel puts the saved state back
   await section.getByRole("button", { name: "Cancel" }).click();
   await expect(save).toBeDisabled();
-  await expect(page.getByText("Rule 1: 1 condition")).not.toBeVisible();
+  await expect(section.getByRole("button", { name: /^Rule 1/ })).toHaveCount(0);
 });
 
-test("can save rules and they persist after reopening", async ({ page }) => {
+test("can save a rule with placeholders, and the preview shows it answering", async ({ page }) => {
   await openSettings(page);
-
-  // Add a rule
-  await page.getByRole("button", { name: "Add Rule" }).click();
-
-  // Name the rule
-  await page.getByPlaceholder("Rule name (optional)").fill("Persist Test");
-
-  // Change condition to body_path with eq operator
-  await page.getByLabel("Condition field").selectOption("body_path");
-  await page.getByLabel("Condition operator").selectOption("eq");
-  await page.getByLabel("JSON path").fill("type");
-  await page.getByLabel("Condition value").fill("invoice.paid");
-
-  // Set the rule's response body
   const section = responsesSection(page);
-  await section.getByPlaceholder("Response body").fill('{"received": true}');
 
-  // Save
+  await section.getByRole("button", { name: "Add rule" }).click();
+  await section.getByPlaceholder("Optional, for example Payment failed").fill("Persist Test");
+  await section.getByLabel("Condition 1: what to check").selectOption("body_path");
+  await section.getByLabel("Condition 1: Field path").fill("type");
+  await section.getByLabel("Condition 1: value").fill("invoice.paid");
+  await section
+    .getByLabel("Body")
+    .first()
+    .fill('{"received": "{{ json.type }}", "path": "{{ path }}"}');
+
   await section.getByRole("button", { name: "Save changes" }).click();
   await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
 
-  // Load the page again so the settings are read back from the database
   await page.reload();
   await openSettingsTab(page);
-
-  // Rule should still be there (name shows in the rule card header)
-  await expect(page.getByText("Persist Test")).toBeVisible({ timeout: 10000 });
+  await expect(
+    responsesSection(page).getByRole("button", { name: /^Rule 1 Persist Test/ })
+  ).toBeVisible({
+    timeout: 10000,
+  });
 });
 
-test("saved rules work in the receiver", async ({ request }) => {
-  // The previous test saved a rule: body_path "type" == "invoice.paid" -> {"received": true}
-  // Verify the receiver evaluates it
-
-  // Send a matching webhook
-  const matchResponse = await request.post(`${WEBHOOK_URL}/w/${endpointSlug}`, {
+test("saved rules and placeholders work in the receiver", async ({ request }) => {
+  // The previous test saved: body field type is invoice.paid -> {"received": "{{ json.type }}", ...}
+  const matchResponse = await request.post(`${WEBHOOK_URL}/w/${endpointSlug}/billing`, {
     headers: { "Content-Type": "application/json" },
     data: { type: "invoice.paid" },
   });
   expect(matchResponse.status()).toBe(200);
-  const matchBody = await matchResponse.json();
-  expect(matchBody).toEqual({ received: true });
+  expect(await matchResponse.json()).toEqual({ received: "invoice.paid", path: "/billing" });
 
-  // Send a non-matching webhook — should get default (200 OK since no default mock set)
+  // Not matching: the default (200 OK, no mock set)
   const noMatchResponse = await request.post(`${WEBHOOK_URL}/w/${endpointSlug}`, {
     headers: { "Content-Type": "application/json" },
     data: { type: "other.event" },
   });
   expect(noMatchResponse.status()).toBe(200);
+  expect(await noMatchResponse.text()).toBe("OK");
 });
 
-// Depends on "can save rules and they persist after reopening" having saved "Persist Test" rule.
-// Tests run serially (mode: "serial") so this state is guaranteed.
-test("can collapse and expand a rule", async ({ page }) => {
+// Depends on the saved "Persist Test" rule and the captured requests above.
+test("the preview marks the rule that answers a captured request", async ({ page }) => {
   await openSettings(page);
+  const section = responsesSection(page);
+  const preview = section.getByLabel("Preview with");
+  await expect(preview).toBeVisible();
 
-  // Should see the persisted rule from the earlier save test
-  await expect(page.getByText("Persist Test")).toBeVisible({ timeout: 5000 });
+  // The newest request is the non-matching one, so Otherwise answers.
+  await expect(section.getByText("No rule matches, so Otherwise answers")).toBeVisible({
+    timeout: 10000,
+  });
 
-  // Click the rule header to collapse
-  await page.getByText("Persist Test").click();
-
-  // Condition builder should be hidden
-  await expect(page.getByLabel("Condition field")).not.toBeVisible();
-
-  // Click again to expand
-  await page.getByText("Persist Test").click();
-  await expect(page.getByLabel("Condition field")).toBeVisible();
-});
-
-test("logic toggle switches between AND and OR", async ({ page }) => {
-  await openSettings(page);
-  await page.getByRole("button", { name: "Add Rule" }).click();
-
-  // Default should be AND — use last() since the persisted rule from earlier tests also has one
-  const logicSelect = page.locator("select").filter({ hasText: "ALL conditions" }).last();
-  await expect(logicSelect).toBeVisible();
-
-  // Switch to OR
-  await logicSelect.selectOption("or");
-  await expect(page.locator("select").filter({ hasText: "ANY condition" }).last()).toBeVisible();
+  // Pick the matching request: Rule 1 answers, with its placeholders filled in.
+  const options = await preview.locator("option").allTextContents();
+  const billing = options.find((text) => text.includes("/billing"));
+  expect(billing).toBeTruthy();
+  await preview.selectOption({ label: billing! });
+  await expect(section.getByText("Rule 1, Persist Test, answers")).toBeVisible({ timeout: 10000 });
+  await expect(section.getByText('{"received": "invoice.paid", "path": "/billing"}')).toBeVisible();
 });

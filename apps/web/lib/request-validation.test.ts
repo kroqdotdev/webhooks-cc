@@ -3,6 +3,7 @@ import {
   isPlainEmailAddress,
   validateMockResponseField,
   validateNotificationUrl,
+  validateResponseRules,
 } from "./request-validation";
 
 describe("validateMockResponseField", () => {
@@ -260,5 +261,46 @@ describe("isPlainEmailAddress", () => {
     ]) {
       expect(isPlainEmailAddress(value), value).toBe(false);
     }
+  });
+});
+
+describe("validateResponseRules", () => {
+  const rule = (conditions: unknown[]) => ({
+    conditions,
+    response: { status: 200, body: "", headers: {} },
+  });
+  const error = async (result: ReturnType<typeof validateResponseRules>) =>
+    result.valid ? null : ((await result.response.json()) as { error: string }).error;
+
+  test("accepts the rule language's fields and operators", () => {
+    expect(
+      validateResponseRules([
+        rule([
+          { field: "path", op: "regex", value: "^/v[0-9]+/" },
+          { field: "header", op: "not_exists", name: "x-test" },
+          { field: "body_path", op: "lte", path: "data.amount", value: "100" },
+          { field: "body", op: "not_contains", value: "test" },
+          { field: "content_type", op: "contains", value: "json" },
+        ]),
+      ])
+    ).toEqual({ valid: true });
+  });
+
+  test("refuses a regular expression RE2 cannot compile", async () => {
+    expect(
+      await error(validateResponseRules([rule([{ field: "path", op: "regex", value: "(?<=a)b" }])]))
+    ).toMatch(/^responseRules\[0\]\.conditions\[0\]: regex: /);
+  });
+
+  test("refuses fields only filters can read", async () => {
+    expect(
+      await error(validateResponseRules([rule([{ field: "kind", op: "eq", value: "email" }])]))
+    ).toMatch(/forwarding filter/);
+  });
+
+  test("refuses text for a number operator", async () => {
+    expect(
+      await error(validateResponseRules([rule([{ field: "size", op: "gt", value: "lots" }])]))
+    ).toMatch(/must be a number/);
   });
 });

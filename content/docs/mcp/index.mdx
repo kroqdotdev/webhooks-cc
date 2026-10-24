@@ -35,7 +35,7 @@ seo:
 
 ## Available tools
 
-The MCP server exposes 39 tools your AI agent can call. Without an API key, 11 sandbox tools are available (see below). The [agent skill](/docs/mcp/skills) tells your agent when to use them.
+The MCP server exposes 40 tools your AI agent can call. Without an API key, 11 sandbox tools are available (see below). The [agent skill](/docs/mcp/skills) tells your agent when to use them.
 
 ## Provider-aware testing
 
@@ -60,6 +60,7 @@ For provider templates in `send_webhook`, `secret` is required for every signed 
 | `list_endpoints`   | List all your endpoints                       |
 | `get_endpoint`     | Get details for an endpoint by slug           |
 | `update_endpoint`  | Update an endpoint name or mock response      |
+| `preview_response` | Show what a request would get back, unsent    |
 | `delete_endpoint`  | Delete an endpoint and its requests           |
 | `create_endpoints` | Create multiple endpoints in one call (1-20)  |
 | `delete_endpoints` | Delete multiple endpoints in one call (1-100) |

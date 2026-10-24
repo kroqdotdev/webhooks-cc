@@ -11,7 +11,6 @@ import {
   MAX_CONDITION_NAME_LEN,
   MAX_CONDITION_PATH_LEN,
   MAX_RULE_NAME_LEN,
-  MAX_GLOB_PATTERN_LEN,
   NotFoundError,
   RateLimitError,
   TEMPLATE_METADATA,
@@ -27,6 +26,10 @@ import {
   detectWebhookInfo,
   generateRequestSchema,
   PAYLOAD_SCHEMA_FORMATS,
+  CONDITION_FIELDS,
+  CONDITION_OPS,
+  conditionIssues,
+  type ConditionField,
   type EmailRequest,
   type PayloadSchemaFormat,
   type Request,
@@ -74,50 +77,58 @@ const kindSchema = z
 /** With a tag, subject or sender filter, `list_emails` searches this many of the newest emails. */
 const EMAIL_SCAN_LIMIT = 100;
 const durationOrTimestampSchema = z.union([z.string(), z.number()]);
-const ruleConditionSchema = z
-  .object({
-    field: z
-      .enum(["method", "path", "header", "body_contains", "body_path", "query"])
-      .describe("Request field to match against"),
-    op: z
-      .enum(["eq", "contains", "starts_with", "matches", "exists"])
-      .describe("Comparison operator"),
-    value: z
-      .string()
-      .max(MAX_CONDITION_VALUE_LEN)
-      .optional()
-      .describe(
-        `Value to compare against (required unless op is "exists", max ${MAX_CONDITION_VALUE_LEN} chars)`
-      ),
-    name: z
-      .string()
-      .max(MAX_CONDITION_NAME_LEN)
-      .optional()
-      .describe(
-        `Header name or query param name (required for header/query, max ${MAX_CONDITION_NAME_LEN} chars)`
-      ),
-    path: z
-      .string()
-      .max(MAX_CONDITION_PATH_LEN)
-      .optional()
-      .describe(
-        `JSON dot-notation path (required for body_path, max ${MAX_CONDITION_PATH_LEN} chars)`
-      ),
-  })
-  .refine((c) => c.op === "exists" || (c.value !== undefined && c.value.length > 0), {
-    message: 'value is required when op is not "exists"',
-  })
-  .refine(
-    (c) =>
-      !(c.field === "header" || c.field === "query") || (c.name !== undefined && c.name.length > 0),
-    { message: "name is required for header and query conditions" }
-  )
-  .refine((c) => c.field !== "body_path" || (c.path !== undefined && c.path.length > 0), {
-    message: "path is required for body_path conditions",
-  })
-  .refine((c) => c.op !== "matches" || !c.value || c.value.length <= MAX_GLOB_PATTERN_LEN, {
-    message: `matches pattern must be ${MAX_GLOB_PATTERN_LEN} chars or less`,
-  });
+/**
+ * A condition of a response rule ("response": the HTTP request) or a
+ * forwarding filter ("filter": also kind, email parts, spam score, sender
+ * checks and the signature check). Checked with the SDK's rule language, so
+ * an agent learns what is wrong before the API is called.
+ */
+const CONDITION_FIELD_NAMES = Object.keys(CONDITION_FIELDS) as ConditionField[];
+const CONDITION_OP_NAMES = CONDITION_OPS;
+
+function conditionSchema(use: "response" | "filter") {
+  const fields =
+    use === "response"
+      ? CONDITION_FIELD_NAMES.filter((field) => CONDITION_FIELDS[field].response)
+      : CONDITION_FIELD_NAMES;
+  return z
+    .object({
+      field: z
+        .enum(fields as [ConditionField, ...ConditionField[]])
+        .describe(
+          use === "response"
+            ? "What to read: method, path, header (name), query (name), body (text), body_path (path into a JSON or form body), content_type, size"
+            : "What to read: method, path, header (name), query (name), body, body_path (path), content_type, size, kind (http or email), email (name: subject, from, to, text or tag), spam_score, email_auth (name: spf, dkim or dmarc), signature (verified, failed or missing)"
+        ),
+      op: z
+        .enum(CONDITION_OP_NAMES)
+        .describe(
+          "eq, neq, contains, not_contains, starts_with, ends_with, matches (glob: * one path segment, ** any, ? one character), regex (RE2, searched anywhere; (?i) ignores case), exists, not_exists, gt, gte, lt, lte (numbers)"
+        ),
+      value: z
+        .string()
+        .max(MAX_CONDITION_VALUE_LEN)
+        .optional()
+        .describe(`What to compare with (not for exists and not_exists)`),
+      name: z
+        .string()
+        .max(MAX_CONDITION_NAME_LEN)
+        .optional()
+        .describe("Header or query parameter name; the email part; spf, dkim or dmarc"),
+      path: z
+        .string()
+        .max(MAX_CONDITION_PATH_LEN)
+        .optional()
+        .describe('Dot path for body_path, e.g. data.object.status or items.0.sku or a["odd.key"]'),
+    })
+    .superRefine((condition, ctx) => {
+      for (const issue of conditionIssues(condition, { use })) {
+        ctx.addIssue({ code: "custom", message: issue });
+      }
+    });
+}
+
+const ruleConditionSchema = conditionSchema("response");
 
 const responseRuleSchema = z.object({
   name: z
@@ -147,11 +158,16 @@ const mockResponseSchema = z.object({
     .min(MOCK_RESPONSE_STATUS_MIN)
     .max(MOCK_RESPONSE_STATUS_MAX)
     .describe(`HTTP status code (${MOCK_RESPONSE_STATUS_MIN}-${MOCK_RESPONSE_STATUS_MAX})`),
-  body: z.string().default("").describe("Response body string (default: empty)"),
+  body: z
+    .string()
+    .default("")
+    .describe(
+      'Response body (default: empty). {{ placeholders }} are filled in from the request: {{ json.id }} (a JSON or form body field), {{ body }}, {{ headers.user-agent }}, {{ query.page }}, {{ method }}, {{ path }}, {{ id }}, {{ uuid }}, {{ now }}; filters: | default: "x", | json, | lower, | upper, | truncate: 80'
+    ),
   headers: z
     .record(z.string(), z.string())
     .default({})
-    .describe("Response headers (default: none)"),
+    .describe("Response headers (default: none); values may use {{ placeholders }} too"),
   delay: z
     .number()
     .int()
@@ -994,6 +1010,36 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         return jsonContent(endpoint);
       }
     )
+  );
+
+  server.tool(
+    "preview_response",
+    "Dry run of an endpoint's responses: which response rule answers a captured request, and the response with its {{ placeholders }} filled in, exactly as the receiver would send it. Nothing is sent. Pass mockResponse or responseRules to try settings before saving them with update_endpoint.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      requestId: z
+        .string()
+        .optional()
+        .describe(
+          "A captured request on the endpoint (default: the newest HTTP request, or a sample)"
+        ),
+      mockResponse: mockResponseSchema
+        .nullable()
+        .optional()
+        .describe("Try this default response instead of the saved one (null: none)"),
+      responseRules: responseRulesSchema
+        .nullable()
+        .optional()
+        .describe("Try these rules instead of the saved ones (null: none)"),
+    },
+    withErrorHandling(async ({ slug, requestId, mockResponse, responseRules }) => {
+      const preview = await client.endpoints.previewResponse(slug, {
+        ...(requestId ? { requestId } : {}),
+        ...(mockResponse !== undefined ? { mockResponse } : {}),
+        ...(responseRules !== undefined ? { responseRules } : {}),
+      });
+      return jsonContent(preview);
+    })
   );
 
   server.tool(

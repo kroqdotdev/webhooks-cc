@@ -78,13 +78,34 @@ signup emails.
 3. Inspect headers and body with `get_request`, and `verify_signature` with
    the app's signing secret if it signs its webhooks.
 
-### Simulate failures
+### Simulate the receiving end (failures, slow answers, dynamic replies)
 
-To test retry and backoff logic in code that sends webhooks, create the
-endpoint with `mockResponse` (for example `{ "status": 503, "delay": 2000 }`)
-or with `responseRules` that answer differently by path, header or body.
-Clear them afterwards with `update_endpoint` and `mockResponse: null` (or
-`responseRules: null`).
+To test code that sends webhooks or calls back into an API (retries, backoff,
+idempotency, reading the reply), make the endpoint answer like the real
+server would:
+
+1. `update_endpoint` with `mockResponse` for the default answer (for example
+   `{ "status": 503, "delay": 2000 }`) and `responseRules` for answers that
+   depend on the request. Rules are checked in order and the first match
+   answers. Each condition is `{ field, op, value }`, plus `name` for a
+   header or query parameter and `path` for a body field:
+
+   ```text
+   field: method, path, header, query, body, body_path (dot path into a JSON
+          or form body), content_type, size
+   op:    eq, neq, contains, not_contains, starts_with, ends_with,
+          matches (glob), regex (RE2), exists, not_exists, gt, gte, lt, lte
+   ```
+
+2. Echo the request in the answer with placeholders, filled in per request:
+   `{"id": "{{ uuid }}", "event": "{{ json.id }}", "seen": "{{ now }}"}`, or
+   a header value such as `{{ headers.x-request-id }}`. Filters:
+   `| default: "x"`, `| json`, `| lower`, `| upper`, `| truncate: 80`.
+3. Before relying on it, `preview_response` (with `requestId` of a captured
+   request, and the rules you are about to save) shows which rule answers and
+   the exact body. A placeholder listed in `unknownPlaceholders` is a typo.
+4. Clear them afterwards with `update_endpoint` and `mockResponse: null` (or
+   `responseRules: null`).
 
 ### Read signup, magic-link and code emails
 
