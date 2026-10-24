@@ -2324,12 +2324,26 @@ export function decodeHubSpotUri(uri: string): string {
 
 function fromBase64(str: string): Uint8Array {
   if (typeof atob !== "function") {
+    // Buffer skips what it cannot read where atob throws, so check first: an
+    // invalid secret must fall back to its raw bytes in every runtime.
+    if (!isForgivingBase64(str)) {
+      throw new Error("Invalid base64");
+    }
     return new Uint8Array(Buffer.from(str, "base64"));
   }
   const binary = atob(str);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** Whether atob() accepts value (WHATWG forgiving-base64). */
+function isForgivingBase64(value: string): boolean {
+  let data = value.replace(/[\t\n\f\r ]/g, "");
+  if (data.length % 4 === 0) {
+    data = data.replace(/={1,2}$/, "");
+  }
+  return data.length % 4 !== 1 && /^[A-Za-z0-9+/]*$/.test(data);
 }
 
 export async function hmacSignRaw(

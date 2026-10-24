@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { decodeStandardWebhookSecret } from "../templates";
 import {
   WebhooksCC,
   verifyClerkSignature,
@@ -1476,5 +1477,37 @@ describe("secrets that decode to an empty key", () => {
         body: {},
       })
     ).rejects.toThrow("The secret decodes to an empty key");
+  });
+});
+
+describe("decodeStandardWebhookSecret without atob", () => {
+  // Buffer skips characters it cannot read where atob throws; the key must
+  // come out the same either way, raw-bytes fallback included.
+  const secrets = [
+    "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+    "whsec_c2VjcmV0",
+    "whsec_ c2Vj cmV0 ",
+    "whsec_c2VjcmV0=",
+    "whsec_!",
+    "whsec_abcde",
+    "whsec_ab=c",
+    "whsec_ab==",
+    "polar_whs_raw_secret",
+    "c2VjcmV0",
+  ];
+
+  it("gives the key atob gives", () => {
+    const withAtob = secrets.map((secret) => Buffer.from(decodeStandardWebhookSecret(secret)));
+    vi.stubGlobal("atob", undefined);
+    try {
+      const withBuffer = secrets.map((secret) => Buffer.from(decodeStandardWebhookSecret(secret)));
+      expect(withBuffer).toEqual(withAtob);
+      expect(withBuffer[secrets.indexOf("whsec_!")].toString()).toBe("whsec_!");
+      expect(() => decodeStandardWebhookSecret("whsec_")).toThrow(
+        "The secret decodes to an empty key"
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

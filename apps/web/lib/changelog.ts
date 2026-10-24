@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Which Calls the SDKs Retry",
     track: "web",
     items: [
-      "The TypeScript, Python and Go SDK pages say which calls a retry repeats: GET, PUT and DELETE after a network error, a timeout or a 5xx, and any call after a 429",
+      "The TypeScript, Python and Go SDK pages say which calls a retry repeats: GET, PUT and DELETE after a network error, a timeout or a retryable status (429, 500, 502, 503 and 504 by default), and any call after a 429",
     ],
   },
   {
