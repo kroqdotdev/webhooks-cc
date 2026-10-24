@@ -209,11 +209,8 @@ func collect(
 			if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
 				return nil, err
 			}
-			var timeoutErr *TimeoutError
-			if errors.As(err, &timeoutErr) {
-				return nil, err
-			}
-			// A network blip or a server error: try again at the next poll.
+			// A network blip, a poll that timed out or a server error: try
+			// again at the next poll.
 		}
 		slices.SortStableFunc(requests, func(a, b Request) int { return a.ReceivedAt.Compare(b.ReceivedAt) })
 		for _, request := range requests {
@@ -330,7 +327,9 @@ func (s *RequestsService) Clear(ctx context.Context, slug string, opts ClearOpti
 	if !opts.Before.IsZero() {
 		query.Set("before", strconv.FormatInt(opts.Before.UnixMilli(), 10))
 	}
-	return s.c.api(ctx, http.MethodDelete, "/endpoints/"+slug+"/requests", query, nil, nil)
+	// Without Before the server clears up to its own clock, so a repeat after
+	// a clear that went through would delete what arrived since.
+	return s.c.apiRetrying(ctx, http.MethodDelete, "/endpoints/"+slug+"/requests", query, nil, nil, !opts.Before.IsZero())
 }
 
 // Replay sends a captured request again, to any URL, with its method, headers

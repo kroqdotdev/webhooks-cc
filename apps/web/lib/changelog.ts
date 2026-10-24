@@ -1623,8 +1623,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Safer Retries and Waits",
     track: "sdk",
     items: [
-      "With `retry` on, a POST or PATCH (`endpoints.create()`, `emails.sendTest()`, ...) is repeated only after a 429. After a network error, a timeout or a 5xx it may have gone through, and a repeated `endpoints.create()` left an extra endpoint behind. GET, PUT and DELETE are repeated as before",
-      "`waitFor()` and `waitForAll()` poll from 30 seconds before the newest request they have seen, by the server's clock, instead of from the local time of the last poll, which skipped requests when this machine's clock ran ahead of the server's",
+      "With `retry` on, a POST or PATCH (`endpoints.create()`, `emails.sendTest()`, ...) is repeated only after a 429. After a network error, a timeout or a 5xx it may have gone through, and a repeated `endpoints.create()` left an extra endpoint behind. GET, PUT and DELETE are repeated as before, except `requests.clear()` without `before`, whose repeat would also delete what arrived in between",
+      "`waitFor()` and `waitForAll()` poll from 30 seconds before the newest request they have seen, by the server's clock, instead of from the local time of the last poll, which skipped requests when this machine's clock ran ahead of the server's. A poll that times out no longer ends the wait; the next one tries again",
       "A Standard Webhooks, Clerk, Resend or forwarding secret that decodes to no key at all (`whsec_` alone, or whitespace) throws before the headers are read, in `verifySignature()`, `verifyStandardWebhookSignature()` and the forwarding checks. Before, a request without signature headers got `false` or `missing_headers` instead",
     ],
   },
@@ -1943,8 +1943,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Safer Retries and Waits, Text Read as JavaScript Reads It",
     track: "python",
     items: [
-      "With `retry` on, a POST or PATCH (`endpoints.create()`, `emails.send_test()`, ...) is repeated only after a 429. After a network error, a timeout or a 5xx it may have gone through, and a repeated `endpoints.create()` left an extra endpoint behind. GET, PUT and DELETE are repeated as before",
-      "`wait_for()` and `wait_for_all()` poll from 30 seconds before the newest request they have seen, by the server's clock, instead of from the local time of the last poll, which skipped requests when this machine's clock ran ahead of the server's",
+      "With `retry` on, a POST or PATCH (`endpoints.create()`, `emails.send_test()`, ...) is repeated only after a 429. After a network error, a timeout or a 5xx it may have gone through, and a repeated `endpoints.create()` left an extra endpoint behind. GET, PUT and DELETE are repeated as before, except `requests.clear()` without `before`, whose repeat would also delete what arrived in between",
+      "`wait_for()` and `wait_for_all()` poll from 30 seconds before the newest request they have seen, by the server's clock, instead of from the local time of the last poll, which skipped requests when this machine's clock ran ahead of the server's. A poll that times out no longer ends the wait; the next one tries again",
+      "Body matchers treat a body with `NaN` or `Infinity` as not JSON, as `JSON.parse` does",
       "Signature headers, content types, durations and `Retry-After` are trimmed of JavaScript's whitespace rather than Python's, and only ASCII digits count as digits, as in the TypeScript SDK; timestamp filters read numbers as JavaScript's `Number()` does",
       'Mailgun and Adyen bodies, which are signed after being written out again, put keys that are array indexes (`"0"`, `"12"`) first, as `JSON.stringify` does',
       "A PayPal certificate URL reads a backslash as a slash only before its query, as browsers do",
@@ -1990,9 +1991,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Safer Retries",
     track: "go",
     items: [
-      "With `WithRetry`, a POST or PATCH (`Endpoints.Create`, `Emails.SendTest`, ...) is repeated only after a 429. After a dropped connection, a timeout or a 5xx it may have gone through, and a repeated `Endpoints.Create` left an extra endpoint behind. GET, PUT and DELETE are repeated as before",
+      "With `WithRetry`, a POST or PATCH (`Endpoints.Create`, `Emails.SendTest`, ...) is repeated only after a 429. After a dropped connection, a timeout or a 5xx it may have gone through, and a repeated `Endpoints.Create` left an extra endpoint behind. GET, PUT and DELETE are repeated as before, except `Requests.Clear` without `Before`, whose repeat would also delete what arrived in between",
+      "A poll that times out no longer ends `WaitFor` or `WaitForAll`; the next one tries again",
       "`verify.ErrEmptyKey` is exported, so `errors.Is` tells a secret that decodes to no key at all from a failed check",
-      "Content types, hex keys and `Retry-After` are trimmed of JavaScript's whitespace, as the TypeScript SDK trims them, rather than of the set `strings.TrimSpace` takes",
+      "Content types, hex keys, `Retry-After` and PayPal certificates are trimmed of JavaScript's whitespace, as the TypeScript SDK trims them, rather than of the set `strings.TrimSpace` takes",
     ],
   },
   {

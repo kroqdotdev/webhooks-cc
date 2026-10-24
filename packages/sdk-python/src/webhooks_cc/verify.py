@@ -11,7 +11,6 @@ httpx), or a list of name and value pairs; names match in any case.
 from __future__ import annotations
 
 import hmac
-import json
 import math
 import re
 import threading
@@ -36,6 +35,7 @@ from ._crypto import (
     to_hex,
 )
 from ._js import JS_SPACE, js_to_number, js_trim
+from ._js import json_parse as _parse_json
 from .errors import WebhookVerificationError
 
 HeadersInput: TypeAlias = Mapping[Any, Any] | Iterable[tuple[Any, Any]]
@@ -178,15 +178,6 @@ def _hmac_hex(algorithm: str, secret: str, payload: bytes) -> str:
 
 def _hmac_base64(algorithm: str, secret: str | bytes, payload: bytes) -> str:
     return to_base64(hmac_digest("sha256" if algorithm == "sha256" else "sha1", secret, payload))
-
-
-def _reject_constant(name: str) -> Any:
-    raise ValueError(f"{name} is not JSON")
-
-
-def _parse_json(text: str) -> Any:
-    """``json.loads`` without the NaN and Infinity that JavaScript's ``JSON.parse`` refuses."""
-    return json.loads(text, parse_constant=_reject_constant)
 
 
 # --- header formats -------------------------------------------------------------------

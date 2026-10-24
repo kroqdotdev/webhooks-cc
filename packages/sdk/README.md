@@ -104,7 +104,7 @@ const client = new WebhooksCC({
 | `hooks`       | `ClientHooks`  | none                     | lifecycle callbacks for request logging                                  |
 | `emailDomain` | `string`       | `mailhooks.cc`           | domain `emails.address()` builds addresses on                            |
 
-With `retry`, GET, PUT and DELETE calls are repeated after a network error, a timeout or a status in `retryOn` (429, 500, 502, 503 and 504 by default), and any call after a 429, which the API sends before doing anything. A POST or PATCH that failed any other way is not repeated: it may have gone through, and a second `endpoints.create()` would leave an extra endpoint.
+With `retry`, GET, PUT and DELETE calls are repeated after a network error, a timeout or a status in `retryOn` (429, 500, 502, 503 and 504 by default), and any call after a 429, which the API sends before doing anything. A POST or PATCH that failed any other way is not repeated: it may have gone through, and a second `endpoints.create()` would leave an extra endpoint. Nor is `requests.clear()` without `before`, whose repeat would also delete what arrived in between.
 
 ## API overview
 

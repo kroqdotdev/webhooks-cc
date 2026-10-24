@@ -173,6 +173,12 @@ var userAgent = "webhooks-cc-go/" + Version
 
 // api calls an API route and decodes the JSON response into out (when not nil).
 func (c *Client) api(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	return c.apiRetrying(ctx, method, path, query, body, out, idempotentMethods[method])
+}
+
+// apiRetrying is api with repeatable saying whether a network error, a
+// timeout or a 5xx is retried, for a call whose method says otherwise.
+func (c *Client) apiRetrying(ctx context.Context, method, path string, query url.Values, body, out any, repeatable bool) error {
 	endpoint := c.baseURL + "/api" + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
@@ -184,7 +190,6 @@ func (c *Client) api(ctx context.Context, method, path string, query url.Values,
 			return err
 		}
 	}
-	repeatable := idempotentMethods[method]
 	for attempt := 1; ; attempt++ {
 		backoff := backoffDelay(c.retry.Backoff, attempt)
 		more := attempt < c.retry.MaxAttempts

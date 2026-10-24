@@ -331,10 +331,14 @@ class WebhooksCC:
         *,
         body: Any = None,
         params: Mapping[str, str] | None = None,
+        repeatable: bool | None = None,
     ) -> Any:
+        """Call the API. ``repeatable`` overrides whether a network error, a timeout or a
+        5xx is retried, for a call whose method says otherwise."""
         url = f"{self._base_url}/api{path}"
         attempts = max(1, int(self._retry.max_attempts))
-        repeatable = method.upper() in _IDEMPOTENT_METHODS
+        if repeatable is None:
+            repeatable = method.upper() in _IDEMPOTENT_METHODS
         attempt = 0
         while True:
             attempt += 1
@@ -795,7 +799,11 @@ class Requests:
         params = {}
         if before is not None:
             params["before"] = str(int(_resolve_time(before)))
-        self._client._api("DELETE", f"/endpoints/{slug}/requests", params=params)
+        # Without ``before`` the server clears up to its own clock, so a repeat after a
+        # clear that went through would delete what arrived since.
+        self._client._api(
+            "DELETE", f"/endpoints/{slug}/requests", params=params, repeatable=before is not None
+        )
 
     def replay(self, request_id: str, target_url: str) -> httpx.Response:
         """Send a captured request again, to any URL, with its method, headers and exact body.
@@ -1070,8 +1078,8 @@ def _collect(
             requests = sorted(fetch(last_checked), key=lambda request: request.received_at)
         except (UnauthorizedError, NotFoundError):
             raise
-        except RateLimitError:
-            pass
+        except (RateLimitError, TimeoutError):
+            pass  # a poll that timed out is retried like a network blip
         except WebhooksCCError as error:
             if error.status_code < 500:
                 raise

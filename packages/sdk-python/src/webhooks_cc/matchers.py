@@ -7,12 +7,11 @@ and :func:`match_any`, or pass any callable of your own.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ._js import js_trim
+from ._js import js_trim, json_parse
 from ._sentinel import UNSET
 from .models import EmailAddress, Request
 
@@ -23,7 +22,7 @@ def _parse_json(request: Request) -> Any:
     if not request.body:
         return _NO_JSON
     try:
-        return json.loads(request.body)
+        return json_parse(request.body)
     except ValueError:
         return _NO_JSON
 

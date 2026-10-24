@@ -635,7 +635,12 @@ export async function collectMatchingRequests(
         if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
           throw error;
         }
-        if (error.statusCode < 500 && !(error instanceof RateLimitError)) {
+        // A poll that timed out is retried like a network failure.
+        if (
+          error.statusCode < 500 &&
+          !(error instanceof RateLimitError) &&
+          !(error instanceof TimeoutError)
+        ) {
           throw error;
         }
       }
@@ -763,9 +768,17 @@ export class WebhooksCC {
     }
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /**
+   * `repeatable` overrides whether a network error, a timeout or a 5xx is
+   * retried, for a call whose method says otherwise.
+   */
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    { repeatable = IDEMPOTENT_METHODS.has(method) }: { repeatable?: boolean } = {}
+  ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
-    const repeatable = IDEMPOTENT_METHODS.has(method);
     let attempt = 0;
     let refreshed = false;
 
@@ -2000,7 +2013,11 @@ export class WebhooksCC {
       validatePathSegment(endpointSlug, "endpointSlug");
       await this.request<{ deleted: number; complete: boolean }>(
         "DELETE",
-        `/endpoints/${endpointSlug}/requests${buildClearQuery(options)}`
+        `/endpoints/${endpointSlug}/requests${buildClearQuery(options)}`,
+        undefined,
+        // Without `before` the server clears up to its own clock, so a repeat
+        // after a clear that went through would delete what arrived since.
+        { repeatable: options.before !== undefined }
       );
     },
 
@@ -2060,11 +2077,12 @@ export class WebhooksCC {
     /**
      * Polls for incoming requests until one matches or timeout expires.
      *
-     * Each poll asks for requests from 30 seconds before the newest one seen,
-     * by the server's clock, and skips repeats, so a local clock running
-     * ahead of the server's cannot make it miss one. Server errors, rate
-     * limits and network failures do not end the wait; the next poll tries
-     * again.
+     * Until a request arrives it looks back to `since` (five minutes before
+     * it started, by default). After that, each poll asks for requests from
+     * 30 seconds before the newest one seen, by the server's clock, and skips
+     * repeats, so a local clock running ahead of the server's does not make
+     * it miss later ones. Server errors, rate limits, network failures and
+     * polls that time out do not end the wait; the next poll tries again.
      *
      * @param endpointSlug - Endpoint to monitor
      * @param options - Timeout, poll interval, and optional match filter

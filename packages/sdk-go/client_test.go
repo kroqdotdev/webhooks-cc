@@ -605,6 +605,62 @@ func TestCaptureDuringDeletesTheEndpoint(t *testing.T) {
 
 // A client whose clock runs ahead of the server's must not skip requests that
 // arrive between two polls.
+func TestWaitForKeepsPollingAfterAPollTimesOut(t *testing.T) {
+	api := newFakeAPI(t)
+	var polls atomic.Int32
+	api.handle("GET /api/endpoints/acme/requests", func(w http.ResponseWriter, r *http.Request) {
+		if polls.Add(1) == 1 {
+			<-r.Context().Done()
+			return
+		}
+		writeJSON(w, 200, []map[string]any{requestJSON("r1", time.Now().UnixMilli(), nil)})
+	})
+	client := api.client(webhookscc.WithTimeout(50 * time.Millisecond))
+	request, err := client.Requests.WaitFor(context.Background(), "acme", webhookscc.WaitOptions{
+		Timeout:      2 * time.Second,
+		PollInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.ID != "r1" || polls.Load() != 2 {
+		t.Errorf("request %q after %d polls", request.ID, polls.Load())
+	}
+}
+
+// Without Before the server clears up to its own clock: a repeat would delete
+// what arrived after a clear that went through.
+func TestClearIsRepeatedOnlyWithABeforeTime(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		before time.Time
+		sent   int32
+	}{
+		{"without before", time.Time{}, 1},
+		{"with before", time.UnixMilli(1000), 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newFakeAPI(t)
+			var calls atomic.Int32
+			api.handle("DELETE /api/endpoints/acme/requests", func(w http.ResponseWriter, r *http.Request) {
+				if calls.Add(1) == 1 {
+					http.Error(w, "unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				writeJSON(w, 200, map[string]any{"deleted": 1, "complete": true})
+			})
+			client := api.client(webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 2, Backoff: time.Millisecond}))
+			err := client.Requests.Clear(context.Background(), "acme", webhookscc.ClearOptions{Before: tc.before})
+			if (err == nil) != (tc.sent == 2) {
+				t.Errorf("err = %v", err)
+			}
+			if calls.Load() != tc.sent {
+				t.Errorf("DELETE sent %d times", calls.Load())
+			}
+		})
+	}
+}
+
 func TestWaitForToleratesAClientClockAhead(t *testing.T) {
 	api := newFakeAPI(t)
 	serverNow := time.Now().Add(-2 * time.Minute).UnixMilli() // the server is two minutes behind

@@ -267,6 +267,27 @@ def test_a_get_or_a_delete_is_repeated_after_a_network_error(method: str) -> Non
     assert calls == [method, method]
 
 
+@pytest.mark.parametrize(("before", "sent"), [(None, 1), (1000, 2)])
+def test_clear_is_repeated_only_with_a_before_time(before: int | None, sent: int) -> None:
+    # Without ``before`` the server clears up to its own clock: a repeat would
+    # delete what arrived after a clear that went through.
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        if len(calls) == 1:
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json={"deleted": 1, "complete": True})
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
+    if sent == 1:
+        with pytest.raises(httpx.ConnectError):
+            client.requests.clear("acme", before=before)
+    else:
+        client.requests.clear("acme", before=before)
+    assert len(calls) == sent
+
+
 def test_timeouts_raise_the_sdk_timeout_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=request)
@@ -355,6 +376,20 @@ def test_wait_for_finds_a_request_when_the_local_clock_runs_ahead() -> None:
 
     request = make_client(handler).requests.wait_for("acme", timeout="2s", poll_interval=10)
     assert request.id == "r1"
+
+
+def test_wait_for_keeps_polling_after_a_poll_times_out() -> None:
+    polls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        polls.append(1)
+        if len(polls) == 1:
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(200, json=[captured("r1")])
+
+    request = make_client(handler).requests.wait_for("acme", timeout="2s", poll_interval=10)
+    assert request.id == "r1"
+    assert len(polls) == 2
 
 
 def test_wait_for_polls_from_30_seconds_before_the_newest_request() -> None:

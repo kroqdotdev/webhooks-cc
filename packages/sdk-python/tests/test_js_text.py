@@ -16,7 +16,7 @@ from webhooks_cc._crypto import js_json
 from webhooks_cc._js import js_to_number, js_trim
 from webhooks_cc.client import _int_header, _resolve_time
 from webhooks_cc.durations import parse_duration
-from webhooks_cc.matchers import match_content_type
+from webhooks_cc.matchers import match_body_path, match_content_type
 from webhooks_cc.models import Request
 from webhooks_cc.verify import _canonical_paypal_certificate_url
 
@@ -39,6 +39,12 @@ def test_json_puts_array_index_keys_first() -> None:
         ("0x10", 16.0),
         ("", 0.0),
         ("1_0", math.nan),
+        ("0x1F", 31.0),
+        ("0o17", 15.0),
+        ("0b101", 5.0),
+        ("0x0x10", math.nan),  # int() would take the second prefix
+        ("0b0b1", math.nan),
+        ("0o9", math.nan),
     ],
 )
 def test_numbers_read_like_javascript(text: str, expected: float) -> None:
@@ -101,3 +107,22 @@ def test_paypal_urls_read_a_backslash_as_a_slash_only_before_the_query() -> None
         )
         == "https://api.paypal.com/v1/notifications/certs/CERT-1?a=b\\c"
     )
+
+
+def test_bodies_with_nan_are_not_json() -> None:
+    # JSON.parse refuses NaN and Infinity, so no body matcher matches.
+    request = Request.from_dict(
+        {
+            "id": "r1",
+            "endpointId": "e1",
+            "method": "POST",
+            "path": "/",
+            "headers": {"content-type": "application/json"},
+            "body": '{"type":"order.paid","amount":NaN}',
+            "queryParams": {},
+            "ip": "203.0.113.7",
+            "size": 34,
+            "receivedAt": 0,
+        }
+    )
+    assert not match_body_path("type", "order.paid")(request)

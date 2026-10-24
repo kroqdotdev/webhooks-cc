@@ -2212,6 +2212,38 @@ describe("WebhooksCC", () => {
       expect(result.id).toBe("r1");
     });
 
+    it("keeps polling after a poll times out", async () => {
+      const req = { id: "r1", method: "POST", receivedAt: Date.now() };
+      let calls = 0;
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+          calls++;
+          if (calls === 1) {
+            return new Promise((_resolve, reject) => {
+              init.signal.addEventListener("abort", () =>
+                reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+              );
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ "content-type": "application/json" }),
+            json: () => Promise.resolve([req]),
+            text: () => Promise.resolve(JSON.stringify([req])),
+          });
+        });
+
+      const result = await createClient({ timeout: 20 }).requests.waitFor("abc123", {
+        timeout: 2000,
+        pollInterval: 10,
+      });
+
+      expect(result.id).toBe("r1");
+      expect(calls).toBe(2);
+    });
+
     it("polls from 30 seconds before the newest request seen", async () => {
       const receivedAt = Date.now() - 10_000;
       const sinces = serveRequests(() => [{ id: "r1", method: "GET", receivedAt }]);
@@ -2410,6 +2442,32 @@ describe("WebhooksCC", () => {
         .mockRejectedValueOnce(new TypeError("fetch failed"))
         .mockResolvedValueOnce({ ...created, status: 204, json: () => Promise.resolve(undefined) });
       await createClient({ retry: { maxAttempts: 2, backoffMs: 0 } }).endpoints.delete("abc123");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("repeats requests.clear() only with a before time", async () => {
+      const cleared = {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: () => Promise.resolve({ deleted: 1, complete: true }),
+        text: () => Promise.resolve('{"deleted":1,"complete":true}'),
+      };
+      const retry = { maxAttempts: 2, backoffMs: 0 };
+
+      // Without `before` the server clears up to its own clock: a repeat would
+      // delete what arrived after a clear that went through.
+      globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+      await expect(createClient({ retry }).requests.clear("abc123")).rejects.toThrow(
+        "fetch failed"
+      );
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockResolvedValueOnce(cleared);
+      await createClient({ retry }).requests.clear("abc123", { before: 1000 });
       expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
 

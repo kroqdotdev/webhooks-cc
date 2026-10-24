@@ -9,8 +9,10 @@ accept digits from every script.
 
 from __future__ import annotations
 
+import json
 import math
 import re
+from typing import Any
 
 # What String.prototype.trim(), Number() and a regular expression's \s treat as whitespace.
 JS_WHITESPACE = "".join(
@@ -26,7 +28,8 @@ JS_WHITESPACE = "".join(
 JS_SPACE = f"[{re.escape(JS_WHITESPACE)}]"
 
 _JS_DECIMAL = re.compile(r"[+-]?(?:Infinity|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)")
-_JS_RADIX = re.compile(r"0([xXoObB])([0-9a-zA-Z]+)")
+# One digit class per base: int() would also take a second prefix ("0x0x10").
+_JS_RADIX = re.compile(r"0(?:[xX]([0-9a-fA-F]+)|[oO]([0-7]+)|[bB]([01]+))")
 
 
 def js_trim(value: str) -> str:
@@ -45,9 +48,19 @@ def js_to_number(value: str | None) -> float:
         return float(text.replace("Infinity", "inf"))
     radix_match = _JS_RADIX.fullmatch(text)
     if radix_match:
-        base = {"x": 16, "o": 8, "b": 2}[radix_match.group(1).lower()]
-        try:
-            return float(int(radix_match.group(2), base))
-        except ValueError:
-            return math.nan
+        hex_digits, octal_digits, binary_digits = radix_match.groups()
+        if hex_digits is not None:
+            return float(int(hex_digits, 16))
+        if octal_digits is not None:
+            return float(int(octal_digits, 8))
+        return float(int(binary_digits, 2))
     return math.nan
+
+
+def _reject_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not JSON")
+
+
+def json_parse(text: str | bytes) -> Any:
+    """JavaScript's ``JSON.parse``: ``json.loads`` without NaN and Infinity, which it refuses."""
+    return json.loads(text, parse_constant=_reject_constant)
