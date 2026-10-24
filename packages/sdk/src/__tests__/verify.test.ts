@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { decodeStandardWebhookSecret } from "../templates";
 import {
   WebhooksCC,
   verifyClerkSignature,
@@ -1438,5 +1439,75 @@ describe("WorkOS verification (t=<ms>, v1=<hex>)", () => {
     expect(await verifyWorkOSSignature(built.body, built.headers["workos-signature"], secret)).toBe(
       true
     );
+  });
+});
+
+describe("secrets that decode to an empty key", () => {
+  const body = '{"type":"test"}';
+  // Signed with no key at all, as anyone could sign it.
+  const forged = {
+    "webhook-id": "msg_1",
+    "webhook-timestamp": "1700000000",
+    "webhook-signature": `v1,${createHmac("sha256", Buffer.alloc(0))
+      .update(`msg_1.1700000000.${body}`)
+      .digest("base64")}`,
+  };
+
+  for (const secret of ["whsec_", "whsec_ ", " ", "\n\t"]) {
+    it(`refuses ${JSON.stringify(secret)}, with or without headers`, async () => {
+      await expect(verifyStandardWebhookSignature(body, forged, secret)).rejects.toThrow(
+        "The secret decodes to an empty key"
+      );
+      await expect(verifyStandardWebhookSignature(body, {}, secret)).rejects.toThrow(
+        "The secret decodes to an empty key"
+      );
+      for (const provider of ["standard-webhooks", "clerk", "resend"] as const) {
+        await expect(
+          verifySignature({ body, headers: forged }, { provider, secret })
+        ).rejects.toThrow("The secret decodes to an empty key");
+      }
+    });
+  }
+
+  it("refuses to sign with one", async () => {
+    await expect(
+      client.buildRequest("https://example.com/webhooks/standard", {
+        provider: "standard-webhooks",
+        secret: "whsec_",
+        body: {},
+      })
+    ).rejects.toThrow("The secret decodes to an empty key");
+  });
+});
+
+describe("decodeStandardWebhookSecret without atob", () => {
+  // Buffer skips characters it cannot read where atob throws; the key must
+  // come out the same either way, raw-bytes fallback included.
+  const secrets = [
+    "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+    "whsec_c2VjcmV0",
+    "whsec_ c2Vj cmV0 ",
+    "whsec_c2VjcmV0=",
+    "whsec_!",
+    "whsec_abcde",
+    "whsec_ab=c",
+    "whsec_ab==",
+    "polar_whs_raw_secret",
+    "c2VjcmV0",
+  ];
+
+  it("gives the key atob gives", () => {
+    const withAtob = secrets.map((secret) => Buffer.from(decodeStandardWebhookSecret(secret)));
+    vi.stubGlobal("atob", undefined);
+    try {
+      const withBuffer = secrets.map((secret) => Buffer.from(decodeStandardWebhookSecret(secret)));
+      expect(withBuffer).toEqual(withAtob);
+      expect(withBuffer[secrets.indexOf("whsec_!")].toString()).toBe("whsec_!");
+      expect(() => decodeStandardWebhookSecret("whsec_")).toThrow(
+        "The secret decodes to an empty key"
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

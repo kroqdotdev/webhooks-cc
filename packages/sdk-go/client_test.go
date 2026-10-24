@@ -253,6 +253,74 @@ func TestRetriesServerErrors(t *testing.T) {
 	}
 }
 
+// A POST that failed with a 5xx, a dropped connection or a timeout may have
+// gone through, so it is not repeated; a GET is.
+func TestRetriesRepeatOnlyWhatIsSafeToRepeat(t *testing.T) {
+	failures := map[string]http.HandlerFunc{
+		"5xx": func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		},
+		"dropped connection": func(w http.ResponseWriter, r *http.Request) {
+			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
+				conn.Close()
+			}
+		},
+		"timeout": func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() },
+	}
+	for name, fail := range failures {
+		t.Run(name, func(t *testing.T) {
+			api := newFakeAPI(t)
+			var posts, gets atomic.Int32
+			api.handle("POST /api/endpoints", func(w http.ResponseWriter, r *http.Request) {
+				posts.Add(1)
+				fail(w, r)
+			})
+			api.handle("GET /api/endpoints/acme", func(w http.ResponseWriter, r *http.Request) {
+				if gets.Add(1) == 1 {
+					fail(w, r)
+					return
+				}
+				writeJSON(w, 200, map[string]any{"id": "e1", "slug": "acme"})
+			})
+			client := api.client(
+				webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 3, Backoff: time.Millisecond}),
+				webhookscc.WithTimeout(200*time.Millisecond),
+			)
+			if _, err := client.Endpoints.Create(context.Background(), webhookscc.CreateEndpointOptions{Name: "acme"}); err == nil {
+				t.Error("Create should fail")
+			}
+			if posts.Load() != 1 {
+				t.Errorf("POST sent %d times", posts.Load())
+			}
+			if _, err := client.Endpoints.Get(context.Background(), "acme"); err != nil {
+				t.Errorf("Get: %v", err)
+			}
+			if gets.Load() != 2 {
+				t.Errorf("GET sent %d times", gets.Load())
+			}
+		})
+	}
+}
+
+func TestRetriesRepeatAPostAfterA429(t *testing.T) {
+	api := newFakeAPI(t)
+	var posts atomic.Int32
+	api.handle("POST /api/endpoints", func(w http.ResponseWriter, r *http.Request) {
+		if posts.Add(1) == 1 {
+			http.Error(w, "slow down", http.StatusTooManyRequests)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"id": "e1", "slug": "acme"})
+	})
+	client := api.client(webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 2, Backoff: time.Millisecond}))
+	if _, err := client.Endpoints.Create(context.Background(), webhookscc.CreateEndpointOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if posts.Load() != 2 {
+		t.Errorf("POST sent %d times", posts.Load())
+	}
+}
+
 func TestAPICallTimeout(t *testing.T) {
 	api := newFakeAPI(t)
 	api.handle("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
@@ -537,6 +605,62 @@ func TestCaptureDuringDeletesTheEndpoint(t *testing.T) {
 
 // A client whose clock runs ahead of the server's must not skip requests that
 // arrive between two polls.
+func TestWaitForKeepsPollingAfterAPollTimesOut(t *testing.T) {
+	api := newFakeAPI(t)
+	var polls atomic.Int32
+	api.handle("GET /api/endpoints/acme/requests", func(w http.ResponseWriter, r *http.Request) {
+		if polls.Add(1) == 1 {
+			<-r.Context().Done()
+			return
+		}
+		writeJSON(w, 200, []map[string]any{requestJSON("r1", time.Now().UnixMilli(), nil)})
+	})
+	client := api.client(webhookscc.WithTimeout(50 * time.Millisecond))
+	request, err := client.Requests.WaitFor(context.Background(), "acme", webhookscc.WaitOptions{
+		Timeout:      2 * time.Second,
+		PollInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.ID != "r1" || polls.Load() != 2 {
+		t.Errorf("request %q after %d polls", request.ID, polls.Load())
+	}
+}
+
+// Without Before the server clears up to its own clock: a repeat would delete
+// what arrived after a clear that went through.
+func TestClearIsRepeatedOnlyWithABeforeTime(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		before time.Time
+		sent   int32
+	}{
+		{"without before", time.Time{}, 1},
+		{"with before", time.UnixMilli(1000), 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newFakeAPI(t)
+			var calls atomic.Int32
+			api.handle("DELETE /api/endpoints/acme/requests", func(w http.ResponseWriter, r *http.Request) {
+				if calls.Add(1) == 1 {
+					http.Error(w, "unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				writeJSON(w, 200, map[string]any{"deleted": 1, "complete": true})
+			})
+			client := api.client(webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 2, Backoff: time.Millisecond}))
+			err := client.Requests.Clear(context.Background(), "acme", webhookscc.ClearOptions{Before: tc.before})
+			if (err == nil) != (tc.sent == 2) {
+				t.Errorf("err = %v", err)
+			}
+			if calls.Load() != tc.sent {
+				t.Errorf("DELETE sent %d times", calls.Load())
+			}
+		})
+	}
+}
+
 func TestWaitForToleratesAClientClockAhead(t *testing.T) {
 	api := newFakeAPI(t)
 	serverNow := time.Now().Add(-2 * time.Minute).UnixMilli() // the server is two minutes behind

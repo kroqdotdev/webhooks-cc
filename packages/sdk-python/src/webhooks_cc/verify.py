@@ -11,7 +11,6 @@ httpx), or a list of name and value pairs; names match in any case.
 from __future__ import annotations
 
 import hmac
-import json
 import math
 import re
 import threading
@@ -35,6 +34,8 @@ from ._crypto import (
     to_base64,
     to_hex,
 )
+from ._js import JS_SPACE, js_to_number, js_trim
+from ._js import json_parse as _parse_json
 from .errors import WebhookVerificationError
 
 HeadersInput: TypeAlias = Mapping[Any, Any] | Iterable[tuple[Any, Any]]
@@ -179,46 +180,6 @@ def _hmac_base64(algorithm: str, secret: str | bytes, payload: bytes) -> str:
     return to_base64(hmac_digest("sha256" if algorithm == "sha256" else "sha1", secret, payload))
 
 
-def _reject_constant(name: str) -> Any:
-    raise ValueError(f"{name} is not JSON")
-
-
-def _parse_json(text: str) -> Any:
-    """``json.loads`` without the NaN and Infinity that JavaScript's ``JSON.parse`` refuses."""
-    return json.loads(text, parse_constant=_reject_constant)
-
-
-_JS_WHITESPACE = "".join(
-    chr(code)
-    for code in (
-        *(0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680),
-        *range(0x2000, 0x200B),
-        *(0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF),
-    )
-)
-_JS_DECIMAL = re.compile(r"[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
-_JS_RADIX = re.compile(r"0([xXoObB])([0-9a-zA-Z]+)")
-
-
-def _js_to_number(value: str | None) -> float:
-    """JavaScript's ``Number(value)`` for a header value: NaN when it is not a number."""
-    if value is None:
-        return math.nan
-    text = value.strip(_JS_WHITESPACE)
-    if text == "":
-        return 0.0
-    if _JS_DECIMAL.fullmatch(text):
-        return float(text.replace("Infinity", "inf"))
-    radix_match = _JS_RADIX.fullmatch(text)
-    if radix_match:
-        base = {"x": 16, "o": 8, "b": 2}[radix_match.group(1).lower()]
-        try:
-            return float(int(radix_match.group(2), base))
-        except ValueError:
-            return math.nan
-    return math.nan
-
-
 # --- header formats -------------------------------------------------------------------
 
 
@@ -229,12 +190,12 @@ def _parse_stripe_header(header: str | None) -> tuple[str, list[str]] | None:
     timestamp: str | None = None
     signatures: list[str] = []
     for part in header.split(","):
-        trimmed = part.strip()
+        trimmed = js_trim(part)
         if not trimmed or "=" not in trimmed:
             continue
         key, _, value = trimmed.partition("=")
-        key = key.strip()
-        value = value.strip()
+        key = js_trim(key)
+        value = js_trim(value)
         if not value:
             continue
         if key == "t":
@@ -257,8 +218,8 @@ def _parse_standard_signatures(header: str | None) -> list[str]:
     if matches:
         return matches
     parts = header.split(",")[:2]
-    if len(parts) == 2 and parts[0].strip() == "v1" and parts[1].strip():
-        return [parts[1].strip()]
+    if len(parts) == 2 and js_trim(parts[0]) == "v1" and js_trim(parts[1]):
+        return [js_trim(parts[1])]
     return []
 
 
@@ -269,12 +230,12 @@ def _parse_paddle_signature(header: str | None) -> tuple[str, list[str]] | None:
     timestamp: str | None = None
     signatures: list[str] = []
     for part in re.split(r"[;,]", header):
-        trimmed = part.strip()
+        trimmed = js_trim(part)
         if not trimmed or "=" not in trimmed:
             continue
         key, _, value = trimmed.partition("=")
-        key = key.strip().lower()
-        value = value.strip()
+        key = js_trim(key).lower()
+        value = js_trim(value)
         if not value:
             continue
         if key == "ts":
@@ -335,7 +296,7 @@ def verify_github_signature(body: BodyInput, signature_header: str | None, secre
     _require_secret(secret, "verify_github_signature")
     if not signature_header:
         return False
-    match = re.fullmatch(r"sha256=(.+)", signature_header.strip(), re.IGNORECASE | re.DOTALL)
+    match = re.fullmatch(r"sha256=(.+)", js_trim(signature_header), re.IGNORECASE | re.DOTALL)
     if not match:
         return False
     expected = _hmac_hex("sha256", secret, _body_bytes(body))
@@ -348,7 +309,7 @@ def verify_shopify_signature(body: BodyInput, signature_header: str | None, secr
     if not signature_header:
         return False
     expected = _hmac_base64("sha256", secret, _body_bytes(body))
-    return _safe_equal(signature_header.strip(), expected)
+    return _safe_equal(js_trim(signature_header), expected)
 
 
 def verify_twilio_signature(
@@ -365,7 +326,7 @@ def verify_twilio_signature(
         return False
     payload = build_twilio_signature_payload(url, _twilio_params(body))
     expected = _hmac_base64("sha1", secret, _encode_text(payload))
-    return _safe_equal(signature_header.strip(), expected)
+    return _safe_equal(js_trim(signature_header), expected)
 
 
 def verify_slack_signature(body: BodyInput, headers: HeadersInput, secret: str) -> bool:
@@ -375,7 +336,7 @@ def verify_slack_signature(body: BodyInput, headers: HeadersInput, secret: str) 
     timestamp = _get_header(headers, "x-slack-request-timestamp")
     if not signature_header or not timestamp:
         return False
-    match = re.fullmatch(r"v0=(.+)", signature_header.strip(), re.IGNORECASE | re.DOTALL)
+    match = re.fullmatch(r"v0=(.+)", js_trim(signature_header), re.IGNORECASE | re.DOTALL)
     if not match:
         return False
     payload = b"v0:" + _encode_text(timestamp) + b":" + _body_bytes(body)
@@ -399,7 +360,7 @@ def verify_linear_signature(body: BodyInput, signature_header: str | None, secre
     _require_secret(secret, "verify_linear_signature")
     if not signature_header:
         return False
-    match = re.fullmatch(r"(?:sha256=)?(.+)", signature_header.strip(), re.IGNORECASE | re.DOTALL)
+    match = re.fullmatch(r"(?:sha256=)?(.+)", js_trim(signature_header), re.IGNORECASE | re.DOTALL)
     if not match:
         return False
     expected = _hmac_hex("sha256", secret, _body_bytes(body))
@@ -413,7 +374,7 @@ def _hmac_sha256_hex_matches(
     _require_secret(secret, function_name)
     if not signature_header:
         return False
-    received = signature_header.strip()
+    received = js_trim(signature_header)
     signature = received[received.index("=") + 1 :] if "=" in received else received
     if not signature:
         return False
@@ -459,7 +420,7 @@ def verify_intercom_signature(body: BodyInput, signature_header: str | None, sec
     _require_secret(secret, "verify_intercom_signature")
     if not signature_header:
         return False
-    match = re.fullmatch(r"sha1=(.+)", signature_header.strip(), re.IGNORECASE | re.DOTALL)
+    match = re.fullmatch(r"sha1=(.+)", js_trim(signature_header), re.IGNORECASE | re.DOTALL)
     if not match:
         return False
     expected = _hmac_hex("sha1", secret, _body_bytes(body))
@@ -484,7 +445,7 @@ def verify_square_signature(
     if not signature_header:
         return False
     expected = _hmac_base64("sha256", signature_key, _encode_text(url) + _body_bytes(body))
-    return _safe_equal(signature_header.strip(), expected)
+    return _safe_equal(js_trim(signature_header), expected)
 
 
 def verify_hubspot_signature(
@@ -507,7 +468,7 @@ def verify_hubspot_signature(
     if not signature_header or not timestamp:
         return False
     clock = time.time() * 1000 if now is None else now
-    ts = _js_to_number(timestamp)
+    ts = js_to_number(timestamp)
     if not math.isfinite(ts) or abs(clock - ts) > max_age_ms:
         return False
     base = (
@@ -516,7 +477,7 @@ def verify_hubspot_signature(
         + _encode_text(timestamp)
     )
     expected = _hmac_base64("sha256", secret, base)
-    return _safe_equal(signature_header.strip(), expected)
+    return _safe_equal(js_trim(signature_header), expected)
 
 
 def verify_mailgun_signature(body: BodyInput, secret: str) -> bool:
@@ -586,7 +547,7 @@ def verify_docusign_signature(body: BodyInput, signature_header: str | None, sec
     if not signature_header:
         return False
     expected = _hmac_base64("sha256", secret, _body_bytes(body))
-    return _safe_equal(signature_header.strip(), expected)
+    return _safe_equal(js_trim(signature_header), expected)
 
 
 def verify_adyen_signature(body: BodyInput, hmac_key: str) -> bool:
@@ -670,9 +631,11 @@ def _canonical_paypal_certificate_url(cert_url: str) -> str | None:
     not read ``\\`` as ``/``), so fetching the raw string could reach a host
     the check never saw.
     """
-    # Browsers drop tabs and newlines and trim spaces and control characters before parsing.
+    # Browsers drop tabs and newlines and trim spaces and control characters before
+    # parsing, and read a backslash as a slash up to the query.
     cleaned = re.sub(r"[\t\n\r]", "", cert_url).strip(_C0_AND_SPACE)
-    cleaned = cleaned.replace("\\", "/")
+    end = min((i for i in (cleaned.find("?"), cleaned.find("#")) if i >= 0), default=len(cleaned))
+    cleaned = cleaned[:end].replace("\\", "/") + cleaned[end:]
     try:
         parts = urlsplit(cleaned)
         hostname = parts.hostname
@@ -711,7 +674,7 @@ def _pem_to_der(pem: str, label: str) -> bytes | None:
     if not match:
         return None
     try:
-        return from_base64(re.sub(r"\s+", "", match.group(1)))
+        return from_base64(re.sub(f"{JS_SPACE}+", "", match.group(1)))
     except ValueError:
         return None
 
@@ -899,7 +862,7 @@ def verify_vercel_signature(body: BodyInput, signature_header: str | None, secre
     if not signature_header:
         return False
     expected = _hmac_hex("sha1", secret, _body_bytes(body))
-    return _safe_equal(signature_header.strip().lower(), expected)
+    return _safe_equal(js_trim(signature_header).lower(), expected)
 
 
 def verify_gitlab_signature(body: BodyInput, token_header: str | None, secret: str) -> bool:
@@ -915,7 +878,7 @@ def verify_typeform_signature(body: BodyInput, signature_header: str | None, sec
     _require_secret(secret, "verify_typeform_signature")
     if not signature_header:
         return False
-    received = signature_header.strip()
+    received = js_trim(signature_header)
     signature = received[len("sha256=") :] if received.startswith("sha256=") else received
     if not signature:
         return False
@@ -939,7 +902,7 @@ def verify_resend_signature(body: BodyInput, headers: HeadersInput, secret: str)
 
 
 def _discord_hex(value: str) -> bytes:
-    normalized = value.strip().lower()
+    normalized = js_trim(value).lower()
     if not re.fullmatch(r"[a-f0-9]+", normalized) or len(normalized) % 2 != 0:
         raise ValueError("Expected a hex-encoded value")
     return bytes.fromhex(normalized)
@@ -1054,7 +1017,7 @@ def _verify_signed_forward(
             "missing_headers", "Missing webhook-id, webhook-timestamp or webhook-signature header"
         )
 
-    timestamp = _js_to_number(timestamp_header)
+    timestamp = js_to_number(timestamp_header)
     clock = (time.time() * 1000 if now is None else now) / 1000
     if not math.isfinite(timestamp) or abs(clock - timestamp) > tolerance_seconds:
         raise WebhookVerificationError(
@@ -1159,7 +1122,7 @@ def verify_relayed_request(
         raise WebhookVerificationError(
             "invalid_signature", "The webhooks-cc-signature does not match the body and secret"
         )
-    attempt = _js_to_number(_get_header(headers, "webhooks-cc-attempt"))
+    attempt = js_to_number(_get_header(headers, "webhooks-cc-attempt"))
     return RelayedRequestInfo(
         request_id=request_id,
         received_at=received_at,

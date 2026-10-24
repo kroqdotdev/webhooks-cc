@@ -17,15 +17,24 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.42.3";
+export const APP_VERSION = "0.42.4";
 export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.17.0";
-export const PYTHON_SDK_VERSION = "0.1.2";
-export const GO_SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "1.17.1";
+export const PYTHON_SDK_VERSION = "0.1.3";
+export const GO_SDK_VERSION = "0.1.1";
 export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.42.4",
+    date: "2026-10-24",
+    title: "Which Calls the SDKs Retry",
+    track: "web",
+    items: [
+      "The TypeScript, Python and Go SDK pages say which calls a retry repeats: GET, PUT and DELETE after a network error, a timeout or a retryable status (429, 500, 502, 503 and 504 by default), and any call after a 429",
+    ],
+  },
   {
     version: "0.42.3",
     date: "2026-10-24",
@@ -1609,6 +1618,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.17.1",
+    date: "2026-10-24",
+    title: "Safer Retries and Waits",
+    track: "sdk",
+    items: [
+      "With `retry` on, a POST or PATCH (`endpoints.create()`, `emails.sendTest()`, ...) is repeated only after a 429. After a network error, a timeout or a 5xx it may have gone through, and a repeated `endpoints.create()` left an extra endpoint behind. GET, PUT and DELETE are repeated as before, except `requests.clear()` without `before`, whose repeat would also delete what arrived in between",
+      "`waitFor()` and `waitForAll()` poll from 30 seconds before the newest request they have seen, by the server's clock, instead of from the local time of the last poll, which skipped requests when this machine's clock ran ahead of the server's. A poll that times out no longer ends the wait; the next one tries again",
+      "A Standard Webhooks, Clerk, Resend or forwarding secret that decodes to no key at all (`whsec_` alone, or whitespace) throws before the headers are read, in `verifySignature()`, `verifyStandardWebhookSignature()` and the forwarding checks. Before, a request without signature headers got `false` or `missing_headers` instead",
+    ],
+  },
+  {
     version: "1.17.0",
     date: "2026-10-23",
     title: "Payload Schemas from Captured Requests",
@@ -1918,6 +1938,20 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.1.3",
+    date: "2026-10-24",
+    title: "Safer Retries and Waits, Text Read as JavaScript Reads It",
+    track: "python",
+    items: [
+      "With `retry` on, a POST or PATCH (`endpoints.create()`, `emails.send_test()`, ...) is repeated only after a 429. After a network error, a timeout or a 5xx it may have gone through, and a repeated `endpoints.create()` left an extra endpoint behind. GET, PUT and DELETE are repeated as before, except `requests.clear()` without `before`, whose repeat would also delete what arrived in between",
+      "`wait_for()` and `wait_for_all()` poll from 30 seconds before the newest request they have seen, by the server's clock, instead of from the local time of the last poll, which skipped requests when this machine's clock ran ahead of the server's. A poll that times out no longer ends the wait; the next one tries again",
+      "Body matchers treat a body with `NaN` or `Infinity` as not JSON, as `JSON.parse` does",
+      "Signature headers, content types, durations and `Retry-After` are trimmed of JavaScript's whitespace rather than Python's, and only ASCII digits count as digits, as in the TypeScript SDK; timestamp filters read numbers as JavaScript's `Number()` does",
+      'Mailgun and Adyen bodies, which are signed after being written out again, put keys that are array indexes (`"0"`, `"12"`) first, as `JSON.stringify` does',
+      "A PayPal certificate URL reads a backslash as a slash only before its query, as browsers do",
+    ],
+  },
+  {
     version: "0.1.2",
     date: "2026-10-24",
     title: "Empty Signing Keys Are Refused",
@@ -1951,6 +1985,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
+  {
+    version: "0.1.1",
+    date: "2026-10-24",
+    title: "Safer Retries",
+    track: "go",
+    items: [
+      "With `WithRetry`, a POST or PATCH (`Endpoints.Create`, `Emails.SendTest`, ...) is repeated only after a 429. After a dropped connection, a timeout or a 5xx it may have gone through, and a repeated `Endpoints.Create` left an extra endpoint behind. GET, PUT and DELETE are repeated as before, except `Requests.Clear` without `Before`, whose repeat would also delete what arrived in between",
+      "A poll that times out no longer ends `WaitFor` or `WaitForAll`; the next one tries again",
+      "`verify.ErrEmptyKey` is exported, so `errors.Is` tells a secret that decodes to no key at all from a failed check",
+      "Content types, hex keys, `Retry-After` and PayPal certificates are trimmed of JavaScript's whitespace, as the TypeScript SDK trims them, rather than of the set `strings.TrimSpace` takes",
+    ],
+  },
   {
     version: "0.1.0",
     date: "2026-10-24",

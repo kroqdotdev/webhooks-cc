@@ -2324,12 +2324,26 @@ export function decodeHubSpotUri(uri: string): string {
 
 function fromBase64(str: string): Uint8Array {
   if (typeof atob !== "function") {
+    // Buffer skips what it cannot read where atob throws, so check first: an
+    // invalid secret must fall back to its raw bytes in every runtime.
+    if (!isForgivingBase64(str)) {
+      throw new Error("Invalid base64");
+    }
     return new Uint8Array(Buffer.from(str, "base64"));
   }
   const binary = atob(str);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** Whether atob() accepts value (WHATWG forgiving-base64). */
+function isForgivingBase64(value: string): boolean {
+  let data = value.replace(/[\t\n\f\r ]/g, "");
+  if (data.length % 4 === 0) {
+    data = data.replace(/={1,2}$/, "");
+  }
+  return data.length % 4 !== 1 && /^[A-Za-z0-9+/]*$/.test(data);
 }
 
 export async function hmacSignRaw(
@@ -2371,6 +2385,14 @@ export function buildTwilioSignaturePayload(
   return payload;
 }
 
+/**
+ * The HMAC key for a Standard Webhooks style secret (Standard Webhooks, Clerk,
+ * Resend, webhooks.cc forwarding): a leading `whsec_` is stripped and the rest
+ * decoded as base64, or, when that fails, the whole secret's UTF-8 bytes.
+ *
+ * @throws Error when the secret decodes to no key at all ("whsec_",
+ *   whitespace): an HMAC keyed with nothing is one anyone can compute.
+ */
 export function decodeStandardWebhookSecret(secret: string): Uint8Array {
   let rawSecret = secret;
   const hadPrefix = rawSecret.startsWith("whsec_");
@@ -2378,12 +2400,16 @@ export function decodeStandardWebhookSecret(secret: string): Uint8Array {
     rawSecret = rawSecret.slice(6);
   }
 
+  let key: Uint8Array;
   try {
-    return fromBase64(rawSecret);
+    key = fromBase64(rawSecret);
   } catch {
-    const raw = hadPrefix ? secret : rawSecret;
-    return new TextEncoder().encode(raw);
+    key = new TextEncoder().encode(hadPrefix ? secret : rawSecret);
   }
+  if (key.byteLength === 0) {
+    throw new Error("The secret decodes to an empty key");
+  }
+  return key;
 }
 
 function hexToBytes(hex: string): Uint8Array {

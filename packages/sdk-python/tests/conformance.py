@@ -9,11 +9,13 @@ from typing import Any
 CONFORMANCE_DIR = Path(__file__).resolve().parents[2] / "sdk" / "conformance"
 
 
-def load(name: str) -> dict[str, Any]:
-    """The parsed contents of ``packages/sdk/conformance/<name>.json``."""
+def load(name: str, version: int = 1) -> dict[str, Any]:
+    """The parsed contents of ``packages/sdk/conformance/<name>.json``, in format ``version``."""
     with (CONFORMANCE_DIR / f"{name}.json").open(encoding="utf-8") as file:
         data: dict[str, Any] = json.load(file)
-    assert data["version"] == 1, f"{name}.json is format version {data['version']}; update the port"
+    assert data["version"] == version, (
+        f"{name}.json is format version {data['version']}; update the port"
+    )
     return data
 
 

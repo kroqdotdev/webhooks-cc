@@ -20,6 +20,7 @@ import (
 
 	"webhooks.cc/go/internal/jsonx"
 	"webhooks.cc/go/internal/templates"
+	"webhooks.cc/go/internal/webtext"
 )
 
 // Defaults and the environment variables New reads.
@@ -62,6 +63,12 @@ type Client struct {
 
 // RetryOptions controls how API calls are retried. By default they are not
 // (MaxAttempts 1).
+//
+// Network errors, timeouts and the statuses in RetryOn are retried for GET,
+// HEAD, OPTIONS, PUT and DELETE, whose repeat is harmless. Other calls
+// (creating an endpoint, sending a test email) are retried only after a 429,
+// which the API sends before doing anything: one that timed out or failed
+// with a 5xx may have gone through.
 type RetryOptions struct {
 	// MaxAttempts is the number of tries, the first included.
 	MaxAttempts int
@@ -70,8 +77,16 @@ type RetryOptions struct {
 	// precedence.
 	Backoff time.Duration
 	// RetryOn lists the statuses to retry (default 429, 500, 502, 503 and 504).
-	// Network errors and timeouts are always retried.
 	RetryOn []int
+}
+
+// idempotentMethods are the methods whose repeat is harmless (RFC 9110), so
+// a network error, a timeout or a 5xx is retried for them. Any other method
+// is retried only after a 429: a POST that timed out may have gone through,
+// and repeating POST /endpoints would leave an extra endpoint.
+var idempotentMethods = map[string]bool{
+	http.MethodGet: true, http.MethodHead: true, http.MethodOptions: true,
+	http.MethodPut: true, http.MethodDelete: true,
 }
 
 // Option configures a Client.
@@ -158,6 +173,12 @@ var userAgent = "webhooks-cc-go/" + Version
 
 // api calls an API route and decodes the JSON response into out (when not nil).
 func (c *Client) api(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	return c.apiRetrying(ctx, method, path, query, body, out, idempotentMethods[method])
+}
+
+// apiRetrying is api with repeatable saying whether a network error, a
+// timeout or a 5xx is retried, for a call whose method says otherwise.
+func (c *Client) apiRetrying(ctx context.Context, method, path string, query url.Values, body, out any, repeatable bool) error {
 	endpoint := c.baseURL + "/api" + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
@@ -177,7 +198,7 @@ func (c *Client) api(ctx context.Context, method, path string, query url.Values,
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if more {
+			if more && repeatable {
 				if err := sleep(ctx, backoff); err != nil {
 					return err
 				}
@@ -187,7 +208,8 @@ func (c *Client) api(ctx context.Context, method, path string, query url.Values,
 		}
 		if response.status >= 300 {
 			apiErr := errorFromResponse(response)
-			if more && slices.Contains(c.retry.RetryOn, response.status) {
+			if more && slices.Contains(c.retry.RetryOn, response.status) &&
+				(repeatable || response.status == http.StatusTooManyRequests) {
 				wait := backoff
 				if apiErr.RetryAfter > 0 {
 					wait = apiErr.RetryAfter
@@ -252,15 +274,23 @@ func (c *Client) timeoutOr(parent, call context.Context, err error) error {
 	return err
 }
 
-var leadingDigits = regexp.MustCompile(`^\s*(\d+)`)
-
-// headerDigits returns the leading digits of a header, if it starts with any.
+// headerDigits returns the digits a header starts with, if it starts with
+// any, after the whitespace parseInt skips. The bytes are read as Latin-1,
+// as fetch reads them, so 0xA0 is a no-break space.
 func headerDigits(header http.Header, name string) (string, bool) {
-	match := leadingDigits.FindStringSubmatch(header.Get(name))
-	if match == nil {
+	value := header.Get(name)
+	start := 0
+	for start < len(value) && strings.ContainsRune(webtext.JSWhitespace, rune(value[start])) {
+		start++
+	}
+	end := start
+	for end < len(value) && value[end] >= '0' && value[end] <= '9' {
+		end++
+	}
+	if end == start {
 		return "", false
 	}
-	return match[1], true
+	return value[start:end], true
 }
 
 // headerInt reads a header as a count or a number of seconds. Anything past

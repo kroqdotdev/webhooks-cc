@@ -39,6 +39,13 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
+// ErrEmptyKey is returned, wrapped, for a secret that decodes to no key at
+// all, such as "whsec_" or whitespace, from the checks keyed with a whsec_
+// secret: forwarding, Standard Webhooks, Clerk and Resend. An HMAC keyed with
+// nothing is one anyone can compute, so it is a setup error, reported
+// before the request is looked at; test it with errors.Is.
+var ErrEmptyKey = sigutil.ErrEmptyKey
+
 // Event is an event webhooks.cc forwarded as signed JSON: email.received for
 // email, request.received for an HTTP request.
 type Event struct {
@@ -94,7 +101,7 @@ func WithNow(now time.Time) ForwardOption {
 // It checks webhook-id, webhook-timestamp and webhook-signature against the
 // endpoint's whsec_ forwarding secret and refuses a timestamp more than five
 // minutes from now. Pass the raw body, before any JSON parsing. Failures are
-// *Error values.
+// *Error values; a secret with no key is ErrEmptyKey.
 func ForwardedEmail(body []byte, headers Headers, secret string, opts ...ForwardOption) (*Event, error) {
 	return forwarded(body, headers, secret, "email.received", []string{"id", "address"}, opts)
 }
@@ -221,7 +228,7 @@ func isString(value any) bool {
 // a dot, and the exact body bytes. There is no age limit: a retry a day later
 // carries the original received-at time, so remember RequestID to ignore
 // repeats. Failures are *Error values with CodeMissingHeaders or
-// CodeInvalidSignature.
+// CodeInvalidSignature; a secret with no key is ErrEmptyKey.
 func RelayedRequest(body []byte, headers Headers, secret string) (*Relayed, error) {
 	if secret == "" {
 		return nil, errors.New("verify: forwarding verification requires a non-empty secret")

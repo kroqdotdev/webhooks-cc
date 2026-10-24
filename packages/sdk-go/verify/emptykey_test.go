@@ -27,14 +27,14 @@ func TestSecretsThatDecodeToNothingAreRefused(t *testing.T) {
 	}
 	for _, secret := range []string{"whsec_", " ", "whsec_\n"} {
 		for _, provider := range []string{"standard-webhooks", "clerk", "resend"} {
-			if valid, err := Signature(provider, body, signed, Options{Secret: secret}); valid || !errors.Is(err, sigutil.ErrEmptyKey) {
+			if valid, err := Signature(provider, body, signed, Options{Secret: secret}); valid || !errors.Is(err, ErrEmptyKey) {
 				t.Errorf("%s with %q: valid = %v, err = %v", provider, secret, valid, err)
 			}
 		}
-		if _, err := ForwardedEmail(body, signed, secret, WithNow(now)); !errors.Is(err, sigutil.ErrEmptyKey) {
+		if _, err := ForwardedEmail(body, signed, secret, WithNow(now)); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("ForwardedEmail with %q: %v", secret, err)
 		}
-		if _, err := RelayedRequest(body, signed, secret); !errors.Is(err, sigutil.ErrEmptyKey) {
+		if _, err := RelayedRequest(body, signed, secret); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("RelayedRequest with %q: %v", secret, err)
 		}
 	}
@@ -46,16 +46,16 @@ func TestAnEmptyKeyIsReportedBeforeTheHeadersAreChecked(t *testing.T) {
 	body := []byte(`{}`)
 	stale := Map{"webhook-id": "m", "webhook-timestamp": "1", "webhook-signature": "v1,x"}
 	for name, headers := range map[string]Map{"no headers": {}, "stale timestamp": stale} {
-		if _, err := ForwardedEmail(body, headers, "whsec_"); !errors.Is(err, sigutil.ErrEmptyKey) {
+		if _, err := ForwardedEmail(body, headers, "whsec_"); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("ForwardedEmail, %s: %v", name, err)
 		}
-		if _, err := ForwardedRequest(body, headers, "whsec_"); !errors.Is(err, sigutil.ErrEmptyKey) {
+		if _, err := ForwardedRequest(body, headers, "whsec_"); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("ForwardedRequest, %s: %v", name, err)
 		}
-		if _, err := RelayedRequest(body, headers, "whsec_"); !errors.Is(err, sigutil.ErrEmptyKey) {
+		if _, err := RelayedRequest(body, headers, "whsec_"); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("RelayedRequest, %s: %v", name, err)
 		}
-		if _, err := Signature("standard-webhooks", body, headers, Options{Secret: "whsec_"}); !errors.Is(err, sigutil.ErrEmptyKey) {
+		if _, err := Signature("standard-webhooks", body, headers, Options{Secret: "whsec_"}); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("Signature, %s: %v", name, err)
 		}
 	}

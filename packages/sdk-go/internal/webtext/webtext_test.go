@@ -28,3 +28,17 @@ func TestDecodeUTF8ReplacesLikeTextDecoder(t *testing.T) {
 		}
 	}
 }
+
+func TestJSTrimTrimsWhatJavaScriptTrims(t *testing.T) {
+	cases := map[string]string{
+		" \ufeffa\u3000":     "a",
+		"\u0085a\u0085":      "\u0085a\u0085", // TrimSpace would take these
+		"\x1ca\x1c":          "\x1ca\x1c",
+		"\t\v\f\r\n a\u00a0": "a",
+	}
+	for in, want := range cases {
+		if got := JSTrim(in); got != want {
+			t.Errorf("JSTrim(%q) = %q; want %q", in, got, want)
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"webhooks.cc/go/internal/jsonx"
+	"webhooks.cc/go/internal/webtext"
 )
 
 // Matcher reports whether a captured request matches. Pass one to WaitFor and
@@ -130,7 +131,7 @@ func MatchBodySubset(subset any) Matcher {
 
 // MatchContentType matches the content type, ignoring parameters such as charset.
 func MatchContentType(contentType string) Matcher {
-	expected := strings.ToLower(strings.TrimSpace(contentType))
+	expected := strings.ToLower(webtext.JSTrim(contentType))
 	return func(r *Request) bool {
 		raw := r.ContentType
 		if raw == "" {
@@ -139,7 +140,7 @@ func MatchContentType(contentType string) Matcher {
 		if raw == "" {
 			return false
 		}
-		normalized := strings.ToLower(strings.TrimSpace(raw))
+		normalized := strings.ToLower(webtext.JSTrim(raw))
 		return normalized == expected || strings.HasPrefix(normalized, expected+";")
 	}
 }

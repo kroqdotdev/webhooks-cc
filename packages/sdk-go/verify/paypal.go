@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"webhooks.cc/go/internal/sigutil"
+	"webhooks.cc/go/internal/webtext"
 )
 
 // PayPal signs transmission id|transmission time|webhook id|CRC-32 of the
@@ -277,7 +278,14 @@ func pemToDER(pem string, pattern *regexp.Regexp) []byte {
 	if match == nil {
 		return nil
 	}
-	der, err := sigutil.DecodeBase64(strings.Join(strings.Fields(match[1]), ""))
+	// The whitespace JavaScript's \s removes, as the TypeScript SDK removes it.
+	body := strings.Map(func(r rune) rune {
+		if strings.ContainsRune(webtext.JSWhitespace, r) {
+			return -1
+		}
+		return r
+	}, match[1])
+	der, err := sigutil.DecodeBase64(body)
 	if err != nil || len(der) == 0 {
 		return nil
 	}

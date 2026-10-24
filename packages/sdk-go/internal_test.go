@@ -2,6 +2,7 @@ package webhookscc
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -45,5 +46,28 @@ func TestSSEReaderRefusesOversizedLinesAndEvents(t *testing.T) {
 	many := strings.Repeat("data: "+strings.Repeat("x", 40)+"\n", 5) + "\n"
 	if _, err := read(many); !errors.Is(err, errSSETooLarge) {
 		t.Errorf("an event of many lines: %v", err)
+	}
+}
+
+// Header numbers read as parseInt reads them: ASCII digits after JavaScript's
+// whitespace, with the header's bytes taken as Latin-1.
+func TestHeaderDigitsSkipJavaScriptWhitespace(t *testing.T) {
+	cases := map[string]string{
+		"7":      "7",
+		" \t7s":  "7",
+		"\xa07":  "7", // a no-break space
+		"\x857":  "",  // U+0085 is not whitespace to JavaScript
+		"\x1c7":  "",
+		"\u0663": "", // an Arabic-Indic digit
+		"seven":  "",
+		"12, 3":  "12",
+		"":       "",
+	}
+	for value, want := range cases {
+		header := http.Header{"Retry-After": {value}}
+		got, ok := headerDigits(header, "Retry-After")
+		if got != want || ok != (want != "") {
+			t.Errorf("headerDigits(%q) = %q, %v; want %q", value, got, ok, want)
+		}
 	}
 }

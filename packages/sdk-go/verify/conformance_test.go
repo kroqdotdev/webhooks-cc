@@ -43,8 +43,9 @@ type forwardingVector struct {
 	BodyBase64 *string           `json:"bodyBase64"`
 	Headers    map[string]string `json:"headers"`
 	Expected   struct {
-		OK    bool   `json:"ok"`
-		Error string `json:"error"`
+		OK            bool   `json:"ok"`
+		Error         string `json:"error"`
+		InvalidSecret bool   `json:"invalidSecret"`
 	} `json:"expected"`
 }
 
@@ -62,7 +63,7 @@ func loadForwardingVectors(t *testing.T) []forwardingVector {
 	t.Helper()
 	var file forwardingFile
 	conformance.Load(t, "forwarding.json", &file)
-	if file.Version != 1 {
+	if file.Version != 2 {
 		t.Fatalf("forwarding.json is format version %d; update the port", file.Version)
 	}
 	return file.Vectors
@@ -156,6 +157,12 @@ func TestForwardingVectors(t *testing.T) {
 		t.Run(vector.Name, func(t *testing.T) {
 			t.Parallel()
 			code, err := runForwarding(vector)
+			if vector.Expected.InvalidSecret {
+				if !errors.Is(err, ErrEmptyKey) {
+					t.Errorf("got %q, %v; want ErrEmptyKey", code, err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

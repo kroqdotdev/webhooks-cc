@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
-  "description": "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises.",
+  "description": "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises. expected.invalidSecret means it refuses the secret itself, whatever the request carries, with the error the language uses for a bad argument rather than a verification error: the secret decodes to an empty key, and an HMAC keyed with nothing is one anyone can compute.",
   "vectors": [
     {
       "name": "forwarded email",
@@ -123,6 +123,32 @@
       }
     },
     {
+      "name": "forwarded email, a secret that decodes to an empty key",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,FKV+HVFoYrE5m74psLB6oC98MbMSz0QGkoKO6CJEgeA="
+      },
+      "expected": {
+        "invalidSecret": true
+      }
+    },
+    {
+      "name": "forwarded email, an empty key is refused before the headers are read",
+      "function": "verifyForwardedEmail",
+      "secret": "whsec_ ",
+      "now": 1767225660000,
+      "body": "{\"type\":\"email.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"3f6c2a1e-8b7d-4c9e-a2f1-0d5b6e7c8a90\",\"endpoint\":{\"slug\":\"acme-signup\",\"name\":null},\"receivedAt\":\"2026-01-01T00:00:00.000Z\",\"address\":\"acme-signup+run-42@mailhooks.cc\",\"tag\":\"run-42\",\"subject\":\"Confirm your email\",\"text\":\"Your code is 482913\",\"headers\":{\"message-id\":\"<1@example.com>\"}}}",
+      "headers": {},
+      "expected": {
+        "invalidSecret": true
+      }
+    },
+    {
       "name": "forwarded request",
       "function": "verifyForwardedRequest",
       "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
@@ -150,6 +176,21 @@
       },
       "expected": {
         "error": "invalid_payload"
+      }
+    },
+    {
+      "name": "forwarded request, a secret of only whitespace",
+      "function": "verifyForwardedRequest",
+      "secret": " \n",
+      "now": 1767225660000,
+      "body": "{\"type\":\"request.received\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"data\":{\"id\":\"7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d\",\"method\":\"POST\",\"path\":\"/webhooks/stripe\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"ok\\\":true}\"}}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,/sg+ctWPFigrRpIbxiAM237HaQI3xaea422gS+J05mc="
+      },
+      "expected": {
+        "invalidSecret": true
       }
     },
     {
@@ -251,6 +292,34 @@
       },
       "expected": {
         "error": "missing_headers"
+      }
+    },
+    {
+      "name": "relayed request, a secret that decodes to an empty key",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_1\",\"note\":\"café ✓\"}",
+      "headers": {
+        "webhooks-cc-request-id": "7b1d9e4a-2c3f-4a5b-9c8d-1e2f3a4b5c6d",
+        "webhooks-cc-received-at": "1767225600123",
+        "webhooks-cc-endpoint": "acme-signup",
+        "webhooks-cc-attempt": "1",
+        "webhooks-cc-signature": "v1,bFHxe49gsm8n5+PhrTbSg9r/QKwAe+jddGPTtzSTX4E="
+      },
+      "expected": {
+        "invalidSecret": true
+      }
+    },
+    {
+      "name": "relayed request, an empty key is refused before the headers are read",
+      "function": "verifyRelayedRequest",
+      "secret": "whsec_",
+      "now": 1767225660000,
+      "body": "{\"id\":\"evt_1\",\"note\":\"café ✓\"}",
+      "headers": {},
+      "expected": {
+        "invalidSecret": true
       }
     }
   ]

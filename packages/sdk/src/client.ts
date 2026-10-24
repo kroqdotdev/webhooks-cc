@@ -95,9 +95,18 @@ const DEFAULT_TIMEOUT = 30000;
 const DEFAULT_RETRY_ATTEMPTS = 1;
 const DEFAULT_RETRY_BACKOFF_MS = 1000;
 const DEFAULT_RETRY_STATUSES = [429, 500, 502, 503, 504];
+// Methods whose repeat is harmless (RFC 9110), so a network error, a timeout
+// or a 5xx is retried for them. Any other method is retried only after a 429,
+// which the API sends before doing anything: a POST that timed out may have
+// gone through, and repeating POST /endpoints would leave an extra endpoint.
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
 declare const PKG_VERSION: string | undefined;
 const SDK_VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-dev";
 const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
+// How far before the newest request a wait's next poll starts. The receiver
+// stamps receivedAt before the capture commits, and a capture can wait its
+// turn behind others for the same account.
+const WAIT_POLL_OVERLAP_MS = 30 * 1000;
 // requests.subscribe(): bound the connect phase, then watch for silence. The server
 // sends a keepalive comment every 30 s, so 90 s of silence means the socket is dead.
 const STREAM_CONNECT_TIMEOUT_MS = 30000;
@@ -589,14 +598,22 @@ export async function collectMatchingRequests(
 
   while (Date.now() - start < timeout && iterations < MAX_ITERATIONS) {
     iterations++;
-    const checkTime = Date.now();
 
     try {
       const requests = (await fetchRequests(lastChecked))
         .slice()
         .sort((left, right) => left.receivedAt - right.receivedAt);
 
-      lastChecked = checkTime;
+      // The next poll starts a little before the newest request seen, on the
+      // server's clock. A boundary taken from the local clock would skip
+      // whatever arrives in the gap when this machine's clock runs ahead of
+      // the server's; the overlap also catches a capture that committed after
+      // a newer one. Repeats are skipped by id.
+      for (const request of requests) {
+        if (Number.isFinite(request.receivedAt)) {
+          lastChecked = Math.max(lastChecked, request.receivedAt - WAIT_POLL_OVERLAP_MS);
+        }
+      }
 
       for (const request of requests) {
         if (seenRequestIds.has(request.id)) {
@@ -618,7 +635,12 @@ export async function collectMatchingRequests(
         if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
           throw error;
         }
-        if (error.statusCode < 500 && !(error instanceof RateLimitError)) {
+        // A poll that timed out is retried like a network failure.
+        if (
+          error.statusCode < 500 &&
+          !(error instanceof RateLimitError) &&
+          !(error instanceof TimeoutError)
+        ) {
           throw error;
         }
       }
@@ -746,7 +768,16 @@ export class WebhooksCC {
     }
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /**
+   * `repeatable` overrides whether a network error, a timeout or a 5xx is
+   * retried, for a call whose method says otherwise.
+   */
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    { repeatable = IDEMPOTENT_METHODS.has(method) }: { repeatable?: boolean } = {}
+  ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
     let refreshed = false;
@@ -795,7 +826,11 @@ export class WebhooksCC {
             // Hooks must not break the request flow
           }
 
-          if (attempt < this.retry.maxAttempts && this.retry.retryOn.has(response.status)) {
+          if (
+            attempt < this.retry.maxAttempts &&
+            this.retry.retryOn.has(response.status) &&
+            (repeatable || response.status === 429)
+          ) {
             const retryDelayMs =
               response.status === 429 && parseRetryAfterHeader(response) !== undefined
                 ? (parseRetryAfterHeader(response) ?? 0) * 1000
@@ -842,7 +877,7 @@ export class WebhooksCC {
             // Hooks must not break the request flow
           }
 
-          if (attempt < this.retry.maxAttempts) {
+          if (attempt < this.retry.maxAttempts && repeatable) {
             await sleep(this.retry.backoffMs * 2 ** (attempt - 1));
             continue;
           }
@@ -864,7 +899,7 @@ export class WebhooksCC {
           }
         }
 
-        if (attempt < this.retry.maxAttempts && isNetworkError) {
+        if (attempt < this.retry.maxAttempts && isNetworkError && repeatable) {
           await sleep(this.retry.backoffMs * 2 ** (attempt - 1));
           continue;
         }
@@ -1978,7 +2013,11 @@ export class WebhooksCC {
       validatePathSegment(endpointSlug, "endpointSlug");
       await this.request<{ deleted: number; complete: boolean }>(
         "DELETE",
-        `/endpoints/${endpointSlug}/requests${buildClearQuery(options)}`
+        `/endpoints/${endpointSlug}/requests${buildClearQuery(options)}`,
+        undefined,
+        // Without `before` the server clears up to its own clock, so a repeat
+        // after a clear that went through would delete what arrived since.
+        { repeatable: options.before !== undefined }
       );
     },
 
@@ -2038,9 +2077,12 @@ export class WebhooksCC {
     /**
      * Polls for incoming requests until one matches or timeout expires.
      *
-     * Fetches requests that arrived since the last successful check. On API
-     * errors, continues polling without updating the timestamp to avoid
-     * missing requests during transient failures.
+     * Until a request arrives it looks back to `since` (five minutes before
+     * it started, by default). After that, each poll asks for requests from
+     * 30 seconds before the newest one seen, by the server's clock, and skips
+     * repeats, so a local clock running ahead of the server's does not make
+     * it miss later ones. Server errors, rate limits, network failures and
+     * polls that time out do not end the wait; the next poll tries again.
      *
      * @param endpointSlug - Endpoint to monitor
      * @param options - Timeout, poll interval, and optional match filter

@@ -17,6 +17,7 @@ import base64
 import binascii
 import builtins
 import json
+import math
 import os
 import re
 import socket
@@ -34,6 +35,7 @@ import httpx
 
 from . import __version__
 from ._crypto import json_body
+from ._js import JS_SPACE, js_to_number, js_trim
 from ._sentinel import UNSET
 from ._sse import parse_sse
 from .durations import Duration, parse_duration
@@ -66,6 +68,15 @@ WEBHOOK_URL_ENV = "WHK_WEBHOOK_URL"
 
 _DEFAULT_TIMEOUT_MS = 30_000
 _WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000
+# How far before the newest request a wait's next poll starts. The receiver stamps
+# receivedAt before the capture commits, and a capture can wait its turn behind
+# others for the same account.
+_WAIT_POLL_OVERLAP_MS = 30 * 1000
+# Methods whose repeat is harmless (RFC 9110), so a network error, a timeout or a
+# 5xx is retried for them. Any other method is retried only after a 429, which the
+# API sends before doing anything: a POST that timed out may have gone through, and
+# repeating POST /endpoints would leave an extra endpoint.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 _MIN_POLL_INTERVAL_MS = 10
 _MAX_POLL_INTERVAL_MS = 60_000
 _MAX_WAIT_ITERATIONS = 10_000
@@ -110,8 +121,12 @@ _REPLAY_SKIPPED_HEADERS = frozenset(
 class RetryOptions:
     """How API calls are retried. By default they are not (``max_attempts=1``).
 
-    A retry waits ``backoff`` doubled for each attempt, or what a 429's
-    ``Retry-After`` says.
+    Network errors, timeouts and the statuses in ``retry_on`` are retried for GET,
+    HEAD, OPTIONS, PUT and DELETE, whose repeat is harmless. Other calls (creating
+    an endpoint, sending a test email) are retried only after a 429, which the API
+    sends before doing anything: one that timed out or failed with a 5xx may have
+    gone through. A retry waits ``backoff`` doubled for each attempt, or what a
+    429's ``Retry-After`` says.
     """
 
     max_attempts: int = 1
@@ -148,7 +163,7 @@ def _int_header(headers: httpx.Headers, name: str) -> int | None:
     value = headers.get(name)
     if value is None:
         return None
-    match = re.match(r"^\s*(\d+)", value)
+    match = re.match(rf"^{JS_SPACE}*([0-9]+)", value)
     return int(match.group(1)) if match else None
 
 
@@ -316,9 +331,14 @@ class WebhooksCC:
         *,
         body: Any = None,
         params: Mapping[str, str] | None = None,
+        repeatable: bool | None = None,
     ) -> Any:
+        """Call the API. ``repeatable`` overrides whether a network error, a timeout or a
+        5xx is retried, for a call whose method says otherwise."""
         url = f"{self._base_url}/api{path}"
         attempts = max(1, int(self._retry.max_attempts))
+        if repeatable is None:
+            repeatable = method.upper() in _IDEMPOTENT_METHODS
         attempt = 0
         while True:
             attempt += 1
@@ -333,19 +353,23 @@ class WebhooksCC:
                     timeout=self._timeout_s,
                 )
             except httpx.TimeoutException:
-                if attempt < attempts:
+                if attempt < attempts and repeatable:
                     _sleep_ms(backoff)
                     continue
                 raise TimeoutError(self._timeout_ms) from None
             except httpx.TransportError:
-                if attempt < attempts:
+                if attempt < attempts and repeatable:
                     _sleep_ms(backoff)
                     continue
                 raise
 
             if response.status_code >= 400:
                 error = _error_from_response(response)
-                if attempt < attempts and response.status_code in self._retry.retry_on:
+                if (
+                    attempt < attempts
+                    and response.status_code in self._retry.retry_on
+                    and (repeatable or response.status_code == 429)
+                ):
                     retry_after = error.retry_after if isinstance(error, RateLimitError) else None
                     _sleep_ms(retry_after * 1000 if retry_after is not None else backoff)
                     continue
@@ -775,7 +799,11 @@ class Requests:
         params = {}
         if before is not None:
             params["before"] = str(int(_resolve_time(before)))
-        self._client._api("DELETE", f"/endpoints/{slug}/requests", params=params)
+        # Without ``before`` the server clears up to its own clock, so a repeat after a
+        # clear that went through would delete what arrived since.
+        self._client._api(
+            "DELETE", f"/endpoints/{slug}/requests", params=params, repeatable=before is not None
+        )
 
     def replay(self, request_id: str, target_url: str) -> httpx.Response:
         """Send a captured request again, to any URL, with its method, headers and exact body.
@@ -1045,20 +1073,26 @@ def _collect(
 
     while _now_ms() - start < timeout_ms and iterations < _MAX_WAIT_ITERATIONS:
         iterations += 1
-        check_time = _now_ms()
         requests: list[Request] = []
         try:
             requests = sorted(fetch(last_checked), key=lambda request: request.received_at)
-            last_checked = check_time
         except (UnauthorizedError, NotFoundError):
             raise
-        except RateLimitError:
-            pass
+        except (RateLimitError, TimeoutError):
+            pass  # a poll that timed out is retried like a network blip
         except WebhooksCCError as error:
             if error.status_code < 500:
                 raise
         except httpx.TransportError:
             pass  # a network blip: try again at the next poll
+
+        # The next poll starts a little before the newest request seen, on the server's
+        # clock. A boundary taken from the local clock would skip whatever arrives in the
+        # gap when this machine's clock runs ahead of the server's; the overlap also
+        # catches a capture that committed after a newer one. Repeats are skipped by id.
+        for request in requests:
+            if math.isfinite(request.received_at):
+                last_checked = max(last_checked, request.received_at - _WAIT_POLL_OVERLAP_MS)
 
         for request in requests:
             if request.id in seen:
@@ -1082,13 +1116,13 @@ def _collect(
 def _resolve_time(value: float | str) -> float:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value
-    text = str(value).strip()
+    text = js_trim(str(value))
     if not text:
         raise ValueError("Invalid timestamp filter: value cannot be empty")
-    try:
-        return float(text)
-    except ValueError:
-        return _now_ms() - parse_duration(text)
+    number = js_to_number(text)
+    if not math.isnan(number):
+        return number
+    return _now_ms() - parse_duration(text)
 
 
 def _search_params(

@@ -24,7 +24,7 @@ from webhooks_cc.verify import (
 )
 
 VERIFY = load("verify")["vectors"]
-FORWARDING = load("forwarding")["vectors"]
+FORWARDING = load("forwarding", version=2)["vectors"]
 
 
 @pytest.mark.parametrize("vector", VERIFY, ids=vector_id)
@@ -58,6 +58,10 @@ def _run_forwarding(vector: dict[str, Any]) -> dict[str, Any]:
             verify_relayed_request(body, vector["headers"], vector["secret"])
     except WebhookVerificationError as error:
         return {"error": error.code}
+    except ValueError as error:
+        if str(error) != "The secret decodes to an empty key":
+            raise
+        return {"invalidSecret": True}
     return {"ok": True}
 
 

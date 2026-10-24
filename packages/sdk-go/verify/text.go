@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"webhooks.cc/go/internal/sigutil"
 	"webhooks.cc/go/internal/webtext"
@@ -18,10 +17,7 @@ import (
 // handles it: trimmed of JavaScript's whitespace, numbers read as Number()
 // reads them, and bytes decoded as TextDecoder decodes them.
 
-// jsWhitespace is what String.prototype.trim and Number() strip.
-const jsWhitespace = "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
-
-func jsTrim(s string) string { return strings.Trim(s, jsWhitespace) }
+func jsTrim(s string) string { return webtext.JSTrim(s) }
 
 var (
 	jsDecimal = regexp.MustCompile(`^[+-]?(?:Infinity|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)$`)
