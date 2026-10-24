@@ -75,8 +75,8 @@ type Relayed struct {
 	Attempt int
 }
 
-// ForwardOption changes how ForwardedEmail and ForwardedRequest check a
-// delivery.
+// ForwardOption changes how ForwardedEmail, ForwardedRequest and
+// ForwardedJSON check a delivery.
 type ForwardOption func(*forwardConfig)
 
 type forwardConfig struct {
@@ -113,12 +113,41 @@ func ForwardedRequest(body []byte, headers Headers, secret string, opts ...Forwa
 	return forwarded(body, headers, secret, "request.received", []string{"id", "method", "path"}, opts)
 }
 
+// ForwardedJSON verifies a delivery of a destination that sends your own JSON
+// (format "template") and returns its body: the same checks as
+// ForwardedRequest, with the destination's whsec_ secret, but the body is
+// whatever the destination's template made, so it can be any JSON value and
+// only its being JSON is checked. Unmarshal it into a type of your own.
+func ForwardedJSON(body []byte, headers Headers, secret string, opts ...ForwardOption) (json.RawMessage, error) {
+	_, text, _, err := signedForward(body, headers, secret, opts)
+	if err != nil {
+		return nil, err
+	}
+	return text, nil
+}
+
 func forwarded(body []byte, headers Headers, secret, eventType string, stringFields []string, opts []ForwardOption) (*Event, error) {
+	messageID, text, parsed, err := signedForward(body, headers, secret, opts)
+	if err != nil {
+		return nil, err
+	}
+	data := topLevelValue(text, "data")
+	if !isEvent(parsed, eventType, stringFields) || data == nil {
+		return nil, &Error{CodeInvalidPayload, "the body is not an " + eventType + " event"}
+	}
+	created, _ := parsed.(jsonx.Object).Get("timestamp")
+	return &Event{ID: messageID, Type: eventType, Timestamp: created.(string), Data: data}, nil
+}
+
+// signedForward checks the Standard Webhooks headers of a forwarded delivery
+// and parses its body as JSON. It returns the webhook-id, the body as text
+// and the parsed value.
+func signedForward(body []byte, headers Headers, secret string, opts []ForwardOption) (string, []byte, any, error) {
 	if secret == "" {
-		return nil, errors.New("verify: forwarding verification requires a non-empty secret")
+		return "", nil, nil, errors.New("verify: forwarding verification requires a non-empty secret")
 	}
 	if _, err := sigutil.StandardWebhookKey(secret); err != nil {
-		return nil, fmt.Errorf("verify: forwarding secret: %w", err)
+		return "", nil, nil, fmt.Errorf("verify: forwarding secret: %w", err)
 	}
 	config := forwardConfig{tolerance: 5 * time.Minute}
 	for _, opt := range opts {
@@ -132,32 +161,27 @@ func forwarded(body []byte, headers Headers, secret, eventType string, stringFie
 	timestampHeader := header(headers, "webhook-timestamp")
 	signatureHeader := header(headers, "webhook-signature")
 	if messageID == "" || timestampHeader == "" || signatureHeader == "" {
-		return nil, &Error{CodeMissingHeaders, "missing webhook-id, webhook-timestamp or webhook-signature header"}
+		return "", nil, nil, &Error{CodeMissingHeaders, "missing webhook-id, webhook-timestamp or webhook-signature header"}
 	}
 
 	timestamp := jsNumber(timestampHeader)
 	clock := float64(config.now.UnixNano()) / 1e9
 	tolerance := config.tolerance.Seconds()
 	if math.IsNaN(timestamp) || math.IsInf(timestamp, 0) || math.Abs(clock-timestamp) > tolerance {
-		return nil, &Error{CodeTimestampOutOfRange, "webhook-timestamp is more than " + strconv.FormatFloat(tolerance, 'f', -1, 64) + " seconds from now"}
+		return "", nil, nil, &Error{CodeTimestampOutOfRange, "webhook-timestamp is more than " + strconv.FormatFloat(tolerance, 'f', -1, 64) + " seconds from now"}
 	}
 	if valid, err := standardWebhook(body, headers, secret); err != nil {
-		return nil, err
+		return "", nil, nil, err
 	} else if !valid {
-		return nil, &Error{CodeInvalidSignature, "the webhook-signature does not match the body and secret"}
+		return "", nil, nil, &Error{CodeInvalidSignature, "the webhook-signature does not match the body and secret"}
 	}
 
 	text := []byte(bodyText(body))
 	parsed, err := jsonx.Parse(text)
 	if err != nil {
-		return nil, &Error{CodeInvalidPayload, "the body is not JSON"}
+		return "", nil, nil, &Error{CodeInvalidPayload, "the body is not JSON"}
 	}
-	data := topLevelValue(text, "data")
-	if !isEvent(parsed, eventType, stringFields) || data == nil {
-		return nil, &Error{CodeInvalidPayload, "the body is not an " + eventType + " event"}
-	}
-	created, _ := parsed.(jsonx.Object).Get("timestamp")
-	return &Event{ID: messageID, Type: eventType, Timestamp: created.(string), Data: data}, nil
+	return messageID, text, parsed, nil
 }
 
 // topLevelValue returns the raw JSON of a key of the top-level object, the

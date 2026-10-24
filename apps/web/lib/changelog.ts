@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.43.0";
+export const APP_VERSION = "0.44.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.1";
 export const PYTHON_SDK_VERSION = "0.1.3";
@@ -26,6 +26,23 @@ export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.44.0",
+    date: "2026-10-25",
+    title: "Forwarding to Several Destinations, Filtered and Shaped",
+    track: "web",
+    items: [
+      "Forwarding sends to up to 10 destinations per endpoint: your servers, Slack or Discord channels, and tools like Zapier or n8n. Each has its own kinds, format, headers, retries, signing secret and last 24 hours, and adding one starts from what it is for",
+      "Conditions decide what a destination gets, in the same language as response rules plus the kind, an email's subject, sender, recipients, text or tag, its spam score, the SPF, DKIM and DMARC results, and the signature check; what they turn down is logged as Filtered out, and Send anyway delivers it once",
+      "Your JSON: write the body a destination sends, with placeholders filled in from each request or email, so only the fields you pick go out, under the names your tool wants; a lone placeholder keeps its type. Chat destinations can have their own message text",
+      "At most one every so many seconds turns a destination into a heads-up channel, and Wait before sending (up to an hour) makes it a callback that arrives later",
+      "Preview with a captured request shows whether a destination would send it and the exact request, before you save; Send test delivery sends one for real",
+      "Notifications are a Slack or Discord destination now: the same message at most once a second, listed under Forwarding and logged like any other delivery. Existing notification URLs moved over as they were",
+      "The Deliveries log names each delivery's destination and filters by destination and by Filtered out; a request's Deliveries tab groups the tries by destination, with Redeliver for each",
+      "The API, SDK and MCP server manage destinations too: /api/endpoints/{slug}/destinations, client.destinations, and add_destination, preview_destination and three more tools",
+      "A destination can no longer be a webhooks.cc capture URL, so a delivery can never be captured and forwarded again in a loop",
+    ],
+  },
   {
     version: "0.43.0",
     date: "2026-10-25",

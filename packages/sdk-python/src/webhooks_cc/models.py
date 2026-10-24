@@ -13,6 +13,10 @@ from typing import Any, Literal
 
 RequestKind = Literal["http", "email"]
 
+DestinationFormat = Literal["auto", "as_received", "json", "template", "chat"]
+"""How a destination sends. ``"auto"`` picks from the URL: a chat message for Slack and
+Discord, otherwise HTTP requests as received and emails as signed JSON."""
+
 
 def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) else None
@@ -444,6 +448,319 @@ class ResponsePreview:
                 received_at=int(_number(request.get("receivedAt"))),
                 sample=request.get("sample") is True,
             ),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class DestinationFilter:
+    """Which captured requests a destination gets: its conditions, all of them or any.
+
+    The conditions are dicts like those of response rules (see
+    :meth:`Endpoints.create <webhooks_cc.client.Endpoints.create>`), and may also
+    read ``kind`` (``eq``, ``neq``: ``"http"`` or ``"email"``), ``email`` (with
+    ``name`` ``subject``, ``from``, ``to``, ``text`` or ``tag``), ``spam_score``
+    (a number), ``email_auth`` (with ``name`` ``spf``, ``dkim`` or ``dmarc``:
+    ``eq``, ``neq``) and ``signature`` (``eq``, ``neq``: ``"verified"``,
+    ``"failed"`` or ``"missing"``).
+    """
+
+    conditions: list[dict[str, Any]]
+    logic: Literal["and", "or"] = "and"
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> DestinationFilter:
+        conditions = data.get("conditions")
+        return cls(
+            conditions=[dict(item) for item in conditions if isinstance(item, Mapping)]
+            if isinstance(conditions, list)
+            else [],
+            logic="or" if data.get("logic") == "or" else "and",
+        )
+
+
+@dataclass(frozen=True)
+class DestinationHeader:
+    """One of a destination's own headers. Values are masked when read."""
+
+    name: str
+    value: str
+
+
+@dataclass(frozen=True)
+class DeliveryCounts:
+    delivered: int
+    failed: int
+    skipped: int
+    """Turned down by the destination's filter."""
+
+
+@dataclass(frozen=True)
+class DestinationSummary:
+    """A destination's deliveries of the last 24 hours, and what is waiting now."""
+
+    last_24h: DeliveryCounts
+    pending: int
+
+
+@dataclass(frozen=True)
+class Destination:
+    """Where an endpoint's captures go. An endpoint has up to 10.
+
+    Every capture is queued once for each destination that is on and takes its
+    kind, and the destination's ``filter`` decides whether it is sent.
+    """
+
+    id: str
+    position: int
+    """Its place in the list, also the order captures are queued in."""
+    name: str | None
+    enabled: bool
+    url: str
+    has_secret: bool
+    """Whether it has a signing secret; ``destinations.secret()`` reveals it."""
+    http: bool
+    """Takes HTTP requests."""
+    email: bool
+    """Takes emails."""
+    format: str
+    """``"auto"``, ``"as_received"``, ``"json"``, ``"template"`` or ``"chat"``."""
+    filter: DestinationFilter | None
+    """``None`` sends every capture of the kinds it takes."""
+    body_template: Any
+    """For format ``"template"``: the JSON body, with ``{{ placeholders }}`` filled in
+    from each request."""
+    message_template: str | None
+    """For format ``"chat"``: the message text; ``None`` sends the standard message."""
+    headers: list[DestinationHeader]
+    append_path: bool
+    """Adds the captured path to the URL, for requests sent as received."""
+    retry_seconds: int
+    """How long failed deliveries are retried: 86400, 3600 or 0 (one try)."""
+    keep_order: bool
+    """One delivery at a time, in capture order."""
+    sent_field: str | None
+    """A JSON body field with the sender's own timestamp."""
+    throttle_seconds: int
+    """At most one delivery every so many seconds (0: every capture); the rest are not sent."""
+    delay_seconds: int
+    """Seconds after the capture before the first try, like a callback."""
+    role: str | None
+    """``"forward"``: what the endpoint's ``forward_*`` settings stand for;
+    ``"notify"``: its ``notification_url``."""
+    created_at: int
+    updated_at: int
+    summary: DestinationSummary | None = None
+    """Set by ``destinations.list(slug, summary=True)``."""
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Destination:
+        filter_ = data.get("filter")
+        headers = data.get("headers")
+        summary = data.get("summary")
+        role = data.get("role")
+        return cls(
+            id=str(data.get("id") or ""),
+            position=int(_number(data.get("position"))),
+            name=_str_or_none(data.get("name")),
+            enabled=data.get("enabled") is True,
+            url=str(data.get("url") or ""),
+            has_secret=data.get("hasSecret") is True,
+            http=data.get("http") is True,
+            email=data.get("email") is True,
+            format=str(data.get("format") or "auto"),
+            filter=DestinationFilter.from_dict(filter_) if isinstance(filter_, Mapping) else None,
+            body_template=data.get("bodyTemplate"),
+            message_template=_str_or_none(data.get("messageTemplate")),
+            headers=[
+                DestinationHeader(name=item["name"], value=str(item.get("value") or ""))
+                for item in headers
+                if isinstance(item, Mapping) and isinstance(item.get("name"), str)
+            ]
+            if isinstance(headers, list)
+            else [],
+            append_path=data.get("appendPath") is True,
+            retry_seconds=int(_number(data.get("retrySeconds"))),
+            keep_order=data.get("keepOrder") is True,
+            sent_field=_str_or_none(data.get("sentField")),
+            throttle_seconds=int(_number(data.get("throttleSeconds"))),
+            delay_seconds=int(_number(data.get("delaySeconds"))),
+            role=role if role in ("forward", "notify") else None,
+            created_at=int(_number(data.get("createdAt"))),
+            updated_at=int(_number(data.get("updatedAt"))),
+            summary=_destination_summary(summary) if isinstance(summary, Mapping) else None,
+            raw=dict(data),
+        )
+
+
+def _destination_summary(data: Mapping[str, Any]) -> DestinationSummary:
+    counts = data.get("last24h")
+    if not isinstance(counts, Mapping):
+        counts = {}
+    return DestinationSummary(
+        last_24h=DeliveryCounts(
+            delivered=int(_number(counts.get("delivered"))),
+            failed=int(_number(counts.get("failed"))),
+            skipped=int(_number(counts.get("skipped"))),
+        ),
+        pending=int(_number(data.get("pending"))),
+    )
+
+
+@dataclass(frozen=True)
+class DestinationRequest:
+    """The captured request a destination preview or test delivery used."""
+
+    id: str | None
+    """``None`` when nothing of the kind was captured yet and a sample was used."""
+    kind: RequestKind | None
+    method: str
+    path: str
+    subject: str | None
+    """The email's subject, for emails."""
+    received_at: int
+    sample: bool
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any], outer: Mapping[str, Any]) -> DestinationRequest:
+        """``outer`` is the result holding it, which carries ``kind`` and ``sample``
+        for a test delivery."""
+        kind = data.get("kind", outer.get("kind"))
+        sample = data.get("sample", outer.get("sample"))
+        return cls(
+            id=_str_or_none(data.get("id")),
+            kind=kind if kind in ("http", "email") else None,
+            method=str(data.get("method") or ""),
+            path=str(data.get("path") or ""),
+            subject=_str_or_none(data.get("subject")),
+            received_at=int(_number(data.get("receivedAt"))),
+            sample=sample is True,
+        )
+
+
+@dataclass(frozen=True)
+class PreviewedDelivery:
+    """The request a destination would send. Header values it stores stay masked."""
+
+    method: str
+    url: str
+    headers: dict[str, str]
+    body: str | None
+    """The body as text; ``None`` when there is none or it is not UTF-8."""
+    body_base64: str | None
+    """The body's bytes, base64-encoded, when they are not UTF-8."""
+
+
+@dataclass(frozen=True)
+class DestinationPreview:
+    """What ``destinations.preview()`` reports: what a destination would send, unsent."""
+
+    request: DestinationRequest
+    takes_kind: bool
+    """Whether the destination takes this kind of request at all."""
+    filter_passes: bool
+    """Whether its filter lets the request through."""
+    format: str
+    """How it would go out: ``"as_received"``, ``"json"``, ``"template"`` or ``"chat"``."""
+    delivery: PreviewedDelivery | None
+    """``None`` when nothing would be sent; ``error`` says why."""
+    error: str | None
+    """Why nothing would be sent, such as a template that cannot be filled in."""
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> DestinationPreview:
+        request = data.get("request")
+        delivery = data.get("delivery")
+        return cls(
+            request=DestinationRequest.from_dict(
+                request if isinstance(request, Mapping) else {}, {}
+            ),
+            takes_kind=data.get("takesKind") is True,
+            filter_passes=data.get("filterPasses") is True,
+            format=str(data.get("format") or ""),
+            delivery=PreviewedDelivery(
+                method=str(delivery.get("method") or ""),
+                url=str(delivery.get("url") or ""),
+                headers=_str_map(delivery.get("headers")),
+                body=_str_or_none(delivery.get("body")),
+                body_base64=_str_or_none(delivery.get("bodyBase64")),
+            )
+            if isinstance(delivery, Mapping)
+            else None,
+            error=_str_or_none(data.get("error")),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class SenderTime:
+    """The sender's own timestamp, as read from a request."""
+
+    at: int
+    """Milliseconds since the epoch."""
+    source: str
+    """Where it was read: the body field, or a header such as ``webhook-timestamp``."""
+    whole_seconds: bool
+    """The timestamp has whole seconds only."""
+
+
+@dataclass(frozen=True)
+class DestinationTestResult:
+    """What ``destinations.test()`` reports: one delivery, sent now, and its answer."""
+
+    status: int | None
+    """The HTTP status the URL answered, or ``None`` when no answer arrived."""
+    duration_ms: int
+    excerpt: str | None
+    """The start of the response body."""
+    error: str | None
+    """Why no answer arrived (a timeout, a refused connection, a TLS problem)."""
+    delivered: bool
+    """The URL answered with a 2xx status."""
+    sample: bool
+    """Nothing of the kind was captured yet, so a sample was sent."""
+    filter_passes: bool
+    """Whether the destination's filter would have let it through; a test sends either way."""
+    kind: RequestKind | None
+    format: str | None
+    url: str | None
+    """The URL it went to, path appended."""
+    target: str | None
+    """Host and path, as the delivery log records them."""
+    request: DestinationRequest | None
+    sender: SenderTime | None
+    """The sender's own timestamp, when the request had one."""
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> DestinationTestResult:
+        kind = data.get("kind")
+        request = data.get("request")
+        sender = data.get("sender")
+        return cls(
+            status=_int_or_none(data.get("status")),
+            duration_ms=int(_number(data.get("durationMs"))),
+            excerpt=_str_or_none(data.get("excerpt")),
+            error=_str_or_none(data.get("error")),
+            delivered=data.get("delivered") is True,
+            sample=data.get("sample") is True,
+            filter_passes=data.get("filterPasses") is True,
+            kind=kind if kind in ("http", "email") else None,
+            format=_str_or_none(data.get("format")),
+            url=_str_or_none(data.get("url")),
+            target=_str_or_none(data.get("target")),
+            request=DestinationRequest.from_dict(request, data)
+            if isinstance(request, Mapping)
+            else None,
+            sender=SenderTime(
+                at=int(_number(sender.get("at"))),
+                source=str(sender.get("source") or ""),
+                whole_seconds=sender.get("wholeSeconds") is True,
+            )
+            if isinstance(sender, Mapping)
+            else None,
             raw=dict(data),
         )
 

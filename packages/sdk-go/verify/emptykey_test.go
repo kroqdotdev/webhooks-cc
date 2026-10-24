@@ -34,6 +34,9 @@ func TestSecretsThatDecodeToNothingAreRefused(t *testing.T) {
 		if _, err := ForwardedEmail(body, signed, secret, WithNow(now)); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("ForwardedEmail with %q: %v", secret, err)
 		}
+		if _, err := ForwardedJSON(body, signed, secret, WithNow(now)); !errors.Is(err, ErrEmptyKey) {
+			t.Errorf("ForwardedJSON with %q: %v", secret, err)
+		}
 		if _, err := RelayedRequest(body, signed, secret); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("RelayedRequest with %q: %v", secret, err)
 		}
@@ -51,6 +54,9 @@ func TestAnEmptyKeyIsReportedBeforeTheHeadersAreChecked(t *testing.T) {
 		}
 		if _, err := ForwardedRequest(body, headers, "whsec_"); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("ForwardedRequest, %s: %v", name, err)
+		}
+		if _, err := ForwardedJSON(body, headers, "whsec_"); !errors.Is(err, ErrEmptyKey) {
+			t.Errorf("ForwardedJSON, %s: %v", name, err)
 		}
 		if _, err := RelayedRequest(body, headers, "whsec_"); !errors.Is(err, ErrEmptyKey) {
 			t.Errorf("RelayedRequest, %s: %v", name, err)

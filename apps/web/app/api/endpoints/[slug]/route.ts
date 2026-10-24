@@ -22,6 +22,7 @@ import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { checkForwardUrl } from "@/lib/forwarding/target";
+import { TooManyDestinationsError } from "@/lib/supabase/destinations";
 import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
 import { reportError } from "@/lib/observability";
 
@@ -168,7 +169,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     }
   }
 
-  const notifCheck = validateNotificationUrl(body.notificationUrl);
+  const notifCheck = validateNotificationUrl(body.notificationUrl, {
+    allowPrivate: allowPrivateTargets(),
+  });
   if (!notifCheck.valid) return notifCheck.response;
 
   const mockCheck = validateMockResponseField(body.mockResponse, true);
@@ -381,6 +384,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   } catch (error) {
     if (error instanceof ForwardHeaderValueMissingError) {
       return Response.json({ error: error.message }, { status: 400 });
+    }
+    if (error instanceof TooManyDestinationsError) {
+      return Response.json({ error: error.message }, { status: 409 });
     }
     reportError("Failed to update endpoint", error);
     await auditUserAction(request, auth.userId, {

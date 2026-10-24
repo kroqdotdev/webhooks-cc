@@ -22,7 +22,7 @@ seo:
 
 Most webhook providers sign payloads so you can verify authenticity before processing. The SDK includes verification functions for 32 signed providers, plus a generic `verifySignature` that dispatches by provider name. For a conceptual walkthrough of HMAC-SHA256, Ed25519, and RSA webhook verification in Express and Next.js handlers, see the [How to Verify Webhook Signatures guide](/docs/guides/verify-webhook-signatures). SendGrid is supported for templates and detection; SendGrid signs Event Webhooks with ECDSA (X-Twilio-Email-Event-Webhook-Signature), which the SDK does not currently verify. Plaid is template-only for now because verification needs Plaid JWT/JWK lookup credentials.
 
-Requests and emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifiers: `verifyRelayedRequest` for requests relayed as received, `verifyForwardedRequest` and `verifyForwardedEmail` for signed JSON. See [Forwarded requests](#forwarded-requests) and [Forwarded emails](#forwarded-emails).
+Requests and emails that webhooks.cc [forwards](/docs/forwarding) to your server have their own verifiers: `verifyRelayedRequest` for requests relayed as received, `verifyForwardedRequest` and `verifyForwardedEmail` for signed JSON, `verifyForwardedJson` for a destination's own JSON. See [Forwarded requests](#forwarded-requests) and [Forwarded emails](#forwarded-emails).
 
 Generic verifier (works with any supported provider):
 
@@ -620,6 +620,21 @@ const event = await verifyForwardedRequest(
 );
 console.log(event.data.method, event.data.path, event.data.body);
 ```
+
+**Your own JSON** (a destination with the Your JSON format): the body is the JSON your template made, signed with the same Standard Webhooks headers. `verifyForwardedJson` makes the same checks and returns the body parsed; pass the shape your template makes as the type:
+
+```ts
+import { verifyForwardedJson } from "@webhooks-cc/sdk";
+
+const paid = await verifyForwardedJson<{ invoice: string; amount: number }>(
+  await request.text(),
+  request.headers,
+  process.env.FORWARD_SECRET!
+);
+console.log(paid.invoice, paid.amount);
+```
+
+Each destination has its own secret: use the one its **Signing secret** field (or `client.destinations.secret()`) shows.
 
 ## Forwarded emails
 

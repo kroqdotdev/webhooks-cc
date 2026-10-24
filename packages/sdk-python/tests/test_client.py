@@ -17,7 +17,13 @@ from webhooks_cc import errors
 from webhooks_cc.client import RetryOptions, WebhooksCC
 from webhooks_cc.email import email_address, extract_code, extract_link, is_valid_email_tag
 from webhooks_cc.matchers import match_body_path, match_email, match_path
-from webhooks_cc.models import Endpoint, Request
+from webhooks_cc.models import (
+    Destination,
+    DestinationPreview,
+    DestinationTestResult,
+    Endpoint,
+    Request,
+)
 from webhooks_cc.testing import capture_during, temporary_endpoint
 from webhooks_cc.verify import verify_signature
 
@@ -241,6 +247,294 @@ def test_preview_response_reads_a_sample_and_the_plain_200() -> None:
     assert result.response is None
     assert result.request.id is None
     assert result.request.sample is True
+
+
+DESTINATION_ID = "4f0e7c1a-0000-4000-8000-000000000010"
+
+
+def destination_record(**fields: Any) -> dict[str, Any]:
+    return {
+        "id": DESTINATION_ID,
+        "endpointId": "e1",
+        "position": 1,
+        "name": "Invoices",
+        "enabled": True,
+        "url": "https://hooks.acme.test/invoices",
+        "hasSecret": True,
+        "http": True,
+        "email": False,
+        "format": "template",
+        "filter": {
+            "logic": "or",
+            "conditions": [
+                {"field": "body_path", "path": "type", "op": "eq", "value": "invoice.paid"},
+                {"field": "signature", "op": "eq", "value": "verified"},
+            ],
+        },
+        "bodyTemplate": {"invoice": "{{ json.data.object.id }}"},
+        "messageTemplate": None,
+        "headers": [{"name": "x-env", "value": "\u2022\u2022\u2022\u2022"}],
+        "appendPath": True,
+        "retrySeconds": 3600,
+        "keepOrder": False,
+        "sentField": None,
+        "throttleSeconds": 60,
+        "delaySeconds": 0,
+        "role": None,
+        "createdAt": NOW_MS - 1000,
+        "updatedAt": NOW_MS,
+        **fields,
+    }
+
+
+def test_destinations_call_their_routes() -> None:
+    calls: list[tuple[str, str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else None
+        target = request.url.path + (f"?{request.url.query.decode()}" if request.url.query else "")
+        calls.append((request.method, target, body))
+        path = request.url.path
+        if path.endswith("/secret"):
+            return httpx.Response(200, json={"secret": "whsec_c2VjcmV0"})
+        if path.endswith("/test"):
+            return httpx.Response(200, json={"status": 204, "durationMs": 12, "delivered": True})
+        if path.endswith("/preview"):
+            return httpx.Response(200, json={"request": {}, "format": "json"})
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"deleted": True})
+        if path.endswith("/destinations") or path.endswith("/order"):
+            if request.method == "POST":
+                return httpx.Response(201, json=destination_record())
+            return httpx.Response(200, json=[destination_record()])
+        return httpx.Response(200, json=destination_record())
+
+    destinations = make_client(handler).destinations
+    base = "/api/endpoints/acme/destinations"
+    one = f"{base}/{DESTINATION_ID}"
+
+    assert [item.id for item in destinations.list("acme")] == [DESTINATION_ID]
+    destinations.list("acme", summary=True)
+    destinations.get("acme", DESTINATION_ID)
+    destinations.create(
+        "acme",
+        url="https://hooks.acme.test/invoices",
+        email=False,
+        filter={"conditions": [{"field": "kind", "op": "eq", "value": "http"}]},
+        format="template",
+        body_template={"invoice": "{{ json.id }}"},
+        headers=[{"name": "x-env", "value": "test"}],
+        retry_seconds=3600,
+        throttle_seconds=60,
+        delay_seconds=30,
+    )
+    destinations.update(
+        "acme", DESTINATION_ID, name=None, enabled=False, headers=[{"name": "x-env", "value": None}]
+    )
+    destinations.delete("acme", DESTINATION_ID)
+    destinations.reorder("acme", [DESTINATION_ID, "4f0e7c1a-0000-4000-8000-000000000011"])
+    assert destinations.secret("acme", DESTINATION_ID) == "whsec_c2VjcmV0"
+    destinations.rotate_secret("acme", DESTINATION_ID)
+    destinations.test("acme", DESTINATION_ID)
+    destinations.test("acme", DESTINATION_ID, kind="email", request_id="r1")
+    destinations.preview(
+        "acme",
+        destination_id=DESTINATION_ID,
+        destination={"format": "json", "filter": None, "append_path": False},
+        request_id="r1",
+    )
+    destinations.preview("acme", destination={"url": "https://hooks.acme.test/new"})
+
+    assert calls == [
+        ("GET", base, None),
+        ("GET", f"{base}?summary=true", None),
+        ("GET", one, None),
+        (
+            "POST",
+            base,
+            {
+                "url": "https://hooks.acme.test/invoices",
+                "email": False,
+                "format": "template",
+                "filter": {"conditions": [{"field": "kind", "op": "eq", "value": "http"}]},
+                "bodyTemplate": {"invoice": "{{ json.id }}"},
+                "headers": [{"name": "x-env", "value": "test"}],
+                "retrySeconds": 3600,
+                "throttleSeconds": 60,
+                "delaySeconds": 30,
+            },
+        ),
+        (
+            "PATCH",
+            one,
+            {"name": None, "enabled": False, "headers": [{"name": "x-env", "value": None}]},
+        ),
+        ("DELETE", one, None),
+        ("PUT", f"{base}/order", {"ids": [DESTINATION_ID, "4f0e7c1a-0000-4000-8000-000000000011"]}),
+        ("GET", f"{one}/secret", None),
+        ("POST", f"{one}/secret", None),
+        ("POST", f"{one}/test", {}),
+        ("POST", f"{one}/test", {"kind": "email", "requestId": "r1"}),
+        (
+            "POST",
+            f"{base}/preview",
+            {
+                "destinationId": DESTINATION_ID,
+                "destination": {"format": "json", "filter": None, "appendPath": False},
+                "requestId": "r1",
+            },
+        ),
+        ("POST", f"{base}/preview", {"destination": {"url": "https://hooks.acme.test/new"}}),
+    ]
+
+
+def test_destinations_are_parsed() -> None:
+    record = destination_record(
+        summary={"last24h": {"delivered": 3, "failed": 1, "skipped": 2}, "pending": 4}
+    )
+    client = make_client(lambda request: httpx.Response(200, json=[record]))
+    [destination] = client.destinations.list("acme", summary=True)
+    assert destination.id == DESTINATION_ID
+    assert destination.position == 1
+    assert destination.name == "Invoices"
+    assert destination.enabled is True and destination.has_secret is True
+    assert destination.http is True and destination.email is False
+    assert destination.format == "template"
+    assert destination.filter is not None
+    assert destination.filter.logic == "or"
+    assert destination.filter.conditions[1] == {
+        "field": "signature",
+        "op": "eq",
+        "value": "verified",
+    }
+    assert destination.body_template == {"invoice": "{{ json.data.object.id }}"}
+    assert destination.message_template is None
+    assert destination.headers[0].name == "x-env"
+    assert destination.append_path is True and destination.keep_order is False
+    assert destination.retry_seconds == 3600
+    assert destination.throttle_seconds == 60 and destination.delay_seconds == 0
+    assert destination.role is None
+    assert destination.updated_at == NOW_MS
+    assert destination.summary is not None
+    assert destination.summary.last_24h.delivered == 3
+    assert destination.summary.last_24h.skipped == 2
+    assert destination.summary.pending == 4
+    assert destination.raw["endpointId"] == "e1"
+
+    plain = Destination.from_dict(destination_record(filter=None, role="forward"))
+    assert plain.filter is None and plain.summary is None and plain.role == "forward"
+
+
+def test_a_saved_filter_can_be_sent_back() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=destination_record())
+
+    client = make_client(handler)
+    saved = Destination.from_dict(destination_record())
+    client.destinations.update("acme", DESTINATION_ID, filter=saved.filter)
+    assert bodies[0]["filter"] == destination_record()["filter"]
+
+
+def test_destination_preview_and_test_results_are_parsed() -> None:
+    preview = DestinationPreview.from_dict(
+        {
+            "request": {
+                "id": None,
+                "kind": "email",
+                "method": "EMAIL",
+                "path": "acme@mailhooks.cc",
+                "subject": "Invoice 42",
+                "receivedAt": NOW_MS,
+                "sample": True,
+            },
+            "takesKind": True,
+            "filterPasses": False,
+            "format": "template",
+            "delivery": {
+                "method": "POST",
+                "url": "https://hooks.acme.test/invoices",
+                "headers": {"content-type": "application/json"},
+                "body": '{"invoice":"in_1"}',
+                "bodyBase64": None,
+            },
+            "error": None,
+        }
+    )
+    assert preview.request.id is None and preview.request.sample is True
+    assert preview.request.kind == "email" and preview.request.subject == "Invoice 42"
+    assert preview.takes_kind is True and preview.filter_passes is False
+    assert preview.format == "template"
+    assert preview.delivery is not None
+    assert preview.delivery.body == '{"invoice":"in_1"}' and preview.delivery.body_base64 is None
+    assert preview.delivery.headers == {"content-type": "application/json"}
+    assert preview.error is None
+
+    unsent = DestinationPreview.from_dict(
+        {"request": {}, "format": "template", "delivery": None, "error": "json.nope is missing"}
+    )
+    assert unsent.delivery is None and unsent.error == "json.nope is missing"
+
+    result = DestinationTestResult.from_dict(
+        {
+            "status": None,
+            "durationMs": 10_000,
+            "excerpt": None,
+            "error": "timed out",
+            "delivered": False,
+            "url": "https://hooks.acme.test/invoices",
+            "sample": False,
+            "kind": "http",
+            "format": "as_received",
+            "target": "hooks.acme.test/invoices",
+            "filterPasses": True,
+            "request": {
+                "id": "r1",
+                "method": "POST",
+                "path": "/stripe",
+                "subject": None,
+                "receivedAt": NOW_MS,
+            },
+            "sender": {"at": NOW_MS - 50, "source": "webhook-timestamp", "wholeSeconds": True},
+        }
+    )
+    assert result.status is None and result.error == "timed out" and result.delivered is False
+    assert result.duration_ms == 10_000
+    assert result.filter_passes is True
+    assert result.format == "as_received" and result.target == "hooks.acme.test/invoices"
+    assert result.request is not None
+    assert result.request.id == "r1" and result.request.kind == "http"
+    assert result.request.sample is False and result.request.path == "/stripe"
+    assert result.sender is not None and result.sender.whole_seconds is True
+
+
+def test_destination_input_is_checked_before_sending() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json=destination_record())
+
+    destinations = make_client(handler).destinations
+    with pytest.raises(ValueError, match="logic"):
+        destinations.create(
+            "acme", url="https://hooks.acme.test", filter={"logic": "xor", "conditions": []}
+        )
+    with pytest.raises(ValueError, match="conditions"):
+        destinations.update("acme", DESTINATION_ID, filter={"logic": "and"})
+    with pytest.raises(ValueError, match="filter"):
+        destinations.update("acme", DESTINATION_ID, filter=[])  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Unknown destination field"):
+        destinations.preview("acme", destination={"bodyTemplate": {}})
+    with pytest.raises(ValueError, match="destination id"):
+        destinations.get("acme", "../secret")
+    with pytest.raises(ValueError, match="slug"):
+        destinations.list("../admin")
+    with pytest.raises(ValueError, match="list"):
+        destinations.reorder("acme", DESTINATION_ID)
+    assert calls == []
 
 
 def test_path_globs_cross_line_breaks() -> None:

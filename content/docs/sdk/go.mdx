@@ -3,7 +3,7 @@ title: "Go SDK"
 description: "The webhooks.cc Go module captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes testing.TB helpers."
 section: sdk
 order: 7
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-25
 schema: none
 keywords: ["go webhook sdk", "golang webhooks", "webhook testing go", "verify webhook signature go", "webhooks.cc/go"]
 seo:
@@ -174,9 +174,41 @@ func stripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 Headers can be an `http.Header`, a captured request's `Headers`, or a `verify.Map`. Twilio, Square and HubSpot also need `URL`; HubSpot also needs `Method`. Discord takes `PublicKey`. An invalid signature is `false` with no error; the error is for a call that cannot be checked, such as a missing secret or an unknown provider. See [Signature Verification](/docs/sdk/signatures) for each provider's scheme.
 
+## Forwarding destinations
+
+An endpoint [forwards](/docs/forwarding) what it captures to up to 10 destinations, each with its own kinds, filter, format, headers, retries, throttle, delay and signing secret. `client.Destinations` manages them. A `DestinationInput` sends only the fields set with `Value` (or `Null`, which clears `Name`, `Filter`, `BodyTemplate`, `MessageTemplate` and `SentField`):
+
+```go
+destination, err := client.Destinations.Create(ctx, endpoint.Slug, webhookscc.DestinationInput{
+	URL:   webhookscc.Value("https://hooks.example.com/invoices"),
+	Email: webhookscc.Value(false),
+	Filter: webhookscc.Value(webhookscc.DestinationFilter{
+		Conditions: []webhookscc.ResponseRuleCondition{{Field: "body_path", Path: "type", Op: "eq", Value: "invoice.paid"}},
+	}),
+	Format:       webhookscc.Value(webhookscc.FormatTemplate),
+	BodyTemplate: webhookscc.Value(json.RawMessage(`{"invoice":"{{ json.data.object.id }}","amount":"{{ json.data.object.amount_paid }}"}`)),
+})
+if err != nil {
+	return err
+}
+preview, err := client.Destinations.Preview(ctx, endpoint.Slug, webhookscc.PreviewDestinationOptions{
+	DestinationID: destination.ID,
+})
+if err != nil {
+	return err
+}
+fmt.Println(preview.FilterPasses, preview.Error)
+```
+
+A `DestinationFilter` takes the conditions of [response rules](/docs/mock-responses#what-a-condition-can-check), plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`; see [Send only some captures](/docs/forwarding#send-only-some-captures). `FormatTemplate` sends [your own JSON](/docs/forwarding#your-own-json), and `FormatChat` a message for Slack or Discord, with your own `MessageTemplate` if you like. `Retry`, `Throttle` and `Delay` are `time.Duration` values in whole seconds.
+
+`Preview` is a dry run: whether the filter lets a captured request through (`FilterPasses`) and the exact request the destination would send (`Delivery`), or why it would send nothing (`Error`). Set a saved `DestinationID`, unsaved fields in `Destination`, or both, and `RequestID` to run it against a particular request. Nothing is sent.
+
+`Update(ctx, slug, id, input)` changes only the fields you set. `Test` sends one delivery now and reports the answer, its filter reported in `FilterPasses` rather than applied. `List` with `Summary` adds each destination's last 24 hours, and `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
+
 ## Verify what webhooks.cc forwards
 
-When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, check that they came from it with the endpoint's forwarding secret (`client.Forwarding.Secret(ctx, slug)`):
+When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, check that they came from it with the destination's signing secret (`client.Destinations.Secret(ctx, slug, id)`, or `client.Forwarding.Secret(ctx, slug)` for the endpoint's primary destination):
 
 ```go
 event, err := verify.ForwardedEmail(body, r.Header, secret)
@@ -196,6 +228,21 @@ _ = json.Unmarshal(event.Data, &email)
 ```
 
 A `*verify.Error` says why a delivery was refused (`Code`); any other error means the call itself was wrong, such as an empty secret. `verify.ForwardedRequest` checks a request forwarded as JSON, and `verify.RelayedRequest` one relayed as it was received.
+
+A destination that sends your own JSON is checked with `verify.ForwardedJSON`, which makes the same checks and returns the body, whatever its shape, to unmarshal into a type of your own:
+
+```go
+payload, err := verify.ForwardedJSON(body, r.Header, secret)
+if err != nil {
+	http.Error(w, "invalid delivery", http.StatusUnauthorized)
+	return
+}
+var paid struct {
+	Invoice string `json:"invoice"`
+	Amount  int    `json:"amount"`
+}
+_ = json.Unmarshal(payload, &paid)
+```
 
 ## Stream requests as they arrive
 

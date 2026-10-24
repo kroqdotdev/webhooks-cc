@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
-import type { WebhooksCC } from "@webhooks-cc/sdk";
+import { CONDITION_FIELDS, type WebhooksCC } from "@webhooks-cc/sdk";
 import { registerSandboxTools } from "../sandbox-tools";
 import { registerTools } from "../tools";
 
@@ -34,9 +34,11 @@ function frontmatter(markdown: string): Record<string, string> {
   );
 }
 
-/** Backticked snake_case words, which in the skill are tool names. */
+/** Backticked snake_case words, which in the skill are tool names unless they are condition fields. */
 function mentionedTools(markdown: string): string[] {
-  return [...new Set([...markdown.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]))];
+  return [...new Set([...markdown.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]))].filter(
+    (name) => !(name in CONDITION_FIELDS)
+  );
 }
 
 describe("agent skill", () => {

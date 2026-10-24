@@ -83,9 +83,7 @@ You can also set mock responses from the dashboard (the endpoint's Settings tab)
 
 ## Notification webhooks
 
-Add a notification URL to any endpoint and the receiver will POST a JSON summary (slug, method, path, timestamp, body preview, and a ready-made message) after each captured request. Slack and Discord webhook URLs post the message as is; any service that accepts a JSON POST can read the fields. See [Notification Webhooks](/docs/notification-webhooks).
-
-Configure from the endpoint's Settings tab in the dashboard, the SDK, or the MCP server. See the [notification webhooks guide](/docs/notification-webhooks) for setup details.
+A notification is a [forwarding destination](/docs/forwarding) that posts a chat message to Slack or Discord when a request arrives, at most one a second: the endpoint, the method and path, when it arrived and the start of the body, or your own text. Any service that accepts a JSON POST can read its fields. See [Notification Webhooks](/docs/notification-webhooks).
 
 ## Ephemeral endpoints
 

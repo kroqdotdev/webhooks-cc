@@ -45,7 +45,43 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		Request: webhookscc.PreviewRequest{Method: "EMAIL", Path: "acme-test@mailhooks.cc", Sample: true},
 	}
 
-	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample} {
+	destination := webhookscc.Destination{
+		ID: "d1", Position: 2, Name: "Invoices", Enabled: true, URL: "https://hooks.acme.test/invoices",
+		HasSecret: true, HTTP: true, Format: webhookscc.FormatTemplate,
+		Filter: &webhookscc.DestinationFilter{Logic: "or", Conditions: []webhookscc.ResponseRuleCondition{
+			{Field: "email", Name: "subject", Op: "contains", Value: "invoice"},
+		}},
+		BodyTemplate: json.RawMessage(`{"invoice":"{{ json.id }}"}`), MessageTemplate: "{{ method }} {{ path }}",
+		Headers:    []webhookscc.DestinationHeader{{Name: "x-env", Value: "****"}},
+		AppendPath: true, Retry: time.Hour, KeepOrder: true, SentField: "data.created", Throttle: time.Minute,
+		Delay: 30 * time.Second, Role: "forward", CreatedAt: time.UnixMilli(1767225600000), UpdatedAt: time.UnixMilli(1767225660000),
+		Summary: &webhookscc.DestinationSummary{Last24h: webhookscc.DeliveryCounts{Delivered: 3, Failed: 1, Skipped: 2}, Pending: 4},
+	}
+	destinationPreview := webhookscc.DestinationPreview{
+		Request: webhookscc.DestinationRequest{
+			ID: "r1", Kind: webhookscc.KindEmail, Method: "EMAIL", Path: "acme-test@mailhooks.cc", Subject: "Hi",
+			ReceivedAt: time.UnixMilli(1767225600123),
+		},
+		TakesKind: true, FilterPasses: true, Format: webhookscc.FormatJSON,
+		Delivery: &webhookscc.PreviewedDelivery{Method: "POST", URL: "https://hooks.acme.test/invoices", Headers: map[string]string{"a": "b"}, Body: "{}"},
+	}
+	unsent := webhookscc.DestinationPreview{
+		Request: webhookscc.DestinationRequest{Kind: webhookscc.KindHTTP, Method: "POST", Path: "/", Sample: true},
+		Format:  webhookscc.FormatTemplate, Error: "json.nope is missing",
+	}
+	testResult := webhookscc.DestinationTestResult{
+		Status: 204, Duration: 12 * time.Millisecond, Excerpt: "ok", Delivered: true, FilterPasses: true,
+		Kind: webhookscc.KindHTTP, Format: webhookscc.FormatAsReceived, URL: "https://hooks.acme.test/invoices/x",
+		Target:  "hooks.acme.test/invoices/x",
+		Request: webhookscc.DestinationRequest{ID: "r1", Kind: webhookscc.KindHTTP, Method: "POST", Path: "/x", ReceivedAt: time.UnixMilli(1767225600123)},
+		Sender:  &webhookscc.SenderTime{At: time.UnixMilli(1767225600000), Source: "webhook-timestamp", WholeSeconds: true},
+	}
+	failedTest := webhookscc.DestinationTestResult{
+		Duration: 10 * time.Second, Error: "timed out", Sample: true,
+		Request: webhookscc.DestinationRequest{Method: "POST", Path: "/", Sample: true},
+	}
+
+	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample, &destination, &destinationPreview, &unsent, &testResult, &failedTest} {
 		data, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)

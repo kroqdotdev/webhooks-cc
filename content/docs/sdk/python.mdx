@@ -3,7 +3,7 @@ title: "Python SDK"
 description: "The webhooks-cc Python package captures webhooks and email in your tests, waits for them, sends signed webhooks to your own handlers, and verifies provider and forwarding signatures. Includes pytest fixtures."
 section: sdk
 order: 6
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-25
 schema: none
 keywords: ["python webhook sdk", "pytest webhooks", "webhook testing python", "verify webhook signature python", "webhooks-cc"]
 seo:
@@ -148,9 +148,37 @@ valid = verify_signature(
 
 Twilio, Square and HubSpot also need `url`; HubSpot also needs `method`. Discord takes `public_key`. One function per provider is in `webhooks_cc.verify`, such as `verify_stripe_signature(body, header, secret)`. See [Signature Verification](/docs/sdk/signatures) for each provider's scheme.
 
+## Forwarding destinations
+
+An endpoint [forwards](/docs/forwarding) what it captures to up to 10 destinations, each with its own kinds, filter, format, headers, retries, throttle, delay and signing secret. `client.destinations` manages them:
+
+```python
+destination = client.destinations.create(
+    endpoint.slug,
+    url="https://hooks.example.com/invoices",
+    email=False,
+    filter={
+        "conditions": [{"field": "body_path", "path": "type", "op": "eq", "value": "invoice.paid"}]
+    },
+    format="template",
+    body_template={
+        "invoice": "{{ json.data.object.id }}",
+        "amount": "{{ json.data.object.amount_paid }}",
+    },
+)
+preview = client.destinations.preview(endpoint.slug, destination_id=destination.id)
+print(preview.filter_passes, preview.delivery.body if preview.delivery else preview.error)
+```
+
+A `filter` takes the conditions of [response rules](/docs/mock-responses#what-a-condition-can-check), plus `kind`, `email` (with `name` `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (with `name` `spf`, `dkim` or `dmarc`) and `signature`; see [Send only some captures](/docs/forwarding#send-only-some-captures). `format="template"` sends [your own JSON](/docs/forwarding#your-own-json), and `"chat"` a message for Slack or Discord, with your own `message_template` if you like.
+
+`preview()` is a dry run: whether the filter lets a captured request through (`filter_passes`) and the exact request the destination would send (`delivery`), or why it would send nothing (`error`). Pass a saved `destination_id`, unsaved fields in `destination` (the names `create()` takes), or both, and a `request_id` to run it against a particular request. Nothing is sent.
+
+`update(slug, destination_id, ...)` changes only the arguments you pass, and `None` clears `name`, `filter`, `body_template`, `message_template` and `sent_field`. `test()` sends one delivery now and reports the answer, its filter reported in `filter_passes` rather than applied. `list(slug, summary=True)` adds each destination's last 24 hours, and `get()`, `delete()`, `reorder()`, `secret()` and `rotate_secret()` do what they say.
+
 ## Verify what webhooks.cc forwards
 
-When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, check that they came from it with the endpoint's forwarding secret (`client.forwarding.secret(slug)`):
+When webhooks.cc [forwards](/docs/forwarding) requests or email to your server, check that they came from it with the destination's signing secret (`client.destinations.secret(slug, destination_id)`, or `client.forwarding.secret(slug)` for the endpoint's primary destination):
 
 ```python
 from webhooks_cc import WebhookVerificationError, verify_forwarded_email
@@ -162,7 +190,12 @@ except WebhookVerificationError as error:
 print(event["data"]["subject"])
 ```
 
-`verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received.
+`verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received. A destination that sends your own JSON is checked with `verify_forwarded_json()`, which makes the same checks and returns the parsed body, whatever its shape:
+
+```python
+paid = verify_forwarded_json(body, headers, secret)
+print(paid["invoice"], paid["amount"])
+```
 
 ## Stream requests as they arrive
 

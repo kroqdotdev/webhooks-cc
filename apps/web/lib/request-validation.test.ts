@@ -220,8 +220,12 @@ describe("validateNotificationUrl", () => {
     expect(validateNotificationUrl("https://example.com/hook")).toEqual({ valid: true });
   });
 
-  test("valid http URL passes", () => {
-    expect(validateNotificationUrl("http://localhost:3000/hook")).toEqual({ valid: true });
+  test("http and local URLs pass only where private targets are allowed", () => {
+    expect(validateNotificationUrl("http://localhost:3000/hook").valid).toBe(false);
+    expect(validateNotificationUrl("https://10.0.0.5/hook").valid).toBe(false);
+    expect(validateNotificationUrl("http://localhost:3000/hook", { allowPrivate: true })).toEqual({
+      valid: true,
+    });
   });
 
   test("rejects non-http protocol", () => {

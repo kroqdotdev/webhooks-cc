@@ -117,7 +117,7 @@ curl -X PATCH https://webhooks.cc/api/endpoints/abc123 \
   -d '{"name": "new-name", "mockResponse": {"status": 200, "body": "{\"ok\":true}", "headers": {"Content-Type": "application/json"}}, "notificationUrl": "https://hooks.slack.com/services/..."}'
 ```
 
-Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications. The `notificationUrl` must be a valid `http` or `https` URL, max 2048 characters.
+Set `"mockResponse": null` to clear the mock response and return to the default `200 OK`. Set `"notificationUrl": null` to stop sending notifications. The `notificationUrl` follows the rules of a [destination](#destinations) URL: `https` on a public host name, max 2048 characters.
 
 Set `"showEmailExtracts": false` to stop picking out codes and links in emails. The `forward*` fields are covered under [Forwarding](#forwarding).
 
@@ -246,7 +246,9 @@ curl -X POST https://webhooks.cc/api/send-test-email \
 
 ## Forwarding
 
-[Forwarding](/docs/forwarding) sends every HTTP request and email an endpoint captures to your URL: relayed as received, as signed JSON, or as a chat message for Slack and Discord, and retried until it is accepted. The formats and how to verify them are described in [Forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
+[Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations: relayed as received, as signed JSON, as a JSON body you shape with placeholders, or as a chat message for Slack and Discord, each with its own conditions and timing, and retried until it is accepted. The formats and how to verify them are described in [Forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
+
+The `forward*` fields of an endpoint stand for its primary destination, and `notificationUrl` for a chat destination named Notifications (at most one message a second, not retried). The [destination routes](#destinations) manage all of them.
 
 ### Turn forwarding on
 
@@ -327,7 +329,7 @@ curl "https://webhooks.cc/api/endpoints/abc123/deliveries?limit=50&status=failed
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns the endpoint's deliveries, newest first. `limit` is 1 to 100 (default 5); `status` is `all` (default), `pending` (queued or retrying) or `failed`; `before` takes the `cursor` of the last row you have, for older rows (URL-encode it; it is opaque). Each has `id`, `requestId`, `kind`, `status` (`pending`, `succeeded` or `failed`), `attempts`, `createdAt`, `finishedAt`, `nextAttemptAt`, `lastStatus`, `lastError`, `lastDurationMs` (your server's time on the latest try), `format`, `senderAt` and `senderSource` (the sender's timestamp and where it was read), `cursor`, and the request's `method`, `path`, `receivedAt` and, for an email, `subject`.
+Returns the endpoint's deliveries, newest first. `limit` is 1 to 100 (default 5); `status` is `all` (default), `pending` (queued or retrying), `failed` or `skipped` (filtered out); `destination` takes a destination's id, for its deliveries only; `before` takes the `cursor` of the last row you have, for older rows (URL-encode it; it is opaque). Each has `id`, `requestId`, `kind`, `destination` (`{ "id", "name", "url" }`, or `null` once it is removed), `status` (`pending`, `succeeded`, `failed` or `skipped`), `attempts`, `createdAt`, `finishedAt`, `nextAttemptAt`, `lastStatus`, `lastError`, `lastDurationMs` (your server's time on the latest try), `format`, `senderAt` and `senderSource` (the sender's timestamp and where it was read), `cursor`, and the request's `method`, `path`, `receivedAt` and, for an email, `subject`.
 
 ### Delivery counts
 
@@ -345,7 +347,7 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/deliveries/redeliver-faile
   -H "Authorization: Bearer whcc_..."
 ```
 
-Queues every request whose latest delivery failed again, oldest first, with the current settings, and returns `{ "queued": 12 }`. At most 1,000 deliveries wait at a time, so `queued` can be lower than the failed count; call it again once those are through. Returns `409` when forwarding is off. Rate limited to 10 requests per minute.
+Queues every request whose latest delivery to a destination failed again, oldest first, with that destination's current settings, and returns `{ "queued": 12 }`. Add `?destination=<id>` for one destination only. At most 1,000 deliveries wait for a destination at a time, so `queued` can be lower than the failed count; call it again once those are through. Returns `409` when no destination is on. Rate limited to 10 requests per minute.
 
 ### List deliveries of a request
 
@@ -402,7 +404,30 @@ curl -X POST https://webhooks.cc/api/requests/REQUEST_ID/deliveries \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Queues another delivery of an HTTP request or an email, sent with the endpoint's current settings, and returns `{ "id": "..." }`. It also sends a request that was never forwarded. Owner only. Returns `409` when forwarding, or forwarding of that kind, is off. Rate limited to 30 requests per minute.
+Queues another delivery of an HTTP request or an email to every destination that takes it, sent with their current settings, and returns `{ "id": "..." }`. It also sends a request that was never forwarded. Send `{"destinationId": "..."}` to send it to that destination only, whatever its filter says. Owner only. Returns `409` when no destination takes it. Rate limited to 30 requests per minute.
+
+### Destinations
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://hooks.zapier.com/hooks/catch/123/abc", "email": false, "format": "template", "bodyTemplate": {"event": "{{ json.type }}"}, "filter": {"conditions": [{"field": "body_path", "op": "eq", "path": "type", "value": "invoice.paid"}]}}'
+```
+
+| Route                                              | What it does                                                                                              |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `GET /api/endpoints/:slug/destinations`            | The destinations in order, header values masked; `?summary=true` adds each one's last 24 hours            |
+| `POST /api/endpoints/:slug/destinations`           | Add one (up to 10); returns it with its `id` and creates its signing secret                               |
+| `GET /api/endpoints/:slug/destinations/:id`        | One destination                                                                                           |
+| `PATCH /api/endpoints/:slug/destinations/:id`      | Change the fields sent; switching it off or taking a kind away fails what is waiting for it               |
+| `DELETE /api/endpoints/:slug/destinations/:id`     | Remove it; what is waiting is marked failed, the log stays                                                |
+| `PUT /api/endpoints/:slug/destinations/order`      | `{"ids": [...]}`, every id once: the new order                                                            |
+| `GET /api/endpoints/:slug/destinations/:id/secret` | `{ "secret": "whsec_..." }`; `POST` rotates it                                                            |
+| `POST /api/endpoints/:slug/destinations/:id/test`  | Send one delivery now (`kind`, `requestId`), as the forwarding test above, plus `filterPasses`            |
+| `POST /api/endpoints/:slug/destinations/preview`   | Dry run: `destinationId` and/or unsaved `destination` fields, optional `requestId`; nothing is sent       |
+
+A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template` or `chat`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600) and `position`. A mistake in a template or a condition returns `400` naming the field. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
 
 ## Search
 

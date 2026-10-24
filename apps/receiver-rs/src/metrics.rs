@@ -62,13 +62,6 @@ pub fn mail_ingest(outcome: &'static str) {
     add("mail", outcome);
 }
 
-/// Record a notification that failed: `status` (the URL answered non-2xx),
-/// `send` (no answer), `target` (the URL was refused before sending),
-/// `client` or `timeout`.
-pub fn notification_failed(reason: &'static str) {
-    add("notification_failed", reason);
-}
-
 /// Writes the counts line every `period` while anything was counted.
 pub fn spawn_reporter(period: Duration) {
     tokio::spawn(async move {
@@ -96,11 +89,9 @@ mod tests {
         counts.add("capture", "ok");
         counts.add("capture_failed", "transient");
         counts.add("mail", "captured");
-        counts.add("notification_failed", "status");
         assert_eq!(
             counts.take_line(3),
-            "capture.ok=2 capture_failed.transient=1 mail.captured=1 \
-             notification_failed.status=1 statoss.held_back=3"
+            "capture.ok=2 capture_failed.transient=1 mail.captured=1 statoss.held_back=3"
         );
         assert_eq!(counts.take_line(0), "");
         assert_eq!(counts.take_line(2), "statoss.held_back=2");
@@ -111,6 +102,5 @@ mod tests {
         capture_result("ok");
         capture_failed("permanent");
         mail_ingest("transient");
-        notification_failed("timeout");
     }
 }

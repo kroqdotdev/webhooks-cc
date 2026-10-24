@@ -1,7 +1,12 @@
-import { decryptSigningSecret, encryptSigningSecret } from "@/lib/crypto";
-import { decryptOwnerHeaders } from "@/lib/forwarding/owner-headers";
-import { generateForwardSecret } from "@/lib/forwarding/sign";
 import { createAdminClient } from "./admin";
+import type { DestinationFormat } from "./database";
+import {
+  getDestinationHeaders,
+  getDestinationSecret,
+  listDestinations,
+  primaryDestination,
+  rotateDestinationSecret,
+} from "./destinations";
 
 /**
  * Forwarding data for the routes: the endpoint's secret and headers, the
@@ -18,11 +23,22 @@ export interface DeliveryAttempt {
   responseExcerpt: string | null;
 }
 
+/** Where a delivery went, as the log names it. */
+export interface DeliveryDestination {
+  id: string;
+  /** The destination's name, or null to show its host. */
+  name: string | null;
+  url: string;
+}
+
 export interface Delivery {
   id: string;
   requestId: string;
   kind: "http" | "email";
-  status: "pending" | "succeeded" | "failed";
+  /** skipped: the destination's filter turned the request down. */
+  status: "pending" | "succeeded" | "failed" | "skipped";
+  /** Null for deliveries from before destinations, or once the destination is removed. */
+  destination: DeliveryDestination | null;
   attempts: number;
   createdAt: number;
   finishedAt: number | null;
@@ -40,16 +56,17 @@ export interface Delivery {
   attemptLog: DeliveryAttempt[];
 }
 
-export type DeliveryFormat = "as_received" | "json" | "chat";
+export type DeliveryFormat = DestinationFormat;
 
-/** The log's filter: every delivery, those still waiting, or those that failed. */
-export type DeliveryStatusFilter = "all" | "pending" | "failed";
+/** The log's filter: every delivery, those still waiting, those that failed, or those filtered out. */
+export type DeliveryStatusFilter = "all" | "pending" | "failed" | "skipped";
 
 export interface RecentDelivery {
   id: string;
   requestId: string;
   kind: Delivery["kind"];
   status: Delivery["status"];
+  destination: DeliveryDestination | null;
   attempts: number;
   createdAt: number;
   /** When it was delivered or given up, null while pending. */
@@ -96,6 +113,8 @@ interface DeliveryRow {
   request_id: string;
   kind: Delivery["kind"];
   status: Delivery["status"];
+  destination_id: string | null;
+  endpoint_destinations: { name: string | null; url: string } | null;
   attempts: number;
   created_at: string;
   finished_at: string | null;
@@ -114,44 +133,55 @@ function millis(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Hex for PostgREST's bytea input. */
-function byteaHex(bytes: Buffer): string {
-  return `\\x${bytes.toString("hex")}`;
-}
-
-/** The plaintext forwarding secret of an endpoint the user owns, or null. */
-export async function getForwardSecret(userId: string, slug: string): Promise<string | null> {
+/** The endpoint's id when the user owns it. */
+async function ownedEndpointId(userId: string, slug: string): Promise<string | null> {
   const { data, error } = await createAdminClient()
     .from("endpoints")
-    .select("forward_secret_encrypted")
-    .eq("user_id", userId)
-    .eq("slug", slug.toLowerCase())
-    .maybeSingle();
-  if (error) throw error;
-  if (!data?.forward_secret_encrypted) return null;
-  return decryptSigningSecret(
-    Buffer.from(data.forward_secret_encrypted.replace(/^\\x/, ""), "hex")
-  );
-}
-
-/** Replaces the secret; deliveries from now on are signed with the new one. */
-export async function rotateForwardSecret(userId: string, slug: string): Promise<string | null> {
-  const secret = generateForwardSecret();
-  const { data, error } = await createAdminClient()
-    .from("endpoints")
-    .update({ forward_secret_encrypted: byteaHex(encryptSigningSecret(secret)) })
-    .eq("user_id", userId)
-    .eq("slug", slug.toLowerCase())
     .select("id")
+    .eq("user_id", userId)
+    .eq("slug", slug.toLowerCase())
     .maybeSingle();
   if (error) throw error;
-  return data ? secret : null;
+  return data?.id ?? null;
+}
+
+/** The primary destination of an endpoint the user owns (what the old forward* fields mean). */
+async function primaryOf(userId: string, slug: string) {
+  const endpointId = await ownedEndpointId(userId, slug);
+  if (!endpointId) return null;
+  const primary = primaryDestination(await listDestinations(endpointId));
+  return primary ? { endpointId, destinationId: primary.id } : null;
+}
+
+/** The plaintext signing secret of the endpoint's primary destination, or null. */
+export async function getForwardSecret(userId: string, slug: string): Promise<string | null> {
+  const primary = await primaryOf(userId, slug);
+  return primary ? getDestinationSecret(primary.endpointId, primary.destinationId) : null;
+}
+
+/** Replaces the primary destination's secret; deliveries from now on are signed with it. */
+export async function rotateForwardSecret(userId: string, slug: string): Promise<string | null> {
+  const primary = await primaryOf(userId, slug);
+  return primary ? rotateDestinationSecret(primary.endpointId, primary.destinationId) : null;
+}
+
+/** Queues another delivery of one request to one destination now; null when it is off. */
+export async function queueDestinationRedelivery(
+  requestId: string,
+  destinationId: string
+): Promise<string | null> {
+  const { data, error } = await createAdminClient().rpc("queue_destination_redelivery", {
+    p_request_id: requestId,
+    p_destination_id: destinationId,
+  });
+  if (error) throw error;
+  return data ?? null;
 }
 
 /**
- * Queues another delivery of one email, sent with the endpoint's current
- * settings. Null when forwarding is off (checked under the endpoint lock, so
- * a concurrent turn-off cannot leave the new row waiting).
+ * Queues another delivery of one request to every destination that takes
+ * its kind, with their current settings; the first one's id, or null when
+ * none does.
  */
 export async function queueRedelivery(
   requestId: string,
@@ -165,13 +195,20 @@ export async function queueRedelivery(
   return data ?? null;
 }
 
-/** Every delivery of one email, newest first, with its attempts. */
+function destinationOf(
+  id: string | null,
+  embedded: { name: string | null; url: string } | null | undefined
+): DeliveryDestination | null {
+  return id && embedded ? { id, name: embedded.name, url: embedded.url } : null;
+}
+
+/** Every delivery of one request, newest first, with its attempts. */
 export async function listDeliveriesForRequest(requestId: string): Promise<Delivery[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("email_deliveries")
     .select(
-      "id, request_id, kind, status, attempts, created_at, finished_at, next_attempt_at, last_status, last_error, format, target, sender_at, sender_source"
+      "id, request_id, kind, status, destination_id, endpoint_destinations(name, url), attempts, created_at, finished_at, next_attempt_at, last_status, last_error, format, target, sender_at, sender_source"
     )
     .eq("request_id", requestId)
     .order("created_at", { ascending: false })
@@ -197,6 +234,7 @@ export async function listDeliveriesForRequest(requestId: string): Promise<Deliv
     requestId: row.request_id,
     kind: row.kind ?? "email",
     status: row.status,
+    destination: destinationOf(row.destination_id, row.endpoint_destinations),
     attempts: row.attempts,
     createdAt: millis(row.created_at) ?? 0,
     finishedAt: millis(row.finished_at),
@@ -226,16 +264,22 @@ export async function listDeliveriesForRequest(requestId: string): Promise<Deliv
  */
 export async function listRecentDeliveries(
   endpointId: string,
-  options: { limit?: number; status?: DeliveryStatusFilter; before?: string | null } = {}
+  options: {
+    limit?: number;
+    status?: DeliveryStatusFilter;
+    before?: string | null;
+    destinationId?: string | null;
+  } = {}
 ): Promise<RecentDelivery[]> {
   const admin = createAdminClient();
   let query = admin
     .from("email_deliveries")
     .select(
-      "id, request_id, kind, status, attempts, created_at, finished_at, next_attempt_at, last_status, last_error, format, sender_at, sender_source, requests(subject:email->>subject, method, path, received_at)"
+      "id, request_id, kind, status, destination_id, endpoint_destinations(name, url), attempts, created_at, finished_at, next_attempt_at, last_status, last_error, format, sender_at, sender_source, requests(subject:email->>subject, method, path, received_at)"
     )
     .eq("endpoint_id", endpointId);
   if (options.status && options.status !== "all") query = query.eq("status", options.status);
+  if (options.destinationId) query = query.eq("destination_id", options.destinationId);
   const cursor = options.before ? CURSOR.exec(options.before) : null;
   if (cursor) {
     // Rows queued in the same microsecond are told apart by id.
@@ -278,7 +322,11 @@ export async function listRecentDeliveries(
       id: row.id,
       requestId: row.request_id,
       kind: (row.kind as RecentDelivery["kind"]) ?? "email",
-      status: row.status,
+      status: row.status as RecentDelivery["status"],
+      destination: destinationOf(
+        row.destination_id,
+        row.endpoint_destinations as unknown as { name: string | null; url: string } | null
+      ),
       attempts: row.attempts,
       createdAt: millis(row.created_at) ?? 0,
       finishedAt: millis(row.finished_at),
@@ -321,30 +369,25 @@ export async function getDeliverySummary(
  * Queues every request whose latest delivery failed again, oldest first, up
  * to the pending cap; returns how many were queued (0 when forwarding is off).
  */
-export async function queueFailedRedeliveries(endpointId: string): Promise<number> {
+export async function queueFailedRedeliveries(
+  endpointId: string,
+  destinationId: string | null = null
+): Promise<number> {
   const { data, error } = await createAdminClient().rpc("queue_failed_redeliveries", {
     p_endpoint_id: endpointId,
+    p_destination_id: destinationId,
   });
   if (error) throw error;
   return data ?? 0;
 }
 
-/** The owner's forwarding headers in plain text, for a test delivery. */
+/** The primary destination's headers in plain text, for a test delivery. */
 export async function getForwardOwnerHeaders(
   userId: string,
   slug: string
 ): Promise<[string, string][]> {
-  const { data, error } = await createAdminClient()
-    .from("endpoints")
-    .select("forward_headers_encrypted")
-    .eq("user_id", userId)
-    .eq("slug", slug.toLowerCase())
-    .maybeSingle();
-  if (error) throw error;
-  if (!data?.forward_headers_encrypted) return [];
-  return decryptOwnerHeaders(
-    Buffer.from(data.forward_headers_encrypted.replace(/^\\x/, ""), "hex")
-  );
+  const primary = await primaryOf(userId, slug);
+  return primary ? getDestinationHeaders(primary.endpointId, primary.destinationId) : [];
 }
 
 /** The newest email the endpoint captured, for a test delivery. */

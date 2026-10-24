@@ -1,14 +1,14 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 39 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 45 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-25
 schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 39 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 45 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -24,7 +24,7 @@ Create a new webhook endpoint. Returns the endpoint slug and full URL.
 | `expiresIn`       | `string`  | no       | Custom expiry duration (e.g., `"2h"`, `"7d"`)                                |
 | `mockResponse`    | `object`  | no       | Mock response config (see fields below)                                      |
 | `responseRules`   | `array`   | no       | Conditional response rules (method/path/header/body conditions + responses)  |
-| `notificationUrl` | `string`  | no       | URL to POST a JSON summary on each request                                   |
+| `notificationUrl` | `string`  | no       | Adds a Notifications destination: a chat message, at most one a second       |
 | `signingProvider` | `string`  | no       | Provider for automatic signature verification (e.g., `stripe`, `github`)     |
 | `signingSecret`   | `string`  | no       | Signing secret (encrypted server-side). Required when signingProvider is set |
 | `signingHeader`   | `string`  | no       | Custom header name (only for `generic-hmac` provider)                        |
@@ -67,7 +67,7 @@ Get details for an endpoint by slug.
 
 ### update_endpoint
 
-Update an endpoint's name, mock response, notification webhook, signing configuration, or whether codes and links are picked out of its emails.
+Update an endpoint's name, mock response, notification webhook, signing configuration, or whether codes and links are picked out of its emails. Forwarding has its [own tools](#forwarding).
 
 | Parameter           | Type      | Required | Description                                                                   |
 | ------------------- | --------- | -------- | ----------------------------------------------------------------------------- |
@@ -75,7 +75,7 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `name`              | `string`  | no       | New display name                                                              |
 | `mockResponse`      | `object`  | no       | Mock response config (see fields above), or `null` to clear                   |
 | `responseRules`     | `array`   | no       | Conditional response rules, or `null` to clear                                |
-| `notificationUrl`   | `string`  | no       | Notification webhook URL, or `null` to clear                                  |
+| `notificationUrl`   | `string`  | no       | Sets the Notifications [destination](#add_destination), or `null` removes it  |
 | `signingProvider`   | `string`  | no       | Signing provider (e.g., `stripe`), or `null` to disable                       |
 | `signingSecret`     | `string`  | no       | New signing secret (encrypted server-side), or `null` to clear                |
 | `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
@@ -319,17 +319,77 @@ Deliver a sample email with a 6-digit code and a link, to try the email tools be
 
 ## Forwarding
 
-[Forwarding](/docs/forwarding) sends every HTTP request and email an endpoint captures to a URL or a Slack or Discord channel, queued, retried and logged with its timing. Only the endpoint's owner can manage it.
+[Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations (servers, Slack or Discord channels, tools such as Zapier or n8n), each with its own kinds, conditions, format, timing and signing secret, queued, retried and logged. Only the endpoint's owner can manage it.
+
+A typical agent session: `add_destination`, `preview_destination` to see the exact request it would send, `test_forwarding` with the destination's id to send one, then `list_deliveries` to watch it.
+
+### list_destinations
+
+List the endpoint's destinations with every setting (header values masked) and, by default, each one's last 24 hours.
+
+| Parameter | Type      | Required | Description                                  |
+| --------- | --------- | -------- | -------------------------------------------- |
+| `slug`    | `string`  | yes      | Endpoint slug                                |
+| `summary` | `boolean` | no       | Add each destination's last 24 hours (default `true`) |
+
+### add_destination
+
+Add a destination; it is on at once unless `enabled: false`, and gets a signing secret of its own. Returns the destination with its `id`.
+
+| Parameter         | Type                                                         | Required | Description                                                                                                         |
+| ----------------- | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `slug`            | `string`                                                     | yes      | Endpoint slug                                                                                                       |
+| `url`             | `string`                                                     | yes      | `https` URL on a public host name, or a Slack or Discord webhook                                                    |
+| `name`            | `string \| null`                                             | no       | A name for the list and the log                                                                                     |
+| `enabled`         | `boolean`                                                    | no       | Send to it (default `true`)                                                                                         |
+| `http`, `email`   | `boolean`                                                    | no       | Which kinds it takes (default both)                                                                                 |
+| `filter`          | `{ logic?, conditions } \| null`                             | no       | Send only matching captures; see [Send only some captures](/docs/forwarding#send-only-some-captures)                |
+| `format`          | `"auto" \| "as_received" \| "json" \| "template" \| "chat"` | no       | How it is sent; `auto` picks chat for Slack and Discord URLs                                                        |
+| `bodyTemplate`    | JSON                                                         | no       | With `template`: the body, its strings holding `{{ placeholders }}` ([Your own JSON](/docs/forwarding#your-own-json)) |
+| `messageTemplate` | `string \| null`                                             | no       | With `chat`: your own message text; `null` sends the standard message                                               |
+| `headers`         | `{ name, value \| null }[]`                                  | no       | Your own headers (at most 10, not for chat)                                                                         |
+| `appendPath`      | `boolean`                                                    | no       | Add the captured path to the URL for relayed requests (default `true`)                                              |
+| `retrySeconds`    | `0 \| 3600 \| 86400`                                         | no       | How long failed deliveries are retried (default a day)                                                              |
+| `keepOrder`       | `boolean`                                                    | no       | One delivery at a time, in capture order                                                                            |
+| `sentField`       | `string \| null`                                             | no       | JSON body field with the sender's timestamp, for [timing](/docs/forwarding#timing)                                  |
+| `throttleSeconds` | `number`                                                     | no       | At most one delivery every so many seconds, 0 to 3,600; 1 makes a heads-up channel                                  |
+| `delaySeconds`    | `number`                                                     | no       | Wait this long after the capture before sending, 0 to 3,600                                                         |
+
+A filter condition takes `field`, `op` and `value` like a response rule condition, plus `kind`, `email` (`name`: `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (`name`: `spf`, `dkim` or `dmarc`) and `signature` (`verified`, `failed` or `missing`).
+
+### update_destination
+
+Change a destination; only the fields passed change. Takes `slug`, `destinationId` and any field of `add_destination`, `url` included. Switching it off or taking a kind away fails the deliveries still waiting for it.
+
+### remove_destination
+
+Remove a destination. Deliveries still waiting for it are marked failed; its log stays.
+
+| Parameter       | Type     | Required | Description          |
+| --------------- | -------- | -------- | -------------------- |
+| `slug`          | `string` | yes      | Endpoint slug        |
+| `destinationId` | `string` | yes      | The destination's id |
+
+### preview_destination
+
+A dry run: whether the destination's filter lets a captured request through (`filterPasses`), and the exact request it would send (`delivery`: method, URL, headers, body, with placeholders filled in and `unknownPlaceholders` listed). Nothing is sent. Pass `destinationId`, `destination` (unsaved fields, on top of the saved ones or with a `url` on their own), or both.
+
+| Parameter       | Type     | Required | Description                                                         |
+| --------------- | -------- | -------- | ------------------------------------------------------------------- |
+| `slug`          | `string` | yes      | Endpoint slug                                                       |
+| `destinationId` | `string` | no       | A saved destination                                                 |
+| `destination`   | `object` | no       | Fields of `add_destination` to try                                  |
+| `requestId`     | `string` | no       | A captured request (default: the newest of a kind it takes, or a sample) |
 
 ### configure_forwarding
 
-Change the forwarding settings; only the arguments passed change. Saving the first URL creates the signing secret, so the agent can send a test delivery before turning forwarding on. Turning forwarding (or a kind) off fails the deliveries still waiting. Returns every forwarding setting, with header values masked.
+Change the endpoint's primary destination, the one its `forwardUrl` stands for; only the arguments passed change. Saving the first URL creates it with its signing secret, so the agent can send a test delivery before turning it on. Returns the primary destination's settings, with header values masked. For filters, templates, throttling, delays or more than one destination, use `add_destination` and `update_destination`.
 
 | Parameter      | Type                                          | Required | Description                                                                                         |
 | -------------- | --------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
 | `slug`         | `string`                                      | yes      | Endpoint slug                                                                                       |
 | `url`          | `string \| null`                              | no       | `https` URL on a public host name, or `null` to remove it (when off)                                |
-| `enabled`      | `boolean`                                     | no       | Turn forwarding on (needs a URL) or off                                                             |
+| `enabled`      | `boolean`                                     | no       | Turn it on (needs a URL) or off                                                                     |
 | `http`         | `boolean`                                     | no       | Forward HTTP requests                                                                               |
 | `email`        | `boolean`                                     | no       | Forward emails                                                                                      |
 | `format`       | `"auto" \| "as_received" \| "json" \| "chat"` | no       | How deliveries go out; `auto` picks chat for Slack and Discord URLs                                |
@@ -341,42 +401,47 @@ Change the forwarding settings; only the arguments passed change. Saving the fir
 
 ### get_forwarding_secret
 
-Read the `whsec_` secret deliveries are signed with, or replace it with `rotate: true`. The value is a credential and ends up in the agent's context: have the agent put it in the handler's environment, not in code.
+Read the `whsec_` secret a destination signs its deliveries with, or replace it with `rotate: true`. The value is a credential and ends up in the agent's context: have the agent put it in the handler's environment, not in code.
 
-| Parameter | Type      | Required | Description                          |
-| --------- | --------- | -------- | ------------------------------------ |
-| `slug`    | `string`  | yes      | Endpoint slug                        |
-| `rotate`  | `boolean` | no       | Replace the secret (default `false`) |
+| Parameter       | Type      | Required | Description                                            |
+| --------------- | --------- | -------- | ------------------------------------------------------ |
+| `slug`          | `string`  | yes      | Endpoint slug                                          |
+| `destinationId` | `string`  | no       | A destination (default: the primary destination)       |
+| `rotate`        | `boolean` | no       | Replace the secret (default `false`)                   |
 
 ### test_forwarding
 
-Send the newest captured request of a kind (or a sample, if none has arrived) to the saved URL once, exactly as a delivery would go out, and report the `status`, `durationMs`, the start of the answer (`excerpt`), `error`, `delivered`, the `format` and `target` used, and the sender's own timestamp when the request had one. Works with forwarding on or off; nothing is retried or logged.
+Send the newest captured request of a kind (or a sample, if none has arrived, or `requestId`) to a destination once, exactly as a delivery would go out, and report the `status`, `durationMs`, the start of the answer (`excerpt`), `error`, `delivered`, the `format` and `target` used, and the sender's own timestamp when the request had one. Works whether the destination is on or off and whatever its filter says; nothing is retried or logged.
 
-| Parameter | Type                | Required | Description                                                       |
-| --------- | ------------------- | -------- | ----------------------------------------------------------------- |
-| `slug`    | `string`            | yes      | Endpoint slug                                                     |
-| `kind`    | `"http" \| "email"` | no       | Which kind (default: HTTP when HTTP requests are forwarded)       |
+| Parameter       | Type                | Required | Description                                                       |
+| --------------- | ------------------- | -------- | ----------------------------------------------------------------- |
+| `slug`          | `string`            | yes      | Endpoint slug                                                     |
+| `destinationId` | `string`            | no       | A destination (default: the primary destination)                  |
+| `kind`          | `"http" \| "email"` | no       | Which kind (default: HTTP when the destination takes it)          |
+| `requestId`     | `string`            | no       | With `destinationId`: a captured request to send                  |
 
 ### list_deliveries
 
-With `endpointSlug`, return the endpoint's delivery log with its counts: `{ summary, deliveries, nextCursor }`. Rows carry `senderAt` when the request had the sender's own timestamp, so `receivedAt - senderAt` is the time to reach webhooks.cc. With `requestId`, return every delivery and try of one request or email. Pass exactly one.
+With `endpointSlug`, return the endpoint's delivery log with its counts: `{ summary, deliveries, nextCursor }`. Each row names its destination, and carries `senderAt` when the request had the sender's own timestamp, so `receivedAt - senderAt` is the time to reach webhooks.cc. With `requestId`, return every delivery and try of one request or email. Pass exactly one.
 
-| Parameter      | Type                              | Required | Description                                          |
-| -------------- | --------------------------------- | -------- | ---------------------------------------------------- |
-| `endpointSlug` | `string`                          | no       | The endpoint's delivery log                          |
-| `requestId`    | `string`                          | no       | Every delivery of this request, with each try        |
-| `limit`        | `number`                          | no       | With `endpointSlug`: 1 to 100 (default 20)           |
-| `status`       | `"all" \| "pending" \| "failed"`  | no       | With `endpointSlug`: filter (default `all`)          |
-| `before`       | `string`                          | no       | With `endpointSlug`: `nextCursor`, for older rows    |
+| Parameter       | Type                                           | Required | Description                                                   |
+| --------------- | ---------------------------------------------- | -------- | ------------------------------------------------------------- |
+| `endpointSlug`  | `string`                                       | no       | The endpoint's delivery log                                   |
+| `requestId`     | `string`                                       | no       | Every delivery of this request, with each try                 |
+| `limit`         | `number`                                       | no       | With `endpointSlug`: 1 to 100 (default 20)                    |
+| `status`        | `"all" \| "pending" \| "failed" \| "skipped"`  | no       | With `endpointSlug`: filter (default `all`); `skipped` is filtered out |
+| `destinationId` | `string`                                       | no       | With `endpointSlug`: only this destination                    |
+| `before`        | `string`                                       | no       | With `endpointSlug`: `nextCursor`, for older rows             |
 
 ### redeliver
 
-Forward again with the current settings: one request or email (`requestId`, which also sends one that was never forwarded), or every request whose latest delivery failed (`endpointSlug`, oldest first, up to 1,000 at a time). Pass exactly one. Fails while forwarding is off.
+Forward again with the current settings: one request or email (`requestId`, to every destination that takes it, or with `destinationId` to that one whatever its filter says), or every request whose latest delivery failed (`endpointSlug`, optionally only `destinationId`, oldest first, up to 1,000 at a time per destination). Pass exactly one of `requestId` and `endpointSlug`.
 
-| Parameter      | Type     | Required | Description                                  |
-| -------------- | -------- | -------- | -------------------------------------------- |
-| `requestId`    | `string` | no       | The request or email to send again           |
-| `endpointSlug` | `string` | no       | Send every failed delivery of this endpoint  |
+| Parameter       | Type     | Required | Description                                  |
+| --------------- | -------- | -------- | -------------------------------------------- |
+| `requestId`     | `string` | no       | The request or email to send again           |
+| `endpointSlug`  | `string` | no       | Send every failed delivery of this endpoint  |
+| `destinationId` | `string` | no       | Only this destination                        |
 
 ## Request analysis
 

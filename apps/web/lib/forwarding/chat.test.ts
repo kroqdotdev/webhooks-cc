@@ -5,10 +5,7 @@ import { chatPayload, isDiscordUrl, isSlackUrl, truncatePreview, type ChatFields
 // The receiver's notifications and this chat format must say the same thing:
 // both are checked against the vectors the Rust implementation wrote.
 const vectors = JSON.parse(
-  readFileSync(
-    new URL("../../../receiver-rs/src/handlers/notification_vectors.json", import.meta.url),
-    "utf8"
-  )
+  readFileSync(new URL("./chat-vectors.json", import.meta.url), "utf8")
 ) as { name: string; fields: ChatFields; payload: Record<string, unknown> }[];
 
 describe("chatPayload", () => {

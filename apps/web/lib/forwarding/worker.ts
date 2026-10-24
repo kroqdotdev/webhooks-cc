@@ -3,8 +3,13 @@ import { buildEmailJson } from "@webhooks-cc/sdk/email";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database";
 import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
+import { renderJsonTemplate, renderTemplate, type Condition } from "@webhooks-cc/sdk";
+import { templateContextFor, ruleSubjectFor } from "@/lib/request-context";
+import { conditionsHold } from "@/lib/rules";
+import type { Json } from "@/lib/supabase/database";
 import {
   chatPayload,
+  customChatPayload,
   CHAT_MESSAGE_CHARS,
   CHAT_PREVIEW_CHARS,
   isDiscordUrl,
@@ -24,12 +29,13 @@ import { reportError } from "@/lib/observability";
 
 /**
  * Sends forwarded requests. capture_webhook() queues a delivery for every
- * captured request of a kind the endpoint forwards (migrations 00050 and
- * 00058); this loop claims due deliveries with a lease, sends each one in its
+ * captured request to every destination that takes its kind (migrations
+ * 00050, 00058 and 00063); this loop claims due deliveries with a lease,
+ * skips those the destination's filter turns down, sends each one in its
  * format (format.ts: an HTTP request as received, an email as signed JSON,
- * either as a chat message to Slack or Discord) and records the outcome,
- * which schedules the next try (schedule.ts) within the endpoint's retry
- * window or settles the delivery.
+ * the owner's JSON template, either as a chat message to Slack or Discord)
+ * and records the outcome, which schedules the next try (schedule.ts) within
+ * the destination's retry window or settles the delivery.
  *
  * One loop per process, started from instrumentation.ts. Several processes
  * may run it: the claim never hands one delivery to two of them, and a
@@ -228,7 +234,14 @@ export interface OutgoingSettings {
   secret: string;
   /** endpoints.forward_sent_field: the body field with the sender's time. */
   sentField?: string | null;
+  /** The destination's JSON body template (format "template"). */
+  bodyTemplate?: Json | null;
+  /** The destination's chat message template; null keeps the standard message. */
+  messageTemplate?: string | null;
 }
+
+/** The most a template may produce; the notify proxy refuses larger bodies. */
+const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
 
 /** The sender's own time for a request, as the dashboard reads it too (timing.ts). */
 export function requestSenderTime(
@@ -262,12 +275,56 @@ export function outgoingFor(
     target: deliveryTarget(settings.url, format),
     sent: requestSenderTime(request, settings.sentField),
   };
+  const endpoint = { slug: settings.slug, name: settings.name };
   if (format === "chat") {
+    if (settings.messageTemplate) {
+      const context = templateContextFor(request, endpoint, {
+        includeExtracts: settings.showEmailExtracts,
+        withSignature: true,
+      });
+      const text = renderTemplate(settings.messageTemplate, context, {
+        maxBytes: CHAT_MESSAGE_CHARS * 4,
+      });
+      if (!text.trim()) return { reason: "The message template came out empty.", facts };
+      return {
+        outgoing: jsonForward(
+          settings.url,
+          { "content-type": "application/json", "user-agent": FORWARD_USER_AGENT },
+          JSON.stringify(customChatPayload(truncatePreview(text, CHAT_MESSAGE_CHARS), settings.url))
+        ),
+        facts,
+      };
+    }
     return { outgoing: chatForward(request, settings.slug, settings.url, facts.sent), facts };
   }
   const hasOwnerHeaders = settings.ownerHeaders.length > 0;
+  if (format === "template") {
+    if (settings.bodyTemplate === undefined || settings.bodyTemplate === null) {
+      return { reason: "The destination has no template.", facts };
+    }
+    let body: string;
+    try {
+      const context = templateContextFor(request, endpoint, {
+        includeExtracts: settings.showEmailExtracts,
+        withSignature: true,
+      });
+      body = JSON.stringify(
+        renderJsonTemplate(settings.bodyTemplate, context, { maxBytes: MAX_TEMPLATE_BYTES })
+      );
+    } catch (error) {
+      return {
+        reason: error instanceof Error ? error.message : "The template could not be filled in.",
+        facts,
+      };
+    }
+    const headers = { ...forwardHeaders(settings.secret, request.id, body) };
+    for (const [name, value] of settings.ownerHeaders) headers[name] = value;
+    return {
+      outgoing: jsonForward(settings.url, headers, body, { ownerHeaders: hasOwnerHeaders }),
+      facts,
+    };
+  }
   if (format === "json") {
-    const endpoint = { slug: settings.slug, name: settings.name };
     const prepared =
       request.kind === "email"
         ? forwardRequest(request, endpoint, settings.secret, settings.showEmailExtracts)
@@ -319,6 +376,8 @@ function prepare(claim: Claim, request: RequestRecord, secret: string) {
     attempt: claim.attempt,
     secret,
     sentField: claim.forward_sent_field,
+    bodyTemplate: claim.body_template,
+    messageTemplate: claim.message_template,
   });
 }
 
@@ -385,18 +444,129 @@ async function release(claim: Claim, delayMs: number): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * The throttle of a destination with a filter, taken once the filter let a
+ * delivery through (one without a filter is throttled when queued).
+ */
+async function takeSlot(claim: Claim): Promise<boolean> {
+  const { data, error } = await createAdminClient().rpc("take_destination_slot", {
+    p_destination_id: claim.destination_id,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+function hasConditions(filter: Json | null): boolean {
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return false;
+  const conditions = (filter as { conditions?: unknown }).conditions;
+  return Array.isArray(conditions) && conditions.length > 0;
+}
+
+/**
+ * A heads-up (a throttled destination that never retries) this late is not
+ * sent: after an outage, or while chat spacing holds it, a burst of stale
+ * heads-ups says nothing the first did not.
+ */
+export const HEADS_UP_MAX_LATE_MS = 60_000;
+
+export function isStaleHeadsUp(
+  claim: Pick<Claim, "throttle_seconds" | "forward_retry_seconds" | "queued_at" | "bypass_filter">,
+  now: number = Date.now()
+): boolean {
+  return (
+    claim.throttle_seconds > 0 &&
+    claim.forward_retry_seconds === 0 &&
+    !claim.bypass_filter &&
+    now - Date.parse(claim.queued_at) > HEADS_UP_MAX_LATE_MS
+  );
+}
+
+/** Puts a claimed delivery down as skipped: the destination's filter turned it down. */
+async function skip(claim: Claim, reason: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("skip_email_delivery", {
+    p_delivery_id: claim.delivery_id,
+    p_attempt: claim.attempt,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/** How long a filter on the signature waits for the receiver's check, which runs after the capture. */
+const SIGNATURE_WAIT_MS = 30_000;
+
+export type FilterVerdict = "send" | "skip" | { waitMs: number };
+
+/**
+ * Whether a destination's filter lets a request through. A filter that reads
+ * the signature waits (up to 30 s after the capture) while the receiver's
+ * check of a configured signature has not reported yet.
+ */
+export function filterVerdict(
+  filter: Json | null,
+  request: RequestRecord,
+  signingProvider: string | null,
+  now: number = Date.now()
+): FilterVerdict {
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return "send";
+  const group = filter as { logic?: unknown; conditions?: unknown };
+  if (!Array.isArray(group.conditions) || group.conditions.length === 0) return "send";
+  const conditions = group.conditions as unknown as Condition[];
+  const readsSignature = conditions.some((condition) => condition.field === "signature");
+  if (
+    readsSignature &&
+    signingProvider &&
+    (request.signatureVerified === null || request.signatureVerified === undefined) &&
+    !request.signatureError &&
+    now - request.receivedAt < SIGNATURE_WAIT_MS
+  ) {
+    return { waitMs: 2000 };
+  }
+  return conditionsHold(
+    { logic: group.logic === "or" ? "or" : "and", conditions },
+    ruleSubjectFor(request)
+  )
+    ? "send"
+    : "skip";
+}
+
 /** Sends one claimed delivery and records the outcome. */
 async function deliver(claim: Claim, request: RequestRecord | undefined): Promise<void> {
   // Deliveries that cannot be sent at all fail at once: retrying will not help.
   const giveUp = (reason: string) =>
     record(claim, { status: null, durationMs: 0, excerpt: null, error: reason }, false);
   if (!request) return giveUp("The request is no longer stored.");
-  if (!claim.forward_url || !claim.forward_secret_encrypted) {
-    return giveUp("Forwarding is not set up for this endpoint.");
+  if (!claim.forward_url) return giveUp("The destination has no URL.");
+
+  const verdict = claim.bypass_filter
+    ? "send"
+    : filterVerdict(claim.destination_filter, request, claim.signing_provider);
+  if (verdict === "skip") return skip(claim, "Not sent: the destination's filter did not match.");
+  if (verdict !== "send") return release(claim, verdict.waitMs);
+  if (isStaleHeadsUp(claim)) {
+    return skip(claim, "Not sent: a heads-up that could not go out within a minute is dropped.");
+  }
+  if (
+    claim.throttle_seconds > 0 &&
+    !claim.bypass_filter &&
+    hasConditions(claim.destination_filter) &&
+    !(await takeSlot(claim))
+  ) {
+    return skip(
+      claim,
+      `Not sent: at most one every ${claim.throttle_seconds} s, and one went out less than that before.`
+    );
+  }
+
+  const format = resolveFormat(request.kind, claim.forward_format, claim.forward_url);
+  // Chat messages are not signed; every other format needs the secret.
+  if (format !== "chat" && !claim.forward_secret_encrypted) {
+    return giveUp("The destination has no signing secret. Open it and save it again.");
   }
   let prepared: ReturnType<typeof outgoingFor>;
   try {
-    const secret = decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"));
+    const secret = claim.forward_secret_encrypted
+      ? decryptSigningSecret(Buffer.from(claim.forward_secret_encrypted, "base64"))
+      : "";
     prepared = prepare(claim, request, secret);
   } catch (error) {
     // A server problem (SIGNING_SECRET_KEY missing or changed): retried on the
@@ -447,6 +617,7 @@ async function claimDeliveries(
     p_limit: limit,
     p_per_endpoint: PER_ENDPOINT,
     p_lease_seconds: LEASE_SECONDS,
+    p_all: true,
   });
   if (error) throw error;
   if (!claims || claims.length === 0) return { claims: [], requests: new Map() };

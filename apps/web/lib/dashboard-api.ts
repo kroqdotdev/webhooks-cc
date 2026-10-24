@@ -47,6 +47,8 @@ export interface DashboardEndpoint {
   /** Owner only. */
   forwardUrl?: string | null;
   hasForwardSecret?: boolean;
+  /** How many destinations captures go to. */
+  destinationCount?: number;
   /** Which captured requests are forwarded. */
   forwardHttp?: boolean;
   forwardEmail?: boolean;
@@ -63,8 +65,8 @@ export interface DashboardEndpoint {
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
-export type DeliveryFormat = "as_received" | "json" | "chat";
-export type DeliveryStatus = "pending" | "succeeded" | "failed";
+export type DeliveryFormat = "as_received" | "json" | "chat" | "template";
+export type DeliveryStatus = "pending" | "succeeded" | "failed" | "skipped";
 
 export interface TeamEndpointShare {
   teamId: string;
@@ -179,11 +181,19 @@ export interface DeliveryAttempt {
 }
 
 /** One forwarded copy of a captured request, with its tries (newest first). */
+/** Where a delivery went, as the log names it; null for deliveries from before destinations. */
+export interface DeliveryDestinationRef {
+  id: string;
+  name: string | null;
+  url: string;
+}
+
 export interface RequestDelivery {
   id: string;
   requestId: string;
   kind: "http" | "email";
   status: DeliveryStatus;
+  destination: DeliveryDestinationRef | null;
   attempts: number;
   createdAt: number;
   finishedAt: number | null;
@@ -209,6 +219,7 @@ export interface LogDelivery {
   requestId: string;
   kind: "http" | "email";
   status: DeliveryStatus;
+  destination: DeliveryDestinationRef | null;
   attempts: number;
   createdAt: number;
   finishedAt: number | null;
@@ -236,7 +247,7 @@ export interface DeliverySummary {
   total: number;
 }
 
-export type DeliveryLogFilter = "all" | "pending" | "failed";
+export type DeliveryLogFilter = "all" | "pending" | "failed" | "skipped";
 
 export interface ForwardTestResult {
   status: number | null;
@@ -334,7 +345,12 @@ export async function sendForwardTest(
 export async function fetchDeliveryLog(
   accessToken: string,
   slug: string,
-  options: { limit?: number; status?: DeliveryLogFilter; before?: string | null } = {}
+  options: {
+    limit?: number;
+    status?: DeliveryLogFilter;
+    before?: string | null;
+    destinationId?: string | null;
+  } = {}
 ): Promise<LogDelivery[]> {
   // URLSearchParams encodes the "+" in a cursor's offset.
   const params = new URLSearchParams({
@@ -342,6 +358,7 @@ export async function fetchDeliveryLog(
     status: options.status ?? "all",
   });
   if (options.before) params.set("before", options.before);
+  if (options.destinationId) params.set("destination", options.destinationId);
   const response = await fetch(
     `${endpointPath(slug)}/deliveries?${params.toString()}`,
     withAuthHeaders(accessToken)
@@ -362,13 +379,215 @@ export async function fetchDeliverySummary(
 
 export class ForwardingOffError extends Error {}
 
+export type DestinationFormatSetting = "auto" | "as_received" | "json" | "chat" | "template";
+
+/** Where an endpoint's captures go (lib/supabase/destinations.ts). */
+export interface DashboardDestination {
+  id: string;
+  position: number;
+  name: string | null;
+  enabled: boolean;
+  url: string;
+  hasSecret: boolean;
+  http: boolean;
+  email: boolean;
+  format: DestinationFormatSetting;
+  filter: { logic: "and" | "or"; conditions: Condition[] } | null;
+  bodyTemplate: unknown;
+  messageTemplate: string | null;
+  /** Names and masked values. */
+  headers: { name: string; value: string }[];
+  appendPath: boolean;
+  retrySeconds: number;
+  keepOrder: boolean;
+  sentField: string | null;
+  throttleSeconds: number;
+  delaySeconds: number;
+  role: "forward" | "notify" | null;
+  createdAt: number;
+  updatedAt: number;
+  summary?: {
+    last24h: { delivered: number; failed: number; skipped: number };
+    pending: number;
+  };
+}
+
+/** Fields to create or change; header values left null keep what is stored. */
+export type DestinationInput = Partial<
+  Omit<
+    DashboardDestination,
+    "id" | "hasSecret" | "headers" | "role" | "createdAt" | "updatedAt" | "summary"
+  >
+> & { headers?: { name: string; value: string | null }[] };
+
+export async function fetchDestinations(
+  accessToken: string,
+  slug: string,
+  options: { summary?: boolean } = {}
+): Promise<DashboardDestination[]> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations${options.summary ? "?summary=true" : ""}`,
+    withAuthHeaders(accessToken)
+  );
+  return readJson<DashboardDestination[]>(response);
+}
+
+export async function createDestination(
+  accessToken: string,
+  slug: string,
+  input: DestinationInput & { url: string }
+): Promise<DashboardDestination> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  );
+  return readJson<DashboardDestination>(response);
+}
+
+export async function updateDestination(
+  accessToken: string,
+  slug: string,
+  id: string,
+  input: DestinationInput
+): Promise<DashboardDestination> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/${encodeURIComponent(id)}`,
+    withAuthHeaders(accessToken, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  );
+  return readJson<DashboardDestination>(response);
+}
+
+export async function deleteDestination(
+  accessToken: string,
+  slug: string,
+  id: string
+): Promise<void> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/${encodeURIComponent(id)}`,
+    withAuthHeaders(accessToken, { method: "DELETE" })
+  );
+  await readJson<{ deleted: boolean }>(response);
+}
+
+export async function reorderDestinations(
+  accessToken: string,
+  slug: string,
+  ids: string[]
+): Promise<DashboardDestination[]> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/order`,
+    withAuthHeaders(accessToken, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+  );
+  return readJson<DashboardDestination[]>(response);
+}
+
+export async function fetchDestinationSecret(
+  accessToken: string,
+  slug: string,
+  id: string
+): Promise<string> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/${encodeURIComponent(id)}/secret`,
+    withAuthHeaders(accessToken)
+  );
+  return (await readJson<{ secret: string }>(response)).secret;
+}
+
+export async function rotateDestinationSecret(
+  accessToken: string,
+  slug: string,
+  id: string
+): Promise<string> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/${encodeURIComponent(id)}/secret`,
+    withAuthHeaders(accessToken, { method: "POST" })
+  );
+  return (await readJson<{ secret: string }>(response)).secret;
+}
+
+export async function sendDestinationTest(
+  accessToken: string,
+  slug: string,
+  id: string,
+  options: { kind?: "http" | "email"; requestId?: string } = {}
+): Promise<ForwardTestResult & { filterPasses: boolean }> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/${encodeURIComponent(id)}/test`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    })
+  );
+  return readJson<ForwardTestResult & { filterPasses: boolean }>(response);
+}
+
+export interface DestinationPreviewResult {
+  request: {
+    id: string | null;
+    kind: "http" | "email";
+    method: string;
+    path: string;
+    subject: string | null;
+    receivedAt: number;
+    sample: boolean;
+  };
+  /** Whether the destination takes this kind at all. */
+  takesKind: boolean;
+  /** Whether its filter lets the request through. */
+  filterPasses: boolean;
+  format: DeliveryFormat;
+  delivery: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body: string | null;
+    bodyBase64: string | null;
+  } | null;
+  /** Why nothing would be sent (a template that cannot be filled in, a path that escapes). */
+  error: string | null;
+}
+
+/** A dry run of a destination (saved, unsaved changes, or both) against a captured request. */
+export async function previewDestination(
+  accessToken: string,
+  slug: string,
+  body: { destinationId?: string; destination?: DestinationInput; requestId?: string | null },
+  signal?: AbortSignal
+): Promise<DestinationPreviewResult> {
+  const response = await fetch(
+    `${endpointPath(slug)}/destinations/preview`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, requestId: body.requestId ?? undefined }),
+      signal,
+    })
+  );
+  return readJson<DestinationPreviewResult>(response);
+}
+
 /** Queues every failed delivery again, oldest first. Throws ForwardingOffError on 409. */
 export async function redeliverAllFailed(
   accessToken: string,
-  slug: string
+  slug: string,
+  destinationId: string | null = null
 ): Promise<{ queued: number }> {
+  const query = destinationId ? `?destination=${encodeURIComponent(destinationId)}` : "";
   const response = await fetch(
-    `${endpointPath(slug)}/deliveries/redeliver-failed`,
+    `${endpointPath(slug)}/deliveries/redeliver-failed${query}`,
     withAuthHeaders(accessToken, { method: "POST" })
   );
   if (response.status === 409) {
@@ -389,11 +608,22 @@ export async function fetchRequestDeliveries(
   return readJson<RequestDelivery[]>(response);
 }
 
-/** Forwards the request again with the current settings. Throws ForwardingOffError on 409. */
-export async function redeliverRequest(accessToken: string, requestId: string): Promise<void> {
+/**
+ * Forwards the request again with the current settings: to one destination,
+ * or to every destination that takes its kind. Throws ForwardingOffError on 409.
+ */
+export async function redeliverRequest(
+  accessToken: string,
+  requestId: string,
+  destinationId: string | null = null
+): Promise<void> {
   const response = await fetch(
     `/api/requests/${encodeURIComponent(requestId)}/deliveries`,
-    withAuthHeaders(accessToken, { method: "POST" })
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(destinationId ? { destinationId } : {}),
+    })
   );
   if (response.status === 409) {
     const data = (await response.json().catch(() => null)) as { error?: string } | null;

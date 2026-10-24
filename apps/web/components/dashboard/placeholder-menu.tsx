@@ -51,6 +51,48 @@ export const REQUEST_PLACEHOLDERS: PlaceholderGroup[] = [
   },
 ];
 
+/** What a forwarded email can read: the fields of its email.received JSON. */
+export const EMAIL_PLACEHOLDERS: PlaceholderGroup[] = [
+  {
+    label: "From the email",
+    choices: [
+      { label: "Subject", text: "{{ subject }}" },
+      { label: "Sender's address", text: "{{ from.address }}" },
+      { label: "Sender's name", text: "{{ from.name }}" },
+      { label: "First recipient", text: "{{ to.0.address }}" },
+      { label: "Text", text: "{{ text }}" },
+      { label: "Tag (after +)", text: "{{ tag }}" },
+      { label: "The first code found", text: "{{ codes.0 }}" },
+      { label: "The first link found", text: "{{ links.0.url }}" },
+      { label: "Spam score", text: "{{ spam.score }}" },
+      { label: "SPF result", text: "{{ auth.spf }}" },
+      { label: "Received at", text: "{{ receivedAt }}" },
+      { label: "Email id", text: "{{ id }}" },
+    ],
+  },
+];
+
+/** The signature check, for forwarded requests. */
+export const SIGNATURE_PLACEHOLDER: PlaceholderGroup = {
+  label: "From webhooks.cc",
+  choices: [
+    { label: "Signature check", text: "{{ signature }}" },
+    { label: "Endpoint", text: "{{ endpoint.slug }}" },
+  ],
+};
+
+/** The groups a forwarding template offers for the kinds it takes. */
+export function forwardingPlaceholders(http: boolean, email: boolean): PlaceholderGroup[] {
+  const request = REQUEST_PLACEHOLDERS[0];
+  const generated = REQUEST_PLACEHOLDERS[1];
+  return [
+    ...(http ? [request] : []),
+    ...(email ? EMAIL_PLACEHOLDERS : []),
+    SIGNATURE_PLACEHOLDER,
+    generated,
+  ];
+}
+
 /** Inserts `text` into a text input at its cursor (or the end), returning the new value. */
 export function insertAtCursor(
   element: HTMLTextAreaElement | HTMLInputElement | null,

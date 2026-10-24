@@ -1,5 +1,8 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
+/** How a destination's deliveries go out (migration 00063). */
+export type DestinationFormat = "as_received" | "json" | "chat" | "template";
+
 export interface Database {
   public: {
     Tables: {
@@ -734,8 +737,11 @@ export interface Database {
           id: string;
           request_id: string;
           endpoint_id: string;
-          status: "pending" | "succeeded" | "failed";
+          status: "pending" | "succeeded" | "failed" | "skipped";
           kind: "http" | "email";
+          /** The destination it goes to (migration 00063); null once that destination is gone. */
+          destination_id: string | null;
+          bypass_filter: boolean;
           attempts: number;
           next_attempt_at: string;
           locked_until: string | null;
@@ -743,7 +749,7 @@ export interface Database {
           last_error: string | null;
           created_at: string;
           finished_at: string | null;
-          format: "as_received" | "json" | "chat" | null;
+          format: DestinationFormat | null;
           target: string | null;
           sender_at: string | null;
           sender_source: string | null;
@@ -752,7 +758,8 @@ export interface Database {
           id?: string;
           request_id: string;
           endpoint_id: string;
-          status?: "pending" | "succeeded" | "failed";
+          destination_id?: string | null;
+          status?: "pending" | "succeeded" | "failed" | "skipped";
           kind?: "http" | "email";
           attempts?: number;
           next_attempt_at?: string;
@@ -763,14 +770,108 @@ export interface Database {
           finished_at?: string | null;
         };
         Update: {
-          status?: "pending" | "succeeded" | "failed";
+          status?: "pending" | "succeeded" | "failed" | "skipped";
           next_attempt_at?: string;
           locked_until?: string | null;
           last_status?: number | null;
           last_error?: string | null;
           finished_at?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "email_deliveries_destination_id_fkey";
+            columns: ["destination_id"];
+            isOneToOne: false;
+            referencedRelation: "endpoint_destinations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      endpoint_destinations: {
+        Row: {
+          id: string;
+          endpoint_id: string;
+          position: number;
+          name: string | null;
+          enabled: boolean;
+          url: string;
+          /** AES-GCM ciphertext (bytea, read as hex); null until a format that signs needs one. */
+          secret_encrypted: string | null;
+          http: boolean;
+          email: boolean;
+          /** null picks from the URL. */
+          format: DestinationFormat | null;
+          /** { logic, conditions }, null lets everything through. */
+          filter: Json | null;
+          body_template: Json | null;
+          message_template: string | null;
+          headers_encrypted: string | null;
+          append_path: boolean;
+          retry_seconds: number;
+          keep_order: boolean;
+          sent_field: string | null;
+          throttle_seconds: number;
+          delay_seconds: number;
+          last_queued_at: string | null;
+          legacy_role: "forward" | "notify" | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          endpoint_id: string;
+          position?: number;
+          name?: string | null;
+          enabled?: boolean;
+          url: string;
+          secret_encrypted?: string | null;
+          http?: boolean;
+          email?: boolean;
+          format?: DestinationFormat | null;
+          filter?: Json | null;
+          body_template?: Json | null;
+          message_template?: string | null;
+          headers_encrypted?: string | null;
+          append_path?: boolean;
+          retry_seconds?: number;
+          keep_order?: boolean;
+          sent_field?: string | null;
+          throttle_seconds?: number;
+          delay_seconds?: number;
+          legacy_role?: "forward" | "notify" | null;
+          updated_at?: string;
+        };
+        Update: {
+          position?: number;
+          name?: string | null;
+          enabled?: boolean;
+          url?: string;
+          secret_encrypted?: string | null;
+          http?: boolean;
+          email?: boolean;
+          format?: DestinationFormat | null;
+          filter?: Json | null;
+          body_template?: Json | null;
+          message_template?: string | null;
+          headers_encrypted?: string | null;
+          append_path?: boolean;
+          retry_seconds?: number;
+          keep_order?: boolean;
+          sent_field?: string | null;
+          throttle_seconds?: number;
+          delay_seconds?: number;
+          legacy_role?: "forward" | "notify" | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "endpoint_destinations_endpoint_id_fkey";
+            columns: ["endpoint_id"];
+            isOneToOne: false;
+            referencedRelation: "endpoints";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       email_delivery_attempts: {
         Row: {
@@ -875,7 +976,13 @@ export interface Database {
         Returns: Json;
       };
       claim_email_deliveries: {
-        Args: { p_limit?: number; p_per_endpoint?: number; p_lease_seconds?: number };
+        Args: {
+          p_limit?: number;
+          p_per_endpoint?: number;
+          p_lease_seconds?: number;
+          /** Claim every delivery (the destinations' worker); without it, only what the 00058 worker can send. */
+          p_all?: boolean;
+        };
         Returns: Array<{
           delivery_id: string;
           request_id: string;
@@ -887,7 +994,7 @@ export interface Database {
           forward_url: string | null;
           /** base64 of the AES-GCM ciphertext (see lib/crypto.ts). */
           forward_secret_encrypted: string | null;
-          forward_format: "as_received" | "json" | "chat" | null;
+          forward_format: DestinationFormat | null;
           /** base64 of the AES-GCM ciphertext of the owner's headers. */
           forward_headers_encrypted: string | null;
           forward_append_path: boolean;
@@ -896,20 +1003,60 @@ export interface Database {
           show_email_extracts: boolean;
           endpoint_slug: string;
           endpoint_name: string | null;
+          destination_id: string;
+          destination_name: string | null;
+          destination_filter: Json | null;
+          body_template: Json | null;
+          message_template: string | null;
+          /** The endpoint's signature check, when one is set (a filter on it waits for the result). */
+          signing_provider: string | null;
+          /** Sent whatever the filter says (a redelivery asked for by hand). */
+          bypass_filter: boolean;
+          /** At most one delivery every this many seconds (0: no limit). */
+          throttle_seconds: number;
         }>;
       };
       queue_email_redelivery: {
         Args: { p_request_id: string; p_endpoint_id: string };
         Returns: string | null;
       };
-      queue_capture_delivery: {
+      queue_destination_delivery: {
         Args: {
           p_request_id: string;
           p_endpoint_id: string;
+          p_destination_id: string;
           p_kind: "http" | "email";
           p_max_pending?: number;
+          p_capture?: boolean;
+          p_bypass_filter?: boolean;
         };
         Returns: string | null;
+      };
+      queue_destination_redelivery: {
+        Args: { p_request_id: string; p_destination_id: string };
+        Returns: string | null;
+      };
+      skip_email_delivery: {
+        Args: { p_delivery_id: string; p_attempt: number; p_reason: string };
+        Returns: undefined;
+      };
+      take_destination_slot: {
+        Args: { p_destination_id: string };
+        Returns: boolean;
+      };
+      detach_destination_log: {
+        Args: { p_destination_id: string; p_limit?: number };
+        Returns: number;
+      };
+      destination_summaries: {
+        Args: { p_endpoint_id: string; p_since: string };
+        Returns: Array<{
+          destination_id: string;
+          delivered_recent: number;
+          failed_recent: number;
+          skipped_recent: number;
+          pending: number;
+        }>;
       };
       record_email_delivery_attempt: {
         Args: {
@@ -922,7 +1069,7 @@ export interface Database {
           p_error: string | null;
           p_response_excerpt: string | null;
           p_retry_in_seconds: number | null;
-          p_format?: "as_received" | "json" | "chat" | null;
+          p_format?: DestinationFormat | null;
           p_target?: string | null;
           p_sender_at?: string | null;
           p_sender_source?: string | null;
@@ -934,7 +1081,7 @@ export interface Database {
         Returns: undefined;
       };
       queue_failed_redeliveries: {
-        Args: { p_endpoint_id: string; p_max_pending?: number };
+        Args: { p_endpoint_id: string; p_max_pending?: number; p_destination_id?: string | null };
         Returns: number;
       };
       delivery_summary: {

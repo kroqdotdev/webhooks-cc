@@ -16,6 +16,7 @@ from webhooks_cc.verify import (
     RelayedRequestInfo,
     build_paypal_transmission_message,
     verify_forwarded_email,
+    verify_forwarded_json,
     verify_forwarded_request,
     verify_relayed_request,
     verify_signature,
@@ -24,7 +25,7 @@ from webhooks_cc.verify import (
 )
 
 VERIFY = load("verify")["vectors"]
-FORWARDING = load("forwarding", version=2)["vectors"]
+FORWARDING = load("forwarding", version=3)["vectors"]
 
 
 @pytest.mark.parametrize("vector", VERIFY, ids=vector_id)
@@ -53,6 +54,8 @@ def _run_forwarding(vector: dict[str, Any]) -> dict[str, Any]:
             verify_forwarded_email(body, vector["headers"], vector["secret"], now=vector["now"])
         elif vector["function"] == "verifyForwardedRequest":
             verify_forwarded_request(body, vector["headers"], vector["secret"], now=vector["now"])
+        elif vector["function"] == "verifyForwardedJson":
+            verify_forwarded_json(body, vector["headers"], vector["secret"], now=vector["now"])
         else:
             assert vector["function"] == "verifyRelayedRequest"
             verify_relayed_request(body, vector["headers"], vector["secret"])
@@ -116,6 +119,21 @@ def test_forwarded_email_tolerance_is_adjustable() -> None:
         tolerance_seconds=3600,
     )
     assert event["type"] == "email.received"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("your own JSON", {"invoice": "in_1Q", "amount": 4200, "paid": True, "customer": None}),
+        ("your own JSON, a body that is a lone JSON value", 4200),
+    ],
+)
+def test_forwarded_json_returns_the_body(name: str, expected: Any) -> None:
+    vector = _vector(FORWARDING, name)
+    body = verify_forwarded_json(
+        vector["body"], vector["headers"], vector["secret"], now=vector["now"]
+    )
+    assert body == expected
 
 
 def test_relayed_request_returns_the_metadata() -> None:

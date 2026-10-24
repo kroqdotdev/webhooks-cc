@@ -1,3 +1,4 @@
+import type { ForwardFormat } from "./format";
 import { isDiscordUrl } from "./chat";
 import { formatDuration, type SenderTime } from "./timing";
 
@@ -193,7 +194,7 @@ export function retryWindowName(seconds: number): string {
 }
 
 /** The host and path of a URL as the lead line names it; host only for chat webhooks. */
-export function targetOfUrl(url: string, format: "as_received" | "json" | "chat"): string | null {
+export function targetOfUrl(url: string, format: ForwardFormat): string | null {
   try {
     const parsed = new URL(url);
     if (format === "chat") return parsed.host;
@@ -204,9 +205,10 @@ export function targetOfUrl(url: string, format: "as_received" | "json" | "chat"
 }
 
 /** "Forwarded as received to", "Forwarded as signed JSON to", "Posted as a message to". */
-export function leadVerb(format: "as_received" | "json" | "chat"): string {
+export function leadVerb(format: ForwardFormat): string {
   if (format === "chat") return "Posted as a message to";
   if (format === "json") return "Forwarded as signed JSON to";
+  if (format === "template") return "Forwarded as your JSON to";
   return "Forwarded as received to";
 }
 

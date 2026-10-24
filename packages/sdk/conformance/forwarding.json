@@ -1,7 +1,7 @@
 {
-  "version": 2,
+  "version": 3,
   "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
-  "description": "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event or the relay metadata; expected.error is the error code it raises. expected.invalidSecret means it refuses the secret itself, whatever the request carries, with the error the language uses for a bad argument rather than a verification error: the secret decodes to an empty key, and an HMAC keyed with nothing is one anyone can compute.",
+  "description": "webhooks.cc's own forwarding signatures. Call the port's equivalent of function with body (or the bytes of bodyBase64), headers and secret, with the clock at now (milliseconds). expected.ok means it returns the parsed event, the parsed body (verifyForwardedJson, for a destination's own JSON, which can be any JSON value) or the relay metadata; expected.error is the error code it raises. expected.invalidSecret means it refuses the secret itself, whatever the request carries, with the error the language uses for a bad argument rather than a verification error: the secret decodes to an empty key, and an HMAC keyed with nothing is one anyone can compute.",
   "vectors": [
     {
       "name": "forwarded email",
@@ -188,6 +188,96 @@
         "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
         "webhook-timestamp": "1767225600",
         "webhook-signature": "v1,/sg+ctWPFigrRpIbxiAM237HaQI3xaea422gS+J05mc="
+      },
+      "expected": {
+        "invalidSecret": true
+      }
+    },
+    {
+      "name": "your own JSON",
+      "function": "verifyForwardedJson",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"invoice\":\"in_1Q\",\"amount\":4200,\"paid\":true,\"customer\":null}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ab1PIR3OTfCy2pQyUlJBR1OMe20mo3yyPXKe+RgAcwY="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "your own JSON, a body that is a lone JSON value",
+      "function": "verifyForwardedJson",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "4200",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,QjgvpC7zT4UiJVVuMgwWr2Zk01fSF6IVMZ2MqXh8KTE="
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "your own JSON, changed body",
+      "function": "verifyForwardedJson",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "{\"invoice\":\"in_1Q\",\"amount\":9999,\"paid\":true,\"customer\":null}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ab1PIR3OTfCy2pQyUlJBR1OMe20mo3yyPXKe+RgAcwY="
+      },
+      "expected": {
+        "error": "invalid_signature"
+      }
+    },
+    {
+      "name": "your own JSON, signed more than five minutes ago",
+      "function": "verifyForwardedJson",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225901000,
+      "body": "{\"invoice\":\"in_1Q\",\"amount\":4200,\"paid\":true,\"customer\":null}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,ab1PIR3OTfCy2pQyUlJBR1OMe20mo3yyPXKe+RgAcwY="
+      },
+      "expected": {
+        "error": "timestamp_out_of_range"
+      }
+    },
+    {
+      "name": "your own JSON, a signed body that is not JSON",
+      "function": "verifyForwardedJson",
+      "secret": "whsec_c2VjcmV0LWZvci1jb25mb3JtYW5jZS10ZXN0cw==",
+      "now": 1767225660000,
+      "body": "invoice 4200",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,UNTNe+dEpdQhaIELlnVymcsFaui8+SWXgLyyigV9hOg="
+      },
+      "expected": {
+        "error": "invalid_payload"
+      }
+    },
+    {
+      "name": "your own JSON, a secret that decodes to an empty key",
+      "function": "verifyForwardedJson",
+      "secret": "whsec_",
+      "now": 1767225660000,
+      "body": "{\"invoice\":\"in_1Q\",\"amount\":4200,\"paid\":true,\"customer\":null}",
+      "headers": {
+        "webhook-id": "msg_3f6c2a1e8b7d4c9ea2f10d5b6e7c8a90",
+        "webhook-timestamp": "1767225600",
+        "webhook-signature": "v1,gTTPWeYFR1fMHT5tp+wYy/NGEp5RhuNUjiBwS6lKjJM="
       },
       "expected": {
         "invalidSecret": true

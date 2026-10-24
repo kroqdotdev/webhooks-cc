@@ -64,7 +64,10 @@ test.afterAll(async () => {
   server?.closeAllConnections();
   server?.close();
   if (endpointId) {
-    await admin.from("endpoints").update({ forward_enabled: false }).eq("id", endpointId);
+    await admin
+      .from("endpoint_destinations")
+      .update({ enabled: false })
+      .eq("endpoint_id", endpointId);
     await admin.from("requests").delete().eq("endpoint_id", endpointId);
     await admin.from("endpoints").delete().eq("id", endpointId);
   }
@@ -118,21 +121,20 @@ async function captureEmail(subject: string) {
   return (data as { request_id: string }).request_id;
 }
 
-test("set up forwarding: URL, secret, a test delivery, then on", async ({ page }) => {
+test("add a destination for emails: URL, secret, a test delivery", async ({ page }) => {
   const section = await openSettings(page);
 
+  await section.getByRole("button", { name: /^Your server/ }).click();
   await section.getByLabel("Send to").fill(hookUrl);
-  // A first setup proposes both kinds; this endpoint forwards emails only.
+  // A new destination takes both kinds; this one forwards emails only.
   await expect(section.getByLabel("HTTP requests")).toBeChecked();
   await section.getByLabel("HTTP requests").uncheck();
-  // A server URL with only emails forwarded picks signed JSON.
-  await expect(
-    section.getByRole("radiogroup", { name: "Format" }).getByRole("radio", { name: "Signed JSON" })
-  ).toHaveAttribute("aria-checked", "true");
-  await section.getByRole("button", { name: "Save changes" }).click();
-  await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+  // A server URL with only emails picks signed JSON.
+  await expect(section.getByText(/^From the URL: signed json\./)).toBeVisible();
+  await section.getByRole("button", { name: "Add destination" }).click();
+  await expect(section.getByText("Emails.", { exact: true })).toBeVisible({ timeout: 10000 });
 
-  // The first URL brings a secret, before forwarding is on.
+  // Its own secret, made with it.
   await section.getByRole("button", { name: "Reveal" }).click();
   const shownSecret = section.locator("code", { hasText: /^whsec_/ });
   await expect(shownSecret).toHaveText(/^whsec_[A-Za-z0-9+/]{32}$/);
@@ -154,19 +156,12 @@ test("set up forwarding: URL, secret, a test delivery, then on", async ({ page }
     )
   ).toBe(true);
 
-  await section.getByRole("switch", { name: "Forward captured requests" }).click();
-  await expect(section.getByText("Forwarding turned on.")).toBeVisible();
-  await section.getByRole("button", { name: "Save changes" }).click();
-  await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
-  await expect(
-    section.getByText("On. Every email captured here is sent to the URL below.")
-  ).toBeVisible();
   const { data } = await admin
-    .from("endpoints")
-    .select("forward_enabled, forward_url")
-    .eq("id", endpointId)
+    .from("endpoint_destinations")
+    .select("enabled, url, http, email")
+    .eq("endpoint_id", endpointId)
     .single();
-  expect(data).toEqual({ forward_enabled: true, forward_url: hookUrl });
+  expect(data).toEqual({ enabled: true, url: hookUrl, http: false, email: true });
 });
 
 test("a captured email is forwarded, shown as delivered, and can be sent again", async ({
@@ -194,9 +189,11 @@ test("a captured email is forwarded, shown as delivered, and can be sent again",
 
   await signInTestUser(page, testUser, `/dashboard?endpoint=${endpointSlug}`);
   await page.getByRole("button", { name: /^EMAIL Forward me/ }).click();
-  await expect(shown(page.getByText("Forwarded as this JSON to"))).toBeVisible({
-    timeout: 15000,
-  });
+  await expect(shown(page.getByText(/^Destinations set to signed JSON get this JSON/))).toBeVisible(
+    {
+      timeout: 15000,
+    }
+  );
   await shown(page.getByRole("button", { name: /^Deliveries$/i })).click();
   await expect(shown(page.getByText(/^Forwarded as signed JSON to /))).toBeVisible();
   const cards = shown(page.getByRole("region", { name: /^(Delivery|Redelivery)$/ }));
@@ -220,12 +217,26 @@ test("a captured email is forwarded, shown as delivered, and can be sent again",
   await expect(cards.first()).toContainText("Delivered", { timeout: 15000 });
 });
 
-test("turning forwarding off stops it", async ({ page }) => {
+test("switching the destination off stops it", async ({ page }) => {
   const section = await openSettings(page);
-  await section.getByRole("switch", { name: "Forward captured requests" }).click();
-  await expect(section.getByText("Forwarding turned off.")).toBeVisible();
-  await section.getByRole("button", { name: "Save changes" }).click();
-  await expect(section.getByText("Saved.")).toBeVisible({ timeout: 10000 });
+  const toggle = section.getByRole("switch", { name: /^127\.0\.0\.1:\d+ on$/ });
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect(section.getByText("Off. Nothing is sent.")).toBeVisible({ timeout: 10000 });
+  // The row turns off at once; the change is saved a moment later.
+  await expect
+    .poll(
+      async () =>
+        (
+          await admin
+            .from("endpoint_destinations")
+            .select("enabled")
+            .eq("endpoint_id", endpointId)
+            .single()
+        ).data?.enabled,
+      { timeout: 10000 }
+    )
+    .toBe(false);
 
   const before = received.length;
   await captureEmail("Not forwarded");

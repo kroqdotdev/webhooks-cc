@@ -591,6 +591,513 @@ func nonEmpty(s string) *string {
 	return &s
 }
 
+// DestinationFormat is how a destination sends.
+type DestinationFormat string
+
+// The formats of a destination. FormatAuto picks from the URL: a chat
+// message for Slack and Discord, otherwise HTTP requests as received and
+// emails as signed JSON. A delivery's format is never FormatAuto.
+const (
+	FormatAuto       DestinationFormat = "auto"
+	FormatAsReceived DestinationFormat = "as_received"
+	FormatJSON       DestinationFormat = "json"
+	FormatTemplate   DestinationFormat = "template"
+	FormatChat       DestinationFormat = "chat"
+)
+
+// DestinationFilter says which captured requests a destination gets: those
+// its conditions match, all of them (Logic "and", the default) or any
+// ("or"). The conditions are those of response rules, and may also read:
+//
+//   - kind: eq, neq, with Value "http" or "email"
+//   - email (with Name subject, from, to, text or tag): exists, not_exists
+//     and the path ops
+//   - spam_score: exists, not_exists, gt, gte, lt, lte
+//   - email_auth (with Name spf, dkim or dmarc): eq, neq, with a Value such
+//     as "pass" or "fail"
+//   - signature: eq, neq, with Value "verified", "failed" or "missing"
+type DestinationFilter struct {
+	Logic string `json:"logic,omitempty"`
+	// Conditions are at most 10 conditions.
+	Conditions []ResponseRuleCondition `json:"conditions"`
+}
+
+// MarshalJSON writes the filter as the API expects it, no conditions as [].
+func (f DestinationFilter) MarshalJSON() ([]byte, error) {
+	type wire DestinationFilter
+	if f.Conditions == nil {
+		f.Conditions = []ResponseRuleCondition{}
+	}
+	return json.Marshal(wire(f))
+}
+
+// DestinationHeader is one of a destination's own headers, its value masked.
+type DestinationHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// DestinationHeaderInput is a header to save on a destination. A nil Value
+// keeps the value stored under that name.
+type DestinationHeaderInput struct {
+	Name  string  `json:"name"`
+	Value *string `json:"value"`
+}
+
+// Destination is where an endpoint's captures go. An endpoint has up to 10:
+// every capture is queued once for each one that is on and takes its kind,
+// and the destination's Filter decides whether it is sent.
+type Destination struct {
+	ID string
+	// Position is its place in the list, also the order captures are queued in.
+	Position int
+	Name     string
+	Enabled  bool
+	URL      string
+	// HasSecret reports whether it has a signing secret;
+	// DestinationsService.Secret reveals it.
+	HasSecret bool
+	// HTTP and Email say which kinds it takes.
+	HTTP   bool
+	Email  bool
+	Format DestinationFormat
+	// Filter is nil when it gets every capture of the kinds it takes.
+	Filter *DestinationFilter
+	// BodyTemplate is the JSON body a FormatTemplate destination sends, its
+	// strings holding {{ placeholders }} filled in from each request; nil
+	// when there is none.
+	BodyTemplate json.RawMessage
+	// MessageTemplate is the text of a FormatChat destination's messages;
+	// "" sends the standard message.
+	MessageTemplate string
+	// Headers are its own headers, values masked.
+	Headers []DestinationHeader
+	// AppendPath adds the captured path to the URL, for requests sent as
+	// received.
+	AppendPath bool
+	// Retry is how long failed deliveries are retried: 24 hours, 1 hour, or
+	// 0 for one try.
+	Retry time.Duration
+	// KeepOrder sends one delivery at a time, in capture order.
+	KeepOrder bool
+	// SentField is a JSON body field with the sender's own timestamp.
+	SentField string
+	// Throttle sends at most one delivery per period (0: every capture); the
+	// rest are not sent.
+	Throttle time.Duration
+	// Delay is how long after a capture the first try waits, like a callback.
+	Delay time.Duration
+	// Role is "forward" for the destination the endpoint's Forward settings
+	// stand for, "notify" for its NotificationURL, and "" otherwise.
+	Role      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	// Summary is set by DestinationsService.List with Summary.
+	Summary *DestinationSummary
+	// Raw is the JSON the destination was read from.
+	Raw json.RawMessage
+}
+
+// DestinationSummary is a destination's deliveries of the last 24 hours and
+// what is waiting now.
+type DestinationSummary struct {
+	Last24h DeliveryCounts
+	// Pending counts the deliveries queued or retrying now.
+	Pending int
+}
+
+// DeliveryCounts count deliveries by outcome. Skipped ones were turned down
+// by the destination's filter.
+type DeliveryCounts struct {
+	Delivered int
+	Failed    int
+	Skipped   int
+}
+
+// seconds reads a number of seconds as a duration.
+func (o rawObject) seconds(key string) time.Duration {
+	return time.Duration(o.num(key) * float64(time.Second))
+}
+
+// UnmarshalJSON reads a destination as the API returns it.
+func (d *Destination) UnmarshalJSON(data []byte) error {
+	var o rawObject
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	*d = Destination{
+		ID:              o.str("id"),
+		Position:        int(o.num("position")),
+		Name:            o.str("name"),
+		Enabled:         o.boolean("enabled"),
+		URL:             o.str("url"),
+		HasSecret:       o.boolean("hasSecret"),
+		HTTP:            o.boolean("http"),
+		Email:           o.boolean("email"),
+		Format:          DestinationFormat(o.str("format")),
+		MessageTemplate: o.str("messageTemplate"),
+		AppendPath:      o.boolean("appendPath"),
+		Retry:           o.seconds("retrySeconds"),
+		KeepOrder:       o.boolean("keepOrder"),
+		SentField:       o.str("sentField"),
+		Throttle:        o.seconds("throttleSeconds"),
+		Delay:           o.seconds("delaySeconds"),
+		CreatedAt:       o.millis("createdAt"),
+		UpdatedAt:       o.millis("updatedAt"),
+		Raw:             bytes.Clone(data),
+	}
+	if role := o.str("role"); role == "forward" || role == "notify" {
+		d.Role = role
+	}
+	if filter := o.raw("filter"); isJSONObject(filter) {
+		var parsed DestinationFilter
+		if json.Unmarshal(filter, &parsed) == nil {
+			d.Filter = &parsed
+		}
+	}
+	if template := bytes.TrimSpace(o.raw("bodyTemplate")); len(template) > 0 && !bytes.Equal(template, []byte("null")) {
+		d.BodyTemplate = bytes.Clone(template)
+	}
+	for _, item := range o.array("headers") {
+		var header rawObject
+		if json.Unmarshal(item, &header) != nil || header == nil {
+			continue
+		}
+		if name, ok := header.strOK("name"); ok {
+			d.Headers = append(d.Headers, DestinationHeader{Name: name, Value: header.str("value")})
+		}
+	}
+	if summary := o.object("summary"); summary != nil {
+		counts := summary.object("last24h")
+		d.Summary = &DestinationSummary{
+			Last24h: DeliveryCounts{
+				Delivered: int(counts.num("delivered")),
+				Failed:    int(counts.num("failed")),
+				Skipped:   int(counts.num("skipped")),
+			},
+			Pending: int(summary.num("pending")),
+		}
+	}
+	return nil
+}
+
+// MarshalJSON writes the destination in the API's shape, so UnmarshalJSON
+// reads it back.
+func (d Destination) MarshalJSON() ([]byte, error) {
+	type wireCounts struct {
+		Delivered int `json:"delivered"`
+		Failed    int `json:"failed"`
+		Skipped   int `json:"skipped"`
+	}
+	type wireSummary struct {
+		Last24h wireCounts `json:"last24h"`
+		Pending int        `json:"pending"`
+	}
+	var summary *wireSummary
+	if d.Summary != nil {
+		summary = &wireSummary{Last24h: wireCounts(d.Summary.Last24h), Pending: d.Summary.Pending}
+	}
+	headers := d.Headers
+	if headers == nil {
+		headers = []DestinationHeader{}
+	}
+	return json.Marshal(struct {
+		ID              string              `json:"id"`
+		Position        int                 `json:"position"`
+		Name            *string             `json:"name"`
+		Enabled         bool                `json:"enabled"`
+		URL             string              `json:"url"`
+		HasSecret       bool                `json:"hasSecret"`
+		HTTP            bool                `json:"http"`
+		Email           bool                `json:"email"`
+		Format          DestinationFormat   `json:"format"`
+		Filter          *DestinationFilter  `json:"filter"`
+		BodyTemplate    json.RawMessage     `json:"bodyTemplate"`
+		MessageTemplate *string             `json:"messageTemplate"`
+		Headers         []DestinationHeader `json:"headers"`
+		AppendPath      bool                `json:"appendPath"`
+		RetrySeconds    int64               `json:"retrySeconds"`
+		KeepOrder       bool                `json:"keepOrder"`
+		SentField       *string             `json:"sentField"`
+		ThrottleSeconds int64               `json:"throttleSeconds"`
+		DelaySeconds    int64               `json:"delaySeconds"`
+		Role            *string             `json:"role"`
+		CreatedAt       *int64              `json:"createdAt,omitempty"`
+		UpdatedAt       *int64              `json:"updatedAt,omitempty"`
+		Summary         *wireSummary        `json:"summary,omitempty"`
+	}{
+		d.ID, d.Position, nonEmpty(d.Name), d.Enabled, d.URL, d.HasSecret, d.HTTP, d.Email, d.Format,
+		d.Filter, d.BodyTemplate, nonEmpty(d.MessageTemplate), headers, d.AppendPath,
+		int64(d.Retry / time.Second), d.KeepOrder, nonEmpty(d.SentField), int64(d.Throttle / time.Second),
+		int64(d.Delay / time.Second), nonEmpty(d.Role), millisOf(d.CreatedAt), millisOf(d.UpdatedAt), summary,
+	})
+}
+
+// DestinationRequest is the captured request a destination preview or test
+// delivery used.
+type DestinationRequest struct {
+	// ID is "" when nothing of the kind was captured yet and a sample was used.
+	ID     string
+	Kind   RequestKind
+	Method string
+	Path   string
+	// Subject is the email's subject, for emails.
+	Subject    string
+	ReceivedAt time.Time
+	// Sample is true when a sample was used.
+	Sample bool
+}
+
+// destinationRequest reads the request of a preview or test result. A test
+// result carries kind and sample beside it, in outer.
+func (o rawObject) destinationRequest(outer rawObject) DestinationRequest {
+	kind, ok := o.strOK("kind")
+	if !ok {
+		kind = outer.str("kind")
+	}
+	sample := o.optBool("sample")
+	if sample == nil {
+		sample = outer.optBool("sample")
+	}
+	request := DestinationRequest{
+		ID:         o.str("id"),
+		Method:     o.str("method"),
+		Path:       o.str("path"),
+		Subject:    o.str("subject"),
+		ReceivedAt: o.millis("receivedAt"),
+		Sample:     sample != nil && *sample,
+	}
+	if kind := RequestKind(kind); kind == KindHTTP || kind == KindEmail {
+		request.Kind = kind
+	}
+	return request
+}
+
+// destinationRequestJSON is a DestinationRequest in the API's shape.
+type destinationRequestJSON struct {
+	ID         *string     `json:"id"`
+	Kind       RequestKind `json:"kind,omitempty"`
+	Method     string      `json:"method"`
+	Path       string      `json:"path"`
+	Subject    *string     `json:"subject"`
+	ReceivedAt *int64      `json:"receivedAt"`
+	Sample     bool        `json:"sample"`
+}
+
+func (r DestinationRequest) wire() destinationRequestJSON {
+	return destinationRequestJSON{
+		ID: nonEmpty(r.ID), Kind: r.Kind, Method: r.Method, Path: r.Path, Subject: nonEmpty(r.Subject),
+		ReceivedAt: millisOf(r.ReceivedAt), Sample: r.Sample,
+	}
+}
+
+// PreviewedDelivery is the request a destination would send. Header values
+// it stores stay masked.
+type PreviewedDelivery struct {
+	Method  string
+	URL     string
+	Headers map[string]string
+	// Body is the body as text, "" when there is none or it is not UTF-8.
+	Body string
+	// BodyBase64 holds the body's bytes, base64-encoded, when they are not
+	// UTF-8. BodyBytes decodes it.
+	BodyBase64 string
+}
+
+// BodyBytes returns the body's exact bytes, decoding BodyBase64 when it is set.
+func (p *PreviewedDelivery) BodyBytes() []byte {
+	if p.BodyBase64 != "" {
+		if raw, err := base64.StdEncoding.DecodeString(p.BodyBase64); err == nil {
+			return raw
+		}
+	}
+	return []byte(p.Body)
+}
+
+// DestinationPreview is what DestinationsService.Preview reports: what a
+// destination would send for a captured request, without sending it.
+type DestinationPreview struct {
+	Request DestinationRequest
+	// TakesKind reports whether the destination takes this kind of request
+	// at all.
+	TakesKind bool
+	// FilterPasses reports whether its filter lets the request through.
+	FilterPasses bool
+	// Format is how it would go out.
+	Format DestinationFormat
+	// Delivery is the request it would send, or nil when nothing would be
+	// sent; Error says why.
+	Delivery *PreviewedDelivery
+	// Error says why nothing would be sent, such as a template that cannot
+	// be filled in.
+	Error string
+	// Raw is the JSON the preview was read from.
+	Raw json.RawMessage
+}
+
+// UnmarshalJSON reads a preview as the API returns it.
+func (p *DestinationPreview) UnmarshalJSON(data []byte) error {
+	var o rawObject
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	*p = DestinationPreview{
+		Request:      o.object("request").destinationRequest(nil),
+		TakesKind:    o.boolean("takesKind"),
+		FilterPasses: o.boolean("filterPasses"),
+		Format:       DestinationFormat(o.str("format")),
+		Error:        o.str("error"),
+		Raw:          bytes.Clone(data),
+	}
+	if delivery := o.object("delivery"); delivery != nil {
+		p.Delivery = &PreviewedDelivery{
+			Method:     delivery.str("method"),
+			URL:        delivery.str("url"),
+			Headers:    delivery.strMap("headers"),
+			Body:       delivery.str("body"),
+			BodyBase64: delivery.str("bodyBase64"),
+		}
+	}
+	return nil
+}
+
+// MarshalJSON writes the preview in the API's shape, so UnmarshalJSON reads
+// it back.
+func (p DestinationPreview) MarshalJSON() ([]byte, error) {
+	type wireDelivery struct {
+		Method     string            `json:"method"`
+		URL        string            `json:"url"`
+		Headers    map[string]string `json:"headers"`
+		Body       *string           `json:"body"`
+		BodyBase64 *string           `json:"bodyBase64"`
+	}
+	var delivery *wireDelivery
+	if p.Delivery != nil {
+		delivery = &wireDelivery{
+			Method: p.Delivery.Method, URL: p.Delivery.URL, Headers: p.Delivery.Headers,
+			Body: nonEmpty(p.Delivery.Body), BodyBase64: nonEmpty(p.Delivery.BodyBase64),
+		}
+		if delivery.Headers == nil {
+			delivery.Headers = map[string]string{}
+		}
+	}
+	return json.Marshal(struct {
+		Request      destinationRequestJSON `json:"request"`
+		TakesKind    bool                   `json:"takesKind"`
+		FilterPasses bool                   `json:"filterPasses"`
+		Format       DestinationFormat      `json:"format"`
+		Delivery     *wireDelivery          `json:"delivery"`
+		Error        *string                `json:"error"`
+	}{p.Request.wire(), p.TakesKind, p.FilterPasses, p.Format, delivery, nonEmpty(p.Error)})
+}
+
+// SenderTime is the sender's own timestamp, as read from a request.
+type SenderTime struct {
+	At time.Time
+	// Source is where it was read: the body field, or a header such as
+	// webhook-timestamp.
+	Source string
+	// WholeSeconds is true when the timestamp has whole seconds only.
+	WholeSeconds bool
+}
+
+// DestinationTestResult is what DestinationsService.Test reports: one
+// delivery, sent now, and the answer it got.
+type DestinationTestResult struct {
+	// Status is the HTTP status the URL answered, or 0 when no answer arrived.
+	Status   int
+	Duration time.Duration
+	// Excerpt is the start of the response body.
+	Excerpt string
+	// Error says why no answer arrived (a timeout, a refused connection, a
+	// TLS problem).
+	Error string
+	// Delivered reports whether the URL answered with a 2xx status.
+	Delivered bool
+	// Sample is true when nothing of the kind was captured yet, so a sample
+	// was sent.
+	Sample bool
+	// FilterPasses reports whether the destination's filter would have let
+	// the request through; a test sends either way.
+	FilterPasses bool
+	Kind         RequestKind
+	Format       DestinationFormat
+	// URL is where it went, path appended.
+	URL string
+	// Target is the host and path, as the delivery log records them.
+	Target  string
+	Request DestinationRequest
+	// Sender is the sender's own timestamp, when the request had one.
+	Sender *SenderTime
+	// Raw is the JSON the result was read from.
+	Raw json.RawMessage
+}
+
+// UnmarshalJSON reads a test result as the API returns it.
+func (r *DestinationTestResult) UnmarshalJSON(data []byte) error {
+	var o rawObject
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	*r = DestinationTestResult{
+		Status:       int(o.num("status")),
+		Duration:     time.Duration(o.num("durationMs") * float64(time.Millisecond)),
+		Excerpt:      o.str("excerpt"),
+		Error:        o.str("error"),
+		Delivered:    o.boolean("delivered"),
+		Sample:       o.boolean("sample"),
+		FilterPasses: o.boolean("filterPasses"),
+		Format:       DestinationFormat(o.str("format")),
+		URL:          o.str("url"),
+		Target:       o.str("target"),
+		Request:      o.object("request").destinationRequest(o),
+		Raw:          bytes.Clone(data),
+	}
+	if kind := RequestKind(o.str("kind")); kind == KindHTTP || kind == KindEmail {
+		r.Kind = kind
+	}
+	if sender := o.object("sender"); sender != nil {
+		r.Sender = &SenderTime{At: sender.millis("at"), Source: sender.str("source"), WholeSeconds: sender.boolean("wholeSeconds")}
+	}
+	return nil
+}
+
+// MarshalJSON writes the result in the API's shape, so UnmarshalJSON reads
+// it back.
+func (r DestinationTestResult) MarshalJSON() ([]byte, error) {
+	type wireSender struct {
+		At           *int64 `json:"at"`
+		Source       string `json:"source"`
+		WholeSeconds bool   `json:"wholeSeconds"`
+	}
+	var sender *wireSender
+	if r.Sender != nil {
+		sender = &wireSender{At: millisOf(r.Sender.At), Source: r.Sender.Source, WholeSeconds: r.Sender.WholeSeconds}
+	}
+	var status *int
+	if r.Status != 0 {
+		status = &r.Status
+	}
+	return json.Marshal(struct {
+		Status       *int                   `json:"status"`
+		DurationMs   int64                  `json:"durationMs"`
+		Excerpt      *string                `json:"excerpt"`
+		Error        *string                `json:"error"`
+		Delivered    bool                   `json:"delivered"`
+		Sample       bool                   `json:"sample"`
+		FilterPasses bool                   `json:"filterPasses"`
+		Kind         RequestKind            `json:"kind,omitempty"`
+		Format       DestinationFormat      `json:"format,omitempty"`
+		URL          string                 `json:"url,omitempty"`
+		Target       *string                `json:"target"`
+		Request      destinationRequestJSON `json:"request"`
+		Sender       *wireSender            `json:"sender"`
+	}{
+		status, r.Duration.Milliseconds(), nonEmpty(r.Excerpt), nonEmpty(r.Error), r.Delivered, r.Sample,
+		r.FilterPasses, r.Kind, r.Format, r.URL, nonEmpty(r.Target), r.Request.wire(), sender,
+	})
+}
+
 // Endpoint is a webhook endpoint. It captures requests at URL and email at
 // EmailAddress.
 type Endpoint struct {

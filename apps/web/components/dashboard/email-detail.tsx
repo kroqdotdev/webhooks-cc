@@ -677,12 +677,12 @@ function EmailJsonPane({
         {forwardEnabled ? (
           <>
             <span>
-              Forwarded as this JSON to{" "}
+              Destinations set to signed JSON get this JSON
               {forwardUrl ? (
-                <span className="font-mono text-foreground break-all">{forwardUrl}</span>
-              ) : (
-                "the endpoint's forwarding URL"
-              )}
+                <>
+                  , like <span className="font-mono text-foreground break-all">{forwardUrl}</span>
+                </>
+              ) : null}
               .
             </span>
             <button

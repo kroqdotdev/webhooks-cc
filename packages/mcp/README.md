@@ -68,7 +68,7 @@ Get your API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/a
 
 ## What it exposes
 
-The server exposes `40` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
+The server exposes `45` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
 
 ### Endpoint tools
 
@@ -109,14 +109,18 @@ The request tools and resources return emails too (filter with `kind`), without 
 
 ### Forwarding tools
 
-Forward every captured HTTP request and email to a URL or a Slack or Discord channel, as received,
-as signed JSON or as a chat message, retried and logged (owner only):
+Send captured HTTP requests and emails to up to 10 destinations (your servers, Slack or Discord
+channels, Zapier or n8n), each with its own kinds, conditions, format (as received, signed JSON,
+a JSON body you shape with placeholders, or a chat message), throttle, delay and signing secret,
+retried and logged (owner only):
 
-- `configure_forwarding` (URL, on/off, kinds, format, your headers, path, retries, order, sent time field)
-- `get_forwarding_secret` (returns the `whsec_` secret; with `rotate: true`, replaces it)
-- `test_forwarding`
-- `list_deliveries` (the delivery log with its counts, or every try of one request)
-- `redeliver` (one request, or every failed delivery of an endpoint)
+- `list_destinations`, `add_destination`, `update_destination`, `remove_destination`
+- `preview_destination` (dry run: does the filter pass, and the exact request it would send)
+- `configure_forwarding` (the primary destination: URL, on/off, kinds, format, your headers, path, retries, order, sent time field)
+- `get_forwarding_secret` (returns a destination's `whsec_` secret; with `rotate: true`, replaces it)
+- `test_forwarding` (sends one request to a destination and reports the answer)
+- `list_deliveries` (the delivery log with its counts, by destination, or every try of one request)
+- `redeliver` (one request, to one destination or all, or every failed delivery of an endpoint)
 
 ### Send and test tools
 

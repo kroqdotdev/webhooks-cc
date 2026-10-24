@@ -50,7 +50,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: October 23, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: October 25, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -145,9 +145,12 @@ export default function PrivacyPage() {
               .
             </p>
             <p>
-              <span className="font-bold text-foreground">Notifications.</span> If you set a
-              notification URL on an endpoint, each captured request sends its method, path, sender
-              IP address, time, and the start of its body to that URL. You choose the destination.
+              <span className="font-bold text-foreground">Forwarding and notifications.</span> If
+              you add a destination to an endpoint, each captured request or email it takes is sent
+              to the URL you chose: as received, as a JSON document, as a JSON body built from the
+              fields you pick, or as a chat message (a notification is such a message). We keep a
+              log of each delivery (when it was sent, the status of the answer and its first
+              kilobyte) for as long as the request itself. You choose the destinations.
             </p>
             <p>
               <span className="font-bold text-foreground">API keys.</span> We store API keys only as

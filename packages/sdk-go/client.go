@@ -59,6 +59,8 @@ type Client struct {
 	Emails *EmailsService
 	// Forwarding reads and rotates forwarding signing secrets.
 	Forwarding *ForwardingService
+	// Destinations manages where an endpoint's captures go.
+	Destinations *DestinationsService
 }
 
 // RetryOptions controls how API calls are retried. By default they are not
@@ -159,6 +161,7 @@ func New(opts ...Option) (*Client, error) {
 	c.Requests = &RequestsService{c: c}
 	c.Emails = &EmailsService{c: c}
 	c.Forwarding = &ForwardingService{c: c}
+	c.Destinations = &DestinationsService{c: c}
 	return c, nil
 }
 

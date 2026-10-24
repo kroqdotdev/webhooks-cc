@@ -142,7 +142,7 @@ A message the sender retries after a temporary failure is captured once, not onc
 
 ## Notifications
 
-A [notification URL](/docs/notification-webhooks) fires for emails too. The payload has `"method": "EMAIL"`, the recipient address as `path`, and the subject followed by the start of the text as `preview`.
+A [Slack or Discord destination](/docs/notification-webhooks) posts emails too. The standard message payload has `"method": "EMAIL"`, the recipient address as `path`, and the subject followed by the start of the text as `preview`.
 
 ## In the SDK
 

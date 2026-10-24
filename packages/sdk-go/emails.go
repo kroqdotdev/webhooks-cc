@@ -267,6 +267,8 @@ func ExtractActionLink(email *Request) (string, error) {
 
 // ForwardingService reads and rotates the signing secret of an endpoint's
 // forwarding, for verifying what it delivers. Use it as client.Forwarding.
+// It is the secret of the endpoint's primary destination;
+// DestinationsService reads and rotates each destination's own.
 type ForwardingService struct{ c *Client }
 
 // Secret returns the endpoint's whsec_ signing secret. It returns ErrNotFound

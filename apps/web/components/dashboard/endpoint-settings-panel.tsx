@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { ResponsesSection } from "./responses-section";
 import { AddressPill } from "./endpoint-bar";
-import { ForwardingSection } from "./forwarding-section";
+import { DestinationsSection } from "./destinations-section";
 import { DeliveriesSection } from "./deliveries-section";
 import {
   Field,
@@ -155,70 +155,6 @@ function ReceivingSection({
           </div>
         </>
       )}
-    </Section>
-  );
-}
-
-function NotificationsSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
-  const initial = endpoint.notificationUrl || "";
-  const [url, setUrl] = useState(initial);
-  const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
-  useEffect(() => setUrl(initial), [initial]);
-  const duplicate = !!url.trim() && url.trim() === (endpoint.forwardUrl ?? "").trim();
-  return (
-    <Section
-      id="notifications"
-      title="Notifications"
-      description="A heads-up when something arrives: at most one message per second, sent at once, not retried and not logged."
-      footer={
-        <SaveFooter
-          dirty={url !== initial}
-          saving={saving}
-          error={error}
-          saved={saved}
-          hint="Notification URL changed."
-          onReset={() => {
-            setUrl(initial);
-            setError(null);
-            setSaved(false);
-          }}
-          onSave={() => void save({ notificationUrl: url || null })}
-        />
-      }
-    >
-      <Field
-        id="settings-notification-url"
-        label="Notification URL"
-        help={
-          duplicate ? (
-            <p className="text-destructive">
-              This is also the forwarding URL, so the channel gets requests twice. Keep one of the
-              two.
-            </p>
-          ) : (
-            <p>
-              Slack and Discord show the message as it is; any other server gets the JSON summary.
-              Need every request, retried and logged? That is{" "}
-              <a
-                href="#settings-forwarding"
-                className="underline underline-offset-2 text-foreground"
-              >
-                Forwarding
-              </a>
-              , above.
-            </p>
-          )
-        }
-      >
-        <input
-          id="settings-notification-url"
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://hooks.slack.com/services/..."
-          className="ui-input w-full text-sm py-2!"
-        />
-      </Field>
     </Section>
   );
 }
@@ -595,20 +531,22 @@ export function EndpointSettingsPanel({
   // rename it and change its responses, but not change its email setting or
   // delete it (the API enforces the same split).
   const isOwner = endpoint.notificationUrl !== undefined;
-  // The log exists once a forwarding URL was saved (its secret stays after the URL goes).
-  const hasLog = isOwner && (!!endpoint.forwardUrl || endpoint.hasForwardSecret === true);
+  // The log exists once a destination was added (its rows stay after it goes).
+  const hasLog =
+    isOwner && ((endpoint.destinationCount ?? 0) > 0 || endpoint.hasForwardSecret === true);
   const sections = useMemo(
     () =>
       [
+        // In the order a request meets them: it arrives, its signature is
+        // checked, it is answered, and it is sent on.
         { id: "receiving", label: "Receiving" },
+        ...(isOwner ? [{ id: "verification", label: "Signature verification" }] : []),
         { id: "responses", label: "Responses" },
         ...(isOwner
           ? [
               { id: "forwarding", label: "Forwarding" },
               ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
-              { id: "notifications", label: "Notifications" },
               { id: "sharing", label: "Team sharing" },
-              { id: "verification", label: "Signature verification" },
               { id: "delete", label: "Delete endpoint" },
             ]
           : []),
@@ -675,9 +613,10 @@ export function EndpointSettingsPanel({
       <div ref={scroller} className="flex-1 overflow-y-auto">
         <div className="max-w-[780px] p-4 md:p-6 space-y-6">
           <ReceivingSection endpoint={endpoint} isOwner={isOwner} />
+          {isOwner && <VerificationSection endpoint={endpoint} />}
           <ResponsesSection endpoint={endpoint} />
           {isOwner && (
-            <ForwardingSection endpoint={endpoint} onSeeDeliveries={() => jump("deliveries")} />
+            <DestinationsSection endpoint={endpoint} onSeeDeliveries={() => jump("deliveries")} />
           )}
           {hasLog && (
             <DeliveriesSection
@@ -685,9 +624,7 @@ export function EndpointSettingsPanel({
               onOpenRequest={(requestId) => onOpenRequestDeliveries?.(requestId)}
             />
           )}
-          {isOwner && <NotificationsSection endpoint={endpoint} />}
           {isOwner && <SharingSection endpointId={endpoint.id} />}
-          {isOwner && <VerificationSection endpoint={endpoint} />}
           {isOwner && <DeleteSection endpoint={endpoint} requestCount={requestCount} />}
         </div>
       </div>

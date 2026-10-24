@@ -8,7 +8,9 @@ import { getForwardSecret, queueRedelivery } from "@/lib/supabase/forwarding";
 import { runForwardingBatch } from "@/lib/forwarding/worker";
 
 /**
- * Email forwarding against the local database (migration 00050) and a local
+ * Email forwarding against the local database (migrations 00050 and 00063,
+ * through the endpoint's old forward* fields, which stand for its primary
+ * destination) and a local
  * HTTP server standing in for the user's. Needs FORWARDING_ALLOW_PRIVATE_TARGETS
  * (as in .env.local) so deliveries may go to 127.0.0.1. A running dev server
  * drains the same queue with its own worker; the assertions hold whichever
@@ -56,7 +58,10 @@ afterAll(async () => {
   server?.closeAllConnections();
   server?.close();
   for (const endpoint of endpoints) {
-    await admin.from("endpoints").update({ forward_enabled: false }).eq("id", endpoint.id);
+    await admin
+      .from("endpoint_destinations")
+      .update({ enabled: false })
+      .eq("endpoint_id", endpoint.id);
     await admin.from("requests").delete().eq("endpoint_id", endpoint.id);
     await admin.from("endpoints").update({ request_count: 0 }).eq("id", endpoint.id);
     await admin.from("endpoints").delete().eq("id", endpoint.id);
@@ -273,7 +278,7 @@ describe("email forwarding", () => {
     expect((await deliveries(endpoint.id))[0]).toMatchObject({
       request_id: requestId,
       status: "failed",
-      last_error: "Forwarding was turned off.",
+      last_error: "The destination was switched off.",
     });
 
     const { data: history } = await admin
@@ -336,13 +341,13 @@ describe("email forwarding", () => {
       .update({ next_attempt_at: new Date(Date.now() + 3_600_000).toISOString() })
       .eq("endpoint_id", endpoint.id);
     const { error } = await admin
-      .from("endpoints")
-      .update({ forward_enabled: false })
-      .eq("id", endpoint.id);
+      .from("endpoint_destinations")
+      .update({ enabled: false })
+      .eq("endpoint_id", endpoint.id);
     expect(error).toBeNull();
     expect((await deliveries(endpoint.id))[0]).toMatchObject({
       status: "failed",
-      last_error: "Forwarding was turned off.",
+      last_error: "The destination was switched off.",
     });
   });
 
@@ -353,7 +358,7 @@ describe("email forwarding", () => {
     await updateEndpointBySlugForUser({ userId, slug: endpoint.slug, forwardEnabled: false });
     expect((await deliveries(endpoint.id))[0]).toMatchObject({
       status: "failed",
-      last_error: "Forwarding was turned off.",
+      last_error: "The destination was switched off.",
     });
   });
 });
