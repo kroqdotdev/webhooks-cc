@@ -8,28 +8,9 @@ import {
   MOCK_RESPONSE_DELAY_MIN,
   MOCK_RESPONSE_DELAY_MAX,
   MAX_RESPONSE_RULES,
-  MAX_CONDITIONS_PER_RULE,
+  MAX_RULE_NAME_LEN,
 } from "@webhooks-cc/sdk";
-
-const VALID_RULE_FIELDS = new Set([
-  "method",
-  "path",
-  "header",
-  "body_contains",
-  "body_path",
-  "query",
-]);
-const VALID_RULE_OPS = new Set(["eq", "contains", "starts_with", "matches", "exists"]);
-
-/** Valid ops per field — must match the Rust evaluator and SDK validation. */
-const VALID_OPS_BY_FIELD: Record<string, Set<string>> = {
-  method: new Set(["eq"]),
-  path: new Set(["eq", "contains", "starts_with", "matches"]),
-  header: new Set(["exists", "eq", "contains"]),
-  body_contains: new Set(["contains"]),
-  body_path: new Set(["exists", "eq", "contains"]),
-  query: new Set(["exists", "eq"]),
-};
+import { conditionProblems } from "./rules";
 
 /**
  * Validate a notificationUrl field from a request body.
@@ -210,15 +191,6 @@ export function validateResponseRules(
         ),
       };
     }
-    if (conditions.length > MAX_CONDITIONS_PER_RULE) {
-      return {
-        valid: false,
-        response: Response.json(
-          { error: `responseRules[${i}]: max ${MAX_CONDITIONS_PER_RULE} conditions` },
-          { status: 400 }
-        ),
-      };
-    }
     // Validate logic field
     if (rule.logic !== undefined && rule.logic !== "and" && rule.logic !== "or") {
       return {
@@ -230,130 +202,26 @@ export function validateResponseRules(
       };
     }
     // Validate rule name length
-    if (rule.name !== undefined && (typeof rule.name !== "string" || rule.name.length > 200)) {
+    if (
+      rule.name !== undefined &&
+      (typeof rule.name !== "string" || rule.name.length > MAX_RULE_NAME_LEN)
+    ) {
       return {
         valid: false,
         response: Response.json(
-          { error: `responseRules[${i}]: name must be a string (max 200 chars)` },
+          { error: `responseRules[${i}]: name must be a string (max ${MAX_RULE_NAME_LEN} chars)` },
           { status: 400 }
         ),
       };
     }
-    for (let j = 0; j < conditions.length; j++) {
-      const c = conditions[j] as Record<string, unknown>;
-      if (!c || typeof c !== "object") {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: must be an object` },
-            { status: 400 }
-          ),
-        };
-      }
-      if (!VALID_RULE_FIELDS.has(c.field as string)) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: invalid field` },
-            { status: 400 }
-          ),
-        };
-      }
-      if (!VALID_RULE_OPS.has(c.op as string)) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: invalid op` },
-            { status: 400 }
-          ),
-        };
-      }
-      // String length limits
-      if (typeof c.value === "string" && c.value.length > 4096) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: value too long (max 4096)` },
-            { status: 400 }
-          ),
-        };
-      }
-      if (typeof c.name === "string" && c.name.length > 256) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: name too long (max 256)` },
-            { status: 400 }
-          ),
-        };
-      }
-      if (typeof c.path === "string" && c.path.length > 256) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: path too long (max 256)` },
-            { status: 400 }
-          ),
-        };
-      }
-      // Required sub-fields
-      if (
-        (c.field === "header" || c.field === "query") &&
-        (typeof c.name !== "string" || c.name.length === 0)
-      ) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: name required for ${c.field}` },
-            { status: 400 }
-          ),
-        };
-      }
-      if (c.field === "body_path" && (typeof c.path !== "string" || c.path.length === 0)) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: path required for body_path` },
-            { status: 400 }
-          ),
-        };
-      }
-      // Require value for non-exists ops
-      if (
-        c.op !== "exists" &&
-        (c.value === undefined || c.value === null || typeof c.value !== "string")
-      ) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: value required when op is "${c.op}"` },
-            { status: 400 }
-          ),
-        };
-      }
-      // Validate op/field compatibility
-      const fieldOps = VALID_OPS_BY_FIELD[c.field as string];
-      if (fieldOps && !fieldOps.has(c.op as string)) {
-        return {
-          valid: false,
-          response: Response.json(
-            {
-              error: `responseRules[${i}].conditions[${j}]: op "${c.op}" not valid for field "${c.field}"`,
-            },
-            { status: 400 }
-          ),
-        };
-      }
-      // Enforce glob pattern max length at API level
-      if (c.op === "matches" && typeof c.value === "string" && c.value.length > 500) {
-        return {
-          valid: false,
-          response: Response.json(
-            { error: `responseRules[${i}].conditions[${j}]: matches pattern too long (max 500)` },
-            { status: 400 }
-          ),
-        };
-      }
+    // Fields, operators, lengths and patterns: the SDK's rule language, with
+    // regular expressions checked by RE2 as the receiver compiles them.
+    const problems = conditionProblems(conditions, "response", `responseRules[${i}].conditions`);
+    if (problems.length > 0) {
+      return {
+        valid: false,
+        response: Response.json({ error: problems[0] }, { status: 400 }),
+      };
     }
     // Validate the rule's response (required)
     if (

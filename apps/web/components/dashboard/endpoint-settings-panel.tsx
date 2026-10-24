@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { Globe, Mail, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
-import { Textarea } from "@/components/ui/textarea";
-import { StatusCodePicker } from "./status-code-picker";
-import { ResponseRulesEditor } from "./response-rules-editor";
+import { ResponsesSection } from "./responses-section";
 import { AddressPill } from "./endpoint-bar";
 import { ForwardingSection } from "./forwarding-section";
 import { DeliveriesSection } from "./deliveries-section";
@@ -24,11 +22,9 @@ import {
   deleteDashboardEndpoint,
   emitDashboardEndpointsChanged,
   type DashboardEndpoint,
-  type ResponseRule,
 } from "@/lib/dashboard-api";
-import { parseStatusCode } from "@/lib/http";
 import { isValidSigningHeaderName } from "@/lib/signing-config";
-import { trackEndpointDeleted, trackEndpointSaved } from "@/lib/analytics";
+import { trackEndpointDeleted } from "@/lib/analytics";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import {
   getWebProviderCredentialLabel,
@@ -36,32 +32,6 @@ import {
   getWebProviderLabel,
   WEB_VERIFICATION_PROVIDER_OPTIONS,
 } from "@/lib/provider-catalog";
-
-/** Suggested response bodies by status code, offered when the user picks a code. */
-const DEFAULT_BODIES: Record<string, string> = {
-  "200": '{"status": "ok"}',
-  "201": '{"id": "abc-123", "created": true}',
-  "202": '{"accepted": true, "message": "Processing"}',
-  "204": "",
-  "301": "",
-  "302": "",
-  "304": "",
-  "307": "",
-  "308": "",
-  "400": '{"error": "bad_request", "message": "Invalid input"}',
-  "401": '{"error": "unauthorized"}',
-  "403": '{"error": "forbidden"}',
-  "404": '{"error": "not_found"}',
-  "405": '{"error": "method_not_allowed"}',
-  "409": '{"error": "conflict", "message": "Resource already exists"}',
-  "422": '{"error": "unprocessable_entity", "message": "Validation failed"}',
-  "429": '{"error": "too_many_requests", "retry_after": 60}',
-  "500": '{"error": "internal_server_error"}',
-  "502": '{"error": "bad_gateway"}',
-  "503": '{"error": "service_unavailable"}',
-  "504": '{"error": "gateway_timeout"}',
-};
-const DEFAULT_BODY_VALUES = new Set(Object.values(DEFAULT_BODIES));
 
 export type { SettingsSection } from "./settings-primitives";
 
@@ -185,155 +155,6 @@ function ReceivingSection({
           </div>
         </>
       )}
-    </Section>
-  );
-}
-
-function ResponsesSection({ endpoint }: { endpoint: EndpointSettingsPanelProps["endpoint"] }) {
-  const mock = endpoint.mockResponse;
-  // Keyed on values, not object identity: every endpoints refetch (another
-  // section saving) hands back new objects, which must not discard edits here.
-  const initialStatus = mock?.status?.toString() || "200";
-  const initialBody = mock?.body || "";
-  const initialDelay = mock?.delay?.toString() || "";
-  const initialRules = JSON.stringify(endpoint.responseRules ?? []);
-  const initial = useMemo(
-    () => ({
-      status: initialStatus,
-      body: initialBody,
-      delay: initialDelay,
-      rules: JSON.parse(initialRules) as ResponseRule[],
-    }),
-    [initialStatus, initialBody, initialDelay, initialRules]
-  );
-  const [status, setStatus] = useState(initial.status);
-  const [body, setBody] = useState(initial.body);
-  const [delayEnabled, setDelayEnabled] = useState(!!initial.delay);
-  const [delay, setDelay] = useState(initial.delay);
-  const [rules, setRules] = useState<ResponseRule[]>(initial.rules);
-  const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
-
-  const reset = useCallback(() => {
-    setStatus(initial.status);
-    setBody(initial.body);
-    setDelayEnabled(!!initial.delay);
-    setDelay(initial.delay);
-    setRules(initial.rules);
-  }, [initial]);
-  useEffect(reset, [reset]);
-
-  const effectiveDelay = delayEnabled ? delay : "";
-  const dirty =
-    status !== initial.status ||
-    body !== initial.body ||
-    effectiveDelay !== initial.delay ||
-    JSON.stringify(rules) !== JSON.stringify(initial.rules);
-
-  const onSave = async () => {
-    const delayMs = delayEnabled && delay ? parseInt(delay, 10) : undefined;
-    const hasCustomMock = body || status !== "200" || (delayMs && delayMs > 0);
-    const ok = await save({
-      mockResponse: hasCustomMock
-        ? {
-            status: parseStatusCode(status, 200),
-            body,
-            headers: mock?.headers || {},
-            ...(delayMs && delayMs > 0 ? { delay: delayMs } : {}),
-          }
-        : null,
-      responseRules: rules.length > 0 ? rules : null,
-    });
-    if (ok) {
-      trackEndpointSaved(
-        { name: endpoint.name ?? "", mockStatus: initial.status, mockBody: initial.body },
-        { name: endpoint.name ?? "", mockStatus: status, mockBody: body }
-      );
-    }
-  };
-
-  return (
-    <Section
-      id="responses"
-      title="HTTP responses"
-      description="What senders get back from this endpoint. Emails are always accepted with a standard reply."
-      footer={
-        <SaveFooter
-          dirty={dirty}
-          saving={saving}
-          error={error}
-          saved={saved}
-          hint="Response changed."
-          onReset={() => {
-            reset();
-            setError(null);
-            setSaved(false);
-          }}
-          onSave={() => void onSave()}
-        />
-      }
-    >
-      <StatusCodePicker
-        id="settings-status"
-        value={status}
-        onChange={(code) => {
-          setStatus(code);
-          if (!body || DEFAULT_BODY_VALUES.has(body)) setBody(DEFAULT_BODIES[code] ?? "");
-        }}
-      />
-      <Field id="settings-body" label="Response body">
-        <Textarea
-          id="settings-body"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder='{"status": "ok"}'
-          rows={3}
-          className="border-strong border-line text-sm font-mono"
-        />
-      </Field>
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={delayEnabled}
-            onChange={(e) => {
-              setDelayEnabled(e.target.checked);
-              if (!e.target.checked) setDelay("");
-            }}
-            className="accent-foreground"
-          />
-          <span className="text-xs font-bold caps">Response delay</span>
-        </label>
-        {delayEnabled && (
-          <>
-            <input
-              id="settings-delay"
-              type="number"
-              min="0"
-              max="30000"
-              step="100"
-              value={delay}
-              onChange={(e) => setDelay(e.target.value)}
-              onBlur={() => {
-                if (!delay) return;
-                const n = parseInt(delay, 10);
-                if (isNaN(n) || n < 0) setDelay("");
-                else if (n > 30000) setDelay("30000");
-              }}
-              placeholder="0-30000 ms"
-              className="ui-input w-full text-sm py-2!"
-            />
-            <p className="text-xs text-muted-foreground">
-              Wait this long before answering (at most 30 s), to test timeouts.
-            </p>
-          </>
-        )}
-      </div>
-      <div className="pt-4 border-t border-line/20">
-        <ResponseRulesEditor rules={rules} onChange={setRules} />
-        <p className="text-xs text-muted-foreground mt-2">
-          The first matching rule wins. Without a match, the status code and body above are sent.
-        </p>
-      </div>
     </Section>
   );
 }
@@ -780,7 +601,7 @@ export function EndpointSettingsPanel({
     () =>
       [
         { id: "receiving", label: "Receiving" },
-        { id: "responses", label: "HTTP responses" },
+        { id: "responses", label: "Responses" },
         ...(isOwner
           ? [
               { id: "forwarding", label: "Forwarding" },

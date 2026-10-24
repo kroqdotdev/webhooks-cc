@@ -140,6 +140,24 @@ await client.endpoints.update(endpoint.slug, {
 });
 ```
 
+Answer differently per request with response rules, and echo the request with placeholders. `previewResponse` shows what a captured request would get back without sending anything:
+
+```typescript
+await client.endpoints.update(endpoint.slug, {
+  responseRules: [
+    {
+      name: "Payment failed",
+      conditions: [{ field: "body_path", op: "eq", path: "type", value: "invoice.payment_failed" }],
+      response: { status: 422, body: '{"event": "{{ json.id }}"}', headers: {} },
+    },
+  ],
+  mockResponse: { status: 200, body: '{"id": "{{ uuid }}"}', headers: {} },
+});
+
+const preview = await client.endpoints.previewResponse(endpoint.slug);
+console.log(preview.rule?.index, preview.response?.body);
+```
+
 Send plain test requests through the hosted receiver:
 
 ```typescript

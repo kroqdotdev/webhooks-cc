@@ -2,7 +2,7 @@ use axum::body::Bytes;
 use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use chrono::Utc;
+use chrono::{SecondsFormat, Utc};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -14,7 +14,9 @@ use tokio::sync::Mutex;
 use super::capture_limiter::CaptureLimiter;
 use super::log_throttle::LogThrottle;
 use super::notification_payload::{NotificationFields, notification_payload};
+use super::placeholders::{self, Mode, TemplateRequest};
 use super::rules::{self, RequestContext, ResponseRule};
+use super::values::LazyBody;
 use crate::AppState; // ResponseRule needed for deserialization
 use crate::metrics;
 
@@ -225,6 +227,9 @@ pub(crate) struct CaptureResult {
     signing_header: Option<String>,
     /// Quota row the capture billed ("user:<id>", "team:<id>", "endpoint:<id>").
     pub(crate) billing_key: Option<String>,
+    /// The endpoint's name, for `{{ endpoint.name }}` in mock responses.
+    #[serde(default)]
+    endpoint_name: Option<String>,
 }
 
 struct WebhookTarget {
@@ -639,6 +644,27 @@ fn send_failure(error: reqwest::Error) -> NotifyFailure {
 fn notification_log_throttle() -> &'static LogThrottle {
     static THROTTLE: OnceLock<LogThrottle> = OnceLock::new();
     THROTTLE.get_or_init(|| LogThrottle::new(QUOTA_LOG_WINDOW, QUOTA_LOG_MAX_SLUGS))
+}
+
+/// Largest mock response body placeholders may produce (the largest body
+/// the receiver accepts, so `{{ body }}` fits).
+const MAX_FILLED_BODY_BYTES: usize = 1024 * 1024;
+
+/// The response with its placeholders filled in from the request: the body
+/// in the mode its Content-Type (or its first character) calls for, header
+/// values as text. Headers that end up too long or holding a line break are
+/// dropped by `build_mock_response`.
+fn fill_mock_response(mut mock: MockResponse, request: &TemplateRequest<'_>) -> MockResponse {
+    if placeholders::may_have_placeholders(&mock.body) {
+        let mode = placeholders::response_mode(&mock.body, &mock.headers);
+        mock.body = placeholders::render(&mock.body, request, mode, MAX_FILLED_BODY_BYTES);
+    }
+    for value in mock.headers.values_mut() {
+        if placeholders::may_have_placeholders(value) {
+            *value = placeholders::render(value, request, Mode::Text, MAX_HEADER_VALUE_LEN + 1);
+        }
+    }
+    mock
 }
 
 /// Build an HTTP response from a mock_response configuration.
@@ -1158,17 +1184,52 @@ async fn handle_webhook_inner(
                             }
                         });
 
-                    let effective_mock = if let Some(ref rules) = parsed_rules {
-                        let ctx = RequestContext {
-                            method: method.as_str(),
-                            path: &req_path,
-                            headers: &filtered_headers,
-                            body: &body_str,
-                            query: &query_params,
+                    // Pick the response and fill in its placeholders before any
+                    // delay: the parsed body is not held across the await.
+                    let effective_mock = {
+                        let content_type = (!content_type.is_empty()).then_some(content_type.as_str());
+                        let lazy_body = LazyBody::new(&body_str, content_type);
+                        let chosen = if let Some(ref rules) = parsed_rules {
+                            let ctx = RequestContext {
+                                method: method.as_str(),
+                                path: &req_path,
+                                headers: &filtered_headers,
+                                body: &body_str,
+                                query: &query_params,
+                                content_type,
+                                size: Some(body.len() as u64),
+                            };
+                            rules::evaluate_rules_with(rules, &ctx, &lazy_body)
+                                .or(capture.mock_response.clone())
+                        } else {
+                            capture.mock_response.clone()
                         };
-                        rules::evaluate_rules(rules, &ctx).or(capture.mock_response.clone())
-                    } else {
-                        capture.mock_response.clone()
+                        chosen.map(|mock| {
+                            let request_id = capture.request_id.clone().unwrap_or_default();
+                            let received = received_at.to_rfc3339_opts(SecondsFormat::Millis, true);
+                            let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+                            let uuid = uuid::Uuid::new_v4().to_string();
+                            fill_mock_response(
+                                mock,
+                                &TemplateRequest {
+                                    id: &request_id,
+                                    method: method.as_str(),
+                                    path: &req_path,
+                                    headers: &filtered_headers,
+                                    query: &query_params,
+                                    body: &lazy_body,
+                                    body_text: &body_str,
+                                    content_type,
+                                    ip: &ip,
+                                    size: body.len() as u64,
+                                    received_at: &received,
+                                    endpoint_slug: &slug,
+                                    endpoint_name: capture.endpoint_name.as_deref(),
+                                    uuid: &uuid,
+                                    now: &now,
+                                },
+                            )
+                        })
                     };
 
                     if let Some(ref mock) = effective_mock {
@@ -1238,6 +1299,81 @@ async fn handle_webhook_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn filled(mock: MockResponse, body: &str, content_type: Option<&str>) -> MockResponse {
+        let headers = HashMap::from([("x-event".to_string(), "order.paid".to_string())]);
+        let query = HashMap::from([("page".to_string(), "2".to_string())]);
+        let lazy = LazyBody::new(body, content_type);
+        fill_mock_response(
+            mock,
+            &TemplateRequest {
+                id: "req_1",
+                method: "POST",
+                path: "/orders",
+                headers: &headers,
+                query: &query,
+                body: &lazy,
+                body_text: body,
+                content_type,
+                ip: "203.0.113.7",
+                size: body.len() as u64,
+                received_at: "2026-01-01T00:00:00.000Z",
+                endpoint_slug: "acme",
+                endpoint_name: None,
+                uuid: "u",
+                now: "n",
+            },
+        )
+    }
+
+    #[test]
+    fn mock_response_placeholders_are_filled_in() {
+        let mock = MockResponse {
+            status: 201,
+            body: r#"{"id": "{{ json.id }}", "echo": {{ json }}, "page": "{{ query.page }}"}"#
+                .to_string(),
+            headers: HashMap::from([
+                ("x-request-id".to_string(), "{{ id }}".to_string()),
+                ("x-event".to_string(), "{{ headers.X-Event | upper }}".to_string()),
+            ]),
+            delay: None,
+        };
+        let out = filled(mock, r#"{"id":"o\"1","n":1.0}"#, Some("application/json"));
+        assert_eq!(
+            out.body,
+            r#"{"id": "o\"1", "echo": {"id":"o\"1","n":1}, "page": "2"}"#
+        );
+        assert_eq!(out.headers["x-request-id"], "req_1");
+        assert_eq!(out.headers["x-event"], "ORDER.PAID");
+        assert_eq!(out.status, 201);
+    }
+
+    #[test]
+    fn mock_response_without_placeholders_is_unchanged() {
+        let mock = MockResponse {
+            status: 200,
+            body: "{{ name }} and {{ }}".to_string(),
+            headers: HashMap::new(),
+            delay: Some(5),
+        };
+        let out = filled(mock, "", None);
+        assert_eq!(out.body, "{{ name }} and {{ }}");
+        assert_eq!(out.delay, Some(5));
+    }
+
+    #[test]
+    fn a_filled_in_header_with_a_line_break_is_dropped() {
+        let mock = MockResponse {
+            status: 200,
+            body: String::new(),
+            headers: HashMap::from([("x-echo".to_string(), "{{ body }}".to_string())]),
+            delay: None,
+        };
+        let out = filled(mock, "a\r\nset-cookie: x=1", Some("text/plain"));
+        let response = build_mock_response(&out);
+        assert!(response.headers().get("x-echo").is_none());
+        assert!(response.headers().get("set-cookie").is_none());
+    }
 
     #[test]
     fn valid_slugs() {

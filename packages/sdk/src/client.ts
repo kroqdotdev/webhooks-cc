@@ -25,6 +25,8 @@ import type {
   TeamMembers,
   CreateEndpointOptions,
   UpdateEndpointOptions,
+  PreviewResponseOptions,
+  ResponsePreview,
   SendOptions,
   SendTemplateOptions,
   SendToOptions,
@@ -938,7 +940,7 @@ export class WebhooksCC {
             expiresIn: "number|string?",
             mockResponse: "object?",
             responseRules:
-              "ResponseRule[]? — ordered conditional rules (first match wins, max 50). Each rule has conditions (field/op/value) and a response.",
+              "ResponseRule[]?: ordered conditional rules (first match wins, max 50). Each rule has conditions (field/op/value: method, path, header, query, body, body_path, content_type, size with eq, neq, contains, not_contains, starts_with, ends_with, matches, regex, exists, not_exists, gt, gte, lt, lte) and a response whose body and header values may use {{ placeholders }} such as {{ json.id }}.",
             notificationUrl: "string?",
           },
         },
@@ -970,6 +972,17 @@ export class WebhooksCC {
         delete: {
           description: "Delete endpoint and its requests",
           params: { slug: "string" },
+        },
+        previewResponse: {
+          description:
+            "Dry run: which response rule matches a captured request and the response with {{ placeholders }} filled in. Nothing is sent.",
+          params: {
+            slug: "string",
+            requestId:
+              "string?: a captured request (default: the newest HTTP request, or a sample)",
+            mockResponse: "object|null?: try an unsaved default response",
+            responseRules: "ResponseRule[]|null?: try unsaved rules",
+          },
         },
         send: {
           description: "Send a test webhook to endpoint",
@@ -1369,6 +1382,26 @@ export class WebhooksCC {
     delete: async (slug: string): Promise<void> => {
       validatePathSegment(slug, "slug");
       await this.request("DELETE", `/endpoints/${slug}`);
+    },
+
+    /**
+     * What a sender would get back for a captured request, without sending
+     * anything: which rule matches and the response with its placeholders
+     * filled in. Uses the newest HTTP request unless `requestId` is given,
+     * and the saved rules unless `mockResponse` or `responseRules` are.
+     */
+    previewResponse: async (
+      slug: string,
+      options: PreviewResponseOptions = {}
+    ): Promise<ResponsePreview> => {
+      validatePathSegment(slug, "slug");
+      if (options.mockResponse != null) {
+        validateMockResponse(options.mockResponse, "mock response");
+      }
+      if (options.responseRules != null) {
+        validateResponseRules(options.responseRules);
+      }
+      return this.request<ResponsePreview>("POST", `/endpoints/${slug}/responses/preview`, options);
     },
 
     send: async (slug: string, options: SendOptions = {}): Promise<Response> => {

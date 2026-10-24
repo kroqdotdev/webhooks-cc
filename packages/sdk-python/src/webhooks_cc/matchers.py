@@ -31,20 +31,25 @@ _NO_JSON = object()
 
 
 def _glob(pattern: str) -> re.Pattern[str]:
+    # The receiver's globs, as in the TypeScript SDK's globToRegexSource.
     source: list[str] = []
     index = 0
     while index < len(pattern):
         char = pattern[index]
-        if char == "*":
-            if pattern[index + 1 : index + 2] == "*":
-                source.append(".*")
+        if char == "*" and pattern[index + 1 : index + 2] == "*":
+            source.append(".*")
+            index += 1
+            # ** takes the slash after it, so /a/**/b also matches /a/b.
+            if pattern[index + 1 : index + 2] == "/":
                 index += 1
-            else:
-                source.append("[^/]*")
+        elif char == "*":
+            source.append("[^/]*")
+        elif char == "?":
+            source.append("[^/]")
         else:
             source.append(re.escape(char))
         index += 1
-    return re.compile("".join(source))
+    return re.compile("".join(source), re.DOTALL)
 
 
 def _same(expected: Any, actual: Any) -> bool:
@@ -93,7 +98,12 @@ def match_header(name: str, value: str | None = None) -> Matcher:
 
 
 def match_path(pattern: str) -> Matcher:
-    """The path matches a glob: ``*`` within one segment, ``**`` across segments."""
+    """The whole path matches a glob, the way response rules match paths.
+
+    ``*`` is any run of characters other than ``/``, ``**`` is anything (and
+    takes a ``/`` right after it, so ``/a/**/b`` also matches ``/a/b``), ``?`` is
+    one character other than ``/``, and every other character stands for itself.
+    """
     regex = _glob(pattern)
     return lambda request: regex.fullmatch(request.path) is not None
 

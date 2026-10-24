@@ -386,8 +386,13 @@ func (s *TeamShare) UnmarshalJSON(data []byte) error {
 // MockResponse is what an endpoint answers instead of the default 200 OK.
 type MockResponse struct {
 	// Status is the HTTP status (100 to 599).
-	Status  int
-	Body    string
+	Status int
+	// Body may hold {{ placeholders }} the receiver fills in from the request,
+	// such as {{ json.id }}, {{ headers.user-agent }} or {{ uuid }}; see
+	// https://webhooks.cc/docs/mock-responses#placeholders.
+	Body string
+	// Headers are sent with the response; their values may hold placeholders
+	// too.
 	Headers map[string]string
 	// Delay holds the response back, up to 30 seconds.
 	Delay time.Duration
@@ -428,29 +433,162 @@ func (m *MockResponse) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ResponseRule answers with Response when its conditions match.
+// ResponseRule answers with Response when its conditions match. An
+// endpoint's rules are tried in order and the first match wins (at most 50
+// rules).
 type ResponseRule struct {
 	ID      string `json:"id,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Enabled *bool  `json:"enabled,omitempty"`
 	// Logic is "and" (every condition, the default) or "or" (any).
-	Logic      string                  `json:"logic,omitempty"`
+	Logic string `json:"logic,omitempty"`
+	// Conditions are 1 to 10 conditions.
 	Conditions []ResponseRuleCondition `json:"conditions"`
 	Response   MockResponse            `json:"response"`
 }
 
-// ResponseRuleCondition is one condition of a response rule.
+// ResponseRuleCondition is one condition of a response rule: it reads Field
+// of the request and compares it with Value using Op. The fields and the ops
+// each one takes:
+//
+//   - method: eq, neq
+//   - path: eq, neq, contains, not_contains, starts_with, ends_with, matches
+//     (a glob, as in MatchPath) and regex (RE2 syntax)
+//   - header and query (with Name), body_path (with Path): exists,
+//     not_exists, the path ops, and gt, gte, lt, lte
+//   - body: contains, not_contains, regex
+//   - body_contains: contains
+//   - content_type: eq, neq, contains, not_contains, starts_with, regex
+//   - size (in bytes): eq, neq, gt, gte, lt, lte
+//
+// gt, gte, lt and lte compare numbers, so their Value must be one; matches
+// and regex patterns are at most 500 characters. The API refuses rules that
+// break these limits; try rules before saving them with
+// EndpointsService.PreviewResponse.
 type ResponseRuleCondition struct {
-	// Field is method, path, header, body_contains, body_path or query.
+	// Field is the part of the request the condition reads.
 	Field string `json:"field"`
-	// Op is eq, contains, starts_with, matches or exists.
+	// Op is how it compares.
 	Op string `json:"op"`
-	// Value is sent for every op, since all but exists require one (even "").
+	// Value is sent for every op, since all but exists and not_exists
+	// require one (even "").
 	Value string `json:"value"`
 	// Name is the header or query parameter, for header and query conditions.
 	Name string `json:"name,omitempty"`
-	// Path is the dot-separated JSON path, for body_path conditions.
+	// Path is the dot path into the JSON (or form) body, such as
+	// data.items.0.id, for body_path conditions.
 	Path string `json:"path,omitempty"`
+}
+
+// ResponsePreview is what EndpointsService.PreviewResponse reports: what a
+// sender would get back for a request.
+type ResponsePreview struct {
+	// Rule is the rule that answers, or nil when the default response does.
+	Rule *PreviewRule
+	// Response is the response with its placeholders filled in; nil means
+	// the receiver's plain 200 OK.
+	Response *MockResponse
+	// UnknownPlaceholders are placeholders the request has no field for;
+	// they are sent as written.
+	UnknownPlaceholders []string
+	// Email is true for an email: emails get a standard mail-server reply,
+	// never a mock response.
+	Email bool
+	// Request is the request the preview ran against.
+	Request PreviewRequest
+	// Raw is the JSON the preview was read from.
+	Raw json.RawMessage
+}
+
+// PreviewRule is the response rule that answers a preview.
+type PreviewRule struct {
+	// Index is the rule's position in the rules, from 0.
+	Index int
+	Name  string
+}
+
+// PreviewRequest is the request a preview ran against.
+type PreviewRequest struct {
+	// ID is "" when no request was captured yet and a sample was used.
+	ID         string
+	Method     string
+	Path       string
+	ReceivedAt time.Time
+	// Sample is true when no request was captured yet, so a sample was used.
+	Sample bool
+}
+
+// UnmarshalJSON reads a preview as the API returns it.
+func (p *ResponsePreview) UnmarshalJSON(data []byte) error {
+	var o rawObject
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	request := o.object("request")
+	*p = ResponsePreview{
+		UnknownPlaceholders: o.strList("unknownPlaceholders"),
+		Email:               o.boolean("email"),
+		Request: PreviewRequest{
+			ID:         request.str("id"),
+			Method:     request.str("method"),
+			Path:       request.str("path"),
+			ReceivedAt: request.millis("receivedAt"),
+			Sample:     request.boolean("sample"),
+		},
+		Raw: bytes.Clone(data),
+	}
+	if rule := o.object("rule"); rule != nil {
+		p.Rule = &PreviewRule{Index: int(rule.num("index")), Name: rule.str("name")}
+	}
+	if response := o.raw("response"); isJSONObject(response) {
+		p.Response = new(MockResponse)
+		if err := json.Unmarshal(response, p.Response); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MarshalJSON writes the preview in the API's shape, so UnmarshalJSON reads
+// it back.
+func (p ResponsePreview) MarshalJSON() ([]byte, error) {
+	type wireRule struct {
+		Index int     `json:"index"`
+		Name  *string `json:"name"`
+	}
+	type wireRequest struct {
+		ID         *string `json:"id"`
+		Method     string  `json:"method"`
+		Path       string  `json:"path"`
+		ReceivedAt *int64  `json:"receivedAt"`
+		Sample     bool    `json:"sample"`
+	}
+	var rule *wireRule
+	if p.Rule != nil {
+		rule = &wireRule{Index: p.Rule.Index, Name: nonEmpty(p.Rule.Name)}
+	}
+	placeholders := p.UnknownPlaceholders
+	if placeholders == nil {
+		placeholders = []string{}
+	}
+	return json.Marshal(struct {
+		Rule                *wireRule     `json:"rule"`
+		Response            *MockResponse `json:"response"`
+		UnknownPlaceholders []string      `json:"unknownPlaceholders"`
+		Email               bool          `json:"email"`
+		Request             wireRequest   `json:"request"`
+	}{rule, p.Response, placeholders, p.Email, wireRequest{
+		ID: nonEmpty(p.Request.ID), Method: p.Request.Method, Path: p.Request.Path,
+		ReceivedAt: millisOf(p.Request.ReceivedAt), Sample: p.Request.Sample,
+	}})
+}
+
+// nonEmpty is s, or nil (JSON null) for "".
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // Endpoint is a webhook endpoint. It captures requests at URL and email at

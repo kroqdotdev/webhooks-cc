@@ -300,7 +300,14 @@ class Endpoint:
     expires_at: int | None = None
     notification_url: str | None = None
     mock_response: dict[str, Any] | None = None
+    """What the endpoint answers instead of a plain 200 OK: ``status``, ``body``,
+    ``headers`` and ``delay`` (milliseconds). The body and header values may hold
+    ``{{ placeholders }}`` the receiver fills in from the request, such as
+    ``{{ json.id }}``; see https://webhooks.cc/docs/mock-responses#placeholders."""
     response_rules: list[dict[str, Any]] | None = None
+    """Ordered rules, first match wins: ``conditions`` (``logic`` ``"and"`` or
+    ``"or"``) and the ``response`` to send. See :meth:`Endpoints.create
+    <webhooks_cc.client.Endpoints.create>` for the conditions."""
     signing_provider: str | None = None
     has_signing_secret: bool = False
     show_email_extracts: bool | None = None
@@ -349,6 +356,94 @@ class Endpoint:
             ]
             if isinstance(from_teams, list)
             else [],
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class PreviewRule:
+    """The response rule that answers a preview."""
+
+    index: int
+    """Its position in the rules, from 0."""
+    name: str | None
+
+
+@dataclass(frozen=True)
+class PreviewedResponse:
+    """A response as the receiver would send it, placeholders filled in."""
+
+    status: int
+    headers: dict[str, str]
+    body: str
+    delay: int
+    """Milliseconds the receiver waits before answering."""
+
+
+@dataclass(frozen=True)
+class PreviewRequest:
+    """The request a preview ran against."""
+
+    id: str | None
+    """``None`` when no request was captured yet and a sample was used."""
+    method: str
+    path: str
+    received_at: int
+    """Milliseconds since the epoch."""
+    sample: bool
+    """No request was captured yet, so a sample was used."""
+
+
+@dataclass(frozen=True)
+class ResponsePreview:
+    """What ``endpoints.preview_response()`` reports: what a sender would get back."""
+
+    rule: PreviewRule | None
+    """The rule that answers, or ``None`` when the default response does."""
+    response: PreviewedResponse | None
+    """The response with its placeholders filled in; ``None`` means the receiver's
+    plain 200 OK."""
+    unknown_placeholders: list[str]
+    """Placeholders the request has no field for; they are sent as written."""
+    email: bool
+    """The request is an email: emails get a standard mail-server reply, never a
+    mock response."""
+    request: PreviewRequest
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ResponsePreview:
+        rule = data.get("rule")
+        response = data.get("response")
+        request = data.get("request")
+        if not isinstance(request, Mapping):
+            request = {}
+        placeholders = data.get("unknownPlaceholders")
+        return cls(
+            rule=PreviewRule(
+                index=int(_number(rule.get("index"))), name=_str_or_none(rule.get("name"))
+            )
+            if isinstance(rule, Mapping)
+            else None,
+            response=PreviewedResponse(
+                status=int(_number(response.get("status"))),
+                headers=_str_map(response.get("headers")),
+                body=_str_or_none(response.get("body")) or "",
+                delay=int(_number(response.get("delay"))),
+            )
+            if isinstance(response, Mapping)
+            else None,
+            unknown_placeholders=[item for item in placeholders if isinstance(item, str)]
+            if isinstance(placeholders, list)
+            else [],
+            email=data.get("email") is True,
+            request=PreviewRequest(
+                id=_str_or_none(request.get("id")),
+                method=str(request.get("method") or ""),
+                path=str(request.get("path") or ""),
+                received_at=int(_number(request.get("receivedAt"))),
+                sample=request.get("sample") is True,
+            ),
             raw=dict(data),
         )
 

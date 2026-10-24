@@ -131,3 +131,22 @@ func TestMatchersConformance(t *testing.T) {
 		})
 	}
 }
+
+// Beyond the vectors: globs cross line breaks, ? takes a whole character, and
+// a pattern that is not valid UTF-8 does not panic.
+func TestMatchPathGlobs(t *testing.T) {
+	request := &webhookscc.Request{Path: "/a/b\nc/é"}
+	for pattern, want := range map[string]bool{
+		"/a/**":       true,
+		"/a/*/?":      true,
+		"/a/b?c/é":    true,
+		"/a/**/c/é":   true,
+		"/a/b":        false,
+		"/a/*":        false,
+		"/a/b\xffc/é": false,
+	} {
+		if got := webhookscc.MatchPath(pattern)(request); got != want {
+			t.Errorf("MatchPath(%q) = %v, want %v", pattern, got, want)
+		}
+	}
+}

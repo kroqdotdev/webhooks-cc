@@ -17,7 +17,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.42.4";
+export const APP_VERSION = "0.43.0";
 export const CLI_VERSION = "1.4.1";
 export const SDK_VERSION = "1.17.1";
 export const PYTHON_SDK_VERSION = "0.1.3";
@@ -26,6 +26,18 @@ export const MCP_VERSION = "1.13.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.43.0",
+    date: "2026-10-25",
+    title: "Responses That Read More and Echo the Request",
+    track: "web",
+    items: [
+      "Settings has one Responses list in the order the receiver checks it: numbered rules from the top, the first that matches answers, and Otherwise for the rest; every answer has a status, a delay, a body and now headers",
+      "Rule conditions read more and compare more ways: is not, does not contain, ends with, matches regex (RE2, so a pattern can never slow an endpoint down), is missing, and is more or less than for numbers; a body field can be read from form bodies too, and conditions can check the content type and the body's size",
+      "Bodies and header values take placeholders filled in from each request, such as {{ json.id }}, {{ headers.user-agent }}, {{ query.page }}, {{ uuid }} and {{ now }}, with filters like | default and | upper; in a JSON body, text is escaped so the answer stays valid JSON. Insert field picks one for you",
+      "Preview with a captured request shows which rule answers and exactly what it sends, and marks that rule in the list; the API has it too (POST /api/endpoints/{slug}/responses/preview)",
+    ],
+  },
   {
     version: "0.42.4",
     date: "2026-10-24",
