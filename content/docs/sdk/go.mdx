@@ -130,6 +130,54 @@ link, _ := webhookscc.ExtractLink(email) // "https://app.example.com/confirm?tok
 
 `email.Email` holds the parsed message: `Subject`, `From`, `To`, `Text`, `HTML`, attachments, and the SPF, DKIM and DMARC results. `ExtractCode` returns an error when the endpoint's **Show codes and links found in emails** setting is off. See [Email capture](/docs/email-capture) for how capture works.
 
+### Email fields and reply text
+
+An endpoint can pick up to 20 [named fields](/docs/email-capture#fields-you-pick-out) out of every email it captures. Each reads the `subject`, `text`, `html`, `from`, `to` (To and Cc) or one `header`, and the first group of its [RE2](https://github.com/google/re2/wiki/Syntax) pattern (the whole match without a group) is the value:
+
+```go
+_, err := client.Endpoints.Update(ctx, endpoint.Slug, webhookscc.UpdateEndpointOptions{
+	EmailFields: webhookscc.Value([]webhookscc.EmailField{
+		{Name: "invoice", From: "subject", Pattern: `(INV-\d+)`},
+		{Name: "mailer", From: "header", Header: "X-Mailer", Pattern: ".+"},
+	}),
+})
+if err != nil {
+	t.Fatal(err)
+}
+
+email, err := client.Emails.WaitFor(t.Context(), endpoint.Slug, webhookscc.EmailQuery{Tag: run})
+if err != nil {
+	t.Fatal(err)
+}
+invoice := email.EmailFields["invoice"] // "INV-2041"
+reply := email.ReplyText                // "Thanks, paid." without the quoted message and the signature
+```
+
+Every email the client reads carries the values in `EmailFields`, by name (`""` for a field that found nothing, and a nil map when the endpoint has no fields), and forwarding templates read them as `{{ fields.invoice }}`. `endpoint.EmailFields` lists the saved fields, and `webhookscc.Null[[]webhookscc.EmailField]()` removes them. `Update` refuses a list that `webhookscc.EmailFieldIssues` finds fault with (names, sources, headers, pattern lengths) before sending it; the API checks the patterns themselves. `ReplyText` is the [new text of a reply](/docs/email-capture#reply-text), or `""` when the email quotes no earlier message.
+
+### Test an inbound email handler
+
+If your app already receives email through Postmark, SendGrid, Mailgun or CloudMailin, render a captured email in that provider's shape and post it to the handler you wrote for it, on localhost or anywhere else:
+
+```go
+rendered, err := client.Emails.Render(ctx, email.ID, webhookscc.RenderEmailOptions{Format: webhookscc.FormatPostmark})
+if err != nil {
+	t.Fatal(err)
+}
+response, err := client.SendTo(ctx, "http://localhost:8080/inbound/postmark", webhookscc.SendOptions{
+	Body:    rendered.Body,
+	Headers: rendered.Headers,
+})
+if err != nil {
+	t.Fatal(err)
+}
+if response.StatusCode != http.StatusOK {
+	t.Errorf("status = %d", response.StatusCode)
+}
+```
+
+`Format` is `FormatPostmark` (Postmark's inbound JSON), `FormatSendGrid` (an Inbound Parse form), `FormatMailgun` (a route's form; set `MailgunSigningKey`, your Mailgun HTTP webhook signing key, and its `signature` verifies) or `FormatCloudMailin` (JSON Normalized), or `FormatJSON` for the [`email.received` JSON](/docs/forwarding#an-email), unsigned. `rendered.Headers` holds the content type and user agent to send with `rendered.Body`. To post every captured email this way, give a destination that format; see [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape).
+
 ## Send signed webhooks to your handler
 
 Test your own webhook handler, on localhost or anywhere else, with requests signed the way the provider signs them:
@@ -176,7 +224,7 @@ Headers can be an `http.Header`, a captured request's `Headers`, or a `verify.Ma
 
 ## Forwarding destinations
 
-An endpoint [forwards](/docs/forwarding) what it captures to up to 10 destinations, each with its own kinds, filter, format, headers, retries, throttle, delay and signing secret. `client.Destinations` manages them. A `DestinationInput` sends only the fields set with `Value` (or `Null`, which clears `Name`, `Filter`, `BodyTemplate`, `MessageTemplate` and `SentField`):
+An endpoint [forwards](/docs/forwarding) what it captures to up to 10 destinations, each with its own kinds, filter, format, headers, retries, throttle, delay and signing secret. `client.Destinations` manages them. A `DestinationInput` sends only the fields set with `Value` (or `Null`, which clears `Name`, `Filter`, `BodyTemplate`, `MessageTemplate`, `SentField` and `MailgunSigningKey`):
 
 ```go
 destination, err := client.Destinations.Create(ctx, endpoint.Slug, webhookscc.DestinationInput{
@@ -200,7 +248,7 @@ if err != nil {
 fmt.Println(preview.FilterPasses, preview.Error)
 ```
 
-A `DestinationFilter` takes the conditions of [response rules](/docs/mock-responses#what-a-condition-can-check), plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`; see [Send only some captures](/docs/forwarding#send-only-some-captures). `FormatTemplate` sends [your own JSON](/docs/forwarding#your-own-json), and `FormatChat` a message for Slack or Discord, with your own `MessageTemplate` if you like. `Retry`, `Throttle` and `Delay` are `time.Duration` values in whole seconds.
+A `DestinationFilter` takes the conditions of [response rules](/docs/mock-responses#what-a-condition-can-check), plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`; see [Send only some captures](/docs/forwarding#send-only-some-captures). `FormatTemplate` sends [your own JSON](/docs/forwarding#your-own-json), and `FormatChat` a message for Slack or Discord, with your own `MessageTemplate` if you like. `FormatPostmark`, `FormatSendGrid`, `FormatMailgun` and `FormatCloudMailin` post emails [in that mail provider's shape](/docs/forwarding#in-a-mail-providers-shape) and HTTP requests as received; `MailgunSigningKey` signs the Mailgun form as Mailgun does. The key is stored encrypted and never returned (`HasMailgunSigningKey` says whether one is saved). `Retry`, `Throttle` and `Delay` are `time.Duration` values in whole seconds.
 
 `Preview` is a dry run: whether the filter lets a captured request through (`FilterPasses`) and the exact request the destination would send (`Delivery`), or why it would send nothing (`Error`). Set a saved `DestinationID`, unsaved fields in `Destination`, or both, and `RequestID` to run it against a particular request. Nothing is sent.
 
@@ -227,7 +275,7 @@ var email struct {
 _ = json.Unmarshal(event.Data, &email)
 ```
 
-A `*verify.Error` says why a delivery was refused (`Code`); any other error means the call itself was wrong, such as an empty secret. `verify.ForwardedRequest` checks a request forwarded as JSON, and `verify.RelayedRequest` one relayed as it was received.
+The event's `Data` also carries `replyText` and, when the endpoint has named fields, `fields`. A `*verify.Error` says why a delivery was refused (`Code`); any other error means the call itself was wrong, such as an empty secret. `verify.ForwardedRequest` checks a request forwarded as JSON, and `verify.RelayedRequest` one relayed as it was received.
 
 A destination that sends your own JSON is checked with `verify.ForwardedJSON`, which makes the same checks and returns the body, whatever its shape, to unmarshal into a type of your own:
 

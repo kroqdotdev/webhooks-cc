@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use urlencoding::encode;
 
 use super::ApiClient;
-use crate::types::{CapturedRequest, CountResult, PaginatedRequestList, RequestList, SearchResult};
+use crate::types::{
+    CapturedRequest, CountResult, EmailFormat, PaginatedRequestList, RenderedEmail, RequestList,
+    SearchResult,
+};
 
 impl ApiClient {
     pub async fn list_requests(
@@ -65,6 +68,29 @@ impl ApiClient {
         self.require_auth()?;
         let resp = self.get(&format!("/api/requests/{}", encode(request_id))).await?;
         serde_json::from_str(&resp.body).context("failed to parse request")
+    }
+
+    /// Render a captured email for a handler (`POST /api/requests/{id}/render`):
+    /// webhooks.cc's email JSON, or the way an inbound mail provider posts it.
+    /// The Mailgun form is signed with `mailgun_signing_key` when one is given.
+    pub async fn render_email(
+        &self,
+        request_id: &str,
+        format: EmailFormat,
+        mailgun_signing_key: Option<&str>,
+    ) -> Result<RenderedEmail> {
+        self.require_auth()?;
+        let mut body = serde_json::json!({ "format": format });
+        if let Some(key) = mailgun_signing_key {
+            body["mailgunSigningKey"] = key.into();
+        }
+        let resp = self
+            .post(
+                &format!("/api/requests/{}/render", encode(request_id)),
+                &body,
+            )
+            .await?;
+        serde_json::from_str(&resp.body).context("failed to parse rendered email")
     }
 
     #[allow(clippy::too_many_arguments)]

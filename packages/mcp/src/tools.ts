@@ -146,10 +146,28 @@ const destinationFields = {
       "Send only captures that match (null: everything it takes). Conditions like response rules plus kind, email (name: subject, from, to, text, tag), spam_score, email_auth (name: spf, dkim, dmarc) and signature (verified, failed, missing)"
     ),
   format: z
-    .enum(["auto", "as_received", "json", "template", "chat"])
+    .enum([
+      "auto",
+      "as_received",
+      "json",
+      "template",
+      "chat",
+      "postmark",
+      "sendgrid",
+      "mailgun",
+      "cloudmailin",
+    ])
     .optional()
     .describe(
-      "auto (pick from the URL), as_received (relay HTTP requests unchanged; emails as signed JSON), json (signed JSON envelope), template (your bodyTemplate, signed like json), chat (Slack or Discord message)"
+      "auto (pick from the URL), as_received (relay HTTP requests unchanged; emails as signed JSON), json (signed JSON envelope), template (your bodyTemplate, signed like json), chat (Slack or Discord message), or an inbound mail provider's shape for emails (postmark, sendgrid, mailgun, cloudmailin; HTTP requests then go as received), to test the inbound handler you wrote for that provider"
+    ),
+  mailgunSigningKey: z
+    .string()
+    .max(200)
+    .nullable()
+    .optional()
+    .describe(
+      "For format mailgun: your Mailgun HTTP webhook signing key, so the form's signature verifies; null removes it. Write-only."
     ),
   bodyTemplate: z
     .unknown()
@@ -818,6 +836,8 @@ const ESSENTIAL_DETAIL_FIELDS = [
   "tag",
   "subject",
   "from",
+  "fields",
+  "replyText",
   "size",
   "test",
   "spam",
@@ -839,6 +859,13 @@ const ESSENTIAL_DETAIL_FIELDS = [
  * text gets what room is left; and at last the subject is cut, so it always
  * fits.
  */
+/** A rendered email for the output budget: its body cut to fit, and said so. */
+function shrinkRendered(rendered: Record<string, unknown>, max: number): Record<string, unknown> {
+  const body = typeof rendered.body === "string" ? rendered.body : "";
+  if (body.length <= max - 1024) return rendered;
+  return { ...rendered, body: body.slice(0, max - 1024), bodyTruncated: true };
+}
+
 function emailDetail(
   client: WebhooksCC,
   email: EmailRequest,
@@ -1018,7 +1045,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
 
   server.tool(
     "update_endpoint",
-    "Update an endpoint name, mock response, conditional response rules, signing configuration, or whether codes and links are picked out of its emails.",
+    "Update an endpoint name, mock response, conditional response rules, signing configuration, whether codes and links are picked out of its emails, or the named fields picked out of them.",
     {
       slug: z.string().describe("The endpoint slug to update"),
       name: z.string().optional().describe("New display name"),
@@ -1059,6 +1086,27 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         .boolean()
         .optional()
         .describe("Pick codes and links out of emails (dashboard and forwarded JSON). Owner only."),
+      emailFields: z
+        .array(
+          z.object({
+            name: z
+              .string()
+              .describe("Letters, digits and _, starting with a letter: {{ fields.name }}"),
+            from: z
+              .enum(["subject", "text", "html", "from", "to", "header"])
+              .describe("What it reads; html is the HTML as text"),
+            header: z.string().optional().describe('The header name, for from "header"'),
+            pattern: z
+              .string()
+              .describe("RE2 regular expression; the first group is the value (no lookarounds)"),
+          })
+        )
+        .max(20)
+        .nullable()
+        .optional()
+        .describe(
+          "Named fields picked out of every email: shown with it, `fields` in its JSON, read by forwarding templates and filters (email_field). Replaces the list; null or [] removes them. Owner only."
+        ),
     },
     withErrorHandling(
       async ({
@@ -1071,6 +1119,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         signingSecret,
         signingHeader,
         showEmailExtracts,
+        emailFields,
       }) => {
         const endpoint = await client.endpoints.update(slug, {
           name,
@@ -1081,6 +1130,7 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
           signingSecret,
           signingHeader,
           showEmailExtracts,
+          emailFields,
         });
         return jsonContent(endpoint);
       }
@@ -1368,6 +1418,47 @@ export function registerTools(server: McpServer, client: WebhooksCC): void {
         status: response.status,
         statusText: response.statusText,
         body: responseBody,
+      });
+    })
+  );
+
+  server.tool(
+    "render_email",
+    "A captured email in the shape an inbound mail provider posts it (postmark, sendgrid, mailgun, cloudmailin), to test the inbound handler you wrote for that provider against real mail. Returns the method, headers and body; with targetUrl (your local handler), posts it there and returns the answer. A Mailgun form is signed when you pass the signing key your handler checks.",
+    {
+      requestId: z.string().describe("The captured email's request ID"),
+      format: z
+        .enum(["postmark", "sendgrid", "mailgun", "cloudmailin", "json"])
+        .describe("Whose shape; json is webhooks.cc's own email.received JSON (unsigned)"),
+      mailgunSigningKey: z
+        .string()
+        .optional()
+        .describe("For mailgun: the signing key your handler verifies with (a test key)"),
+      targetUrl: httpUrlSchema
+        .optional()
+        .describe("Post it here, e.g. http://localhost:3000/api/inbound/postmark"),
+    },
+    withErrorHandling(async ({ requestId, format, mailgunSigningKey, targetUrl }) => {
+      const rendered = await client.emails.render(requestId, {
+        format,
+        ...(mailgunSigningKey ? { mailgunSigningKey } : {}),
+      });
+      if (!targetUrl) {
+        return jsonContent(
+          shrinkRendered(rendered as unknown as Record<string, unknown>, MAX_BODY_SIZE)
+        );
+      }
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: { "content-type": rendered.headers["content-type"] },
+        body: rendered.body,
+        redirect: "manual",
+      });
+      return jsonContent({
+        format,
+        status: response.status,
+        statusText: response.statusText,
+        body: await readBodyTruncated(response),
       });
     })
   );

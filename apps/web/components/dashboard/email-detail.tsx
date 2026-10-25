@@ -6,7 +6,14 @@ import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatBytes } from "@/types/request";
 import type { EmailAddress, EmailAuth, EmailCapture, EmailSmtp } from "@/lib/email-capture";
-import { buildEmailJson, extractFromEmail, type ExtractedLink } from "@webhooks-cc/sdk/email";
+import {
+  buildEmailJson,
+  extractFromEmail,
+  replyText as findReplyText,
+  type ExtractedLink,
+} from "@webhooks-cc/sdk/email";
+import { useAuth } from "@/components/providers/supabase-auth-provider";
+import { fetchEmailFieldValues } from "@/lib/dashboard-api";
 import { buildPreviewDocument, countImageReferences } from "@/lib/email-preview";
 import { highlightBody } from "@/lib/highlight";
 import { JsonTree } from "./json-tree";
@@ -22,7 +29,7 @@ interface EmailDetailProps {
   /** The endpoint's "Show codes and links found in emails" setting. */
   showExtracts: boolean;
   /** For the JSON (it names the endpoint), the forwarding line above it and the Deliveries tab. */
-  endpoint: DeliveryEndpoint & { name?: string | null };
+  endpoint: DeliveryEndpoint & { name?: string | null; emailFields?: unknown[] };
   /** The owner can redeliver and is pointed at the Forwarding settings. */
   canManageForwarding: boolean;
   onOpenForwarding?: () => void;
@@ -237,11 +244,14 @@ function Pick({
   children,
   actions,
   wide,
+  exactLabel,
 }: {
   label: string;
   children: React.ReactNode;
   actions: React.ReactNode;
   wide?: boolean;
+  /** Show the label as written (a field's name, as templates read it). */
+  exactLabel?: boolean;
 }) {
   return (
     <span
@@ -251,7 +261,10 @@ function Pick({
       )}
     >
       <span
-        className="flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold caps border-r-strong border-line shrink-0 max-w-[140px]"
+        className={cn(
+          "flex items-center px-2.5 bg-muted text-muted-foreground text-[11px] font-semibold border-r-strong border-line shrink-0 max-w-[140px]",
+          exactLabel ? "font-mono" : "caps"
+        )}
         title={label}
       >
         <span className="truncate">{label}</span>
@@ -299,18 +312,41 @@ function PickButton({
 function FoundInEmail({
   code,
   link,
+  fields,
   copied,
   onCopy,
 }: {
   code: string | null;
   link: ExtractedLink | null;
+  /** The endpoint's named fields that found something, in their order. */
+  fields: [name: string, value: string][];
   copied: string | null;
   onCopy: (text: string, key: string) => void;
 }) {
-  if (!code && !link) return null;
+  if (!code && !link && fields.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-line/20 text-sm">
       <span className="text-muted-foreground mr-1">Found in this email</span>
+      {fields.map(([name, value]) => (
+        <Pick
+          key={name}
+          label={name}
+          exactLabel
+          actions={
+            <PickButton label={`Copy ${name}`} onClick={() => onCopy(value, `field:${name}`)}>
+              {copied === `field:${name}` ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </PickButton>
+          }
+        >
+          <span className="font-mono text-[13px] truncate max-w-[260px]" title={value}>
+            {value}
+          </span>
+        </Pick>
+      ))}
       {code && (
         <Pick
           label="Code"
@@ -771,6 +807,30 @@ export function EmailDetail({
     () => (email && showExtracts ? extractFromEmail(email) : { codes: [], links: [] }),
     [email, showExtracts]
   );
+  const reply = useMemo(() => findReplyText(email?.text), [email]);
+  const [textView, setTextView] = useState<"whole" | "reply">("whole");
+  // The endpoint's named fields run on the server (RE2), so they are fetched.
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
+  const [fieldValues, setFieldValues] = useState<{
+    id: string;
+    values: Record<string, string | null> | null;
+  } | null>(null);
+  // Once per opened email (the list refreshes the request objects on every
+  // capture), and not at all when the endpoint is known to have no fields.
+  const fieldsKnownEmpty = endpoint.emailFields !== undefined && endpoint.emailFields.length === 0;
+  const isEmail = !!email;
+  useEffect(() => {
+    if (!accessToken || !isEmail || fieldsKnownEmpty) return;
+    let cancelled = false;
+    fetchEmailFieldValues(accessToken, requestId)
+      .then((values) => !cancelled && setFieldValues({ id: requestId, values }))
+      .catch(() => !cancelled && setFieldValues({ id: requestId, values: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, isEmail, requestId, fieldsKnownEmpty]);
+  const fields = fieldValues?.id === requestId ? fieldValues.values : null;
   const json = useMemo(
     () =>
       email
@@ -784,10 +844,10 @@ export function EmailDetail({
               email,
             },
             { slug: endpoint.slug, name: endpoint.name ?? null },
-            { includeExtracts: showExtracts }
+            { includeExtracts: showExtracts, fields }
           )
         : null,
-    [email, requestId, request, endpoint.slug, endpoint.name, showExtracts]
+    [email, requestId, request, endpoint.slug, endpoint.name, showExtracts, fields]
   );
 
   const downloadEml = useCallback(() => {
@@ -891,10 +951,13 @@ export function EmailDetail({
         <div className="mt-3">
           <Verdicts email={email} isTest={isTest} onOpen={() => setTab("authentication")} />
         </div>
-        {showExtracts && (
+        {(showExtracts || fields) && (
           <FoundInEmail
-            code={extracts.codes[0] ?? null}
-            link={extracts.links[0] ?? null}
+            code={showExtracts ? (extracts.codes[0] ?? null) : null}
+            link={showExtracts ? (extracts.links[0] ?? null) : null}
+            fields={Object.entries(fields ?? {}).filter(
+              (entry): entry is [string, string] => entry[1] !== null
+            )}
             copied={copied}
             onCopy={copy}
           />
@@ -923,6 +986,38 @@ export function EmailDetail({
             )}
           </button>
         ))}
+        {activeTab === "text" && reply && (
+          <div className="flex ml-auto items-center pr-3 pl-3">
+            <div
+              className="flex overflow-hidden rounded-sm border-strong border-line"
+              role="group"
+              aria-label="Text to show"
+            >
+              {(
+                [
+                  ["whole", "Whole text"],
+                  ["reply", "Reply only"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setTextView(mode)}
+                  aria-pressed={textView === mode}
+                  className={cn(
+                    "px-2.5 py-0.5 text-[11px] font-bold caps clean:capitalize cursor-pointer transition-colors whitespace-nowrap",
+                    mode === "reply" && "border-l-strong border-line",
+                    textView === mode
+                      ? "bg-selected text-selected-foreground"
+                      : "bg-background hover:bg-muted"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {activeTab === "preview" && (
           <div className="hidden md:flex ml-auto items-center pr-3 pl-3">
             <div className="flex overflow-hidden rounded-sm border-strong border-line">
@@ -991,17 +1086,25 @@ export function EmailDetail({
                 This email has no text part; the text below was taken from its HTML.
               </p>
             )}
+            {reply && textView === "reply" && (
+              <p className="text-xs text-muted-foreground mb-3">
+                What the sender wrote above the quoted message, without the signature: the{" "}
+                <code className="font-mono">replyText</code> field of the JSON.
+              </p>
+            )}
             {email.text ? (
               <div className="relative ui-code font-sans! text-sm leading-relaxed whitespace-pre-wrap break-words">
                 <button
                   type="button"
-                  onClick={() => copy(email.text ?? "", "text")}
+                  onClick={() =>
+                    copy((reply && textView === "reply" ? reply : email.text) ?? "", "text")
+                  }
                   className="absolute top-2 right-2 p-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
                   aria-label="Copy text"
                 >
                   {copied === "text" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </button>
-                {email.text}
+                {reply && textView === "reply" ? reply : email.text}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">This email has no text.</p>

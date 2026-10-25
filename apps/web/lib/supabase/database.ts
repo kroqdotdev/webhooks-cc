@@ -1,7 +1,15 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 /** How a destination's deliveries go out (migration 00063). */
-export type DestinationFormat = "as_received" | "json" | "chat" | "template";
+export type DestinationFormat =
+  | "as_received"
+  | "json"
+  | "chat"
+  | "template"
+  | "postmark"
+  | "sendgrid"
+  | "mailgun"
+  | "cloudmailin";
 
 export interface Database {
   public: {
@@ -337,6 +345,8 @@ export interface Database {
           signing_secret_encrypted: string | null;
           signing_header: string | null;
           show_email_extracts: boolean;
+          /** Named fields picked out of every email (migration 00064). */
+          email_fields: Json;
           forward_enabled: boolean;
           forward_url: string | null;
           forward_secret_encrypted: string | null;
@@ -368,6 +378,7 @@ export interface Database {
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
           show_email_extracts?: boolean;
+          email_fields?: Json;
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
@@ -397,6 +408,7 @@ export interface Database {
           signing_secret_encrypted?: string | null;
           signing_header?: string | null;
           show_email_extracts?: boolean;
+          email_fields?: Json;
           forward_enabled?: boolean;
           forward_url?: string | null;
           forward_secret_encrypted?: string | null;
@@ -797,6 +809,7 @@ export interface Database {
           url: string;
           /** AES-GCM ciphertext (bytea, read as hex); null until a format that signs needs one. */
           secret_encrypted: string | null;
+          mailgun_key_encrypted: string | null;
           http: boolean;
           email: boolean;
           /** null picks from the URL. */
@@ -825,6 +838,7 @@ export interface Database {
           enabled?: boolean;
           url: string;
           secret_encrypted?: string | null;
+          mailgun_key_encrypted?: string | null;
           http?: boolean;
           email?: boolean;
           format?: DestinationFormat | null;
@@ -847,6 +861,7 @@ export interface Database {
           enabled?: boolean;
           url?: string;
           secret_encrypted?: string | null;
+          mailgun_key_encrypted?: string | null;
           http?: boolean;
           email?: boolean;
           format?: DestinationFormat | null;
@@ -1014,6 +1029,10 @@ export interface Database {
           bypass_filter: boolean;
           /** At most one delivery every this many seconds (0: no limit). */
           throttle_seconds: number;
+          /** The endpoint's named email fields (migration 00064). */
+          email_fields: Json;
+          /** base64 of the AES-GCM ciphertext of the owner's Mailgun signing key. */
+          mailgun_key_encrypted: string | null;
         }>;
       };
       queue_email_redelivery: {

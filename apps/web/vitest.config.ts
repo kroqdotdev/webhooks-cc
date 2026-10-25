@@ -19,6 +19,7 @@ const REALTIME_SUITE = "tests/integration/supabase-realtime.test.ts";
 // worker sends the other's deliveries. They run after the rest, one at a time.
 const FORWARDING_SUITES = [
   "tests/integration/destinations.test.ts",
+  "tests/integration/email-fields.test.ts",
   "tests/integration/email-forwarding.test.ts",
   "tests/integration/http-forwarding.test.ts",
 ];

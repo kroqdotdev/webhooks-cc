@@ -59,6 +59,10 @@ fn test_tunnel_help() {
     assert!(stdout.contains("endpoint"));
     assert!(stdout.contains("ephemeral"));
     assert!(stdout.contains("header"));
+    assert!(stdout.contains("--email-format"));
+    assert!(stdout.contains("--email-path"));
+    assert!(stdout.contains("--mailgun-signing-key"));
+    assert!(stdout.contains("--no-email"));
 }
 
 #[test]
@@ -170,10 +174,10 @@ fn test_full_lifecycle() {
         assert!(output.status.success(), "requests list failed");
         let stdout = String::from_utf8_lossy(&output.stdout);
         reqs_value = serde_json::from_str(&stdout).unwrap();
-        if let Some(arr) = reqs_value["requests"].as_array() {
-            if !arr.is_empty() {
-                break;
-            }
+        if let Some(arr) = reqs_value["requests"].as_array()
+            && !arr.is_empty()
+        {
+            break;
         }
     }
     let requests = reqs_value["requests"].as_array().unwrap();

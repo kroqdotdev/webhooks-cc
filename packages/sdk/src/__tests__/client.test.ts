@@ -271,6 +271,40 @@ describe("WebhooksCC", () => {
     });
   });
 
+  describe("email fields and inbound shapes", () => {
+    it("sends emailFields, refusing a bad list before the request", async () => {
+      const fetchMock = mockFetch({ body: { slug: "abc123" } });
+      globalThis.fetch = fetchMock;
+      const client = createClient();
+      const emailFields = [{ name: "invoice", from: "subject" as const, pattern: "(INV-\\d+)" }];
+      await client.endpoints.update("abc123", { emailFields });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ emailFields });
+      await expect(
+        client.endpoints.update("abc123", {
+          emailFields: [{ name: "1x", from: "subject", pattern: "x" }],
+        })
+      ).rejects.toThrow(/emailFields: field 1: name/);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders an email through the API and locally", async () => {
+      const fetchMock = mockFetch({
+        body: { format: "postmark", method: "POST", headers: {}, body: "{}" },
+      });
+      globalThis.fetch = fetchMock;
+      const client = createClient();
+      await client.emails.render("r1", { format: "mailgun", mailgunSigningKey: "key-x" });
+      expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/requests/r1/render`);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        format: "mailgun",
+        mailgunSigningKey: "key-x",
+      });
+      await expect(client.emails.render("r1", { format: "resend" as never })).rejects.toThrow(
+        /Unknown inbound format/
+      );
+    });
+  });
+
   describe("endpoints.previewResponse", () => {
     it("posts unsaved rules and returns the preview", async () => {
       const preview = {
@@ -1691,7 +1725,7 @@ describe("WebhooksCC", () => {
       expect(description.endpoints.list.params.team).toContain("team id or unique name");
       expect(Object.keys(description.teams)).toHaveLength(8);
       expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });
-      expect(Object.keys(description.emails)).toHaveLength(8);
+      expect(Object.keys(description.emails)).toHaveLength(10);
       expect(Object.keys(description.forwarding)).toHaveLength(9);
       expect(Object.keys(description.destinations)).toHaveLength(10);
       expect(description.requests.list.params.kind).toBe('"http"|"email"?');

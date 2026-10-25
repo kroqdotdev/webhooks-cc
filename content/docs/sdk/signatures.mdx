@@ -719,7 +719,7 @@ When a check fails it throws `WebhookVerificationError`, whose `code` says which
 | `invalid_signature`      | No signature matches: a wrong or rotated secret, or a body changed on the way     | 401         |
 | `invalid_payload`        | The signature is valid, but the body is not JSON or not an `email.received` event | 400         |
 
-Every copy of one email has the same `webhook-id`, so a handler that stores it can skip repeats. To post a captured email to a handler on your machine, see [Test your handler locally](/docs/forwarding#test-your-handler-locally).
+Every copy of one email has the same `webhook-id`, so a handler that stores it can skip repeats. To post a captured email to a handler on your machine, see [Test your handler locally](/docs/forwarding#test-an-email-handler-locally).
 
 ## FAQ
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +93,158 @@ func TestEmailsWaitForFiltersAndExtracts(t *testing.T) {
 	address, err := client.Emails.AddressOf(&webhookscc.Endpoint{Slug: "acme-test", EmailAddress: "acme-test@mailhooks.localhost"}, "run-3")
 	if err != nil || address != "acme-test+run-3@mailhooks.localhost" {
 		t.Errorf("address = %q, %v", address, err)
+	}
+}
+
+func TestEmailsCarryTheirFieldsAndReplyText(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/requests/{id}", func(w http.ResponseWriter, r *http.Request) {
+		email := emailJSON(r.PathValue("id"), 1767225600000, "run-1", "Re: Invoice INV-2041", nil)
+		email["emailFields"] = map[string]any{"invoice": "INV-2041", "total": nil}
+		email["replyText"] = "Thanks, paid."
+		writeJSON(w, 200, email)
+	})
+	email, err := api.client().Emails.Get(context.Background(), "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request, _ := api.last(); request.URL.RawQuery != "extracts=true" {
+		t.Errorf("query = %q", request.URL.RawQuery)
+	}
+	if want := map[string]string{"invoice": "INV-2041", "total": ""}; !reflect.DeepEqual(email.EmailFields, want) {
+		t.Errorf("fields = %#v", email.EmailFields)
+	}
+	if email.ReplyText != "Thanks, paid." {
+		t.Errorf("reply = %q", email.ReplyText)
+	}
+	var plain webhookscc.Request
+	if err := json.Unmarshal([]byte(`{"id":"m2","kind":"email","emailFields":null,"replyText":null}`), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if plain.EmailFields != nil || plain.ReplyText != "" {
+		t.Errorf("request = %+v", plain)
+	}
+}
+
+func TestEmailsRenderPostsTheFormat(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("POST /api/requests/{id}/render", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"format": "postmark", "method": "POST",
+			"headers": map[string]string{"content-type": "application/json", "user-agent": "webhooks.cc"},
+			"body":    `{"Subject":"Hi"}`,
+		})
+	})
+	client := api.client()
+	ctx := context.Background()
+	rendered, err := client.Emails.Render(ctx, "m1", webhookscc.RenderEmailOptions{Format: webhookscc.FormatPostmark})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request, body := api.last(); request.URL.Path != "/api/requests/m1/render" || body != `{"format":"postmark"}` {
+		t.Errorf("sent %s %s", request.URL.Path, body)
+	}
+	if rendered.Format != webhookscc.FormatPostmark || rendered.Method != "POST" || rendered.Body != `{"Subject":"Hi"}` ||
+		rendered.Headers["content-type"] != "application/json" || !strings.Contains(string(rendered.Raw), `"format":"postmark"`) {
+		t.Errorf("rendered = %+v", rendered)
+	}
+	if _, err := client.Emails.Render(ctx, "m1", webhookscc.RenderEmailOptions{Format: webhookscc.FormatMailgun, MailgunSigningKey: "key-acme-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"format":"mailgun","mailgunSigningKey":"key-acme-test"}` {
+		t.Errorf("body = %s", body)
+	}
+	for _, opts := range []webhookscc.RenderEmailOptions{{}, {Format: webhookscc.FormatChat}, {Format: "resend"}} {
+		if _, err := client.Emails.Render(ctx, "m1", opts); err == nil || !strings.Contains(err.Error(), "unknown inbound format") {
+			t.Errorf("%q: err = %v", opts.Format, err)
+		}
+	}
+	if _, err := client.Emails.Render(ctx, "../m1", webhookscc.RenderEmailOptions{Format: webhookscc.FormatJSON}); err == nil {
+		t.Error("a bad id should be refused")
+	}
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	if len(api.calls) != 2 {
+		t.Errorf("%d requests reached the API", len(api.calls))
+	}
+}
+
+func TestEmailFieldIssues(t *testing.T) {
+	valid := []webhookscc.EmailField{
+		{Name: "invoice", From: "subject", Pattern: `(INV-\d+)`},
+		{Name: "mailer", From: "header", Header: "X-Mailer", Pattern: ".+"},
+	}
+	if issues := webhookscc.EmailFieldIssues(valid); issues != nil {
+		t.Errorf("issues = %q", issues)
+	}
+	got := webhookscc.EmailFieldIssues([]webhookscc.EmailField{
+		{Name: "invoice", From: "subject", Pattern: "x"},
+		{Name: "invoice", From: "body"},
+		{Name: strings.Repeat("a", 41), From: "header", Pattern: "x"},
+		{Name: "total", From: "text", Header: "X-Total", Pattern: strings.Repeat("x", 301)},
+		{Name: "astral", From: "text", Pattern: strings.Repeat("\U0001F600", 151)},
+		{Name: "invoice\n", From: "subject", Pattern: "x"},
+	})
+	want := []string{
+		`field 2: the name "invoice" is used twice`,
+		"field 2: from must be one of subject, text, html, from, to, header",
+		"field 2: pattern is required",
+		"field 3: name must be letters, digits and _, start with a letter, at most 40 characters",
+		"field 3: header must be a header name",
+		`field 4: header is only for from "header"`,
+		"field 4: pattern is longer than 300 characters",
+		"field 5: pattern is longer than 300 characters",
+		"field 6: name must be letters, digits and _, start with a letter, at most 40 characters",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("issues =\n%q\nwant\n%q", got, want)
+	}
+	if got := webhookscc.EmailFieldIssues(make([]webhookscc.EmailField, 21)); !reflect.DeepEqual(got, []string{"at most 20 fields"}) {
+		t.Errorf("issues = %q", got)
+	}
+}
+
+func TestUpdateSendsEmailFieldsAndRefusesABadList(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("PATCH /api/endpoints/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"id": "ep_1", "slug": r.PathValue("slug"), "emailFields": []any{
+			map[string]any{"name": "invoice", "from": "subject", "pattern": `(INV-\d+)`},
+			map[string]any{"name": "mailer", "from": "header", "header": "X-Mailer", "pattern": ".+"},
+		}})
+	})
+	client := api.client()
+	ctx := context.Background()
+	fields := []webhookscc.EmailField{
+		{Name: "invoice", From: "subject", Pattern: `(INV-\d+)`},
+		{Name: "mailer", From: "header", Header: "X-Mailer", Pattern: ".+"},
+	}
+	endpoint, err := client.Endpoints.Update(ctx, "acme-test", webhookscc.UpdateEndpointOptions{EmailFields: webhookscc.Value(fields)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"emailFields":[{"name":"invoice","from":"subject","pattern":"(INV-\\d+)"},`+
+		`{"name":"mailer","from":"header","header":"X-Mailer","pattern":".+"}]}` {
+		t.Errorf("body = %s", body)
+	}
+	if !reflect.DeepEqual(endpoint.EmailFields, fields) {
+		t.Errorf("fields = %+v", endpoint.EmailFields)
+	}
+	if _, err := client.Endpoints.Update(ctx, "acme-test", webhookscc.UpdateEndpointOptions{EmailFields: webhookscc.Null[[]webhookscc.EmailField]()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"emailFields":null}` {
+		t.Errorf("body = %s", body)
+	}
+	_, err = client.Endpoints.Update(ctx, "acme-test", webhookscc.UpdateEndpointOptions{
+		EmailFields: webhookscc.Value([]webhookscc.EmailField{{Name: "1x", From: "subject", Pattern: "x"}}),
+	})
+	if err == nil || !strings.Contains(err.Error(), "EmailFields: field 1: name") {
+		t.Errorf("err = %v", err)
+	}
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	if len(api.calls) != 2 {
+		t.Errorf("%d requests reached the API", len(api.calls))
 	}
 }
 

@@ -6,6 +6,7 @@ import {
   type ValidateOptions,
 } from "./rules";
 import type { MockResponse, ResponseRule } from "./types";
+import { emailFieldIssues } from "./email/fields";
 
 export const MOCK_RESPONSE_STATUS_MIN = 100;
 export const MOCK_RESPONSE_STATUS_MAX = 599;
@@ -113,4 +114,11 @@ export function validateDestinationInput(input: { filter?: unknown }): void {
   }
   const issues = conditionsIssues(filter.conditions, { use: "filter" }, "filter.conditions");
   if (issues.length > 0) throw new Error(issues[0]);
+}
+
+/** Refuses a field list the API would refuse (names, sources, pattern length; RE2 syntax is checked by the server). */
+export function validateEmailFields(fields: unknown): void {
+  if (fields === undefined || fields === null) return;
+  const issues = emailFieldIssues(fields);
+  if (issues.length > 0) throw new Error(`emailFields: ${issues[0]}`);
 }

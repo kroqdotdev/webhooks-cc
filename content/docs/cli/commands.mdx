@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-25
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -103,17 +103,21 @@ whk delete <slug>
 
 ## tunnel
 
-Forward webhooks to a local port. Creates a new endpoint unless `--endpoint` is set.
+Forward webhooks to a local port. Creates a new endpoint unless `--endpoint` is set. Captured emails are posted too, as webhooks.cc's email JSON or in a mail provider's shape ([emails](/docs/cli/tunnel#emails)).
 
 ```bash
 whk tunnel <port>
 ```
 
-| Flag              | Description                                                                 |
-| ----------------- | --------------------------------------------------------------------------- |
-| `--endpoint`      | Use an existing endpoint instead of creating one                            |
-| `--ephemeral, -e` | Delete the endpoint when the tunnel exits                                   |
-| `--header, -H`    | Add a custom header to forwarded requests (repeatable, format: `Key:Value`) |
+| Flag                    | Description                                                                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `--endpoint`            | Use an existing endpoint instead of creating one                                                                                    |
+| `--ephemeral, -e`       | Delete the endpoint when the tunnel exits                                                                                           |
+| `--header, -H`          | Add a custom header to forwarded requests and emails (repeatable, format: `Key:Value`)                                              |
+| `--email-format`        | Shape to post emails in: `json` (default, webhooks.cc's email JSON), `postmark`, `sendgrid`, `mailgun` or `cloudmailin`             |
+| `--email-path`          | Path to post emails to, appended to the target like a webhook's path (default: the target itself)                                   |
+| `--mailgun-signing-key` | Your Mailgun HTTP webhook signing key, to sign the form with `--email-format mailgun` (also: `WHK_MAILGUN_SIGNING_KEY`)             |
+| `--no-email`            | Skip captured emails instead of posting them                                                                                        |
 
 When signature verification is configured on the endpoint, tunnel injects verification headers into forwarded requests:
 
@@ -123,7 +127,7 @@ When signature verification is configured on the endpoint, tunnel injects verifi
 
 Your local server can use these headers to skip its own verification during development.
 
-> **Warning:** These headers are injected by the local tunnel client and are **not authenticated**. Never trust them in production — any HTTP client can send arbitrary `X-Signature-*` headers. Always perform your own signature verification in production environments.
+> **Warning:** These headers are injected by the local tunnel client and are **not authenticated**. Never trust them in production: any HTTP client can send arbitrary `X-Signature-*` headers. Always perform your own signature verification in production environments.
 
 ## listen
 

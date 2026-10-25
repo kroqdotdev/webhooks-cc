@@ -226,8 +226,40 @@ func TestDestinationsAreParsed(t *testing.T) {
 	if err := json.Unmarshal(data, &plain); err != nil {
 		t.Fatal(err)
 	}
-	if plain.Filter != nil || plain.BodyTemplate != nil || plain.Summary != nil || plain.Role != "forward" {
+	if plain.Filter != nil || plain.BodyTemplate != nil || plain.Summary != nil || plain.Role != "forward" || plain.HasMailgunSigningKey {
 		t.Errorf("destination = %+v", plain)
+	}
+}
+
+func TestDestinationsTakeTheInboundShapesAndAMailgunKey(t *testing.T) {
+	api := newFakeAPI(t)
+	mailgun := func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, destinationJSON(map[string]any{"format": "mailgun", "email": true, "hasMailgunSigningKey": true}))
+	}
+	api.handle("POST /api/endpoints/{slug}/destinations", mailgun)
+	api.handle("PATCH /api/endpoints/{slug}/destinations/{id}", mailgun)
+	client := api.client()
+	ctx := context.Background()
+	created, err := client.Destinations.Create(ctx, "acme-test", webhookscc.DestinationInput{
+		URL:               webhookscc.Value("https://hooks.acme.test/inbound"),
+		HTTP:              webhookscc.Value(false),
+		Format:            webhookscc.Value(webhookscc.FormatMailgun),
+		MailgunSigningKey: webhookscc.Value("key-acme-test"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"format":"mailgun","http":false,"mailgunSigningKey":"key-acme-test","url":"https://hooks.acme.test/inbound"}` {
+		t.Errorf("body = %s", body)
+	}
+	if created.Format != webhookscc.FormatMailgun || !created.HasMailgunSigningKey {
+		t.Errorf("destination = %+v", created)
+	}
+	if _, err := client.Destinations.Update(ctx, "acme-test", destinationID, webhookscc.DestinationInput{MailgunSigningKey: webhookscc.Null[string]()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"mailgunSigningKey":null}` {
+		t.Errorf("body = %s", body)
 	}
 }
 

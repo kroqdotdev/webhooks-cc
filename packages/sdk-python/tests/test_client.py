@@ -15,12 +15,19 @@ import pytest
 
 from webhooks_cc import errors
 from webhooks_cc.client import RetryOptions, WebhooksCC
-from webhooks_cc.email import email_address, extract_code, extract_link, is_valid_email_tag
+from webhooks_cc.email import (
+    email_address,
+    email_field_issues,
+    extract_code,
+    extract_link,
+    is_valid_email_tag,
+)
 from webhooks_cc.matchers import match_body_path, match_email, match_path
 from webhooks_cc.models import (
     Destination,
     DestinationPreview,
     DestinationTestResult,
+    EmailField,
     Endpoint,
     Request,
 )
@@ -156,6 +163,95 @@ def test_update_sends_only_given_fields() -> None:
 
     make_client(handler).endpoints.update("acme", name="renamed", forward_url=None)
     assert bodies == [{"name": "renamed", "forwardUrl": None}]
+
+
+def test_update_sends_email_fields_and_refuses_a_bad_list() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "e1",
+                "slug": "acme",
+                "createdAt": 1,
+                "emailFields": [
+                    {"name": "invoice", "from": "subject", "pattern": r"(INV-\d+)"},
+                    {"name": "mailer", "from": "header", "header": "X-Mailer", "pattern": ".+"},
+                ],
+            },
+        )
+
+    endpoints = make_client(handler).endpoints
+    endpoint = endpoints.update(
+        "acme",
+        email_fields=[
+            {"name": "invoice", "from": "subject", "pattern": r"(INV-\d+)"},
+            EmailField(name="mailer", from_="header", header="X-Mailer", pattern=".+"),
+        ],
+    )
+    assert bodies[-1] == {
+        "emailFields": [
+            {"name": "invoice", "from": "subject", "pattern": r"(INV-\d+)"},
+            {"name": "mailer", "from": "header", "header": "X-Mailer", "pattern": ".+"},
+        ]
+    }
+    assert endpoint.email_fields == [
+        EmailField(name="invoice", from_="subject", pattern=r"(INV-\d+)"),
+        EmailField(name="mailer", from_="header", header="X-Mailer", pattern=".+"),
+    ]
+    # What was read can be sent back.
+    endpoints.update("acme", email_fields=endpoint.email_fields)
+    assert bodies[-1] == bodies[0]
+    endpoints.update("acme", email_fields=None)
+    assert bodies[-1] == {"emailFields": None}
+
+    with pytest.raises(ValueError, match="email_fields: field 1: name"):
+        endpoints.update("acme", email_fields=[{"name": "1x", "from": "subject", "pattern": "x"}])
+    with pytest.raises(ValueError, match="list"):
+        endpoints.update("acme", email_fields="invoice")  # type: ignore[arg-type]
+    assert len(bodies) == 3
+    assert Endpoint.from_dict({"id": "e1", "slug": "acme", "createdAt": 1}).email_fields is None
+
+
+def test_email_field_issues() -> None:
+    assert email_field_issues([]) == []
+    assert (
+        email_field_issues(
+            [
+                {"name": "invoice", "from": "subject", "pattern": r"(INV-\d+)"},
+                {"name": "mailer", "from": "header", "header": "X-Mailer", "pattern": ".+"},
+            ]
+        )
+        == []
+    )
+    assert email_field_issues(
+        [
+            {"name": "invoice", "from": "subject", "pattern": "x"},
+            {"name": "invoice", "from": "body", "pattern": ""},
+            {"name": "a" * 41, "from": "header", "pattern": "x"},
+            {"name": "total", "from": "text", "header": "X-Total", "pattern": "x" * 301},
+            {"name": "astral", "from": "text", "pattern": "\U0001f600" * 151},
+            "subject",
+        ]
+    ) == [
+        'field 2: the name "invoice" is used twice',
+        "field 2: from must be one of subject, text, html, from, to, header",
+        "field 2: pattern is required",
+        "field 3: name must be letters, digits and _, start with a letter, at most 40 characters",
+        "field 3: header must be a header name",
+        'field 4: header is only for from "header"',
+        "field 4: pattern is longer than 300 characters",
+        "field 5: pattern is longer than 300 characters",
+        "field 6: must be a dict",
+    ]
+    assert email_field_issues([{"name": "invoice\n", "from": "subject", "pattern": "x"}]) == [
+        "field 1: name must be letters, digits and _, start with a letter, at most 40 characters"
+    ]
+    many = [{"name": f"f{index}", "from": "subject", "pattern": "x"} for index in range(21)]
+    assert email_field_issues(many) == ["at most 20 fields"]
+    assert email_field_issues(None) == ["must be a list of fields"]
 
 
 def test_preview_response_sends_only_given_settings() -> None:
@@ -421,8 +517,39 @@ def test_destinations_are_parsed() -> None:
     assert destination.summary.pending == 4
     assert destination.raw["endpointId"] == "e1"
 
+    assert destination.has_mailgun_signing_key is False
+
     plain = Destination.from_dict(destination_record(filter=None, role="forward"))
     assert plain.filter is None and plain.summary is None and plain.role == "forward"
+
+
+def test_destinations_take_the_inbound_shapes_and_a_mailgun_key() -> None:
+    bodies: list[Any] = []
+    record = destination_record(format="mailgun", email=True, hasMailgunSigningKey=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=record)
+
+    destinations = make_client(handler).destinations
+    created = destinations.create(
+        "acme",
+        url="https://hooks.acme.test/inbound",
+        http=False,
+        format="mailgun",
+        mailgun_signing_key="key-acme-test",
+    )
+    assert bodies[-1] == {
+        "url": "https://hooks.acme.test/inbound",
+        "http": False,
+        "format": "mailgun",
+        "mailgunSigningKey": "key-acme-test",
+    }
+    assert created.format == "mailgun" and created.has_mailgun_signing_key is True
+    destinations.update("acme", DESTINATION_ID, mailgun_signing_key=None)
+    assert bodies[-1] == {"mailgunSigningKey": None}
+    destinations.preview("acme", destination={"format": "postmark"})
+    assert bodies[-1] == {"destination": {"format": "postmark"}}
 
 
 def test_a_saved_filter_can_be_sent_back() -> None:
@@ -823,6 +950,62 @@ def test_emails_wait_for_filters_and_extracts() -> None:
     assert extract_code(email) == "482913"
     assert extract_link(email, action_only=True) == "https://acme.test/confirm"
     assert client.emails.latest("acme", tag=None) is None
+
+
+def test_emails_carry_their_fields_and_reply_text() -> None:
+    record = {
+        **email_record("m1", None, "Re: Invoice INV-2041"),
+        "emailFields": {"invoice": "INV-2041", "total": None},
+        "replyText": "Thanks, paid.",
+    }
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(f"{request.url.path}?{request.url.query.decode()}")
+        return httpx.Response(200, json=record)
+
+    email = make_client(handler).emails.get("m1")
+    assert paths == ["/api/requests/m1?extracts=true"]
+    assert email.email_fields == {"invoice": "INV-2041", "total": None}
+    assert email.reply_text == "Thanks, paid."
+    plain = Request.from_dict({**record, "emailFields": None, "replyText": None})
+    assert plain.email_fields is None and plain.reply_text is None
+    assert Request.from_dict(captured("r1")).email_fields is None
+
+
+def test_emails_render_posts_the_format() -> None:
+    calls: list[tuple[str, str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, json.loads(request.content)))
+        return httpx.Response(
+            200,
+            json={
+                "format": "postmark",
+                "method": "POST",
+                "headers": {"content-type": "application/json", "user-agent": "webhooks.cc"},
+                "body": '{"Subject":"Hi"}',
+            },
+        )
+
+    emails = make_client(handler).emails
+    rendered = emails.render("m1", format="postmark")
+    assert calls[-1] == ("POST", "/api/requests/m1/render", {"format": "postmark"})
+    assert rendered.format == "postmark" and rendered.method == "POST"
+    assert rendered.headers["content-type"] == "application/json"
+    assert rendered.body == '{"Subject":"Hi"}'
+    assert rendered.raw["format"] == "postmark"
+
+    emails.render("m1", format="mailgun", mailgun_signing_key="key-acme-test")
+    assert calls[-1][2] == {"format": "mailgun", "mailgunSigningKey": "key-acme-test"}
+    emails.render("m1", format="json", mailgun_signing_key="")
+    assert calls[-1][2] == {"format": "json"}
+
+    with pytest.raises(ValueError, match="Unknown inbound format"):
+        emails.render("m1", format="resend")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="request id"):
+        emails.render("../m1", format="json")
+    assert len(calls) == 3
 
 
 def test_extract_code_needs_extracts() -> None:

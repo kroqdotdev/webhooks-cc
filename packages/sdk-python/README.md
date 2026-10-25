@@ -63,6 +63,33 @@ link = extract_link(email)          # "https://app.example.com/confirm?token=...
 
 `email.email` holds the parsed message: `subject`, `from_`, `to`, `text`, `html`, attachments, and the SPF, DKIM and DMARC results.
 
+## Email fields, reply text and provider shapes
+
+An endpoint can pick up to 20 named fields out of every email it captures. Each reads the `subject`, `text`, `html`, `from`, `to` or one `header`, and the first group of its RE2 pattern is the value:
+
+```python
+client.endpoints.update(
+    endpoint.slug,
+    email_fields=[{"name": "invoice", "from": "subject", "pattern": r"(INV-\d+)"}],
+)
+email = client.emails.wait_for(endpoint.slug, tag=run)
+email.email_fields  # {"invoice": "INV-2041"}, None for a field that found nothing
+email.reply_text    # what a reply says above the quoted message, without the signature
+```
+
+Forwarding templates read the fields as `{{ fields.invoice }}`. `email_field_issues()` checks a list before you save it (the API checks the patterns themselves).
+
+To test a handler you wrote for an inbound mail provider, render a captured email in that provider's shape and post it there:
+
+```python
+rendered = client.emails.render(email.id, format="postmark")
+response = client.send_to(
+    "http://localhost:8000/inbound/postmark", body=rendered.body, headers=rendered.headers
+)
+```
+
+`format` is `"postmark"`, `"sendgrid"`, `"mailgun"` (pass `mailgun_signing_key` to sign the form as Mailgun does) or `"cloudmailin"`, or `"json"` for the `email.received` JSON.
+
 ## Send signed webhooks to your handler
 
 Test your own webhook handler, on localhost or anywhere else, with requests signed the way the provider signs them:
@@ -103,7 +130,7 @@ try:
     event = verify_forwarded_email(body, headers, secret)
 except WebhookVerificationError as error:
     return 400 if error.code == "invalid_payload" else 401
-print(event["data"]["subject"])
+print(event["data"]["subject"], event["data"]["replyText"], event["data"].get("fields"))
 ```
 
 `verify_forwarded_request()` checks a request forwarded as JSON, `verify_forwarded_json()` a destination's own JSON (it returns the parsed body, whatever its shape), and `verify_relayed_request()` one relayed as it was received.
@@ -130,7 +157,7 @@ preview = client.destinations.preview(endpoint.slug, destination_id=destination.
 print(preview.filter_passes, preview.delivery.body if preview.delivery else preview.error)
 ```
 
-Filters take the conditions of response rules, plus `kind`, `email` (with `name` `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (with `name` `spf`, `dkim` or `dmarc`) and `signature`. `preview()` is a dry run: pass a saved `destination_id`, unsaved fields in `destination` (the names `create()` takes), or both. `update()` changes only the arguments you pass, `test()` sends one delivery now and reports the answer, and `list()` (with `summary=True` for the last 24 hours), `get()`, `delete()`, `reorder()`, `secret()` and `rotate_secret()` do what they say.
+Filters take the conditions of response rules, plus `kind`, `email` (with `name` `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (with `name` `spf`, `dkim` or `dmarc`) and `signature`. `format` may also be an inbound mail provider's shape (`"postmark"`, `"sendgrid"`, `"mailgun"` or `"cloudmailin"`): emails go out as that provider posts them and HTTP requests as received. `mailgun_signing_key` signs the Mailgun form; it is never returned, and `has_mailgun_signing_key` says whether one is saved. `preview()` is a dry run: pass a saved `destination_id`, unsaved fields in `destination` (the names `create()` takes), or both. `update()` changes only the arguments you pass, `test()` sends one delivery now and reports the answer, and `list()` (with `summary=True` for the last 24 hours), `get()`, `delete()`, `reorder()`, `secret()` and `rotate_secret()` do what they say.
 
 ## Mock responses and response rules
 

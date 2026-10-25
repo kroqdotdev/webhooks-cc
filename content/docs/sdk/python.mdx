@@ -117,6 +117,44 @@ link = extract_link(email)   # "https://app.example.com/confirm?token=..."
 
 `email.email` holds the parsed message: `subject`, `from_`, `to`, `text`, `html`, attachments, and the SPF, DKIM and DMARC results. `extract_code()` raises `ValueError` when the endpoint's **Show codes and links found in emails** setting is off. See [Email capture](/docs/email-capture) for how capture works.
 
+### Email fields and reply text
+
+An endpoint can pick up to 20 [named fields](/docs/email-capture#fields-you-pick-out) out of every email it captures. Each reads the `subject`, `text`, `html`, `from`, `to` (To and Cc) or one `header`, and the first group of its [RE2](https://github.com/google/re2/wiki/Syntax) pattern (the whole match without a group) is the value:
+
+```python
+from webhooks_cc import EmailField
+
+client.endpoints.update(
+    endpoint.slug,
+    email_fields=[
+        {"name": "invoice", "from": "subject", "pattern": r"(INV-\d+)"},
+        EmailField(name="mailer", from_="header", header="X-Mailer", pattern=".+"),
+    ],
+)
+
+email = client.emails.wait_for(endpoint.slug, tag=run)
+email.email_fields  # {"invoice": "INV-2041", "mailer": "Acme Billing"}
+email.reply_text    # "Thanks, paid." without the quoted message and the signature
+```
+
+Every email the client reads carries the values as `email_fields` (`None` for a field that found nothing, and `None` altogether when the endpoint has no fields), and forwarding templates read them as `{{ fields.invoice }}`. `endpoint.email_fields` lists the saved fields, and `email_fields=None` removes them. The client refuses a list that `email_field_issues()` finds fault with (names, sources, headers, pattern lengths) before sending it; the API checks the patterns themselves. `reply_text` is the [new text of a reply](/docs/email-capture#reply-text), or `None` when the email quotes no earlier message.
+
+### Test an inbound email handler
+
+If your app already receives email through Postmark, SendGrid, Mailgun or CloudMailin, render a captured email in that provider's shape and post it to the handler you wrote for it, on localhost or anywhere else:
+
+```python
+rendered = client.emails.render(email.id, format="postmark")
+response = client.send_to(
+    "http://localhost:8000/inbound/postmark",
+    body=rendered.body,
+    headers=rendered.headers,
+)
+assert response.status_code == 200
+```
+
+`format` is `"postmark"` (Postmark's inbound JSON), `"sendgrid"` (an Inbound Parse form), `"mailgun"` (a route's form; pass `mailgun_signing_key`, your Mailgun HTTP webhook signing key, and its `signature` verifies) or `"cloudmailin"` (JSON Normalized), or `"json"` for the [`email.received` JSON](/docs/forwarding#an-email), unsigned. `rendered.headers` holds the content type and user agent to send with `rendered.body`. To post every captured email this way, give a destination that format; see [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape).
+
 ## Send signed webhooks to your handler
 
 Test your own webhook handler, on localhost or anywhere else, with requests signed the way the provider signs them:
@@ -170,11 +208,11 @@ preview = client.destinations.preview(endpoint.slug, destination_id=destination.
 print(preview.filter_passes, preview.delivery.body if preview.delivery else preview.error)
 ```
 
-A `filter` takes the conditions of [response rules](/docs/mock-responses#what-a-condition-can-check), plus `kind`, `email` (with `name` `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (with `name` `spf`, `dkim` or `dmarc`) and `signature`; see [Send only some captures](/docs/forwarding#send-only-some-captures). `format="template"` sends [your own JSON](/docs/forwarding#your-own-json), and `"chat"` a message for Slack or Discord, with your own `message_template` if you like.
+A `filter` takes the conditions of [response rules](/docs/mock-responses#what-a-condition-can-check), plus `kind`, `email` (with `name` `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (with `name` `spf`, `dkim` or `dmarc`) and `signature`; see [Send only some captures](/docs/forwarding#send-only-some-captures). `format="template"` sends [your own JSON](/docs/forwarding#your-own-json), and `"chat"` a message for Slack or Discord, with your own `message_template` if you like. `"postmark"`, `"sendgrid"`, `"mailgun"` and `"cloudmailin"` post emails [in that mail provider's shape](/docs/forwarding#in-a-mail-providers-shape) and HTTP requests as received; `mailgun_signing_key` signs the Mailgun form as Mailgun does. The key is stored encrypted and never returned (`has_mailgun_signing_key` says whether one is saved).
 
 `preview()` is a dry run: whether the filter lets a captured request through (`filter_passes`) and the exact request the destination would send (`delivery`), or why it would send nothing (`error`). Pass a saved `destination_id`, unsaved fields in `destination` (the names `create()` takes), or both, and a `request_id` to run it against a particular request. Nothing is sent.
 
-`update(slug, destination_id, ...)` changes only the arguments you pass, and `None` clears `name`, `filter`, `body_template`, `message_template` and `sent_field`. `test()` sends one delivery now and reports the answer, its filter reported in `filter_passes` rather than applied. `list(slug, summary=True)` adds each destination's last 24 hours, and `get()`, `delete()`, `reorder()`, `secret()` and `rotate_secret()` do what they say.
+`update(slug, destination_id, ...)` changes only the arguments you pass, and `None` clears `name`, `filter`, `body_template`, `message_template`, `sent_field` and `mailgun_signing_key`. `test()` sends one delivery now and reports the answer, its filter reported in `filter_passes` rather than applied. `list(slug, summary=True)` adds each destination's last 24 hours, and `get()`, `delete()`, `reorder()`, `secret()` and `rotate_secret()` do what they say.
 
 ## Verify what webhooks.cc forwards
 
@@ -190,7 +228,7 @@ except WebhookVerificationError as error:
 print(event["data"]["subject"])
 ```
 
-`verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received. A destination that sends your own JSON is checked with `verify_forwarded_json()`, which makes the same checks and returns the parsed body, whatever its shape:
+The event's `data` also carries `replyText` and, when the endpoint has named fields, `fields`. `verify_forwarded_request()` checks a request forwarded as JSON, and `verify_relayed_request()` one relayed as it was received. A destination that sends your own JSON is checked with `verify_forwarded_json()`, which makes the same checks and returns the parsed body, whatever its shape:
 
 ```python
 paid = verify_forwarded_json(body, headers, secret)

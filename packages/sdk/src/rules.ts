@@ -26,6 +26,7 @@ export type ConditionField =
   | "size"
   | "kind"
   | "email"
+  | "email_field"
   | "spam_score"
   | "email_auth"
   | "signature";
@@ -138,6 +139,12 @@ export const CONDITION_FIELDS: Record<ConditionField, FieldSpec> = {
     names: ["subject", "from", "to", "text", "tag"],
     response: false,
   },
+  // One of the endpoint's named email fields, by name.
+  email_field: {
+    ops: [...PRESENCE_OPS, ...STRING_OPS, ...NUMBER_OPS],
+    key: "name",
+    response: false,
+  },
   spam_score: { ops: [...PRESENCE_OPS, ...NUMBER_OPS], response: false },
   email_auth: { ops: ["eq", "neq"], key: "name", names: ["spf", "dkim", "dmarc"], response: false },
   signature: { ops: ["eq", "neq"], response: false },
@@ -177,6 +184,8 @@ export interface RuleSubject {
     tag: string | null;
     spamScore: number | null;
     auth: { spf: string | null; dkim: string | null; dmarc: string | null };
+    /** The endpoint's named fields: what each pattern found, or null. */
+    fields?: Record<string, string | null> | null;
   } | null;
   /** The signature check, when one ran or is configured. */
   signature?: SignatureState | null;
@@ -471,6 +480,15 @@ function resolve(condition: Condition, subject: RuleSubject, body: Body): Resolv
         default:
           return one(undefined);
       }
+    }
+    case "email_field": {
+      const fields = subject.email?.fields;
+      if (!fields || !condition.name) return one(undefined);
+      return one(
+        Object.prototype.hasOwnProperty.call(fields, condition.name)
+          ? (fields[condition.name] ?? undefined)
+          : undefined
+      );
     }
     case "spam_score":
       return one(subject.email?.spamScore ?? undefined);

@@ -39,7 +39,13 @@ from ._js import JS_SPACE, js_to_number, js_trim
 from ._sentinel import UNSET
 from ._sse import parse_sse
 from .durations import Duration, parse_duration
-from .email import DEFAULT_EMAIL_DOMAIN, email_address, is_valid_email_tag
+from .email import (
+    DEFAULT_EMAIL_DOMAIN,
+    INBOUND_EMAIL_FORMATS,
+    email_address,
+    email_field_issues,
+    is_valid_email_tag,
+)
 from .errors import (
     NotFoundError,
     RateLimitError,
@@ -55,7 +61,9 @@ from .models import (
     DestinationFormat,
     DestinationPreview,
     DestinationTestResult,
+    EmailField,
     Endpoint,
+    RenderedEmail,
     Request,
     RequestKind,
     RequestPage,
@@ -599,6 +607,7 @@ class Endpoints:
         signing_secret: str | None = UNSET,
         signing_header: str | None = UNSET,
         show_email_extracts: bool = UNSET,
+        email_fields: Sequence[Mapping[str, Any] | EmailField] | None = UNSET,
         forward_enabled: bool = UNSET,
         forward_url: str | None = UNSET,
     ) -> Endpoint:
@@ -606,8 +615,23 @@ class Endpoints:
 
         Only the arguments you pass change; ``None`` clears a setting.
         ``mock_response`` and ``response_rules`` take what :meth:`create` takes.
+
+        ``email_fields`` replaces the named fields picked out of every email the
+        endpoint captures (owner only, at most 20), each an
+        :class:`~webhooks_cc.models.EmailField` or a dict such as
+        ``{"name": "invoice", "from": "subject", "pattern": r"(INV-\\d+)"}``. A list
+        :func:`~webhooks_cc.email.email_field_issues` finds fault with is refused
+        before anything is sent.
         """
         _validate_segment(slug, "slug")
+        if email_fields is not UNSET and email_fields is not None:
+            issues = email_field_issues(email_fields)
+            if issues:
+                raise ValueError(f"email_fields: {issues[0]}")
+            email_fields = [
+                item.to_dict() if isinstance(item, EmailField) else dict(item)
+                for item in email_fields
+            ]
         fields: dict[str, Any] = {
             "name": name,
             "mockResponse": dict(mock_response)
@@ -621,6 +645,7 @@ class Endpoints:
             "signingSecret": signing_secret,
             "signingHeader": signing_header,
             "showEmailExtracts": show_email_extracts,
+            "emailFields": email_fields,
             "forwardEnabled": forward_enabled,
             "forwardUrl": forward_url,
         }
@@ -1010,7 +1035,8 @@ class Emails:
         ]
 
     def get(self, request_id: str) -> Request:
-        """One captured email. Raises :class:`NotFoundError` for anything else."""
+        """One captured email, with the endpoint's named fields (``email_fields``) and the
+        reply text (``reply_text``). Raises :class:`NotFoundError` for anything else."""
         request = self._client.requests.get(request_id)
         if not is_email_request(request):
             raise NotFoundError(f"Request {request_id} is not a captured email")
@@ -1107,6 +1133,42 @@ class Emails:
             raw=dict(result),
         )
 
+    def render(
+        self,
+        request_id: str,
+        *,
+        format: Literal["json", "postmark", "sendgrid", "mailgun", "cloudmailin"],
+        mailgun_signing_key: str | None = None,
+    ) -> RenderedEmail:
+        """A captured email in an inbound mail provider's shape, rendered by webhooks.cc.
+
+        ``format`` is ``"postmark"`` (Postmark's inbound JSON), ``"sendgrid"``
+        (SendGrid's Inbound Parse form), ``"mailgun"`` (a Mailgun route's form, its
+        ``signature`` computed with ``mailgun_signing_key`` when you pass your Mailgun
+        HTTP webhook signing key) or ``"cloudmailin"`` (CloudMailin's JSON
+        Normalized format), or ``"json"`` for the ``email.received`` JSON, unsigned,
+        with the endpoint's named fields. Post it to the handler you wrote for that
+        provider to test it against real mail:
+
+        .. code-block:: python
+
+            rendered = client.emails.render(email.id, format="postmark")
+            response = client.send_to(
+                "http://localhost:8000/inbound/postmark",
+                body=rendered.body,
+                headers=rendered.headers,
+            )
+        """
+        _validate_segment(request_id, "request id")
+        if format != "json" and format not in INBOUND_EMAIL_FORMATS:
+            raise ValueError(f'Unknown inbound format: "{format}"')
+        body: dict[str, Any] = {"format": format}
+        if mailgun_signing_key:
+            body["mailgunSigningKey"] = mailgun_signing_key
+        return RenderedEmail.from_dict(
+            self._client._api("POST", f"/requests/{request_id}/render", body=body)
+        )
+
 
 class Forwarding:
     """The signing secret of an endpoint's forwarding, for verifying what it delivers.
@@ -1146,6 +1208,7 @@ _DESTINATION_FIELDS = {
     "filter": "filter",
     "body_template": "bodyTemplate",
     "message_template": "messageTemplate",
+    "mailgun_signing_key": "mailgunSigningKey",
     "headers": "headers",
     "append_path": "appendPath",
     "retry_seconds": "retrySeconds",
@@ -1201,9 +1264,9 @@ class Destinations:
 
     Each one has its own URL, what it gets (HTTP requests, emails, and a filter
     of conditions), how it is sent (as received, signed JSON, a JSON template
-    with ``{{ placeholders }}``, or a chat message), its own signing secret and
-    headers, retries, order, and optional throttling and delay. Only the
-    endpoint's owner can manage them.
+    with ``{{ placeholders }}``, a chat message, or emails in an inbound mail
+    provider's shape), its own signing secret and headers, retries, order, and
+    optional throttling and delay. Only the endpoint's owner can manage them.
 
     .. code-block:: python
 
@@ -1256,6 +1319,7 @@ class Destinations:
         filter: Mapping[str, Any] | DestinationFilter | None = UNSET,
         body_template: Any = UNSET,
         message_template: str | None = UNSET,
+        mailgun_signing_key: str | None = UNSET,
         headers: Sequence[Mapping[str, str | None]] = UNSET,
         append_path: bool = UNSET,
         retry_seconds: Literal[0, 3600, 86400] = UNSET,
@@ -1272,8 +1336,13 @@ class Destinations:
         - ``filter``: ``{"logic": "and" | "or", "conditions": [...]}``, sends only the
           captures that match; see :class:`~webhooks_cc.models.DestinationFilter`.
         - ``format``: ``"auto"`` (default), ``"as_received"``, ``"json"``, ``"template"``
-          (``body_template``: the JSON to send, its strings holding ``{{ placeholders }}``)
-          or ``"chat"`` (``message_template``: your own message text).
+          (``body_template``: the JSON to send, its strings holding ``{{ placeholders }}``),
+          ``"chat"`` (``message_template``: your own message text), or an inbound mail
+          provider's shape for emails: ``"postmark"``, ``"sendgrid"``, ``"mailgun"`` or
+          ``"cloudmailin"`` (HTTP requests to such a destination go as received).
+        - ``mailgun_signing_key``: for ``"mailgun"``, your Mailgun HTTP webhook signing
+          key, so the form's ``signature`` verifies. It is stored encrypted and never
+          returned; ``has_mailgun_signing_key`` says whether one is saved.
         - ``headers``: your own headers, at most 10, as ``{"name": ..., "value": ...}``.
         - ``retry_seconds``: retry failed deliveries for 86400 (default), 3600 or 0 seconds.
         - ``throttle_seconds``: at most one delivery every so many seconds (0 to 3600).
@@ -1293,6 +1362,7 @@ class Destinations:
                 "filter": filter,
                 "body_template": body_template,
                 "message_template": message_template,
+                "mailgun_signing_key": mailgun_signing_key,
                 "headers": headers,
                 "append_path": append_path,
                 "retry_seconds": retry_seconds,
@@ -1321,6 +1391,7 @@ class Destinations:
         filter: Mapping[str, Any] | DestinationFilter | None = UNSET,
         body_template: Any = UNSET,
         message_template: str | None = UNSET,
+        mailgun_signing_key: str | None = UNSET,
         headers: Sequence[Mapping[str, str | None]] = UNSET,
         append_path: bool = UNSET,
         retry_seconds: Literal[0, 3600, 86400] = UNSET,
@@ -1332,10 +1403,10 @@ class Destinations:
     ) -> Destination:
         """Change a destination; only the arguments you pass change.
 
-        ``None`` clears ``name``, ``filter``, ``body_template``, ``message_template``
-        and ``sent_field``. ``headers`` replaces the whole list; a ``None`` value
-        keeps the value stored under that name. Switching it off or taking a kind
-        away marks what is waiting for it as failed.
+        ``None`` clears ``name``, ``filter``, ``body_template``, ``message_template``,
+        ``sent_field`` and ``mailgun_signing_key``. ``headers`` replaces the whole
+        list; a ``None`` value keeps the value stored under that name. Switching it
+        off or taking a kind away marks what is waiting for it as failed.
         """
         _validate_segment(slug, "endpoint slug")
         _validate_segment(destination_id, "destination id")
@@ -1350,6 +1421,7 @@ class Destinations:
                 "filter": filter,
                 "body_template": body_template,
                 "message_template": message_template,
+                "mailgun_signing_key": mailgun_signing_key,
                 "headers": headers,
                 "append_path": append_path,
                 "retry_seconds": retry_seconds,

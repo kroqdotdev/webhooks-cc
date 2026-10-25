@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  INBOUND_EMAIL_FORMATS,
+  INBOUND_EMAIL_FORMAT_NAMES,
+  isInboundEmailFormat,
+  type InboundEmailFormat,
+} from "@webhooks-cc/sdk/email";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Send, Trash2 } from "lucide-react";
 import { conditionIssues, type Condition } from "@webhooks-cc/sdk";
@@ -49,15 +55,32 @@ import { Field, Segmented, Switch, SwitchRow } from "./settings-primitives";
 
 type Retry = 0 | 3600 | 86400;
 
-export type DestinationPreset = "server" | "chat" | "template";
+export type DestinationPreset = "server" | "chat" | "template" | "inbound";
 
-const FORMAT_OPTIONS: { value: DestinationFormatSetting; label: string }[] = [
+/** "provider" stands for the four inbound shapes, chosen below it. */
+type FormatChoice = Exclude<DestinationFormatSetting, InboundEmailFormat> | "provider";
+
+const FORMAT_OPTIONS: { value: FormatChoice; label: string }[] = [
   { value: "auto", label: "Pick from the URL" },
   { value: "as_received", label: "As received" },
   { value: "json", label: "Signed JSON" },
   { value: "template", label: "Your JSON" },
   { value: "chat", label: "Chat message" },
 ];
+const PROVIDER_OPTION: { value: FormatChoice; label: string } = {
+  value: "provider",
+  label: "Mail provider",
+};
+
+const PROVIDER_DESCRIPTIONS: Record<InboundEmailFormat, string> = {
+  postmark:
+    "Postmark's inbound JSON: FromFull, ToFull, TextBody, HtmlBody, StrippedTextReply, MailboxHash (the +tag) and Headers.",
+  sendgrid:
+    "SendGrid Inbound Parse: a multipart form with headers, text, html, envelope, SPF, dkim and spam_score.",
+  mailgun:
+    "A Mailgun route's form: body-plain, stripped-text, message-headers, and timestamp, token and signature, signed with your Mailgun key.",
+  cloudmailin: "CloudMailin's JSON Normalized: envelope, headers, plain, html and reply_plain.",
+};
 
 const RETRY_OPTIONS: { value: `${Retry}`; label: string }[] = [
   { value: "0", label: "Never" },
@@ -94,6 +117,8 @@ interface Draft {
   sentField: string;
   throttle: string;
   delay: string;
+  /** A new Mailgun signing key; empty keeps the saved one. */
+  mailgunKey: string;
 }
 
 function draftFrom(destination: DashboardDestination | null, preset: DestinationPreset): Draft {
@@ -119,15 +144,24 @@ function draftFrom(destination: DashboardDestination | null, preset: Destination
       sentField: destination.sentField ?? "",
       throttle: destination.throttleSeconds ? String(destination.throttleSeconds) : "",
       delay: destination.delaySeconds ? String(destination.delaySeconds) : "",
+      mailgunKey: "",
     };
   }
   return {
     name: "",
     url: "",
     enabled: true,
-    http: true,
+    // An inbound handler takes emails only, in Postmark's shape to start with.
+    http: preset !== "inbound",
     email: true,
-    format: preset === "chat" ? "chat" : preset === "template" ? "template" : "auto",
+    format:
+      preset === "chat"
+        ? "chat"
+        : preset === "template"
+          ? "template"
+          : preset === "inbound"
+            ? "postmark"
+            : "auto",
     logic: "and",
     conditions: [],
     bodyTemplate: preset === "template" ? STARTER_TEMPLATE : "",
@@ -139,6 +173,7 @@ function draftFrom(destination: DashboardDestination | null, preset: Destination
     sentField: "",
     throttle: "",
     delay: "",
+    mailgunKey: "",
   };
 }
 
@@ -172,6 +207,9 @@ function inputOf(draft: Draft, headersChanged: boolean): DestinationInput | { er
     throttleSeconds: seconds(draft.throttle),
     delaySeconds: seconds(draft.delay),
     ...(headersChanged ? { headers: headersInput(draft.rows) } : {}),
+    ...(draft.format === "mailgun" && draft.mailgunKey.trim()
+      ? { mailgunSigningKey: draft.mailgunKey.trim() }
+      : {}),
   };
 }
 
@@ -365,6 +403,7 @@ export function DestinationEditor({
   destination,
   preset = "server",
   signingConfigured,
+  emailFieldNames = [],
   onSaved,
   onDeleted,
   onCancel,
@@ -375,6 +414,8 @@ export function DestinationEditor({
   preset?: DestinationPreset;
   /** Whether the endpoint checks signatures (a filter can then use the result). */
   signingConfigured: boolean;
+  /** The endpoint's named email fields, for templates and filters. */
+  emailFieldNames?: string[];
   onSaved: (saved: DashboardDestination) => void;
   onDeleted?: () => void;
   /** Closes a new destination without saving it. */
@@ -413,6 +454,9 @@ export function DestinationEditor({
   const service = chatServiceName(url);
   const autoFormat = chatUrl ? "chat" : draft.http ? "as_received" : "json";
   const effective = draft.format === "auto" ? autoFormat : draft.format;
+  const provider = isInboundEmailFormat(draft.format) ? draft.format : null;
+  const formatChoice: FormatChoice = provider ? "provider" : (draft.format as FormatChoice);
+  const formatOptions = draft.email ? [...FORMAT_OPTIONS, PROVIDER_OPTION] : FORMAT_OPTIONS;
   const chat = effective === "chat";
   const headersChanged = serializeRows(draft.rows) !== serializeRows(initial.rows);
   const dirty =
@@ -538,8 +582,9 @@ export function DestinationEditor({
     });
   };
 
-  const formatDescription =
-    effective === "as_received"
+  const formatDescription = provider
+    ? `${PROVIDER_DESCRIPTIONS[provider]} For testing the inbound handler you wrote for that provider against real mail. Attachment contents are never kept, so none are attached.${draft.http ? " HTTP requests go as received." : ""}`
+    : effective === "as_received"
       ? `Relayed as it arrived: same method, headers and body bytes, so the sender's own signature (Stripe, GitHub, ...) still verifies on your server.${draft.email ? " Emails have no request to relay and go as signed JSON." : ""}`
       : effective === "json"
         ? "A JSON envelope with the request or email inside, signed with Standard Webhooks headers. One handler for both kinds."
@@ -547,9 +592,11 @@ export function DestinationEditor({
           ? "The JSON you write below, with fields of each request filled in, signed with Standard Webhooks headers. A value that is only a placeholder keeps its type, so amounts stay numbers."
           : "A message for a chat channel: the standard one (endpoint, method and path, when it arrived, and the start of the body), or your own text below.";
   const formatWarning =
-    chatUrl && !chat
-      ? `${service} expects a chat message; this format will be rejected by that URL.`
-      : null;
+    provider && !draft.email
+      ? "A mail provider's shape is for emails, and this destination takes none: pick another format or tick Emails."
+      : chatUrl && !chat
+        ? `${service} expects a chat message; this format will be rejected by that URL.`
+        : null;
 
   const summaryParts = [
     ...(chat || effective !== "as_received"
@@ -563,7 +610,7 @@ export function DestinationEditor({
     ...(draft.delay && Number(draft.delay) > 0 ? [`sent ${draft.delay} s after it arrives`] : []),
     ...(draft.sentField.trim() ? [`sent time from ${draft.sentField.trim()}`] : []),
   ];
-  const placeholders = forwardingPlaceholders(draft.http, draft.email);
+  const placeholders = forwardingPlaceholders(draft.http, draft.email, emailFieldNames);
 
   return (
     <div className="space-y-5">
@@ -632,6 +679,7 @@ export function DestinationEditor({
           idPrefix={idPrefix}
           showRequired={submitted}
           emptyLabel="Everything it takes is sent. Add a condition to send only some of it."
+          emailFieldNames={emailFieldNames}
           onChange={({ conditions, logic }) => set({ conditions, logic })}
         />
         {draft.conditions.some((condition) => condition.field === "signature") &&
@@ -649,17 +697,38 @@ export function DestinationEditor({
         <div className="space-y-1.5">
           <Segmented
             name="How it is sent"
-            value={draft.format}
-            onChange={(format) =>
+            value={formatChoice}
+            onChange={(choice) => {
+              const format: DestinationFormatSetting =
+                choice === "provider" ? (provider ?? "postmark") : choice;
               set({
                 format,
                 ...(format === "template" && !draft.bodyTemplate.trim()
                   ? { bodyTemplate: draft.http ? STARTER_TEMPLATE : STARTER_EMAIL_TEMPLATE }
                   : {}),
-              })
-            }
-            options={FORMAT_OPTIONS}
+              });
+            }}
+            options={formatOptions}
           />
+          {provider && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <label htmlFor={`${idPrefix}-provider`} className="text-xs text-muted-foreground">
+                Shaped like
+              </label>
+              <select
+                id={`${idPrefix}-provider`}
+                value={provider}
+                onChange={(e) => set({ format: e.target.value as InboundEmailFormat })}
+                className="ui-input text-[13px] py-1.5! px-2! w-56"
+              >
+                {INBOUND_EMAIL_FORMATS.map((format) => (
+                  <option key={format} value={format}>
+                    {INBOUND_EMAIL_FORMAT_NAMES[format]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="text-xs text-muted-foreground space-y-1">
             <p className="max-w-[62ch]">
               {draft.format === "auto"
@@ -670,6 +739,28 @@ export function DestinationEditor({
             {formatWarning && <p className="text-destructive">{formatWarning}</p>}
           </div>
         </div>
+
+        {provider === "mailgun" && (
+          <Field
+            id={`${idPrefix}-mailgun-key`}
+            label="Mailgun signing key"
+            help="Your HTTP webhook signing key (Mailgun, Settings, API Security), so the signature field verifies in your handler. Stored encrypted, never shown again."
+          >
+            <input
+              id={`${idPrefix}-mailgun-key`}
+              type="password"
+              autoComplete="off"
+              value={draft.mailgunKey}
+              onChange={(e) => set({ mailgunKey: e.target.value })}
+              placeholder={
+                destination?.hasMailgunSigningKey
+                  ? "Saved. Type a new one to replace it."
+                  : "Optional: without it, the signature field is empty"
+              }
+              className="ui-input w-full text-sm font-mono py-2!"
+            />
+          </Field>
+        )}
 
         {draft.format === "template" && (
           <div className="space-y-1.5">

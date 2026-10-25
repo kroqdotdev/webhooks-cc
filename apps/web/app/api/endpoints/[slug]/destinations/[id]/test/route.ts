@@ -5,6 +5,7 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 import {
   getDestination,
   getDestinationHeaders,
+  getDestinationMailgunKey,
   getDestinationSecret,
 } from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
@@ -57,7 +58,8 @@ export async function POST(request: Request, { params }: Params) {
       destination,
       picked.request,
       secret,
-      await getDestinationHeaders(endpoint.id, id)
+      await getDestinationHeaders(endpoint.id, id),
+      await getDestinationMailgunKey(endpoint.id, id)
     );
     const sent = await sendPrepared(prepared);
     if (!sent.sent) return reply({ error: sent.reason }, 400);

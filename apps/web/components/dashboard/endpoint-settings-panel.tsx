@@ -9,11 +9,13 @@ import { ResponsesSection } from "./responses-section";
 import { AddressPill } from "./endpoint-bar";
 import { DestinationsSection } from "./destinations-section";
 import { DeliveriesSection } from "./deliveries-section";
+import { EmailFieldsEditor } from "./email-fields-editor";
+import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import {
   Field,
   SaveFooter,
   Section,
-  Switch,
+  SwitchRow,
   scrollToSection,
   useSave,
   type SettingsSection,
@@ -60,23 +62,29 @@ function ReceivingSection({
 }) {
   const initialName = endpoint.name ?? "";
   const initialExtracts = endpoint.showEmailExtracts !== false;
+  const initialFieldsKey = JSON.stringify(endpoint.emailFields ?? []);
   const [name, setName] = useState(initialName);
   const [extracts, setExtracts] = useState(initialExtracts);
+  const [fields, setFields] = useState<EmailField[]>(() => endpoint.emailFields ?? []);
+  const [triedSave, setTriedSave] = useState(false);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
   const url = `${WEBHOOK_BASE_URL}/w/${endpoint.slug}`;
 
   useEffect(() => {
     setName(initialName);
     setExtracts(initialExtracts);
-  }, [initialName, initialExtracts]);
+    setFields(JSON.parse(initialFieldsKey) as EmailField[]);
+  }, [initialName, initialExtracts, initialFieldsKey]);
 
-  const dirty = name !== initialName || extracts !== initialExtracts;
+  const fieldsChanged = JSON.stringify(fields) !== initialFieldsKey;
+  const emailChanged = extracts !== initialExtracts || fieldsChanged;
+  const dirty = name !== initialName || emailChanged;
   const hint =
-    name !== initialName && extracts !== initialExtracts
-      ? "Name and email setting changed."
+    name !== initialName && emailChanged
+      ? "Name and email settings changed."
       : name !== initialName
         ? "Name changed."
-        : "Email setting changed.";
+        : "Email settings changed.";
 
   return (
     <Section
@@ -93,16 +101,26 @@ function ReceivingSection({
           onReset={() => {
             setName(initialName);
             setExtracts(initialExtracts);
+            setFields(JSON.parse(initialFieldsKey) as EmailField[]);
+            setTriedSave(false);
             setError(null);
             setSaved(false);
           }}
-          onSave={() =>
-            void save({
-              // An emptied name is saved as "" (the dashboard then shows the slug).
-              ...(name !== initialName ? { name: name.trim() } : {}),
-              ...(extracts !== initialExtracts ? { showEmailExtracts: extracts } : {}),
-            })
-          }
+          onSave={() => {
+            setTriedSave(true);
+            void save(
+              {
+                // An emptied name is saved as "" (the dashboard then shows the slug).
+                ...(name !== initialName ? { name: name.trim() } : {}),
+                ...(extracts !== initialExtracts ? { showEmailExtracts: extracts } : {}),
+                ...(fieldsChanged ? { emailFields: fields } : {}),
+              },
+              () => {
+                const [problem] = emailFieldIssues(fields);
+                if (problem) throw new Error(`Check the fields: ${problem}.`);
+              }
+            );
+          }}
         />
       }
     >
@@ -132,26 +150,41 @@ function ReceivingSection({
               className="w-full"
             />
           </Field>
-          <div className="flex items-start justify-between gap-6 pt-4 border-t border-line/20">
-            <div>
-              <label htmlFor="settings-extracts" className="text-sm font-semibold">
-                Show codes and links found in emails
-              </label>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[62ch]">
-                Verification codes and links are picked out of each email and shown above the
-                preview, with copy buttons. Turn this off for endpoints that receive mail you would
-                rather not have scanned.
-                {!isOwner &&
-                  " Only the endpoint's owner can change this, because it also decides what forwarding sends."}
-              </p>
-            </div>
-            <Switch
+          <div className="pt-4 border-t border-line/20 space-y-4">
+            <h3 className="text-sm font-semibold">Picked out of emails</h3>
+            <SwitchRow
               id="settings-extracts"
+              label="Codes and links"
+              help={
+                <>
+                  Verification codes and links found in each email, shown above it with copy buttons
+                  and sent along when it is forwarded. Turn this off for endpoints that receive mail
+                  you would rather not have scanned.
+                  {!isOwner &&
+                    " Only the endpoint's owner can change these, because they also decide what forwarding sends."}
+                </>
+              }
               checked={extracts}
               onChange={setExtracts}
-              label="Show codes and links found in emails"
               disabled={!isOwner}
             />
+            <div>
+              <p className="text-sm font-semibold">Your fields</p>
+              <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-[62ch]">
+                Name a value and say where it is: a regular expression (RE2) whose first group is
+                the value. It shows with the email, appears as <code>fields</code> in its JSON, and
+                forwarding templates and filters read it as{" "}
+                <code className="font-mono">{"{{ fields.invoice }}"}</code>.
+              </p>
+              <EmailFieldsEditor
+                slug={endpoint.slug}
+                fields={fields}
+                onChange={setFields}
+                disabled={!isOwner}
+                showRequired={triedSave}
+                emailAddress={endpoint.emailAddress}
+              />
+            </div>
           </div>
         </>
       )}

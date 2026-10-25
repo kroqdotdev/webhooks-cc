@@ -47,18 +47,30 @@ function ConditionRow({
   onChange,
   onRemove,
   canRemove,
+  emailFieldNames,
 }: {
   condition: Condition;
   use: ConditionUse;
   index: number;
   idPrefix: string;
   showRequired: boolean;
+  emailFieldNames: string[];
   onChange: (next: Condition) => void;
   onRemove: () => void;
   canRemove: boolean;
 }) {
   const labels = FIELD_LABELS[condition.field] ?? FIELD_LABELS.path;
   const key = keyOf(condition.field);
+  // "Email field" picks one of the endpoint's own fields when it has any.
+  const keyChoices =
+    condition.field === "email_field" && emailFieldNames.length > 0
+      ? [
+          ...emailFieldNames.map((name) => ({ value: name, label: name })),
+          ...(condition.name && !emailFieldNames.includes(condition.name)
+            ? [{ value: condition.name, label: condition.name }]
+            : []),
+        ]
+      : labels.keyChoices;
   const n = index + 1;
   // "Required" waits for a save attempt; other problems show as soon as they exist.
   const issue = conditionIssues(condition, { use }).find(
@@ -73,7 +85,14 @@ function ConditionRow({
         <select
           aria-label={`Condition ${n}: what to check`}
           value={shownField}
-          onChange={(e) => onChange(withField(condition, e.target.value as ConditionField))}
+          onChange={(e) => {
+            const next = withField(condition, e.target.value as ConditionField);
+            onChange(
+              next.field === "email_field" && !next.name && emailFieldNames[0]
+                ? { ...next, name: emailFieldNames[0] }
+                : next
+            );
+          }}
           className={cn(selectClass, "w-36")}
         >
           {fieldsFor(use).map((field) => (
@@ -83,14 +102,14 @@ function ConditionRow({
           ))}
         </select>
         {key &&
-          (labels.keyChoices ? (
+          (keyChoices ? (
             <select
               aria-label={`Condition ${n}: ${labels.keyLabel ?? "which"}`}
               value={condition.name ?? ""}
               onChange={(e) => onChange({ ...condition, name: e.target.value })}
               className={cn(selectClass, "w-32")}
             >
-              {labels.keyChoices.map((choice) => (
+              {keyChoices.map((choice) => (
                 <option key={choice.value} value={choice.value}>
                   {choice.label}
                 </option>
@@ -191,6 +210,7 @@ export function ConditionList({
   showRequired = false,
   onChange,
   emptyLabel,
+  emailFieldNames = [],
 }: {
   conditions: Condition[];
   logic: "and" | "or";
@@ -201,6 +221,8 @@ export function ConditionList({
   onChange: (next: { conditions: Condition[]; logic: "and" | "or" }) => void;
   /** Shown when there are no conditions (filters may have none). */
   emptyLabel?: string;
+  /** The endpoint's named email fields: what "Email field" offers. */
+  emailFieldNames?: string[];
 }) {
   const set = (next: Condition[], nextLogic: "and" | "or" = logic) =>
     onChange({ conditions: next, logic: nextLogic });
@@ -238,6 +260,7 @@ export function ConditionList({
           onChange={(next) => set(conditions.map((c, i) => (i === index ? next : c)))}
           onRemove={() => set(conditions.filter((_, i) => i !== index))}
           canRemove={use === "filter" || conditions.length > 1}
+          emailFieldNames={emailFieldNames}
         />
       ))}
       {conditions.length < MAX_CONDITIONS && (

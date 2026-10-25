@@ -1,6 +1,7 @@
 "use client";
 
 import type { Condition, MockResponse } from "@webhooks-cc/sdk";
+import type { EmailField } from "@webhooks-cc/sdk/email";
 import type { EmailCapture } from "@/lib/email-capture";
 import type { ClickHouseRequest, Request } from "@/types/request";
 
@@ -42,6 +43,8 @@ export interface DashboardEndpoint {
   emailAddress?: string | null;
   /** Show codes and links found in captured emails. */
   showEmailExtracts?: boolean;
+  /** Named fields picked out of every email (owner only to change). */
+  emailFields?: EmailField[];
   /** Forward captured requests and emails to forwardUrl (lib/forwarding). */
   forwardEnabled?: boolean;
   /** Owner only. */
@@ -65,7 +68,15 @@ export interface DashboardEndpoint {
 }
 
 export type ForwardFormatSetting = "auto" | "as_received" | "json" | "chat";
-export type DeliveryFormat = "as_received" | "json" | "chat" | "template";
+export type DeliveryFormat =
+  | "as_received"
+  | "json"
+  | "chat"
+  | "template"
+  | "postmark"
+  | "sendgrid"
+  | "mailgun"
+  | "cloudmailin";
 export type DeliveryStatus = "pending" | "succeeded" | "failed" | "skipped";
 
 export interface TeamEndpointShare {
@@ -379,7 +390,16 @@ export async function fetchDeliverySummary(
 
 export class ForwardingOffError extends Error {}
 
-export type DestinationFormatSetting = "auto" | "as_received" | "json" | "chat" | "template";
+export type DestinationFormatSetting =
+  | "auto"
+  | "as_received"
+  | "json"
+  | "chat"
+  | "template"
+  | "postmark"
+  | "sendgrid"
+  | "mailgun"
+  | "cloudmailin";
 
 /** Where an endpoint's captures go (lib/supabase/destinations.ts). */
 export interface DashboardDestination {
@@ -389,6 +409,8 @@ export interface DashboardDestination {
   enabled: boolean;
   url: string;
   hasSecret: boolean;
+  /** Whether a Mailgun signing key is saved (never the key). */
+  hasMailgunSigningKey?: boolean;
   http: boolean;
   email: boolean;
   format: DestinationFormatSetting;
@@ -416,9 +438,20 @@ export interface DashboardDestination {
 export type DestinationInput = Partial<
   Omit<
     DashboardDestination,
-    "id" | "hasSecret" | "headers" | "role" | "createdAt" | "updatedAt" | "summary"
+    | "id"
+    | "hasSecret"
+    | "hasMailgunSigningKey"
+    | "headers"
+    | "role"
+    | "createdAt"
+    | "updatedAt"
+    | "summary"
   >
-> & { headers?: { name: string; value: string | null }[] };
+> & {
+  headers?: { name: string; value: string | null }[];
+  /** For format "mailgun": a new key to sign with, or null to remove it. */
+  mailgunSigningKey?: string | null;
+};
 
 export async function fetchDestinations(
   accessToken: string,
@@ -595,6 +628,43 @@ export async function redeliverAllFailed(
     throw new ForwardingOffError(data?.error ?? "Turn forwarding on first.");
   }
   return readJson<{ queued: number }>(response);
+}
+
+/** What unsaved named fields find in the endpoint's newest email (or `requestId`). */
+export interface EmailFieldsPreview {
+  problems: string[];
+  request: { id: string; subject: string | null; receivedAt: number } | null;
+  values: Record<string, string | null> | null;
+}
+
+export async function previewEmailFields(
+  accessToken: string,
+  slug: string,
+  emailFields: EmailField[],
+  requestId?: string
+): Promise<EmailFieldsPreview> {
+  const response = await fetch(
+    `/api/endpoints/${encodeURIComponent(slug)}/email-fields/preview`,
+    withAuthHeaders(accessToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailFields, ...(requestId ? { requestId } : {}) }),
+    })
+  );
+  return readJson<EmailFieldsPreview>(response);
+}
+
+/** An email's named field values (null when the endpoint has none), found by the server with RE2. */
+export async function fetchEmailFieldValues(
+  accessToken: string,
+  requestId: string
+): Promise<Record<string, string | null> | null> {
+  const response = await fetch(
+    `/api/requests/${encodeURIComponent(requestId)}?extracts=true`,
+    withAuthHeaders(accessToken)
+  );
+  const data = await readJson<{ emailFields?: Record<string, string | null> | null }>(response);
+  return data.emailFields ?? null;
 }
 
 export async function fetchRequestDeliveries(

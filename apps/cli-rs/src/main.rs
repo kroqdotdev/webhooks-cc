@@ -54,8 +54,9 @@ async fn main() -> Result<()> {
             cli::endpoints::delete(&client, &slug, force, args.json).await?;
         }
 
-        Some(Command::Tunnel { target, endpoint, ephemeral, headers }) => {
-            cli::tunnel::run(&client, &target, endpoint.as_deref(), ephemeral, headers, args.json).await?;
+        Some(Command::Tunnel { target, endpoint, ephemeral, headers, email_format, email_path, mailgun_signing_key, no_email }) => {
+            let emails = cli::tunnel::email_options(email_format, email_path, mailgun_signing_key, no_email);
+            cli::tunnel::run(&client, &target, endpoint.as_deref(), ephemeral, headers, emails, args.json).await?;
         }
 
         Some(Command::Listen { slug }) => {

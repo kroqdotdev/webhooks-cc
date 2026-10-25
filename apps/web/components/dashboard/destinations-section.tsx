@@ -1,7 +1,8 @@
 "use client";
 
+import { INBOUND_EMAIL_FORMAT_NAMES } from "@webhooks-cc/sdk/email";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Globe, MessageSquare, Braces } from "lucide-react";
+import { ArrowDown, ArrowUp, Braces, ChevronDown, Globe, Mail, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
@@ -47,6 +48,13 @@ const PRESETS: { id: DestinationPreset; label: string; detail: string; icon: typ
     detail: "Pick the fields to send and shape the body, for Zapier, n8n or your own API.",
     icon: Braces,
   },
+  {
+    id: "inbound",
+    label: "Inbound email handler",
+    detail:
+      "Emails shaped as Postmark, SendGrid, Mailgun or CloudMailin post them, to test your handler.",
+    icon: Mail,
+  },
 ];
 
 const FORMAT_NAMES: Record<string, string> = {
@@ -54,6 +62,7 @@ const FORMAT_NAMES: Record<string, string> = {
   json: "Signed JSON",
   template: "Your JSON",
   chat: "Chat message",
+  ...INBOUND_EMAIL_FORMAT_NAMES,
 };
 
 function hostOf(url: string): string {
@@ -125,14 +134,16 @@ function Health({ destination }: { destination: DashboardDestination }) {
 
 function PresetPicker({
   onPick,
-  compact,
+  email,
 }: {
   onPick: (preset: DestinationPreset) => void;
-  compact: boolean;
+  /** Whether the endpoint receives email (the inbound handler preset is for that). */
+  email: boolean;
 }) {
+  const presets = email ? PRESETS : PRESETS.filter((preset) => preset.id !== "inbound");
   return (
-    <div className={cn("grid gap-2", compact ? "sm:grid-cols-3" : "sm:grid-cols-3")}>
-      {PRESETS.map((preset) => {
+    <div className={cn("grid gap-2", presets.length === 4 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+      {presets.map((preset) => {
         const Icon = preset.icon;
         return (
           <button
@@ -235,6 +246,7 @@ export function DestinationsSection({
   };
 
   const signingConfigured = !!endpoint.signingProvider;
+  const emailFieldNames = (endpoint.emailFields ?? []).map((field) => field.name);
   const count = destinations?.length ?? 0;
   const anyDelivered = (destinations ?? []).some(
     (d) => d.summary && d.summary.last24h.delivered + d.summary.last24h.failed > 0
@@ -255,7 +267,7 @@ export function DestinationsSection({
       {destinations !== null && count === 0 && !adding && (
         <div className="space-y-2">
           <p className="text-sm">Nothing is forwarded yet. Where should captures go?</p>
-          <PresetPicker onPick={setAdding} compact={false} />
+          <PresetPicker onPick={setAdding} email={!!endpoint.emailAddress} />
         </div>
       )}
 
@@ -330,6 +342,7 @@ export function DestinationsSection({
                       slug={endpoint.slug}
                       destination={destination}
                       signingConfigured={signingConfigured}
+                      emailFieldNames={emailFieldNames}
                       onSaved={(saved) => {
                         setDestinations(
                           (prev) =>
@@ -387,6 +400,7 @@ export function DestinationsSection({
             destination={null}
             preset={adding}
             signingConfigured={signingConfigured}
+            emailFieldNames={emailFieldNames}
             onSaved={(saved) => {
               setAdding(null);
               setOpen((prev) => new Set(prev).add(saved.id));
@@ -402,7 +416,7 @@ export function DestinationsSection({
           {picking ? (
             <>
               <PresetPicker
-                compact
+                email={!!endpoint.emailAddress}
                 onPick={(preset) => {
                   setPicking(false);
                   setAdding(preset);
