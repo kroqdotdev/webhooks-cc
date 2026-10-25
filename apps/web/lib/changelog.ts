@@ -17,15 +17,27 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
   mcp: "MCP",
 };
 
-export const APP_VERSION = "0.44.0";
-export const CLI_VERSION = "1.4.1";
-export const SDK_VERSION = "1.17.1";
-export const PYTHON_SDK_VERSION = "0.1.3";
-export const GO_SDK_VERSION = "0.1.1";
-export const MCP_VERSION = "1.13.0";
+export const APP_VERSION = "0.45.0";
+export const CLI_VERSION = "1.5.0";
+export const SDK_VERSION = "1.18.0";
+export const PYTHON_SDK_VERSION = "0.2.0";
+export const GO_SDK_VERSION = "0.2.0";
+export const MCP_VERSION = "1.14.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   // ─── Web App ────────────────────────────────────────────────────────
+  {
+    version: "0.45.0",
+    date: "2026-10-25",
+    title: "Fields Picked Out of Emails, Reply Text, and Mail Provider Shapes",
+    track: "web",
+    items: [
+      "Name a value and say where it is (the subject, the text, the HTML, the sender, the recipients or a header, with an RE2 pattern), and every email shows it, carries it in its JSON as fields, and hands it to forwarding: templates read {{ fields.invoice }} and a filter can check it. Each field shows what it finds in the newest email as you type",
+      "Replies carry replyText, what the sender wrote above the quoted message without their signature, and the Text tab has Reply only",
+      "A destination can post emails the way Postmark, SendGrid Inbound Parse, a Mailgun route or CloudMailin posts them, a Mailgun form signed with your own signing key, so the inbound handler you already wrote runs against real mail; the Inbound email handler preset starts one",
+      "The API renders an email in any of those shapes (POST /api/requests/{id}/render), and returns your fields and the reply text with extracts=true",
+    ],
+  },
   {
     version: "0.44.0",
     date: "2026-10-25",
@@ -1448,6 +1460,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.5.0",
+    date: "2026-10-25",
+    title: "Emails Through the Tunnel",
+    track: "cli",
+    items: [
+      "whk tunnel delivers captured emails to your machine again, now as webhooks.cc's email.received JSON (the body forwarding posts, unsigned here) instead of a raw message; this replaces 1.3.2's \"emails are not tunneled\"",
+      "--email-format postmark, sendgrid, mailgun or cloudmailin posts each email the way that service's inbound webhook does, so the handler you wrote for it runs against real mail; --mailgun-signing-key (or WHK_MAILGUN_SIGNING_KEY) signs a Mailgun form with your key",
+      "--email-path sends emails to a path of their own on the target, and --no-email skips them",
+      "Emails show their recipient and subject in the tunnel's output, the JSON events and the request lists, with encoded subjects decoded",
+    ],
+  },
+  {
     version: "1.4.1",
     date: "2026-10-08",
     title: "TLS Library Update",
@@ -1646,6 +1670,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.18.0",
+    date: "2026-10-25",
+    title: "Destinations, Response Rules and Email Fields",
+    track: "sdk",
+    items: [
+      "`client.destinations`: list, get, create, update, delete, reorder, secret, rotateSecret, test and preview an endpoint's forwarding destinations, each with its own kinds, filter, format (as received, signed JSON, your own JSON template, a chat message, or a mail provider's shape), throttle and delay. `forwarding.redeliver()`, `redeliverFailed()` and `deliveries()` take a `destinationId`, and the log has a `skipped` status for what a filter turned down",
+      "`verifyForwardedJson()` checks a delivery of a destination's own JSON and returns its body",
+      "`endpoints.previewResponse()` runs response rules and a mock response with its {{ placeholders }} against a captured request; conditions gain operators (is not, ends with, RE2 regex, number comparisons, is missing) and fields (body, content type, size), and `evaluateConditions()` and `renderTemplate()` are exported",
+      "Emails: `emails.get()` returns the endpoint's named fields as `emailFields` and the reply text as `replyText`, `buildEmailJson()` and `emails.toJson()` add `replyText` and `fields`, `emails.toInbound()` builds an email in Postmark, SendGrid, Mailgun or CloudMailin shape locally and `emails.render()` asks webhooks.cc for it. Endpoints take `emailFields`, and filters an `email_field` condition",
+      "`matchPath()` reads `?` as exactly one character, as the receiver always did",
+      "Conformance vectors: `rules.json` and `placeholders.json` are new, and `forwarding.json` is at format 3 with `verifyForwardedJson`",
+    ],
+  },
   {
     version: "1.17.1",
     date: "2026-10-24",
@@ -1967,6 +2005,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.2.0",
+    date: "2026-10-25",
+    title: "Destinations, Response Previews and Email Fields",
+    track: "python",
+    items: [
+      "`client.destinations` manages an endpoint's forwarding destinations, and `verify_forwarded_json()` checks a delivery of a destination's own JSON",
+      "`client.endpoints.preview_response()` runs response rules and placeholders against a captured request",
+      "Email requests carry the endpoint's named fields (`email_fields`) and the reply text (`reply_text`); endpoints take `email_fields`; `client.emails.render()` returns an email in Postmark, SendGrid, Mailgun or CloudMailin shape to post to your inbound handler",
+      "`match_path()` reads `?` as exactly one character, as the receiver does",
+    ],
+  },
+  {
     version: "0.1.3",
     date: "2026-10-24",
     title: "Safer Retries and Waits, Text Read as JavaScript Reads It",
@@ -2015,6 +2065,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.2.0",
+    date: "2026-10-25",
+    title: "Destinations, Response Previews and Email Fields",
+    track: "go",
+    items: [
+      "`client.Destinations` manages an endpoint's forwarding destinations, and `verify.ForwardedJSON` checks a delivery of a destination's own JSON",
+      "`client.Endpoints.PreviewResponse` runs response rules and placeholders against a captured request",
+      "Email requests carry the endpoint's named fields and the reply text; endpoints take `EmailFields`; `client.Emails.Render` returns an email in Postmark, SendGrid, Mailgun or CloudMailin shape to post to your inbound handler",
+      "`MatchPath` reads `?` as exactly one character, as the receiver does",
+    ],
+  },
+  {
     version: "0.1.1",
     date: "2026-10-24",
     title: "Safer Retries",
@@ -2041,6 +2103,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.14.0",
+    date: "2026-10-25",
+    title: "Destinations, Response Previews and Email Fields",
+    track: "mcp",
+    items: [
+      "New tools `list_destinations`, `add_destination`, `update_destination`, `remove_destination` and `preview_destination` manage an endpoint's forwarding destinations, with filters, your own JSON, chat messages, mail provider shapes, throttles and delays; `get_forwarding_secret`, `test_forwarding`, `list_deliveries` and `redeliver` take a `destinationId`",
+      "`preview_response` dry-runs response rules and placeholders, and conditions are checked with the SDK's rule language before they are sent",
+      "`render_email` gives a captured email in Postmark, SendGrid, Mailgun or CloudMailin shape and can post it to your local inbound handler; `update_endpoint` takes `emailFields`, and `get_email` returns them as `fields` with the `replyText`",
+      "46 tools",
+    ],
+  },
   {
     version: "1.13.0",
     date: "2026-10-23",

@@ -1,11 +1,11 @@
 ---
 title: "Tunneling"
-description: "Forward webhooks to your local development server in one command. No port forwarding, no deploy — inspect every request as it arrives."
+description: "Forward webhooks and captured emails to your local development server in one command. No port forwarding, no deploy: inspect every request as it arrives."
 section: cli
 order: 3
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-25
 schema: howto
-keywords: ["webhook tunnel", "localhost forwarding", "webhook forward", "local development"]
+keywords: ["webhook tunnel", "localhost forwarding", "webhook forward", "local development", "inbound email testing"]
 seo:
   ogTitle: "Webhook Tunnel to Localhost"
   ogDescription: "Forward webhooks from webhooks.cc to your local development server with the CLI tunnel. No port forwarding, firewall changes, or ngrok."
@@ -22,8 +22,10 @@ whk
 Select **Tunnel** from the menu, enter your local port, and the TUI connects automatically. Incoming requests appear in a live stream showing:
 
 - Timestamp and color-coded HTTP method
-- Request path
+- Request path, or for an email the address it arrived at and its subject
 - Forward result with status code and latency
+
+The TUI posts emails as webhooks.cc's email JSON. For a mail provider's shape or a separate email path, use `whk tunnel` with the [email flags](#emails).
 
 Press Enter on any request to open the detail viewer with three tabs: **Overview** (method, path, IP, size), **Headers**, and **Body** (with JSON pretty-printing). Press Esc to go back.
 
@@ -33,7 +35,7 @@ Press Enter on any request to open the detail viewer with three tabs: **Overview
 whk tunnel 3000
 ```
 
-Creates an endpoint, prints its URL, and forwards every incoming request to `localhost:3000`. The sender receives the mock response you configured (200 OK by default).
+Creates an endpoint, prints its URL and email address, and forwards every incoming request to `localhost:3000`, and every email it receives too ([emails](#emails)). The sender receives the mock response you configured (200 OK by default).
 
 ## Forward an existing endpoint
 
@@ -53,7 +55,7 @@ whk tunnel 3000 -e
 
 ## Custom headers
 
-Inject headers into every forwarded request with `-H` (repeatable):
+Inject headers into every forwarded request and email with `-H` (repeatable):
 
 ```bash
 whk tunnel 3000 -H "Authorization: Bearer test-token" -H "X-Custom: value"
@@ -71,12 +73,69 @@ whk listen <slug>
 
 1. The CLI creates (or connects to) an endpoint on webhooks.cc.
 2. When a webhook arrives, the server pushes it to the CLI over Server-Sent Events (SSE).
-3. The CLI replays the request — method, headers, body — to your local port.
+3. The CLI replays the request (method, headers, body) to your local port. An email is first rendered by webhooks.cc in the format you picked, then posted.
 4. Your local server processes it as if the sender called it directly.
 
 Sensitive headers (Authorization, Cookie) from the original request are filtered out before forwarding. Use `-H` to inject authentication headers your local server needs.
 
-Only HTTP requests are tunneled. [Emails](/docs/email-capture) the endpoint receives are listed as not tunneled, because an email is a raw message sent to an address, not an HTTP request your server could handle. To receive emails in your app as JSON, use [forwarding](/docs/forwarding).
+## Emails
+
+The tunnel also delivers the [emails](/docs/email-capture) the endpoint receives at its `mailhooks.cc` address, so you can test an inbound email handler while you click through a signup by hand. An email is a message sent to an address, not an HTTP request, so for each one the CLI asks webhooks.cc to render it and sends the result to your server as a `POST`.
+
+By default the body is webhooks.cc's own `email.received` JSON, the same body [forwarding posts](/docs/forwarding#an-email), with `Content-Type: application/json`. The tunnel does not sign it: there are no `webhook-*` headers, so turn off a `verifyForwardedEmail` check while you test through the tunnel, or post a signed copy with the SDK ([test an email handler locally](/docs/forwarding#test-an-email-handler-locally)).
+
+An email has no path of its own (its path is the address it was sent to), so emails go to the target itself: `whk tunnel 3000` posts them to `http://localhost:3000`, and `whk tunnel 3000/api/inbound` to `http://localhost:3000/api/inbound`. `--email-path` appends a path for emails only, the way a webhook's path is appended, so one tunnel can feed your webhook handlers and your email handler:
+
+```bash
+# Webhooks keep their own paths; emails go to localhost:3000/hooks/email
+whk tunnel 3000 --email-path /hooks/email
+```
+
+Each email shows up with the address it arrived at and its subject:
+
+```
+14:32:01 POST /webhooks/stripe -> 200 (12ms)
+14:32:09 EMAIL acme-7@mailhooks.cc Confirm your email -> 204 (8ms)
+```
+
+With `--json`, an email's `forwarded` event also carries `"kind": "email"`, its `subject` and the `format` it was posted in.
+
+### In a mail provider's shape
+
+If your app receives email through an inbound mail service, `--email-format` posts each email the way that service would, so the handler you wrote for it runs against real mail from real clients:
+
+```bash
+whk tunnel 3000 --email-format postmark --email-path /webhooks/postmark
+```
+
+| `--email-format`        | What your handler receives                                                 |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `json` (default)        | webhooks.cc's `email.received` JSON                                        |
+| `postmark`              | Postmark's inbound JSON                                                    |
+| `sendgrid`              | A SendGrid Inbound Parse form (`multipart/form-data`)                      |
+| `mailgun`               | A Mailgun route's form (`application/x-www-form-urlencoded`), signed below |
+| `cloudmailin`           | CloudMailin's JSON Normalized format                                       |
+
+The fields of each shape are listed under [forwarding in a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape).
+
+A Mailgun handler checks `signature`, the hex HMAC-SHA256 of `timestamp` and `token` under your Mailgun HTTP webhook signing key (under API Security in Mailgun). Give the tunnel that key and the form is signed the way Mailgun signs it, so the check passes; without it, `signature` is empty. Set it in the environment rather than on the command line, where it would end up in your shell history:
+
+```bash
+export WHK_MAILGUN_SIGNING_KEY=key-from-mailgun
+whk tunnel 3000 --email-format mailgun --email-path /webhooks/mailgun
+```
+
+`--mailgun-signing-key <key>` works too. The key is only used with `--email-format mailgun`: it goes to webhooks.cc with each email to sign that form, and is not stored.
+
+What differs from the real thing: attachment contents are never stored, so no format includes attachment files (the JSON lists each attachment's name, type and size), and the text and HTML are what webhooks.cc kept, up to 256 KB each.
+
+### Skip emails
+
+`--no-email` leaves emails out: they are listed as `skipped (--no-email)` and nothing reaches your server.
+
+```bash
+whk tunnel 3000 --no-email
+```
 
 ## Tips
 
@@ -100,6 +159,11 @@ No. The webhooks.cc CLI creates an outbound connection from your machine. No por
 <FAQItem question="Can I use an existing endpoint with the tunnel?">
 
 Yes. Pass `--endpoint <slug>` to forward an endpoint you already created in the dashboard or CLI, instead of creating a new one.
+
+</FAQItem>
+<FAQItem question="Can I test an inbound email handler on localhost?">
+
+Yes. `whk tunnel 3000` posts every email the endpoint receives to your server as JSON. Add `--email-format postmark`, `sendgrid`, `mailgun` or `cloudmailin` to post it the way that provider would, and `--email-path` to send emails to their own route.
 
 </FAQItem>
 </FAQ>

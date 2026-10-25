@@ -13,10 +13,10 @@ import (
 // DestinationsService manages where an endpoint's captures go: up to 10
 // destinations per endpoint, each with its own URL, what it gets (HTTP
 // requests, emails, and a filter of conditions), how it is sent (as
-// received, signed JSON, a JSON template with {{ placeholders }}, or a chat
-// message), its own signing secret and headers, retries, order, and optional
-// throttling and delay. Only the endpoint's owner can manage them. Use it as
-// client.Destinations.
+// received, signed JSON, a JSON template with {{ placeholders }}, a chat
+// message, or emails in an inbound mail provider's shape), its own signing
+// secret and headers, retries, order, and optional throttling and delay.
+// Only the endpoint's owner can manage them. Use it as client.Destinations.
 type DestinationsService struct{ c *Client }
 
 // ListDestinationsOptions say what DestinationsService.List returns.
@@ -57,8 +57,8 @@ func (s *DestinationsService) Get(ctx context.Context, slug, destinationID strin
 
 // DestinationInput holds the fields of a destination to create or change.
 // Only the fields set with Value or Null are sent. Null clears Name, Filter,
-// BodyTemplate, MessageTemplate and SentField; the others only take Value.
-// DestinationsService.Create needs URL.
+// BodyTemplate, MessageTemplate, SentField and MailgunSigningKey; the others
+// only take Value. DestinationsService.Create needs URL.
 //
 //	client.Destinations.Create(ctx, slug, webhookscc.DestinationInput{
 //		URL:   webhookscc.Value("https://hooks.example.com/invoices"),
@@ -80,7 +80,9 @@ type DestinationInput struct {
 	// HTTP and Email say which kinds it takes (default both).
 	HTTP  Field[bool]
 	Email Field[bool]
-	// Format is how it sends (default FormatAuto).
+	// Format is how it sends (default FormatAuto). FormatPostmark,
+	// FormatSendGrid, FormatMailgun and FormatCloudMailin send emails in that
+	// provider's shape and HTTP requests as received.
 	Format Field[DestinationFormat]
 	// Filter sends only the captures its conditions match.
 	Filter Field[DestinationFilter]
@@ -90,6 +92,11 @@ type DestinationInput struct {
 	// MessageTemplate is your own message text for FormatChat; Null sends
 	// the standard message.
 	MessageTemplate Field[string]
+	// MailgunSigningKey is, for FormatMailgun, your Mailgun HTTP webhook
+	// signing key, so the form's signature verifies. It is stored encrypted
+	// and never returned (Destination.HasMailgunSigningKey says whether one
+	// is saved); Null removes it.
+	MailgunSigningKey Field[string]
 	// Headers are your own headers, at most 10 (not for chat). They replace
 	// the whole list.
 	Headers Field[[]DestinationHeaderInput]
@@ -121,7 +128,7 @@ func (in DestinationInput) body() (map[string]any, error) {
 		in.KeepOrder, in.Throttle, in.Delay, in.Position,
 	} {
 		if field.isNull() {
-			return nil, errors.New("webhooks.cc: only Name, Filter, BodyTemplate, MessageTemplate and SentField can be cleared; set the others with Value")
+			return nil, errors.New("webhooks.cc: only Name, Filter, BodyTemplate, MessageTemplate, SentField and MailgunSigningKey can be cleared; set the others with Value")
 		}
 	}
 	if in.Filter.IsSet() && !in.Filter.isNull() {
@@ -139,6 +146,7 @@ func (in DestinationInput) body() (map[string]any, error) {
 	in.Filter.put(body, "filter")
 	in.BodyTemplate.put(body, "bodyTemplate")
 	in.MessageTemplate.put(body, "messageTemplate")
+	in.MailgunSigningKey.put(body, "mailgunSigningKey")
 	if in.Headers.IsSet() {
 		headers := in.Headers.value
 		if headers == nil {

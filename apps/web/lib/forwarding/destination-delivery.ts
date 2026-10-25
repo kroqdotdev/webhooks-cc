@@ -1,3 +1,4 @@
+import { emailFieldValues } from "@/lib/email-fields";
 import { serverEnv } from "@/lib/env";
 import type { EndpointRecord } from "@/lib/supabase/endpoints";
 import type { Destination } from "@/lib/supabase/destinations";
@@ -80,16 +81,22 @@ export interface PreparedDelivery {
 
 /** The outgoing request for one destination and one captured request. */
 export function prepareDelivery(
-  endpoint: Pick<EndpointRecord, "slug" | "name" | "showEmailExtracts" | "signingProvider">,
+  endpoint: Pick<
+    EndpointRecord,
+    "slug" | "name" | "showEmailExtracts" | "signingProvider" | "emailFields"
+  >,
   destination: DestinationDraft,
   request: RequestRecord,
   secret: string,
-  ownerHeaders: [string, string][]
+  ownerHeaders: [string, string][],
+  mailgunSigningKey: string | null = null
 ): PreparedDelivery {
   const verdict = filterVerdict(
     (destination.filter as never) ?? null,
     request,
-    endpoint.signingProvider ?? null
+    endpoint.signingProvider ?? null,
+    Date.now(),
+    emailFieldValues(request, endpoint.emailFields ?? [])
   );
   const outgoing = outgoingFor(request, {
     url: destination.url,
@@ -104,6 +111,8 @@ export function prepareDelivery(
     sentField: destination.sentField,
     bodyTemplate: destination.bodyTemplate,
     messageTemplate: destination.messageTemplate,
+    emailFields: endpoint.emailFields ?? [],
+    mailgunSigningKey,
   });
   return {
     format: resolveFormat(

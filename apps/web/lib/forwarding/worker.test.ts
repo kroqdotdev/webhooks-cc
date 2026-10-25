@@ -1,8 +1,10 @@
+import { createHmac } from "node:crypto";
 import { verifyForwardedRequest, verifyRelayedRequest } from "@webhooks-cc/sdk";
 import { describe, expect, it } from "vitest";
 import type { RequestRecord } from "@/lib/supabase/requests";
 import {
   deliveryTarget,
+  filterVerdict,
   holdChat,
   isStaleHeadsUp,
   nextRetry,
@@ -94,6 +96,103 @@ describe("outgoingFor", () => {
   it("keeps a captured path with dot segments under the URL's path", () => {
     const prepared = outgoingFor(captured({ path: "/../../admin" }), settings());
     expect(prepared.facts.target).toBe("dest.example/hooks/admin");
+  });
+});
+
+describe("email shapes and fields", () => {
+  const capturedEmail = () =>
+    captured({
+      method: "EMAIL",
+      path: "acme-orders+inv@mailhooks.cc",
+      kind: "email",
+      headers: { from: "Acme <billing@acme.example>", subject: "Invoice INV-2041" },
+      body: "From: Acme <billing@acme.example>\r\nSubject: Invoice INV-2041\r\n\r\nPaid.",
+      email: {
+        subject: "Invoice INV-2041",
+        from: [{ name: "Acme", address: "billing@acme.example" }],
+        to: [{ name: null, address: "acme-orders+inv@mailhooks.cc" }],
+        cc: [],
+        replyTo: [],
+        sender: [],
+        date: null,
+        messageId: null,
+        inReplyTo: [],
+        tag: "inv",
+        text: "Paid.",
+        html: null,
+        textFromHtml: false,
+        attachments: [],
+        auth: null,
+        smtp: null,
+        parseError: false,
+        truncated: {
+          raw: false,
+          text: false,
+          html: false,
+          headers: false,
+          addresses: false,
+          attachments: false,
+        },
+      },
+    });
+  const fields = [{ name: "invoice", from: "subject" as const, pattern: "(INV-\\d+)" }];
+
+  it("sends an email as a provider would, signed with the destination's secret too", () => {
+    const prepared = outgoingFor(capturedEmail(), settings({ format: "postmark" }));
+    if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+    const headers = Object.fromEntries(prepared.outgoing.headers);
+    expect(headers["content-type"]).toBe("application/json");
+    expect(headers["webhook-signature"]).toMatch(/^v1,/);
+    expect(JSON.parse(prepared.outgoing.body!.toString()).MailboxHash).toBe("inv");
+    expect(prepared.facts.format).toBe("postmark");
+  });
+
+  it("relays HTTP requests to a provider-shaped destination as received", () => {
+    const prepared = outgoingFor(captured(), settings({ format: "sendgrid" }));
+    expect(prepared.facts.format).toBe("as_received");
+  });
+
+  it("signs a Mailgun form with the owner's key", () => {
+    const prepared = outgoingFor(
+      capturedEmail(),
+      settings({ format: "mailgun", mailgunSigningKey: "key-acme" })
+    );
+    if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+    const form = new URLSearchParams(prepared.outgoing.body!.toString());
+    const expected = createHmac("sha256", "key-acme")
+      .update(`${form.get("timestamp")}${form.get("token")}`)
+      .digest("hex");
+    expect(form.get("signature")).toBe(expected);
+  });
+
+  it("fills in the endpoint's fields in templates and the JSON", () => {
+    const template = outgoingFor(
+      capturedEmail(),
+      settings({
+        format: "template",
+        bodyTemplate: { invoice: "{{ fields.invoice }}" },
+        emailFields: fields,
+      })
+    );
+    if (!("outgoing" in template)) throw new Error(template.reason);
+    expect(JSON.parse(template.outgoing.body!.toString())).toEqual({ invoice: "INV-2041" });
+    const json = outgoingFor(capturedEmail(), settings({ format: "json", emailFields: fields }));
+    if (!("outgoing" in json)) throw new Error(json.reason);
+    const data = JSON.parse(json.outgoing.body!.toString()).data;
+    expect(data.fields).toEqual({ invoice: "INV-2041" });
+    expect(data.replyText).toBeNull();
+  });
+
+  it("filters on a field", () => {
+    const filter = {
+      conditions: [{ field: "email_field", name: "invoice", op: "starts_with", value: "INV-" }],
+    };
+    expect(filterVerdict(filter, capturedEmail(), null, Date.now(), { invoice: "INV-2041" })).toBe(
+      "send"
+    );
+    expect(filterVerdict(filter, capturedEmail(), null, Date.now(), { invoice: null })).toBe(
+      "skip"
+    );
   });
 });
 

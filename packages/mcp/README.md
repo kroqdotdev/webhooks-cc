@@ -68,7 +68,7 @@ Get your API key at [webhooks.cc/account/api-keys](https://webhooks.cc/account/a
 
 ## What it exposes
 
-The server exposes `45` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
+The server exposes `46` tools, `3` prompts, and `3` resource surfaces with an API key, and `11` sandbox tools without one.
 
 ### Endpoint tools
 
@@ -104,6 +104,7 @@ Every endpoint on an account receives email at `{slug}@mailhooks.cc` (and `{slug
 - `get_email`
 - `wait_for_email`
 - `send_test_email`
+- `render_email` (an email in Postmark, SendGrid, Mailgun or CloudMailin shape, optionally posted to your local inbound handler)
 
 The request tools and resources return emails too (filter with `kind`), without the raw message or the HTML part and with the text cut at 8,000 characters; `get_email` returns the HTML.
 

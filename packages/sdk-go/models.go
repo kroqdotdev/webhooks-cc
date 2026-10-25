@@ -77,6 +77,15 @@ type Request struct {
 	// emails read through this client, unless the endpoint's "Show codes and
 	// links found in emails" setting is off.
 	Extracts *EmailExtracts
+	// EmailFields are the endpoint's named fields (see EmailField), by name:
+	// the text each pattern found, or "" when it found nothing (a value is
+	// never empty). Nil when the endpoint has none. Set on emails read
+	// through this client.
+	EmailFields map[string]string
+	// ReplyText is the new text of a reply, without the quoted message and
+	// the signature, or "" when the email quotes no earlier message. Set on
+	// emails read through this client.
+	ReplyText string
 	// Raw is the JSON the request was read from.
 	Raw json.RawMessage
 }
@@ -116,10 +125,17 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 		SignatureVerified: o.optBool("signatureVerified"),
 		SignatureError:    o.str("signatureError"),
 		SigningProvider:   o.str("signingProvider"),
+		ReplyText:         o.str("replyText"),
 		Raw:               bytes.Clone(data),
 	}
 	if kind := RequestKind(o.str("kind")); kind == KindHTTP || kind == KindEmail {
 		r.Kind = kind
+	}
+	if fields := o.object("emailFields"); fields != nil {
+		r.EmailFields = make(map[string]string, len(fields))
+		for name := range fields {
+			r.EmailFields[name] = fields.str(name)
+		}
 	}
 	if email := o.raw("email"); isJSONObject(email) {
 		r.Email = new(EmailCapture)
@@ -140,30 +156,45 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 // it back.
 func (r Request) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		ID                string            `json:"id"`
-		EndpointID        string            `json:"endpointId,omitempty"`
-		Slug              string            `json:"slug,omitempty"`
-		Method            string            `json:"method"`
-		Path              string            `json:"path"`
-		Headers           Headers           `json:"headers"`
-		Body              string            `json:"body"`
-		QueryParams       map[string]string `json:"queryParams"`
-		IP                string            `json:"ip"`
-		Size              int               `json:"size"`
-		ReceivedAt        *int64            `json:"receivedAt,omitempty"`
-		ContentType       string            `json:"contentType,omitempty"`
-		BodyRaw           string            `json:"bodyRaw,omitempty"`
-		SignatureVerified *bool             `json:"signatureVerified,omitempty"`
-		SignatureError    string            `json:"signatureError,omitempty"`
-		SigningProvider   string            `json:"signingProvider,omitempty"`
-		Kind              RequestKind       `json:"kind,omitempty"`
-		Email             *EmailCapture     `json:"email,omitempty"`
-		Extracts          *EmailExtracts    `json:"extracts,omitempty"`
+		ID                string             `json:"id"`
+		EndpointID        string             `json:"endpointId,omitempty"`
+		Slug              string             `json:"slug,omitempty"`
+		Method            string             `json:"method"`
+		Path              string             `json:"path"`
+		Headers           Headers            `json:"headers"`
+		Body              string             `json:"body"`
+		QueryParams       map[string]string  `json:"queryParams"`
+		IP                string             `json:"ip"`
+		Size              int                `json:"size"`
+		ReceivedAt        *int64             `json:"receivedAt,omitempty"`
+		ContentType       string             `json:"contentType,omitempty"`
+		BodyRaw           string             `json:"bodyRaw,omitempty"`
+		SignatureVerified *bool              `json:"signatureVerified,omitempty"`
+		SignatureError    string             `json:"signatureError,omitempty"`
+		SigningProvider   string             `json:"signingProvider,omitempty"`
+		Kind              RequestKind        `json:"kind,omitempty"`
+		Email             *EmailCapture      `json:"email,omitempty"`
+		Extracts          *EmailExtracts     `json:"extracts,omitempty"`
+		EmailFields       map[string]*string `json:"emailFields,omitempty"`
+		ReplyText         string             `json:"replyText,omitempty"`
 	}{
 		r.ID, r.EndpointID, r.Slug, r.Method, r.Path, r.Headers, r.Body, r.QueryParams, r.IP, r.Size,
 		millisOf(r.ReceivedAt), r.ContentType, r.BodyRaw, r.SignatureVerified, r.SignatureError,
-		r.SigningProvider, r.Kind, r.Email, r.Extracts,
+		r.SigningProvider, r.Kind, r.Email, r.Extracts, emailFieldValuesJSON(r.EmailFields), r.ReplyText,
 	})
+}
+
+// emailFieldValuesJSON is a request's field values in the API's shape, null
+// for a field that found nothing.
+func emailFieldValuesJSON(fields map[string]string) map[string]*string {
+	if fields == nil {
+		return nil
+	}
+	out := make(map[string]*string, len(fields))
+	for name, value := range fields {
+		out[name] = nonEmpty(value)
+	}
+	return out
 }
 
 // millisOf is t in milliseconds since the epoch, or nil for the zero time.
@@ -365,6 +396,26 @@ func (x *EmailExtracts) UnmarshalJSON(data []byte) error {
 		x.Links = append(x.Links, ExtractedLink{URL: url, Label: link.str("label"), Action: link.boolean("action")})
 	}
 	return nil
+}
+
+// EmailField is a named field an endpoint picks out of every email it
+// captures: the part of the email to read and a regular expression in RE2
+// syntax whose first group (or whole match, without a group) is the value.
+// webhooks.cc runs the patterns, so lookahead, lookbehind and backreferences
+// are not available. The values arrive as Request.EmailFields, and as fields
+// in the email's JSON, where forwarding templates read them as
+// {{ fields.invoice }}.
+type EmailField struct {
+	// Name is how templates and filters refer to it: letters, digits and _,
+	// starting with a letter, at most 40 characters.
+	Name string `json:"name"`
+	// From is the part it reads: "subject", "text", "html" (the HTML as
+	// text), "from", "to" (the To and Cc addresses) or "header".
+	From string `json:"from"`
+	// Header is the header's name, for From "header".
+	Header string `json:"header,omitempty"`
+	// Pattern is at most 1,000 characters.
+	Pattern string `json:"pattern"`
 }
 
 // TeamShare is a team an endpoint is shared with or through.
@@ -597,12 +648,22 @@ type DestinationFormat string
 // The formats of a destination. FormatAuto picks from the URL: a chat
 // message for Slack and Discord, otherwise HTTP requests as received and
 // emails as signed JSON. A delivery's format is never FormatAuto.
+//
+// FormatPostmark, FormatSendGrid, FormatMailgun and FormatCloudMailin post
+// emails in that inbound mail provider's shape: Postmark's inbound JSON,
+// SendGrid's Inbound Parse form, a Mailgun route's form and CloudMailin's
+// JSON Normalized format. HTTP requests to such a destination go as
+// received. EmailsService.Render takes them, and FormatJSON, too.
 const (
-	FormatAuto       DestinationFormat = "auto"
-	FormatAsReceived DestinationFormat = "as_received"
-	FormatJSON       DestinationFormat = "json"
-	FormatTemplate   DestinationFormat = "template"
-	FormatChat       DestinationFormat = "chat"
+	FormatAuto        DestinationFormat = "auto"
+	FormatAsReceived  DestinationFormat = "as_received"
+	FormatJSON        DestinationFormat = "json"
+	FormatTemplate    DestinationFormat = "template"
+	FormatChat        DestinationFormat = "chat"
+	FormatPostmark    DestinationFormat = "postmark"
+	FormatSendGrid    DestinationFormat = "sendgrid"
+	FormatMailgun     DestinationFormat = "mailgun"
+	FormatCloudMailin DestinationFormat = "cloudmailin"
 )
 
 // DestinationFilter says which captured requests a destination gets: those
@@ -657,6 +718,9 @@ type Destination struct {
 	// HasSecret reports whether it has a signing secret;
 	// DestinationsService.Secret reveals it.
 	HasSecret bool
+	// HasMailgunSigningKey reports, for FormatMailgun, whether a Mailgun
+	// signing key is saved. The key itself is never returned.
+	HasMailgunSigningKey bool
 	// HTTP and Email say which kinds it takes.
 	HTTP   bool
 	Email  bool
@@ -726,25 +790,26 @@ func (d *Destination) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*d = Destination{
-		ID:              o.str("id"),
-		Position:        int(o.num("position")),
-		Name:            o.str("name"),
-		Enabled:         o.boolean("enabled"),
-		URL:             o.str("url"),
-		HasSecret:       o.boolean("hasSecret"),
-		HTTP:            o.boolean("http"),
-		Email:           o.boolean("email"),
-		Format:          DestinationFormat(o.str("format")),
-		MessageTemplate: o.str("messageTemplate"),
-		AppendPath:      o.boolean("appendPath"),
-		Retry:           o.seconds("retrySeconds"),
-		KeepOrder:       o.boolean("keepOrder"),
-		SentField:       o.str("sentField"),
-		Throttle:        o.seconds("throttleSeconds"),
-		Delay:           o.seconds("delaySeconds"),
-		CreatedAt:       o.millis("createdAt"),
-		UpdatedAt:       o.millis("updatedAt"),
-		Raw:             bytes.Clone(data),
+		ID:                   o.str("id"),
+		Position:             int(o.num("position")),
+		Name:                 o.str("name"),
+		Enabled:              o.boolean("enabled"),
+		URL:                  o.str("url"),
+		HasSecret:            o.boolean("hasSecret"),
+		HasMailgunSigningKey: o.boolean("hasMailgunSigningKey"),
+		HTTP:                 o.boolean("http"),
+		Email:                o.boolean("email"),
+		Format:               DestinationFormat(o.str("format")),
+		MessageTemplate:      o.str("messageTemplate"),
+		AppendPath:           o.boolean("appendPath"),
+		Retry:                o.seconds("retrySeconds"),
+		KeepOrder:            o.boolean("keepOrder"),
+		SentField:            o.str("sentField"),
+		Throttle:             o.seconds("throttleSeconds"),
+		Delay:                o.seconds("delaySeconds"),
+		CreatedAt:            o.millis("createdAt"),
+		UpdatedAt:            o.millis("updatedAt"),
+		Raw:                  bytes.Clone(data),
 	}
 	if role := o.str("role"); role == "forward" || role == "notify" {
 		d.Role = role
@@ -802,31 +867,32 @@ func (d Destination) MarshalJSON() ([]byte, error) {
 		headers = []DestinationHeader{}
 	}
 	return json.Marshal(struct {
-		ID              string              `json:"id"`
-		Position        int                 `json:"position"`
-		Name            *string             `json:"name"`
-		Enabled         bool                `json:"enabled"`
-		URL             string              `json:"url"`
-		HasSecret       bool                `json:"hasSecret"`
-		HTTP            bool                `json:"http"`
-		Email           bool                `json:"email"`
-		Format          DestinationFormat   `json:"format"`
-		Filter          *DestinationFilter  `json:"filter"`
-		BodyTemplate    json.RawMessage     `json:"bodyTemplate"`
-		MessageTemplate *string             `json:"messageTemplate"`
-		Headers         []DestinationHeader `json:"headers"`
-		AppendPath      bool                `json:"appendPath"`
-		RetrySeconds    int64               `json:"retrySeconds"`
-		KeepOrder       bool                `json:"keepOrder"`
-		SentField       *string             `json:"sentField"`
-		ThrottleSeconds int64               `json:"throttleSeconds"`
-		DelaySeconds    int64               `json:"delaySeconds"`
-		Role            *string             `json:"role"`
-		CreatedAt       *int64              `json:"createdAt,omitempty"`
-		UpdatedAt       *int64              `json:"updatedAt,omitempty"`
-		Summary         *wireSummary        `json:"summary,omitempty"`
+		ID                   string              `json:"id"`
+		Position             int                 `json:"position"`
+		Name                 *string             `json:"name"`
+		Enabled              bool                `json:"enabled"`
+		URL                  string              `json:"url"`
+		HasSecret            bool                `json:"hasSecret"`
+		HasMailgunSigningKey bool                `json:"hasMailgunSigningKey"`
+		HTTP                 bool                `json:"http"`
+		Email                bool                `json:"email"`
+		Format               DestinationFormat   `json:"format"`
+		Filter               *DestinationFilter  `json:"filter"`
+		BodyTemplate         json.RawMessage     `json:"bodyTemplate"`
+		MessageTemplate      *string             `json:"messageTemplate"`
+		Headers              []DestinationHeader `json:"headers"`
+		AppendPath           bool                `json:"appendPath"`
+		RetrySeconds         int64               `json:"retrySeconds"`
+		KeepOrder            bool                `json:"keepOrder"`
+		SentField            *string             `json:"sentField"`
+		ThrottleSeconds      int64               `json:"throttleSeconds"`
+		DelaySeconds         int64               `json:"delaySeconds"`
+		Role                 *string             `json:"role"`
+		CreatedAt            *int64              `json:"createdAt,omitempty"`
+		UpdatedAt            *int64              `json:"updatedAt,omitempty"`
+		Summary              *wireSummary        `json:"summary,omitempty"`
 	}{
-		d.ID, d.Position, nonEmpty(d.Name), d.Enabled, d.URL, d.HasSecret, d.HTTP, d.Email, d.Format,
+		d.ID, d.Position, nonEmpty(d.Name), d.Enabled, d.URL, d.HasSecret, d.HasMailgunSigningKey, d.HTTP, d.Email, d.Format,
 		d.Filter, d.BodyTemplate, nonEmpty(d.MessageTemplate), headers, d.AppendPath,
 		int64(d.Retry / time.Second), d.KeepOrder, nonEmpty(d.SentField), int64(d.Throttle / time.Second),
 		int64(d.Delay / time.Second), nonEmpty(d.Role), millisOf(d.CreatedAt), millisOf(d.UpdatedAt), summary,
@@ -1116,10 +1182,13 @@ type Endpoint struct {
 	SigningProvider   string
 	HasSigningSecret  bool
 	ShowEmailExtracts *bool
-	ForwardEnabled    *bool
-	ForwardURL        string
-	SharedWith        []TeamShare
-	FromTeams         []TeamShare
+	// EmailFields are the named fields picked out of every email the
+	// endpoint captures (owner only).
+	EmailFields    []EmailField
+	ForwardEnabled *bool
+	ForwardURL     string
+	SharedWith     []TeamShare
+	FromTeams      []TeamShare
 	// Raw is the JSON the endpoint was read from.
 	Raw json.RawMessage
 }
@@ -1169,6 +1238,12 @@ func (e *Endpoint) UnmarshalJSON(data []byte) error {
 			e.ResponseRules = append(e.ResponseRules, rule)
 		}
 	}
+	for _, item := range o.array("emailFields") {
+		var field EmailField
+		if isJSONObject(item) && json.Unmarshal(item, &field) == nil {
+			e.EmailFields = append(e.EmailFields, field)
+		}
+	}
 	return nil
 }
 
@@ -1190,6 +1265,7 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 		SigningProvider   string         `json:"signingProvider,omitempty"`
 		HasSigningSecret  bool           `json:"hasSigningSecret"`
 		ShowEmailExtracts *bool          `json:"showEmailExtracts,omitempty"`
+		EmailFields       []EmailField   `json:"emailFields,omitempty"`
 		ForwardEnabled    *bool          `json:"forwardEnabled,omitempty"`
 		ForwardURL        string         `json:"forwardUrl,omitempty"`
 		SharedWith        []TeamShare    `json:"sharedWith,omitempty"`
@@ -1197,7 +1273,7 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 	}{
 		e.ID, e.Slug, e.Name, e.URL, e.EmailAddress, millisOf(e.CreatedAt), e.IsEphemeral, millisOf(e.ExpiresAt),
 		e.NotificationURL, e.MockResponse, e.ResponseRules, e.SigningProvider, e.HasSigningSecret,
-		e.ShowEmailExtracts, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
+		e.ShowEmailExtracts, e.EmailFields, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams,
 	})
 }
 
@@ -1245,6 +1321,40 @@ type RequestPage struct {
 	Items   []Request
 	Cursor  string
 	HasMore bool
+}
+
+// RenderedEmail is a captured email in an inbound provider's shape, as
+// EmailsService.Render returns it: post Body with Headers to the handler you
+// wrote for that provider.
+type RenderedEmail struct {
+	Format DestinationFormat `json:"format"`
+	// Method is always "POST".
+	Method string `json:"method"`
+	// Headers are the content-type and user-agent to send it with.
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"`
+	// Raw is the JSON the result was read from.
+	Raw json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON reads a rendered email as the API returns it.
+func (e *RenderedEmail) UnmarshalJSON(data []byte) error {
+	var o rawObject
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	method := o.str("method")
+	if method == "" {
+		method = "POST"
+	}
+	*e = RenderedEmail{
+		Format:  DestinationFormat(o.str("format")),
+		Method:  method,
+		Headers: o.strMap("headers"),
+		Body:    o.str("body"),
+		Raw:     bytes.Clone(data),
+	}
+	return nil
 }
 
 // SendTestEmailResult is what Emails.SendTest delivered.

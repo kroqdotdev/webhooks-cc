@@ -1,9 +1,9 @@
 ---
 title: "Email Capture"
-description: "Every endpoint on an account also receives email at its own mailhooks.cc address. Preview the HTML safely, copy one-time codes and links, check SPF, DKIM and DMARC, and download the original message."
+description: "Every endpoint on an account also receives email at its own mailhooks.cc address. Preview the HTML safely, copy one-time codes and links, pick out fields of your own, read just the reply, check SPF, DKIM and DMARC, and download the original message."
 section: dashboard
 order: 4
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-25
 schema: none
 keywords:
   [
@@ -59,8 +59,8 @@ Selecting an email opens its own view:
 
 - **Envelope**: subject, sender, recipients (with the tag highlighted), when it arrived and its size.
 - **Sender checks**: one badge each for SPF, DKIM, DMARC and TLS, and the spam score.
-- **Found in this email**: the one-time code and the main link, each with a copy button (see below).
-- **Tabs**: JSON (the parsed email, shown first), Preview (when the email has HTML), Text, Headers, Attachments (when there are any), Authentication, Raw, and Deliveries when [forwarding](/docs/forwarding) is on.
+- **Found in this email**: the one-time code, the main link and [your fields](#fields-you-pick-out), each with a copy button.
+- **Tabs**: JSON (the parsed email, shown first), Preview (when the email has HTML), Text (with **Reply only** when the email [quotes an earlier one](#reply-text)), Headers, Attachments (when there are any), Authentication, Raw, and Deliveries when [forwarding](/docs/forwarding) is on.
 - **Download .eml**: saves the original message, when it was stored in full.
 
 Notes, pinning, compare, export, search, and live updates work for emails the same way as for HTTP requests.
@@ -82,6 +82,24 @@ For signup and login tests, the code or link is usually all you need. The dashbo
 - **Links**: links that look like the thing the email asks you to click (confirm, verify, reset, sign in, accept an invite) come first. Unsubscribe, preference, tracking and social links are left out.
 
 This runs in your browser when you open an email, and on the server when the API is asked for it (`extracts=true`); nothing extra is stored. To hide it for an endpoint, for example one that receives mail you would rather not have scanned, open **Settings**, then **Receiving**, and turn off **Show codes and links found in emails**. Only the endpoint's owner can change this, because it also decides whether [forwarded](/docs/forwarding) emails carry their codes and links.
+
+### Fields you pick out
+
+Name a value and say where it is, and every email the endpoint receives shows it, carries it in its JSON as `fields`, and hands it to [forwarding](/docs/forwarding): templates read it as `{{ fields.invoice }}`, and a destination can send only the emails whose field matches. Open **Settings**, then **Receiving**, and under **Your fields** add one:
+
+| Name      | From            | Pattern                    | Finds in "Invoice INV-2041, total 42.00 EUR" |
+| --------- | --------------- | -------------------------- | -------------------------------------------- |
+| `invoice` | Subject         | `(INV-\d+)`                | `INV-2041`                                   |
+| `total`   | Text            | `total ([\d.]+) EUR`       | `42.00`                                      |
+| `mailer`  | A header        | `.+` (header `X-Mailer`)   | the X-Mailer header                          |
+
+A field reads the subject, the text, the HTML as text, the sender, the recipients (To and Cc), or one header, and its pattern is a regular expression whose first group is the value (the whole match without a group). Each row shows what it finds in the newest email as you type, so a pattern is right before you save it. A field that finds nothing is `null`.
+
+Patterns are [RE2](https://github.com/google/re2/wiki/Syntax): they run in time linear in the email, whatever a sender writes, so lookahead, lookbehind and backreferences are not available; match the text around the value and put the value in a group instead. An endpoint has up to 20 fields, each pattern up to 300 characters; a field reads the first 64 KB of its part, and a pattern with very large repeat counts (such as `[a-z]{500}`) is refused, because it would be slow on every email. Like codes and links, they are found when an email is shown or forwarded, and nothing extra is stored. Only the owner can change them.
+
+### Reply text
+
+When an email quotes an earlier message (a reply), `replyText` in its JSON holds only what the sender wrote above the quote, without their signature, the way inbound mail services ship it (Postmark's `StrippedTextReply`, Mailgun's `stripped-text`). It is `null` for an email that quotes nothing. The **Text** tab shows it with **Reply only**. The quote is recognised by the line clients write above it ("On ... wrote:" and its translations, Outlook's header block, "Original Message" and forwarding separators) or a closing run of `>` lines.
 
 ### Authentication
 
@@ -138,7 +156,11 @@ A message the sender retries after a temporary failure is captured once, not onc
 
 ## Forward to your server
 
-[Forwarding](/docs/forwarding) posts every email an endpoint receives to your own URL, by default as the JSON from the JSON tab, signed with Standard Webhooks headers and retried for up to a day until your server answers 2xx (or as a chat message to Slack or Discord; the format and retries are settings). It forwards the endpoint's HTTP requests too, if you like. Use it to handle inbound email in your app without running a mail server or parsing MIME.
+[Forwarding](/docs/forwarding) posts every email an endpoint receives to your own URL, by default as the JSON from the JSON tab, signed with Standard Webhooks headers and retried for up to a day until your server answers 2xx. A destination can also send only some emails (by subject, sender, tag, spam score, sender checks or one of your fields), send only the fields you pick as [your own JSON](/docs/forwarding#your-own-json), or post a message to Slack or Discord. Use it to handle inbound email in your app without running a mail server or parsing MIME.
+
+### Test an inbound email handler
+
+If your app already receives email through Postmark, SendGrid, Mailgun or CloudMailin, a destination can post captured mail [in that provider's shape](/docs/forwarding#in-a-mail-providers-shape), so the handler you wrote for it runs against real messages from real clients, with their quoting and encodings. `whk tunnel` [does the same on localhost](/docs/cli/tunnel), and `render_email` in the [MCP server](/docs/mcp/tools#render_email) hands one email to a local handler.
 
 ## Notifications
 
@@ -162,8 +184,8 @@ const email = await client.emails.waitFor("my-endpoint", { tag: runId });
 const code = extractCode(email); // "482913"
 ```
 
-`waitFor` polls for up to 60 seconds by default and only takes mail sent to that tag. `extractLink(email)` returns the confirm, verify, reset, or sign-in link the same way. `client.emails` also lists emails, filters them by subject, sender, or recipient, and sends test emails, and `client.forwarding` manages [forwarding](/docs/forwarding). See [Emails in the SDK reference](/docs/sdk/api#emails), and [Testing emails](/docs/sdk/testing#testing-emails) for test patterns.
+`waitFor` polls for up to 60 seconds by default and only takes mail sent to that tag. `extractLink(email)` returns the confirm, verify, reset, or sign-in link the same way. `client.emails.get(id)` adds your fields as `emailFields` and the reply as `replyText`, and `client.emails.toInbound(email, "postmark")` builds an email in a provider's shape to post to your handler. `client.emails` also lists emails, filters them by subject, sender, or recipient, and sends test emails, and `client.forwarding` manages [forwarding](/docs/forwarding). See [Emails in the SDK reference](/docs/sdk/api#emails), and [Testing emails](/docs/sdk/testing#testing-emails) for test patterns.
 
 ## In the API
 
-The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`. Add `kind=email` to the request list or search to get only emails, or `kind=http` to leave them out. Add `extracts=true` to the request lists or a single request to get the codes and links found in each email as `extracts`, so a test in any language can read the code without parsing the message (see [Get single request](/docs/api#get-single-request)).
+The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`. Add `kind=email` to the request list or search to get only emails, or `kind=http` to leave them out. Add `extracts=true` to the request lists or a single request to get the codes and links found in each email as `extracts`, and your fields and the reply text as `emailFields` and `replyText`, so a test in any language can read them without parsing the message (see [Get single request](/docs/api#get-single-request)). `POST /api/requests/{id}/render` returns an email in a provider's shape ([Render an email](/docs/api#render-an-email)).

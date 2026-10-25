@@ -3,7 +3,7 @@ title: "API Reference"
 description: "Complete method reference for the TypeScript SDK. Endpoints, requests, emails, forwarding, streaming, matchers, and error handling with code examples."
 section: sdk
 order: 2
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-25
 schema: none
 keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
 seo:
@@ -107,6 +107,8 @@ update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
 | `mockResponse`    | `MockResponse \| null`   | no       | Default response (see fields above), or `null` to clear                             |
 | `responseRules`   | `ResponseRule[] \| null` | no       | [Response rules](/docs/mock-responses#conditional-response-rules), or `null` to clear |
 | `notificationUrl` | `string \| null`         | no       | Sets the Notifications [destination](#destinations), or `null` removes it           |
+| `showEmailExtracts` | `boolean`              | no       | Pick codes and links out of emails (owner only)                                     |
+| `emailFields`     | `EmailField[] \| null`   | no       | [Named fields](/docs/email-capture#fields-you-pick-out) to pick out of every email, at most 20; replaces the list (owner only) |
 
 </ParamTable>
 
@@ -364,7 +366,7 @@ Streamed requests carry `kind`, so you can tell emails apart, but not the parsed
 
 <ApiMethod method="POST" path="/requests/:id/replay" title="client.requests.replay">
 
-Replay a captured request to a target URL. Sends the original method, headers, and body. Hop-by-hop headers are stripped. Throws for a captured email, which is not an HTTP request; to post an email to a handler, send `client.emails.toJson(email)` with [`sendTo()`](/docs/forwarding#test-your-handler-locally).
+Replay a captured request to a target URL. Sends the original method, headers, and body. Hop-by-hop headers are stripped. Throws for a captured email, which is not an HTTP request; to post an email to a handler, send `client.emails.toJson(email)` with [`sendTo()`](/docs/forwarding#test-an-email-handler-locally).
 
 ```ts
 replay(requestId: string, targetUrl: string): Promise<Response>
@@ -515,7 +517,7 @@ list(endpointSlug: string, options?: ListEmailsOptions): Promise<EmailRequest[]>
 
 <ApiMethod method="GET" path="/requests/:id" title="client.emails.get">
 
-One captured email by request ID. Throws `NotFoundError` when the request is not an email.
+One captured email by request ID, with the endpoint's [named fields](/docs/email-capture#fields-you-pick-out) as `emailFields` and the [reply text](/docs/email-capture#reply-text) as `replyText`. Throws `NotFoundError` when the request is not an email.
 
 ```ts
 get(requestId: string): Promise<EmailRequest>
@@ -586,8 +588,39 @@ The `email.received` JSON that [forwarding](/docs/forwarding) would post for an 
 ```ts
 toJson(
   email: EmailRequest,
-  options?: { endpoint?: { slug: string; name?: string | null }; includeExtracts?: boolean }
+  options?: {
+    endpoint?: { slug: string; name?: string | null };
+    includeExtracts?: boolean;
+    fields?: Record<string, string | null> | null; // default: email.emailFields
+  }
 ): EmailReceivedEvent
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(local)" title="client.emails.toInbound">
+
+The email in the shape an inbound mail service posts it, to test the handler you wrote for that service: `postmark`, `sendgrid` (a multipart form), `mailgun` (a form, signed when you pass your Mailgun signing key) or `cloudmailin`. No API call is made. Post `body` with `contentType` to your handler. See [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape).
+
+```ts
+toInbound(
+  email: EmailRequest,
+  format: "postmark" | "sendgrid" | "mailgun" | "cloudmailin",
+  options?: { mailgunSigningKey?: string }
+): Promise<{ contentType: string; body: string }>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/render" title="client.emails.render">
+
+The same, rendered by webhooks.cc (what `whk tunnel` and the Python and Go SDKs use), or the `email.received` JSON with `format: "json"`.
+
+```ts
+render(
+  requestId: string,
+  options: { format: "json" | "postmark" | "sendgrid" | "mailgun" | "cloudmailin"; mailgunSigningKey?: string }
+): Promise<{ format: string; method: "POST"; headers: Record<string, string>; body: string }>
 ```
 
 </ApiMethod>
@@ -800,7 +833,8 @@ create(endpointSlug: string, input: DestinationInput & { url: string }): Promise
 | `enabled`         | `boolean`                                                    | no       | Send to it (default `true`)                                                                                   |
 | `http`, `email`   | `boolean`                                                    | no       | Which kinds it takes (default both)                                                                           |
 | `filter`          | `{ logic?: "and" \| "or"; conditions: Condition[] } \| null` | no       | Send only matching captures. See [Send only some captures](/docs/forwarding#send-only-some-captures)          |
-| `format`          | `"auto" \| "as_received" \| "json" \| "template" \| "chat"` | no       | Default `"auto"`: chat for Slack and Discord URLs, as received otherwise                                      |
+| `format`          | `DestinationFormat`                                          | no       | Default `"auto"`: chat for Slack and Discord URLs, as received otherwise. Also `"as_received"`, `"json"`, `"template"`, `"chat"`, and for emails a mail provider's shape: `"postmark"`, `"sendgrid"`, `"mailgun"`, `"cloudmailin"` |
+| `mailgunSigningKey` | `string \| null`                                           | no       | With `"mailgun"`: your Mailgun signing key, so `signature` verifies (write-only; `hasMailgunSigningKey` says one is saved) |
 | `bodyTemplate`    | JSON                                                         | no       | With `"template"`: the body; its strings hold `{{ placeholders }}` ([Your own JSON](/docs/forwarding#your-own-json)) |
 | `messageTemplate` | `string \| null`                                             | no       | With `"chat"`: your own message text; `null` sends the standard message                                       |
 | `headers`         | `{ name: string; value: string \| null }[]`                  | no       | Your own headers, at most 10 (not for chat). Replaces the list; `null` keeps a stored value                   |
@@ -1321,6 +1355,7 @@ interface Endpoint {
   createdAt: number;
   emailAddress?: string | null; // null for guest endpoints, which receive no email
   showEmailExtracts?: boolean;
+  emailFields?: EmailField[]; // { name, from, header?, pattern }
   forwardEnabled?: boolean;
   forwardUrl?: string | null; // only returned to the owner
   hasForwardSecret?: boolean;

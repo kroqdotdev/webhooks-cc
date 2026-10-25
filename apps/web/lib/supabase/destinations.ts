@@ -36,6 +36,10 @@ export const DESTINATION_FORMAT_SETTINGS: readonly DestinationFormatSetting[] = 
   "json",
   "chat",
   "template",
+  "postmark",
+  "sendgrid",
+  "mailgun",
+  "cloudmailin",
 ];
 
 export interface DestinationFilter {
@@ -52,6 +56,8 @@ export interface Destination {
   url: string;
   /** Whether a signing secret exists (never the secret). */
   hasSecret: boolean;
+  /** Whether a Mailgun signing key is saved (never the key). */
+  hasMailgunSigningKey: boolean;
   http: boolean;
   email: boolean;
   /** "auto" picks from the URL. */
@@ -100,6 +106,8 @@ export interface DestinationChanges {
   sentField?: string | null;
   throttleSeconds?: number;
   delaySeconds?: number;
+  /** The owner's Mailgun signing key (format "mailgun"); null removes it. */
+  mailgunSigningKey?: string | null;
 }
 
 /** Thrown when a submitted header keeps a value (null) that is not stored under its name. */
@@ -113,7 +121,7 @@ export class TooManyDestinationsError extends Error {
 }
 
 const COLUMNS =
-  "id, endpoint_id, position, name, enabled, url, secret_encrypted, http, email, format, filter, body_template, message_template, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, throttle_seconds, delay_seconds, last_queued_at, legacy_role, created_at, updated_at";
+  "id, endpoint_id, position, name, enabled, url, secret_encrypted, http, email, format, filter, body_template, message_template, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, throttle_seconds, delay_seconds, last_queued_at, legacy_role, created_at, updated_at, mailgun_key_encrypted";
 
 /** PostgREST returns bytea as "\\x..." hex text. */
 export function byteaToBuffer(value: string): Buffer {
@@ -159,6 +167,7 @@ export function toDestination(row: DestinationRow): Destination {
     enabled: row.enabled,
     url: row.url,
     hasSecret: !!row.secret_encrypted,
+    hasMailgunSigningKey: !!row.mailgun_key_encrypted,
     http: row.http,
     email: row.email,
     format: row.format ?? "auto",
@@ -258,6 +267,11 @@ function columnsFor(changes: DestinationChanges, storedHeaders: string | null): 
   if (changes.sentField !== undefined) update.sent_field = changes.sentField;
   if (changes.throttleSeconds !== undefined) update.throttle_seconds = changes.throttleSeconds;
   if (changes.delaySeconds !== undefined) update.delay_seconds = changes.delaySeconds;
+  if (changes.mailgunSigningKey !== undefined) {
+    update.mailgun_key_encrypted = changes.mailgunSigningKey
+      ? toBytea(encryptSigningSecret(changes.mailgunSigningKey))
+      : null;
+  }
   return update;
 }
 
@@ -374,6 +388,17 @@ export async function getDestinationSecret(endpointId: string, id: string): Prom
   if (!row) return null;
   if (row.secret_encrypted) return decryptSigningSecret(byteaToBuffer(row.secret_encrypted));
   return rotateDestinationSecret(endpointId, id);
+}
+
+/** The owner's Mailgun signing key, decrypted; null when none is saved. */
+export async function getDestinationMailgunKey(
+  endpointId: string,
+  id: string
+): Promise<string | null> {
+  const row = await rowFor(endpointId, id);
+  return row?.mailgun_key_encrypted
+    ? decryptSigningSecret(byteaToBuffer(row.mailgun_key_encrypted))
+    : null;
 }
 
 /** A new signing secret; deliveries are signed with it from now on. */

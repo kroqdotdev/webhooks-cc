@@ -513,7 +513,12 @@ function asDeliveryEndpoint(slug: string, destination: DashboardDestination): De
     hasForwardSecret: destination.hasSecret,
     forwardHttp: destination.http,
     forwardEmail: destination.email,
-    forwardFormat: destination.format === "template" ? "auto" : destination.format,
+    forwardFormat:
+      destination.format === "as_received" ||
+      destination.format === "json" ||
+      destination.format === "chat"
+        ? destination.format
+        : "auto",
     forwardAppendPath: destination.appendPath,
     forwardRetrySeconds: destination.retrySeconds,
     forwardSentField: destination.sentField,

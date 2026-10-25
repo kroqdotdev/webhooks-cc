@@ -4,6 +4,7 @@ import { ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import {
   getDestinationHeaders,
+  getDestinationMailgunKey,
   getDestinationSecret,
   listDestinations,
   primaryDestination,
@@ -54,7 +55,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       destination,
       picked.request,
       (await getDestinationSecret(endpoint.id, destination.id)) ?? "",
-      await getDestinationHeaders(endpoint.id, destination.id)
+      await getDestinationHeaders(endpoint.id, destination.id),
+      await getDestinationMailgunKey(endpoint.id, destination.id)
     );
     const sent = await sendPrepared(prepared);
     if (!sent.sent) return reply({ error: sent.reason }, 400);

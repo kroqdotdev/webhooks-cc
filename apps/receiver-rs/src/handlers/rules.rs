@@ -8,8 +8,8 @@
 //! app evaluates with the SDK (`packages/sdk/src/rules.ts`). Both run the
 //! vectors in `packages/sdk/conformance/rules.json`; change them together.
 //! Response rules read the HTTP request only: fields that need the email or
-//! the signature check (kind, email, spam_score, email_auth, signature)
-//! never hold here.
+//! the signature check (kind, email, email_field, spam_score, email_auth,
+//! signature) never hold here.
 
 use serde::Deserialize;
 use serde_json::Value;

@@ -19,13 +19,6 @@ fn make_client() -> whk::api::ApiClient {
         .expect("failed to create API client")
 }
 
-fn skip_if_no_auth(client: &whk::api::ApiClient) {
-    if client.require_auth().is_err() {
-        eprintln!("SKIPPING: no auth token found. Run `whk auth login` first.");
-        return;
-    }
-}
-
 // ─── Auth ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -408,7 +401,8 @@ async fn test_tunnel_forward_binary_body_raw_exact_bytes() {
 }
 
 #[tokio::test]
-async fn test_tunnel_does_not_forward_emails() {
+async fn test_tunnel_skips_emails_without_email_options() {
+    // `--no-email`: the tunnel is built without `with_emails`.
     let (base_url, mut body_rx, shutdown_tx) = start_echo_server().await;
     let tunnel = whk::tunnel::Tunnel::new(base_url, HashMap::new()).unwrap();
 
@@ -422,7 +416,7 @@ async fn test_tunnel_does_not_forward_emails() {
     assert!(req.is_email());
     let result = tunnel.forward(&req).await;
     assert!(!result.success);
-    assert_eq!(result.error.as_deref(), Some(whk::tunnel::EMAIL_NOT_TUNNELED));
+    assert_eq!(result.error.as_deref(), Some(whk::tunnel::EMAIL_SKIPPED));
 
     // From the REST API: kind is set.
     req.kind = Some("email".into());

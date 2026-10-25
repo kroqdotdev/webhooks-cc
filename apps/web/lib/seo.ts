@@ -15,8 +15,8 @@ const LEGAL_PAGES_UPDATED = new Date("2026-10-05T00:00:00.000Z");
 // The privacy policy alone: forwarding destinations and their delivery log.
 const PRIVACY_UPDATED = new Date("2026-10-25T00:00:00.000Z");
 
-// Email capture and forwarding: the two email pages.
-const EMAIL_PAGES_UPDATED = new Date("2026-10-08T00:00:00.000Z");
+// Email capture and forwarding: the two email pages (fields, reply text, provider shapes).
+const EMAIL_PAGES_UPDATED = new Date("2026-10-25T00:00:00.000Z");
 
 // The Search Console pass: the public Teams page, the landing page that links
 // it, and comparison pages with fresh tables and the questions people (and AI

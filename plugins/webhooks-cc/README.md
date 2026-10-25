@@ -67,6 +67,7 @@ types from captured requests with `generate_payload_schema`.
 - `skills/webhook-testing/SKILL.md`: when to reach for webhooks.cc and the
   workflows: learn a payload, test a local handler, write CI tests, check the
   app's own webhooks, simulate failures and callbacks, read signup emails,
+  test inbound email handlers with real mail in a provider's shape,
   forward captures to servers, Slack, Discord or Zapier with filters and your
   own JSON, debug deliveries.
 - `skills/webhook-testing/references/sdk-tests.md`: Vitest, Jest and Playwright

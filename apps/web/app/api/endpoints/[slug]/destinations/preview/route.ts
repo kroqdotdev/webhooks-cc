@@ -8,7 +8,11 @@ import {
 import { parseDestinationInput, templateProblem } from "@/lib/forwarding/destination-input";
 import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
-import { getDestination, getDestinationSecret } from "@/lib/supabase/destinations";
+import {
+  getDestination,
+  getDestinationMailgunKey,
+  getDestinationSecret,
+} from "@/lib/supabase/destinations";
 import { reportError } from "@/lib/observability";
 import { isUuid } from "@/lib/uuid";
 
@@ -100,7 +104,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
           ?.value ??
         "",
     ]);
-    const prepared = prepareDelivery(endpoint, destination, picked.request, secret, headers);
+    const mailgunKey =
+      changes.mailgunSigningKey !== undefined
+        ? changes.mailgunSigningKey
+        : saved
+          ? await getDestinationMailgunKey(endpoint.id, saved.id)
+          : null;
+    const prepared = prepareDelivery(
+      endpoint,
+      destination,
+      picked.request,
+      secret,
+      headers,
+      mailgunKey
+    );
     const takesKind = picked.request.kind === "email" ? destination.email : destination.http;
     return reply({
       request: {

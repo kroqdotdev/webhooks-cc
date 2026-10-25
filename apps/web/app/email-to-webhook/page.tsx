@@ -11,7 +11,7 @@ const PATH = "/email-to-webhook";
 export const metadata = createPageMetadata({
   title: "Email to Webhook: Inbound Email Parsed to Signed JSON",
   description:
-    "Receive inbound email as a webhook. webhooks.cc parses every email to JSON (sender, subject, text, HTML, codes, links, attachments, SPF, DKIM and DMARC) and posts it to your URL, signed with Standard Webhooks headers and retried for a day.",
+    "Receive inbound email as a webhook. webhooks.cc parses every email to JSON (sender, subject, text, reply, HTML, codes, links, your own fields, SPF, DKIM and DMARC) and posts it to your URL, signed and retried for a day, or in Postmark, SendGrid, Mailgun or CloudMailin's shape.",
   path: PATH,
   keywords: [
     "email to webhook",
@@ -22,6 +22,10 @@ export const metadata = createPageMetadata({
     "receive email webhook",
     "email parser api",
     "email webhook",
+    "extract fields from email",
+    "test postmark inbound webhook",
+    "test mailgun inbound route",
+    "sendgrid inbound parse testing",
     "standard webhooks",
   ],
 });
@@ -121,7 +125,17 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "What does the JSON contain?",
     answer:
-      "The sender, recipients, subject, date, message id, the text and HTML parts, the one-time codes and links found in the email, the name, type and size of each attachment, the SPF, DKIM and DMARC results, and every header. It is the same JSON each email's JSON tab shows in the dashboard. The codes and links fields are left out when the endpoint's owner turned off \"Show codes and links found in emails\", so treat them as optional.",
+      "The sender, recipients, subject, date, message id, the text and HTML parts, the new text of a reply without the quoted message, the one-time codes and links found in the email, the fields you named, the name, type and size of each attachment, the SPF, DKIM and DMARC results, and every header. It is the same JSON each email's JSON tab shows in the dashboard. The codes and links fields are left out when the endpoint's owner turned off \"Show codes and links found in emails\", so treat them as optional.",
+  },
+  {
+    question: "Can I pick only certain values out of an email?",
+    answer:
+      "Yes. Name a value and say where it is, such as invoice from the subject with the pattern (INV-\\d+), and every email carries it in its JSON as fields.invoice. A forwarding destination can then send only those values, in a JSON body you write, and only for emails whose value matches, which is what an email parser does. Patterns are RE2, so they run in time linear in the email.",
+  },
+  {
+    question: "Can I test a handler written for Postmark, SendGrid, Mailgun or CloudMailin?",
+    answer:
+      "Yes. A destination, the CLI's tunnel and the SDK can post a captured email the way Postmark's inbound webhook, SendGrid's Inbound Parse, a Mailgun route or CloudMailin's JSON format posts it, a Mailgun form signed with your own signing key, so the handler you already wrote runs against real mail. Attachment contents are not included, because they are not stored.",
   },
   {
     question: "How are forwarded emails signed?",
@@ -146,7 +160,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Can I forward to localhost?",
     answer:
-      "No. The URL must be https on a public host name; IP addresses, localhost and private networks are refused. While you build the handler locally, copy an email's JSON from the dashboard and post it yourself.",
+      "Not as a destination: its URL must be https on a public host name, and IP addresses, localhost and private networks are refused. For local work, run whk tunnel with your port: the CLI posts every email the endpoint receives to your machine as the same JSON, or in a mail provider's shape with --email-format.",
   },
 ];
 

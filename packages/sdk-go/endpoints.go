@@ -3,6 +3,7 @@ package webhookscc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -93,8 +94,13 @@ type UpdateEndpointOptions struct {
 	SigningHeader   Field[string]
 	// ShowEmailExtracts turns the codes and links found in emails on or off.
 	ShowEmailExtracts Field[bool]
-	ForwardEnabled    Field[bool]
-	ForwardURL        Field[string]
+	// EmailFields replaces the named fields picked out of every email the
+	// endpoint captures, at most 20 (owner only); Null removes them all. A
+	// list EmailFieldIssues finds fault with is refused before anything is
+	// sent.
+	EmailFields    Field[[]EmailField]
+	ForwardEnabled Field[bool]
+	ForwardURL     Field[string]
 }
 
 // Update changes an endpoint's settings.
@@ -105,6 +111,11 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.ForwardEnabled.isNull() {
 		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts and ForwardEnabled cannot be cleared; set them with Value")
 	}
+	if opts.EmailFields.IsSet() && !opts.EmailFields.isNull() {
+		if issues := EmailFieldIssues(opts.EmailFields.value); len(issues) > 0 {
+			return nil, fmt.Errorf("webhooks.cc: EmailFields: %s", issues[0])
+		}
+	}
 	body := map[string]any{}
 	opts.Name.put(body, "name")
 	opts.MockResponse.put(body, "mockResponse")
@@ -114,6 +125,7 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	opts.SigningSecret.put(body, "signingSecret")
 	opts.SigningHeader.put(body, "signingHeader")
 	opts.ShowEmailExtracts.put(body, "showEmailExtracts")
+	opts.EmailFields.put(body, "emailFields")
 	opts.ForwardEnabled.put(body, "forwardEnabled")
 	opts.ForwardURL.put(body, "forwardUrl")
 	var endpoint Endpoint

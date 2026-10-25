@@ -17,9 +17,18 @@ import {
  * linear in the input, as the receiver's `regex` crate does.
  */
 
+/**
+ * RE2 takes time linear in the text times the compiled pattern, and these
+ * run against bodies of up to a megabyte: a pattern may compile to at most
+ * this many instructions (ordinary ones have 10 to 80), and is only tried
+ * on the first MAX_REGEX_TEXT_CHARS of a value.
+ */
+export const MAX_REGEX_PROGRAM = 200;
+const MAX_REGEX_TEXT_CHARS = 262_144;
+
 /** Compiled patterns; emptied when full. */
 const compiledPatterns = new Map<string, RE2JS | null>();
-const MAX_COMPILED = 512;
+const MAX_COMPILED = 256;
 
 /**
  * The longest source compiled. Patterns are held to MAX_PATTERN_CHARS when
@@ -35,6 +44,7 @@ function compile(pattern: string): RE2JS | null {
   let compiled: RE2JS | null = null;
   try {
     compiled = RE2JS.compile(pattern);
+    if (compiled.programSize() > MAX_REGEX_PROGRAM) compiled = null;
   } catch {
     compiled = null;
   }
@@ -46,25 +56,27 @@ function compile(pattern: string): RE2JS | null {
 /** Searches `text` with an RE2 pattern; a pattern that does not compile never matches. */
 export const re2Tester: RegexTester = (pattern, text) => {
   const compiled = compile(pattern);
-  return compiled !== null && compiled.matcher(text).find();
+  return compiled !== null && compiled.matcher(text.slice(0, MAX_REGEX_TEXT_CHARS)).find();
 };
 
 /** Why a pattern is not valid RE2, or null when it is. */
 export function regexProblem(pattern: string): string | null {
   if (pattern.length > MAX_PATTERN_CHARS) return `longer than ${MAX_PATTERN_CHARS} characters`;
-  return sourceProblem(pattern);
+  return sourceProblem(pattern, "use smaller repeat counts");
 }
 
 /** Why a glob cannot run as the regex it expands to, or null when it can. */
 export function globProblem(glob: string): string | null {
-  return sourceProblem(`(?s)${globToRegexSource(glob)}`);
+  return sourceProblem(`(?s)${globToRegexSource(glob)}`, "use a shorter glob");
 }
 
-function sourceProblem(source: string): string | null {
+function sourceProblem(source: string, hint: string): string | null {
   if (source.length > MAX_SOURCE_CHARS) return `longer than ${MAX_PATTERN_CHARS} characters`;
   try {
-    RE2JS.compile(source);
-    return null;
+    const size = RE2JS.compile(source).programSize();
+    return size > MAX_REGEX_PROGRAM
+      ? `too large to run quickly on every request (it compiles to ${size} steps, at most ${MAX_REGEX_PROGRAM}): ${hint}`
+      : null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return message.replace(/^error parsing regexp: /, "");

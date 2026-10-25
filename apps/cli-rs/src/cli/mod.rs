@@ -12,6 +12,8 @@ pub mod update;
 
 use clap::{Parser, Subcommand};
 
+use crate::types::EmailFormat;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "whk",
@@ -149,9 +151,30 @@ pub enum Command {
         #[arg(short, long)]
         ephemeral: bool,
 
-        /// Add custom header to forwarded requests (repeatable)
+        /// Add custom header to forwarded requests and emails (repeatable)
         #[arg(short = 'H', long = "header", value_name = "KEY:VALUE")]
         headers: Vec<String>,
+
+        /// Shape to post captured emails in: webhooks.cc's email JSON or an inbound mail provider's
+        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = EmailFormat::Json)]
+        email_format: EmailFormat,
+
+        /// Path to post emails to, appended to the target like a webhook's path (default: the target itself)
+        #[arg(long, value_name = "PATH")]
+        email_path: Option<String>,
+
+        /// Mailgun HTTP webhook signing key, to sign emails posted with --email-format mailgun
+        #[arg(
+            long,
+            env = "WHK_MAILGUN_SIGNING_KEY",
+            hide_env_values = true,
+            value_name = "KEY"
+        )]
+        mailgun_signing_key: Option<String>,
+
+        /// Skip captured emails instead of posting them to the target
+        #[arg(long, conflicts_with_all = ["email_format", "email_path"])]
+        no_email: bool,
     },
 
     /// Stream incoming requests to terminal
@@ -414,4 +437,66 @@ pub enum RequestsAction {
 pub enum ExportFormat {
     Har,
     Curl,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The tunnel's email flags, parsed: format, path, key, --no-email.
+    fn tunnel_flags(args: &[&str]) -> (EmailFormat, Option<String>, Option<String>, bool) {
+        let cli = Cli::try_parse_from(["whk", "tunnel", "3000"].iter().chain(args)).unwrap();
+        match cli.command {
+            Some(Command::Tunnel {
+                email_format,
+                email_path,
+                mailgun_signing_key,
+                no_email,
+                ..
+            }) => (email_format, email_path, mailgun_signing_key, no_email),
+            other => panic!("expected tunnel, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tunnel_posts_emails_as_json_by_default() {
+        let (format, path, _, no_email) = tunnel_flags(&[]);
+        assert_eq!(format, EmailFormat::Json);
+        assert_eq!(path, None);
+        assert!(!no_email);
+    }
+
+    #[test]
+    fn tunnel_takes_an_email_format_path_and_mailgun_key() {
+        let (format, path, key, _) = tunnel_flags(&[
+            "--email-format",
+            "mailgun",
+            "--email-path",
+            "/inbound/mailgun",
+            "--mailgun-signing-key",
+            "key-acme",
+        ]);
+        assert_eq!(format, EmailFormat::Mailgun);
+        assert_eq!(path.as_deref(), Some("/inbound/mailgun"));
+        assert_eq!(key.as_deref(), Some("key-acme"));
+
+        for (value, expected) in [
+            ("json", EmailFormat::Json),
+            ("postmark", EmailFormat::Postmark),
+            ("sendgrid", EmailFormat::Sendgrid),
+            ("cloudmailin", EmailFormat::Cloudmailin),
+        ] {
+            assert_eq!(tunnel_flags(&["--email-format", value]).0, expected);
+        }
+    }
+
+    #[test]
+    fn tunnel_refuses_unknown_formats_and_contradictions() {
+        let parse =
+            |args: &[&str]| Cli::try_parse_from(["whk", "tunnel", "3000"].iter().chain(args));
+        assert!(parse(&["--email-format", "mandrill"]).is_err());
+        assert!(parse(&["--no-email", "--email-format", "postmark"]).is_err());
+        assert!(parse(&["--no-email", "--email-path", "/inbound"]).is_err());
+        assert!(tunnel_flags(&["--no-email"]).3);
+    }
 }

@@ -56,6 +56,7 @@ const EXPECTED_TOOLS = [
   "get_email",
   "wait_for_email",
   "send_test_email",
+  "render_email",
   "configure_forwarding",
   "get_forwarding_secret",
   "test_forwarding",
@@ -224,7 +225,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(45);
+    expect(Object.keys(tools)).toHaveLength(46);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1829,6 +1830,48 @@ describe("email and forwarding tools", () => {
     expect(
       parseJsonResult(await tools.send_test_email.handler({ slug: "acme", tag: "t1" }))
     ).toEqual({ status: "captured", requestId: "e3", address: "acme+t1@mailhooks.cc" });
+  });
+
+  it("renders an email in a provider's shape, and posts it to a local handler", async () => {
+    const render = vi.fn(async () => ({
+      format: "postmark",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"Subject":"Hi"}',
+    }));
+    const tools = getRegisteredTools(emailClient({ emails: { render } as never }));
+    expect(
+      parseJsonResult(await tools.render_email.handler({ requestId: "e1", format: "postmark" }))
+    ).toMatchObject({ format: "postmark", body: '{"Subject":"Hi"}' });
+    expect(render).toHaveBeenCalledWith("e1", { format: "postmark" });
+
+    const posted: { url: string; init: RequestInit }[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      posted.push({ url: String(url), init: init ?? {} });
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const result = parseJsonResult(
+        await tools.render_email.handler({
+          requestId: "e1",
+          format: "mailgun",
+          mailgunSigningKey: "key-test",
+          targetUrl: "http://localhost:3000/inbound",
+        })
+      );
+      expect(result).toMatchObject({ format: "mailgun", status: 200, body: "ok" });
+      expect(render).toHaveBeenLastCalledWith("e1", {
+        format: "mailgun",
+        mailgunSigningKey: "key-test",
+      });
+      expect(posted[0]).toMatchObject({
+        url: "http://localhost:3000/inbound",
+        init: { method: "POST", body: '{"Subject":"Hi"}' },
+      });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   it("configures forwarding and reads or rotates the secret", async () => {

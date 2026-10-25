@@ -3,7 +3,7 @@ title: "REST API"
 description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure forwarding, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-25
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -79,6 +79,7 @@ Email and forwarding fields on every endpoint:
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `emailAddress`      | The endpoint's [email address](/docs/email-capture). `null` for guest endpoints, which receive no email.            |
 | `showEmailExtracts` | Whether codes and links found in emails are shown in the dashboard, returned by the API (`extracts`), and included in forwarded JSON. Default `true`. |
+| `emailFields`       | Named fields picked out of every email: `[{ "name", "from", "header"?, "pattern" }]`, at most 20 ([Fields you pick out](/docs/email-capture#fields-you-pick-out)). `from` is `subject`, `text`, `html`, `from`, `to` or `header`; `pattern` is RE2, its first group the value. Owner only to change; send the whole list, or `[]` to remove them. |
 | `forwardEnabled`    | Whether captured requests are [forwarded](/docs/forwarding) to `forwardUrl`.                                        |
 | `forwardUrl`        | Where requests are forwarded. Only returned to the endpoint's owner.                                                |
 | `hasForwardSecret`  | Whether a forwarding secret exists. The secret itself is never included.                                            |
@@ -210,6 +211,30 @@ Add `extracts=true` to the request list, the paginated list or a single request,
 ```
 
 `action` is `true` for a link that looks like what the email asks you to click (confirm, verify, reset, sign in); those come first. `label` is the link text when the link came from the HTML part, otherwise `null`.
+
+With `extracts=true` an email also has `emailFields`, the endpoint's [named fields](/docs/email-capture#fields-you-pick-out) by name (each the text its pattern found, or `null`; `emailFields` is `null` when the endpoint has none), and `replyText`, the new text of a reply without the quoted message ([Reply text](/docs/email-capture#reply-text)). Both are there whatever `showEmailExtracts` says.
+
+### Render an email
+
+```bash
+curl -X POST https://webhooks.cc/api/requests/REQUEST_ID/render \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"format": "postmark"}'
+```
+
+Returns a captured email the way an inbound mail service posts it, to send to the handler you wrote for that service: `{ "format", "method": "POST", "headers": { "content-type", "user-agent" }, "body" }`. `format` is `postmark`, `sendgrid` (a multipart form; the boundary is in `content-type`), `mailgun` (a form; add `"mailgunSigningKey"` to sign it the way Mailgun does), `cloudmailin`, or `json` for webhooks.cc's own `email.received` JSON, unsigned. See [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape) for what each holds. Anyone who can read the email may render it; `400` for an HTTP request.
+
+### Try email fields
+
+```bash
+curl -X POST https://webhooks.cc/api/endpoints/abc123/email-fields/preview \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{"emailFields": [{"name": "invoice", "from": "subject", "pattern": "(INV-\\d+)"}]}'
+```
+
+Runs unsaved fields (or the saved ones, without `emailFields`) on the endpoint's newest email, or on `requestId`, and returns `{ "problems": [...], "request": { "id", "subject", "receivedAt" } | null, "values": { "invoice": "INV-2041" } }`. A field with a problem (a pattern RE2 cannot run) is listed in `problems` and left out of `values`. Nothing is saved. Owner only.
 
 ### Clear requests
 
@@ -427,7 +452,7 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 | `POST /api/endpoints/:slug/destinations/:id/test`  | Send one delivery now (`kind`, `requestId`), as the forwarding test above, plus `filterPasses`            |
 | `POST /api/endpoints/:slug/destinations/preview`   | Dry run: `destinationId` and/or unsaved `destination` fields, optional `requestId`; nothing is sent       |
 
-A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template` or `chat`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600) and `position`. A mistake in a template or a condition returns `400` naming the field. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
+A destination's fields are `url`, `name`, `enabled`, `http`, `email`, `filter` (`{ "logic": "and" | "or", "conditions": [...] }` or `null`), `format` (`auto`, `as_received`, `json`, `template`, `chat`, or a mail provider's shape for emails: `postmark`, `sendgrid`, `mailgun`, `cloudmailin`), `bodyTemplate` (any JSON, for `template`), `messageTemplate` (for `chat`), `mailgunSigningKey` (for `mailgun`; write-only, the destination says `hasMailgunSigningKey`), `headers`, `appendPath`, `retrySeconds` (`0`, `3600` or `86400`), `keepOrder`, `sentField`, `throttleSeconds` and `delaySeconds` (0 to 3,600) and `position`. A mistake in a template or a condition returns `400` naming the field. See the [SDK reference](/docs/sdk/api#destinations) for each field and the preview's answer.
 
 ## Search
 

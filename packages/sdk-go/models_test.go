@@ -23,7 +23,9 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 			Attachments: []webhookscc.EmailAttachment{{Filename: "a.txt", ContentType: "text/plain", Size: 3}},
 			Auth:        json.RawMessage(`{"spf":"pass"}`), Truncated: map[string]bool{"html": true},
 		},
-		Extracts: &webhookscc.EmailExtracts{Codes: []string{"123"}, Links: []webhookscc.ExtractedLink{{URL: "https://acme.test/x", Action: true}}},
+		Extracts:    &webhookscc.EmailExtracts{Codes: []string{"123"}, Links: []webhookscc.ExtractedLink{{URL: "https://acme.test/x", Action: true}}},
+		EmailFields: map[string]string{"invoice": "INV-2041", "total": ""},
+		ReplyText:   "Thanks, paid.",
 	}
 	endpoint := webhookscc.Endpoint{
 		ID: "ep_1", Slug: "acme-test", Name: "Acme", CreatedAt: time.UnixMilli(1767225600000),
@@ -31,6 +33,10 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		MockResponse:  &webhookscc.MockResponse{Status: 201, Body: "ok", Headers: map[string]string{"x": "y"}, Delay: 250 * time.Millisecond},
 		ResponseRules: []webhookscc.ResponseRule{{Conditions: []webhookscc.ResponseRuleCondition{{Field: "method", Op: "eq", Value: ""}}, Response: webhookscc.MockResponse{Status: 200, Headers: map[string]string{}}}},
 		SharedWith:    []webhookscc.TeamShare{{TeamID: "t1", TeamName: "Acme"}},
+		EmailFields: []webhookscc.EmailField{
+			{Name: "invoice", From: "subject", Pattern: `(INV-\d+)`},
+			{Name: "mailer", From: "header", Header: "X-Mailer", Pattern: ".+"},
+		},
 	}
 	usage := webhookscc.Usage{Used: 1, Limit: 100, Remaining: 99, Plan: "free"}
 	preview := webhookscc.ResponsePreview{
@@ -47,7 +53,7 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 
 	destination := webhookscc.Destination{
 		ID: "d1", Position: 2, Name: "Invoices", Enabled: true, URL: "https://hooks.acme.test/invoices",
-		HasSecret: true, HTTP: true, Format: webhookscc.FormatTemplate,
+		HasSecret: true, HasMailgunSigningKey: true, HTTP: true, Format: webhookscc.FormatTemplate,
 		Filter: &webhookscc.DestinationFilter{Logic: "or", Conditions: []webhookscc.ResponseRuleCondition{
 			{Field: "email", Name: "subject", Op: "contains", Value: "invoice"},
 		}},
@@ -76,12 +82,16 @@ func TestModelsRoundTripThroughJSON(t *testing.T) {
 		Request: webhookscc.DestinationRequest{ID: "r1", Kind: webhookscc.KindHTTP, Method: "POST", Path: "/x", ReceivedAt: time.UnixMilli(1767225600123)},
 		Sender:  &webhookscc.SenderTime{At: time.UnixMilli(1767225600000), Source: "webhook-timestamp", WholeSeconds: true},
 	}
+	rendered := webhookscc.RenderedEmail{
+		Format: webhookscc.FormatMailgun, Method: "POST", Body: "recipient=acme-test%40mailhooks.cc",
+		Headers: map[string]string{"content-type": "application/x-www-form-urlencoded", "user-agent": "webhooks.cc"},
+	}
 	failedTest := webhookscc.DestinationTestResult{
 		Duration: 10 * time.Second, Error: "timed out", Sample: true,
 		Request: webhookscc.DestinationRequest{Method: "POST", Path: "/", Sample: true},
 	}
 
-	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample, &destination, &destinationPreview, &unsent, &testResult, &failedTest} {
+	for _, value := range []any{&request, &endpoint, &usage, &preview, &sample, &destination, &destinationPreview, &unsent, &testResult, &failedTest, &rendered} {
 		data, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)
