@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Padding, StatefulWidget, Widget},
 };
 
+use crate::cli::output::sanitize_line;
 use crate::tui::theme;
 use crate::types::CapturedRequest;
 use crate::util::format::format_bytes;
@@ -146,15 +147,33 @@ impl StatefulWidget for RequestList<'_> {
                 Style::default().fg(theme::SURFACE).bg(bg)
             };
 
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(indicator, indicator_style),
                 Span::styled(&time, Style::default().fg(theme::TEXT_DIM).bg(bg)),
                 Span::styled("  ", Style::default().bg(bg)),
                 Span::styled(&method, method_style.bg(bg)),
-                Span::styled(&req.path, Style::default().fg(theme::TEXT).bg(bg)),
-                Span::styled("  ", Style::default().bg(bg)),
-                Span::styled(&size_str, Style::default().fg(theme::MUTED).bg(bg)),
-            ]);
+                Span::styled(
+                    sanitize_line(&req.path),
+                    Style::default().fg(theme::TEXT).bg(bg),
+                ),
+            ];
+            // An email's path is its recipient; its subject says which one it is.
+            if req.is_email() {
+                let subject = req
+                    .email_subject()
+                    .unwrap_or_else(|| "(no subject)".to_string());
+                spans.push(Span::styled("  ", Style::default().bg(bg)));
+                spans.push(Span::styled(
+                    sanitize_line(&subject),
+                    theme::style_bold().bg(bg),
+                ));
+            }
+            spans.push(Span::styled("  ", Style::default().bg(bg)));
+            spans.push(Span::styled(
+                &size_str,
+                Style::default().fg(theme::MUTED).bg(bg),
+            ));
+            let line = Line::from(spans);
 
             buf.set_line(inner.x, y, &line, inner.width);
 

@@ -16,7 +16,7 @@ your own handlers, and verify provider and forwarding signatures.
 Every signature check for each provider is in :mod:`webhooks_cc.verify`.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.2.0"
 
 from .client import (
     Destinations,
@@ -30,7 +30,9 @@ from .client import (
 from .durations import Duration, parse_duration
 from .email import (
     DEFAULT_EMAIL_DOMAIN,
+    INBOUND_EMAIL_FORMATS,
     email_address,
+    email_field_issues,
     extract_code,
     extract_link,
     is_valid_email_tag,
@@ -74,12 +76,14 @@ from .models import (
     EmailAttachment,
     EmailCapture,
     EmailExtracts,
+    EmailField,
     Endpoint,
     ExtractedLink,
     PreviewedDelivery,
     PreviewedResponse,
     PreviewRequest,
     PreviewRule,
+    RenderedEmail,
     Request,
     RequestPage,
     ResponsePreview,
@@ -107,6 +111,7 @@ from .verify import (
 
 __all__ = [
     "DEFAULT_EMAIL_DOMAIN",
+    "INBOUND_EMAIL_FORMATS",
     "TEMPLATE_METADATA",
     "TEMPLATE_PROVIDERS",
     "VERIFY_PROVIDERS",
@@ -126,6 +131,7 @@ __all__ = [
     "EmailAttachment",
     "EmailCapture",
     "EmailExtracts",
+    "EmailField",
     "Emails",
     "Endpoint",
     "Endpoints",
@@ -139,6 +145,7 @@ __all__ = [
     "PreviewedResponse",
     "RateLimitError",
     "RelayedRequestInfo",
+    "RenderedEmail",
     "Request",
     "RequestPage",
     "Requests",
@@ -159,6 +166,7 @@ __all__ = [
     "capture_during",
     "capture_email_during",
     "email_address",
+    "email_field_issues",
     "extract_code",
     "extract_link",
     "is_email_request",

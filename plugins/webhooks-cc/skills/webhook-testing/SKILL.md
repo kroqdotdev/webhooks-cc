@@ -152,6 +152,25 @@ Every account endpoint receives mail at `{slug}@mailhooks.cc`, and at
    parallel runs find their own mail.
 2. `wait_for_email` with that `tag` (and `subject` if useful). It returns the
    one-time `code` and the main `link` already extracted.
+3. For other values (an order number, an amount, a magic token in an odd
+   place), `update_endpoint` with `emailFields`: a `name`, where it is
+   (`from`: subject, text, html, from, to, or header with `header`) and an
+   RE2 `pattern` whose first group is the value. `get_email` then returns
+   them as `fields`, and the reply without its quote as `replyText`.
+
+### Test an inbound email handler
+
+When the app receives email through Postmark, SendGrid, Mailgun or
+CloudMailin, test the handler with real mail in that provider's shape:
+
+1. Send mail to the endpoint's address (`send_test_email`, or the app's own
+   flow), then `render_email` with the `requestId`, the provider as
+   `format`, and `targetUrl` set to the local handler (for example
+   `http://localhost:3000/api/inbound/postmark`). For Mailgun, pass the test
+   signing key the handler verifies with as `mailgunSigningKey`.
+2. Check the side effect the handler should have, as for webhooks.
+3. Attachments are never included (their contents are not stored); say so
+   if the handler's attachment path needs another test.
 
 ### Debug a failing delivery
 

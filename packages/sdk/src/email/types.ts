@@ -162,6 +162,16 @@ export interface EmailReceivedData {
   inReplyTo: string[];
   text: string | null;
   html: string | null;
+  /**
+   * The new text of a reply, without the quoted message and the signature;
+   * null when the email quotes no earlier message.
+   */
+  replyText: string | null;
+  /**
+   * The endpoint's named fields (Settings, Receiving), by name: the text its
+   * pattern found, or null. Left out when the endpoint has none.
+   */
+  fields?: Record<string, string | null>;
   /** One-time codes found in the email. Left out when the endpoint turned that off. */
   codes?: string[];
   /** Links found in the email. Left out when the endpoint turned that off. */

@@ -1,5 +1,12 @@
 import { decryptSigningSecret } from "@/lib/crypto";
-import { buildEmailJson } from "@webhooks-cc/sdk/email";
+import { createHmac } from "node:crypto";
+import {
+  buildEmailJson,
+  inboundEmailPayload,
+  isInboundEmailFormat,
+  type EmailField,
+} from "@webhooks-cc/sdk/email";
+import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database";
 import { getRequestsByIds, type RequestRecord } from "@/lib/supabase/requests";
@@ -87,11 +94,12 @@ export function forwardRequest(
   request: RequestRecord,
   endpoint: { slug: string; name: string | null },
   secret: string,
-  includeExtracts: boolean
+  includeExtracts: boolean,
+  fields: Record<string, string | null> | null = null
 ): { body: string; headers: Record<string, string> } | null {
   if (request.kind !== "email" || !request.email) return null;
   const body = JSON.stringify(
-    buildEmailJson({ ...request, email: request.email }, endpoint, { includeExtracts })
+    buildEmailJson({ ...request, email: request.email }, endpoint, { includeExtracts, fields })
   );
   return { body, headers: forwardHeaders(secret, request.id, body) };
 }
@@ -238,7 +246,14 @@ export interface OutgoingSettings {
   bodyTemplate?: Json | null;
   /** The destination's chat message template; null keeps the standard message. */
   messageTemplate?: string | null;
+  /** The endpoint's named email fields, for templates, filters and the JSON. */
+  emailFields?: readonly EmailField[];
+  /** The owner's Mailgun signing key, for format "mailgun". */
+  mailgunSigningKey?: string | null;
 }
+
+const hmacSha256Hex = (key: string, message: string) =>
+  createHmac("sha256", key).update(message).digest("hex");
 
 /** The most a template may produce; the notify proxy refuses larger bodies. */
 const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
@@ -276,11 +291,39 @@ export function outgoingFor(
     sent: requestSenderTime(request, settings.sentField),
   };
   const endpoint = { slug: settings.slug, name: settings.name };
+  const fields = emailFieldValues(request, settings.emailFields ?? []);
+  if (isInboundEmailFormat(format)) {
+    if (request.kind !== "email" || !request.email) {
+      return { reason: "The email could not be read.", facts };
+    }
+    const payload = inboundEmailPayload(
+      format,
+      { ...request, email: request.email },
+      {
+        raw: request.bodyRaw ? null : (request.body ?? null),
+        mailgunSigningKey: settings.mailgunSigningKey ?? null,
+        hmacSha256Hex,
+      }
+    );
+    // Signed like the JSON format too, so a handler can check it came from here.
+    const headers: Record<string, string> = {
+      ...forwardHeaders(settings.secret, request.id, payload.body),
+      "content-type": payload.contentType,
+    };
+    for (const [name, value] of settings.ownerHeaders) headers[name] = value;
+    return {
+      outgoing: jsonForward(settings.url, headers, payload.body, {
+        ownerHeaders: settings.ownerHeaders.length > 0,
+      }),
+      facts,
+    };
+  }
   if (format === "chat") {
     if (settings.messageTemplate) {
       const context = templateContextFor(request, endpoint, {
         includeExtracts: settings.showEmailExtracts,
         withSignature: true,
+        fields,
       });
       const text = renderTemplate(settings.messageTemplate, context, {
         maxBytes: CHAT_MESSAGE_CHARS * 4,
@@ -307,6 +350,7 @@ export function outgoingFor(
       const context = templateContextFor(request, endpoint, {
         includeExtracts: settings.showEmailExtracts,
         withSignature: true,
+        fields,
       });
       body = JSON.stringify(
         renderJsonTemplate(settings.bodyTemplate, context, { maxBytes: MAX_TEMPLATE_BYTES })
@@ -327,7 +371,7 @@ export function outgoingFor(
   if (format === "json") {
     const prepared =
       request.kind === "email"
-        ? forwardRequest(request, endpoint, settings.secret, settings.showEmailExtracts)
+        ? forwardRequest(request, endpoint, settings.secret, settings.showEmailExtracts, fields)
         : forwardRequestJson(request, endpoint, settings.secret);
     if (!prepared) return { reason: "The email could not be read.", facts };
     const headers = { ...prepared.headers };
@@ -378,6 +422,10 @@ function prepare(claim: Claim, request: RequestRecord, secret: string) {
     sentField: claim.forward_sent_field,
     bodyTemplate: claim.body_template,
     messageTemplate: claim.message_template,
+    emailFields: storedEmailFields(claim.email_fields),
+    mailgunSigningKey: claim.mailgun_key_encrypted
+      ? decryptSigningSecret(Buffer.from(claim.mailgun_key_encrypted, "base64"))
+      : null,
   });
 }
 
@@ -505,7 +553,8 @@ export function filterVerdict(
   filter: Json | null,
   request: RequestRecord,
   signingProvider: string | null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  fields: Record<string, string | null> | null = null
 ): FilterVerdict {
   if (!filter || typeof filter !== "object" || Array.isArray(filter)) return "send";
   const group = filter as { logic?: unknown; conditions?: unknown };
@@ -523,7 +572,7 @@ export function filterVerdict(
   }
   return conditionsHold(
     { logic: group.logic === "or" ? "or" : "and", conditions },
-    ruleSubjectFor(request)
+    ruleSubjectFor(request, fields)
   )
     ? "send"
     : "skip";
@@ -539,7 +588,13 @@ async function deliver(claim: Claim, request: RequestRecord | undefined): Promis
 
   const verdict = claim.bypass_filter
     ? "send"
-    : filterVerdict(claim.destination_filter, request, claim.signing_provider);
+    : filterVerdict(
+        claim.destination_filter,
+        request,
+        claim.signing_provider,
+        Date.now(),
+        emailFieldValues(request, storedEmailFields(claim.email_fields))
+      );
   if (verdict === "skip") return skip(claim, "Not sent: the destination's filter did not match.");
   if (verdict !== "send") return release(claim, verdict.waitMs);
   if (isStaleHeadsUp(claim)) {

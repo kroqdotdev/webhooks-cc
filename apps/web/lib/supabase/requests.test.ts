@@ -98,11 +98,35 @@ describe("withEmailExtracts", () => {
       http,
     ]);
     expect(from).toHaveBeenCalledWith("endpoints");
-    expect(select).toHaveBeenCalledWith("id, show_email_extracts");
+    expect(select).toHaveBeenCalledWith("id, show_email_extracts, email_fields");
     expect(inFilter).toHaveBeenCalledWith("id", ["e1"]);
     expect(result[0].extracts).toEqual(FOUND);
     expect(result[1]).toBe(http);
     expect(result[1]).not.toHaveProperty("extracts");
+  });
+
+  it("adds the endpoint's named fields and the reply text, whatever the switch says", async () => {
+    inFilter.mockResolvedValue({
+      data: [
+        {
+          id: "off",
+          show_email_extracts: false,
+          email_fields: [{ name: "code", from: "text", pattern: "code is (\\d+)" }],
+        },
+      ],
+      error: null,
+    });
+    const [captured] = await withEmailExtracts([
+      record({
+        id: "r",
+        endpointId: "off",
+        kind: "email",
+        email: email({ text: "Your code is 482913.\n\nOn Sat, Ada wrote:\n> Hi" }),
+      }),
+    ]);
+    expect(captured.extracts).toBeNull();
+    expect(captured.emailFields).toEqual({ code: "482913" });
+    expect(captured.replyText).toBe("Your code is 482913.");
   });
 
   it("gives null when the endpoint turned extraction off", async () => {

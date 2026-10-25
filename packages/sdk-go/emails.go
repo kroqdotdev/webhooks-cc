@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 // DefaultEmailDomain is the domain endpoints receive email on.
@@ -23,6 +25,15 @@ var (
 	// Printable ASCII without the characters an unquoted local part cannot hold.
 	emailTagPattern  = regexp.MustCompile(`^[!#-'*+\-./0-9=?A-Z^-~]+$`)
 	emailSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
+
+	emailFieldName    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,39}$`)
+	emailHeaderName   = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$")
+	emailFieldSources = []string{"subject", "text", "html", "from", "to", "header"}
+)
+
+const (
+	maxEmailFields            = 20
+	maxEmailFieldPatternChars = 300
 )
 
 // IsValidEmailTag reports whether tag can follow the plus sign in the address
@@ -150,7 +161,9 @@ func (s *EmailsService) List(ctx context.Context, slug string, q EmailQuery) ([]
 	return emails, nil
 }
 
-// Get returns one captured email, or ErrNotFound for anything else.
+// Get returns one captured email, with the endpoint's named fields
+// (EmailFields) and the reply text (ReplyText), or ErrNotFound for anything
+// else.
 func (s *EmailsService) Get(ctx context.Context, id string) (*Request, error) {
 	request, err := s.c.Requests.Get(ctx, id)
 	if err != nil {
@@ -220,6 +233,95 @@ func (s *EmailsService) SendTest(ctx context.Context, slug, tag string) (*SendTe
 	var o rawObject
 	_ = json.Unmarshal(raw, &o)
 	return &SendTestEmailResult{Status: o.str("status"), RequestID: o.str("requestId"), Raw: raw}, nil
+}
+
+// RenderEmailOptions say how EmailsService.Render shapes an email.
+type RenderEmailOptions struct {
+	// Format is FormatPostmark, FormatSendGrid, FormatMailgun or
+	// FormatCloudMailin for that inbound mail provider's shape, or FormatJSON
+	// for the email.received JSON (unsigned, with the endpoint's named
+	// fields): what a destination of that format sends.
+	Format DestinationFormat
+	// MailgunSigningKey, your Mailgun HTTP webhook signing key, signs a
+	// FormatMailgun form the way Mailgun does, so your handler's check
+	// passes. Optional.
+	MailgunSigningKey string
+}
+
+// Render returns a captured email in an inbound mail provider's shape,
+// rendered by webhooks.cc: Postmark's inbound JSON, SendGrid's Inbound Parse
+// form, a Mailgun route's form or CloudMailin's JSON Normalized format. Post
+// it to the handler you wrote for that provider to test it against real
+// mail:
+//
+//	rendered, err := client.Emails.Render(ctx, email.ID, webhookscc.RenderEmailOptions{Format: webhookscc.FormatPostmark})
+//	if err != nil {
+//		return err
+//	}
+//	response, err := client.SendTo(ctx, "http://localhost:8080/inbound/postmark", webhookscc.SendOptions{
+//		Body:    rendered.Body,
+//		Headers: rendered.Headers,
+//	})
+func (s *EmailsService) Render(ctx context.Context, id string, opts RenderEmailOptions) (*RenderedEmail, error) {
+	if err := validateSegment(id, "request id"); err != nil {
+		return nil, err
+	}
+	switch opts.Format {
+	case FormatJSON, FormatPostmark, FormatSendGrid, FormatMailgun, FormatCloudMailin:
+	default:
+		return nil, fmt.Errorf("webhooks.cc: unknown inbound format %q: use FormatPostmark, FormatSendGrid, FormatMailgun, FormatCloudMailin or FormatJSON", opts.Format)
+	}
+	body := map[string]any{"format": opts.Format}
+	if opts.MailgunSigningKey != "" {
+		body["mailgunSigningKey"] = opts.MailgunSigningKey
+	}
+	var rendered RenderedEmail
+	if err := s.c.api(ctx, http.MethodPost, "/requests/"+id+"/render", nil, body, &rendered); err != nil {
+		return nil, err
+	}
+	return &rendered, nil
+}
+
+// EmailFieldIssues returns what the API would refuse in a list of named
+// email fields, or nil when it is valid: more than 20 fields, a bad or
+// repeated name, an unknown From, a missing or misplaced Header, or an
+// empty or too long Pattern. Whether a pattern is valid RE2 is left to the
+// server.
+func EmailFieldIssues(fields []EmailField) []string {
+	if len(fields) > maxEmailFields {
+		return []string{fmt.Sprintf("at most %d fields", maxEmailFields)}
+	}
+	var issues []string
+	names := map[string]bool{}
+	for i, field := range fields {
+		at := fmt.Sprintf("field %d", i+1)
+		switch {
+		case !emailFieldName.MatchString(field.Name):
+			issues = append(issues, at+": name must be letters, digits and _, start with a letter, at most 40 characters")
+		case names[field.Name]:
+			issues = append(issues, fmt.Sprintf("%s: the name %q is used twice", at, field.Name))
+		default:
+			names[field.Name] = true
+		}
+		switch {
+		case !slices.Contains(emailFieldSources, field.From):
+			issues = append(issues, at+": from must be one of "+strings.Join(emailFieldSources, ", "))
+		case field.From == "header":
+			if !emailHeaderName.MatchString(field.Header) {
+				issues = append(issues, at+": header must be a header name")
+			}
+		case field.Header != "":
+			issues = append(issues, at+`: header is only for from "header"`)
+		}
+		switch {
+		case field.Pattern == "":
+			issues = append(issues, at+": pattern is required")
+		// Counted as JavaScript counts it, as the API does.
+		case len(utf16.Encode([]rune(field.Pattern))) > maxEmailFieldPatternChars:
+			issues = append(issues, fmt.Sprintf("%s: pattern is longer than %d characters", at, maxEmailFieldPatternChars))
+		}
+	}
+	return issues
 }
 
 func extracts(email *Request) (*EmailExtracts, error) {

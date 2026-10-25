@@ -48,6 +48,33 @@ email, err := client.Emails.WaitFor(ctx, endpoint.Slug, webhookscc.EmailQuery{Ta
 code, _ := webhookscc.ExtractCode(email)
 ```
 
+## Email fields, reply text and provider shapes
+
+An endpoint can pick up to 20 named fields out of every email it captures. Each reads the `subject`, `text`, `html`, `from`, `to` or one `header`, and the first group of its RE2 pattern is the value:
+
+```go
+_, err := client.Endpoints.Update(ctx, endpoint.Slug, webhookscc.UpdateEndpointOptions{
+	EmailFields: webhookscc.Value([]webhookscc.EmailField{{Name: "invoice", From: "subject", Pattern: `(INV-\d+)`}}),
+})
+email, err := client.Emails.WaitFor(ctx, endpoint.Slug, webhookscc.EmailQuery{Tag: run})
+fmt.Println(email.EmailFields["invoice"]) // "INV-2041", or "" when the pattern found nothing
+fmt.Println(email.ReplyText)              // what a reply says above the quoted message, without the signature
+```
+
+Forwarding templates read the fields as `{{ fields.invoice }}`. `webhookscc.EmailFieldIssues` checks a list before you save it (the API checks the patterns themselves).
+
+To test a handler you wrote for an inbound mail provider, render a captured email in that provider's shape and post it there:
+
+```go
+rendered, err := client.Emails.Render(ctx, email.ID, webhookscc.RenderEmailOptions{Format: webhookscc.FormatPostmark})
+response, err := client.SendTo(ctx, "http://localhost:8080/inbound/postmark", webhookscc.SendOptions{
+	Body:    rendered.Body,
+	Headers: rendered.Headers,
+})
+```
+
+`Format` is `FormatPostmark`, `FormatSendGrid`, `FormatMailgun` (set `MailgunSigningKey` to sign the form as Mailgun does) or `FormatCloudMailin`, or `FormatJSON` for the `email.received` JSON.
+
 ## Send signed webhooks to your handler
 
 ```go
@@ -90,7 +117,7 @@ destination, err := client.Destinations.Create(ctx, endpoint.Slug, webhookscc.De
 preview, err := client.Destinations.Preview(ctx, endpoint.Slug, webhookscc.PreviewDestinationOptions{DestinationID: destination.ID})
 ```
 
-Filters take the conditions of response rules, plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`. `Preview` is a dry run: whether the filter lets a captured request through and the exact request the destination would send. `Update` changes only the fields set with `Value` or `Null`, `Test` sends one delivery now, and `List`, `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
+Filters take the conditions of response rules, plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`. `Format` may also be an inbound mail provider's shape (`FormatPostmark`, `FormatSendGrid`, `FormatMailgun` or `FormatCloudMailin`): emails go out as that provider posts them and HTTP requests as received. `MailgunSigningKey` signs the Mailgun form; it is never returned, and `HasMailgunSigningKey` says whether one is saved. `Preview` is a dry run: whether the filter lets a captured request through and the exact request the destination would send. `Update` changes only the fields set with `Value` or `Null`, `Test` sends one delivery now, and `List`, `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
 
 ## Verify signatures
 

@@ -100,6 +100,8 @@ export const EMAIL_TEMPLATE_ROOTS = [
   "inReplyTo",
   "text",
   "html",
+  "replyText",
+  "fields",
   "codes",
   "links",
   "attachments",

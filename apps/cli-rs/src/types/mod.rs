@@ -202,6 +202,20 @@ impl CapturedRequest {
             None => self.method.eq_ignore_ascii_case("EMAIL") && !self.path.starts_with('/'),
         }
     }
+
+    /// A captured email's subject, for one line of output: the parsed one when
+    /// the REST API sent it, otherwise the raw `Subject` header the stream
+    /// carries, with its encoded words decoded. The sender wrote it, so pass it
+    /// through `sanitize_line` before printing.
+    pub fn email_subject(&self) -> Option<String> {
+        if let Some(subject) = self.email.as_ref().and_then(|e| e.subject.as_ref()) {
+            return Some(subject.clone());
+        }
+        self.headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("subject"))
+            .map(|(_, value)| crate::util::format::decode_encoded_words(value))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -491,6 +505,66 @@ impl fmt::Display for ForwardResult {
 }
 
 // ---------------------------------------------------------------------------
+// Rendered email (POST /api/requests/{id}/render)
+// ---------------------------------------------------------------------------
+
+/// The shape the tunnel posts a captured email in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum EmailFormat {
+    /// webhooks.cc's email.received JSON, the body forwarding posts (unsigned here)
+    #[default]
+    Json,
+    /// Postmark's inbound JSON
+    Postmark,
+    /// SendGrid Inbound Parse, a multipart/form-data form
+    Sendgrid,
+    /// A Mailgun route's form, signed with --mailgun-signing-key
+    Mailgun,
+    /// CloudMailin's JSON Normalized format
+    Cloudmailin,
+}
+
+impl EmailFormat {
+    /// The value the API and `--email-format` take.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EmailFormat::Json => "json",
+            EmailFormat::Postmark => "postmark",
+            EmailFormat::Sendgrid => "sendgrid",
+            EmailFormat::Mailgun => "mailgun",
+            EmailFormat::Cloudmailin => "cloudmailin",
+        }
+    }
+
+    /// What the format is called, for people.
+    pub fn label(self) -> &'static str {
+        match self {
+            EmailFormat::Json => "webhooks.cc email JSON",
+            EmailFormat::Postmark => "Postmark inbound",
+            EmailFormat::Sendgrid => "SendGrid Inbound Parse",
+            EmailFormat::Mailgun => "Mailgun route",
+            EmailFormat::Cloudmailin => "CloudMailin JSON",
+        }
+    }
+}
+
+/// A captured email rendered for a handler: the request to send it with.
+/// `body` is text in every format (JSON, a multipart form or a URL-encoded
+/// form), and `headers` carries its content type, with the multipart
+/// boundary for SendGrid.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderedEmail {
+    #[serde(default)]
+    pub format: String,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    pub body: String,
+}
+
+// ---------------------------------------------------------------------------
 // SSE events
 // ---------------------------------------------------------------------------
 
@@ -752,5 +826,62 @@ mod email_tests {
     fn address_without_a_name_prints_the_address() {
         let address = EmailAddress { name: None, address: Some("a@b.c".into()) };
         assert_eq!(address.to_string(), "a@b.c");
+    }
+
+    #[test]
+    fn email_subject_prefers_the_parsed_one_then_the_header() {
+        // As the stream delivers it: kind, the raw headers, no parsed email.
+        let json = r#"{"_id":"e1","endpointId":"ep","method":"EMAIL","path":"acme@mailhooks.cc","headers":{"subject":"=?UTF-8?Q?Gr=C3=BC=C3=9Fe?="},"queryParams":{},"ip":"192.0.2.1","size":120,"receivedAt":1,"kind":"email"}"#;
+        let mut request: CapturedRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.email_subject().as_deref(), Some("Grüße"));
+
+        request.email = Some(crate::types::EmailSummary {
+            subject: Some("Parsed".into()),
+            ..Default::default()
+        });
+        assert_eq!(request.email_subject().as_deref(), Some("Parsed"));
+
+        request.email = None;
+        request.headers.clear();
+        assert_eq!(request.email_subject(), None);
+    }
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::{EmailFormat, RenderedEmail};
+
+    #[test]
+    fn email_format_serializes_as_the_api_expects() {
+        assert_eq!(
+            serde_json::to_string(&EmailFormat::Cloudmailin).unwrap(),
+            r#""cloudmailin""#
+        );
+        assert_eq!(
+            serde_json::to_string(&EmailFormat::default()).unwrap(),
+            r#""json""#
+        );
+        for format in [
+            EmailFormat::Json,
+            EmailFormat::Postmark,
+            EmailFormat::Sendgrid,
+            EmailFormat::Mailgun,
+            EmailFormat::Cloudmailin,
+        ] {
+            assert_eq!(serde_json::to_value(format).unwrap(), format.as_str());
+        }
+    }
+
+    #[test]
+    fn rendered_email_parses_the_api_shape() {
+        let json = r#"{"format":"sendgrid","method":"POST","headers":{"content-type":"multipart/form-data; boundary=xyz","user-agent":"webhooks.cc (+https://webhooks.cc/docs/forwarding)"},"body":"--xyz\r\n..."}"#;
+        let rendered: RenderedEmail = serde_json::from_str(json).unwrap();
+        assert_eq!(rendered.format, "sendgrid");
+        assert_eq!(rendered.method, "POST");
+        assert_eq!(
+            rendered.headers.get("content-type").map(String::as_str),
+            Some("multipart/form-data; boundary=xyz")
+        );
+        assert!(rendered.body.starts_with("--xyz"));
     }
 }

@@ -1,3 +1,4 @@
+import { INBOUND_EMAIL_FORMAT_NAMES, isInboundEmailFormat } from "@webhooks-cc/sdk/email";
 import type { ForwardFormat } from "./format";
 import { isDiscordUrl } from "./chat";
 import { formatDuration, type SenderTime } from "./timing";
@@ -209,6 +210,9 @@ export function leadVerb(format: ForwardFormat): string {
   if (format === "chat") return "Posted as a message to";
   if (format === "json") return "Forwarded as signed JSON to";
   if (format === "template") return "Forwarded as your JSON to";
+  if (isInboundEmailFormat(format)) {
+    return `Forwarded as ${INBOUND_EMAIL_FORMAT_NAMES[format]} to`;
+  }
   return "Forwarded as received to";
 }
 

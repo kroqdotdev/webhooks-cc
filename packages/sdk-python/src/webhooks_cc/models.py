@@ -9,13 +9,34 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 RequestKind = Literal["http", "email"]
 
-DestinationFormat = Literal["auto", "as_received", "json", "template", "chat"]
+InboundEmailFormat = Literal["postmark", "sendgrid", "mailgun", "cloudmailin"]
+"""The inbound mail providers whose shape an email can be sent or rendered in: Postmark's
+inbound JSON, SendGrid's Inbound Parse form, a Mailgun route's form and CloudMailin's
+JSON Normalized format."""
+
+DestinationFormat = Literal[
+    "auto",
+    "as_received",
+    "json",
+    "template",
+    "chat",
+    "postmark",
+    "sendgrid",
+    "mailgun",
+    "cloudmailin",
+]
 """How a destination sends. ``"auto"`` picks from the URL: a chat message for Slack and
-Discord, otherwise HTTP requests as received and emails as signed JSON."""
+Discord, otherwise HTTP requests as received and emails as signed JSON. The
+:data:`InboundEmailFormat` shapes apply to emails; HTTP requests to such a destination go
+as received."""
+
+EmailFieldSource = Literal["subject", "text", "html", "from", "to", "header"]
+"""The part of an email a named field reads: ``"html"`` is the HTML as text, ``"to"`` the
+To and Cc addresses, and ``"header"`` the header named in ``header``."""
 
 
 def _str_or_none(value: Any) -> str | None:
@@ -190,6 +211,43 @@ class EmailExtracts:
 
 
 @dataclass(frozen=True)
+class EmailField:
+    """A named field an endpoint picks out of every email it captures.
+
+    ``pattern`` is a regular expression in RE2 syntax whose first group (or whole
+    match, without a group) is the value. webhooks.cc runs it, so lookahead,
+    lookbehind and backreferences are not available. The values arrive as
+    :attr:`Request.email_fields`, and as ``fields`` in the email's JSON, where
+    forwarding templates read them as ``{{ fields.invoice }}``.
+    """
+
+    name: str
+    """Letters, digits and ``_``, starting with a letter, at most 40 characters."""
+    from_: EmailFieldSource
+    pattern: str
+    """At most 1,000 characters."""
+    header: str | None = None
+    """The header's name, for ``from_="header"``."""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> EmailField:
+        source = data.get("from")
+        return cls(
+            name=str(data.get("name") or ""),
+            from_=cast(EmailFieldSource, source if isinstance(source, str) else ""),
+            pattern=str(data.get("pattern") or ""),
+            header=_str_or_none(data.get("header")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """The field as the API takes it."""
+        out: dict[str, Any] = {"name": self.name, "from": self.from_, "pattern": self.pattern}
+        if self.header is not None:
+            out["header"] = self.header
+        return out
+
+
+@dataclass(frozen=True)
 class Request:
     """A captured request: an HTTP webhook, or an email when ``kind`` is ``"email"``.
 
@@ -221,6 +279,13 @@ class Request:
     Set on emails read through this client, unless the endpoint's "Show codes
     and links found in emails" setting is off.
     """
+    email_fields: dict[str, str | None] | None = None
+    """The endpoint's named fields (see :class:`EmailField`), by name: the text each
+    pattern found, or ``None`` when it found nothing. ``None`` when the endpoint has
+    none. Set on emails read through this client."""
+    reply_text: str | None = None
+    """The new text of a reply, without the quoted message and the signature; ``None``
+    when the email quotes no earlier message. Set on emails read through this client."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -229,6 +294,7 @@ class Request:
         verified = data.get("signatureVerified")
         email = data.get("email")
         extracts = data.get("extracts")
+        fields = data.get("emailFields")
         request_id = data.get("id")
         if not isinstance(request_id, str):
             legacy_id = data.get("_id")
@@ -252,6 +318,10 @@ class Request:
             kind=kind if kind in ("http", "email") else None,
             email=EmailCapture.from_dict(email) if isinstance(email, Mapping) else None,
             extracts=EmailExtracts.from_dict(extracts) if isinstance(extracts, Mapping) else None,
+            email_fields={str(key): _str_or_none(value) for key, value in fields.items()}
+            if isinstance(fields, Mapping)
+            else None,
+            reply_text=_str_or_none(data.get("replyText")),
             raw=dict(data),
         )
 
@@ -315,6 +385,8 @@ class Endpoint:
     signing_provider: str | None = None
     has_signing_secret: bool = False
     show_email_extracts: bool | None = None
+    email_fields: list[EmailField] | None = None
+    """The named fields picked out of every email the endpoint captures (owner only)."""
     forward_enabled: bool | None = None
     forward_url: str | None = None
     shared_with: list[TeamShare] = field(default_factory=list)
@@ -325,6 +397,7 @@ class Endpoint:
     def from_dict(cls, data: Mapping[str, Any]) -> Endpoint:
         mock = data.get("mockResponse")
         rules = data.get("responseRules")
+        email_fields = data.get("emailFields")
         shared = data.get("sharedWith")
         from_teams = data.get("fromTeams")
         if not isinstance(from_teams, list) and isinstance(data.get("fromTeam"), Mapping):
@@ -347,6 +420,11 @@ class Endpoint:
             has_signing_secret=data.get("hasSigningSecret") is True,
             show_email_extracts=data.get("showEmailExtracts")
             if isinstance(data.get("showEmailExtracts"), bool)
+            else None,
+            email_fields=[
+                EmailField.from_dict(item) for item in email_fields if isinstance(item, Mapping)
+            ]
+            if isinstance(email_fields, list)
             else None,
             forward_enabled=data.get("forwardEnabled")
             if isinstance(data.get("forwardEnabled"), bool)
@@ -524,7 +602,8 @@ class Destination:
     email: bool
     """Takes emails."""
     format: str
-    """``"auto"``, ``"as_received"``, ``"json"``, ``"template"`` or ``"chat"``."""
+    """``"auto"``, ``"as_received"``, ``"json"``, ``"template"``, ``"chat"``, or an inbound
+    mail provider's shape: ``"postmark"``, ``"sendgrid"``, ``"mailgun"`` or ``"cloudmailin"``."""
     filter: DestinationFilter | None
     """``None`` sends every capture of the kinds it takes."""
     body_template: Any
@@ -550,6 +629,9 @@ class Destination:
     ``"notify"``: its ``notification_url``."""
     created_at: int
     updated_at: int
+    has_mailgun_signing_key: bool = False
+    """For format ``"mailgun"``: whether a Mailgun signing key is saved. The key itself is
+    never returned."""
     summary: DestinationSummary | None = None
     """Set by ``destinations.list(slug, summary=True)``."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
@@ -589,6 +671,7 @@ class Destination:
             role=role if role in ("forward", "notify") else None,
             created_at=int(_number(data.get("createdAt"))),
             updated_at=int(_number(data.get("updatedAt"))),
+            has_mailgun_signing_key=data.get("hasMailgunSigningKey") is True,
             summary=_destination_summary(summary) if isinstance(summary, Mapping) else None,
             raw=dict(data),
         )
@@ -803,6 +886,32 @@ class SendTestEmailResult:
     request_id: str | None
     """ID of the captured email (``None`` when the server could not tell)."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+
+@dataclass(frozen=True)
+class RenderedEmail:
+    """A captured email in an inbound provider's shape, as ``emails.render()`` returns it:
+    post ``body`` with ``headers`` to the handler you wrote for that provider."""
+
+    format: str
+    """``"json"``, or the provider: ``"postmark"``, ``"sendgrid"``, ``"mailgun"`` or
+    ``"cloudmailin"``."""
+    method: str
+    """Always ``"POST"``."""
+    headers: dict[str, str]
+    """The ``content-type`` and ``user-agent`` to send it with."""
+    body: str
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> RenderedEmail:
+        return cls(
+            format=str(data.get("format") or ""),
+            method=str(data.get("method") or "POST"),
+            headers=_str_map(data.get("headers")),
+            body=_str_or_none(data.get("body")) or "",
+            raw=dict(data),
+        )
 
 
 @dataclass(frozen=True)

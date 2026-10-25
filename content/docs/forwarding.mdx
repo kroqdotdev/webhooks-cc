@@ -53,6 +53,7 @@ The format is picked from the URL, and you can change it:
 | **Signed JSON**  | Emails to a server URL (the default), or both    | A JSON envelope with the request or email inside, signed with [Standard Webhooks](https://www.standardwebhooks.com) headers.         |
 | **Your JSON**    | Any URL that wants its own shape                 | The JSON you write, with `{{ placeholders }}` filled in from each request, signed like Signed JSON. See [Your own JSON](#your-own-json). |
 | **Chat message** | Slack and Discord incoming webhooks (the default) | A readable message: the endpoint, method and path, when it arrived, and up to 3,000 characters of the body; or your own text.        |
+| **Mail provider** | Emails to an inbound handler you wrote for Postmark, SendGrid, Mailgun or CloudMailin | The email in that provider's shape. See [In a mail provider's shape](#in-a-mail-providers-shape). |
 
 Slack and Discord reject anything but their own JSON, so a URL on `hooks.slack.com` or `discord.com` gets a chat message unless you pick otherwise.
 
@@ -151,6 +152,8 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
     "inReplyTo": [],
     "text": "Hi Ines,\n\nYour confirmation code is 482913. ...",
     "html": "<div style=\"font-family:Arial\">...</div>",
+    "replyText": null,
+    "fields": { "code": "482913" },
     "codes": ["482913"],
     "links": [{ "url": "https://app.tidewater.app/confirm?token=Zk3q9v", "text": "Confirm email" }],
     "attachments": [
@@ -180,6 +183,8 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 | `data.address`, `data.tag`   | The address the email arrived at, and its `+tag` if it had one.                                                                                      |
 | `data.from`                  | The first `From` address, or `null`.                                                                                                                 |
 | `data.text`, `data.html`     | The text and HTML parts, up to 256 KB each; `truncated` says when one was cut. `text` is derived from the HTML when the email has no text part.      |
+| `data.replyText`             | The new text of a reply, without the quoted message and the signature; `null` when the email quotes nothing. See [Reply text](/docs/email-capture#reply-text). |
+| `data.fields`                | The endpoint's [named fields](/docs/email-capture#fields-you-pick-out), each the text its pattern found or `null`. Left out when the endpoint has none. |
 | `data.codes`, `data.links`   | One-time codes and the links worth clicking, as on the email in the dashboard. Left out when the endpoint turned off "Show codes and links found in emails". |
 | `data.attachments`           | Name, type and size of each attachment. The contents are not kept, so they are not forwarded.                                                         |
 | `data.auth`                  | The SPF, DKIM and DMARC results (`pass`, `fail`, `softfail`, `none`, ...) and the TLS version; `null` when a check did not run.                     |
@@ -303,9 +308,24 @@ Pick **Your JSON** and write the body you want. Every string can hold `{{ placeh
 
 A string that is only a placeholder keeps the value's own type, so `"{{ json.data.object.amount_paid }}"` becomes the number `4200`, and a field the request does not have becomes `null`. Placeholders inside longer text are written as text. The body is signed with [Standard Webhooks](#verify-the-signature) headers like the Signed JSON format, so `verifyForwardedJson()` from the SDK [checks it](/docs/sdk/signatures#forwarded-requests) and returns the body, and your own headers are added.
 
-An HTTP request reads `method`, `path`, `query.page`, `headers.user-agent` (any case), `body` (the text), `json.data.id` (a field of the JSON or form body), `contentType`, `ip`, `size`, `id`, `receivedAt`, `endpoint.slug` and `signature` (`verified`, `failed` or `missing`). An email reads the fields of its [email JSON](#an-email): `subject`, `from.address`, `from.name`, `to.0.address`, `text`, `html`, `tag`, `codes.0` and `links.0.url` (when the endpoint shows codes and links), `auth.spf`, `spam.score` and the rest. Both read `uuid` (new for each delivery) and `now`. Filters work as in [mock responses](/docs/mock-responses#placeholders): `| default: "none"`, `| upper`, `| lower`, `| truncate: 80` and `| json`.
+An HTTP request reads `method`, `path`, `query.page`, `headers.user-agent` (any case), `body` (the text), `json.data.id` (a field of the JSON or form body), `contentType`, `ip`, `size`, `id`, `receivedAt`, `endpoint.slug` and `signature` (`verified`, `failed` or `missing`). An email reads the fields of its [email JSON](#an-email): `subject`, `from.address`, `from.name`, `to.0.address`, `text`, `replyText`, `html`, `tag`, your [named fields](/docs/email-capture#fields-you-pick-out) as `fields.invoice`, `codes.0` and `links.0.url` (when the endpoint shows codes and links), `auth.spf`, `spam.score` and the rest. Both read `uuid` (new for each delivery) and `now`. Filters work as in [mock responses](/docs/mock-responses#placeholders): `| default: "none"`, `| upper`, `| lower`, `| truncate: 80` and `| json`.
 
-**Insert field** next to the template lists what the destination's kinds can read, and the editor refuses a placeholder neither kind has. Use it to send only part of an email: a template with the subject, the sender and the first code sends nothing else.
+**Insert field** next to the template lists what the destination's kinds can read, your named fields included, and the editor refuses a placeholder neither kind has. Use it to send only part of an email: a template with the subject, the sender and the invoice number you named sends nothing else, which is what an email parser does.
+
+## In a mail provider's shape
+
+If your app already receives email through an inbound mail service, a destination can post each captured email the way that service would, so the handler you wrote for it runs against real mail from real clients, with their quoting, encodings and headers. Pick **Mail provider** (or the **Inbound email handler** preset) and the provider:
+
+| Shape                      | What your handler receives                                                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Postmark inbound**       | Postmark's JSON: `From`, `FromFull`, `ToFull` (with each `MailboxHash`, the `+tag`), `Subject`, `TextBody`, `HtmlBody`, `StrippedTextReply`, `MailboxHash` and `Headers`, with spam results as `X-Spam-*` headers. |
+| **SendGrid Inbound Parse** | A `multipart/form-data` form: `headers`, `dkim`, `to`, `from`, `text`, `html`, `sender_ip`, `spam_score`, `envelope`, `charsets`, `SPF` and `subject`.        |
+| **Mailgun route**          | A form like a route's `forward()`: `recipient`, `sender`, `from`, `subject`, `body-plain`, `body-html`, `stripped-text`, `stripped-signature`, `message-headers`, and `timestamp`, `token` and `signature`. |
+| **CloudMailin JSON**       | CloudMailin's JSON Normalized format: `envelope` (with `spf` and `tls`), `headers`, `plain`, `html` and `reply_plain`.                                          |
+
+The Mailgun form is signed as Mailgun signs it when you enter your **Mailgun signing key** (the HTTP webhook signing key under API Security in Mailgun): `signature` is the hex HMAC-SHA256 of `timestamp` and `token`, so your handler's check passes; without a key it is empty. The key is stored encrypted and never shown again. Every shape also carries this destination's Standard Webhooks headers, so a handler can check that a delivery came from here.
+
+What differs from the real thing: attachment contents are never stored, so no attachments are included (the [email JSON](#an-email) lists them); the text and HTML are what webhooks.cc kept (up to 256 KB each); and fields a provider computes for itself (Postmark's `MessageID`, SendGrid's SpamAssassin report) come from webhooks.cc's own checks or the request id. HTTP requests to such a destination go as received. To try a shape on one email, use `whk tunnel --email-format postmark` [on localhost](/docs/cli/tunnel), `client.emails.render()` in the SDK, or `render_email` in the [MCP server](/docs/mcp/tools#render_email).
 
 ## Send only some captures
 
@@ -315,6 +335,7 @@ Add conditions under **What it gets** to send only the requests that match, with
 | ---------------- | ------------------------------------------------------------------------------------------ |
 | **Kind**         | `http` or `email`                                                                          |
 | **Email**        | its subject, sender, recipients (To and Cc, any of them), text or tag                       |
+| **Email field**  | one of the endpoint's [named fields](/docs/email-capture#fields-you-pick-out), as text or a number |
 | **Spam score**   | the rspamd score, as a number                                                              |
 | **Sender check** | the SPF, DKIM or DMARC result: `pass`, `fail`, `softfail`, `neutral`, `none`, ...          |
 | **Signature**    | the endpoint's [signature check](/docs/signature-verification): `verified`, `failed` or `missing` |
@@ -400,7 +421,9 @@ console.log(res.status); // 204
 
 `verifyForwardedEmail` accepts these requests like real deliveries: the body is the same JSON and the timestamp is the current time. Two differences: the `webhook-id` is random rather than `msg_` followed by the email's id, and nothing is retried. Pass `endpoint` so `data.endpoint.name` is filled in (without it the slug is read from the address and the name is `null`), and `includeExtracts: false` to leave out `codes` and `links` the way forwarding does when the endpoint turned them off.
 
-To test the deployed handler through webhooks.cc instead, use **Send test delivery**, or `client.forwarding.test()`.
+For a handler written for a mail provider, `client.emails.toInbound(email, "postmark")` builds the email in that provider's shape (`sendgrid`, `mailgun` with your signing key, `cloudmailin`) to post with its `contentType`. `whk tunnel <port>` posts every email the endpoint receives to your machine as this JSON, or in a provider's shape with `--email-format`, while you click through a signup by hand.
+
+To test the deployed handler through webhooks.cc instead, use **Send test delivery**, or `client.destinations.test()`.
 
 ## Manage forwarding from code
 

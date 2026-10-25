@@ -63,6 +63,8 @@ import type {
   DeliveryLogEntry,
   DeliverySummary,
   ListDeliveriesOptions,
+  RenderEmailOptions,
+  RenderedEmail,
 } from "./types";
 import type { EmailReceivedEvent, RequestKind } from "./email/types";
 import { DEFAULT_EMAIL_DOMAIN, emailAddress, isValidEmailTag } from "./email/address";
@@ -83,9 +85,16 @@ import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
 import {
   validateDestinationInput,
+  validateEmailFields,
   validateMockResponse,
   validateResponseRules,
 } from "./validation";
+import {
+  isInboundEmailFormat,
+  renderInboundEmail,
+  type InboundEmailFormat,
+  type InboundEmailPayload,
+} from "./email/inbound";
 import {
   registerAnonymous,
   registerWithEmail,
@@ -974,6 +983,8 @@ export class WebhooksCC {
               "ResponseRule[]|null? — conditional rules (first match wins), or null to clear",
             notificationUrl: "string?",
             showEmailExtracts: "boolean? (owner only)",
+            emailFields:
+              "{ name, from: subject|text|html|from|to|header, header?, pattern (RE2) }[]|null? (owner only, at most 20)",
             forwardEnabled: "boolean? (owner only; needs forwardUrl)",
             forwardUrl: "string|null? (owner only)",
           },
@@ -1223,6 +1234,24 @@ export class WebhooksCC {
             includeExtracts: "boolean? (default: true)",
           },
         },
+        toInbound: {
+          description:
+            "The email in an inbound provider's shape (postmark, sendgrid, mailgun, cloudmailin), built locally",
+          params: {
+            email: "EmailRequest",
+            format: '"postmark"|"sendgrid"|"mailgun"|"cloudmailin"',
+            mailgunSigningKey: "string? (signs a Mailgun form)",
+          },
+        },
+        render: {
+          description:
+            "The email in an inbound provider's shape (or the email.received JSON), rendered by webhooks.cc: { method, headers, body }",
+          params: {
+            requestId: "string",
+            format: '"json"|"postmark"|"sendgrid"|"mailgun"|"cloudmailin"',
+            mailgunSigningKey: "string?",
+          },
+        },
       },
       forwarding: {
         configure: {
@@ -1444,6 +1473,7 @@ export class WebhooksCC {
       if (options.responseRules != null) {
         validateResponseRules(options.responseRules);
       }
+      validateEmailFields(options.emailFields);
       return this.request<Endpoint>("PATCH", `/endpoints/${slug}`, options);
     },
 
@@ -1643,12 +1673,17 @@ export class WebhooksCC {
     },
 
     /** One captured email by request ID. Throws NotFoundError for anything else. */
+    /** A captured email, with the endpoint's named fields and the reply text. */
     get: async (requestId: string): Promise<EmailRequest> => {
-      const request = await this.requests.get(requestId);
+      validatePathSegment(requestId, "requestId");
+      const request = await this.request<Request>("GET", `/requests/${requestId}?extracts=true`);
       if (!isEmailRequest(request)) {
         throw new NotFoundError(`Request ${requestId} is not a captured email`);
       }
-      return request;
+      // The codes and links come from extractCode()/extractLink(); only the fields are kept.
+      const email = { ...request } as EmailRequest & { extracts?: unknown };
+      delete email.extracts;
+      return email;
     },
 
     /** The newest email matching the criteria, or null. */
@@ -1722,7 +1757,12 @@ export class WebhooksCC {
      */
     toJson: (
       email: EmailRequest,
-      options: { endpoint?: { slug: string; name?: string | null }; includeExtracts?: boolean } = {}
+      options: {
+        endpoint?: { slug: string; name?: string | null };
+        includeExtracts?: boolean;
+        /** The endpoint's named fields, found; `emails.get()` gives them as `emailFields`. */
+        fields?: Record<string, string | null> | null;
+      } = {}
     ): EmailReceivedEvent => {
       const local = email.path.slice(0, Math.max(0, email.path.lastIndexOf("@")));
       const slug = options.endpoint?.slug ?? local.split("+")[0].toLowerCase();
@@ -1736,8 +1776,53 @@ export class WebhooksCC {
           email: email.email,
         },
         { slug, name: options.endpoint?.name ?? null },
-        { includeExtracts: options.includeExtracts }
+        {
+          includeExtracts: options.includeExtracts,
+          fields: options.fields !== undefined ? options.fields : (email.emailFields ?? null),
+        }
       );
+    },
+
+    /**
+     * The email in an inbound provider's shape (Postmark, SendGrid Inbound
+     * Parse, a Mailgun route, CloudMailin JSON), built here without a
+     * request. Post `body` with `contentType` to the handler you wrote for
+     * that provider. A Mailgun form is signed when you pass your signing key.
+     */
+    toInbound: (
+      email: EmailRequest,
+      format: InboundEmailFormat,
+      options: { mailgunSigningKey?: string } = {}
+    ): Promise<InboundEmailPayload> => {
+      if (!isInboundEmailFormat(format)) throw new Error(`Unknown inbound format: "${format}"`);
+      return renderInboundEmail(
+        format,
+        {
+          id: email.id,
+          receivedAt: email.receivedAt,
+          path: email.path,
+          size: email.size,
+          headers: email.headers,
+          email: email.email,
+        },
+        { raw: email.body ?? null, mailgunSigningKey: options.mailgunSigningKey ?? null }
+      );
+    },
+
+    /**
+     * The same, rendered by webhooks.cc (what the CLI tunnels and the other
+     * SDKs use): the method, headers and body to send. `format: "json"` gives
+     * the `email.received` JSON, unsigned, with the endpoint's named fields.
+     */
+    render: async (requestId: string, options: RenderEmailOptions): Promise<RenderedEmail> => {
+      validatePathSegment(requestId, "requestId");
+      if (options.format !== "json" && !isInboundEmailFormat(options.format)) {
+        throw new Error(`Unknown inbound format: "${options.format}"`);
+      }
+      return this.request<RenderedEmail>("POST", `/requests/${requestId}/render`, {
+        format: options.format,
+        ...(options.mailgunSigningKey ? { mailgunSigningKey: options.mailgunSigningKey } : {}),
+      });
     },
   };
 

@@ -157,7 +157,7 @@ export default function CompareWebhookSitePage() {
             <h3 className="text-lg font-bold mb-2">MCP server for AI agents</h3>
             <p className="text-muted-foreground">
               <code className="text-sm bg-muted px-1.5 py-0.5 rounded-sm">@webhooks-cc/mcp</code>{" "}
-              exposes 45 tools to create endpoints, send test payloads, inspect captured requests,
+              exposes 46 tools to create endpoints, send test payloads, inspect captured requests,
               replay, generate payload types and more, so Cursor, Claude Code, Windsurf, or any
               MCP-compatible agent can drive webhook workflows without leaving the editor.
               Webhook.site does not offer MCP support.

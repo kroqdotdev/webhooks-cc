@@ -1,4 +1,5 @@
 import { extractFromEmail } from "./extract";
+import { replyText } from "./reply";
 import {
   EMAIL_RECEIVED,
   type EmailCapture,
@@ -36,12 +37,13 @@ function dkimVerdict(email: EmailCapture): string | null {
  *
  * `includeExtracts` (default true) adds the one-time `codes` and `links`;
  * forwarding leaves them out when the endpoint turned off "Show codes and
- * links found in emails".
+ * links found in emails". `fields` are the endpoint's named fields, already
+ * found (the caller runs their patterns; see `extractEmailFields()`).
  */
 export function buildEmailJson(
   request: EmailJsonSource,
   endpoint: { slug: string; name?: string | null },
-  options: { includeExtracts?: boolean } = {}
+  options: { includeExtracts?: boolean; fields?: Record<string, string | null> | null } = {}
 ): EmailReceivedEvent {
   const { email } = request;
   const receivedDate = new Date(request.receivedAt);
@@ -69,6 +71,8 @@ export function buildEmailJson(
       inReplyTo: email.inReplyTo,
       text: email.text,
       html: email.html,
+      replyText: replyText(email.text),
+      ...(options.fields ? { fields: options.fields } : {}),
       ...(extracts
         ? {
             codes: extracts.codes,

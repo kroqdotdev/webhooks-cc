@@ -1,3 +1,5 @@
+import { storedEmailFields } from "@/lib/email-fields";
+import type { EmailField } from "@webhooks-cc/sdk/email";
 import { customAlphabet } from "nanoid";
 import { decryptOwnerHeaders, maskOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { createAdminClient } from "./admin";
@@ -33,6 +35,7 @@ type SelectedEndpointRow = Pick<
   signing_secret_encrypted?: string | null;
   signing_header?: string | null;
   show_email_extracts?: boolean;
+  email_fields?: Json;
   /** Embedded: the old forward* fields and notificationUrl read from these (migration 00063). */
   endpoint_destinations?: EmbeddedDestination[];
 };
@@ -57,7 +60,7 @@ type EmbeddedDestination = Pick<
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
+  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -90,6 +93,8 @@ export interface EndpointRecord {
   emailAddress?: string | null;
   /** Show the codes and links found in captured emails in the dashboard. */
   showEmailExtracts: boolean;
+  /** Named fields picked out of every email (lib/email-fields.ts). */
+  emailFields: EmailField[];
   /** Forwarding is on: the kinds below go to forwardUrl (lib/forwarding). */
   forwardEnabled: boolean;
   /** Owner-only, like notificationUrl. */
@@ -166,6 +171,8 @@ interface UpdateEndpointInput {
   signingSecret?: string | null;
   signingHeader?: string | null;
   showEmailExtracts?: boolean;
+  /** Validated by the route (lib/email-fields.ts). */
+  emailFields?: EmailField[] | null;
   forwardEnabled?: boolean;
   /** Validated by the route (lib/forwarding/target.ts). */
   forwardUrl?: string | null;
@@ -251,13 +258,17 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     signingHeader: row.signing_header ?? null,
     emailAddress: emailAddress(row.slug, row.user_id),
     showEmailExtracts: row.show_email_extracts ?? true,
+    emailFields: storedEmailFields(row.email_fields),
     forwardEnabled: primary?.enabled ?? false,
     forwardUrl: primary?.url ?? null,
     hasForwardSecret: !!primary?.secret_encrypted,
     forwardHttp: primary?.http ?? false,
     forwardEmail: primary?.email ?? true,
-    // A template is newer than this field; older clients see the URL's pick.
-    forwardFormat: !primary?.format || primary.format === "template" ? "auto" : primary.format,
+    // Templates and provider shapes are newer than this field; older clients see the URL's pick.
+    forwardFormat:
+      primary?.format === "as_received" || primary?.format === "json" || primary?.format === "chat"
+        ? primary.format
+        : "auto",
     forwardAppendPath: primary?.append_path ?? true,
     forwardRetrySeconds: primary?.retry_seconds ?? 86400,
     forwardKeepOrder: primary?.keep_order ?? false,
@@ -518,6 +529,7 @@ export async function updateEndpointBySlugForUser({
   signingSecret,
   signingHeader,
   showEmailExtracts,
+  emailFields,
   forwardEnabled,
   forwardUrl,
   forwardHttp,
@@ -603,6 +615,9 @@ export async function updateEndpointBySlugForUser({
   }
   if (showEmailExtracts !== undefined) {
     updates.show_email_extracts = showEmailExtracts;
+  }
+  if (emailFields !== undefined) {
+    updates.email_fields = (emailFields ?? []) as unknown as Json;
   }
   // Handle signing config
   if (signingProvider !== undefined) {

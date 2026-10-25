@@ -3,7 +3,8 @@ import type { Database, Json } from "./database";
 import { resolveEndpointAccess } from "./teams";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
 import { toEmailCapture, type EmailCapture } from "@/lib/email-capture";
-import { extractFromEmail, type EmailExtracts } from "@webhooks-cc/sdk/email";
+import { extractFromEmail, replyText, type EmailExtracts } from "@webhooks-cc/sdk/email";
+import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import type { RequestKind } from "@/lib/supabase/search";
 
 const FREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -68,6 +69,9 @@ export interface RequestRecord {
    * and links found in it (see withEmailExtracts).
    */
   extracts?: EmailExtracts | null;
+  /** With extracts: the endpoint's named fields (null when it has none) and the reply text. */
+  emailFields?: Record<string, string | null> | null;
+  replyText?: string | null;
 }
 
 export interface PaginatedRequestPage {
@@ -178,7 +182,9 @@ export function parseExtractsParam(value: string | null): boolean | null {
  * dashboard's "Found in this email" shows, computed by the same function, so
  * SDKs in other languages read them instead of reimplementing the extraction.
  * Like forwarding, it honours the endpoint's "Show codes and links found in
- * emails": `extracts` is null when that is off.
+ * emails": `extracts` is null when that is off. `emailFields` (the
+ * endpoint's named fields, run with RE2) and `replyText` come with them,
+ * whatever that switch says.
  *
  * The routes add it only on `extracts=true`. Up to 20 links can make it tens
  * of kilobytes, which would break the MCP server's output budget and cost the
@@ -195,23 +201,32 @@ export async function withEmailExtracts(records: RequestRecord[]): Promise<Reque
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("endpoints")
-    .select("id, show_email_extracts")
+    .select("id, show_email_extracts, email_fields")
     .in("id", endpointIds);
   if (error) throw error;
   const enabled = new Set(
     (data ?? []).filter((row) => row.show_email_extracts !== false).map((row) => row.id)
+  );
+  const fieldsOf = new Map(
+    (data ?? []).map((row) => [row.id, storedEmailFields(row.email_fields)])
   );
 
   const out: RequestRecord[] = [];
   for (const record of records) {
     if (record.kind !== "email") {
       out.push(record);
-    } else if (!record.email || !enabled.has(record.endpointId)) {
-      out.push({ ...record, extracts: null });
-    } else {
-      out.push({ ...record, extracts: extractFromEmail(record.email) });
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      continue;
     }
+    const derived = {
+      emailFields: emailFieldValues(record, fieldsOf.get(record.endpointId) ?? []),
+      replyText: replyText(record.email?.text),
+    };
+    if (!record.email || !enabled.has(record.endpointId)) {
+      out.push({ ...record, extracts: null, ...derived });
+    } else {
+      out.push({ ...record, extracts: extractFromEmail(record.email), ...derived });
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   return out;
 }

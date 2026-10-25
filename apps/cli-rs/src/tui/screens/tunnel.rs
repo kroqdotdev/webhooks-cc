@@ -7,11 +7,12 @@ use ratatui::{
     Frame,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 use crate::api::stream::join_stream;
-use crate::tunnel::{parse_target, Tunnel};
+use crate::tunnel::{parse_target, EmailOptions, Tunnel};
 use crate::tui::{keys, theme};
 use crate::tui::widgets::request_list::{RequestList, RequestListState};
 use crate::tui::widgets::spinner::Spinner;
@@ -32,6 +33,9 @@ pub struct TunnelScreen {
     slug: Option<String>,
     webhook_url_str: Option<String>,
     target_url: Option<String>,
+    /// Built once the endpoint exists; emails go as webhooks.cc's email JSON
+    /// (`whk tunnel --email-format` picks a mail provider's shape).
+    tunnel: Option<Arc<Tunnel>>,
     requests: RequestListState,
     forward_results: HashMap<String, ForwardResult>,
     /// Stream status line (set while reconnecting, cleared on reconnect).
@@ -51,6 +55,7 @@ impl TunnelScreen {
             slug: None,
             webhook_url_str: None,
             target_url: None,
+            tunnel: None,
             requests: RequestListState::new(),
             forward_results: HashMap::new(),
             stream_status: None,
@@ -144,6 +149,11 @@ impl Screen for TunnelScreen {
                 self.slug = Some(slug.clone());
                 self.webhook_url_str = Some(url);
                 self.state = State::Active;
+                if let (Some(target), Some(client)) = (&self.target_url, &self.client) {
+                    self.tunnel = Tunnel::new(target.clone(), HashMap::new())
+                        .ok()
+                        .map(|t| Arc::new(t.with_emails(client.clone(), EmailOptions::default())));
+                }
 
                 // Start SSE stream
                 if let (Some(tx), Some(client)) = (&self.tx, &self.client) {
@@ -195,9 +205,9 @@ impl Screen for TunnelScreen {
                 let req_for_fwd = (*req).clone();
                 self.requests.push(*req);
 
-                // Forward the request
-                if let Some(ref target) = self.target_url {
-                    let Ok(tunnel) = Tunnel::new(target.clone(), HashMap::new()) else { return };
+                // Forward the request (emails are rendered through the API first)
+                if let Some(ref tunnel) = self.tunnel {
+                    let tunnel = tunnel.clone();
                     if let Some(ref tx) = self.tx {
                         let tx = tx.clone();
                         let rid = req_id.clone();

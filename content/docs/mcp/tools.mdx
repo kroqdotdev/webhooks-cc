@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 45 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 46 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-10-25
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 45 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 46 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -80,6 +80,7 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `signingSecret`     | `string`  | no       | New signing secret (encrypted server-side), or `null` to clear                |
 | `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
 | `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
+| `emailFields`       | `array`   | no       | Named fields to pick out of every email, `{ name, from, header?, pattern }` (RE2), at most 20; replaces the list, `null` or `[]` removes them; owner only. See [Fields you pick out](/docs/email-capture#fields-you-pick-out) |
 
 ### preview_response
 
@@ -317,6 +318,17 @@ Deliver a sample email with a 6-digit code and a link, to try the email tools be
 | `slug`    | `string` | yes      | Endpoint slug                          |
 | `tag`     | `string` | no       | Deliver to `{slug}+{tag}@mailhooks.cc` |
 
+### render_email
+
+A captured email in the shape an inbound mail service posts it, to test the handler you wrote for that service against real mail ([In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape)). Returns `{ format, method, headers, body }`; with `targetUrl` (your local handler), posts it there and returns the `status` and the start of the answer.
+
+| Parameter           | Type                                                              | Required | Description                                               |
+| ------------------- | ----------------------------------------------------------------- | -------- | --------------------------------------------------------- |
+| `requestId`         | `string`                                                          | yes      | The captured email                                        |
+| `format`            | `"postmark" \| "sendgrid" \| "mailgun" \| "cloudmailin" \| "json"` | yes      | Whose shape; `json` is webhooks.cc's own `email.received` |
+| `mailgunSigningKey` | `string`                                                          | no       | For `mailgun`: the key your handler verifies with         |
+| `targetUrl`         | `string`                                                          | no       | Post it here, for example `http://localhost:3000/inbound` |
+
 ## Forwarding
 
 [Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations (servers, Slack or Discord channels, tools such as Zapier or n8n), each with its own kinds, conditions, format, timing and signing secret, queued, retried and logged. Only the endpoint's owner can manage it.
@@ -344,7 +356,8 @@ Add a destination; it is on at once unless `enabled: false`, and gets a signing 
 | `enabled`         | `boolean`                                                    | no       | Send to it (default `true`)                                                                                         |
 | `http`, `email`   | `boolean`                                                    | no       | Which kinds it takes (default both)                                                                                 |
 | `filter`          | `{ logic?, conditions } \| null`                             | no       | Send only matching captures; see [Send only some captures](/docs/forwarding#send-only-some-captures)                |
-| `format`          | `"auto" \| "as_received" \| "json" \| "template" \| "chat"` | no       | How it is sent; `auto` picks chat for Slack and Discord URLs                                                        |
+| `format`          | `string`                                                     | no       | `auto` (chat for Slack and Discord URLs), `as_received`, `json`, `template`, `chat`, or for emails a mail provider's shape: `postmark`, `sendgrid`, `mailgun`, `cloudmailin` |
+| `mailgunSigningKey` | `string \| null`                                           | no       | With `mailgun`: your Mailgun signing key, so `signature` verifies; write-only                                       |
 | `bodyTemplate`    | JSON                                                         | no       | With `template`: the body, its strings holding `{{ placeholders }}` ([Your own JSON](/docs/forwarding#your-own-json)) |
 | `messageTemplate` | `string \| null`                                             | no       | With `chat`: your own message text; `null` sends the standard message                                               |
 | `headers`         | `{ name, value \| null }[]`                                  | no       | Your own headers (at most 10, not for chat)                                                                         |
@@ -355,7 +368,7 @@ Add a destination; it is on at once unless `enabled: false`, and gets a signing 
 | `throttleSeconds` | `number`                                                     | no       | At most one delivery every so many seconds, 0 to 3,600; 1 makes a heads-up channel                                  |
 | `delaySeconds`    | `number`                                                     | no       | Wait this long after the capture before sending, 0 to 3,600                                                         |
 
-A filter condition takes `field`, `op` and `value` like a response rule condition, plus `kind`, `email` (`name`: `subject`, `from`, `to`, `text` or `tag`), `spam_score`, `email_auth` (`name`: `spf`, `dkim` or `dmarc`) and `signature` (`verified`, `failed` or `missing`).
+A filter condition takes `field`, `op` and `value` like a response rule condition, plus `kind`, `email` (`name`: `subject`, `from`, `to`, `text` or `tag`), `email_field` (`name`: one of the endpoint's named fields), `spam_score`, `email_auth` (`name`: `spf`, `dkim` or `dmarc`) and `signature` (`verified`, `failed` or `missing`).
 
 ### update_destination
 

@@ -29,6 +29,7 @@ const MAX_TEMPLATE_CHARS = 64 * 1024;
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_NAME_CHARS = 100;
 const MAX_SECONDS = 3600;
+const MAX_MAILGUN_KEY_CHARS = 200;
 
 export type DestinationInputResult =
   { ok: true; changes: DestinationChanges } | { ok: false; error: string };
@@ -183,6 +184,19 @@ export function parseDestinationInput(
         );
       }
       changes.messageTemplate = body.messageTemplate;
+    }
+  }
+
+  if (body.mailgunSigningKey !== undefined) {
+    if (body.mailgunSigningKey === null || body.mailgunSigningKey === "") {
+      changes.mailgunSigningKey = null;
+    } else if (
+      typeof body.mailgunSigningKey !== "string" ||
+      body.mailgunSigningKey.trim().length > MAX_MAILGUN_KEY_CHARS
+    ) {
+      return fail(`mailgunSigningKey is text of at most ${MAX_MAILGUN_KEY_CHARS} characters.`);
+    } else {
+      changes.mailgunSigningKey = body.mailgunSigningKey.trim();
     }
   }
 

@@ -36,14 +36,17 @@ describe("conditions with RE2", () => {
     expect(regexProblem("a".repeat(501))).toMatch(/longer than 500/);
   });
 
-  it("matches a glob at the length limit, though its regex is longer", () => {
-    const glob = "-*".repeat(250);
+  it("holds a glob to the size a regex may have, and says so when it is saved", () => {
+    expect(
+      conditionProblems([{ field: "path", op: "matches", value: "-*".repeat(250) }], "filter")
+    ).toEqual([expect.stringMatching(/glob: too large to run quickly .*use a shorter glob$/)]);
+    const glob = "/api/v1/orders/*/items/**";
     expect(conditionProblems([{ field: "path", op: "matches", value: glob }], "filter")).toEqual(
       []
     );
     const subject = {
       method: "POST",
-      path: "-".repeat(250),
+      path: "/api/v1/orders/42/items/a/b",
       headers: {},
       query: {},
       body: "",

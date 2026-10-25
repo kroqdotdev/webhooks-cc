@@ -20,8 +20,14 @@ export function signatureState(request: RequestRecord): SignatureState {
   return "missing";
 }
 
-/** The rule subject for a stored request, email or HTTP. */
-export function ruleSubjectFor(request: RequestRecord): RuleSubject {
+/**
+ * The rule subject for a stored request, email or HTTP. `fields` are the
+ * endpoint's named email fields, found (lib/email-fields.ts).
+ */
+export function ruleSubjectFor(
+  request: RequestRecord,
+  fields: Record<string, string | null> | null = null
+): RuleSubject {
   const email = request.kind === "email" ? request.email : null;
   return {
     kind: request.kind,
@@ -49,6 +55,7 @@ export function ruleSubjectFor(request: RequestRecord): RuleSubject {
               : (email.auth?.dkim?.[0]?.result ?? null),
             dmarc: email.auth?.dmarc?.result ?? null,
           },
+          fields,
         }
       : null,
     signature: signatureState(request),
@@ -60,6 +67,8 @@ export interface ContextOptions {
   includeExtracts?: boolean;
   /** Add `signature` (forwarded payloads; mock responses are sent before the check). */
   withSignature?: boolean;
+  /** The endpoint's named email fields, found: `{{ fields.name }}`. */
+  fields?: Record<string, string | null> | null;
 }
 
 /** The template context for a stored request. */
@@ -72,6 +81,7 @@ export function templateContextFor(
   if (request.kind === "email" && request.email) {
     const event = buildEmailJson({ ...request, email: request.email }, endpoint, {
       includeExtracts: options.includeExtracts !== false,
+      fields: options.fields ?? null,
     });
     return emailTemplateContext(event.data as unknown as Record<string, unknown>, extra);
   }

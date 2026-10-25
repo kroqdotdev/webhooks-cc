@@ -23,6 +23,8 @@ import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
 import { checkForwardUrl } from "@/lib/forwarding/target";
 import { TooManyDestinationsError } from "@/lib/supabase/destinations";
+import { emailFieldsProblems, normalizedEmailFields } from "@/lib/email-fields";
+import type { EmailField } from "@webhooks-cc/sdk/email";
 import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
 import { reportError } from "@/lib/observability";
 
@@ -66,6 +68,7 @@ const AUDITED_ENDPOINT_FIELDS = [
   "signingSecret",
   "signingHeader",
   "showEmailExtracts",
+  "emailFields",
   "forwardEnabled",
   "forwardUrl",
   "forwardHttp",
@@ -118,6 +121,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
 
   if (body.showEmailExtracts !== undefined && typeof body.showEmailExtracts !== "boolean") {
     return Response.json({ error: "Invalid showEmailExtracts" }, { status: 400 });
+  }
+  if (body.emailFields !== undefined && body.emailFields !== null) {
+    const problems = emailFieldsProblems(body.emailFields);
+    if (problems.length > 0) {
+      return Response.json({ error: `emailFields: ${problems[0]}` }, { status: 400 });
+    }
   }
 
   if (body.forwardEnabled !== undefined && typeof body.forwardEnabled !== "boolean") {
@@ -225,6 +234,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     const ownerOnlyConfigTouched =
       body.notificationUrl !== undefined ||
       body.showEmailExtracts !== undefined ||
+      body.emailFields !== undefined ||
       signingConfigTouched ||
       forwardingTouched;
 
@@ -355,6 +365,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       signingHeader:
         body.signingHeader === undefined ? undefined : (body.signingHeader as string | null),
       showEmailExtracts: body.showEmailExtracts as boolean | undefined,
+      emailFields:
+        body.emailFields === undefined || body.emailFields === null
+          ? (body.emailFields as null | undefined)
+          : normalizedEmailFields(body.emailFields as EmailField[]),
       forwardEnabled: body.forwardEnabled as boolean | undefined,
       forwardUrl:
         body.forwardUrl === undefined ? undefined : (body.forwardUrl as string | null) || null,

@@ -23,6 +23,108 @@ pub fn format_bytes(bytes: usize) -> String {
     }
 }
 
+/// Decode the RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`)
+/// in a raw header such as an email's subject. UTF-8, US-ASCII and
+/// ISO-8859-1 are decoded; a word in another charset, or one that does not
+/// decode, is kept as written.
+pub fn decode_encoded_words(raw: &str) -> String {
+    let mut out = String::new();
+    // Bytes of adjacent UTF-8 words, decoded together: a sender may split one
+    // character across two words.
+    let mut utf8 = Vec::new();
+    let mut after_word = false;
+    let mut rest = raw;
+    while let Some(start) = rest.find("=?") {
+        let Some((word, len)) = decode_word(&rest[start..]) else {
+            out.push_str(&String::from_utf8_lossy(&std::mem::take(&mut utf8)));
+            out.push_str(&rest[..start + 2]);
+            rest = &rest[start + 2..];
+            after_word = false;
+            continue;
+        };
+        // Whitespace between two encoded words is not part of the text.
+        let between = &rest[..start];
+        if !(after_word && between.chars().all(char::is_whitespace)) {
+            out.push_str(&String::from_utf8_lossy(&std::mem::take(&mut utf8)));
+            out.push_str(between);
+        }
+        match word {
+            Word::Utf8(bytes) => utf8.extend(bytes),
+            Word::Text(text) => {
+                out.push_str(&String::from_utf8_lossy(&std::mem::take(&mut utf8)));
+                out.push_str(&text);
+            }
+        }
+        after_word = true;
+        rest = &rest[start + len..];
+    }
+    out.push_str(&String::from_utf8_lossy(&utf8));
+    out.push_str(rest);
+    out
+}
+
+enum Word {
+    Utf8(Vec<u8>),
+    Text(String),
+}
+
+/// RFC 2047 caps an encoded word at 75 characters; some senders run longer,
+/// so a little more is read. Bounding the scan keeps decoding linear in the
+/// subject even when it is full of `=?` that never close.
+const MAX_ENCODED_WORD_CHARS: usize = 256;
+
+/// One encoded word at the start of `s` and its length in bytes.
+fn decode_word(s: &str) -> Option<(Word, usize)> {
+    use base64::Engine;
+
+    let end = s
+        .char_indices()
+        .nth(MAX_ENCODED_WORD_CHARS)
+        .map_or(s.len(), |(index, _)| index);
+    let s = &s[..end];
+    let inner = s.strip_prefix("=?")?;
+    let (charset, inner) = inner.split_once('?')?;
+    let (encoding, inner) = inner.split_once('?')?;
+    let text = &inner[..inner.find("?=")?];
+    if [charset, encoding, text]
+        .iter()
+        .any(|part| part.contains(char::is_whitespace))
+    {
+        return None;
+    }
+    let len = 2 + charset.len() + 1 + encoding.len() + 1 + text.len() + 2;
+    let bytes = match encoding {
+        "B" | "b" => base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(text))
+            .ok()?,
+        "Q" | "q" => {
+            let mut bytes = Vec::with_capacity(text.len());
+            let mut iter = text.bytes();
+            while let Some(b) = iter.next() {
+                match b {
+                    b'_' => bytes.push(b' '),
+                    b'=' => {
+                        let hex = [iter.next()?, iter.next()?];
+                        bytes.push(u8::from_str_radix(std::str::from_utf8(&hex).ok()?, 16).ok()?);
+                    }
+                    b => bytes.push(b),
+                }
+            }
+            bytes
+        }
+        _ => return None,
+    };
+    // RFC 2231 lets a language follow the charset: `UTF-8*en`.
+    let charset = charset.split('*').next().unwrap_or("").to_ascii_lowercase();
+    let word = match charset.as_str() {
+        "utf-8" | "utf8" | "us-ascii" => Word::Utf8(bytes),
+        "iso-8859-1" | "latin1" => Word::Text(bytes.iter().map(|&b| b as char).collect()),
+        _ => return None,
+    };
+    Some((word, len))
+}
+
 /// Format a DateTime as ISO 8601 string, or parse one.
 pub fn format_iso(ts_ms: i64) -> String {
     Utc.timestamp_millis_opt(ts_ms)
@@ -83,6 +185,14 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn decodes_a_long_run_of_unclosed_words_quickly() {
+        let hostile = "=?a".repeat(200_000);
+        let started = std::time::Instant::now();
+        assert_eq!(decode_encoded_words(&hostile), hostile);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
     use super::*;
 
     #[test]
@@ -118,6 +228,41 @@ mod tests {
     fn test_format_timestamp() {
         let ts = format_timestamp(1700000000000);
         assert!(ts.contains("2023"), "expected 2023 in timestamp, got: {ts}");
+    }
+
+    #[test]
+    fn test_decode_encoded_words() {
+        assert_eq!(
+            decode_encoded_words("Confirm your email"),
+            "Confirm your email"
+        );
+        assert_eq!(
+            decode_encoded_words("=?UTF-8?Q?Gr=C3=BC=C3=9Fe_aus_Acme?="),
+            "Grüße aus Acme"
+        );
+        assert_eq!(
+            decode_encoded_words("=?utf-8?b?V2VsY29tZSDwn46J?="),
+            "Welcome 🎉"
+        );
+        assert_eq!(
+            decode_encoded_words("=?ISO-8859-1?Q?Caf=E9?= is open"),
+            "Café is open"
+        );
+        assert_eq!(decode_encoded_words("=?UTF-8*en?Q?Hi?="), "Hi");
+        // Whitespace between two words goes; around plain text it stays.
+        assert_eq!(
+            decode_encoded_words("=?UTF-8?Q?a?=  =?UTF-8?Q?b?= c"),
+            "ab c"
+        );
+        // A character split across two words survives.
+        assert_eq!(decode_encoded_words("=?UTF-8?Q?=C3?= =?UTF-8?Q?=BC?="), "ü");
+        // Other charsets, broken words and stray markers are kept as written.
+        assert_eq!(decode_encoded_words("=?KOI8-R?Q?abc?="), "=?KOI8-R?Q?abc?=");
+        assert_eq!(decode_encoded_words("=?UTF-8?Q?=ZZ?="), "=?UTF-8?Q?=ZZ?=");
+        assert_eq!(
+            decode_encoded_words("Is 2+2 =? 4 ?= yes"),
+            "Is 2+2 =? 4 ?= yes"
+        );
     }
 
     #[test]

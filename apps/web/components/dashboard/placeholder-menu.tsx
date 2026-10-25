@@ -61,6 +61,7 @@ export const EMAIL_PLACEHOLDERS: PlaceholderGroup[] = [
       { label: "Sender's name", text: "{{ from.name }}" },
       { label: "First recipient", text: "{{ to.0.address }}" },
       { label: "Text", text: "{{ text }}" },
+      { label: "Reply text (no quote)", text: "{{ replyText }}" },
       { label: "Tag (after +)", text: "{{ tag }}" },
       { label: "The first code found", text: "{{ codes.0 }}" },
       { label: "The first link found", text: "{{ links.0.url }}" },
@@ -81,13 +82,30 @@ export const SIGNATURE_PLACEHOLDER: PlaceholderGroup = {
   ],
 };
 
-/** The groups a forwarding template offers for the kinds it takes. */
-export function forwardingPlaceholders(http: boolean, email: boolean): PlaceholderGroup[] {
+/**
+ * The groups a forwarding template offers for the kinds it takes, with the
+ * endpoint's named email fields (Settings, Receiving) when it takes emails.
+ */
+export function forwardingPlaceholders(
+  http: boolean,
+  email: boolean,
+  emailFieldNames: readonly string[] = []
+): PlaceholderGroup[] {
   const request = REQUEST_PLACEHOLDERS[0];
   const generated = REQUEST_PLACEHOLDERS[1];
+  const fields: PlaceholderGroup[] =
+    email && emailFieldNames.length > 0
+      ? [
+          {
+            label: "Your email fields",
+            choices: emailFieldNames.map((name) => ({ label: name, text: `{{ fields.${name} }}` })),
+          },
+        ]
+      : [];
   return [
     ...(http ? [request] : []),
     ...(email ? EMAIL_PLACEHOLDERS : []),
+    ...fields,
     SIGNATURE_PLACEHOLDER,
     generated,
   ];

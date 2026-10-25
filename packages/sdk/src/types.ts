@@ -1,5 +1,7 @@
 import type { Condition } from "./rules";
 import type { EmailCapture, RequestKind } from "./email/types";
+import type { EmailField } from "./email/fields";
+import type { InboundEmailFormat } from "./email/inbound";
 
 /**
  * A webhook endpoint that captures incoming HTTP requests.
@@ -48,6 +50,8 @@ export interface Endpoint {
   emailAddress?: string | null;
   /** Whether codes and links are picked out of emails (dashboard and forwarded JSON) */
   showEmailExtracts?: boolean;
+  /** Named fields picked out of every email (owner only): `fields` in its JSON */
+  emailFields?: EmailField[];
   /** Whether forwarding is on: the kinds below go to `forwardUrl` */
   forwardEnabled?: boolean;
   /** Where captured requests are forwarded (only returned to the endpoint's owner) */
@@ -210,6 +214,14 @@ export interface Request {
 export interface EmailRequest extends Request {
   kind: "email";
   email: EmailCapture;
+  /**
+   * The endpoint's named fields (Settings, Receiving): what each pattern
+   * found, or null; null when the endpoint has none. `emails.get()` returns
+   * them; lists leave them out.
+   */
+  emailFields?: Record<string, string | null> | null;
+  /** The new text of a reply, without the quoted message and signature (`emails.get()`). */
+  replyText?: string | null;
 }
 
 /**
@@ -394,6 +406,8 @@ export interface UpdateEndpointOptions {
   signingHeader?: string | null;
   /** Pick codes and links out of emails (owner only) */
   showEmailExtracts?: boolean;
+  /** Named fields to pick out of every email, at most 20, or null for none (owner only) */
+  emailFields?: EmailField[] | null;
   /** Forward captured requests to `forwardUrl` (owner only; needs a URL) */
   forwardEnabled?: boolean;
   /** Where to forward, or null to remove it once forwarding is off (owner only) */
@@ -1128,8 +1142,15 @@ export interface ListDeliveriesOptions {
   destinationId?: string;
 }
 
-/** How a destination sends: "auto" picks from the URL (chat for Slack and Discord, else as received for HTTP and signed JSON for email). */
-export type DestinationFormat = "auto" | "as_received" | "json" | "chat" | "template";
+/**
+ * How a destination sends: "auto" picks from the URL (chat for Slack and
+ * Discord, else as received for HTTP and signed JSON for email). The
+ * inbound provider shapes ("postmark", "sendgrid", "mailgun",
+ * "cloudmailin") apply to emails; HTTP requests to such a destination go as
+ * received.
+ */
+export type DestinationFormat =
+  "auto" | "as_received" | "json" | "chat" | "template" | InboundEmailFormat;
 
 /** Which captured requests a destination gets; null or no conditions: all of them. */
 export interface DestinationFilter {
@@ -1152,6 +1173,8 @@ export interface Destination {
   url: string;
   /** Whether it has a signing secret (`destinations.secret()` reveals it) */
   hasSecret: boolean;
+  /** For format "mailgun": whether a Mailgun signing key is saved (it is never returned) */
+  hasMailgunSigningKey?: boolean;
   /** Takes HTTP requests */
   http: boolean;
   /** Takes emails */
@@ -1198,6 +1221,8 @@ export interface DestinationInput {
   filter?: DestinationFilter | null;
   bodyTemplate?: unknown;
   messageTemplate?: string | null;
+  /** For format "mailgun": your Mailgun HTTP webhook signing key, so `signature` verifies; null removes it */
+  mailgunSigningKey?: string | null;
   /** The whole set; a null value keeps the stored value of that name */
   headers?: ForwardHeaderInput[];
   appendPath?: boolean;
@@ -1315,4 +1340,20 @@ export interface RelayedRequestInfo {
   endpoint: string | null;
   /** Which try this is, from 1 */
   attempt: number | null;
+}
+
+/** Options for `emails.render()`: a provider's shape, or "json" for the `email.received` JSON. */
+export interface RenderEmailOptions {
+  format: InboundEmailFormat | "json";
+  /** For "mailgun": the signing key to sign `signature` with */
+  mailgunSigningKey?: string;
+}
+
+/** An email in an inbound provider's shape, as `emails.render()` returns it: post it to your handler. */
+export interface RenderedEmail {
+  format: InboundEmailFormat | "json";
+  method: "POST";
+  /** Content-Type and the rest a provider would send */
+  headers: Record<string, string>;
+  body: string;
 }

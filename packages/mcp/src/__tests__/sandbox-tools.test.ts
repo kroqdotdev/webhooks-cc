@@ -307,7 +307,7 @@ describe("sandbox tools (no API key)", () => {
     expect(connected.body.message).toContain("now that account's endpoints");
 
     const after = await names();
-    expect(after).toHaveLength(45);
+    expect(after).toHaveLength(46);
     expect(after).toEqual(expect.arrayContaining(["send_webhook", "describe", "list_teams"]));
     expect(after).not.toContain("connect_account");
     expect(after).not.toContain("about_sandbox");
